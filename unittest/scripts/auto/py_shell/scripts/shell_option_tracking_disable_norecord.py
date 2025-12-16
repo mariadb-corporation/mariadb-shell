@@ -1,4 +1,4 @@
-#@ {__version_num >= 90500}
+#@ {supports_option_tracker(shell.open_session(__mysqluripwd))}
 #@<> Setup
 import os
 import shutil
@@ -15,7 +15,7 @@ testutil.import_data(__sandbox_uri1, __data_path+"/sql/sakila-data.sql", "sakila
 
 
 main_session = mysql.get_session(__sandbox_uri1)
-main_session.run_sql("INSTALL COMPONENT 'file://component_option_tracker'")
+enable_option_tracker(main_session)
 
 def get_variables(a_session):
     result = a_session.run_sql("select * from performance_schema.global_status where VARIABLE_NAME like 'option_tracker_usage:Mysql Shell%'")
@@ -116,7 +116,7 @@ testutil.deploy_raw_sandbox(__mysql_sandbox_port2, "root", {
 })
 instance_count += 1
 secondary_session = mysql.get_session(__sandbox_uri2)
-secondary_session.run_sql("INSTALL COMPONENT 'file://component_option_tracker'")
+enable_option_tracker(secondary_session)
 
 expected_variables2 = get_variables(secondary_session)
 verify_variables(expected_variables2, secondary_session)

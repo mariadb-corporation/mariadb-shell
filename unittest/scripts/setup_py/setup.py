@@ -1084,3 +1084,35 @@ def EXPECT_STDERR_CONTAINS_MULTILINE(t):
             err["str"] + "\n<yellow>Diff with stderr:</yellow>\n" + \
             err_result["diff"]
         testutil.fail(context)
+
+def enable_option_tracker(sess, verbose=True):
+    try:
+        sess.run_sql("INSTALL COMPONENT 'file://component_option_tracker'")
+        return True
+    except Exception as e:
+        if verbose:
+            print(e)
+        return False
+
+def disable_option_tracker(sess):
+    try:
+        sess.run_sql("UNINSTALL COMPONENT 'file://component_option_tracker'")
+    except:
+        pass
+
+def supports_option_tracker(sess):
+    if __version_num < 90500:
+        return False
+
+    # check if component is already installed
+    if sess.run_sql("SELECT 1 FROM mysql.component WHERE component_urn = 'file://component_option_tracker'").fetch_one():
+        return True
+
+    # try to enable it
+    if not enable_option_tracker(sess, False):
+        return False
+
+    # we've enabled it, not get back to the original state
+    disable_option_tracker(sess)
+
+    return True
