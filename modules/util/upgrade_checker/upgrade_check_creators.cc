@@ -147,7 +147,17 @@ class Syntax_check : public Upgrade_check {
     local_tokens["target_version"] = m_target_version.get_base();
     local_tokens["selected_version"] = m_parser.version().get_base();
 
-    if (!is_parser_same_series()) {
+    if (m_target_version.numeric_version_series() !=
+        m_parser.version().numeric_version_series()) {
+      // Parser selects grammar version which is greater than or equal to the
+      // requested version (here `target_version`). If minor version number of
+      // the target version is different than the minor version of the grammar,
+      // we cannot guarantee that the reported errors are not false positives,
+      // as i.e. target version 8.2 could still have the syntax which is
+      // reported as invalid, 8.3 could have removed it, and 8.4 parser reports
+      // it as an error. Hence we can be certain that the reported errors are
+      // valid only if MAJOR.MINOR version matches. In any other case, we
+      // include a warning.
       return resolve_tokens(
           get_text("description") + "\n\n" + get_text("warning"), local_tokens);
     }
@@ -208,45 +218,6 @@ class Syntax_check : public Upgrade_check {
   }
 
  protected:
-  /*
-   * This method should return false if the selected parser sql syntax version
-   * is higher than targetVersion and in the next LTS/innovation series
-   * For ex. case when upgrading from 8.0 to 8.2, and parser will select
-   * 8.4 SQL syntax (where major changes to SQL language ware made). This was
-   * probably not the intention of the user and a warning should be displayed.
-   */
-  [[nodiscard]] bool is_parser_same_series() const {
-    const auto &selected_version = m_parser.version();
-    if (m_target_version == selected_version) {
-      return true;
-    }
-    /*
-     * Condition for the case, when we skip to the next major release of SQL
-     * syntax In normal usage this shouldn't happen: but it's possible when
-     * manually selecting targetVersion, ex:
-     * targetVersion: 8.7 (not existent) -> higher than 8.4 (possible SQL syntax
-     * library) so the parser will select next possible -> 9.x
-     */
-    if (m_target_version.get_major() < selected_version.get_major()) {
-      return false;
-    }
-    /*
-     * This case is mostly for the 8 series. There is a possibility to set the
-     * targetVersion to 8.1. We don't have SQL syntax plugin for that version
-     * because of size reasons, so parser will select the next possible -> 8.4
-     * (the LTS version). For future releases, (when 9 series LTS sql syntax
-     * plugin will be added) there is a possibility, that setting targetVersion
-     * to 9.3 (ex. we are upgrading from 9.0), the parser will select 9.7 (the
-     * LTS version).
-     */
-    const auto lts_version =
-        mysqlshdk::utils::get_first_lts_version(m_target_version);
-    if (m_target_version < lts_version && lts_version <= selected_version) {
-      return false;
-    }
-    return true;
-  }
-
   std::string remove_obsolete_modes(const std::string &modes) {
     static constexpr std::array<const std::string_view, 11>
         k_obsolete_80_modes = {{"DB2", "MSSQL", "MYSQL323", "MYSQL40",

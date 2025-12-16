@@ -1393,14 +1393,14 @@ TEST_F(MySQL_upgrade_check_test, syntax_parser_version_warning) {
   session->execute("CREATE PROCEDURE test_procedure() BEGIN FLUSH HOSTS; END");
 
   // No warning
-  auto upg_info = upgrade_info("8.0.0", "9.2.0");
+  auto upg_info = upgrade_info("8.0.0", "8.4.1");
   auto check = get_syntax_check(upg_info);
 
   EXPECT_ISSUES(check.get(), 1);
   EXPECT_ISSUE(issues[0], "testsyntaxverdb", "test_procedure", "",
                Upgrade_issue::ERROR);
 
-  std::string parser_version_str = get_parser_version_str(Version(9, 2, 0));
+  std::string parser_version_str = get_parser_version_str(Version(8, 4, 1));
 
   EXPECT_STREQ(
       check->get_description().c_str(),
@@ -1410,6 +1410,31 @@ TEST_F(MySQL_upgrade_check_test, syntax_parser_version_warning) {
        "definitions and `quote` any such references before upgrading.\nThese "
        "checks were performed using the MySQL " +
        parser_version_str + " syntax.")
+          .c_str());
+
+  // Warning
+  upg_info = upgrade_info("8.0.0", "9.2.0");
+  check = get_syntax_check(upg_info);
+
+  EXPECT_ISSUES(check.get(), 1);
+  EXPECT_ISSUE(issues[0], "testsyntaxverdb", "test_procedure", "",
+               Upgrade_issue::ERROR);
+
+  parser_version_str = get_parser_version_str(Version(9, 2, 0));
+
+  EXPECT_STREQ(
+      check->get_description().c_str(),
+      ("The following objects did not pass a syntax check with the latest "
+       "MySQL grammar. A common reason is that they reference names that "
+       "conflict with new reserved keywords. You must update these routine "
+       "definitions and `quote` any such references before upgrading.\nThese "
+       "checks were performed using the MySQL " +
+       parser_version_str +
+       " syntax.\n\nWARNING: SQL syntax checks were performed for a version "
+       "newer than the target 9.2.0. Some syntax errors may not apply to the "
+       "actual target version, but it is recommended that they be fixed anyway "
+       "to make future upgrades easier. You may skip this check by using the "
+       "{\"exclude\":[\"syntax\"]} option.")
           .c_str());
 
   // Warning
@@ -1462,7 +1487,7 @@ TEST_F(MySQL_upgrade_check_test, syntax_parser_version_warning) {
        "{\"exclude\":[\"syntax\"]} option.")
           .c_str());
 
-  // No warning
+  // Warning
   upg_info = upgrade_info("8.7.0", "9.0.0");
   check = get_syntax_check(upg_info);
 
@@ -1479,7 +1504,12 @@ TEST_F(MySQL_upgrade_check_test, syntax_parser_version_warning) {
        "conflict with new reserved keywords. You must update these routine "
        "definitions and `quote` any such references before upgrading.\nThese "
        "checks were performed using the MySQL " +
-       parser_version_str + " syntax.")
+       parser_version_str +
+       " syntax.\n\nWARNING: SQL syntax checks were performed for a version "
+       "newer than the target 9.0.0. Some syntax errors may not apply to the "
+       "actual target version, but it is recommended that they be fixed anyway "
+       "to make future upgrades easier. You may skip this check by using the "
+       "{\"exclude\":[\"syntax\"]} option.")
           .c_str());
 }
 
@@ -5000,15 +5030,14 @@ TEST_F(MySQL_upgrade_check_test, suggested_version_check) {
   CHECK_MSG_SUGGEST(Version(8, 3, 0), Version(9, 0, 0), "8.4");
   CHECK_MSG_EMPTY(Version(8, 4, 1), Version(9, 1, 0));
   CHECK_MSG_EMPTY(Version(8, 4, 1), Version(9, 3, 0));
-  {
-    auto first_lts = get_first_lts_version(Version(9, 0));
-    auto lts9it = k_latest_versions.find(first_lts.get_short());
 
-    if (lts9it == k_latest_versions.end()) {
-      CHECK_MSG_EMPTY(Version(8, 4, 1), first_lts);
-    } else {
-      CHECK_MSG_SUGGEST(Version(8, 4, 1), lts9it->second, lts9it->first);
-    }
+  {
+    // upgrading from any patch version of LTS to the next LTS (any patch) is
+    // allowed
+    const auto first_lts = get_first_lts_version(Version(9, 0));
+    CHECK_MSG_EMPTY(Version(8, 4, 1), first_lts);
+    CHECK_MSG_EMPTY(Version(8, 4, 1),
+                    Version(first_lts.get_major(), first_lts.get_minor(), 1));
   }
 
   // For all the LTS releases (including the initial innovation releses in the

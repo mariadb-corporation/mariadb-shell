@@ -308,25 +308,28 @@ std::optional<Version> get_next_suggested_lts_version(
 }
 
 std::string format_suggested_version_message(
-    const Version &serverVersion, const Version &targetVersion,
-    const std::string &suggestedTargetVersion) {
+    const Version &server_version, const Version &target_version,
+    const std::string &suggested_target_version) {
   return shcore::str_format(
       "Upgrading MySQL Server from version %s to %s is not supported. Please "
       "consider running the check using the following option: targetVersion=%s",
-      serverVersion.get_base().c_str(), targetVersion.get_base().c_str(),
-      suggestedTargetVersion.c_str());
+      server_version.get_base().c_str(), target_version.get_base().c_str(),
+      suggested_target_version.c_str());
 }
 }  // namespace suggested_version
 
-std::string check_for_version_suggestion(const Version &serverVersion,
-                                         const Version &targetVersion) {
+std::string check_for_version_suggestion(const Version &server_version,
+                                         const Version &target_version) {
   std::string suggested_target_version;
-  auto suggested = suggested_version::get_next_suggested_lts_version(
-      serverVersion, &suggested_target_version);
-  if (suggested.value_or(targetVersion) >= targetVersion) return {};
+  const auto suggested = suggested_version::get_next_suggested_lts_version(
+      server_version, &suggested_target_version);
+  if (suggested.value_or(target_version).numeric_version_series() >=
+      target_version.numeric_version_series()) {
+    return {};
+  }
 
   return suggested_version::format_suggested_version_message(
-      serverVersion, targetVersion, suggested_target_version);
+      server_version, target_version, suggested_target_version);
 }
 
 void run_monitoring_thread(IMonitoring_context *context) {
