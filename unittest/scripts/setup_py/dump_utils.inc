@@ -409,6 +409,11 @@ def skip_invalid_accounts_no_password(user):
     fixed = f"User {user} does not have a password set, this account has been removed from the dump"
     return Compatibility_issue(error, fixed)
 
+def skip_invalid_accounts_mysql_native_password(user):
+    error = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4 (fix this with either 'lock_invalid_accounts', 'skip_invalid_accounts' or 'target_has_mysql_native_password' compatibility option)"
+    fixed = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4, this account has been removed from the dump"
+    return Compatibility_issue(error, fixed)
+
 def lock_invalid_accounts_plugin(user, plugin):
     error = f"User {user} is using an unsupported authentication plugin '{plugin}' (fix this with either 'lock_invalid_accounts' or 'skip_invalid_accounts' compatibility option)"
     fixed = f"User {user} is using an unsupported authentication plugin '{plugin}', this account has been updated and locked"
@@ -417,6 +422,16 @@ def lock_invalid_accounts_plugin(user, plugin):
 def lock_invalid_accounts_no_password(user):
     error = f"User {user} does not have a password set (fix this with either 'lock_invalid_accounts' or 'skip_invalid_accounts' compatibility option)"
     fixed = f"User {user} does not have a password set, this account has been updated and locked"
+    return Compatibility_issue(error, fixed)
+
+def lock_invalid_accounts_mysql_native_password(user):
+    error = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4 (fix this with either 'lock_invalid_accounts', 'skip_invalid_accounts' or 'target_has_mysql_native_password' compatibility option)"
+    fixed = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4, this account has been updated and locked"
+    return Compatibility_issue(error, fixed)
+
+def dump_invalid_accounts_mysql_native_password(user):
+    error = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4 (fix this with either 'lock_invalid_accounts', 'skip_invalid_accounts' or 'target_has_mysql_native_password' compatibility option)"
+    fixed = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4, assuming that plugin has been enabled and dumping this account"
     return Compatibility_issue(error, fixed)
 
 def create_invisible_pks(schema, table):

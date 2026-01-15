@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -95,6 +95,23 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
   // enable MDS checks if target is an MDS instance
   if (is_mds) {
     copy_options->dump_options()->enable_mds_compatibility_checks();
+  }
+
+  // BUG#38852692 - automatically use 'target_has_mysql_native_password'
+  // compatibility option
+  if (804 == version.numeric_version_series()) {
+    const bool has_mysql_native_password =
+        load_session
+            ->query(
+                "SELECT 1 FROM information_schema.plugins WHERE "
+                "plugin_name='mysql_native_password' AND "
+                "plugin_status='ACTIVE'")
+            ->fetch_one();
+
+    if (has_mysql_native_password) {
+      copy_options->dump_options()->set_compatibility_option(
+          dump::Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD);
+    }
   }
 
   copy_options->dump_options()->validate_and_configure();

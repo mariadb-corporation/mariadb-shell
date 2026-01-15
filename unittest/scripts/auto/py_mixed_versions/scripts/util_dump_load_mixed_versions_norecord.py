@@ -140,11 +140,47 @@ EXPECT_STDOUT_CONTAINS(deprecated_authentication_plugin(mysql_native_password_ac
 EXPECT_STDOUT_CONTAINS(deprecated_authentication_plugin(sha256_password_account, "sha256_password").warning())
 
 #@<> BUG#36552764 - sha256_password should be reported as deprecated, mysql_native_password with an extra message {__mysh_version_num >= 80400}
+# BUG#38852692 - mysql_native_password generates an error
 shell.connect(__sandbox_uri1)
 shutil.rmtree(dump_dir_ocimds, True)
-EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "dump should not fail")
-EXPECT_STDOUT_CONTAINS(deprecated_and_disabled_authentication_plugin(mysql_native_password_account).warning())
+EXPECT_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "Compatibility issues were found")
+EXPECT_STDOUT_CONTAINS(dump_invalid_accounts_mysql_native_password(mysql_native_password_account).error())
 EXPECT_STDOUT_CONTAINS(deprecated_authentication_plugin(sha256_password_account, "sha256_password").warning())
+
+#@<> users file
+users_file = os.path.join(dump_dir_ocimds, "@.users.sql")
+
+#@<> BUG#38852692 - target_has_mysql_native_password allows to dump this account {__mysh_version_num >= 80400}
+shell.connect(__sandbox_uri1)
+shutil.rmtree(dump_dir_ocimds, True)
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "compatibility": [ "target_has_mysql_native_password", "skip_invalid_accounts" ], "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "dump should not fail")
+EXPECT_STDOUT_CONTAINS(dump_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+# 'target_has_mysql_native_password' takes priority over 'skip_invalid_accounts'
+EXPECT_STDOUT_NOT_CONTAINS(skip_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+EXPECT_FILE_CONTAINS(f"{mysql_native_password_account} IDENTIFIED WITH 'mysql_native_password'", users_file)
+
+#@<> BUG#38852692 - target_has_mysql_native_password allows to dump this account + lock_invalid_accounts {__mysh_version_num >= 80400}
+shell.connect(__sandbox_uri1)
+shutil.rmtree(dump_dir_ocimds, True)
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "compatibility": [ "target_has_mysql_native_password", "lock_invalid_accounts" ], "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "dump should not fail")
+EXPECT_STDOUT_CONTAINS(dump_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+# 'target_has_mysql_native_password' takes priority over 'lock_invalid_accounts'
+EXPECT_STDOUT_NOT_CONTAINS(lock_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+EXPECT_FILE_CONTAINS(f"{mysql_native_password_account} IDENTIFIED WITH 'mysql_native_password'", users_file)
+
+#@<> BUG#38852692 - skip_invalid_accounts excludes this account {__mysh_version_num >= 80400}
+shell.connect(__sandbox_uri1)
+shutil.rmtree(dump_dir_ocimds, True)
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "compatibility": [ "skip_invalid_accounts" ], "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "dump should not fail")
+EXPECT_STDOUT_CONTAINS(skip_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+EXPECT_FILE_NOT_CONTAINS(mysql_native_password_account, users_file)
+
+#@<> BUG#38852692 - lock_invalid_accounts excludes this account {__mysh_version_num >= 80400}
+shell.connect(__sandbox_uri1)
+shutil.rmtree(dump_dir_ocimds, True)
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir_ocimds, { "compatibility": [ "lock_invalid_accounts" ], "targetVersion": "8.4.0", "ocimds": True, "users": True, "includeSchemas": [ "sakila" ], "includeUsers": [ mysql_native_password_account, sha256_password_account ], "ddlOnly": True }), "dump should not fail")
+EXPECT_STDOUT_CONTAINS(lock_invalid_accounts_mysql_native_password(mysql_native_password_account).fixed())
+EXPECT_FILE_CONTAINS(f"CREATE USER IF NOT EXISTS {mysql_native_password_account} IDENTIFIED WITH 'caching_sha2_password' AS '$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED' REQUIRE NONE PASSWORD EXPIRE DEFAULT ACCOUNT LOCK", users_file)
 
 #@<> BUG#36552764 - sha256_password should be reported as deprecated, mysql_native_password as an error {__mysh_version_num >= 90000}
 shell.connect(__sandbox_uri1)

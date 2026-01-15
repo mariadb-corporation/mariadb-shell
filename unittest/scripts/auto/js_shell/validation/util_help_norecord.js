@@ -799,7 +799,7 @@ DESCRIPTION
         "ignore_wildcard_grants", "lock_invalid_accounts",
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
-        "unescape_wildcard_grants".
+        "target_has_mysql_native_password", "unescape_wildcard_grants".
       - targetVersion: string (default: current version of Shell) - Specifies
         version of the destination MySQL server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
@@ -1151,6 +1151,14 @@ DESCRIPTION
       tablespaces, this option will strip the TABLESPACE= option from CREATE
       TABLE statements.
 
+      target_has_mysql_native_password - The 8.4 MySQL HeatWave Service DB
+      System instances are, by default, created with the mysql_native_password
+      authentication plugin disabled. Use this option when the target instance
+      was modified afterwards, and the plugin is now enabled. This allows to
+      dump accounts which are using the mysql_native_password authentication
+      method. This option takes precedence over lock_invalid_accounts and
+      skip_invalid_accounts options.
+
       unescape_wildcard_grants - Fixes grants on schemas with wildcards,
       replacing escaped \_ and \% wildcards in schema names with _ and %
       wildcard characters. When the partial_revokes system variable is enabled,
@@ -1269,7 +1277,7 @@ DESCRIPTION
         "ignore_wildcard_grants", "lock_invalid_accounts",
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
-        "unescape_wildcard_grants".
+        "target_has_mysql_native_password", "unescape_wildcard_grants".
       - targetVersion: string (default: current version of Shell) - Specifies
         version of the destination MySQL server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
@@ -1600,6 +1608,14 @@ DESCRIPTION
       tablespaces, this option will strip the TABLESPACE= option from CREATE
       TABLE statements.
 
+      target_has_mysql_native_password - The 8.4 MySQL HeatWave Service DB
+      System instances are, by default, created with the mysql_native_password
+      authentication plugin disabled. Use this option when the target instance
+      was modified afterwards, and the plugin is now enabled. This allows to
+      dump accounts which are using the mysql_native_password authentication
+      method. This option takes precedence over lock_invalid_accounts and
+      skip_invalid_accounts options.
+
       unescape_wildcard_grants - Fixes grants on schemas with wildcards,
       replacing escaped \_ and \% wildcards in schema names with _ and %
       wildcard characters. When the partial_revokes system variable is enabled,
@@ -1717,7 +1733,7 @@ DESCRIPTION
         "ignore_wildcard_grants", "lock_invalid_accounts",
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
-        "unescape_wildcard_grants".
+        "target_has_mysql_native_password", "unescape_wildcard_grants".
       - targetVersion: string (default: current version of Shell) - Specifies
         version of the destination MySQL server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
@@ -2036,6 +2052,14 @@ DESCRIPTION
       HeatWave Service. If you'd like to have tables created in their default
       tablespaces, this option will strip the TABLESPACE= option from CREATE
       TABLE statements.
+
+      target_has_mysql_native_password - The 8.4 MySQL HeatWave Service DB
+      System instances are, by default, created with the mysql_native_password
+      authentication plugin disabled. Use this option when the target instance
+      was modified afterwards, and the plugin is now enabled. This allows to
+      dump accounts which are using the mysql_native_password authentication
+      method. This option takes precedence over lock_invalid_accounts and
+      skip_invalid_accounts options.
 
       unescape_wildcard_grants - Fixes grants on schemas with wildcards,
       replacing escaped \_ and \% wildcards in schema names with _ and %

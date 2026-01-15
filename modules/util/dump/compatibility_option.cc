@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +43,8 @@ constexpr auto k_ignore_wildcard_grants = "ignore_wildcard_grants";
 constexpr auto k_unescape_wildcard_grants = "unescape_wildcard_grants";
 constexpr auto k_force_non_standard_fks = "force_non_standard_fks";
 constexpr auto k_lock_invalid_accounts = "lock_invalid_accounts";
+constexpr auto k_target_has_mysql_native_password =
+    "target_has_mysql_native_password";
 }  // namespace
 
 Compatibility_option to_compatibility_option(const std::string &c) {
@@ -67,6 +69,8 @@ Compatibility_option to_compatibility_option(const std::string &c) {
     return Compatibility_option::FORCE_NON_STANDARD_FKS;
   if (c == k_lock_invalid_accounts)
     return Compatibility_option::LOCK_INVALID_ACCOUNTS;
+  if (c == k_target_has_mysql_native_password)
+    return Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD;
 
   throw std::invalid_argument("Unknown compatibility option: " + c);
 }
@@ -108,6 +112,9 @@ std::string to_string(Compatibility_option c) {
 
     case Compatibility_option::LOCK_INVALID_ACCOUNTS:
       return k_lock_invalid_accounts;
+
+    case Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD:
+      return k_target_has_mysql_native_password;
   }
 
   throw std::logic_error("Shouldn't happen, but compiler complains");

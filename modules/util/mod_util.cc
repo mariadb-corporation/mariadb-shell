@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1639,6 +1639,14 @@ HeatWave Service. If you'd like to have tables created in their default
 tablespaces, this option will strip the TABLESPACE= option from CREATE TABLE
 statements.
 
+<b>target_has_mysql_native_password</b> - The 8.4 MySQL HeatWave Service DB
+System instances are, by default, created with the <b>mysql_native_password</b>
+authentication plugin disabled. Use this option when the target instance was
+modified afterwards, and the plugin is now enabled. This allows to dump
+accounts which are using the <b>mysql_native_password</b> authentication method.
+This option takes precedence over <b>lock_invalid_accounts</b> and
+<b>skip_invalid_accounts</b> options.
+
 <b>unescape_wildcard_grants</b> - Fixes grants on schemas with wildcards,
 replacing escaped <b>\\_</b> and <b>\\%</b> wildcards in schema names with
 <b>_</b> and <b>%</b> wildcard characters. When the <b>partial_revokes</b>
@@ -1806,7 +1814,8 @@ HeatWave Service compatibility modifications when writing dump files. Supported
 values: "create_invisible_pks", "force_innodb", "force_non_standard_fks",
 "ignore_missing_pks", "ignore_wildcard_grants", "lock_invalid_accounts",
 "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
-"strip_restricted_grants", "strip_tablespaces", "unescape_wildcard_grants".
+"strip_restricted_grants", "strip_tablespaces",
+"target_has_mysql_native_password", "unescape_wildcard_grants".
 @li <b>targetVersion</b>: string (default: current version of %Shell) -
 Specifies version of the destination MySQL server.
 @li <b>skipUpgradeChecks</b>: bool (default: false) - Do not execute the

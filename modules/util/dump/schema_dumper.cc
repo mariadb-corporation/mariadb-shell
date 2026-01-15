@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2000, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -3116,11 +3116,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
     if (opt_mysqlaas || opt_skip_invalid_accounts ||
         opt_lock_invalid_accounts) {
       bool account_migrated = false;
-      using handler =
-          const std::function<Compatibility_issue(const std::string &)> &;
+      using handler = std::function<Compatibility_issue(const std::string &)>;
 
-      const auto handle_invalid_account = [&](handler error, handler remove,
-                                              handler lock) {
+      const auto handle_invalid_account = [&](const handler &error,
+                                              const handler &remove,
+                                              const handler &lock) {
         // we're removing the user from the list unless lock_invalid_accounts
         // is set, account is invalid in MDS, so other checks can be skipped
         add_user = opt_lock_invalid_accounts;
@@ -3169,16 +3169,49 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
               opt_target_version >= *version_info.removed) {
             handle_unsupported_plugin(plugin);
           } else if (opt_target_version >= version_info.deprecated) {
-            auto issue =
-                Compatibility_issue::warning::user_deprecated_auth_plugin(
-                    user, plugin);
+            const auto is_8_4 =
+                804 == opt_target_version.numeric_version_series();
+            const auto is_mysql_native_password =
+                "mysql_native_password" == plugin;
 
-            if ("mysql_native_password" == plugin &&
-                opt_target_version >= Version{8, 4, 0}) {
-              issue.description += " which is disabled by default";
+            if (opt_mysqlaas && is_8_4 && is_mysql_native_password) {
+              handler handle_account;
+
+              if (opt_target_has_mysql_native_password) {
+                handle_account =
+                    &Compatibility_issue::fixed::
+                        user_mysql_native_password_auth_plugin_ignored;
+              } else if (opt_lock_invalid_accounts) {
+                create_user = compatibility::replace_authentication_plugin(
+                    create_user, plugin);
+                account_migrated = true;
+
+                handle_account =
+                    &Compatibility_issue::fixed::
+                        user_mysql_native_password_auth_plugin_locked;
+              } else {
+                add_user = false;
+
+                handle_account =
+                    opt_skip_invalid_accounts
+                        ? &Compatibility_issue::fixed::
+                              user_mysql_native_password_auth_plugin_removed
+                        : &Compatibility_issue::error::
+                              user_mysql_native_password_auth_plugin;
+              }
+
+              problems.emplace_back(handle_account(user));
+            } else {
+              auto issue =
+                  Compatibility_issue::warning::user_deprecated_auth_plugin(
+                      user, plugin);
+
+              if (is_mysql_native_password && is_8_4) {
+                issue.description += " which is disabled by default";
+              }
+
+              problems.emplace_back(std::move(issue));
             }
-
-            problems.emplace_back(std::move(issue));
           }
         }
       }

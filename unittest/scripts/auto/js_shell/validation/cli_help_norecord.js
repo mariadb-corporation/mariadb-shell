@@ -1062,7 +1062,8 @@ OPTIONS
             "ignore_wildcard_grants", "lock_invalid_accounts",
             "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
             "strip_restricted_grants", "strip_tablespaces",
-            "unescape_wildcard_grants". Default: empty.
+            "target_has_mysql_native_password", "unescape_wildcard_grants".
+            Default: empty.
 
 --compression=<str>
             Compression used when writing the data dump files, one of: "none",
@@ -1330,7 +1331,8 @@ OPTIONS
             "ignore_wildcard_grants", "lock_invalid_accounts",
             "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
             "strip_restricted_grants", "strip_tablespaces",
-            "unescape_wildcard_grants". Default: empty.
+            "target_has_mysql_native_password", "unescape_wildcard_grants".
+            Default: empty.
 
 --compression=<str>
             Compression used when writing the data dump files, one of: "none",
@@ -1586,7 +1588,8 @@ OPTIONS
             "ignore_wildcard_grants", "lock_invalid_accounts",
             "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
             "strip_restricted_grants", "strip_tablespaces",
-            "unescape_wildcard_grants". Default: empty.
+            "target_has_mysql_native_password", "unescape_wildcard_grants".
+            Default: empty.
 
 --compression=<str>
             Compression used when writing the data dump files, one of: "none",

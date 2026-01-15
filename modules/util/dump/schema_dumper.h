@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -172,6 +172,7 @@ class Schema_dumper {
   bool opt_strip_invalid_grants = false;
   bool opt_ignore_wildcard_grants = false;
   bool opt_unescape_wildcard_grants = false;
+  bool opt_target_has_mysql_native_password = false;
   std::string opt_character_set_results = "utf8mb4";
 
   enum enum_set_gtid_purged_mode {

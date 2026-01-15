@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -99,6 +99,68 @@ Compatibility_issue Compatibility_issue::warning::user_deprecated_auth_plugin(
   issue.description = shcore::str_format(
       "User %s is using a deprecated authentication plugin '%s'", user.c_str(),
       plugin.c_str());
+
+  return issue;
+}
+
+Compatibility_issue
+Compatibility_issue::common::user_mysql_native_password_auth_plugin(
+    Status s, const std::string &user) {
+  auto issue = common::user(
+      Compatibility_check::USER_MYSQL_NATIVE_PASSWORD_AUTH_PLUGIN, s, user);
+
+  issue.description = shcore::str_format(
+      "User %s is using the 'mysql_native_password' authentication plugin "
+      "which is disabled by default in MySQL 8.4",
+      user.c_str());
+  issue.compatibility_options |= Compatibility_option::LOCK_INVALID_ACCOUNTS;
+  issue.compatibility_options |=
+      Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD;
+  issue.compatibility_options |= Compatibility_option::SKIP_INVALID_ACCOUNTS;
+
+  return issue;
+}
+
+Compatibility_issue
+Compatibility_issue::error::user_mysql_native_password_auth_plugin(
+    const std::string &user) {
+  return common::user_mysql_native_password_auth_plugin(Status::ERROR, user);
+}
+
+Compatibility_issue
+Compatibility_issue::fixed::user_mysql_native_password_auth_plugin_removed(
+    const std::string &user) {
+  auto issue =
+      common::user_mysql_native_password_auth_plugin(Status::FIXED, user);
+
+  issue.description += ", this account has been removed from the dump";
+  issue.compatibility_options = Compatibility_option::SKIP_INVALID_ACCOUNTS;
+
+  return issue;
+}
+
+Compatibility_issue
+Compatibility_issue::fixed::user_mysql_native_password_auth_plugin_locked(
+    const std::string &user) {
+  auto issue =
+      common::user_mysql_native_password_auth_plugin(Status::FIXED, user);
+
+  issue.description += ", this account has been updated and locked";
+  issue.compatibility_options = Compatibility_option::LOCK_INVALID_ACCOUNTS;
+
+  return issue;
+}
+
+Compatibility_issue
+Compatibility_issue::fixed::user_mysql_native_password_auth_plugin_ignored(
+    const std::string &user) {
+  auto issue =
+      common::user_mysql_native_password_auth_plugin(Status::FIXED, user);
+
+  issue.description +=
+      ", assuming that plugin has been enabled and dumping this account";
+  issue.compatibility_options =
+      Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD;
 
   return issue;
 }
@@ -883,6 +945,9 @@ std::string_view to_string(Compatibility_check check) {
 
     case Compatibility_check::USER_DEPRECATED_AUTH_PLUGIN:
       return "user/deprecated_auth_plugin";
+
+    case Compatibility_check::USER_MYSQL_NATIVE_PASSWORD_AUTH_PLUGIN:
+      return "user/mysql_native_password_auth_plugin";
 
     case Compatibility_check::USER_NO_PASSWORD:
       return "user/no_password";

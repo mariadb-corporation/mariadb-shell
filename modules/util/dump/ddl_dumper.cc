@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -60,6 +60,8 @@ std::unique_ptr<Schema_dumper> Ddl_dumper::schema_dumper(
       options.is_set(Compatibility_option::IGNORE_WILDCARD_GRANTS);
   dumper->opt_unescape_wildcard_grants =
       options.is_set(Compatibility_option::UNESCAPE_WILDCARD_GRANTS);
+  dumper->opt_target_has_mysql_native_password =
+      options.is_set(Compatibility_option::TARGET_HAS_MYSQL_NATIVE_PASSWORD);
 
   return dumper;
 }

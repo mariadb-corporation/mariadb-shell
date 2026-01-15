@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@ namespace dump {
 enum class Compatibility_check {
   USER_UNSUPPORTED_AUTH_PLUGIN,
   USER_DEPRECATED_AUTH_PLUGIN,
+  USER_MYSQL_NATIVE_PASSWORD_AUTH_PLUGIN,
   USER_NO_PASSWORD,
   USER_RESTRICTED_GRANTS,
   USER_INVALID_GRANTS,
@@ -103,6 +104,15 @@ struct Compatibility_issue {
 
     static Compatibility_issue user_unsupported_auth_plugin_locked(
         const std::string &user, const std::string &plugin);
+
+    static Compatibility_issue user_mysql_native_password_auth_plugin_removed(
+        const std::string &user);
+
+    static Compatibility_issue user_mysql_native_password_auth_plugin_locked(
+        const std::string &user);
+
+    static Compatibility_issue user_mysql_native_password_auth_plugin_ignored(
+        const std::string &user);
 
     static Compatibility_issue user_no_password_removed(
         const std::string &user);
@@ -212,6 +222,9 @@ struct Compatibility_issue {
     static Compatibility_issue user_unsupported_auth_plugin(
         const std::string &user, const std::string &plugin);
 
+    static Compatibility_issue user_mysql_native_password_auth_plugin(
+        const std::string &user);
+
     static Compatibility_issue user_no_password(const std::string &user);
 
     static Compatibility_issue user_restricted_grants(
@@ -301,6 +314,9 @@ struct Compatibility_issue {
 
     static Compatibility_issue user_unsupported_auth_plugin(
         Status s, const std::string &user, const std::string &plugin);
+
+    static Compatibility_issue user_mysql_native_password_auth_plugin(
+        Status s, const std::string &user);
 
     static Compatibility_issue user_no_password(Status s,
                                                 const std::string &user);
