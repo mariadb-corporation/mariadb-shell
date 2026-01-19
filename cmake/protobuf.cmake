@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -99,7 +99,7 @@ ENDIF()
 FIND_PACKAGE(Protobuf "${PROTOBUF_VERSION}" REQUIRED)
 
 IF(NOT WITH_PROTOBUF)
-  SET(ABSEIL_DIR "extra/abseil/abseil-cpp-20230802.1")
+  SET(ABSEIL_DIR "extra/abseil/abseil-cpp-20250814.1")
   list(APPEND PROTOBUF_INCLUDE_DIRS "${MYSQL_SOURCE_DIR}/${ABSEIL_DIR}")
 
   IF(WIN32)
@@ -109,10 +109,12 @@ IF(NOT WITH_PROTOBUF)
     FILE(GLOB BUNDLED_ABSEIL_LIBRARIES LIST_DIRECTORIES false "${_protobuf_lib_dir}/libabsl_*.so")
 
     IF(CMAKE_BUILD_TYPE STREQUAL "Debug")
-      # we need to explicitly link with log libraries
+      # we need to explicitly link with log libraries and their dependencies
       FOREACH(_lib ${BUNDLED_ABSEIL_LIBRARIES})
-        IF(_lib MATCHES "libabsl_log_")
+        IF(_lib MATCHES "libabsl_log_|libabsl_raw_logging_internal")
           list(APPEND PROTOBUF_LIBRARIES "${_lib}")
+        ELSEIF(_lib MATCHES "libabsl_raw_hash_set")
+          list(PREPEND PROTOBUF_LIBRARIES "${_lib}")
         ENDIF()
       ENDFOREACH()
     ENDIF()
