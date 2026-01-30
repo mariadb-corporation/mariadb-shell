@@ -144,11 +144,11 @@ struct Compatibility_issue {
     static Compatibility_issue table_unsupported_engine(
         const std::string &table, const std::string &engine);
 
-    static Compatibility_issue table_missing_pk_create(
-        const std::string &table);
+    static Compatibility_issue table_missing_pk_create(const std::string &table,
+                                                       bool allows_pke);
 
-    static Compatibility_issue table_missing_pk_ignore(
-        const std::string &table);
+    static Compatibility_issue table_missing_pk_ignore(const std::string &table,
+                                                       bool allows_pke);
 
     static Compatibility_issue table_data_or_index_dir(
         const std::string &table);
@@ -252,10 +252,11 @@ struct Compatibility_issue {
         const std::string &table, const std::string &engine,
         const std::string &error);
 
-    static Compatibility_issue table_missing_pk(const std::string &table);
+    static Compatibility_issue table_missing_pk(const std::string &table,
+                                                bool allows_pke);
 
     static Compatibility_issue table_missing_pk_manual_fix(
-        const std::string &table, const char *reason);
+        const std::string &table, const char *reason, bool allows_pke);
 
     static Compatibility_issue table_tablespace(const std::string &table);
 
@@ -361,7 +362,8 @@ struct Compatibility_issue {
 
     static Compatibility_issue table_missing_pk(Status s,
                                                 const std::string &table,
-                                                const char *context);
+                                                const char *context,
+                                                bool allows_pke);
 
     static Compatibility_issue table_tablespace(Status s,
                                                 const std::string &table);

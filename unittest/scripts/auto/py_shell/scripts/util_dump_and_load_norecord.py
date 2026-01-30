@@ -934,7 +934,7 @@ EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createIn
 testutil.dbug_set("+d,dump_loader_force_mds")
 
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": False, "ignoreVersion": True }, False)
-EXPECT_STDOUT_CONTAINS("WARNING: The dump contains tables without Primary Keys and it is loaded with the 'createInvisiblePKs' option set to false, this dump cannot be loaded into an MySQL HeatWave Service DB System instance with High Availability.")
+EXPECT_STDOUT_CONTAINS(f"WARNING: The dump contains tables without Primary Keys{" and Primary Key Equivalents" if __version_num >= 90700 else ""} and it is loaded with the 'createInvisiblePKs' option set to false, this dump cannot be loaded into an MySQL HeatWave Service DB System instance with High Availability.")
 
 # all tables have primary keys, no warning
 EXPECT_PK(dump_just_pk_dir, { "createInvisiblePKs": False, "ignoreVersion": True }, False)
@@ -950,7 +950,7 @@ EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True, "ignoreVersion": True }
 if __version_num < 80032:
     EXPECT_STDOUT_CONTAINS("WARNING: The dump contains tables without Primary Keys and it is loaded with the 'createInvisiblePKs' option set to true, Inbound Replication into an MySQL HeatWave Service DB System instance with High Availability cannot be used with this dump.")
 else:
-    EXPECT_STDOUT_CONTAINS("NOTE: The dump contains tables without Primary Keys and it is loaded with the 'createInvisiblePKs' option set to true, Inbound Replication into an MySQL HeatWave Service DB System instance with High Availability can be used with this dump.")
+    EXPECT_STDOUT_CONTAINS(f"NOTE: The dump contains tables without Primary Keys{" and Primary Key Equivalents" if __version_num >= 90700 else ""} and it is loaded with the 'createInvisiblePKs' option set to true, Inbound Replication into an MySQL HeatWave Service DB System instance with High Availability can be used with this dump.")
 
 # all tables have primary keys, no warning
 EXPECT_PK(dump_just_pk_dir, { "createInvisiblePKs": True, "ignoreVersion": True }, False)
@@ -2891,8 +2891,8 @@ def do_load(create_pks):
         options["createInvisiblePKs"] = create_pks
     return lambda: util.load_dump(dump_dir, options)
 
-def has_primary_key() -> bool:
-    return "PRIMARY KEY" in session2.run_sql("SHOW CREATE TABLE !.!", [ tested_schema, tested_table ]).fetch_one()[1]
+def has_primary_key(s, t) -> bool:
+    return "PRIMARY KEY" in session2.run_sql("SHOW CREATE TABLE !.!", [ s, t ]).fetch_one()[1]
 
 #@<> BUG#34408669 - setup {VER(>= 8.0.30)}
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
@@ -2919,18 +2919,18 @@ WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
 EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")
 
-EXPECT_TRUE(has_primary_key())
+EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - load again, this time PKs should not be created {VER(>= 8.0.30)}
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
-EXPECT_FALSE(has_primary_key())
+EXPECT_FALSE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30)}
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = ON")
 
 #@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30)}
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
-EXPECT_TRUE(has_primary_key())
+EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - dump was created without 'create_invisible_pks', but since user doesn't have required privileges it fails {VER(>= 8.0.30)}
 EXPECT_THROWS(do_load(None), "Error: Shell Error (53037): Insufficient privileges to disable automatic invisible primary key creation.")
@@ -2964,7 +2964,7 @@ To load this dump, you can either:
 os.environ["MYSQLSH_ALLOW_ALWAYS_GIPK"] = "1"
 
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
-EXPECT_TRUE(has_primary_key())
+EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - cleanup {VER(>= 8.0.30)}
 del os.environ["MYSQLSH_ALLOW_ALWAYS_GIPK"]
@@ -4261,6 +4261,131 @@ for i in range(privileges_count):
 #@<> BUG#38624926 - cleanup {VER(>=8.0.0)}
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql(f"DROP USER IF EXISTS {tested_user}")
+
+#@<> BUG#38907890 - allow tables with PKE-only if 'targetVersion' >= 9.7.0
+# constants
+tested_schema = "test_schema"
+tested_user = "'user'@'localhost'"
+
+dump_dir = os.path.join(outdir, "bug_38907890")
+
+# setup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+
+session1.run_sql("/*80030 SET @@SESSION.sql_generate_invisible_primary_key = OFF */")
+session1.run_sql("CREATE TABLE !.t1 (id INT PRIMARY KEY)", [tested_schema])
+session1.run_sql("CREATE TABLE !.t2 (id INT NOT NULL AUTO_INCREMENT UNIQUE)", [tested_schema])
+session1.run_sql("CREATE TABLE !.t3 (id INT)", [tested_schema])
+session1.run_sql("/*80030 SET @@SESSION.sql_generate_invisible_primary_key = ON */")
+
+#@<> BUG#38907890 - 'targetVersion' is 9.6.0, table with PKE is reported as an error
+wipe_dir(dump_dir)
+shell.connect(__sandbox_uri1)
+
+EXPECT_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "targetVersion": "9.6.0", "ocimds": True, "showProgress": False }), "Compatibility issues were found")
+
+EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t2", False).error())
+EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t3", False).error())
+
+#@<> BUG#38907890 - 'targetVersion' is 9.7.0, table with PKE is not reported as an error
+wipe_dir(dump_dir)
+shell.connect(__sandbox_uri1)
+
+EXPECT_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "targetVersion": "9.7.0", "ocimds": True, "showProgress": False }), "Compatibility issues were found")
+
+EXPECT_STDOUT_NOT_CONTAINS(create_invisible_pks(tested_schema, "t2").error())
+EXPECT_STDOUT_NOT_CONTAINS(create_invisible_pks(tested_schema, "t2", False).error())
+EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t3").error())
+
+EXPECT_STDOUT_CONTAINS("""
+ERROR: One or more tables without Primary Keys were found.
+
+       MySQL HeatWave Service High Availability (MySQL HeatWave Service HA) requires Primary Keys or Primary Key Equivalents to be present in all tables.
+       To continue with the dump you must do one of the following:
+
+       * Create PRIMARY keys (regular or invisible) in all tables before dumping them.
+         MySQL 8.0.23 supports the creation of invisible columns to allow creating Primary Key columns with no impact to applications. For more details, see https://dev.mysql.com/doc/refman/en/invisible-columns.html.
+         This is considered a best practice for both performance and usability and will work seamlessly with MySQL HeatWave Service.
+
+       * Add the "create_invisible_pks" to the "compatibility" option.
+         The dump will proceed and loader will automatically add Primary Keys to tables that don't have them when loading into MySQL HeatWave Service.
+         This will make it possible to enable HA in MySQL HeatWave Service without application impact and without changes to the source database.
+         Inbound Replication into a DB System HA instance will also be possible, as long as the instance has version 8.0.32 or newer. For more information, see https://docs.oracle.com/en-us/iaas/mysql-database/doc/creating-replication-channel.html.
+
+       * Add the "ignore_missing_pks" to the "compatibility" option.
+         This will disable this check and the dump will be produced normally, Primary Keys will not be added automatically.
+         It will not be possible to load the dump in an HA enabled DB System instance.
+""")
+
+#@<> BUG#38907890 - 'targetVersion' defaults to mysqlsh version, PK errors are fixed
+wipe_dir(dump_dir)
+shell.connect(__sandbox_uri1)
+
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "compatibility": ["create_invisible_pks"], "ocimds": True, "showProgress": False }), "Dump should not fail")
+
+EXPECT_STDOUT_NOT_CONTAINS(create_invisible_pks(tested_schema, "t2").fixed())
+EXPECT_STDOUT_NOT_CONTAINS(create_invisible_pks(tested_schema, "t2", False).fixed())
+EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t3").fixed())
+
+EXPECT_STDOUT_CONTAINS("""
+NOTE: One or more tables without Primary Keys were found.
+
+      Missing Primary Keys will be created automatically when this dump is loaded.
+""")
+
+#@<> BUG#38907890 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>=9.7.0)}
+wipeout_server(session2)
+session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
+session2.run_sql("SET @@GLOBAL.sql_require_primary_key = ON")
+session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
+session2.run_sql("GRANT ALL ON *.* TO admin@'%'")
+session2.run_sql("REVOKE SUPER,SYSTEM_VARIABLES_ADMIN,SESSION_VARIABLES_ADMIN ON *.* FROM admin@'%'")
+
+#@<> BUG#38907890 - connect as the created user {VER(>=9.7.0)}
+shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2))
+
+#@<> BUG#38907890 - load the dump, PKs should be created where applicable because dump was created with 'create_invisible_pks' {VER(>=9.7.0)}
+WIPE_SHELL_LOG()
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"showProgress": False}), "Load should not fail")
+EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")
+
+# table had PK
+EXPECT_TRUE(has_primary_key(tested_schema, "t1"))
+# table has PKE, PK is not created
+EXPECT_FALSE(has_primary_key(tested_schema, "t2"))
+# PK is created
+EXPECT_TRUE(has_primary_key(tested_schema, "t3"))
+
+#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {not __dbug_off and VER(>=9.7.0)}
+testutil.dbug_set("+d,dump_loader_force_mds")
+
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, {"createInvisiblePKs": False, "dropExistingObjects": True, "showProgress": False}), "sql_require_primary_key enabled at destination server")
+
+testutil.dbug_set("")
+
+EXPECT_STDOUT_CONTAINS("""
+WARNING: The dump contains tables without Primary Keys and Primary Key Equivalents and it is loaded with the 'createInvisiblePKs' option set to false, this dump cannot be loaded into an MySQL HeatWave Service DB System instance with High Availability.
+""")
+
+EXPECT_STDOUT_CONTAINS("""
+ERROR: The sql_require_primary_key option is enabled at the destination server and one or more tables without a Primary Key or a Primary Key Equivalent were found in the dump:
+schema `test_schema`: `t3`
+
+You must do one of the following to be able to load this dump:
+- Add a Primary Key to the tables where it's missing
+- Use the "createInvisiblePKs" option to automatically create Primary Keys on a 8.0.24+ server
+- Use the "excludeTables" option to load the dump without those tables
+- Disable the sql_require_primary_key sysvar at the server (note that the underlying reason for the option to be enabled may still prevent your database from functioning properly)
+""")
+
+#@<> BUG#38907890 - cleanup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+
+if __version_num >= 90700:
+    session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
+    session2.run_sql("SET @@GLOBAL.sql_require_primary_key = OFF")
+    session2.run_sql("DROP USER IF EXISTS admin@'%'")
 
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)

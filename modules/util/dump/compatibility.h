@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -293,6 +293,16 @@ bool supports_vector_store_conversion(const mysqlshdk::utils::Version &v);
  * @returns true If server supports GIPKs.
  */
 bool supports_gipks(const mysqlshdk::utils::Version &v);
+
+/**
+ * Checks if server with the given version allows for Primary Key Equivalents
+ * when server is running with sql_require_primary_key enabled.
+ *
+ * @param v Version to be checked.
+ *
+ * @returns true If server supports PKEs.
+ */
+bool supports_pke_as_pk(const mysqlshdk::utils::Version &v);
 
 /**
  * Replaces first occurrence of a keyword (case insensitive comparison) with the

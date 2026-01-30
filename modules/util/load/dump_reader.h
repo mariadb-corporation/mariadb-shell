@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -181,6 +181,9 @@ class Dump_reader {
 
   const std::vector<std::string> &queries_on_schema_end(
       const std::string &schema) const;
+
+  // if target instance >= 9.7.0, all three of these methods assume that tables
+  // with PKE have PK
 
   const std::map<std::string, std::vector<std::string>> tables_without_pk()
       const;
@@ -494,6 +497,7 @@ class Dump_reader {
     mysqlshdk::storage::Compression compression =
         mysqlshdk::storage::Compression::NONE;
     std::vector<std::string> primary_index;
+    bool has_pke = false;
 
     bool has_sql = true;
     volatile bool md_done = false;

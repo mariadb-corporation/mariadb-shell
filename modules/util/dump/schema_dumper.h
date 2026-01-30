@@ -136,6 +136,8 @@ class Schema_dumper {
 
  public:
   // Config options
+  void set_target_version(const mysqlshdk::utils::Version &target_version);
+
   bool opt_force = false;
   bool opt_flush_privileges = false;
   bool opt_drop_database = false;
@@ -159,7 +161,6 @@ class Schema_dumper {
   bool opt_column_statistics = false;
   bool opt_mysqlaas = false;
   bool opt_report_deprecated_errors_as_warnings = false;
-  mysqlshdk::utils::Version opt_target_version;
   bool opt_force_innodb = false;
   bool opt_strip_directory = false;
   bool opt_strip_restricted_grants = false;
@@ -217,6 +218,12 @@ class Schema_dumper {
   const Filtering_options *m_filters = nullptr;
 
   bool m_non_existing_definer_reported = false;
+
+  mysqlshdk::utils::Version m_target_version;
+
+  bool m_supports_set_any_definer_privilege = false;
+
+  bool m_supports_pke_as_pk = false;
 
  private:
   int execute_no_throw(const std::string &s,

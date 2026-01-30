@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -261,6 +261,9 @@ void Load_dump_options::on_set_session(
 
   m_is_library_ddl_supported =
       compatibility::supports_library_ddl(m_target_server_version);
+
+  m_supports_pke_as_pk =
+      compatibility::supports_pke_as_pk(m_target_server_version);
 
   if (is_mds()) {
     const auto result =

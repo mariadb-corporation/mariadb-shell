@@ -1589,19 +1589,6 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
     IFile *sql_file, const std::string &table, const std::string &db,
     std::string *out_table_type, char *ignore_flag) {
   std::vector<Compatibility_issue> res;
-  bool init = false, skip_ddl;
-  std::string result_table;
-  const char *show_fields_stmt =
-      "SELECT `COLUMN_NAME` AS `Field`, "
-      "`COLUMN_TYPE` AS `Type`, "
-      "`IS_NULLABLE` AS `Null`, "
-      "`COLUMN_KEY` AS `Key`, "
-      "`COLUMN_DEFAULT` AS `Default`, "
-      "`EXTRA` AS `Extra`, "
-      "`COLUMN_COMMENT` AS `Comment` "
-      "FROM `INFORMATION_SCHEMA`.`COLUMNS` WHERE "
-      "TABLE_SCHEMA = ? AND TABLE_NAME = ? "
-      "ORDER BY ORDINAL_POSITION";
   bool is_log_table;
   bool is_replication_metadata_table;
   std::shared_ptr<mysqlshdk::db::IResult> result;
@@ -1611,7 +1598,6 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
   bool has_auto_increment = false;
   bool has_partitions = false;
   static constexpr std::string_view k_my_row_id = "my_row_id";
-  const std::string auto_increment = "auto_increment";
 
   *ignore_flag = check_if_ignore_table(db, table, out_table_type);
 
@@ -1619,332 +1605,189 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
     for mysql.innodb_table_stats, mysql.innodb_index_stats tables we
     dont dump DDL
   */
-  skip_ddl = innodb_stats_tables(db, table);
+  const auto skip_ddl = innodb_stats_tables(db, table);
+  const auto result_table = shcore::quote_identifier(table);
 
-  log_debug("-- Retrieving table structure for table %s...", table.c_str());
+  log_debug("-- Retrieving table structure for table %s...",
+            result_table.c_str());
 
-  result_table = shcore::quote_identifier(table);
+  query_log_and_throw("SET SQL_QUOTE_SHOW_CREATE=1");
 
-  if (!execute_no_throw("SET SQL_QUOTE_SHOW_CREATE=1")) {
-    /* using SHOW CREATE statement */
-    if (!skip_ddl) {
-      /* Make an sql-file, if path was given iow. option -T was given */
-      if (query_with_binary_charset("show create table " + result_table,
-                                    &result, &error)) {
-        THROW_ERROR(SHERR_DUMP_SD_SHOW_CREATE_TABLE_FAILED,
-                    result_table.c_str(), error.what());
-      }
-
-      auto row = result->fetch_one();
-      if (!row) {
-        THROW_ERROR(SHERR_DUMP_SD_SHOW_CREATE_TABLE_EMPTY,
-                    result_table.c_str());
-      }
-
-      std::string create_table = row->get_string(1);
-
-      std::string text = fix_identifier_with_newline(result_table);
-      if (*out_table_type == "VIEW") /* view */
-        print_comment(sql_file, false,
-                      "\n--\n-- Temporary view structure for view %s\n--\n\n",
-                      text.c_str());
-      else
-        print_comment(sql_file, false,
-                      "\n--\n-- Table structure for table %s\n--\n\n",
-                      text.c_str());
-
-      if ((*out_table_type == "VIEW" && opt_drop_view) ||
-          (*out_table_type != "VIEW" && opt_drop_table)) {
-        /*
-          Even if the "table" is a view, we do a DROP TABLE here.  The
-          view-specific code below fills in the DROP VIEW.
-          We will skip the DROP TABLE for general_log and slow_log, since
-          those stmts will fail, in case we apply dump by enabling logging.
-          We will skip this for replication metadata tables as well.
-         */
-        if (!(general_log_or_slow_log_tables(db, table) ||
-              replication_metadata_tables(db, table)))
-          fprintf(sql_file, "DROP TABLE IF EXISTS %s;\n", result_table.c_str());
-        check_io(sql_file);
-      }
-
-      if (result->get_metadata().at(0).get_column_label() == "View") {
-        log_debug("-- It's a view, create dummy view");
-
-        /*
-          Create a table with the same name as the view and with columns of
-          the same name in order to satisfy views that depend on this view.
-          The table will be removed when the actual view is created.
-
-          The properties of each column, are not preserved in this temporary
-          table, because they are not necessary.
-
-          This will not be necessary once we can determine dependencies
-          between views and can simply dump them in the appropriate order.
-        */
-        const auto &all_columns =
-            m_cache.schemas.at(db).views.at(table).all_columns;
-
-        if (!all_columns.empty()) {
-          if (opt_drop_view) {
-            /*
-              We have already dropped any table of the same name above, so
-              here we just drop the view.
-            */
-
-            fprintf(sql_file, "/*!50001 DROP VIEW IF EXISTS %s*/;\n",
-                    result_table.c_str());
-            check_io(sql_file);
-          }
-
-          fprintf(sql_file,
-                  "SET @saved_cs_client     = @@character_set_client;\n"
-                  "/*!50503 SET character_set_client = utf8mb4 */;\n"
-                  "/*!50001 CREATE VIEW %s AS SELECT\n",
-                  result_table.c_str());
-
-          /*
-            Get first row, following loop will prepend comma - keeps from
-            having to know if the row being printed is last to determine if
-            there should be a _trailing_ comma.
-          */
-
-          /*
-            A temporary view is created to resolve the view interdependencies.
-            This temporary view is dropped when the actual view is created.
-          */
-          auto column = all_columns.begin();
-
-          fprintf(sql_file, " 1 AS %s", column->quoted_name.c_str());
-
-          while (++column != all_columns.end()) {
-            fprintf(sql_file, ",\n 1 AS %s", column->quoted_name.c_str());
-          }
-
-          fprintf(sql_file,
-                  " */;\n"
-                  "SET character_set_client = @saved_cs_client;\n");
-
-          /*
-             The actual formula is based on the column names and how
-             the .FRM files are stored and is too volatile to be repeated here.
-             Thus we simply warn the user if the columns exceed a limit
-             we know works most of the time.
-          */
-          if (result->get_fetched_row_count() >= 1000)
-            fprintf(stderr,
-                    "-- Warning: Creating a stand-in table for view %s may"
-                    " fail when replaying the dump file produced because "
-                    "of the number of columns exceeding 1000. Exercise "
-                    "caution when replaying the produced dump file.\n",
-                    table.c_str());
-
-          check_io(sql_file);
-        }
-
-        seen_views = true;
-        return res;
-      }
-
-      is_log_table = general_log_or_slow_log_tables(db, table);
-      is_replication_metadata_table = replication_metadata_tables(db, table);
-
-      res = check_ct_for_mysqlaas(db, table, &create_table);
-
-      {
-        // BUG#38089433 - handle unsupported collations
-        const auto &t = m_cache.schemas.at(db).tables.at(table);
-        const auto quoted = quote(db, table);
-
-        DBUG_EXECUTE_IF("dumper_unsupported_collation",
-                        { use_unsupported_collation(&create_table); });
-
-        for (const auto &c : t.all_columns) {
-          handle_collation_update_statement(
-              Compatibility_issue::Object_type::COLUMN,
-              quoted + '.' + c.quoted_name, "collation", c.collation,
-              &create_table, &res);
-        }
-
-        handle_collation_update_statement(
-            Compatibility_issue::Object_type::TABLE, quoted,
-            "default collation", t.collation, &create_table, &res);
-      }
-
-      if (opt_reexecutable || is_log_table || is_replication_metadata_table)
-        create_table = shcore::str_replace(create_table, "CREATE TABLE ",
-                                           "CREATE TABLE IF NOT EXISTS ");
-
-      fprintf(sql_file,
-              "/*!40101 SET @saved_cs_client     = @@character_set_client */;\n"
-              "/*!50503 SET character_set_client = utf8mb4 */;\n"
-              "%s;\n"
-              "/*!40101 SET character_set_client = @saved_cs_client */;\n",
-              create_table.c_str());
-
-      check_io(sql_file);
+  /* using SHOW CREATE statement */
+  if (!skip_ddl) {
+    /* Make an sql-file, if path was given iow. option -T was given */
+    if (query_with_binary_charset("show create table " + result_table, &result,
+                                  &error)) {
+      THROW_ERROR(SHERR_DUMP_SD_SHOW_CREATE_TABLE_FAILED, result_table.c_str(),
+                  error.what());
     }
 
-    if (opt_create_invisible_pks) {
-      const auto &all_columns =
-          m_cache.schemas.at(db).tables.at(table).all_columns;
-
-      for (const auto &column : all_columns) {
-        has_auto_increment |= column.auto_increment;
-        has_my_row_id |= shcore::str_caseeq(column.name.c_str(), k_my_row_id);
-      }
+    auto row = result->fetch_one();
+    if (!row) {
+      THROW_ERROR(SHERR_DUMP_SD_SHOW_CREATE_TABLE_EMPTY, result_table.c_str());
     }
 
-    if (opt_mysqlaas || opt_create_invisible_pks || opt_ignore_missing_pks) {
-      has_pk = m_cache.schemas.at(db).tables.at(table).primary_key;
-    }
-  } else {
-    // the SQL_QUOTE_SHOW_CREATE system variable was added in 3.23.26, we should
-    // remove this code at some point
-    result =
-        query_log_and_throw(shcore::sqlformat(show_fields_stmt, db, table));
-    {
-      std::string text = fix_identifier_with_newline(result_table);
+    std::string create_table = row->get_string(1);
+
+    std::string text = fix_identifier_with_newline(result_table);
+    if (*out_table_type == "VIEW") /* view */
+      print_comment(sql_file, false,
+                    "\n--\n-- Temporary view structure for view %s\n--\n\n",
+                    text.c_str());
+    else
       print_comment(sql_file, false,
                     "\n--\n-- Table structure for table %s\n--\n\n",
                     text.c_str());
 
-      if (opt_drop_table)
+    if ((*out_table_type == "VIEW" && opt_drop_view) ||
+        (*out_table_type != "VIEW" && opt_drop_table)) {
+      /*
+        Even if the "table" is a view, we do a DROP TABLE here.  The
+        view-specific code below fills in the DROP VIEW.
+        We will skip the DROP TABLE for general_log and slow_log, since
+        those stmts will fail, in case we apply dump by enabling logging.
+        We will skip this for replication metadata tables as well.
+       */
+      if (!(general_log_or_slow_log_tables(db, table) ||
+            replication_metadata_tables(db, table)))
         fprintf(sql_file, "DROP TABLE IF EXISTS %s;\n", result_table.c_str());
-      fprintf(sql_file, "CREATE TABLE IF NOT EXISTS %s (\n",
-              result_table.c_str());
       check_io(sql_file);
     }
 
-    while (auto row = result->fetch_one()) {
-      bool real_column = false;
-      if (!row->is_null(SHOW_EXTRA)) {
-        std::string extra = row->get_string(SHOW_EXTRA);
-        real_column =
-            extra != "STORED GENERATED" && extra != "VIRTUAL GENERATED";
-      } else {
-        real_column = true;
-      }
+    if (result->get_metadata().at(0).get_column_label() == "View") {
+      log_debug("-- It's a view, create dummy view");
 
-      if (!real_column) continue;
+      /*
+        Create a table with the same name as the view and with columns of
+        the same name in order to satisfy views that depend on this view.
+        The table will be removed when the actual view is created.
 
-      if (init) {
-        fputs(",\n", sql_file);
-        check_io(sql_file);
-      }
-      init = true;
-      {
-        const auto fieldname = row->get_string(SHOW_FIELDNAME);
+        The properties of each column, are not preserved in this temporary
+        table, because they are not necessary.
 
-        if (opt_create_invisible_pks) {
-          has_my_row_id |= shcore::str_caseeq(fieldname, k_my_row_id);
-        }
+        This will not be necessary once we can determine dependencies
+        between views and can simply dump them in the appropriate order.
+      */
+      const auto &all_columns =
+          m_cache.schemas.at(db).views.at(table).all_columns;
 
-        fprintf(sql_file, "  %s.%s %s", result_table.c_str(),
-                shcore::quote_identifier(fieldname).c_str(),
-                row->get_string(SHOW_TYPE).c_str());
+      if (!all_columns.empty()) {
+        if (opt_drop_view) {
+          /*
+            We have already dropped any table of the same name above, so
+            here we just drop the view.
+          */
 
-        if (!row->is_null(SHOW_DEFAULT)) {
-          fputs(" DEFAULT ", sql_file);
-          std::string def = row->get_string(SHOW_DEFAULT);
-          unescape(sql_file, def);
-        }
-        if (!row->get_string(SHOW_NULL).empty()) fputs(" NOT NULL", sql_file);
-
-        if (!row->is_null(SHOW_EXTRA)) {
-          const auto extra = row->get_string(SHOW_EXTRA);
-
-          if (!extra.empty()) {
-            fprintf(sql_file, " %s", extra.c_str());
-
-            if (opt_create_invisible_pks) {
-              has_auto_increment |=
-                  extra.find(auto_increment) != std::string::npos;
-            }
-          }
-        }
-
-        check_io(sql_file);
-      }
-    }
-    {
-      uint32_t keynr, primary_key;
-      mysqlshdk::db::Error err;
-      if (query_no_throw("show keys from " + result_table, &result, &err)) {
-        if (err.code() == ER_WRONG_OBJECT) {
-          /* it is VIEW */
-          goto continue_xml;
-        }
-        fprintf(stderr, "Can't get keys for table %s (%s)\n",
-                result_table.c_str(), err.format().c_str());
-        THROW_ERROR(SHERR_DUMP_SD_SHOW_KEYS_FAILED, result_table.c_str(),
-                    err.format().c_str());
-      }
-
-      /* Find first which key is primary key */
-      keynr = 0;
-      primary_key = INT_MAX;
-      while (auto row = result->fetch_one()) {
-        if (row->get_int(3) == 1) {
-          keynr++;
-          if (row->get_string(2) == "PRIMARY") {
-            primary_key = keynr;
-            break;
-          }
-        }
-      }
-
-      has_pk = INT_MAX != primary_key;
-
-      result->rewind();
-      keynr = 0;
-      while (auto row = result->fetch_one()) {
-        if (row->get_int(3) == 1) {
-          if (keynr++) fputs(")", sql_file);
-          if (row->get_int(1)) /* Test if duplicate key */
-            /* Duplicate allowed */
-            fprintf(sql_file, ",\n  KEY %s (",
-                    shcore::quote_identifier(row->get_string(2)).c_str());
-          else if (keynr == primary_key)
-            fputs(",\n  PRIMARY KEY (", sql_file); /* First UNIQUE is primary */
-          else
-            fprintf(sql_file, ",\n  UNIQUE %s (",
-                    shcore::quote_identifier(row->get_string(2)).c_str());
-        } else {
-          fputs(",", sql_file);
-        }
-        fputs(shcore::quote_identifier(row->get_string(4)).c_str(), sql_file);
-        if (!row->is_null(7))
-          fprintf(sql_file, " (%s)", row->get_string(7).c_str()); /* Sub key */
-        check_io(sql_file);
-      }
-      if (keynr) fputs(")", sql_file);
-      fputs("\n)", sql_file);
-      check_io(sql_file);
-
-      /* Get MySQL specific create options */
-      if (opt_create_options) {
-        const auto write_options = [sql_file, this](
-                                       const std::string &engine,
-                                       const std::string &options,
-                                       const std::string &comment) {
-          fputs("/*!", sql_file);
-          fprintf(sql_file, "engine=%s", engine.c_str());
-          fprintf(sql_file, "%s", options.c_str());
-          fprintf(sql_file, "comment='%s'",
-                  m_mysql->escape_string(comment).c_str());
-          fputs(" */", sql_file);
+          fprintf(sql_file, "/*!50001 DROP VIEW IF EXISTS %s*/;\n",
+                  result_table.c_str());
           check_io(sql_file);
-        };
-
-        {
-          const auto &t = m_cache.schemas.at(db).tables.at(table);
-          write_options(t.engine, t.create_options, t.comment);
         }
+
+        fprintf(sql_file,
+                "SET @saved_cs_client     = @@character_set_client;\n"
+                "/*!50503 SET character_set_client = utf8mb4 */;\n"
+                "/*!50001 CREATE VIEW %s AS SELECT\n",
+                result_table.c_str());
+
+        /*
+          Get first row, following loop will prepend comma - keeps from
+          having to know if the row being printed is last to determine if
+          there should be a _trailing_ comma.
+        */
+
+        /*
+          A temporary view is created to resolve the view interdependencies.
+          This temporary view is dropped when the actual view is created.
+        */
+        auto column = all_columns.begin();
+
+        fprintf(sql_file, " 1 AS %s", column->quoted_name.c_str());
+
+        while (++column != all_columns.end()) {
+          fprintf(sql_file, ",\n 1 AS %s", column->quoted_name.c_str());
+        }
+
+        fprintf(sql_file,
+                " */;\n"
+                "SET character_set_client = @saved_cs_client;\n");
+
+        /*
+           The actual formula is based on the column names and how
+           the .FRM files are stored and is too volatile to be repeated here.
+           Thus we simply warn the user if the columns exceed a limit
+           we know works most of the time.
+        */
+        if (result->get_fetched_row_count() >= 1000)
+          fprintf(stderr,
+                  "-- Warning: Creating a stand-in table for view %s may"
+                  " fail when replaying the dump file produced because "
+                  "of the number of columns exceeding 1000. Exercise "
+                  "caution when replaying the produced dump file.\n",
+                  table.c_str());
+
+        check_io(sql_file);
       }
-    continue_xml:
-      fputs(";\n", sql_file);
-      check_io(sql_file);
+
+      seen_views = true;
+      return res;
+    }
+
+    is_log_table = general_log_or_slow_log_tables(db, table);
+    is_replication_metadata_table = replication_metadata_tables(db, table);
+
+    res = check_ct_for_mysqlaas(db, table, &create_table);
+
+    {
+      // BUG#38089433 - handle unsupported collations
+      const auto &t = m_cache.schemas.at(db).tables.at(table);
+      const auto quoted = quote(db, table);
+
+      DBUG_EXECUTE_IF("dumper_unsupported_collation",
+                      { use_unsupported_collation(&create_table); });
+
+      for (const auto &c : t.all_columns) {
+        handle_collation_update_statement(
+            Compatibility_issue::Object_type::COLUMN,
+            quoted + '.' + c.quoted_name, "collation", c.collation,
+            &create_table, &res);
+      }
+
+      handle_collation_update_statement(Compatibility_issue::Object_type::TABLE,
+                                        quoted, "default collation",
+                                        t.collation, &create_table, &res);
+    }
+
+    if (opt_reexecutable || is_log_table || is_replication_metadata_table)
+      create_table = shcore::str_replace(create_table, "CREATE TABLE ",
+                                         "CREATE TABLE IF NOT EXISTS ");
+
+    fprintf(sql_file,
+            "/*!40101 SET @saved_cs_client     = @@character_set_client */;\n"
+            "/*!50503 SET character_set_client = utf8mb4 */;\n"
+            "%s;\n"
+            "/*!40101 SET character_set_client = @saved_cs_client */;\n",
+            create_table.c_str());
+
+    check_io(sql_file);
+  }
+
+  if (opt_create_invisible_pks) {
+    const auto &all_columns =
+        m_cache.schemas.at(db).tables.at(table).all_columns;
+
+    for (const auto &column : all_columns) {
+      has_auto_increment |= column.auto_increment;
+      has_my_row_id |= shcore::str_caseeq(column.name.c_str(), k_my_row_id);
+    }
+  }
+
+  if (opt_mysqlaas || opt_create_invisible_pks || opt_ignore_missing_pks) {
+    const auto &t = m_cache.schemas.at(db).tables.at(table);
+    has_pk = t.primary_key;
+
+    // BUG#38907890 starting with 9.7.0, don't report tables with PKE as errors
+    if (m_supports_pke_as_pk) {
+      has_pk |= !t.primary_key_equivalents.empty();
     }
   }
 
@@ -1961,31 +1804,32 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
         if (has_my_row_id) {
           res.emplace_back(
               Compatibility_issue::error::table_missing_pk_manual_fix(
-                  quoted_table, "has a column named `my_row_id`"));
+                  quoted_table, "has a column named `my_row_id`",
+                  m_supports_pke_as_pk));
         }
 
         if (has_auto_increment) {
           res.emplace_back(
               Compatibility_issue::error::table_missing_pk_manual_fix(
-                  quoted_table,
-                  "has a column with 'AUTO_INCREMENT' attribute"));
+                  quoted_table, "has a column with 'AUTO_INCREMENT' attribute",
+                  m_supports_pke_as_pk));
         }
 
         if (has_partitions) {
           res.emplace_back(
               Compatibility_issue::error::table_missing_pk_manual_fix(
-                  quoted_table, "is partitioned"));
+                  quoted_table, "is partitioned", m_supports_pke_as_pk));
         }
       } else {
-        res.emplace_back(
-            Compatibility_issue::fixed::table_missing_pk_create(quoted_table));
+        res.emplace_back(Compatibility_issue::fixed::table_missing_pk_create(
+            quoted_table, m_supports_pke_as_pk));
       }
     } else if (opt_ignore_missing_pks) {
-      res.emplace_back(
-          Compatibility_issue::fixed::table_missing_pk_ignore(quoted_table));
+      res.emplace_back(Compatibility_issue::fixed::table_missing_pk_ignore(
+          quoted_table, m_supports_pke_as_pk));
     } else if (opt_mysqlaas) {
-      res.emplace_back(
-          Compatibility_issue::error::table_missing_pk(quoted_table));
+      res.emplace_back(Compatibility_issue::error::table_missing_pk(
+          quoted_table, m_supports_pke_as_pk));
     }
   }
 
@@ -3166,11 +3010,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
           const auto &version_info = it->second;
 
           if (version_info.removed.has_value() &&
-              opt_target_version >= *version_info.removed) {
+              m_target_version >= *version_info.removed) {
             handle_unsupported_plugin(plugin);
-          } else if (opt_target_version >= version_info.deprecated) {
+          } else if (m_target_version >= version_info.deprecated) {
             const auto is_8_4 =
-                804 == opt_target_version.numeric_version_series();
+                804 == m_target_version.numeric_version_series();
             const auto is_mysql_native_password =
                 "mysql_native_password" == plugin;
 
@@ -3659,8 +3503,7 @@ Schema_dumper::Version_dependent_check Schema_dumper::set_any_definer_check()
     const {
   Version_dependent_check check;
 
-  check.supported =
-      compatibility::supports_set_any_definer_privilege(opt_target_version);
+  check.supported = m_supports_set_any_definer_privilege;
   check.deprecated.report_errors =
       !check.supported || opt_report_deprecated_errors_as_warnings;
   check.deprecated.downgrade_errors = check.supported;
@@ -3826,6 +3669,15 @@ bool Schema_dumper::is_library_included(const std::string &schema,
 std::size_t Schema_dumper::column_count(const std::string &schema,
                                         const std::string &table) const {
   return m_cache.schemas.at(schema).tables.at(table).all_columns.size();
+}
+
+void Schema_dumper::set_target_version(
+    const mysqlshdk::utils::Version &target_version) {
+  m_target_version = target_version;
+
+  m_supports_set_any_definer_privilege =
+      compatibility::supports_set_any_definer_privilege(m_target_version);
+  m_supports_pke_as_pk = compatibility::supports_pke_as_pk(m_target_version);
 }
 
 }  // namespace dump

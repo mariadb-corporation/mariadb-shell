@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1792,7 +1792,7 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer) {
 
   auto sd = Schema_dumper{session, cache};
   sd.opt_mysqlaas = true;
-  sd.opt_target_version = mysqlshdk::utils::Version(8, 2, 0);
+  sd.set_target_version(mysqlshdk::utils::Version(8, 2, 0));
 
   std::vector<std::pair<std::string, Compatibility_issue::Object_type>>
       statements = {
@@ -1850,7 +1850,7 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
   auto sd = Schema_dumper{session, cache};
 
   sd.opt_mysqlaas = true;
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
 
   const std::string stmt =
       "CREATE ${definer} PROCEDURE ${schema}.${object}() ${security} BEGIN END";
@@ -2008,7 +2008,7 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
   sd.opt_report_deprecated_errors_as_warnings = false;
 
   // version which does not support SET_ANY_DEFINER - regular error
-  sd.opt_target_version = Version(8, 1, 0);
+  sd.set_target_version(Version(8, 1, 0));
   //  - user known, no security clause
   EXPECT("DEFINER=user@host",
          {issue(Compatibility_check::OBJECT_INVALID_DEFINER, Status::ERROR,
@@ -2032,11 +2032,11 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
                 definer_disallowed("user@host"),
                 Compatibility_option::STRIP_DEFINERS)},
          sql_security_invoker);
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
 
   // version which does not support SET_ANY_DEFINER, deprecated errors are
   // enabled - still regular error
-  sd.opt_target_version = Version(8, 1, 0);
+  sd.set_target_version(Version(8, 1, 0));
   sd.opt_report_deprecated_errors_as_warnings = true;
   //  - user known, no security clause
   EXPECT("DEFINER=user@host",
@@ -2061,7 +2061,7 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
                 definer_disallowed("user@host"),
                 Compatibility_option::STRIP_DEFINERS)},
          sql_security_invoker);
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
   sd.opt_report_deprecated_errors_as_warnings = false;
 
   // no definer & no security - error
@@ -2130,31 +2130,31 @@ TEST_F(Schema_dumper_test, strip_restricted_grants_set_any_definer) {
       };
 
   // SET_ANY_DEFINER supported, privilege is not restricted
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
   EXPECT({set_any_definer}, {});
 
   // SET_ANY_DEFINER not supported, privilege is restricted
-  sd.opt_target_version = Version(8, 1, 0);
+  sd.set_target_version(Version(8, 1, 0));
   EXPECT({set_any_definer}, {set_any_definer});
 
   // SET_ANY_DEFINER supported, SET_USER_ID is restricted
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
   EXPECT({set_user_id}, {set_user_id});
 
   // SET_ANY_DEFINER not supported, SET_USER_ID is restricted
-  sd.opt_target_version = Version(8, 1, 0);
+  sd.set_target_version(Version(8, 1, 0));
   EXPECT({set_user_id}, {set_user_id});
 
   // SET_ANY_DEFINER supported, strip_restricted_grants enabled, SET_USER_ID is
   // replaced
-  sd.opt_target_version = Version(8, 2, 0);
+  sd.set_target_version(Version(8, 2, 0));
   sd.opt_strip_restricted_grants = true;
   EXPECT({set_user_id}, {}, {privilege_replaced()});
   sd.opt_strip_restricted_grants = false;
 
   // SET_ANY_DEFINER not supported, strip_restricted_grants enabled, SET_USER_ID
   // is removed
-  sd.opt_target_version = Version(8, 1, 0);
+  sd.set_target_version(Version(8, 1, 0));
   sd.opt_strip_restricted_grants = true;
   EXPECT({set_user_id}, {set_user_id});
   sd.opt_strip_restricted_grants = false;

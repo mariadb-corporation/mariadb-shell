@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2243,6 +2243,10 @@ bool supports_vector_store_conversion(const mysqlshdk::utils::Version &v) {
 
 bool supports_gipks(const mysqlshdk::utils::Version &v) {
   return v.numeric() >= 80030;
+}
+
+bool supports_pke_as_pk(const mysqlshdk::utils::Version &v) {
+  return v.numeric() >= 90700;
 }
 
 bool replace_keyword(std::string_view stmt, std::string_view from,

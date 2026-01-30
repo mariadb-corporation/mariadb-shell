@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2406,7 +2406,7 @@ std::unique_ptr<Schema_dumper> Dumper::schema_dumper(
   dumper->opt_reexecutable = true;
   dumper->opt_tz_utc = m_options.use_timezone_utc();
   dumper->opt_mysqlaas = m_options.mds_compatibility();
-  dumper->opt_target_version = m_options.target_version();
+  dumper->set_target_version(m_options.target_version());
   dumper->opt_report_deprecated_errors_as_warnings =
       m_options.implicit_target_version();
   dumper->opt_character_set_results = m_options.character_set();
@@ -3183,8 +3183,9 @@ void Dumper::validate_mds() const {
   if (status.is_set(issues::Status::ERROR_MISSING_PKS)) {
     console->print_info();
     console->print_error("One or more tables without Primary Keys were found.");
-    console->print_info(R"(
-       MySQL HeatWave Service High Availability (MySQL HeatWave Service HA) requires Primary Keys to be present in all tables.
+    console->print_info(shcore::str_format(
+        R"(
+       MySQL HeatWave Service High Availability (MySQL HeatWave Service HA) requires Primary Keys%s to be present in all tables.
        To continue with the dump you must do one of the following:
 
        * Create PRIMARY keys (regular or invisible) in all tables before dumping them.
@@ -3199,7 +3200,10 @@ void Dumper::validate_mds() const {
        * Add the "ignore_missing_pks" to the "compatibility" option.
          This will disable this check and the dump will be produced normally, Primary Keys will not be added automatically.
          It will not be possible to load the dump in an HA enabled DB System instance.
-)");
+)",
+        compatibility::supports_pke_as_pk(m_options.target_version())
+            ? " or Primary Key Equivalents"
+            : ""));
   }
 
   if (status.is_set(issues::Status::ERROR_HAS_WILDCARD_GRANTS)) {
@@ -4634,6 +4638,8 @@ void Dumper::write_table_metadata(
     }
 
     doc.AddMember(StringRef("primaryIndex"), std::move(primary), a);
+    doc.AddMember(StringRef("hasPKE"),
+                  !table.info->primary_key_equivalents.empty(), a);
   }
 
   {

@@ -311,7 +311,7 @@ if(__version_num>80013) {
   }
   session.runSql("set @@global.sql_require_primary_key=ON;");
   EXPECT_THROWS(function () {util.loadDump(__tmp_dir+"/ldtest/dump");}, "sql_require_primary_key enabled at destination server");
-  EXPECT_STDOUT_CONTAINS_MULTILINE(`ERROR: The sql_require_primary_key option is enabled at the destination server and one or more tables without a Primary Key were found in the dump:
+  EXPECT_STDOUT_CONTAINS_MULTILINE(`ERROR: The sql_require_primary_key option is enabled at the destination server and one or more tables without a Primary Key${__version_num >= 90700 ? " or a Primary Key Equivalent" : ""} were found in the dump:
 schema \`all_features\`: \`findextable3\`, \`findextable\`
 schema \`xtest\`: \`t_bigint\`, \`t_bit\`, \`t_char\`, \`t_date\`, \`t_decimal1\`, \`t_decimal2\`, \`t_decimal3\`, \`t_double\`, \`t_enum\`, \`t_float\`, \`t_geom_all\`, \`t_geom\`, \`t_int\`, \`t_integer\`, \`t_json\`, \`t_lchar\`, \`t_lob\`, \`t_mediumint\`, \`t_numeric1\`, \`t_numeric2\`, \`t_real\`, \`t_set\`, \`t_smallint\`, \`t_tinyint\`${t_vector}
 

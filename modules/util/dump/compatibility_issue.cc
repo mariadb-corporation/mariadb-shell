@@ -506,11 +506,12 @@ Compatibility_issue Compatibility_issue::error::table_cannot_replace_engine(
 }
 
 Compatibility_issue Compatibility_issue::common::table_missing_pk(
-    Status s, const std::string &table, const char *context) {
+    Status s, const std::string &table, const char *context, bool allows_pke) {
   auto issue = common::table(Compatibility_check::TABLE_MISSING_PK, s, table);
 
   issue.description = shcore::str_format(
-      "Table %s does not have a Primary Key, %s", table.c_str(), context);
+      "Table %s does not have a Primary Key%s, %s", table.c_str(),
+      allows_pke ? " or a Primary Key Equivalent" : "", context);
   issue.compatibility_options |= Compatibility_option::CREATE_INVISIBLE_PKS;
   issue.compatibility_options |= Compatibility_option::IGNORE_MISSING_PKS;
 
@@ -518,16 +519,18 @@ Compatibility_issue Compatibility_issue::common::table_missing_pk(
 }
 
 Compatibility_issue Compatibility_issue::error::table_missing_pk(
-    const std::string &table) {
+    const std::string &table, bool allows_pke) {
   return common::table_missing_pk(
       Status::ERROR, table,
-      "which is required for High Availability in MySQL HeatWave Service");
+      "which is required for High Availability in MySQL HeatWave Service",
+      allows_pke);
 }
 
 Compatibility_issue Compatibility_issue::fixed::table_missing_pk_create(
-    const std::string &table) {
+    const std::string &table, bool allows_pke) {
   auto issue = common::table_missing_pk(
-      Status::FIXED, table, "this will be fixed when the dump is loaded");
+      Status::FIXED, table, "this will be fixed when the dump is loaded",
+      allows_pke);
 
   issue.compatibility_options.unset(Compatibility_option::IGNORE_MISSING_PKS);
 
@@ -535,9 +538,9 @@ Compatibility_issue Compatibility_issue::fixed::table_missing_pk_create(
 }
 
 Compatibility_issue Compatibility_issue::fixed::table_missing_pk_ignore(
-    const std::string &table) {
-  auto issue =
-      common::table_missing_pk(Status::FIXED, table, "this is ignored");
+    const std::string &table, bool allows_pke) {
+  auto issue = common::table_missing_pk(Status::FIXED, table, "this is ignored",
+                                        allows_pke);
 
   issue.compatibility_options.unset(Compatibility_option::CREATE_INVISIBLE_PKS);
 
@@ -545,10 +548,10 @@ Compatibility_issue Compatibility_issue::fixed::table_missing_pk_ignore(
 }
 
 Compatibility_issue Compatibility_issue::error::table_missing_pk_manual_fix(
-    const std::string &table, const char *reason) {
+    const std::string &table, const char *reason, bool allows_pke) {
   auto issue = common::table_missing_pk(
       Status::ERROR, table,
-      "this cannot be fixed automatically because the table ");
+      "this cannot be fixed automatically because the table ", allows_pke);
 
   issue.description += reason;
   issue.compatibility_options.clear();

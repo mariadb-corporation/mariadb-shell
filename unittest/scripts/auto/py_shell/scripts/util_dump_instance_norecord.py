@@ -1869,7 +1869,7 @@ EXPECT_STDOUT_CONTAINS(skip_invalid_accounts_no_password(test_user_no_pwd).error
 # WL14506-FR1 - When a dump is executed with the ocimds option set to true, for each table that would be dumped which does not contain a primary key, an error must be reported.
 # WL14506-TSFR_1_8
 for table in missing_pks[incompatible_schema]:
-    EXPECT_STDOUT_CONTAINS(create_invisible_pks(incompatible_schema, table).error())
+    EXPECT_STDOUT_CONTAINS(create_invisible_pks(incompatible_schema, table, False).error())
 
 # WL14506-TSFR_1_2
 # WL14506-TSFR_1_3
@@ -2031,7 +2031,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, 
 
 #@<> WL14506-FR3.4 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column with an AUTO_INCREMENT attribute, an error must be reported.
 table = missing_pks[incompatible_schema][0]
-session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE;", [incompatible_schema, table])
+session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
@@ -2045,7 +2045,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table]
 
 #@<> WL14506-FR3.2 + WL14506-FR3.4 - same column
 table = missing_pks[incompatible_schema][0]
-session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int AUTO_INCREMENT UNIQUE;", [incompatible_schema, table])
+session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
@@ -2062,7 +2062,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, 
 #@<> WL14506-FR3.2 + WL14506-FR3.4 - different columns
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
-session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE;", [incompatible_schema, table])
+session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())

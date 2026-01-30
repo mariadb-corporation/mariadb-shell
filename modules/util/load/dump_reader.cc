@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -435,23 +435,34 @@ const std::vector<std::string> &Dump_reader::queries_on_schema_end(
 const std::map<std::string, std::vector<std::string>>
 Dump_reader::tables_without_pk() const {
   std::map<std::string, std::vector<std::string>> res;
+  const auto pke_as_pk = m_options.supports_pke_as_pk();
+
   for (const auto &s : m_contents.schemas) {
     std::vector<std::string> tables;
-    for (const auto &t : s.second->tables)
-      if (t.second->primary_index.empty())
+
+    for (const auto &t : s.second->tables) {
+      if (t.second->primary_index.empty() &&
+          (!pke_as_pk || !t.second->has_pke)) {
         tables.emplace_back(shcore::quote_identifier(t.first));
+      }
+    }
+
     if (!tables.empty()) {
       std::sort(tables.begin(), tables.end());
-      res.emplace(s.first, tables);
+      res.emplace(s.first, std::move(tables));
     }
   }
+
   return res;
 }
 
 bool Dump_reader::has_tables_without_pk() const {
+  const auto pke_as_pk = m_options.supports_pke_as_pk();
+
   for (const auto &s : m_contents.schemas) {
     for (const auto &t : s.second->tables) {
-      if (t.second->primary_index.empty()) {
+      if (t.second->primary_index.empty() &&
+          (!pke_as_pk || !t.second->has_pke)) {
         return true;
       }
     }
@@ -462,9 +473,10 @@ bool Dump_reader::has_tables_without_pk() const {
 
 bool Dump_reader::has_primary_key(const std::string &schema,
                                   const std::string &table) const {
-  return !m_contents.schemas.at(schema)
-              ->tables.at(table)
-              ->primary_index.empty();
+  const auto t = m_contents.schemas.at(schema)->tables.at(table);
+
+  return !t->primary_index.empty() ||
+         (m_options.supports_pke_as_pk() && t->has_pke);
 }
 
 std::string Dump_reader::fetch_schema_script(
@@ -1153,6 +1165,10 @@ void Dump_reader::Table_info::update_metadata(const std::string &data,
 
   if (md->has_key("primaryIndex")) {
     primary_index = to_vector_of_strings(md->get_array("primaryIndex"));
+  }
+
+  if (md->has_key("hasPKE")) {
+    has_pke = md->get_bool("hasPKE");
   }
 
   if (const auto trigger_list = md->get_array("triggers")) {

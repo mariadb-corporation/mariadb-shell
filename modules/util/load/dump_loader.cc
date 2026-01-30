@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -3637,9 +3637,13 @@ void Dump_loader::check_tables_without_primary_key() {
 
   if (m_options.is_mds() && m_dump->has_tables_without_pk()) {
     bool warning = true;
-    std::string msg =
-        "The dump contains tables without Primary Keys and it is loaded with "
-        "the 'createInvisiblePKs' option set to ";
+    std::string msg = "The dump contains tables without Primary Keys";
+
+    if (m_options.supports_pke_as_pk()) {
+      msg += " and Primary Key Equivalents";
+    }
+
+    msg += " and it is loaded with the 'createInvisiblePKs' option set to ";
 
     if (should_create_pks()) {
       msg +=
@@ -3685,7 +3689,7 @@ void Dump_loader::check_tables_without_primary_key() {
   if (!tbs.empty()) {
     const auto error_msg = shcore::str_format(
         "The sql_require_primary_key option is enabled at the destination "
-        "server and one or more tables without a Primary Key were found in "
+        "server and one or more tables without a Primary Key%s were found in "
         "the dump:\n%s\n"
         "You must do one of the following to be able to load this dump:\n"
         "- Add a Primary Key to the tables where it's missing\n"
@@ -3696,6 +3700,7 @@ void Dump_loader::check_tables_without_primary_key() {
         "- Disable the sql_require_primary_key sysvar at the server (note "
         "that the underlying reason for the option to be enabled may still "
         "prevent your database from functioning properly)",
+        m_options.supports_pke_as_pk() ? " or a Primary Key Equivalent" : "",
         tbs.c_str());
     current_console()->print_error(error_msg);
     THROW_ERROR(SHERR_LOAD_REQUIRE_PRIMARY_KEY_ENABLED);

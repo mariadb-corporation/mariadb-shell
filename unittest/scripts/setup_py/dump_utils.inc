@@ -434,29 +434,29 @@ def dump_invalid_accounts_mysql_native_password(user):
     fixed = f"User {user} is using the 'mysql_native_password' authentication plugin which is disabled by default in MySQL 8.4, assuming that plugin has been enabled and dumping this account"
     return Compatibility_issue(error, fixed)
 
-def create_invisible_pks(schema, table):
-    error = f"Table `{schema}`.`{table}` does not have a Primary Key, which is required for High Availability in MySQL HeatWave Service"
-    fixed = f"Table `{schema}`.`{table}` does not have a Primary Key, this will be fixed when the dump is loaded"
+def create_invisible_pks(schema, table, supports_pke_as_pk=True):
+    error = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, which is required for High Availability in MySQL HeatWave Service"
+    fixed = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, this will be fixed when the dump is loaded"
     return Compatibility_issue(error, fixed)
 
-def create_invisible_pks_name_conflict(schema, table):
-    error = f"Table `{schema}`.`{table}` does not have a Primary Key, this cannot be fixed automatically because the table has a column named `my_row_id` (this issue needs to be fixed manually)"
+def create_invisible_pks_name_conflict(schema, table, supports_pke_as_pk=True):
+    error = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, this cannot be fixed automatically because the table has a column named `my_row_id` (this issue needs to be fixed manually)"
     fixed = ""
     return Compatibility_issue(error, fixed)
 
-def create_invisible_pks_auto_increment_conflict(schema, table):
-    error = f"Table `{schema}`.`{table}` does not have a Primary Key, this cannot be fixed automatically because the table has a column with 'AUTO_INCREMENT' attribute (this issue needs to be fixed manually)"
+def create_invisible_pks_auto_increment_conflict(schema, table, supports_pke_as_pk=True):
+    error = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, this cannot be fixed automatically because the table has a column with 'AUTO_INCREMENT' attribute (this issue needs to be fixed manually)"
     fixed = ""
     return Compatibility_issue(error, fixed)
 
-def create_invisible_pks_partitioned_table(schema, table):
-    error = f"Table `{schema}`.`{table}` does not have a Primary Key, this cannot be fixed automatically because the table is partitioned (this issue needs to be fixed manually)"
+def create_invisible_pks_partitioned_table(schema, table, supports_pke_as_pk=True):
+    error = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, this cannot be fixed automatically because the table is partitioned (this issue needs to be fixed manually)"
     fixed = ""
     return Compatibility_issue(error, fixed)
 
-def ignore_missing_pks(schema, table):
-    error = f"Table `{schema}`.`{table}` does not have a Primary Key, which is required for High Availability in MySQL HeatWave Service"
-    fixed = f"Table `{schema}`.`{table}` does not have a Primary Key, this is ignored"
+def ignore_missing_pks(schema, table, supports_pke_as_pk=True):
+    error = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, which is required for High Availability in MySQL HeatWave Service"
+    fixed = f"Table `{schema}`.`{table}` does not have a Primary Key{' or a Primary Key Equivalent' if supports_pke_as_pk else ''}, this is ignored"
     return Compatibility_issue(error, fixed)
 
 def too_many_columns(schema, table, columns):
