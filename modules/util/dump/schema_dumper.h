@@ -184,6 +184,15 @@ class Schema_dumper {
   } opt_set_gtid_purged_mode = SET_GTID_PURGED_AUTO;
 
  private:
+#ifdef FRIEND_TEST
+  FRIEND_TEST(Schema_dumper_test, check_object_for_definer);
+  FRIEND_TEST(Schema_dumper_test, check_object_for_definer_set_any_definer);
+  FRIEND_TEST(Schema_dumper_test,
+              check_object_for_definer_set_any_definer_issues);
+  FRIEND_TEST(Schema_dumper_test, strip_restricted_grants_set_any_definer);
+  FRIEND_TEST(Schema_dumper_test, include_grant);
+#endif  // FRIEND_TEST
+
   struct Version_dependent_check {
     bool supported = false;
 
@@ -193,39 +202,6 @@ class Schema_dumper {
     } deprecated;
   };
 
-  std::shared_ptr<mysqlshdk::db::ISession> m_mysql;
-  mysqlshdk::db::Shared_session m_shared_session;
-
-  bool stats_tables_included = false;
-
-  /**
-   Use double quotes ("") like in the standard  to quote identifiers if true,
-    otherwise backticks (``, non-standard MySQL feature).
-  */
-  bool ansi_quotes_mode = false;
-
-  /*
-    Constant for detection of default value of default_charset.
-    If default_charset is equal to mysql_universal_client_charset, then
-    it is the default value which assigned at the very beginning of main().
-  */
-  const char *default_charset;
-
-  /* have we seen any VIEWs during table scanning? */
-  bool seen_views = false;
-
-  const Instance_cache &m_cache;
-  const Filtering_options *m_filters = nullptr;
-
-  bool m_non_existing_definer_reported = false;
-
-  mysqlshdk::utils::Version m_target_version;
-
-  bool m_supports_set_any_definer_privilege = false;
-
-  bool m_supports_pke_as_pk = false;
-
- private:
   int execute_no_throw(const std::string &s,
                        mysqlshdk::db::Error *out_error = nullptr);
 
@@ -328,8 +304,6 @@ class Schema_dumper {
                              const std::string &table_name,
                              std::string *out_table_type);
 
-  bool is_binlog_disabled = false;
-
   void set_session_binlog(IFile *sql_file, bool flag);
 
   bool add_set_gtid_purged(IFile *sql_file);
@@ -365,14 +339,25 @@ class Schema_dumper {
   std::size_t column_count(const std::string &schema,
                            const std::string &table) const;
 
-#ifdef FRIEND_TEST
-  FRIEND_TEST(Schema_dumper_test, check_object_for_definer);
-  FRIEND_TEST(Schema_dumper_test, check_object_for_definer_set_any_definer);
-  FRIEND_TEST(Schema_dumper_test,
-              check_object_for_definer_set_any_definer_issues);
-  FRIEND_TEST(Schema_dumper_test, strip_restricted_grants_set_any_definer);
-  FRIEND_TEST(Schema_dumper_test, include_grant);
-#endif  // FRIEND_TEST
+  // connections to the instance
+  std::shared_ptr<mysqlshdk::db::ISession> m_mysql;
+  mysqlshdk::db::Shared_session m_shared_session;
+
+  // cache and filtering
+  const Instance_cache &m_cache;
+  const Filtering_options *m_filters = nullptr;
+
+  // whether a warning that users are not being dumped has been reported
+  bool m_users_not_dumped_reported = false;
+
+  // version information
+  mysqlshdk::utils::Version m_target_version;
+  bool m_supports_set_any_definer_privilege = false;
+  bool m_supports_pke_as_pk = false;
+
+  // leftovers from original code
+  bool is_binlog_disabled = false;
+  bool stats_tables_included = false;
 };
 
 }  // namespace dump

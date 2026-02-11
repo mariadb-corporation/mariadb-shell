@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -57,6 +57,7 @@
 #include "modules/util/common/dump/server_info.h"
 #include "modules/util/common/dump/vector_store_info.h"
 #include "modules/util/dump/capability.h"
+#include "modules/util/dump/compatibility_issue.h"
 #include "modules/util/dump/dump_options.h"
 #include "modules/util/dump/dump_writer.h"
 #include "modules/util/dump/instance_cache.h"
@@ -293,7 +294,7 @@ class Dumper {
 
   void create_schema_tasks();
 
-  void validate_mds() const;
+  void validate_mds();
 
   void initialize_counters();
 
@@ -532,6 +533,9 @@ class Dumper {
 
   bool should_write_metadata() const noexcept;
 
+  issues::Status_set show_issues(
+      const std::vector<Compatibility_issue> &issues) const;
+
   // session
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
   mysqlshdk::db::Shared_session m_shared_session;
@@ -632,6 +636,7 @@ class Dumper {
   Progress_thread::Duration m_checksum_duration;
   std::atomic<bool> m_main_thread_finished_producing_chunking_tasks;
   shcore::atomic_flag m_worker_interrupt;
+  mutable std::atomic_bool m_users_not_dumped_shown = false;
 
   // progress thread needs to be placed after any of the fields it uses, in
   // order to ensure that it is destroyed (and stopped) before any of those

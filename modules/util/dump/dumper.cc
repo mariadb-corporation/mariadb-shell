@@ -53,6 +53,7 @@
 #include "mysqlshdk/libs/mysql/replication.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/thread_pool.h"
 
 #include "mysqlshdk/libs/oci/oci_bucket_config.h"
 #include "mysqlshdk/libs/oci/oci_par.h"
@@ -148,135 +149,6 @@ void write_json(std::unique_ptr<mysqlshdk::storage::IFile> file,
   file->open(Mode::WRITE);
   file->write(json.c_str(), json.length());
   file->close();
-}
-
-issues::Status_set show_issues(const std::vector<Compatibility_issue> &issues) {
-  const auto console = current_console();
-  issues::Status_set status;
-
-  const auto issue_attribs = [](const Compatibility_issue &issue) {
-    auto ocimds_issue = shcore::make_dict();
-    ocimds_issue->emplace("check", to_string(issue.check));
-    ocimds_issue->emplace("status", to_string(issue.status));
-    ocimds_issue->emplace("objectType", to_string(issue.object_type));
-    ocimds_issue->emplace("objectName", issue.object_name);
-    ocimds_issue->emplace("description", issue.description);
-
-    if (!issue.compatibility_options.empty()) {
-      auto array = shcore::make_array();
-
-      for (auto option : issue.compatibility_options.values()) {
-        array->emplace_back(to_string(option));
-      }
-
-      ocimds_issue->emplace("compatibilityOptions", std::move(array));
-    }
-
-    return shcore::make_dict("compatibilityIssue", std::move(ocimds_issue));
-  };
-
-  for (const auto &issue : issues) {
-    switch (issue.status) {
-      case Compatibility_issue::Status::FIXED: {
-        status.set(issues::Status::FIXED);
-
-        if (Compatibility_check::TABLE_MISSING_PK == issue.check) {
-          if (issue.compatibility_options.is_set(
-                  Compatibility_option::CREATE_INVISIBLE_PKS)) {
-            status.set(issues::Status::FIXED_CREATE_PKS);
-          } else if (issue.compatibility_options.is_set(
-                         Compatibility_option::IGNORE_MISSING_PKS)) {
-            status.set(issues::Status::FIXED_IGNORE_PKS);
-          }
-        }
-
-        console->print_note(issue.description, issue_attribs(issue));
-        break;
-      }
-
-      case Compatibility_issue::Status::NOTE: {
-        console->print_note(issue.description, issue_attribs(issue));
-        break;
-      }
-
-      case Compatibility_issue::Status::WARNING: {
-        status.set(issues::Status::WARNING);
-
-        if (Compatibility_check::OBJECT_INVALID_DEFINER == issue.check ||
-            Compatibility_check::OBJECT_MISSING_SQL_SECURITY == issue.check) {
-          status.set(issues::Status::WARNING_DEPRECATED_DEFINERS);
-        } else if (Compatibility_check::USER_ESCAPED_WILDCARD_GRANT ==
-                   issue.check) {
-          status.set(issues::Status::WARNING_ESCAPED_WILDCARDS);
-        } else if (Compatibility_check::VIEW_MISMATCHED_REFERENCE ==
-                   issue.check) {
-          status.set(issues::Status::WARNING_HAS_MISMATCHED_VIEW_REFERENCES);
-        }
-
-        console->print_warning(issue.description, issue_attribs(issue));
-        break;
-      }
-
-      case Compatibility_issue::Status::ERROR: {
-        status.set(issues::Status::ERROR);
-
-        std::string hint;
-
-        if (issue.compatibility_options.empty()) {
-          hint = "this issue needs to be fixed manually";
-        }
-
-        if (Compatibility_check::TABLE_MISSING_PK == issue.check) {
-          status.set(issues::Status::ERROR_MISSING_PKS);
-        } else if (Compatibility_check::USER_WILDCARD_GRANT == issue.check) {
-          status.set(issues::Status::ERROR_HAS_WILDCARD_GRANTS);
-        } else if (Compatibility_check::VIEW_MISMATCHED_REFERENCE ==
-                   issue.check) {
-          status.set(issues::Status::WARNING_HAS_MISMATCHED_VIEW_REFERENCES);
-        } else {
-          if (Compatibility_check::USER_INVALID_GRANTS == issue.check) {
-            status.set(issues::Status::ERROR_HAS_INVALID_GRANTS);
-          }
-
-          if (!issue.compatibility_options.empty()) {
-            std::vector<std::string> options;
-
-            for (auto option : issue.compatibility_options.values()) {
-              options.emplace_back("'" + to_string(option) + "'");
-            }
-
-            if (1 == options.size()) {
-              hint = std::move(options[0]);
-            } else {
-              hint = "either ";
-              hint += options.front();
-
-              if (options.size() > 2) {
-                const auto end = std::prev(options.end());
-
-                for (auto it = std::next(options.begin()); it != end; ++it) {
-                  hint += ", ";
-                  hint += *it;
-                }
-              }
-
-              hint += " or ";
-              hint += options.back();
-            }
-
-            hint = "fix this with " + hint + " compatibility option";
-          }
-        }
-
-        console->print_error(
-            issue.description + (hint.empty() ? "" : " (" + hint + ")"),
-            issue_attribs(issue));
-        break;
-      }
-    }
-  }
-
-  return status;
 }
 
 std::string quote(const std::string &schema, const std::string &table) {
@@ -3081,7 +2953,7 @@ void Dumper::create_schema_tasks() {
   }
 }
 
-void Dumper::validate_mds() const {
+void Dumper::validate_mds() {
   if (!m_options.mds_compatibility() ||
       (!m_options.dump_ddl() && !dump_users())) {
     return;
@@ -3114,26 +2986,64 @@ void Dumper::validate_mds() const {
   status.set(check_for_upgrade_errors());
 
   {
+    // setup progress reporting
     Progress_thread::Progress_config config;
     std::atomic<uint64_t> objects_checked{0};
 
     config.current = [&objects_checked]() -> uint64_t {
       return objects_checked;
     };
-    config.total = [this]() { return m_total_objects; };
+
+    {
+      uint64_t objects_total = 0;
+
+      if (dump_users()) {
+        ++objects_total;
+      }
+
+      if (m_options.dump_ddl()) {
+        objects_total += m_total_schemas;
+        // tables + triggers
+        objects_total += 2 * m_total_tables;
+        // temporary + final views
+        objects_total += 2 * m_total_views;
+      }
+
+      config.total = [objects_total]() { return objects_total; };
+    }
 
     const auto stage = m_progress_thread.start_stage(
         "Validating MySQL HeatWave Service compatibility", std::move(config));
     shcore::on_leave_scope finish_stage([stage]() { stage->finish(); });
 
-    const auto issues = [&status](const auto &memory) {
-      status.set(show_issues(memory->issues()));
+    // run compatibility checks using a thread pool
+    shcore::Thread_pool_base<std::shared_ptr<Memory_dumper>> pool{
+        m_options.threads()};
+
+    const auto producer = [this](auto &&produce) {
+      return [this, produce = std::move(produce)]() {
+        auto session = session_pool().pop();
+        const shcore::on_leave_scope release{
+            [this, &session]() { session_pool().push(std::move(session)); }};
+        const auto dumper = schema_dumper(session);
+
+        return produce(dumper.get());
+      };
     };
 
-    const auto dumper = schema_dumper(session());
+    const auto consumer = [this, &status, &objects_checked]() {
+      return [this, &status, &objects_checked](auto &&memory) {
+        status.set(show_issues(memory->issues()));
+        ++objects_checked;
+      };
+    };
+
+    pool.start_threads();
 
     if (dump_users()) {
-      issues(dump_users(dumper.get()));
+      pool.add_task(
+          producer([this](auto dumper) { return dump_users(dumper); }),
+          consumer());
     }
 
     if (m_options.dump_ddl()) {
@@ -3141,30 +3051,56 @@ void Dumper::validate_mds() const {
         // we're dumping whole schema DDL to a single file, it doesn't matter if
         // dump is using a single-file or multi-file schema, the contents is the
         // same
-        issues(dump_complete_schema(dumper.get(), schema.name));
-        ++objects_checked;
+        pool.add_task(producer([this, &schema = schema.name](auto dumper) {
+                        return dump_complete_schema(dumper, schema);
+                      }),
+                      consumer());
       }
+
+      const auto dumping_triggers = [this](const auto &schema,
+                                           const auto &table) {
+        return m_options.dump_triggers() &&
+               m_cache.schemas.at(schema).tables.at(table).triggers.size();
+      };
 
       for (const auto &schema : m_schema_infos) {
         for (const auto &table : schema.tables) {
-          issues(dump_table(dumper.get(), schema.name, table.name));
+          pool.add_task(producer([this, &schema = schema.name,
+                                  &table = table.name](auto dumper) {
+                          return dump_table(dumper, schema, table);
+                        }),
+                        consumer());
 
-          if (m_options.dump_triggers() &&
-              dumper->count_triggers_for_table(schema.name, table.name) > 0) {
-            issues(dump_triggers(dumper.get(), schema.name, table.name));
+          if (dumping_triggers(schema.name, table.name)) {
+            pool.add_task(producer([this, &schema = schema.name,
+                                    &table = table.name](auto dumper) {
+                            return dump_triggers(dumper, schema, table);
+                          }),
+                          consumer());
+          } else {
+            // increase the count, marking this task as complete
+            ++objects_checked;
           }
-
-          ++objects_checked;
         }
 
         for (const auto &view : schema.views) {
-          issues(dump_temporary_view(dumper.get(), schema.name, view.name));
-          issues(dump_view(dumper.get(), schema.name, view.name));
+          pool.add_task(producer([this, &schema = schema.name,
+                                  &view = view.name](auto dumper) {
+                          return dump_temporary_view(dumper, schema, view);
+                        }),
+                        consumer());
 
-          ++objects_checked;
+          pool.add_task(producer([this, &schema = schema.name,
+                                  &view = view.name](auto dumper) {
+                          return dump_view(dumper, schema, view);
+                        }),
+                        consumer());
         }
       }
     }
+
+    pool.tasks_done();
+    pool.process();
   }
 
   if (m_options.implicit_target_version() &&
@@ -5583,6 +5519,148 @@ void Dumper::validate_compatibility_check_status() const {
 bool Dumper::should_write_metadata() const noexcept {
   return Dry_run::DONT_WRITE_ANY_FILES != m_options.dry_run_mode() &&
          !m_options.is_export_only();
+}
+
+issues::Status_set Dumper::show_issues(
+    const std::vector<Compatibility_issue> &issues) const {
+  const auto console = current_console();
+  issues::Status_set status;
+
+  const auto issue_attribs = [](const Compatibility_issue &issue) {
+    auto ocimds_issue = shcore::make_dict();
+    ocimds_issue->emplace("check", to_string(issue.check));
+    ocimds_issue->emplace("status", to_string(issue.status));
+    ocimds_issue->emplace("objectType", to_string(issue.object_type));
+    ocimds_issue->emplace("objectName", issue.object_name);
+    ocimds_issue->emplace("description", issue.description);
+
+    if (!issue.compatibility_options.empty()) {
+      auto array = shcore::make_array();
+
+      for (auto option : issue.compatibility_options.values()) {
+        array->emplace_back(to_string(option));
+      }
+
+      ocimds_issue->emplace("compatibilityOptions", std::move(array));
+    }
+
+    return shcore::make_dict("compatibilityIssue", std::move(ocimds_issue));
+  };
+
+  for (const auto &issue : issues) {
+    switch (issue.status) {
+      case Compatibility_issue::Status::FIXED: {
+        status.set(issues::Status::FIXED);
+
+        if (Compatibility_check::TABLE_MISSING_PK == issue.check) {
+          if (issue.compatibility_options.is_set(
+                  Compatibility_option::CREATE_INVISIBLE_PKS)) {
+            status.set(issues::Status::FIXED_CREATE_PKS);
+          } else if (issue.compatibility_options.is_set(
+                         Compatibility_option::IGNORE_MISSING_PKS)) {
+            status.set(issues::Status::FIXED_IGNORE_PKS);
+          }
+        }
+
+        console->print_note(issue.description, issue_attribs(issue));
+        break;
+      }
+
+      case Compatibility_issue::Status::NOTE: {
+        console->print_note(issue.description, issue_attribs(issue));
+        break;
+      }
+
+      case Compatibility_issue::Status::WARNING: {
+        status.set(issues::Status::WARNING);
+
+        bool show_issue = true;
+
+        if (Compatibility_check::OBJECT_INVALID_DEFINER == issue.check ||
+            Compatibility_check::OBJECT_MISSING_SQL_SECURITY == issue.check) {
+          status.set(issues::Status::WARNING_DEPRECATED_DEFINERS);
+        } else if (Compatibility_check::USER_ESCAPED_WILDCARD_GRANT ==
+                   issue.check) {
+          status.set(issues::Status::WARNING_ESCAPED_WILDCARDS);
+        } else if (Compatibility_check::VIEW_MISMATCHED_REFERENCE ==
+                   issue.check) {
+          status.set(issues::Status::WARNING_HAS_MISMATCHED_VIEW_REFERENCES);
+        } else if (Compatibility_check::
+                       OBJECT_INVALID_DEFINER_USERS_NOT_DUMPED == issue.check) {
+          bool expected = false;
+
+          if (!m_users_not_dumped_shown.compare_exchange_strong(expected,
+                                                                true)) {
+            show_issue = false;
+          }
+        }
+
+        if (show_issue) {
+          console->print_warning(issue.description, issue_attribs(issue));
+        }
+        break;
+      }
+
+      case Compatibility_issue::Status::ERROR: {
+        status.set(issues::Status::ERROR);
+
+        std::string hint;
+
+        if (issue.compatibility_options.empty()) {
+          hint = "this issue needs to be fixed manually";
+        }
+
+        if (Compatibility_check::TABLE_MISSING_PK == issue.check) {
+          status.set(issues::Status::ERROR_MISSING_PKS);
+        } else if (Compatibility_check::USER_WILDCARD_GRANT == issue.check) {
+          status.set(issues::Status::ERROR_HAS_WILDCARD_GRANTS);
+        } else if (Compatibility_check::VIEW_MISMATCHED_REFERENCE ==
+                   issue.check) {
+          status.set(issues::Status::WARNING_HAS_MISMATCHED_VIEW_REFERENCES);
+        } else {
+          if (Compatibility_check::USER_INVALID_GRANTS == issue.check) {
+            status.set(issues::Status::ERROR_HAS_INVALID_GRANTS);
+          }
+
+          if (!issue.compatibility_options.empty()) {
+            std::vector<std::string> options;
+
+            for (auto option : issue.compatibility_options.values()) {
+              options.emplace_back("'" + to_string(option) + "'");
+            }
+
+            if (1 == options.size()) {
+              hint = std::move(options[0]);
+            } else {
+              hint = "either ";
+              hint += options.front();
+
+              if (options.size() > 2) {
+                const auto end = std::prev(options.end());
+
+                for (auto it = std::next(options.begin()); it != end; ++it) {
+                  hint += ", ";
+                  hint += *it;
+                }
+              }
+
+              hint += " or ";
+              hint += options.back();
+            }
+
+            hint = "fix this with " + hint + " compatibility option";
+          }
+        }
+
+        console->print_error(
+            issue.description + (hint.empty() ? "" : " (" + hint + ")"),
+            issue_attribs(issue));
+        break;
+      }
+    }
+  }
+
+  return status;
 }
 
 }  // namespace dump

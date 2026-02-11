@@ -660,7 +660,7 @@ void Schema_dumper::write_header(IFile *sql_file) {
           "*/;"
           "\n/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;"
           "\n/*!50503 SET NAMES %s */;\n",
-          default_charset);
+          MYSQL_UNIVERSAL_CLIENT_CHARSET);
 
     if (opt_tz_utc) {
       fputs("/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;\n", sql_file);
@@ -1520,10 +1520,10 @@ void Schema_dumper::check_object_for_definer(
         }
 
         if (m_cache.users.empty()) {
-          if (!m_non_existing_definer_reported) {
+          if (!m_users_not_dumped_reported) {
             issues->emplace_back(Compatibility_issue::warning::
                                      object_invalid_definer_users_not_dumped());
-            m_non_existing_definer_reported = true;
+            m_users_not_dumped_reported = true;
           }
         } else {
           if (m_cache.users.end() ==
@@ -1728,7 +1728,6 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
         check_io(sql_file);
       }
 
-      seen_views = true;
       return res;
     }
 
@@ -1916,17 +1915,10 @@ std::vector<Compatibility_issue> Schema_dumper::dump_trigger(
 std::vector<Compatibility_issue> Schema_dumper::dump_triggers_for_table(
     IFile *sql_file, const std::string &table, const std::string &db) {
   std::vector<Compatibility_issue> res;
-  bool old_ansi_quotes_mode = ansi_quotes_mode;
-
   std::string db_cl_name;
 
-  /* Do not use ANSI_QUOTES on triggers in dump */
-  ansi_quotes_mode = false;
-
   /* Get database collation. */
-
   switch_character_set_results("binary");
-
   fetch_db_collation(db, &db_cl_name);
 
   /* Get list of triggers. */
@@ -1952,12 +1944,6 @@ std::vector<Compatibility_issue> Schema_dumper::dump_triggers_for_table(
   }
 
   switch_character_set_results(opt_character_set_results.c_str());
-
-  /*
-    make sure to set back ansi_quotes_mode mode to
-    original value
-  */
-  ansi_quotes_mode = old_ansi_quotes_mode;
 
   return res;
 }
@@ -2573,9 +2559,7 @@ std::vector<Compatibility_issue> Schema_dumper::get_view_structure(
 Schema_dumper::Schema_dumper(
     const std::shared_ptr<mysqlshdk::db::ISession> &mysql,
     const Instance_cache &cache)
-    : m_mysql(mysql),
-      default_charset(MYSQL_UNIVERSAL_CLIENT_CHARSET),
-      m_cache(cache) {}
+    : m_mysql(mysql), m_cache(cache) {}
 
 void Schema_dumper::dump_all_tablespaces_ddl(IFile *file) {
   dump_all_tablespaces(file);

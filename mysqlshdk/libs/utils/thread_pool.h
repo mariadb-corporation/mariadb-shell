@@ -30,8 +30,10 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
