@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -66,6 +66,10 @@ class Upgrade_check_output_formatter {
       const std::string &section,
       const std::vector<std::unique_ptr<Upgrade_check>> &checks) = 0;
   virtual void list_summarize(size_t included, size_t excluded) = 0;
+
+  virtual void update_progress(const Upgrade_check *check, int completed_checks,
+                               int total_checks, const std::string &detail = {},
+                               int completed = 0, int total = 0) = 0;
 };
 
 }  // namespace upgrade_checker

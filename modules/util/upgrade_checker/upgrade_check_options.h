@@ -53,6 +53,7 @@ struct Upgrade_check_options {
   std::optional<size_t> check_timeout;
   bool skip_target_version_check = false;
   int threads = 0;
+  bool show_progress = false;
 
   Upgrade_check_options();
   mysqlshdk::utils::Version get_target_version() const;

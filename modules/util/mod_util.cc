@@ -172,6 +172,8 @@ given user name are excluded.
 checks.
 @li <b>checkTimeout</b> - maximum time in seconds after which each check
 should be interrupted.
+@li <b>showProgress</b> - bool value to indicate whether check progress should
+be emitted during the execution. (JSON output only)
 
 If <b>targetVersion</b> is not specified, the current %Shell version will be
 used as target version.

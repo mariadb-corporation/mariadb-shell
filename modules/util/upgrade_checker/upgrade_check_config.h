@@ -109,6 +109,8 @@ class Upgrade_check_config final {
                      std::max<int>(1, std::thread::hardware_concurrency() - 1));
   }
 
+  bool show_progress() const { return m_show_progress; }
+
  private:
   Upgrade_info m_upgrade_info;
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
@@ -122,6 +124,7 @@ class Upgrade_check_config final {
   bool m_warn_on_excludes = true;
   std::optional<size_t> m_check_timeout;
   int m_threads = 0;
+  bool m_show_progress = false;
 
   friend Upgrade_check_config create_config(
       std::optional<Version> server_version,

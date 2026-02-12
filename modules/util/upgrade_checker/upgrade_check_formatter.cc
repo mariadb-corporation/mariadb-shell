@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,10 +29,13 @@
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 
+#include <chrono>
+#include <mutex>
 #include <sstream>
 
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/include/shellcore/shell_options.h"
+#include "mysqlshdk/libs/utils/utils_json.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/util/upgrade_checker/feature_life_cycle_check.h"
@@ -252,6 +255,9 @@ class Text_upgrade_checker_output : public Upgrade_check_output_formatter {
     if (included > 0 || excluded > 0) m_console->println();
   }
 
+  void update_progress(const Upgrade_check *, int, int, const std::string &,
+                       int, int) override {}
+
  private:
   void list_item_info(const Upgrade_check &check) {
     m_console->println();
@@ -382,6 +388,8 @@ class JSON_upgrade_checker_output : public Upgrade_check_output_formatter {
         m_checks(rapidjson::kArrayType),
         m_manual_checks(rapidjson::kArrayType) {
     m_json_document.SetObject();
+    m_raw_json_output =
+        mysqlsh::current_shell_options()->get().wrap_json == "json/raw";
   }
 
   void check_info(const std::string &server_addres,
@@ -638,12 +646,58 @@ class JSON_upgrade_checker_output : public Upgrade_check_output_formatter {
     print_to_output();
   }
 
+  void update_progress(const Upgrade_check *check, int current_check,
+                       int total_checks, const std::string &detail = "",
+                       int completed = 0, int total = 0) override {
+    std::unique_lock<std::mutex> lock(m_progress_mutex);
+
+    auto now = std::chrono::steady_clock::now();
+
+    if (current_check == m_completed_check &&
+        now - m_last_progress_update < std::chrono::seconds(1) &&
+        (total < 0 || completed < total - 1)) {
+      // update once every second unless something changes
+      return;
+    }
+
+    m_last_progress_update = now;
+
+    shcore::JSON_dumper dumper(!m_raw_json_output);
+    dumper.start_object();
+    dumper.append("progress");
+    dumper.start_object();
+
+    if (check) {
+      dumper.append("id", check->get_name());
+      dumper.append("check", check->get_title());
+    }
+
+    if (total >= 0) {
+      dumper.append("detail", detail);
+      dumper.append("completed", completed);
+      dumper.append("total", total);
+    }
+
+    dumper.append("currentCheck", current_check);
+    dumper.append("totalChecks", total_checks);
+
+    dumper.end_object();
+    dumper.end_object();
+
+    mysqlsh::current_console()->raw_print(
+        dumper.str(), mysqlsh::Output_stream::STDOUT, false);
+    mysqlsh::current_console()->raw_print("\n", mysqlsh::Output_stream::STDOUT,
+                                          false);
+
+    m_completed_check = current_check;
+  }
+
   const rapidjson::Document &get_document() const { return m_json_document; }
 
  private:
   void print_to_output() {
     rapidjson::StringBuffer buffer;
-    if (mysqlsh::current_shell_options()->get().wrap_json == "json/raw") {
+    if (m_raw_json_output) {
       rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
       m_json_document.Accept(writer);
     } else {
@@ -660,6 +714,10 @@ class JSON_upgrade_checker_output : public Upgrade_check_output_formatter {
   rapidjson::Document::AllocatorType &m_allocator;
   rapidjson::Value m_checks;
   rapidjson::Value m_manual_checks;
+  int m_completed_check = -1;
+  std::chrono::time_point<std::chrono::steady_clock> m_last_progress_update;
+  std::mutex m_progress_mutex;
+  bool m_raw_json_output = false;
 };
 
 std::unique_ptr<Upgrade_check_output_formatter>

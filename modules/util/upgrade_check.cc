@@ -148,10 +148,22 @@ void run_checks(const Upgrade_check_config &config,
 
   shcore::atomic_flag interrupt_flag;
 
+  shcore::Interrupt_handler intr_handler(
+      [&interrupt_flag]() {
+        interrupt_flag.test_and_set();
+        return false;
+      },
+      []() {
+        mysqlsh::current_console()->print_note(
+            "Interrupted by user. Cancelling...");
+      });
+
   Check_context check_context(
       config.session(), config.upgrade_info(), session_pool, &cache,
       config.has_check_timeout() ? config.check_timeout() : 0, &interrupt_flag);
 
+  const auto checklist_size = checklist->size();
+  int current_check = -1;
   for (const auto &check : *checklist) {
     if (interrupt_flag.test()) {
       break;
@@ -159,6 +171,18 @@ void run_checks(const Upgrade_check_config &config,
 
     check->set_timedout(false);
 
+    ++current_check;
+    if (config.show_progress()) {
+      print->update_progress(check.get(), current_check, checklist_size);
+
+      check_context.on_progress = [print, check = check.get(), current_check,
+                                   total_checks = checklist_size](
+                                      const std::string &detail, int current,
+                                      int total) {
+        print->update_progress(check, current_check, total_checks, detail,
+                               current, total);
+      };
+    }
     // running check
     if (check->is_runnable()) {
       try {
@@ -192,6 +216,10 @@ void run_checks(const Upgrade_check_config &config,
       stats->update(dynamic_cast<Manual_check *>(check.get())->get_level());
       print->manual_check(*check);
     }
+  }
+
+  if (config.show_progress()) {
+    print->update_progress(nullptr, checklist_size, checklist_size);
   }
 }
 

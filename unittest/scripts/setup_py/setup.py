@@ -1177,3 +1177,14 @@ def is_dynamic_data_masking_enabled(sess) -> bool:
         return True
     else:
         return False
+
+
+
+def run_after(delay, func, *args, **kwargs):
+    def delayed_func():
+        time.sleep(delay)
+        func(*args, **kwargs)
+
+    t = threading.Thread(target=delayed_func, daemon=True)
+    t.start()
+

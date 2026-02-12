@@ -52,6 +52,8 @@ void Worker_pool::execute(
     std::function<std::vector<Upgrade_issue>(
         const std::shared_ptr<mysqlshdk::db::ISession> &session)> &&task,
     std::shared_ptr<mysqlshdk::db::ISession> use_session) {
+  m_total_progress_units.fetch_add(1, std::memory_order_relaxed);
+
   m_thread_pool.add_task(
       [check, task = std::move(task), use_session = std::move(use_session),
        this]() -> std::vector<Upgrade_issue> {
@@ -87,6 +89,16 @@ void Worker_pool::execute(
         }
       },
       [this](std::vector<Upgrade_issue> &&issues) {
+        const int finished =
+            m_finished_progress_units.fetch_add(1, std::memory_order_relaxed) +
+            1;
+        const int total =
+            m_total_progress_units.load(std::memory_order_relaxed);
+
+        if (m_progress_callback) {
+          m_progress_callback(finished, total);
+        }
+
         m_issues.insert(m_issues.end(), std::make_move_iterator(issues.begin()),
                         std::make_move_iterator(issues.end()));
       });
@@ -106,9 +118,8 @@ std::vector<Upgrade_issue> Worker_pool::wait() {
       break;
     }
     check_timeouts();
-    if (state == State::IDLE) {
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   m_thread_pool.wait_for_process();
@@ -203,13 +214,15 @@ Check_context::Check_context(
       m_cache(cache),
       m_server_info(server_info),
       m_timeout_seconds(timeout_seconds),
-      m_interrupt_flag(interrupt_flag) {}
+      m_interrupt_flag(interrupt_flag) {
+  on_progress = [](const std::string &, int, int) {};
+}
 
 std::unique_ptr<Worker_pool> Check_context::make_worker_pool(
-    bool skip_pool) const {
+    std::function<void(int, int)> &&progress_callback, bool skip_pool) const {
   auto pool = std::make_unique<Worker_pool>(
       m_session_pool, skip_pool ? 1 : m_session_pool->max_size(),
-      m_timeout_seconds, m_interrupt_flag);
+      m_timeout_seconds, m_interrupt_flag, std::move(progress_callback));
   pool->init();
   return pool;
 }
@@ -218,7 +231,7 @@ std::vector<Upgrade_issue> Check_context::execute_simple(
     Upgrade_check *check,
     std::function<std::vector<Upgrade_issue>(
         const std::shared_ptr<mysqlshdk::db::ISession> &)> &&task) const {
-  auto wpool = make_worker_pool(true);
+  auto wpool = make_worker_pool({}, true);
   wpool->execute(check, std::move(task), m_session);
   return wpool->wait();
 }
