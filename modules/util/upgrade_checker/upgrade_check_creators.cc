@@ -170,34 +170,38 @@ class Syntax_check : public Upgrade_check {
   bool is_runnable() const override { return true; }
 
   std::vector<Upgrade_issue> run(const Check_context &context) override {
-    auto workers = context.make_worker_pool();
+    auto workers = context.make_worker_pool([&context](int current, int total) {
+      if (context.on_progress) {
+        context.on_progress("Checking syntax of database objects", current,
+                            total);
+      }
+    });
 
     struct Check_info {
       std::string names_query;
       std::string show_query;
       int code_field;
       Upgrade_issue::Object_type object_type;
+      std::string_view object_type_name;
     };
 
     const auto &qh = context.cache()->query_helper();
     Check_info object_info[] = {
-        {
-            "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE"
-            " FROM information_schema.routines WHERE " +
-                qh.schema_and_routine_filter(),
-            "",
-            2,
-            Upgrade_issue::Object_type::ROUTINE,
-        },
+        {"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE"
+         " FROM information_schema.routines WHERE " +
+             qh.schema_and_routine_filter(),
+         "", 2, Upgrade_issue::Object_type::ROUTINE, "routines"},
         {"SELECT TRIGGER_SCHEMA, TRIGGER_NAME, SQL_MODE, EVENT_OBJECT_TABLE"
          " FROM information_schema.triggers WHERE " +
              qh.schema_and_trigger_filter(),
-         "SHOW CREATE TRIGGER !.!", 2, Upgrade_issue::Object_type::TRIGGER},
+         "SHOW CREATE TRIGGER !.!", 2, Upgrade_issue::Object_type::TRIGGER,
+         "triggers"},
         {"SELECT EVENT_SCHEMA, EVENT_NAME, SQL_MODE"
          " FROM information_schema.events"
          " WHERE " +
              qh.schema_and_event_filter(),
-         "SHOW CREATE EVENT !.!", 3, Upgrade_issue::Object_type::EVENT}};
+         "SHOW CREATE EVENT !.!", 3, Upgrade_issue::Object_type::EVENT,
+         "events"}};
     const std::string show_procedure = "SHOW CREATE PROCEDURE !.!";
     const std::string show_function = "SHOW CREATE FUNCTION !.!";
 
@@ -206,6 +210,12 @@ class Syntax_check : public Upgrade_check {
         break;
       }
 
+      if (context.on_progress) {
+        context.on_progress(std::string("Collecting ")
+                                .append(obj.object_type_name)
+                                .append(" to check"),
+                            0, 0);
+      }
       auto result = context.session()->queryf(obj.names_query);
 
       while (auto row = result->fetch_one()) {
@@ -674,7 +684,12 @@ class Check_table_command : public Upgrade_check {
     const std::unordered_map<std::string, Checker_cache::Table_info> *tables;
     const std::unordered_map<std::string, Checker_cache::Table_info> *views;
     {
-      auto workers = context.make_worker_pool();
+      auto workers =
+          context.make_worker_pool([&context](int current, int total) {
+            if (context.on_progress) {
+              context.on_progress("Preparing for CHECK TABLE", current, total);
+            }
+          });
       if (context.server_info().server_version < Version(8, 0, 0)) {
         workers->execute(
             this,
@@ -711,7 +726,11 @@ class Check_table_command : public Upgrade_check {
       workers->wait();
     }
 
-    auto workers = context.make_worker_pool();
+    auto workers = context.make_worker_pool([&context](int current, int total) {
+      if (context.on_progress) {
+        context.on_progress("Executing CHECK TABLE", current, total);
+      }
+    });
     if (tables) {
       for (const auto &table : *tables) {
         if (context.interrupted()) {

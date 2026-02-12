@@ -59,12 +59,14 @@ class Worker_pool {
  public:
   Worker_pool(std::shared_ptr<mysqlshdk::db::Session_pool> session_pool,
               uint64_t num_threads, uint64_t timeout_seconds = 0,
-              shcore::atomic_flag *interrupt_flag = nullptr)
+              shcore::atomic_flag *interrupt_flag = nullptr,
+              std::function<void(int, int)> &&progress_callback = {})
       : m_thread_pool(num_threads, 0, mysqlsh::thread_init, mysqlsh::thread_end,
                       interrupt_flag),
         m_interrupt_flag(interrupt_flag),
         m_session_pool(std::move(session_pool)),
-        m_timeout_seconds(timeout_seconds) {}
+        m_timeout_seconds(timeout_seconds),
+        m_progress_callback(std::move(progress_callback)) {}
 
   void init();
 
@@ -101,6 +103,9 @@ class Worker_pool {
   std::list<Active_check> m_active_checks;
 
   const std::atomic<Thread_pool::Async_state> *m_async_process_state = nullptr;
+  std::function<void(int, int)> m_progress_callback;
+  std::atomic<int> m_total_progress_units{0};
+  std::atomic<int> m_finished_progress_units{0};
 };
 
 class Check_context {
@@ -120,16 +125,15 @@ class Check_context {
     return m_session;
   }
 
-  std::shared_ptr<mysqlshdk::db::IResult> query_with_timeout(
-      const std::string_view sql) const;
-
   inline const Upgrade_info &server_info() const { return m_server_info; }
 
   inline std::shared_ptr<mysqlshdk::db::Session_pool> session_pool() const {
     return m_session_pool;
   }
 
-  std::unique_ptr<Worker_pool> make_worker_pool(bool skip_pool = false) const;
+  std::unique_ptr<Worker_pool> make_worker_pool(
+      std::function<void(int, int)> &&progress_callback = {},
+      bool skip_pool = false) const;
 
   inline Checker_cache *cache() const { return m_cache; }
 
@@ -143,6 +147,8 @@ class Check_context {
       Upgrade_check *check,
       std::function<std::vector<Upgrade_issue>(
           const std::shared_ptr<mysqlshdk::db::ISession> &)> &&task) const;
+
+  std::function<void(const std::string &, int, int)> on_progress;
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> m_session;

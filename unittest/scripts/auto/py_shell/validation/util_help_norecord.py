@@ -159,6 +159,8 @@ DESCRIPTION
         checks.
       - checkTimeout - maximum time in seconds after which each check should be
         interrupted.
+      - showProgress - bool value to indicate whether check progress should be
+        emitted during the execution. (JSON output only)
 
       If targetVersion is not specified, the current Shell version will be used
       as target version.

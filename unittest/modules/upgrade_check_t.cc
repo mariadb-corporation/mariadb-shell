@@ -26,6 +26,7 @@
 
 #include <memory>
 #include <set>
+#include <sstream>
 
 #include "modules/util/mod_util.h"
 #include "modules/util/upgrade_check.h"
@@ -3107,6 +3108,61 @@ TEST_F(MySQL_upgrade_check_test, JSON_output_format) {
   } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     EXPECT_TRUE(false);
+  }
+}
+
+TEST_F(MySQL_upgrade_check_test, JSON_progress) {
+  SKIP_IF_NOT_5_7_UP_TO(k_shell_version);
+  Util util(_interactive_shell->shell_context().get());
+  // clear stdout/stderr garbage
+  reset_shell();
+  // valid mysql 5.7 superuser
+  Upgrade_check_options options;
+  options.output_format = "JSON";  // one json per line
+  options.show_progress = true;
+  auto connection_options = mysqlshdk::db::Connection_options(_mysql_uri);
+  try {
+    auto old_wrap = _options->wrap_json;
+    shcore::Scoped_callback reset_wrap(
+        [this, old_wrap]() { _options->wrap_json = old_wrap; });
+    _options->wrap_json = "json/raw";
+    util.check_for_server_upgrade(connection_options, options);
+    std::stringstream ss(output_handler.std_out);
+    std::string line;
+    std::set<std::string> checks_performed;
+    std::set<std::string> checks_seen;
+    while (std::getline(ss, line)) {
+      rapidjson::Document d;
+      d.Parse(line.c_str());
+      ASSERT_FALSE(d.HasParseError());
+      ASSERT_TRUE(d.IsObject());
+      if (d.HasMember("progress")) {
+        rapidjson::Value &p = d["progress"];
+        ASSERT_TRUE(p.IsObject());
+        if (p.HasMember("id")) {
+          EXPECT_TRUE(p["id"].IsString());
+          EXPECT_TRUE(p["check"].IsString());
+          checks_seen.insert(p["id"].GetString());
+        }
+        if (p.HasMember("detail")) {
+          EXPECT_TRUE(p["detail"].IsString());
+          EXPECT_TRUE(p["completed"].IsInt());
+          EXPECT_TRUE(p["total"].IsInt());
+        }
+        ASSERT_TRUE(p.HasMember("currentCheck"));
+        EXPECT_TRUE(p.HasMember("totalChecks"));
+      } else {
+        ASSERT_TRUE(d.HasMember("checksPerformed"));
+        ASSERT_TRUE(!checks_seen.empty());
+        auto checks = d["checksPerformed"].GetArray();
+        for (rapidjson::SizeType i = 0; i < checks.Size(); i++) {
+          checks_performed.insert(checks[i]["id"].GetString());
+        }
+      }
+    }
+    EXPECT_THAT(checks_seen, ContainsAll(checks_performed));
+  } catch (const std::exception &e) {
+    EXPECT_TRUE(false) << e.what();
   }
 }
 
