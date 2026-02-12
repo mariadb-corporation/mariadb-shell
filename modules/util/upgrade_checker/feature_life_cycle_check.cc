@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -140,39 +140,46 @@ std::vector<const Feature_definition *> Feature_life_cycle_check::get_features(
 }
 
 std::vector<Upgrade_issue> Feature_life_cycle_check::run(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session,
-    const Upgrade_info &server_info, Checker_cache *cache) {
-  auto result = session->query(build_query(cache));
-  const mysqlshdk::db::IRow *row = nullptr;
+    const Check_context &context) {
+  return context.execute_simple(
+      this, [this, &context](
+                const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+        auto result = session->query(build_query(context.cache()));
+        const mysqlshdk::db::IRow *row = nullptr;
 
-  while ((row = result->fetch_one()) != nullptr) {
-    process_row(row);
-  }
+        while ((row = result->fetch_one()) != nullptr) {
+          if (context.interrupted()) {
+            break;
+          }
 
-  // Now creates the issue list
-  std::vector<Upgrade_issue> upgrade_issues;
+          process_row(row);
+        }
 
-  // Each item found will create a separate issue
-  for (const auto &issues : m_feature_issues) {
-    const auto &feature = m_features.at(issues.first).feature;
-    auto level = get_issue_level(feature, server_info);
+        // Now creates the issue list
+        std::vector<Upgrade_issue> upgrade_issues;
 
-    for (const auto &item : issues.second) {
-      auto issue = create_issue();
+        // Each item found will create a separate issue
+        for (const auto &issues : m_feature_issues) {
+          const auto &feature = m_features.at(issues.first).feature;
+          auto level = get_issue_level(feature, context.server_info());
 
-      // Issues get the feature set as the group
-      issue.group = feature.id;
+          for (const auto &item : issues.second) {
+            auto issue = create_issue();
 
-      issue.doclink = get_doc_link(feature.id);
+            // Issues get the feature set as the group
+            issue.group = feature.id;
 
-      issue.schema = item.first;
-      issue.level = level;
-      issue.object_type = item.second;
-      upgrade_issues.push_back(issue);
-    }
-  }
+            issue.doclink = get_doc_link(feature.id);
 
-  return upgrade_issues;
+            issue.schema = item.first;
+            issue.level = level;
+            issue.object_type = item.second;
+            upgrade_issues.push_back(issue);
+          }
+        }
+
+        return upgrade_issues;
+      });
 }
 
 Auth_method_usage_check::Auth_method_usage_check(

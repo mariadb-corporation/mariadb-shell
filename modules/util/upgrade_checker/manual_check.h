@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,9 +46,7 @@ class Manual_check : public Upgrade_check {
   Upgrade_issue::Level get_level() const { return m_level; }
   bool is_runnable() const override { return false; }
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> & /*session*/,
-      const Upgrade_info & /*server_info*/) override {
+  std::vector<Upgrade_issue> run(const Check_context &) override {
     throw std::runtime_error("Manual check not meant to be executed");
   }
 

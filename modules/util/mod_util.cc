@@ -123,6 +123,8 @@ Tool behaviour can be modified with following options:
 @li <b>configPath</b> - full path to MySQL server configuration file.
 @li <b>outputFormat</b> - value can be either TEXT (default) or JSON.
 @li <b>targetVersion</b> - version to which upgrade will be checked.
+@li <b>threads</b> - number of threads to use for checks execution. Default is the
+smallest of 4 or the number of CPU cores.
 @li <b>password</b> - password for connection.
 @li <b>include</b> - comma separated list containing the check identifiers to be
 included in the operation.

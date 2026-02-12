@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #ifndef MODULES_UTIL_UPGRADE_CHECKER_UPGRADE_CHECK_CONFIG_H_
 #define MODULES_UTIL_UPGRADE_CHECKER_UPGRADE_CHECK_CONFIG_H_
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
@@ -100,6 +101,14 @@ class Upgrade_check_config final {
     return *m_check_timeout;
   }
 
+  int worker_threads() const {
+    return m_threads > 0
+               ? m_threads
+               : std::min<int>(
+                     4,
+                     std::max<int>(1, std::thread::hardware_concurrency() - 1));
+  }
+
  private:
   Upgrade_info m_upgrade_info;
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
@@ -112,6 +121,7 @@ class Upgrade_check_config final {
   bool m_list_checks;
   bool m_warn_on_excludes = true;
   std::optional<size_t> m_check_timeout;
+  int m_threads = 0;
 
   friend Upgrade_check_config create_config(
       std::optional<Version> server_version,

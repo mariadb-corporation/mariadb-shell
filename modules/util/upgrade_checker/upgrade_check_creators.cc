@@ -29,7 +29,9 @@
 #include <mysqld_error.h>
 
 #include <forward_list>
+#include <ranges>
 #include <regex>
+#include <set>
 #include <vector>
 
 #include "modules/util/upgrade_checker/feature_life_cycle_check.h"
@@ -136,7 +138,6 @@ class Syntax_check : public Upgrade_check {
  public:
   Syntax_check(const Upgrade_info &info)
       : Upgrade_check(ids::k_syntax_check, Category::PARSING),
-        m_parser(info.target_version),
         m_target_version(info.target_version) {}
 
   [[nodiscard]] std::string get_description(
@@ -144,11 +145,13 @@ class Syntax_check : public Upgrade_check {
       const Token_definitions &tokens) const override {
     auto local_tokens = tokens;
 
+    mysqlshdk::yacc::Parser parser(m_target_version);
+
     local_tokens["target_version"] = m_target_version.get_base();
-    local_tokens["selected_version"] = m_parser.version().get_base();
+    local_tokens["selected_version"] = parser.version().get_base();
 
     if (m_target_version.numeric_version_series() !=
-        m_parser.version().numeric_version_series()) {
+        parser.version().numeric_version_series()) {
       // Parser selects grammar version which is greater than or equal to the
       // requested version (here `target_version`). If minor version number of
       // the target version is different than the minor version of the grammar,
@@ -166,9 +169,9 @@ class Syntax_check : public Upgrade_check {
 
   bool is_runnable() const override { return true; }
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info & /*server_info*/, Checker_cache *cache) override {
+  std::vector<Upgrade_issue> run(const Check_context &context) override {
+    auto workers = context.make_worker_pool();
+
     struct Check_info {
       std::string names_query;
       std::string show_query;
@@ -176,18 +179,16 @@ class Syntax_check : public Upgrade_check {
       Upgrade_issue::Object_type object_type;
     };
 
-    const auto &qh = cache->query_helper();
+    const auto &qh = context.cache()->query_helper();
     Check_info object_info[] = {
-        {"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE"
-         " FROM information_schema.routines WHERE ROUTINE_TYPE = 'PROCEDURE'"
-         " AND " +
-             qh.schema_and_routine_filter(),
-         "SHOW CREATE PROCEDURE !.!", 2, Upgrade_issue::Object_type::ROUTINE},
-        {"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE"
-         " FROM information_schema.routines WHERE ROUTINE_TYPE = 'FUNCTION'"
-         " AND " +
-             qh.schema_and_routine_filter(),
-         "SHOW CREATE FUNCTION !.!", 2, Upgrade_issue::Object_type::ROUTINE},
+        {
+            "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE"
+            " FROM information_schema.routines WHERE " +
+                qh.schema_and_routine_filter(),
+            "",
+            2,
+            Upgrade_issue::Object_type::ROUTINE,
+        },
         {"SELECT TRIGGER_SCHEMA, TRIGGER_NAME, SQL_MODE, EVENT_OBJECT_TABLE"
          " FROM information_schema.triggers WHERE " +
              qh.schema_and_trigger_filter(),
@@ -197,24 +198,36 @@ class Syntax_check : public Upgrade_check {
          " WHERE " +
              qh.schema_and_event_filter(),
          "SHOW CREATE EVENT !.!", 3, Upgrade_issue::Object_type::EVENT}};
+    const std::string show_procedure = "SHOW CREATE PROCEDURE !.!";
+    const std::string show_function = "SHOW CREATE FUNCTION !.!";
 
-    std::vector<Upgrade_issue> issues;
     for (const auto &obj : object_info) {
-      auto result = session->queryf(obj.names_query);
+      if (context.interrupted()) {
+        break;
+      }
 
-      // fetch all results because we need to query again in process_item()
-      result->buffer();
+      auto result = context.session()->queryf(obj.names_query);
 
       while (auto row = result->fetch_one()) {
-        auto syntax_issues = process_item(row, obj.show_query, obj.code_field,
-                                          obj.object_type, session.get());
+        if (context.interrupted()) {
+          break;
+        }
 
-        issues.insert(issues.end(),
-                      std::make_move_iterator(syntax_issues.begin()),
-                      std::make_move_iterator(syntax_issues.end()));
+        const std::string *show_query = &obj.show_query;
+        if (obj.object_type == Upgrade_issue::Object_type::ROUTINE) {
+          if (row->get_as_string(3) == "PROCEDURE") {
+            show_query = &show_procedure;
+          } else {
+            show_query = &show_function;
+          }
+        }
+
+        process_item(workers.get(), row, *show_query, obj.code_field,
+                     obj.object_type);
       }
     }
-    return issues;
+
+    return workers->wait();
   }
 
  protected:
@@ -243,9 +256,10 @@ class Syntax_check : public Upgrade_check {
       std::string sql = row->get_as_string(show_sql_field);
       try {
         std::vector<std::string> syntax_issues;
+        auto &parser = get_parser();
 
-        m_parser.set_sql_mode(remove_obsolete_modes(sql_mode));
-        auto syntax_errors = m_parser.check_syntax(sql);
+        parser.set_sql_mode(remove_obsolete_modes(sql_mode));
+        auto syntax_errors = parser.check_syntax(sql);
         syntax_issues.reserve(syntax_errors.size());
         for (auto &err : syntax_errors) {
           syntax_issues.push_back(err.format());
@@ -263,10 +277,9 @@ class Syntax_check : public Upgrade_check {
     return {};
   }
 
-  std::vector<Upgrade_issue> process_item(
-      const mysqlshdk::db::IRow *row, const std::string &show_template,
-      int show_sql_field, Upgrade_issue::Object_type object_type,
-      mysqlshdk::db::ISession *session) {
+  void process_item(Worker_pool *workers, const mysqlshdk::db::IRow *row,
+                    const std::string &show_template, int show_sql_field,
+                    Upgrade_issue::Object_type object_type) {
     auto issue = create_issue();
 
     issue.schema = row->get_as_string(0);
@@ -274,18 +287,7 @@ class Syntax_check : public Upgrade_check {
     issue.level = Upgrade_issue::ERROR;
     issue.object_type = object_type;
 
-    const auto sql_mode = row->get_as_string(2);
-
-    // we need to get routine definitions with the SHOW command
-    // because INFORMATION_SCHEMA will eat up things like backslashes
-    // Bug#34534696	unparseable code returned in
-    // INFORMATION_SCHEMA.ROUTINES.ROUTINE_DEFINITION
-    std::vector<Upgrade_issue> result;
-
-    auto syntax_issues =
-        check_routine_syntax(session, show_template, show_sql_field,
-                             issue.schema, issue.table, sql_mode);
-
+    const auto target_name = issue.table;
     if (Upgrade_issue::Object_type::TRIGGER == object_type) {
       // when reporting trigger-related issues we want to include the associated
       // table's name
@@ -293,20 +295,42 @@ class Syntax_check : public Upgrade_check {
       issue.table = row->get_as_string(3);
     }
 
-    for (auto &syntax_issue : syntax_issues) {
-      if (syntax_issue.empty()) {
-        continue;
-      }
+    const auto sql_mode = row->get_as_string(2);
 
-      auto new_issue = issue;
-      new_issue.description = std::move(syntax_issue);
-      result.emplace_back(std::move(new_issue));
-    }
+    // we need to get routine definitions with the SHOW command
+    // because INFORMATION_SCHEMA will eat up things like backslashes
+    // Bug#34534696	unparseable code returned in
+    // INFORMATION_SCHEMA.ROUTINES.ROUTINE_DEFINITION
 
-    return result;
+    workers->execute(
+        this,
+        [=, this](const std::shared_ptr<mysqlshdk::db::ISession> &session)
+            -> std::vector<Upgrade_issue> {
+          std::vector<Upgrade_issue> result;
+
+          auto syntax_issues =
+              check_routine_syntax(session.get(), show_template, show_sql_field,
+                                   issue.schema, target_name, sql_mode);
+
+          for (auto &syntax_issue : syntax_issues) {
+            if (syntax_issue.empty()) {
+              continue;
+            }
+
+            auto new_issue = issue;
+            new_issue.description = std::move(syntax_issue);
+            result.emplace_back(std::move(new_issue));
+          }
+          return result;
+        });
   }
 
-  mysqlshdk::yacc::Parser m_parser;
+  mysqlshdk::yacc::Parser &get_parser() const {
+    thread_local mysqlshdk::yacc::Parser s_parser(m_target_version);
+
+    return s_parser;
+  }
+
   const Version m_target_version;
 };
 
@@ -429,25 +453,23 @@ class Obsolete_sql_mode_flags_check : public Sql_upgrade_check {
                           Upgrade_issue::NOTICE) {}
 
  protected:
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) override {
-    m_upgrade_info = &server_info;
-    m_cache = cache;
-    m_session = session;
+  std::vector<Upgrade_issue> run(const Check_context &context) override {
+    m_upgrade_info = &context.server_info();
+    m_cache = context.cache();
+    m_session = context.session();
 
     set_groups({Upgrade_issue::level_to_string(Upgrade_issue::NOTICE),
                 Upgrade_issue::level_to_string(Upgrade_issue::WARNING),
                 Upgrade_issue::level_to_string(Upgrade_issue::ERROR)});
 
-    return Sql_upgrade_check::run(session, server_info, cache);
+    return Sql_upgrade_check::run(context);
   }
 
-  void add_issue(
-      const mysqlshdk::db::IRow *row, Upgrade_issue::Object_type object_type,
-      std::vector<Upgrade_issue> *issues,
-      mysqlshdk::db::Filtering_options *db_filters = nullptr) override {
-    Sql_upgrade_check::add_issue(row, object_type, issues, db_filters);
+  void add_issue(const std::vector<std::string> &field_names,
+                 const mysqlshdk::db::IRow *row,
+                 Upgrade_issue::Object_type object_type,
+                 std::vector<Upgrade_issue> *issues) override {
+    Sql_upgrade_check::add_issue(field_names, row, object_type, issues);
 
     issues->back().group =
         Upgrade_issue::level_to_string(Upgrade_issue::NOTICE);
@@ -503,7 +525,7 @@ std::unique_ptr<Sql_upgrade_check> get_obsolete_sql_mode_flags_check() {
             "uses "
             "obsolete %s sql_mode') from information_schema.routines where "
             "<<schema_and_routine_filter>> and find_in_set('%s', sql_mode);",
-            DBUG_EVALUATE_IF("dbg_uc_sql_mode_sleep", "SLEEP(2),", ""), mode,
+            DBUG_EVALUATE_IF("dbg_uc_sql_mode_sleep", "SLEEP(3),", ""), mode,
             mode),
         Upgrade_issue::Object_type::ROUTINE);
     queries.emplace_back(
@@ -550,7 +572,8 @@ class Enum_set_element_length_check : public Sql_upgrade_check {
               Upgrade_issue::Object_type::COLUMN}},
             Upgrade_issue::ERROR) {}
 
-  Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  Upgrade_issue parse_row(const std::vector<std::string> &,
+                          const mysqlshdk::db::IRow *row,
                           Upgrade_issue::Object_type object_type) override {
     auto res = create_issue();
     std::string type = row->get_as_string(3);
@@ -589,78 +612,130 @@ class Check_table_command : public Upgrade_check {
   Check_table_command()
       : Upgrade_check(ids::k_table_command_check, Category::SCHEMA) {}
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) override {
-    // Workaround for 5.7 "No database selected/Corrupted" UPGRADE bug present
-    // up to 5.7.39
-    session->execute("USE mysql;");
+  std::vector<Upgrade_issue> run(const Check_context &context) override {
+    std::set<uint64_t> seen_sessions;
 
-    // Needed for warnings related to triggers, incompatible types in 5.7
-    if (server_info.server_version < Version(8, 0, 0)) {
-      try {
-        session->execute("FLUSH LOCAL TABLES;");
-      } catch (const mysqlshdk::db::Error &error) {
-        if (error.code() == ER_SPECIFIC_ACCESS_DENIED_ERROR) {
-          throw Check_configuration_error(
-              "To run this check the RELOAD grant is required.");
-        } else {
-          throw;
-        }
-      }
-    }
-    std::vector<std::pair<std::string, std::string>> tables;
-    const auto &qh = cache->query_helper();
+    auto use_mysql =
+        [&seen_sessions](
+            const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+          auto id = session->get_connection_id();
+          if (seen_sessions.insert(id).second) {
+            // Workaround for 5.7 "No database selected/Corrupted" UPGRADE bug
+            // present up to 5.7.39
+            session->execute("USE mysql;");
+          }
+        };
+
+    const auto process_table = [this, &use_mysql](
+                                   Worker_pool *workers,
+                                   const std::string &schema_name,
+                                   const std::string &table_name) {
+      workers->execute(
+          this,
+          [schema_name, table_name, &use_mysql, this](
+              const std::shared_ptr<mysqlshdk::db::ISession> &worker_session) {
+            use_mysql(worker_session);
+
+            std::vector<Upgrade_issue> issues;
+            const auto query =
+                shcore::sqlstring("CHECK TABLE !.! FOR UPGRADE;", 0)
+                << schema_name << table_name;
+            auto check_result = worker_session->query(query.str_view());
+
+            const mysqlshdk::db::IRow *row = nullptr;
+            while ((row = check_result->fetch_one()) != nullptr) {
+              if (row->get_string(2) == "status") continue;
+              auto issue = create_issue();
+              std::string type = row->get_string(2);
+              if (type == "warning")
+                issue.level = Upgrade_issue::WARNING;
+              else if (type == "error")
+                issue.level = Upgrade_issue::ERROR;
+              else
+                issue.level = Upgrade_issue::NOTICE;
+              issue.schema = schema_name;
+              issue.table = table_name;
+              issue.object_type = Upgrade_issue::Object_type::TABLE;
+              issue.description = row->get_string(3);
+
+              // Native partitioning warning has been promoted to error in
+              // context of upgrade to 8.0 and is handled by the separate check
+              if (issue.description.find("use native partitioning instead.") !=
+                      std::string::npos &&
+                  issue.level == Upgrade_issue::WARNING)
+                continue;
+              issues.push_back(issue);
+            }
+
+            return issues;
+          });
+    };
+
+    const std::unordered_map<std::string, Checker_cache::Table_info> *tables;
+    const std::unordered_map<std::string, Checker_cache::Table_info> *views;
     {
-      auto query_string = "SELECT TABLE_SCHEMA, TABLE_NAME" +
-                          std::string(DBUG_EVALUATE_IF(
-                              "dbg_uc_check_table_sleep", ", SLEEP(9)", "")) +
-                          " FROM INFORMATION_SCHEMA.TABLES WHERE " +
-                          qh.schema_and_table_filter() +
-                          std::string(DBUG_EVALUATE_IF(
-                              "dbg_uc_check_table_sleep", " LIMIT 1", ""));
-      auto result = session->query(query_string);
-      const mysqlshdk::db::IRow *pair = nullptr;
-      while ((pair = result->fetch_one()) != nullptr) {
-        tables.push_back(
-            std::make_pair(pair->get_string(0), pair->get_string(1)));
+      auto workers = context.make_worker_pool();
+      if (context.server_info().server_version < Version(8, 0, 0)) {
+        workers->execute(
+            this,
+            [](const std::shared_ptr<mysqlshdk::db::ISession> &worker_session)
+                -> std::vector<Upgrade_issue> {
+              // Needed for warnings related to triggers, incompatible types
+              // in 5.7
+
+              try {
+                worker_session->execute("FLUSH LOCAL TABLES;");
+              } catch (const mysqlshdk::db::Error &error) {
+                if (error.code() == ER_SPECIFIC_ACCESS_DENIED_ERROR) {
+                  throw Check_configuration_error(
+                      "To run this check the RELOAD grant is required.");
+                } else {
+                  throw;
+                }
+              }
+
+              return {};
+            });
+      }
+      workers->execute(
+          this,
+          [&context, &tables, &views](
+              const std::shared_ptr<mysqlshdk::db::ISession> &worker_session)
+              -> std::vector<Upgrade_issue> {
+            tables = &context.cache()->cache_tables(worker_session.get());
+            views = &context.cache()->cache_views(worker_session.get());
+            return {};
+          });
+
+      // wait for preliminary queries to finish
+      workers->wait();
+    }
+
+    auto workers = context.make_worker_pool();
+    if (tables) {
+      for (const auto &table : *tables) {
+        if (context.interrupted()) {
+          break;
+        }
+        process_table(workers.get(), table.second.schema_name,
+                      table.second.name);
       }
     }
 
-    std::vector<Upgrade_issue> issues;
-    for (const auto &pair : tables) {
-      const auto query = shcore::sqlstring("CHECK TABLE !.! FOR UPGRADE;", 0)
-                         << pair.first << pair.second;
-      auto check_result = session->query(query.str_view());
-      const mysqlshdk::db::IRow *row = nullptr;
-      while ((row = check_result->fetch_one()) != nullptr) {
-        if (row->get_string(2) == "status") continue;
-        auto issue = create_issue();
-        std::string type = row->get_string(2);
-        if (type == "warning")
-          issue.level = Upgrade_issue::WARNING;
-        else if (type == "error")
-          issue.level = Upgrade_issue::ERROR;
-        else
-          issue.level = Upgrade_issue::NOTICE;
-        issue.schema = pair.first;
-        issue.table = pair.second;
-        issue.object_type = Upgrade_issue::Object_type::TABLE;
-        issue.description = row->get_string(3);
-
-        // Native partitioning warning has been promoted to error in context of
-        // upgrade to 8.0 and is handled by the separate check
-        if (issue.description.find("use native partitioning instead.") !=
-                std::string::npos &&
-            issue.level == Upgrade_issue::WARNING)
-          continue;
-        issues.push_back(issue);
+    if (views) {
+      for (const auto &table : *views) {
+        if (context.interrupted()) {
+          break;
+        }
+        process_table(workers.get(), table.second.schema_name,
+                      table.second.name);
       }
     }
 
-    return issues;
+    return workers->wait();
   }
 
+  // CHECK TABLE won't die unless the session is killed
   bool is_custom_session_required() const override { return true; }
 };
 
@@ -813,7 +888,8 @@ class Removed_functions_check : public Sql_upgrade_check {
             Upgrade_issue::ERROR) {}
 
  protected:
-  Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  Upgrade_issue parse_row(const std::vector<std::string> &,
+                          const mysqlshdk::db::IRow *row,
                           Upgrade_issue::Object_type object_type) override {
     auto res = create_issue();
     std::vector<std::pair<std::string, const char *>> flagged_functions;
@@ -882,7 +958,8 @@ class Groupby_asc_syntax_check : public Sql_upgrade_check {
               Upgrade_issue::Object_type::EVENT}},
             Upgrade_issue::ERROR) {}
 
-  Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  Upgrade_issue parse_row(const std::vector<std::string> &,
+                          const mysqlshdk::db::IRow *row,
                           Upgrade_issue::Object_type object_type) override {
     auto res = create_issue();
     std::string definition = row->get_as_string(3);
@@ -1086,7 +1163,8 @@ class Changed_functions_in_generated_columns_check : public Sql_upgrade_check {
             Upgrade_issue::WARNING) {}
 
  protected:
-  Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  Upgrade_issue parse_row(const std::vector<std::string> &,
+                          const mysqlshdk::db::IRow *row,
                           Upgrade_issue::Object_type object_type) override {
     auto res = create_issue();
     bool match = false;
@@ -1247,7 +1325,7 @@ std::unique_ptr<Sql_upgrade_check> get_empty_dot_table_syntax_check() {
   //        of unicode characters, range 0001-007F (ANSI)
   //        plus 0080-FFFF for supported extended chars,
   //        this should include special chars ,'"_$;
-  auto regex = "[[:blank:]]\\\\.[\\\\x0001-\\\\xFFFF]+"s;
+  auto regex = "[[:blank:]]\\\\.[\\x0001-\\xFFFF]+"s;
 
   return std::make_unique<Sql_upgrade_check>(
       ids::k_empty_dot_table_syntax_check, Category::SCHEMA,
@@ -1414,11 +1492,10 @@ class Deprecated_default_auth_check : public Sql_upgrade_check {
   bool is_multi_lvl_check() const override { return true; }
 
  protected:
-  void add_issue(const mysqlshdk::db::IRow *row,
+  void add_issue(const std::vector<std::string> &,
+                 const mysqlshdk::db::IRow *row,
                  Upgrade_issue::Object_type object_type,
-                 std::vector<Upgrade_issue> *issues,
-                 [[maybe_unused]] mysqlshdk::db::Filtering_options *db_filters =
-                     nullptr) override {
+                 std::vector<Upgrade_issue> *issues) override {
     auto item = row->get_as_string(0);
     auto auth = row->get_as_string(1);
 
@@ -1540,7 +1617,8 @@ or
                 Upgrade_issue::Object_type::COLUMN}},
             Upgrade_issue::ERROR) {}
 
-  Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  Upgrade_issue parse_row(const std::vector<std::string> &,
+                          const mysqlshdk::db::IRow *row,
                           Upgrade_issue::Object_type object_type) override {
     static const auto date_regex =
         std::regex(deprecated_delimiter_funcs::k_date_regex_str);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 #include "modules/util/upgrade_checker/upgrade_check_creators.h"
 #include "modules/util/upgrade_checker/upgrade_check_registry.h"
 #include "mysqlshdk/libs/db/mysql/session.h"
+#include "mysqlshdk/libs/db/session_pool.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
@@ -44,6 +45,7 @@
 #include "unittest/modules/util/upgrade_checker/test_utils.h"
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session.h"
+#include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session_pool.h"
 
 #define SKIP_IF_NOT_BETWEEN(min_version, max_version)                       \
   do {                                                                      \
@@ -102,8 +104,12 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
     if (_target_server_version >= Version(5, 7, 0) ||
         _target_server_version < Version(8, 0, 0)) {
       session = mysqlshdk::db::mysql::Session::create();
-      auto connection_options = mysqlshdk::db::Connection_options(_mysql_uri);
+      auto connection_options =
+          mysqlshdk::db::Connection_options("mysql://" + _mysql_uri);
       session->connect(connection_options);
+
+      session_pool =
+          std::make_unique<mysqlshdk::db::Session_pool>(connection_options, 1);
     }
   }
 
@@ -115,6 +121,8 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
     }
 
     session->close();
+
+    session_pool.reset();
 
     Shell_core_test_wrapper::TearDown();
   }
@@ -154,7 +162,7 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
     try {
       mysqlsh::upgrade_checker::Upgrade_check_options options;
       mysqlsh::upgrade_checker::Checker_cache extra_cache(options.filters);
-      issues = check->run(session, info, &extra_cache);
+      issues = check->run({session, info, session_pool, &extra_cache});
       if (after_run_callback) after_run_callback();
     } catch (const std::exception &e) {
       puts("Exception runing check:");
@@ -177,7 +185,7 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
                      mysqlsh::upgrade_checker::Checker_cache *custom_cache,
                      const int no = -1) {
     try {
-      issues = check->run(session, info, custom_cache);
+      issues = check->run({session, info, session_pool, custom_cache});
     } catch (const std::exception &e) {
       puts("Exception runing check:");
       puts(e.what());
@@ -203,7 +211,7 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
       mysqlsh::upgrade_checker::Upgrade_check_options options;
       mysqlsh::upgrade_checker::Checker_cache filtered_cache(
           filters == nullptr ? options.filters : *filters);
-      issues = check->run(session, info, &filtered_cache);
+      issues = check->run({session, info, session_pool, &filtered_cache});
     } catch (const std::exception &e) {
       puts("Exception runing check:");
       puts(e.what());
@@ -227,7 +235,7 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
       mysqlsh::upgrade_checker::Upgrade_check_options options;
       mysqlsh::upgrade_checker::Checker_cache filtered_cache(
           filters == nullptr ? options.filters : *filters);
-      issues = check->run(session, info, &filtered_cache);
+      issues = check->run({session, info, session_pool, &filtered_cache});
     } catch (const std::exception &e) {
       puts("Exception runing check:");
       puts(e.what());
@@ -502,7 +510,6 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
       std::string_view id, const std::vector<std::string> &uc_options = {},
       bool debug_output = false) {
     output_handler.wipe_all();
-
     if (debug_output) {
       testutil->call_mysqlsh_c({_mysql_uri, "--quiet-start=2", "--", "util",
                                 "check-for-server-upgrade", "--include",
@@ -523,7 +530,8 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
       options.push_back(option);
     }
 
-    testutil->call_mysqlsh_c(options);
+    int rc = testutil->call_mysqlsh_c(options);
+    EXPECT_EQ(0, rc);
 
     m_json_output = output_handler.stdout_as_json();
     return m_json_output.get_object("/checksPerformed/0/detectedProblems");
@@ -577,6 +585,7 @@ class MySQL_upgrade_check_test : public Shell_core_test_wrapper {
   Upgrade_info info;
   Upgrade_check_config config;
   std::shared_ptr<mysqlshdk::db::ISession> session;
+  std::shared_ptr<mysqlshdk::db::Session_pool> session_pool;
   std::vector<std::string> temporal_schemas;
   std::vector<Upgrade_issue> issues;
   mysqlsh::upgrade_checker::Checker_cache cache;
@@ -593,8 +602,8 @@ TEST(Upgrade_check_cache, cache_tables) {
 
     msession
         ->expect_query({"SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM "
-                        "information_schema.tables WHERE ENGINE IS NOT NULL "
-                        "AND (STRCMP(TABLE_SCHEMA COLLATE "
+                        "information_schema.tables WHERE "
+                        "(STRCMP(TABLE_SCHEMA COLLATE "
                         "utf8_bin,'mysql')&STRCMP(TABLE_SCHEMA COLLATE "
                         "utf8_bin,'sys')&STRCMP(TABLE_SCHEMA COLLATE "
                         "utf8_bin,'performance_schema')&STRCMP(TABLE_SCHEMA "
@@ -623,7 +632,7 @@ TEST(Upgrade_check_cache, cache_tables) {
     msession
         ->expect_query(
             "SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM "
-            "information_schema.tables WHERE ENGINE IS NOT NULL AND "
+            "information_schema.tables WHERE "
             "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
             "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,'exclude'))<>0")
         .then({"TABLE_SCHEMA", "TABLE_NAME", "ENGINE"});
@@ -922,14 +931,14 @@ TEST_F(MySQL_upgrade_check_test, reserved_keywords) {
 
   check = get_reserved_keywords_check(
       upgrade_info(Version(5, 7, 0), Version(8, 0, 30)));
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   ASSERT_EQ(12, issues.size());
   EXPECT_ISSUE(issues[10], "grouping", "rows");
   EXPECT_ISSUE(issues[11], "grouping", "LEAD");
 
   check = get_reserved_keywords_check(
       upgrade_info(Version(5, 7, 0), Version(8, 0, 11)));
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   ASSERT_EQ(10, issues.size());
 
   // We get the check with the same information as in line
@@ -1086,9 +1095,9 @@ END)*",
   }
 
   EXPECT_ISSUES(check.get(), 5);
-  EXPECT_ISSUE(issues[0], "testdb", "testsp1", "", Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[1], "testdb", "testsp2", "", Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[2], "testdb", "testf1", "", Upgrade_issue::ERROR);
+  EXPECT_ISSUE(issues[0], "testdb", "testf1", "", Upgrade_issue::ERROR);
+  EXPECT_ISSUE(issues[1], "testdb", "testsp1", "", Upgrade_issue::ERROR);
+  EXPECT_ISSUE(issues[2], "testdb", "testsp2", "", Upgrade_issue::ERROR);
   EXPECT_ISSUE(issues[3], "testdb", "testbl", "mytrigger",
                Upgrade_issue::ERROR);
   EXPECT_ISSUE(issues[4], "testdb", "myevent", "", Upgrade_issue::ERROR);
@@ -1099,9 +1108,9 @@ END)*",
   TEST_SCHEMA_FILTERING(check.get(), "testdb", all_issues.size(), all_issues,
                         {});
 
-  std::vector<Upgrade_issue> other_routines = {all_issues[0], all_issues[2]};
+  std::vector<Upgrade_issue> other_routines = {all_issues[0], all_issues[1]};
   TEST_ROUTINE_FILTERING(check.get(), "testdb.testsp2", all_issues.size(),
-                         {all_issues[1]}, other_routines);
+                         {all_issues[2]}, other_routines);
 
   TEST_EVENT_FILTERING(check.get(), "testdb.myevent", all_issues.size(),
                        {all_issues[4]}, {});
@@ -1117,11 +1126,11 @@ END)*",
   ASSERT_NE(nullptr, json_issues);
 
   EXPECT_JSON_CONTAINS(
+      json_issues, "{'dbObject':'testdb.testf1', 'dbObjectType':'Routine'}");
+  EXPECT_JSON_CONTAINS(
       json_issues, "{'dbObject':'testdb.testsp1', 'dbObjectType':'Routine'}");
   EXPECT_JSON_CONTAINS(
       json_issues, "{'dbObject':'testdb.testsp2', 'dbObjectType':'Routine'}");
-  EXPECT_JSON_CONTAINS(
-      json_issues, "{'dbObject':'testdb.testf1', 'dbObjectType':'Routine'}");
   EXPECT_JSON_CONTAINS(
       json_issues,
       "{'dbObject':'testdb.testbl.mytrigger', 'dbObjectType':'Trigger'}");
@@ -1225,8 +1234,8 @@ TEST_F(MySQL_upgrade_check_test, syntax_check_from_5_7) {
 
   EXPECT_ISSUES(check.get(), 5);
   EXPECT_ISSUE(issues[0], "testdb", "test_r_80_01", "", Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[1], "testdb", "test_r_80_03", "", Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[2], "testdb", "test_r_80_02", "", Upgrade_issue::ERROR);
+  EXPECT_ISSUE(issues[1], "testdb", "test_r_80_02", "", Upgrade_issue::ERROR);
+  EXPECT_ISSUE(issues[2], "testdb", "test_r_80_03", "", Upgrade_issue::ERROR);
   EXPECT_ISSUE(issues[3], "testdb", "testbl", "test_t_80_01",
                Upgrade_issue::ERROR);
   EXPECT_ISSUE(issues[4], "testdb", "test_e_80_01", "", Upgrade_issue::ERROR);
@@ -1357,9 +1366,9 @@ end)*"};
     auto check = get_syntax_check(upg_info);
 
     EXPECT_ISSUES(check.get(), 4);
-    EXPECT_ISSUE(issues[0], "testsyntaxdb", "testsp1", "",
+    EXPECT_ISSUE(issues[0], "testsyntaxdb", "testf1", "", Upgrade_issue::ERROR);
+    EXPECT_ISSUE(issues[1], "testsyntaxdb", "testsp1", "",
                  Upgrade_issue::ERROR);
-    EXPECT_ISSUE(issues[1], "testsyntaxdb", "testf1", "", Upgrade_issue::ERROR);
     EXPECT_ISSUE(issues[2], "testsyntaxdb", "testbl", "mytrigger",
                  Upgrade_issue::ERROR);
     EXPECT_ISSUE(issues[3], "testsyntaxdb", "myevent", "",
@@ -1368,9 +1377,9 @@ end)*"};
     EXPECT_NO_THROW(session->execute("SET sql_mode='ANSI_QUOTES'"));
 
     EXPECT_ISSUES(check.get(), 4);
-    EXPECT_ISSUE(issues[0], "testsyntaxdb", "testsp1", "",
+    EXPECT_ISSUE(issues[0], "testsyntaxdb", "testf1", "", Upgrade_issue::ERROR);
+    EXPECT_ISSUE(issues[1], "testsyntaxdb", "testsp1", "",
                  Upgrade_issue::ERROR);
-    EXPECT_ISSUE(issues[1], "testsyntaxdb", "testf1", "", Upgrade_issue::ERROR);
     EXPECT_ISSUE(issues[2], "testsyntaxdb", "testbl", "mytrigger",
                  Upgrade_issue::ERROR);
     EXPECT_ISSUE(issues[3], "testsyntaxdb", "myevent", "",
@@ -1513,6 +1522,24 @@ TEST_F(MySQL_upgrade_check_test, syntax_parser_version_warning) {
           .c_str());
 }
 
+size_t find_issue(const std::vector<Upgrade_issue> &issues,
+                  std::optional<std::string> schema,
+                  std::optional<std::string> table,
+                  std::optional<std::string> column,
+                  std::optional<std::string> description = {}) {
+  auto it = std::find_if(
+      issues.begin(), issues.end(), [&](const Upgrade_issue &issue) {
+        return (!schema || issue.schema == *schema) &&
+               (!table || issue.table == *table) &&
+               (!column || issue.column == *column) &&
+               (!description || issue.description == *description);
+      });
+  if (it == issues.end()) {
+    return issues.size();
+  }
+  return std::distance(issues.begin(), it);
+}
+
 TEST_F(MySQL_upgrade_check_test, utf8mb3) {
   SKIP_IF_NOT_5_7_UP_TO(Version(8, 0, 0));
 
@@ -1528,9 +1555,11 @@ TEST_F(MySQL_upgrade_check_test, utf8mb3) {
 
   EXPECT_ISSUES(check.get());
   ASSERT_GE(issues.size(), 2);
-  EXPECT_EQ("aaaaaaaaaaaaaaaa_utf8mb3", issues[0].schema);
-  EXPECT_EQ("s3", issues[1].column);
-  EXPECT_EQ(Upgrade_issue::WARNING, issues[0].level);
+  EXPECT_TRUE(find_issue(issues, "aaaaaaaaaaaaaaaa_utf8mb3", {}, {}) !=
+              issues.size());
+
+  size_t column_issue_index = find_issue(issues, {}, {}, "s3");
+  EXPECT_TRUE(column_issue_index != issues.size());
 
   // Backups all issues for the filtering testing
   auto all_issues = issues;
@@ -1539,7 +1568,7 @@ TEST_F(MySQL_upgrade_check_test, utf8mb3) {
                         all_issues.size(), all_issues, {});
 
   TEST_TABLE_FILTERING(check.get(), "aaaaaaaaaaaaaaaa_utf8mb3.utf83",
-                       all_issues.size(), {all_issues[1]}, {});
+                       all_issues.size(), {all_issues[column_issue_index]}, {});
 
   auto json_issues = execute_check_as_json(ids::k_utf8mb3_check);
   ASSERT_NE(nullptr, json_issues);
@@ -1708,14 +1737,14 @@ TEST_F(MySQL_upgrade_check_test, maxdb_sqlmode) {
   ASSERT_NO_THROW(session->execute(
       "CREATE FUNCTION TEST_MAXDB (s CHAR(20)) RETURNS CHAR(50) "
       "DETERMINISTIC RETURN CONCAT('Hello, ',s,'!');"));
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   ASSERT_GT(issues.size(), issues_count);
   issues_count = issues.size();
   issues.clear();
   ASSERT_NO_THROW(
       session->execute("create trigger TR_MAXDB AFTER INSERT on Clone FOR "
                        "EACH ROW delete from Clone where COMPONENT<0;"));
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   ASSERT_GT(issues.size(), issues_count);
   issues_count = issues.size();
   issues.clear();
@@ -1723,7 +1752,7 @@ TEST_F(MySQL_upgrade_check_test, maxdb_sqlmode) {
       session->execute("CREATE EVENT EV_MAXDB ON SCHEDULE AT CURRENT_TIMESTAMP "
                        "+ INTERVAL 1 HOUR "
                        "DO UPDATE Clone SET COMPONENT = COMPONENT + 1;"));
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   ASSERT_GT(issues.size(), issues_count);
 
   // Backups all issues for the filtering testing
@@ -1733,17 +1762,17 @@ TEST_F(MySQL_upgrade_check_test, maxdb_sqlmode) {
                         all_issues.size(), all_issues, {});
 
   TEST_ROUTINE_FILTERING(check.get(), "aaa_test_maxdb_sql_mode.TEST_MAXDB",
-                         all_issues.size(), {all_issues[0]}, {});
+                         all_issues.size(), {all_issues[1]}, {});
 
   TEST_EVENT_FILTERING(check.get(), "aaa_test_maxdb_sql_mode.EV_MAXDB",
-                       all_issues.size(), {all_issues[1]}, {});
+                       all_issues.size(), {all_issues[2]}, {});
 
   TEST_TRIGGER_FILTERING(check.get(), "aaa_test_maxdb_sql_mode.Clone.TR_MAXDB",
-                         all_issues.size(), {all_issues[2]}, {});
+                         all_issues.size(), {all_issues[0]}, {});
 
   // Excluding a table, also excludes the associated trigger
   TEST_TABLE_FILTERING(check.get(), "aaa_test_maxdb_sql_mode.Clone",
-                       all_issues.size(), {all_issues[2]}, {});
+                       all_issues.size(), {all_issues[0]}, {});
 
   auto json_issues = execute_check_as_json(ids::k_maxdb_sql_mode_flags_check);
   ASSERT_NE(nullptr, json_issues);
@@ -1813,7 +1842,7 @@ TEST_F(MySQL_upgrade_check_test, obsolete_sqlmodes) {
                            "DO UPDATE Clone SET COMPONENT = COMPONENT + 1;",
                            event_name.c_str())));
 
-    ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+    ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
     ASSERT_GE(issues.size(), issues_count + 3);
 
     if (!tested_filtering) {
@@ -1877,7 +1906,7 @@ TEST_F(MySQL_upgrade_check_test, enum_set_element_length) {
       get_enum_set_element_length_check();
   EXPECT_STREQ("https://dev.mysql.com/doc/refman/en/string-type-syntax.html",
                check->get_doc_link().c_str());
-  ASSERT_NO_THROW(issues = check->run(session, info, &cache));
+  ASSERT_NO_THROW(issues = check->run({session, info, session_pool, &cache}));
   std::size_t original = issues.size();
 
   ASSERT_NO_THROW(session->execute(
@@ -2062,25 +2091,30 @@ TEST_F(MySQL_upgrade_check_test, removed_functions) {
   // Unable to test generated columns and views as at least in 5.7.26 they are
   // automatically converted to supported functions
   EXPECT_ISSUES(check.get(), 5);
-  EXPECT_NE(std::string::npos, issues[0].description.find("CONTAINS"));
+  size_t i0 = find_issue(issues, {}, "contains_proc", {});
+  EXPECT_NE(std::string::npos, issues[i0].description.find("CONTAINS"));
   EXPECT_NE(std::string::npos,
-            issues[0].description.find("consider using MBRCONTAINS"));
-  EXPECT_NE(std::string::npos, issues[0].description.find("TOUCHES"));
-  EXPECT_NE(std::string::npos, issues[0].description.find("PROCEDURE"));
+            issues[i0].description.find("consider using MBRCONTAINS"));
+  EXPECT_NE(std::string::npos, issues[i0].description.find("TOUCHES"));
+  EXPECT_NE(std::string::npos, issues[i0].description.find("PROCEDURE"));
   EXPECT_NE(std::string::npos,
-            issues[0].description.find("ST_TOUCHES instead"));
-  EXPECT_NE(std::string::npos, issues[1].description.find("PASSWORD"));
-  EXPECT_NE(std::string::npos, issues[1].description.find("ASTEXT"));
-  EXPECT_NE(std::string::npos, issues[1].description.find("ST_ASTEXT"));
-  EXPECT_NE(std::string::npos, issues[1].description.find("FUNCTION"));
-  EXPECT_NE(std::string::npos, issues[2].description.find("ENCRYPT"));
-  EXPECT_NE(std::string::npos, issues[2].description.find("SHA2"));
-  EXPECT_NE(std::string::npos, issues[2].description.find("FUNCTION"));
-  EXPECT_NE(std::string::npos, issues[3].description.find("TOUCHES"));
-  EXPECT_NE(std::string::npos, issues[3].description.find("ST_TOUCHES"));
-  EXPECT_NE(std::string::npos, issues[4].description.find("CONTAINS"));
-  EXPECT_NE(std::string::npos, issues[4].description.find("MBRCONTAINS"));
-  EXPECT_NE(std::string::npos, issues[4].description.find("EVENT"));
+            issues[i0].description.find("ST_TOUCHES instead"));
+  size_t i1 = find_issue(issues, {}, "test_astext", {});
+  EXPECT_NE(std::string::npos, issues[i1].description.find("PASSWORD"));
+  EXPECT_NE(std::string::npos, issues[i1].description.find("ASTEXT"));
+  EXPECT_NE(std::string::npos, issues[i1].description.find("ST_ASTEXT"));
+  EXPECT_NE(std::string::npos, issues[i1].description.find("FUNCTION"));
+  size_t i2 = find_issue(issues, {}, "test_enc", {});
+  EXPECT_NE(std::string::npos, issues[i2].description.find("ENCRYPT"));
+  EXPECT_NE(std::string::npos, issues[i2].description.find("SHA2"));
+  EXPECT_NE(std::string::npos, issues[i2].description.find("FUNCTION"));
+  size_t i3 = find_issue(issues, {}, "geotab1", {});
+  EXPECT_NE(std::string::npos, issues[i3].description.find("TOUCHES"));
+  EXPECT_NE(std::string::npos, issues[i3].description.find("ST_TOUCHES"));
+  size_t i4 = find_issue(issues, {}, "e_contains", {});
+  EXPECT_NE(std::string::npos, issues[i4].description.find("CONTAINS"));
+  EXPECT_NE(std::string::npos, issues[i4].description.find("MBRCONTAINS"));
+  EXPECT_NE(std::string::npos, issues[i4].description.find("EVENT"));
 
   // Backups all issues for the filtering tests
   auto all_issues = issues;
@@ -2088,21 +2122,21 @@ TEST_F(MySQL_upgrade_check_test, removed_functions) {
   TEST_SCHEMA_FILTERING(check.get(), "aaa_test_removed_functions",
                         all_issues.size(), all_issues, {});
 
-  std::vector<Upgrade_issue> other_routines = {all_issues[1], all_issues[2]};
+  std::vector<Upgrade_issue> other_routines = {all_issues[i1], all_issues[i2]};
   TEST_ROUTINE_FILTERING(check.get(),
                          "aaa_test_removed_functions.contains_proc",
-                         all_issues.size(), {all_issues[0]}, other_routines);
+                         all_issues.size(), {all_issues[i0]}, other_routines);
 
   TEST_EVENT_FILTERING(check.get(), "aaa_test_removed_functions.e_contains",
-                       all_issues.size(), {all_issues[4]}, {});
+                       all_issues.size(), {all_issues[i4]}, {});
 
   TEST_TRIGGER_FILTERING(check.get(),
                          "aaa_test_removed_functions.geotab1.contr",
-                         all_issues.size(), {all_issues[3]}, {});
+                         all_issues.size(), {all_issues[i3]}, {});
 
   // Excluding a table, also excludes the associated triggers
   TEST_TABLE_FILTERING(check.get(), "aaa_test_removed_functions.geotab1",
-                       all_issues.size(), {all_issues[3]}, {});
+                       all_issues.size(), {all_issues[i3]}, {});
 
   auto json_issues = execute_check_as_json(ids::k_removed_functions_check);
   ASSERT_NE(nullptr, json_issues);
@@ -2185,20 +2219,26 @@ TEST_F(MySQL_upgrade_check_test, groupby_asc_desc_syntax) {
       "DO select * from movies group by genre desc;"));
 
   EXPECT_ISSUES(check.get(), 6);
-  EXPECT_EQ("genre_desc", issues[0].table);
-  EXPECT_TRUE(shcore::str_beginswith(issues[0].description, "VIEW"));
-  EXPECT_EQ("list_genres_asc", issues[1].table);
-  EXPECT_TRUE(shcore::str_beginswith(issues[1].description, "PROCEDURE"));
-  EXPECT_EQ("list_genres_desc", issues[2].table);
-  EXPECT_TRUE(shcore::str_beginswith(issues[2].description, "PROCEDURE"));
-  EXPECT_EQ("movies", issues[3].table);
-  EXPECT_EQ("genre_summary_asc", issues[3].column);
-  EXPECT_TRUE(shcore::str_beginswith(issues[3].description, "TRIGGER"));
-  EXPECT_EQ("movies", issues[4].table);
-  EXPECT_EQ("genre_summary_desc", issues[4].column);
-  EXPECT_TRUE(shcore::str_beginswith(issues[4].description, "TRIGGER"));
-  EXPECT_EQ("mov_sec", issues[5].table);
-  EXPECT_TRUE(shcore::str_beginswith(issues[5].description, "EVENT"));
+  size_t i0 = find_issue(issues, {}, "genre_desc", {});
+  EXPECT_EQ("genre_desc", issues[i0].table);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i0].description, "VIEW"));
+  size_t i1 = find_issue(issues, {}, "list_genres_asc", {});
+  EXPECT_EQ("list_genres_asc", issues[i1].table);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i1].description, "PROCEDURE"));
+  size_t i2 = find_issue(issues, {}, "list_genres_desc", {});
+  EXPECT_EQ("list_genres_desc", issues[i2].table);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i2].description, "PROCEDURE"));
+  size_t i3 = find_issue(issues, {}, "movies", "genre_summary_asc");
+  EXPECT_EQ("movies", issues[i3].table);
+  EXPECT_EQ("genre_summary_asc", issues[i3].column);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i3].description, "TRIGGER"));
+  size_t i4 = find_issue(issues, {}, "movies", "genre_summary_desc");
+  EXPECT_EQ("movies", issues[i4].table);
+  EXPECT_EQ("genre_summary_desc", issues[i4].column);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i4].description, "TRIGGER"));
+  size_t i5 = find_issue(issues, {}, "mov_sec", {});
+  EXPECT_EQ("mov_sec", issues[i5].table);
+  EXPECT_TRUE(shcore::str_beginswith(issues[i5].description, "EVENT"));
 
   // Backups all issues for the filtering tests
   auto all_issues = issues;
@@ -2207,19 +2247,19 @@ TEST_F(MySQL_upgrade_check_test, groupby_asc_desc_syntax) {
                         all_issues, {});
 
   TEST_ROUTINE_FILTERING(check.get(), "aaa_test_group_by_asc.list_genres_desc",
-                         all_issues.size(), {all_issues[2]}, {all_issues[1]});
+                         all_issues.size(), {all_issues[i2]}, {all_issues[i1]});
 
   TEST_EVENT_FILTERING(check.get(), "aaa_test_group_by_asc.mov_sec",
-                       all_issues.size(), {all_issues[5]}, {});
+                       all_issues.size(), {all_issues[i5]}, {});
 
   TEST_TRIGGER_FILTERING(check.get(),
                          "aaa_test_group_by_asc.movies.genre_summary_asc",
-                         all_issues.size(), {all_issues[3]}, {all_issues[4]});
+                         all_issues.size(), {all_issues[i3]}, {all_issues[i4]});
 
   // Excluding a table also excludes the associated triggers
-  std::vector<Upgrade_issue> all_triggers = {all_issues[3], all_issues[4]};
+  std::vector<Upgrade_issue> all_triggers = {all_issues[i3], all_issues[i4]};
   TEST_TABLE_FILTERING(check.get(), "aaa_test_group_by_asc.movies",
-                       all_issues.size(), all_triggers, {all_issues[0]});
+                       all_issues.size(), all_triggers, {all_issues[i0]});
 
   auto json_issues = execute_check_as_json(ids::k_groupby_asc_syntax_check);
   ASSERT_NE(nullptr, json_issues);
@@ -2302,7 +2342,8 @@ TEST_F(MySQL_upgrade_check_test, removed_sys_vars_57) {
   std::unique_ptr<Upgrade_check> check = get_sys_vars_check(info);
 
   EXPECT_THROW_LIKE(
-      check->run(session, info, &cache), Check_configuration_error,
+      check->run({session, info, session_pool, &cache}),
+      Check_configuration_error,
       "To run this check requires full path to MySQL server configuration "
       "file to be specified at 'configPath' key of options dictionary");
   auto config_path =
@@ -2394,7 +2435,8 @@ TEST_F(MySQL_upgrade_check_test, sys_vars_new_defaults_57) {
   std::unique_ptr<Upgrade_check> check = get_sys_vars_check(info);
 
   EXPECT_THROW_LIKE(
-      check->run(session, info, &cache), Check_configuration_error,
+      check->run({session, info, session_pool, &cache}),
+      Check_configuration_error,
       "To run this check requires full path to MySQL server configuration "
       "file to be specified at 'configPath' key of options dictionary");
   info.config_path.assign(
@@ -2499,7 +2541,8 @@ TEST_F(MySQL_upgrade_check_test, sys_vars_allowed_values_57) {
   std::unique_ptr<Upgrade_check> check = get_sys_vars_check(info);
 
   EXPECT_THROW_LIKE(
-      check->run(session, info, &cache), Check_configuration_error,
+      check->run({session, info, session_pool, &cache}),
+      Check_configuration_error,
       "To run this check requires full path to MySQL server configuration "
       "file to be specified at 'configPath' key of options dictionary");
   info.config_path.assign(
@@ -2784,16 +2827,20 @@ TEST_F(MySQL_upgrade_check_test, zero_dates_check) {
   ASSERT_NO_THROW(session->execute("create view vt as select NOW() as col1;"));
 
   EXPECT_ISSUES(check.get(), 4);
-  EXPECT_NE(std::string::npos,
-            issues[0].description.find("1 session(s) does not contain either"));
-  EXPECT_EQ("dt", issues[1].column);
-  EXPECT_EQ("ts", issues[2].column);
-  EXPECT_EQ("d", issues[3].column);
+  size_t i0 = find_issue(issues, {}, "", {});
+  EXPECT_NE(std::string::npos, issues[i0].description.find(
+                                   "1 session(s) does not contain either"));
+  size_t i1 = find_issue(issues, {}, "dt", "dt");
+  EXPECT_EQ("dt", issues[i1].column);
+  size_t i2 = find_issue(issues, {}, "dt", "ts");
+  EXPECT_EQ("ts", issues[i2].column);
+  size_t i3 = find_issue(issues, {}, "dt", "d");
+  EXPECT_EQ("d", issues[i3].column);
 
   // Backups all issues for the filtering
   auto all_issues = issues;
   auto schema_issues = issues;
-  schema_issues.erase(schema_issues.begin());
+  schema_issues.erase(schema_issues.begin() + i0);
 
   TEST_SCHEMA_FILTERING(check.get(), "mysql_zero_dates_check_test",
                         all_issues.size(), schema_issues, {});
@@ -3288,15 +3335,15 @@ TEST_F(MySQL_upgrade_check_test, columns_which_cannot_have_defaults_check) {
 
   EXPECT_ISSUES(check.get(), 9);
 
-  EXPECT_EQ("p", issues[0].column);
-  EXPECT_EQ("ls", issues[1].column);
-  EXPECT_EQ("poly", issues[2].column);
-  EXPECT_EQ("g", issues[3].column);
-  EXPECT_EQ("mp", issues[4].column);
-  EXPECT_EQ("mls", issues[5].column);
-  EXPECT_EQ("mpoly", issues[6].column);
-  EXPECT_EQ("gc", issues[7].column);
-  EXPECT_EQ("j", issues[8].column);
+  EXPECT_GE(find_issue(issues, {}, {}, "p"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "ls"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "poly"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "g"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "mp"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "mls"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "mpoly"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "gc"), 0);
+  EXPECT_GE(find_issue(issues, {}, {}, "j"), 0);
 
   // Backups all issues for the filtering testing
   auto all_issues = issues;
@@ -3629,6 +3676,11 @@ TEST_F(MySQL_upgrade_check_test, empty_dot_table_syntax_check) {
   EXPECT_NO_ISSUES(check.get());
 
   ASSERT_NO_THROW(session->execute("set GLOBAL SQL_MODE=ANSI_QUOTES;"));
+  ASSERT_NO_THROW(session->execute("set SESSION SQL_MODE=ANSI_QUOTES;"));
+  shcore::Scoped_callback reset_sql_mode([&]() {
+    ASSERT_NO_THROW(session->execute("set GLOBAL SQL_MODE=DEFAULT;"));
+    ASSERT_NO_THROW(session->execute("set SESSION SQL_MODE=DEFAULT;"));
+  });
 
   ASSERT_NO_THROW(session->execute(
       "CREATE PROCEDURE incorrect_procedure()\nBEGIN\ndelete FROM "
@@ -3660,20 +3712,23 @@ TEST_F(MySQL_upgrade_check_test, empty_dot_table_syntax_check) {
 
   EXPECT_ISSUES(check.get(), 7);
 
-  EXPECT_EQ("dot_table_test", issues[0].schema);
-  EXPECT_EQ("incorrect_procedure", issues[0].table);
-  EXPECT_EQ("dot_table_test", issues[1].schema);
-  EXPECT_EQ("incorrect_procedure2", issues[1].table);
-  EXPECT_EQ("dot_table_test", issues[2].schema);
-  EXPECT_EQ("incorrect_procedure3", issues[2].table);
-  EXPECT_EQ("dot_table_test", issues[3].schema);
-  EXPECT_EQ("incorrect_uni_procedure", issues[3].table);
-  EXPECT_EQ("dot_table_test", issues[4].schema);
-  EXPECT_EQ("incorrect_uni_procedure2", issues[4].table);
-  EXPECT_EQ("dot_table_test", issues[5].schema);
-  EXPECT_EQ("incorrect_event", issues[5].table);
-  EXPECT_EQ("dot_table_test", issues[6].schema);
-  EXPECT_EQ("incorrect_trigger", issues[6].table);
+  size_t i0, i1, i2, i3, i4, i5, i6;
+  EXPECT_GE(
+      i0 = find_issue(issues, "dot_table_test", "incorrect_procedure", {}), 0);
+  EXPECT_GE(
+      i1 = find_issue(issues, "dot_table_test", "incorrect_procedure2", {}), 0);
+  EXPECT_GE(
+      i2 = find_issue(issues, "dot_table_test", "incorrect_procedure3", {}), 0);
+  EXPECT_GE(
+      i3 = find_issue(issues, "dot_table_test", "incorrect_uni_procedure", {}),
+      0);
+  EXPECT_GE(
+      i4 = find_issue(issues, "dot_table_test", "incorrect_uni_procedure2", {}),
+      0);
+  EXPECT_GE(i5 = find_issue(issues, "dot_table_test", "incorrect_event", {}),
+            0);
+  EXPECT_GE(i6 = find_issue(issues, "dot_table_test", {}, "incorrect_trigger"),
+            0);
 
   // Backups all issues for the filtering
   auto all_issues = issues;
@@ -3681,20 +3736,21 @@ TEST_F(MySQL_upgrade_check_test, empty_dot_table_syntax_check) {
   TEST_SCHEMA_FILTERING(check.get(), "dot_table_test", all_issues.size(),
                         all_issues, {});
 
-  std::vector<Upgrade_issue> other_routines = {all_issues[1], all_issues[2],
-                                               all_issues[3], all_issues[4]};
+  std::vector<Upgrade_issue> other_routines = {all_issues[i1], all_issues[i2],
+                                               all_issues[i3], all_issues[i4]};
   TEST_ROUTINE_FILTERING(check.get(), "dot_table_test.incorrect_procedure",
-                         all_issues.size(), {all_issues[0]}, other_routines);
+                         all_issues.size(), {all_issues[i0]}, other_routines);
 
   TEST_EVENT_FILTERING(check.get(), "dot_table_test.incorrect_event",
-                       all_issues.size(), {all_issues[5]}, {});
+                       all_issues.size(), {all_issues[i5]}, {});
 
-  TEST_TRIGGER_FILTERING(check.get(), "dot_table_test.incorrect_trigger",
-                         all_issues.size(), {all_issues[6]}, {});
+  TEST_TRIGGER_FILTERING(check.get(),
+                         "dot_table_test.dot_table.incorrect_trigger",
+                         all_issues.size(), {all_issues[i6]}, {});
 
   // Excluding a table also excludes the associated triggers
   TEST_TABLE_FILTERING(check.get(), "dot_table_test.dot_table",
-                       all_issues.size(), {all_issues[6]}, {});
+                       all_issues.size(), {all_issues[i6]}, {});
 }
 
 TEST_F(MySQL_upgrade_check_test, invalid_engine_foreign_key_check) {
@@ -3820,21 +3876,7 @@ TEST_F(MySQL_upgrade_check_test, no_database_selected_corrupted_check) {
       "`test`.`test_table`.`test_column` as `test_column` from "
       "`test`.`test_table` group by `test`.`test_table`.`test_column`) t;"));
 
-  // clear current USE to null
-  ASSERT_NO_THROW(session->execute("create database temp_db;"));
-  ASSERT_NO_THROW(session->execute("use temp_db;"));
-  ASSERT_NO_THROW(session->execute("drop database temp_db;"));
-
   const auto check = get_table_command_check();
-  EXPECT_ISSUES(check.get(), 2);
-  EXPECT_EQ("test", issues[0].schema);
-  EXPECT_EQ("test_view", issues[0].table);
-  EXPECT_EQ("No database selected", issues[0].description);
-  EXPECT_EQ("test", issues[1].schema);
-  EXPECT_EQ("test_view", issues[1].table);
-  EXPECT_EQ("Corrupt", issues[1].description);
-
-  ASSERT_NO_THROW(session->execute("use mysql;"));
 
   EXPECT_NO_ISSUES(check.get());
 
@@ -4269,12 +4311,15 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   const std::string k_test_var_def_v_fido = "authentication_fido";
 
   auto msession = std::make_shared<testing::Mock_session>();
+  auto mock_session_pool = std::make_shared<testing::Mock_session_pool>(1);
+  mock_session_pool->setup_repeated_session(msession);
+
   std::vector<Upgrade_issue> temp_issues;
 
   auto uinfo = upgrade_info(_target_server_version, Version(8, 4, 0));
   auto check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4283,7 +4328,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 3, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4292,7 +4337,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 1, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
 
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
@@ -4302,7 +4347,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 5, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
 
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
@@ -4312,7 +4357,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 4, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4321,7 +4366,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 3, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4330,7 +4375,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 2, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4339,7 +4384,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 1, 0));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4348,7 +4393,7 @@ TEST_F(MySQL_upgrade_check_test, deprecated_default_auth_parsing_check) {
   uinfo = upgrade_info(_target_server_version, Version(8, 0, 27));
   check = get_deprecated_default_auth_check(uinfo);
   set_default_auth_data(msession.get(), k_test_var_def_v_fido);
-  temp_issues = check->run(msession, uinfo, &cache);
+  temp_issues = check->run({msession, uinfo, mock_session_pool, &cache});
   EXPECT_EQ(temp_issues.size(), 1);
   EXPECT_EQ(temp_issues[0].schema, "default_authentication_plugin");
   EXPECT_EQ(temp_issues[0].level,
@@ -4399,27 +4444,33 @@ TEST_F(MySQL_upgrade_check_test,
       "LESS THAN (MAXVALUE,MAXVALUE));"));
 
   EXPECT_ISSUES(check.get(), 5);
+  size_t i0 = find_issue(issues, {}, "temporal_date_incorrect", {});
+  EXPECT_ISSUE(issues[i0], "test", "temporal_date_incorrect", "id",
+               Upgrade_issue::ERROR);
+  size_t i1 = find_issue(issues, {}, "temporal_date_multi", "joi'ned",
+                         " - partition p0 uses deprecated temporal delimiters");
+  EXPECT_ISSUE(issues[i1], "test", "temporal_date_multi", "joi'ned",
+               Upgrade_issue::ERROR);
+  size_t i2 = find_issue(issues, {}, "temporal_date_multi", "left,on");
+  EXPECT_ISSUE(issues[i2], "test", "temporal_date_multi", "left,on",
+               Upgrade_issue::ERROR);
+  size_t i3 = find_issue(issues, {}, "temporal_date_multi", "joi'ned",
+                         " - partition p1 uses deprecated temporal delimiters");
+  EXPECT_ISSUE(issues[i3], "test", "temporal_date_multi", "joi'ned",
+               Upgrade_issue::ERROR);
+  size_t i4 = find_issue(issues, {}, "temporal_datetime_incorrect", "id");
+  EXPECT_ISSUE(issues[i4], "test", "temporal_datetime_incorrect", "id",
+               Upgrade_issue::ERROR);
 
-  EXPECT_ISSUE(issues[0], "test", "temporal_date_incorrect", "id",
-               Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[1], "test", "temporal_date_multi", "joi'ned",
-               Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[2], "test", "temporal_date_multi", "left,on",
-               Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[3], "test", "temporal_date_multi", "joi'ned",
-               Upgrade_issue::ERROR);
-  EXPECT_ISSUE(issues[4], "test", "temporal_datetime_incorrect", "id",
-               Upgrade_issue::ERROR);
-
-  EXPECT_EQ(issues[0].description,
+  EXPECT_EQ(issues[i0].description,
             " - partition px_2024_01 uses deprecated temporal delimiters");
-  EXPECT_EQ(issues[1].description,
+  EXPECT_EQ(issues[i1].description,
             " - partition p0 uses deprecated temporal delimiters");
-  EXPECT_EQ(issues[2].description,
+  EXPECT_EQ(issues[i2].description,
             " - partition p0 uses deprecated temporal delimiters");
-  EXPECT_EQ(issues[3].description,
+  EXPECT_EQ(issues[i3].description,
             " - partition p1 uses deprecated temporal delimiters");
-  EXPECT_EQ(issues[4].description,
+  EXPECT_EQ(issues[i4].description,
             " - partition px_2024_02 uses deprecated temporal delimiters");
 
   // Backups all issues for the filtering testing
@@ -4545,7 +4596,10 @@ TEST_F(MySQL_upgrade_check_test, column_definition_check) {
       .add_row({"myschema", "mytable", "mycolumn1", "##doubleAutoIncrement"})
       .add_row({"myschema", "mytable", "mycolumn2", "##floatAutoIncrement"});
 
-  issues = check->run(msession, info, &cache);
+  auto mock_session_pool = std::make_shared<testing::Mock_session_pool>(1);
+  mock_session_pool->setup_repeated_session(msession);
+
+  issues = check->run({msession, info, mock_session_pool, &cache});
 
   EXPECT_STREQ("myschema", issues[0].schema.c_str());
   EXPECT_STREQ("mytable", issues[0].table.c_str());
@@ -4576,7 +4630,7 @@ TEST_F(MySQL_upgrade_check_test, column_definition_check_57) {
 
   auto check = get_column_definition_check();
 
-  issues = check->run(session, info, &cache);
+  issues = check->run({session, info, session_pool, &cache});
 
   EXPECT_ISSUE(issues[0], "column_definition_check", "mytable1", "mycolumn",
                Upgrade_issue::Level::ERROR);
@@ -4702,7 +4756,10 @@ TEST_F(MySQL_upgrade_check_test, partitions_with_prefix_keys) {
       .add_row({"myschema", "mytable1", "col1,col2"})
       .add_row({"myschema", "mytable2", "col3,col4"});
 
-  issues = check->run(msession, info, &cache);
+  auto mock_session_pool = std::make_shared<testing::Mock_session_pool>(1);
+  mock_session_pool->setup_repeated_session(msession);
+
+  issues = check->run({msession, info, mock_session_pool, &cache});
 
   EXPECT_STREQ("myschema", issues[0].schema.c_str());
   EXPECT_STREQ("mytable1", issues[0].table.c_str());
@@ -4768,7 +4825,7 @@ TEST_F(MySQL_upgrade_check_test, partitions_with_prefix_keys_57) {
 
   auto check = get_partitions_with_prefix_keys_check(info);
 
-  issues = check->run(session, info, &cache);
+  issues = check->run({session, info, session_pool, &cache});
   EXPECT_EQ(4, issues.size());
 
   EXPECT_ISSUE(issues[0], "myschema", "t1", "", Upgrade_issue::ERROR);

@@ -128,10 +128,6 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
    Foreign keys to partial indexes may be forbidden as of 8.4.0, this check
    identifies such cases to warn the user.
 
-   uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1
-      - invalid foreign key defined as
-      'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at
-      table 'parent'.
    uctest3.child_aaa_partial_fk_to_primary.child_aaa_partial_fk_to_primary_ibfk_1
       - invalid foreign key defined as
       'uctest3.child_aaa_partial_fk_to_primary(a)' references a partial key at
@@ -140,6 +136,10 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
       - invalid foreign key defined as
       'uctest3.child_bbb_partial_fk_to_unique_index(a)' references a partial key
       at table 'parent'.
+   uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1
+      - invalid foreign key defined as
+      'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at
+      table 'parent'.
 
    Solutions:
    - Convert non unique key to unique key if values do not have any duplicates.
@@ -180,12 +180,6 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
             "detectedProblems": [
                 {
                     "level": "Warning",
-                    "dbObject": "uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1",
-                    "description": "invalid foreign key defined as 'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at table 'parent'.",
-                    "dbObjectType": "ForeignKey"
-                },
-                {
-                    "level": "Warning",
                     "dbObject": "uctest3.child_aaa_partial_fk_to_primary.child_aaa_partial_fk_to_primary_ibfk_1",
                     "description": "invalid foreign key defined as 'uctest3.child_aaa_partial_fk_to_primary(a)' references a partial key at table 'parent'.",
                     "dbObjectType": "ForeignKey"
@@ -194,6 +188,12 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
                     "level": "Warning",
                     "dbObject": "uctest3.child_bbb_partial_fk_to_unique_index.child_bbb_partial_fk_to_unique_index_ibfk_1",
                     "description": "invalid foreign key defined as 'uctest3.child_bbb_partial_fk_to_unique_index(a)' references a partial key at table 'parent'.",
+                    "dbObjectType": "ForeignKey"
+                },
+                {
+                    "level": "Warning",
+                    "dbObject": "uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1",
+                    "description": "invalid foreign key defined as 'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at table 'parent'.",
                     "dbObjectType": "ForeignKey"
                 }
             ],

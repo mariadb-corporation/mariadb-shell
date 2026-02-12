@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -83,9 +83,7 @@ class Feature_life_cycle_check : public Upgrade_check {
   bool has_feature(const std::string &feature_id) const;
   const Feature_definition &get_feature(const std::string &feature_id) const;
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) override;
+  std::vector<Upgrade_issue> run(const Check_context &context) override;
 
   std::vector<const Feature_definition *> get_features(
       bool only_enabled = false) const;

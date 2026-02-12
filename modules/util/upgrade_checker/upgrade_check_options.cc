@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -69,6 +69,7 @@ const shcore::Option_pack_def<Upgrade_check_options>
           .optional("exclude", &Upgrade_check_options::exclude)
           .optional("list", &Upgrade_check_options::list_checks)
           .optional("checkTimeout", &Upgrade_check_options::check_timeout)
+          .optional("threads", &Upgrade_check_options::threads)
           .include(&Upgrade_check_options::filters,
                    &mysqlshdk::db::Filtering_options::schemas)
           .include(&Upgrade_check_options::filters,

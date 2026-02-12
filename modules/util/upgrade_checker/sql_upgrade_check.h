@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,19 +54,18 @@ class Sql_upgrade_check : public Upgrade_check {
                     std::forward_list<std::string> &&clean_up =
                         std::forward_list<std::string>());
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) override;
+  std::vector<Upgrade_issue> run(const Check_context &context) override;
 
   const std::vector<Check_query> &get_queries() const { return m_queries; }
 
  protected:
-  virtual Upgrade_issue parse_row(const mysqlshdk::db::IRow *row,
+  virtual Upgrade_issue parse_row(const std::vector<std::string> &field_names,
+                                  const mysqlshdk::db::IRow *row,
                                   Upgrade_issue::Object_type object_type);
-  virtual void add_issue(
-      const mysqlshdk::db::IRow *row, Upgrade_issue::Object_type object_type,
-      std::vector<Upgrade_issue> *issues,
-      mysqlshdk::db::Filtering_options *db_filters = nullptr);
+  virtual void add_issue(const std::vector<std::string> &field_names,
+                         const mysqlshdk::db::IRow *row,
+                         Upgrade_issue::Object_type object_type,
+                         std::vector<Upgrade_issue> *issues);
   Upgrade_issue::Level get_level() const { return m_level; }
   Token_definitions base_tokens() const override { return m_base_tokens; }
   std::vector<Check_query> m_queries;
@@ -74,8 +73,9 @@ class Sql_upgrade_check : public Upgrade_check {
   std::forward_list<std::string> m_clean_up;
   const Upgrade_issue::Level m_level;
   const char *m_minimal_version;
-  const std::vector<std::string> *m_field_names = nullptr;
   bool m_filter_out_objects_with_error = false;
+  mysqlshdk::db::Filtering_options *m_db_filters = nullptr;
+  std::mutex m_db_filters_mutex;
   // By default, the target_version is the shell version
   Token_definitions m_base_tokens = {{"target_version", MYSH_VERSION}};
 };

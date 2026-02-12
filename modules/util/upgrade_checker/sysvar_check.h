@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -146,9 +146,7 @@ class Sysvar_check : public Upgrade_check {
 
   bool enabled() const override { return !m_checks.empty(); }
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) override;
+  std::vector<Upgrade_issue> run(const Check_context &context) override;
 
   const std::vector<Sysvar_version_check> &get_checks() const {
     return m_checks;

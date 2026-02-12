@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include "unittest/modules/util/upgrade_checker/test_utils.h"
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session.h"
+#include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session_pool.h"
 
 #include "mysqlshdk/libs/db/filtering_options.h"
 
@@ -44,13 +45,14 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
   {
     // Verifies the original queries are created
     auto msession = std::make_shared<testing::Mock_session>();
+    auto mock_pool = std::make_shared<testing::Mock_session_pool>();
     mysqlsh::upgrade_checker::Upgrade_check_options options;
     Checker_cache cache(options.filters);
 
     msession
-        ->expect_query({"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE FROM "
-                        "information_schema.routines WHERE ROUTINE_TYPE = "
-                        "'PROCEDURE' AND (STRCMP(ROUTINE_SCHEMA COLLATE "
+        ->expect_query({"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, "
+                        "ROUTINE_TYPE FROM information_schema.routines WHERE "
+                        "(STRCMP(ROUTINE_SCHEMA COLLATE "
                         "utf8_bin,'mysql')&STRCMP(ROUTINE_SCHEMA COLLATE "
                         "utf8_bin,'sys')&STRCMP(ROUTINE_SCHEMA COLLATE "
                         "utf8_bin,'performance_schema')&STRCMP(ROUTINE_SCHEMA "
@@ -58,20 +60,6 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
                         [](const std::string &query) {
                           return remove_quoted_strings(query, k_sys_schemas);
                         }})
-        .then({"ROUTINE_SCHEMA", "ROUTINE_NAME"});
-
-    msession
-        ->expect_query({"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE FROM "
-                        "information_schema.routines WHERE ROUTINE_TYPE = "
-                        "'FUNCTION' AND (STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'mysql')&STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'sys')&STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'performance_schema')&STRCMP(ROUTINE_SCHEMA "
-                        "COLLATE utf8_bin,'information_schema'))<>0",
-                        [](const std::string &query) {
-                          return remove_quoted_strings(query, k_sys_schemas);
-                        }})
-
         .then({"ROUTINE_SCHEMA", "ROUTINE_NAME"});
 
     msession
@@ -99,13 +87,16 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
                         }})
         .then({"EVENT_SCHEMA", "EVENT_NAME"});
 
-    EXPECT_NO_THROW(check->run(msession, server_info, &cache));
+    mock_pool->setup_repeated_session(msession);
+
+    EXPECT_NO_THROW(check->run({msession, server_info, mock_pool, &cache}));
 
     EXPECT_TRUE(msession->queries().empty());
   }
 
   {
     // Verifies queries using filtered objects
+    auto mock_pool = std::make_shared<testing::Mock_session_pool>();
     auto msession = std::make_shared<testing::Mock_session>();
     mysqlshdk::db::Filtering_options options;
     options.schemas().include("sakila");
@@ -120,20 +111,8 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
 
     msession
         ->expect_query(
-            "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE FROM "
-            "information_schema.routines WHERE ROUTINE_TYPE = 'PROCEDURE' AND "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'exclude'))<>0 AND "
-            "((STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
-            "(ROUTINE_NAME IN('includedRoutine')))) AND NOT "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
-            "(ROUTINE_NAME IN('excludedRoutine')))")
-        .then({"ROUTINE_SCHEMA", "ROUTINE_NAME"});
-
-    msession
-        ->expect_query(
-            "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE FROM "
-            "information_schema.routines WHERE ROUTINE_TYPE = 'FUNCTION' AND "
+            "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE FROM "
+            "information_schema.routines WHERE "
             "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
             "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'exclude'))<>0 AND "
             "((STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
@@ -168,7 +147,12 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
             "IN('excludedEvent')))")
         .then({"EVENT_SCHEMA", "EVENT_NAME"});
 
-    EXPECT_NO_THROW(check->run(msession, server_info, &cache));
+    mock_pool->setup_repeated_session(msession);
+
+    EXPECT_NO_THROW(check->run(
+        {msession, server_info,
+         std::dynamic_pointer_cast<mysqlshdk::db::Session_pool>(mock_pool),
+         &cache}));
 
     EXPECT_TRUE(msession->queries().empty());
   }

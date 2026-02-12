@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,7 @@
 #include "unittest/modules/util/upgrade_checker/test_utils.h"
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session.h"
+#include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session_pool.h"
 
 namespace mysqlsh {
 namespace upgrade_checker {
@@ -296,7 +297,10 @@ void test_feature_check(
         creator,
     const Versions &cases, const Records &records,
     const Issue_expect_list &expect) {
+  auto mock_session_pool = std::make_shared<testing::Mock_session_pool>();
   auto msession = std::make_shared<testing::Mock_session>();
+
+  mock_session_pool->setup_repeated_session(msession);
 
   for (const auto &versions : cases) {
     auto ui = upgrade_info(std::get<0>(versions), std::get<1>(versions));
@@ -306,7 +310,8 @@ void test_feature_check(
 
     set_expectation(msession.get(), feature_check->build_query(), records);
 
-    auto issues = feature_check->run(msession, ui, nullptr);
+    auto issues =
+        feature_check->run({msession, ui, mock_session_pool, nullptr});
 
     SCOPED_TRACE(shcore::str_format(
         "Testing  %s with source as %s and target as %s", test_id.c_str(),

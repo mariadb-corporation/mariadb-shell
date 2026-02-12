@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "modules/util/upgrade_checker/sql_upgrade_check.h"
 
@@ -88,21 +91,31 @@ Sql_upgrade_check::Sql_upgrade_check(const std::string_view name,
       m_filter_out_objects_with_error(filter_out_objects_with_error) {}
 
 std::vector<Upgrade_issue> Sql_upgrade_check::run(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session,
-    const Upgrade_info &server_info, Checker_cache *cache) {
+    const Check_context &context) {
+  auto cache = context.cache();
+
+  m_db_filters = &cache->db_filters();
+
   // Update the target_version with the one used when running the check
-  m_base_tokens["target_version"] = server_info.target_version.get_base();
+  m_base_tokens["target_version"] =
+      context.server_info().target_version.get_base();
 
   if (m_minimal_version != nullptr &&
-      Version(server_info.server_version) < Version(m_minimal_version))
+      Version(context.server_info().server_version) <
+          Version(m_minimal_version))
     throw std::runtime_error(shcore::str_format(
         "This check requires server to be at minimum at %s version",
         m_minimal_version));
 
-  for (const auto &stm : m_set_up) session->execute(stm);
+  auto workers = context.make_worker_pool(true);
 
-  std::vector<Upgrade_issue> issues;
+  for (const auto &stm : m_set_up) context.session()->execute(stm);
+
   for (const auto &query : m_queries) {
+    if (context.interrupted()) {
+      break;
+    }
+
     auto final_query = shcore::str_subvars(
         query.first,
         [&cache](std::string_view key) {
@@ -138,51 +151,74 @@ std::vector<Upgrade_issue> Sql_upgrade_check::run(
         },
         "<<", ">>");
 
-    auto result = session->query(final_query);
+    workers->execute(
+        this,
+        [this, query, &context, final_query = std::move(final_query)](
+            const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+          auto result = session->query(final_query);
 
-    // Get the metadata to have the queried data available for message
-    // resolution
-    std::vector<std::string> field_names;
-    for (const auto &column : result->get_metadata()) {
-      field_names.push_back(column.get_column_label());
-    }
+          // Get the metadata to have the queried data available for message
+          // resolution
+          std::vector<std::string> field_names;
+          for (const auto &column : result->get_metadata()) {
+            field_names.push_back(column.get_column_label());
+          }
 
-    m_field_names = &field_names;
-    const mysqlshdk::db::IRow *row = nullptr;
-    while ((row = result->fetch_one()) != nullptr) {
-      add_issue(row, query.second, &issues, &cache->db_filters());
-    }
+          std::vector<Upgrade_issue> issues;
 
-    m_field_names = nullptr;
+          const mysqlshdk::db::IRow *row = nullptr;
+          while ((row = result->fetch_one()) != nullptr) {
+            if (context.interrupted()) {
+              break;
+            }
+
+            add_issue(field_names, row, query.second, &issues);
+          }
+
+          return issues;
+        },
+        context.session());
   }
 
-  for (const auto &stm : m_clean_up) session->execute(stm);
+  auto result = workers->wait();
 
-  return issues;
+  for (const auto &stm : m_clean_up) context.session()->execute(stm);
+
+  std::sort(result.begin(), result.end(),
+            [](const Upgrade_issue &a, const Upgrade_issue &b) {
+              return a.object_type < b.object_type ||
+                     (a.object_type == b.object_type &&
+                      a.get_db_object() < b.get_db_object());
+            });
+
+  return result;
 }
 
-void Sql_upgrade_check::add_issue(
-    const mysqlshdk::db::IRow *row, Upgrade_issue::Object_type object_type,
-    std::vector<Upgrade_issue> *issues,
-    mysqlshdk::db::Filtering_options *db_filters) {
-  auto issue = parse_row(row, object_type);
+void Sql_upgrade_check::add_issue(const std::vector<std::string> &field_names,
+                                  const mysqlshdk::db::IRow *row,
+                                  Upgrade_issue::Object_type object_type,
+                                  std::vector<Upgrade_issue> *issues) {
+  auto issue = parse_row(field_names, row, object_type);
 
-  if (db_filters != nullptr && m_filter_out_objects_with_error) {
+  if (m_db_filters != nullptr && m_filter_out_objects_with_error) {
+    std::unique_lock lock(m_db_filters_mutex);
+
     switch (object_type) {
       case Upgrade_issue::Object_type::SCHEMA:
-        db_filters->schemas().exclude(issue.schema);
+        m_db_filters->schemas().exclude(issue.schema);
         break;
       case Upgrade_issue::Object_type::ROUTINE:
-        db_filters->routines().exclude(issue.schema, issue.table);
+        m_db_filters->routines().exclude(issue.schema, issue.table);
         break;
       case Upgrade_issue::Object_type::TABLE:
-        db_filters->tables().exclude(issue.schema, issue.table);
+        m_db_filters->tables().exclude(issue.schema, issue.table);
         break;
       case Upgrade_issue::Object_type::EVENT:
-        db_filters->events().exclude(issue.schema, issue.table);
+        m_db_filters->events().exclude(issue.schema, issue.table);
         break;
       case Upgrade_issue::Object_type::TRIGGER:
-        db_filters->triggers().exclude(issue.schema, issue.table, issue.column);
+        m_db_filters->triggers().exclude(issue.schema, issue.table,
+                                         issue.column);
         break;
       default:
         break;
@@ -192,7 +228,8 @@ void Sql_upgrade_check::add_issue(
 }
 
 Upgrade_issue Sql_upgrade_check::parse_row(
-    const mysqlshdk::db::IRow *row, Upgrade_issue::Object_type object_type) {
+    const std::vector<std::string> &field_names, const mysqlshdk::db::IRow *row,
+    Upgrade_issue::Object_type object_type) {
   auto problem = create_issue();
   problem.object_type = object_type;
   auto fields_count = row->num_fields();
@@ -200,10 +237,8 @@ Upgrade_issue Sql_upgrade_check::parse_row(
 
   // Expose all the query fields to be usable in the message resolution
   Token_definitions tokens = base_tokens();
-  if (m_field_names) {
-    for (size_t index = 0; index < fields_count; index++) {
-      tokens[m_field_names->at(index)] = row->get_as_string(index);
-    }
+  for (size_t index = 0; index < fields_count; index++) {
+    tokens[field_names.at(index)] = row->get_as_string(index);
   }
 
   problem.schema = row->get_as_string(0);

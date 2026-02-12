@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,13 +26,19 @@
 #ifndef MODULES_UTIL_UPGRADE_CHECKER_UPGRADE_CHECK_H_
 #define MODULES_UTIL_UPGRADE_CHECKER_UPGRADE_CHECK_H_
 
+#include <atomic>
+#include <list>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "modules/util/upgrade_checker/common.h"
+#include "mysqlshdk/include/shellcore/shell_init.h"
+#include "mysqlshdk/libs/db/mysql/session.h"
 #include "mysqlshdk/libs/db/session.h"
+#include "mysqlshdk/libs/db/session_pool.h"
+#include "mysqlshdk/libs/utils/thread_pool.h"
 #include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
@@ -45,6 +51,106 @@ enum class Category {
   CONFIG,
   PARSING,
   SCHEMA,
+};
+
+class Upgrade_check;
+
+class Worker_pool {
+ public:
+  Worker_pool(std::shared_ptr<mysqlshdk::db::Session_pool> session_pool,
+              uint64_t num_threads, uint64_t timeout_seconds = 0,
+              shcore::atomic_flag *interrupt_flag = nullptr)
+      : m_thread_pool(num_threads, 0, mysqlsh::thread_init, mysqlsh::thread_end,
+                      interrupt_flag),
+        m_interrupt_flag(interrupt_flag),
+        m_session_pool(std::move(session_pool)),
+        m_timeout_seconds(timeout_seconds) {}
+
+  void init();
+
+  void execute(Upgrade_check *check,
+               std::function<std::vector<Upgrade_issue>(
+                   const std::shared_ptr<mysqlshdk::db::ISession> &)> &&task,
+               std::shared_ptr<mysqlshdk::db::ISession> session = {});
+
+  std::vector<Upgrade_issue> wait();
+
+ private:
+  struct Active_check {
+    Upgrade_check *check;
+    uint64_t connection_id;
+    std::chrono::steady_clock::time_point start_time;
+  };
+
+  void kill_check(const Active_check &check);
+  void on_work_start(const std::shared_ptr<mysqlshdk::db::ISession> &session,
+                     Upgrade_check *check);
+  void on_work_end(const std::shared_ptr<mysqlshdk::db::ISession> &session,
+                   Upgrade_check *check);
+  void check_timeouts();
+
+ private:
+  using Thread_pool = shcore::Thread_pool_base<std::vector<Upgrade_issue>>;
+  Thread_pool m_thread_pool;
+  shcore::atomic_flag *m_interrupt_flag;
+  std::shared_ptr<mysqlshdk::db::Session_pool> m_session_pool;
+  std::vector<Upgrade_issue> m_issues;
+  uint64_t m_timeout_seconds;
+
+  std::mutex m_active_checks_mutex;
+  std::list<Active_check> m_active_checks;
+
+  const std::atomic<Thread_pool::Async_state> *m_async_process_state = nullptr;
+};
+
+class Check_context {
+ public:
+  Check_context() = delete;
+  Check_context(const Check_context &) = delete;
+  Check_context &operator=(const Check_context &) = delete;
+  Check_context(const std::shared_ptr<mysqlshdk::db::ISession> &session,
+                const Upgrade_info &server_info,
+                std::shared_ptr<mysqlshdk::db::Session_pool> session_pool,
+                Checker_cache *cache, uint64_t timeout_seconds = 0,
+                shcore::atomic_flag *interrupt_flag = nullptr);
+
+  ~Check_context() = default;
+
+  inline std::shared_ptr<mysqlshdk::db::ISession> session() const noexcept {
+    return m_session;
+  }
+
+  std::shared_ptr<mysqlshdk::db::IResult> query_with_timeout(
+      const std::string_view sql) const;
+
+  inline const Upgrade_info &server_info() const { return m_server_info; }
+
+  inline std::shared_ptr<mysqlshdk::db::Session_pool> session_pool() const {
+    return m_session_pool;
+  }
+
+  std::unique_ptr<Worker_pool> make_worker_pool(bool skip_pool = false) const;
+
+  inline Checker_cache *cache() const { return m_cache; }
+
+  inline bool interrupted() const {
+    if (!m_interrupt_flag) return false;
+
+    return m_interrupt_flag->test();
+  }
+
+  std::vector<Upgrade_issue> execute_simple(
+      Upgrade_check *check,
+      std::function<std::vector<Upgrade_issue>(
+          const std::shared_ptr<mysqlshdk::db::ISession> &)> &&task) const;
+
+ private:
+  std::shared_ptr<mysqlshdk::db::ISession> m_session;
+  std::shared_ptr<mysqlshdk::db::Session_pool> m_session_pool;
+  Checker_cache *m_cache;
+  const Upgrade_info &m_server_info;
+  uint64_t m_timeout_seconds;
+  shcore::atomic_flag *m_interrupt_flag;
 };
 
 class Upgrade_check {
@@ -64,20 +170,8 @@ class Upgrade_check {
   virtual bool is_multi_lvl_check() const { return false; }
   std::vector<std::string> get_solutions(const std::string &group = "") const;
 
-  virtual std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info) {
-    (void)session;
-    (void)server_info;
+  virtual std::vector<Upgrade_issue> run(const Check_context &) {
     throw std::logic_error("not implemented");
-  }
-
-  virtual std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info, Checker_cache *cache) {
-    // override this method if cache is used by the check
-    (void)cache;
-    return run(session, server_info);
   }
 
   const std::string &get_text(const char *field) const;
@@ -94,6 +188,9 @@ class Upgrade_check {
 
   virtual bool is_custom_session_required() const { return false; }
 
+  bool is_timedout() const noexcept { return m_timedout.load(); }
+  void set_timedout(bool timedout) { m_timedout.store(timedout); }
+
  protected:
   virtual Token_definitions base_tokens() const { return {}; }
 
@@ -104,6 +201,7 @@ class Upgrade_check {
   Category m_category;
   Condition *m_condition = nullptr;
   std::vector<std::string> m_groups;
+  std::atomic_bool m_timedout{false};
 };
 
 class Invalid_privileges_check : public Upgrade_check {
@@ -116,9 +214,7 @@ class Invalid_privileges_check : public Upgrade_check {
 
   bool enabled() const override;
 
-  std::vector<Upgrade_issue> run(
-      const std::shared_ptr<mysqlshdk::db::ISession> &session,
-      const Upgrade_info &server_info) override;
+  std::vector<Upgrade_issue> run(const Check_context &context) override;
 
  private:
   const Upgrade_info &m_upgrade_info;

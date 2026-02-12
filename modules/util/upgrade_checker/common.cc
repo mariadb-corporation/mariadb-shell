@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +25,13 @@
 
 #include "modules/util/upgrade_checker/common.h"
 
+#include <memory>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "mysqlshdk/libs/config/config_file.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
@@ -245,23 +248,50 @@ const Checker_cache::Table_info *Checker_cache::get_table(
   return (t != m_tables.end()) ? &t->second : nullptr;
 }
 
-void Checker_cache::cache_tables(mysqlshdk::db::ISession *session) {
-  if (!m_tables.empty()) return;
-
+void Checker_cache::cache_tables_and_views(mysqlshdk::db::ISession *session) {
   std::string query =
       "SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM information_schema.tables "
-      "WHERE ENGINE IS NOT NULL AND " +
+      "WHERE " +
       m_query_helper.schema_filter("TABLE_SCHEMA");
 
   auto res = session->query(query);
 
   while (auto row = res->fetch_one()) {
-    Table_info table{row->get_string(0), row->get_string(1),
-                     row->get_string(2)};
+    if (row->is_null(2)) {
+      Table_info view{row->get_string(0), row->get_string(1), ""};
 
-    m_tables.emplace(row->get_string(0) + "/" + row->get_string(1),
-                     std::move(table));
+      m_views.emplace(row->get_string(0) + "/" + row->get_string(1),
+                      std::move(view));
+    } else {
+      Table_info table{row->get_string(0), row->get_string(1),
+                       row->get_string(2)};
+
+      m_tables.emplace(row->get_string(0) + "/" + row->get_string(1),
+                       std::move(table));
+    }
   }
+}
+
+const std::unordered_map<std::string, Checker_cache::Table_info>
+    &Checker_cache::cache_tables(mysqlshdk::db::ISession *session) {
+  if (!m_views.empty() || !m_tables.empty()) {
+    return m_tables;
+  }
+
+  cache_tables_and_views(session);
+
+  return m_tables;
+}
+
+const std::unordered_map<std::string, Checker_cache::Table_info>
+    &Checker_cache::cache_views(mysqlshdk::db::ISession *session) {
+  if (!m_views.empty() || !m_tables.empty()) {
+    return m_views;
+  }
+
+  cache_tables_and_views(session);
+
+  return m_views;
 }
 
 const Checker_cache::Sysvar_info *Checker_cache::get_sysvar(
@@ -390,5 +420,6 @@ Upgrade_issue::Level get_issue_level(const Feature_definition &feature,
   // UC target is after removal
   return Upgrade_issue::Level::ERROR;
 }
+
 }  // namespace upgrade_checker
 }  // namespace mysqlsh

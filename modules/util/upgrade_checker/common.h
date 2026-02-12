@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,12 +26,15 @@
 #ifndef MODULES_UTIL_UPGRADE_CHECKER_COMMON_H_
 #define MODULES_UTIL_UPGRADE_CHECKER_COMMON_H_
 
+#include <list>
+#include <memory>
 #include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "mysqlshdk/libs/db/filtering_options.h"
 #include "mysqlshdk/libs/db/mysql/session.h"
@@ -163,13 +166,13 @@ struct Upgrade_issue {
   enum class Object_type {
     SCHEMA = 0,
     TABLE,
-    VIEW,
     COLUMN,
+    TRIGGER,
+    VIEW,
     INDEX,
     FOREIGN_KEY,
     ROUTINE,
     EVENT,
-    TRIGGER,
     SYSVAR,
     USER,
     TABLESPACE,
@@ -233,7 +236,10 @@ class Checker_cache {
                               bool case_sensitive = true) const;
   const Sysvar_info *get_sysvar(const std::string &name) const;
 
-  void cache_tables(mysqlshdk::db::ISession *session);
+  const std::unordered_map<std::string, Table_info> &cache_tables(
+      mysqlshdk::db::ISession *session);
+  const std::unordered_map<std::string, Table_info> &cache_views(
+      mysqlshdk::db::ISession *session);
   void cache_sysvars(mysqlshdk::db::ISession *session,
                      const Upgrade_info &server_info);
 
@@ -247,11 +253,13 @@ class Checker_cache {
   Filtering_options m_db_filters;
   mysqlshdk::db::Query_helper m_query_helper;
   std::unordered_map<std::string, Table_info> m_tables;
+  std::unordered_map<std::string, Table_info> m_views;
   std::unordered_map<std::string, Sysvar_info> m_sysvars;
 
   friend void override_sysvar(Checker_cache *cache, const std::string &name,
                               const std::string &value,
                               const std::string &source);
+  void cache_tables_and_views(mysqlshdk::db::ISession *session);
 };
 
 const std::string &get_translation(const char *item);
@@ -270,6 +278,7 @@ struct Feature_definition {
 
 Upgrade_issue::Level get_issue_level(const Feature_definition &feature,
                                      const Upgrade_info &server_info);
+
 }  // namespace upgrade_checker
 }  // namespace mysqlsh
 

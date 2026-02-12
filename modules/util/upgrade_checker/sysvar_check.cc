@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -636,14 +636,13 @@ Sysvar_check::Sysvar_check(const Upgrade_info &info)
   m_checks = s_registry.get_checks(info);
 }
 
-std::vector<Upgrade_issue> Sysvar_check::run(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session,
-    const Upgrade_info &server_info, Checker_cache *cache) {
+std::vector<Upgrade_issue> Sysvar_check::run(const Check_context &context) {
   std::vector<Upgrade_issue> issues;
 
-  cache->cache_sysvars(session.get(), server_info);
+  context.cache()->cache_sysvars(context.session().get(),
+                                 context.server_info());
   for (const auto &sysvar_check : m_checks) {
-    auto sysvar = cache->get_sysvar(sysvar_check.name);
+    auto sysvar = context.cache()->get_sysvar(sysvar_check.name);
 
     auto issue = create_issue();
     if (sysvar && sysvar->source != "COMPILED") {

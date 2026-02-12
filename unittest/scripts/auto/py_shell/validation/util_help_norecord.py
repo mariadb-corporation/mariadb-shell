@@ -108,6 +108,8 @@ DESCRIPTION
       - configPath - full path to MySQL server configuration file.
       - outputFormat - value can be either TEXT (default) or JSON.
       - targetVersion - version to which upgrade will be checked.
+      - threads - number of threads to use for checks execution. Default is the
+        smallest of 4 or the number of CPU cores.
       - password - password for connection.
       - include - comma separated list containing the check identifiers to be
         included in the operation.
