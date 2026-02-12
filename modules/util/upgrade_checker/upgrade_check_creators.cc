@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1711,32 +1711,33 @@ from (select
                        Upgrade_issue::Object_type::FOREIGN_KEY},
                        {
 /*
- * query for finding foreign key constraint to partial keys
+ * Query for finding foreign key constraint to partial keys.
  *
  * Query works in three parts - first one (using REFERENTIAL_CONSTRAINTS and
  * KEY_COLUMN_USAGE tables) constructs list of constraints with source and
- * target (col_list) fk definitions.
- * Second part (using STATISTICS table) constructs a list of known fk definitions.
- * Last, final part tries to find target fk definitions from first part in
- * the list from the second part - constraints with missing fk definitions in
- * second part are the ones with partial keys.
+ * target (ref_cols) fk definitions.
+ * Second part (using STATISTICS table) constructs a list of known key
+ * definitions.
+ * Last, final part tries to join target fk definitions from the first part with
+ * the keys from the second part - constraints where fk definitions do not match
+ * keys are the ones with partial keys.
  */
                          R"(SELECT
-  constraint_schema,
-  table_name,
-  name,
+  fk.constraint_schema,
+  fk.table_name,
+  fk.constraint_name,
   fk_definition,
-  col_list,
-  target_table,
+  fk.referenced_table_name AS target_table,
   '##fkToPartialKey'
 FROM (
   SELECT
-    rc.constraint_schema constraint_schema,
-    rc.constraint_name name,
-    rc.referenced_table_name target_table,
-    CONCAT(kc.table_schema,'.',rc.table_name,'(',GROUP_CONCAT(kc.column_name order by kc.ORDINAL_POSITION),')') fk_definition,
-    CONCAT(kc.referenced_table_schema,'.',kc.referenced_table_name,'(',GROUP_CONCAT(kc.referenced_column_name order by kc.ORDINAL_POSITION),')') col_list,
-    rc.table_name
+    rc.constraint_name,
+    rc.constraint_schema,
+    rc.table_name,
+    kc.referenced_table_schema,
+    kc.referenced_table_name,
+    CONCAT(rc.constraint_schema,'.',rc.table_name,'(',GROUP_CONCAT(kc.column_name ORDER BY kc.ORDINAL_POSITION),')') fk_definition,
+    GROUP_CONCAT(kc.referenced_column_name ORDER BY kc.ORDINAL_POSITION) AS ref_cols
   FROM
     INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
     INNER JOIN
@@ -1745,33 +1746,38 @@ FROM (
       rc.constraint_schema = kc.constraint_schema AND
       rc.constraint_name = kc.constraint_name AND
       rc.table_name = kc.table_name AND
-      rc.referenced_table_name = kc.referenced_table_name AND
-      <<schema_filter:rc.constraint_schema>>
+      rc.referenced_table_name = kc.referenced_table_name
   WHERE
     <<schema_filter:rc.constraint_schema>>
     GROUP BY
       rc.constraint_name,
       rc.constraint_schema,
-      kc.table_schema,
-      kc.table_name,
+      rc.table_name,
       kc.referenced_table_schema,
       kc.referenced_table_name
-  ) fk
+) fk
+LEFT JOIN (
+  SELECT
+    s.table_schema,
+    s.table_name,
+    s.index_name,
+    GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index) AS idx_columns
+  FROM
+    INFORMATION_SCHEMA.STATISTICS s
+  WHERE
+    s.sub_part IS NULL
+    AND <<schema_filter:table_schema>>
+  GROUP BY
+    s.table_schema,
+    s.table_name,
+    s.index_name
+) idx
+  ON fk.referenced_table_schema = idx.table_schema
+  AND fk.referenced_table_name = idx.table_name
+  AND fk.ref_cols = idx.idx_columns
 WHERE
-  fk.col_list NOT IN (
-    SELECT
-      CONCAT(table_schema,'.',table_name,'(',GROUP_CONCAT(column_name order by seq_in_index),')') col_list
-    FROM
-      INFORMATION_SCHEMA.STATISTICS
-    WHERE
-      sub_part IS NULL AND
-      <<schema_filter:table_schema>>
-    GROUP BY
-      table_schema,
-      table_name,
-      index_name
-    ) AND
-  <<fk.schema_and_table_filter:constraint_schema:table_name>>
+  idx.idx_columns IS NULL
+  AND <<fk.schema_and_table_filter:constraint_schema:table_name>>
 )"
                         ,Upgrade_issue::Object_type::FOREIGN_KEY
                        }},
