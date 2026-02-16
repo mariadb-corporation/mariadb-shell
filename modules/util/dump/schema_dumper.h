@@ -117,6 +117,8 @@ class Schema_dumper {
 
   std::vector<Compatibility_issue> dump_grants(IFile *file);
 
+  void dump_data_masking_policies(IFile *file);
+
   const std::vector<Instance_cache::Histogram> &get_histograms(
       const std::string &db_name, const std::string &table_name);
 

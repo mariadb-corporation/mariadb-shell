@@ -50,8 +50,10 @@
 #include "mysqlshdk/libs/utils/atomic_flag.h"
 #include "mysqlshdk/libs/utils/enumset.h"
 #include "mysqlshdk/libs/utils/synchronized_queue.h"
+#include "mysqlshdk/libs/utils/utils_account.h"
 #include "mysqlshdk/libs/utils/version.h"
 
+#include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/basenames.h"
 #include "modules/util/common/dump/checksums.h"
 #include "modules/util/common/dump/server_info.h"
@@ -296,6 +298,16 @@ class Dumper {
 
   void validate_mds();
 
+  void validate_data_masking();
+
+  std::unordered_set<std::string> list_data_masking_policies_in_use();
+
+  std::vector<mysqlsh::common::Data_masking::Policy>
+  verify_data_masking_policies(std::unordered_set<std::string> &&names);
+
+  void report_data_masking_issues(
+      const std::vector<mysqlsh::common::Data_masking::Policy> &policies) const;
+
   void initialize_counters();
 
   void initialize_dump();
@@ -331,6 +343,8 @@ class Dumper {
   void dump_global_ddl() const;
 
   void dump_users_ddl() const;
+
+  void dump_data_masking_policies_ddl() const;
 
   void write_ddl(const Memory_dumper &in_memory, const std::string &file) const;
 
@@ -376,6 +390,9 @@ class Dumper {
                                            const std::string &view) const;
 
   std::unique_ptr<Memory_dumper> dump_users(Schema_dumper *dumper) const;
+
+  std::unique_ptr<Memory_dumper> dump_data_masking_policies(
+      Schema_dumper *dumper) const;
 
   void create_schema_metadata_tasks();
 
@@ -528,6 +545,10 @@ class Dumper {
     return m_capability_set.is_set(Capability::INNODB_VECTOR_STORE);
   }
 
+  bool uses_dynamic_data_masking() const noexcept {
+    return m_capability_set.is_set(Capability::DYNAMIC_DATA_MASKING);
+  }
+
   void maybe_ddl_dump_finished(
       const std::shared_ptr<mysqlshdk::db::ISession> &session) const;
 
@@ -535,6 +556,26 @@ class Dumper {
 
   issues::Status_set show_issues(
       const std::vector<Compatibility_issue> &issues) const;
+
+  /**
+   * Do we need to list data masking policies?
+   */
+  bool should_fetch_data_masking_policies() const noexcept;
+
+  /**
+   * Are we going to dump data masking policies?
+   */
+  bool should_dump_data_masking_policies() const noexcept;
+
+  /**
+   * Are we going to dump table DDL which contains masked columns?
+   */
+  bool will_dump_masked_table_ddl() const noexcept;
+
+  /**
+   * Are we going to dump table data which may be masked?
+   */
+  bool will_dump_table_data_with_masked_columns() const noexcept;
 
   // session
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
@@ -546,10 +587,11 @@ class Dumper {
   common::Server_version m_server_version;
   bool m_binlog_enabled = false;
   bool m_gtid_enabled = false;
+  bool m_data_masking_enabled = false;
 
   // user privileges
   std::unique_ptr<mysqlshdk::mysql::User_privileges> m_user_privileges;
-  std::string m_user_account;
+  shcore::Account m_user_account;
   bool m_skip_grant_tables_active = false;
   // whether user has the BACKUP_ADMIN privilege
   bool m_user_has_backup_admin = false;
@@ -568,6 +610,7 @@ class Dumper {
 
   std::unique_ptr<mysqlshdk::storage::IFile> m_output_file;
   Instance_cache m_cache;
+  bool m_cache_initialized = false;
   std::vector<Schema_info> m_schema_infos;
   common::Basenames m_basenames;
 

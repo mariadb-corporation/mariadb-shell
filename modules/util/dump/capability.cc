@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@ constexpr auto k_partition_awareness_capability = "partition_awareness";
 constexpr auto k_multifile_schema_ddl_capability = "multifile_schema_ddl";
 constexpr auto k_dump_dir_redirection_capability = "dump_dir_redirection";
 constexpr auto k_innodb_vector_store_capability = "innodb_vector_store";
+constexpr auto k_dynamic_data_masking = "dynamic_data_masking";
 
 }  // namespace
 
@@ -56,6 +57,9 @@ std::string id(Capability capability) {
 
     case Capability::INNODB_VECTOR_STORE:
       return k_innodb_vector_store_capability;
+
+    case Capability::DYNAMIC_DATA_MASKING:
+      return k_dynamic_data_masking;
   }
 
   throw std::logic_error("Should not happen");
@@ -79,6 +83,9 @@ std::string description(Capability capability) {
     case Capability::INNODB_VECTOR_STORE:
       return "InnoDB vector store - dump contains InnoDB-based vector store "
              "tables.";
+
+    case Capability::DYNAMIC_DATA_MASKING:
+      return "Dynamic data masking - dump contains dynamic data masking DDL.";
   }
 
   throw std::logic_error("Should not happen");
@@ -97,6 +104,9 @@ Version version_required(Capability capability) {
     case Capability::DUMP_DIR_REDIRECTION:
     case Capability::INNODB_VECTOR_STORE:
       return Version(9, 4, 1);
+
+    case Capability::DYNAMIC_DATA_MASKING:
+      return Version(9, 7, 0);
   }
 
   throw std::logic_error("Should not happen");
@@ -111,6 +121,8 @@ std::optional<Capability> to_capability(const std::string &id) {
     return Capability::DUMP_DIR_REDIRECTION;
   } else if (k_innodb_vector_store_capability == id) {
     return Capability::INNODB_VECTOR_STORE;
+  } else if (k_dynamic_data_masking == id) {
+    return Capability::DYNAMIC_DATA_MASKING;
   } else {
     return std::nullopt;
   }

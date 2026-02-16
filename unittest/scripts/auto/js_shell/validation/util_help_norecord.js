@@ -214,6 +214,18 @@ DESCRIPTION
 
       The following options are supported:
 
+      - dataMaskingPolicies: bool (default: true) - Include data masking
+        policies in the copy.
+      - users: bool (default: true) - Include users, roles and grants in the
+        copy.
+      - excludeUsers: list of strings (default not set) - Skip copying the
+        specified users. Each user is in the format of 'user_name'[@'host']. If
+        the host is not specified, all the accounts with the given user name
+        are excluded.
+      - includeUsers: list of strings (default not set) - Copy only the
+        specified users. Each user is in the format of 'user_name'[@'host']. If
+        the host is not specified, all the accounts with the given user name
+        are included. By default, all users are included.
       - excludeSchemas: list of strings (default: empty) - List of schemas to
         be excluded from the copy.
       - includeSchemas: list of strings (default: empty) - List of schemas to
@@ -239,16 +251,6 @@ DESCRIPTION
         objects to be excluded from the copy in the format of schema.library.
       - includeLibraries: list of strings (default: empty) - List of library
         objects to be included in the copy in the format of schema.library.
-      - users: bool (default: true) - Include users, roles and grants in the
-        copy.
-      - excludeUsers: list of strings (default not set) - Skip copying the
-        specified users. Each user is in the format of 'user_name'[@'host']. If
-        the host is not specified, all the accounts with the given user name
-        are excluded.
-      - includeUsers: list of strings (default not set) - Copy only the
-        specified users. Each user is in the format of 'user_name'[@'host']. If
-        the host is not specified, all the accounts with the given user name
-        are included. By default, all users are included.
       - triggers: bool (default: true) - Include triggers for each copied
         table.
       - excludeTriggers: list of strings (default: empty) - List of triggers to
@@ -301,6 +303,10 @@ DESCRIPTION
         otherwise) - Enable or disable copy progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
+      - allowDataMasking: bool (default: false) - Allows to copy data with
+        masked values. When set to false, an attempt to copy data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - analyzeTables: "off", "on", "histogram" (default: off) - If 'on',
         executes ANALYZE TABLE for all tables, once copied. If set to
         'histogram', only tables that have histogram information stored in the
@@ -454,6 +460,10 @@ DESCRIPTION
         otherwise) - Enable or disable copy progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
+      - allowDataMasking: bool (default: false) - Allows to copy data with
+        masked values. When set to false, an attempt to copy data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - analyzeTables: "off", "on", "histogram" (default: off) - If 'on',
         executes ANALYZE TABLE for all tables, once copied. If set to
         'histogram', only tables that have histogram information stored in the
@@ -590,6 +600,10 @@ DESCRIPTION
         otherwise) - Enable or disable copy progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
+      - allowDataMasking: bool (default: false) - Allows to copy data with
+        masked values. When set to false, an attempt to copy data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - analyzeTables: "off", "on", "histogram" (default: off) - If 'on',
         executes ANALYZE TABLE for all tables, once copied. If set to
         'histogram', only tables that have histogram information stored in the
@@ -784,14 +798,6 @@ DESCRIPTION
 
       The following options are supported:
 
-      - excludeSchemas: list of strings (default: empty) - List of schemas to
-        be excluded from the dump.
-      - includeSchemas: list of strings (default: empty) - List of schemas to
-        be included in the dump.
-      - excludeTables: list of strings (default: empty) - List of tables or
-        views to be excluded from the dump in the format of schema.table.
-      - includeTables: list of strings (default: empty) - List of tables or
-        views to be included in the dump in the format of schema.table.
       - ocimds: bool (default: false) - Enable checks for compatibility with
         MySQL HeatWave Service.
       - compatibility: list of strings (default: empty) - Apply MySQL HeatWave
@@ -810,6 +816,26 @@ DESCRIPTION
         Checker separately.
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
+      - dataMaskingPolicies: bool (default: true) - Include data masking
+        policies in the dump file.
+      - users: bool (default: true) - Include users, roles and grants in the
+        dump file.
+      - excludeUsers: array of strings (default not set) - Skip dumping the
+        specified users. Each user is in the format of 'user_name'[@'host']. If
+        the host is not specified, all the accounts with the given user name
+        are excluded.
+      - includeUsers: array of strings (default not set) - Dump only the
+        specified users. Each user is in the format of 'user_name'[@'host']. If
+        the host is not specified, all the accounts with the given user name
+        are included. By default, all users are included.
+      - excludeSchemas: list of strings (default: empty) - List of schemas to
+        be excluded from the dump.
+      - includeSchemas: list of strings (default: empty) - List of schemas to
+        be included in the dump.
+      - excludeTables: list of strings (default: empty) - List of tables or
+        views to be excluded from the dump in the format of schema.table.
+      - includeTables: list of strings (default: empty) - List of tables or
+        views to be included in the dump in the format of schema.table.
       - events: bool (default: true) - Include events from each dumped schema.
       - excludeEvents: list of strings (default: empty) - List of events to be
         excluded from the dump in the format of schema.event.
@@ -827,16 +853,6 @@ DESCRIPTION
         objects to be excluded from the dump in the format of schema.library.
       - includeLibraries: list of strings (default: empty) - List of library
         objects to be included in the dump in the format of schema.library.
-      - users: bool (default: true) - Include users, roles and grants in the
-        dump file.
-      - excludeUsers: array of strings (default not set) - Skip dumping the
-        specified users. Each user is in the format of 'user_name'[@'host']. If
-        the host is not specified, all the accounts with the given user name
-        are excluded.
-      - includeUsers: array of strings (default not set) - Dump only the
-        specified users. Each user is in the format of 'user_name'[@'host']. If
-        the host is not specified, all the accounts with the given user name
-        are included. By default, all users are included.
       - triggers: bool (default: true) - Include triggers for each dumped
         table.
       - excludeTriggers: list of strings (default: empty) - List of triggers to
@@ -898,6 +914,10 @@ DESCRIPTION
         otherwise) - Enable or disable dump progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
+      - allowDataMasking: bool (default: false) - Allows to dump data with
+        masked values. When set to false, an attempt to dump data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - compression: string (default: "zstd;level=1") - Compression used when
         writing the data dump files, one of: "none", "gzip", "zstd".
         Compression level may be specified as "gzip;level=8" or "zstd;level=8".
@@ -1266,10 +1286,6 @@ DESCRIPTION
 
       The following options are supported:
 
-      - excludeTables: list of strings (default: empty) - List of tables or
-        views to be excluded from the dump in the format of schema.table.
-      - includeTables: list of strings (default: empty) - List of tables or
-        views to be included in the dump in the format of schema.table.
       - ocimds: bool (default: false) - Enable checks for compatibility with
         MySQL HeatWave Service.
       - compatibility: list of strings (default: empty) - Apply MySQL HeatWave
@@ -1288,6 +1304,10 @@ DESCRIPTION
         Checker separately.
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
+      - excludeTables: list of strings (default: empty) - List of tables or
+        views to be excluded from the dump in the format of schema.table.
+      - includeTables: list of strings (default: empty) - List of tables or
+        views to be included in the dump in the format of schema.table.
       - events: bool (default: true) - Include events from each dumped schema.
       - excludeEvents: list of strings (default: empty) - List of events to be
         excluded from the dump in the format of schema.event.
@@ -1366,6 +1386,10 @@ DESCRIPTION
         otherwise) - Enable or disable dump progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
+      - allowDataMasking: bool (default: false) - Allows to dump data with
+        masked values. When set to false, an attempt to dump data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - compression: string (default: "zstd;level=1") - Compression used when
         writing the data dump files, one of: "none", "gzip", "zstd".
         Compression level may be specified as "gzip;level=8" or "zstd;level=8".
@@ -1724,8 +1748,6 @@ DESCRIPTION
 
       The following options are supported:
 
-      - all: bool (default: false) - Dump all views and tables from the
-        specified schema.
       - ocimds: bool (default: false) - Enable checks for compatibility with
         MySQL HeatWave Service.
       - compatibility: list of strings (default: empty) - Apply MySQL HeatWave
@@ -1744,6 +1766,8 @@ DESCRIPTION
         Checker separately.
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
+      - all: bool (default: false) - Dump all views and tables from the
+        specified schema.
       - triggers: bool (default: true) - Include triggers for each dumped
         table.
       - excludeTriggers: list of strings (default: empty) - List of triggers to
@@ -1805,6 +1829,10 @@ DESCRIPTION
         otherwise) - Enable or disable dump progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
+      - allowDataMasking: bool (default: false) - Allows to dump data with
+        masked values. When set to false, an attempt to dump data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - compression: string (default: "zstd;level=1") - Compression used when
         writing the data dump files, one of: "none", "gzip", "zstd".
         Compression level may be specified as "gzip;level=8" or "zstd;level=8".
@@ -2197,6 +2225,10 @@ DESCRIPTION
         otherwise) - Enable or disable dump progress information.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
+      - allowDataMasking: bool (default: false) - Allows to dump data with
+        masked values. When set to false, an attempt to dump data using an
+        account that cannot access columns with masking policies will result in
+        an error. When enabled, downgrades this error to a warning.
       - compression: string (default: "none") - Compression used when writing
         the data dump files, one of: "none", "gzip", "zstd". Compression level
         may be specified as "gzip;level=8" or "zstd;level=8".

@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -88,6 +88,7 @@ if(WITH_TESTS)
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/replication_version_compatibility_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/devapi/mod_mysqlx_collection_find_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/devapi/mod_mysqlx_table_select_t.cc"
+        "${PROJECT_SOURCE_DIR}/unittest/modules/util/common/data_masking_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/util/dump/decimal_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/util/upgrade_checker/test_utils.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/util/upgrade_checker/upgrade_check_condition_t.cc"

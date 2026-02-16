@@ -2249,6 +2249,10 @@ bool supports_pke_as_pk(const mysqlshdk::utils::Version &v) {
   return v.numeric() >= 90700;
 }
 
+bool supports_dynamic_data_masking(const mysqlshdk::utils::Version &v) {
+  return v.numeric() >= 90700;
+}
+
 bool replace_keyword(std::string_view stmt, std::string_view from,
                      std::string_view to, std::string *result) {
   mysqlshdk::utils::SQL_iterator it(stmt);
@@ -2321,6 +2325,26 @@ std::string lock_account(std::string_view create_user) {
   }
 
   return result;
+}
+
+std::unordered_set<std::string> list_data_masking_policies(
+    std::string_view create_table) {
+  SQL_iterator it(create_table, 0, false);
+
+  if (!it.consume_tokens("CREATE", "TABLE")) {
+    throw std::runtime_error{"Expected CREATE TABLE statement"};
+  }
+
+  std::unordered_set<std::string> policies;
+
+  while (it.valid()) {
+    if (it.consume_tokens("MASKING", "POLICY")) {
+      policies.emplace(
+          shcore::utf8_lower(shcore::unquote_identifier(it.next_token())));
+    }
+  }
+
+  return policies;
 }
 
 }  // namespace compatibility

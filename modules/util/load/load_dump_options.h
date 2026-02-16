@@ -273,6 +273,14 @@ class Load_dump_options : public common::Common_options {
     return m_supports_pke_as_pk;
   }
 
+  inline bool is_ddm_ddl_supported() const noexcept {
+    return m_is_ddm_ddl_supported;
+  }
+
+  inline bool is_ddm_component_installed() const noexcept {
+    return m_is_ddm_component_installed;
+  }
+
   inline bool has_lakehouse_source_option() const {
     return !m_lakehouse_source.par().empty() ||
            !m_lakehouse_source.resource_principals().empty();
@@ -400,6 +408,11 @@ class Load_dump_options : public common::Common_options {
   bool m_is_library_ddl_supported = false;
 
   bool m_supports_pke_as_pk = false;
+
+  // DDM - dynamic data masking
+  bool m_is_ddm_ddl_supported = false;
+
+  bool m_is_ddm_component_installed = false;
 
   load::Lakehouse_source_option m_lakehouse_source;
 

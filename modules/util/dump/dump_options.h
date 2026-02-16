@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -190,6 +190,10 @@ class Dump_options : public mysqlsh::common::Common_options {
 
   virtual bool dump_users() const = 0;
 
+  virtual bool dump_data_masking_policies() const = 0;
+
+  bool allow_data_masking() const noexcept { return m_allow_data_masking; }
+
   virtual bool use_timezone_utc() const = 0;
 
   virtual bool dump_binlog_info() const = 0;
@@ -288,6 +292,9 @@ class Dump_options : public mysqlsh::common::Common_options {
 
   // schema -> table -> partitions
   Instance_cache_builder::Partition_filters m_partitions;
+
+  // WL17279-FR1.2.1: default value of `allowDataMasking` is false
+  bool m_allow_data_masking = false;
 
   // these options are unpacked elsewhere, but are here 'cause we're returning
   // a reference

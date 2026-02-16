@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2080,7 +2080,8 @@ bool Shell_script_tester::context_enabled(std::string code) {
   }
 
   throw std::invalid_argument(
-      "Context does not evaluate to a boolean expression");
+      "Context does not evaluate to a boolean expression: " +
+      output_handler.internal_std_out);
 }
 
 void Shell_script_tester::execute(int location, const std::string &code) {

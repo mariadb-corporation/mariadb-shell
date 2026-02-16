@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -53,6 +53,9 @@ const shcore::Option_pack_def<Dump_instance_options>
           .include(&Dump_instance_options::m_filtering_options,
                    &mysqlshdk::db::Filtering_options::schemas)
           .optional("users", &Dump_instance_options::m_dump_users)
+          // WL17279-FR1.1: `dataMaskingPolicies` option
+          .optional("dataMaskingPolicies",
+                    &Dump_instance_options::m_dump_data_masking_policies)
           .include(&Dump_instance_options::m_filtering_options,
                    &mysqlshdk::db::Filtering_options::users)
           .on_done(&Dump_instance_options::on_unpacked_options);

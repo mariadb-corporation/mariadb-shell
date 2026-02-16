@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -65,12 +65,14 @@ inline constexpr int k_default_mysql_x_port = 33060;
 inline constexpr int k_max_auth_factors = 3;
 class SHCORE_PUBLIC Connection_options : public IConnection {
  public:
+  using Nullable_options = mysqlshdk::utils::Nullable_options;
+  using Comparison_mode = mysqlshdk::utils::nullable_options::Comparison_mode;
+
   Connection_options();
-  explicit Connection_options(utils::nullable_options::Comparison_mode mode);
+  explicit Connection_options(Comparison_mode mode);
   explicit Connection_options(
       const std::string &uri,
-      utils::nullable_options::Comparison_mode mode =
-          utils::nullable_options::Comparison_mode::CASE_INSENSITIVE);
+      Comparison_mode mode = Comparison_mode::CASE_INSENSITIVE);
 
   Connection_options(const Connection_options &other) = default;
   Connection_options(Connection_options &&other) = default;
@@ -204,13 +206,11 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
     return as_uri(uri::formats::only_transport());
   }
 
-  const utils::Nullable_options &get_extra_options() const {
-    return m_extra_options;
-  }
+  const Nullable_options &get_extra_options() const { return m_extra_options; }
   bool is_connection_attributes_enabled() const {
     return m_enable_connection_attributes;
   }
-  const utils::Nullable_options &get_connection_attributes() const {
+  const Nullable_options &get_connection_attributes() const {
     return m_connection_attributes;
   }
 
@@ -292,9 +292,9 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
 
   Ssl_options m_ssl_options;
   ssh::Ssh_connection_options m_ssh_options;
-  utils::Nullable_options m_extra_options;
+  Nullable_options m_extra_options;
   bool m_enable_connection_attributes;
-  utils::Nullable_options m_connection_attributes;
+  Nullable_options m_connection_attributes;
   // mfa_password1 is the regular password
   std::optional<std::string> m_mfa_password_2;
   std::optional<std::string> m_mfa_password_3;

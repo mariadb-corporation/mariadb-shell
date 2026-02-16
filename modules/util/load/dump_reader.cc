@@ -192,23 +192,24 @@ Dump_reader::Status Dump_reader::open() {
   }
 
   {
+    using mysqlsh::dump::Capability;
     const auto &capabilities = m_contents.dump.capabilities;
+    const auto has_capability = [&capabilities](Capability cap) {
+      return std::find_if(capabilities.begin(), capabilities.end(),
+                          [cap](const auto &c) {
+                            return c.capability.has_value() &&
+                                   cap == *c.capability;
+                          }) != capabilities.end();
+    };
 
     m_contents.redirect_dump_dir =
-        std::find_if(capabilities.begin(), capabilities.end(),
-                     [](const auto &c) {
-                       return c.capability.has_value() &&
-                              mysqlsh::dump::Capability::DUMP_DIR_REDIRECTION ==
-                                  *c.capability;
-                     }) != capabilities.end();
+        has_capability(Capability::DUMP_DIR_REDIRECTION);
 
     m_contents.has_innodb_vector_store =
-        std::find_if(capabilities.begin(), capabilities.end(),
-                     [](const auto &c) {
-                       return c.capability.has_value() &&
-                              mysqlsh::dump::Capability::INNODB_VECTOR_STORE ==
-                                  *c.capability;
-                     }) != capabilities.end();
+        has_capability(Capability::INNODB_VECTOR_STORE);
+
+    m_contents.has_dynamic_data_masking_ddl =
+        has_capability(Capability::DYNAMIC_DATA_MASKING);
   }
 
   if (m_contents.redirect_dump_dir) {
@@ -245,15 +246,19 @@ Dump_reader::Status Dump_reader::open() {
 }
 
 std::string Dump_reader::begin_script() const {
-  return m_contents.sql ? *m_contents.sql : "";
+  return m_contents.sql.value_or(std::string{});
 }
 
 std::string Dump_reader::end_script() const {
-  return m_contents.post_sql ? *m_contents.post_sql : "";
+  return m_contents.post_sql.value_or(std::string{});
 }
 
 std::string Dump_reader::users_script() const {
-  return m_contents.users_sql ? *m_contents.users_sql : "";
+  return m_contents.users_sql.value_or(std::string{});
+}
+
+std::string Dump_reader::data_masking_script() const {
+  return m_contents.data_masking_sql.value_or(std::string{});
 }
 
 const Dump_reader::Schema_info *Dump_reader::next_schema() {
@@ -1652,30 +1657,31 @@ void Dump_reader::Schema_info::rescan_data(const Files &files,
 }
 
 bool Dump_reader::Dump_info::ready() const {
-  // we're not checking for the @.sql, @.post.sql and @.users.sql here, because
-  // presence of these files depends on the dataOnly dump option (which is not
-  // recorded in the metadata), but these files are written at the beginning of
-  // the dump, so if md_done is true, then for sure these were already written
-  // by the dumper
+  // we're not checking for the @.sql, @.post.sql, @.users.sql and
+  // @.data.masking.sql here, because presence of these files depends on the
+  // dataOnly dump option (which is not recorded in the metadata), but these
+  // files are written at the beginning of the dump, so if md_done is true, then
+  // for sure these were already written by the dumper
   return md_done;
 }
 
 void Dump_reader::Dump_info::rescan(mysqlshdk::storage::IDirectory *dir,
                                     const Files &files, Dump_reader *reader,
                                     dump::Progress_thread *progress_thread) {
-  if (!sql && files.find({dump::common::k_preamble_sql_file}) != files.end()) {
-    sql = std::make_unique<std::string>(
-        fetch_file(dir->file(dump::common::k_preamble_sql_file)));
+  if (!sql.has_value() && files.contains({dump::common::k_preamble_sql_file})) {
+    sql = fetch_file(dir->file(dump::common::k_preamble_sql_file));
   }
-  if (!post_sql &&
-      files.find({dump::common::k_postamble_sql_file}) != files.end()) {
-    post_sql = std::make_unique<std::string>(
-        fetch_file(dir->file(dump::common::k_postamble_sql_file)));
+  if (!post_sql.has_value() &&
+      files.contains({dump::common::k_postamble_sql_file})) {
+    post_sql = fetch_file(dir->file(dump::common::k_postamble_sql_file));
   }
-  if (dump.has_users && !users_sql &&
-      files.find({dump::common::k_users_sql_file}) != files.end()) {
-    users_sql = std::make_unique<std::string>(
-        fetch_file(dir->file(dump::common::k_users_sql_file)));
+  if (dump.has_users && !users_sql.has_value() &&
+      files.contains({dump::common::k_users_sql_file})) {
+    users_sql = fetch_file(dir->file(dump::common::k_users_sql_file));
+  }
+  if (!dump.data_masking_policies.empty() && !data_masking_sql.has_value() &&
+      files.contains({dump::common::k_data_masking_file})) {
+    data_masking_sql = fetch_file(dir->file(dump::common::k_data_masking_file));
   }
 
   if (!md_done) {

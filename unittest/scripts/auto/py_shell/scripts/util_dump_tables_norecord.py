@@ -1092,7 +1092,7 @@ EXPECT_FAIL("ValueError", "Argument #4: The value of the option 's3EndpointOverr
 
 #@<> options param being a dictionary that contains an unknown key
 # WL13804-TSFR_11_1_2
-for param in { "dummy", "users", "excludeUsers", "includeUsers", "indexColumn", "excludeSchemas", "includeSchemas", "excludeTables", "includeTables", "events", "excludeEvents", "includeEvents", "routines", "excludeRoutines", "includeRoutines", "libraries", "excludeLibraries", "includeLibraries", "ociParManifest", "ociParExpireTime" }:
+for param in { "dummy", "users", "excludeUsers", "includeUsers", "indexColumn", "excludeSchemas", "includeSchemas", "excludeTables", "includeTables", "events", "excludeEvents", "includeEvents", "routines", "excludeRoutines", "includeRoutines", "libraries", "excludeLibraries", "includeLibraries", "ociParManifest", "ociParExpireTime", "dataMaskingPolicies" }:
     EXPECT_FAIL("ValueError", f"Argument #4: Invalid options: {param}", types_schema, types_schema_tables, test_output_relative, { param: "fails" })
 
 # FR12 - The `util.dumpTables()` function must create:
@@ -3519,6 +3519,9 @@ EXPECT_STDOUT_CONTAINS("2 chunks (2 rows, 18 bytes) for 1 tables in 1 schemas we
 
 # cleanup
 session.run_sql("DROP SCHEMA !;", [ tested_schema ])
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
 
 #@<> Cleanup
 drop_all_schemas()

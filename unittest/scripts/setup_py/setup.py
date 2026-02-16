@@ -1116,3 +1116,64 @@ def supports_option_tracker(sess):
     disable_option_tracker(sess)
 
     return True
+
+def install_dynamic_data_masking(uri: str, sess=None, verbose=True) -> bool:
+    try:
+        if not sess:
+            sess = shell.open_session(uri)
+
+        basedir = sess.run_sql("SELECT @@basedir").fetch_one()[0]
+        install_script = os.path.join(basedir, "share", "install_component_object_policy.sql")
+
+        if not os.path.exists(install_script):
+            return False
+
+        ec = testutil.call_mysqlsh([uri, "--quiet-start=2", "--sql", "--file", install_script])
+        return 0 == ec
+    except Exception as e:
+        if verbose:
+            print(e)
+        return False
+
+def enable_dynamic_data_masking(sess, verbose=True) -> bool:
+    try:
+        sess.run_sql("INSTALL COMPONENT 'file://component_object_policy'")
+        return True
+    except Exception as e:
+        if verbose:
+            print(e)
+        return False
+
+def disable_dynamic_data_masking(sess):
+    try:
+        sess.run_sql("UNINSTALL COMPONENT 'file://component_object_policy'")
+    except:
+        pass
+
+def supports_dynamic_data_masking(uri: str) -> bool:
+    if __version_num < 90700:
+        return False
+
+    sess = shell.open_session(uri)
+
+    # check if component is already installed
+    if is_dynamic_data_masking_enabled(sess):
+        return True
+
+    # try to enable it
+    if not install_dynamic_data_masking(uri, sess=sess, verbose=False):
+        return False
+
+    # we've enabled it, not get back to the original state
+    disable_dynamic_data_masking(sess)
+
+    return True
+
+def is_dynamic_data_masking_enabled(sess) -> bool:
+    if __version_num < 90700:
+        return False
+
+    if sess.run_sql("SELECT 1 FROM mysql.component WHERE component_urn = 'file://component_object_policy'").fetch_one():
+        return True
+    else:
+        return False

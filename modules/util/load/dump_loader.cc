@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "modules/mod_utils.h"
+#include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/dump_version.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/capability.h"
@@ -3628,6 +3629,41 @@ To load this dump, you can either:
     console->print_warning(msg);
     THROW_ERROR(SHERR_LOAD_INVISIBLE_PKS_CANNOT_DISABLE_SYS_VAR);
   }
+
+  if (m_options.load_ddl() && m_dump->has_dynamic_data_masking_ddl()) {
+    // WL17279-FR2.1: throw an exception if dynamic data masking DDL is going to
+    // be loaded, but server does not support it
+    if (!m_options.is_ddm_ddl_supported()) {
+      THROW_ERROR(SHERR_LOAD_DDM_DDL_UNSUPPORTED_SERVER_VERSION);
+    }
+
+    if (!m_options.is_ddm_component_installed()) {
+      if (m_dump->has_data_masking_policies()) {
+        // WL17279-FR2.2.1: show a warning if component is not installed and
+        // continue
+        console->print_warning(
+            "The dump contains data masking policy DDL, but the dynamic data "
+            "masking component is not installed on the target instance. Data "
+            "masking policies will not be loaded.");
+      }
+
+      if (m_dump->has_masked_table_ddl()) {
+        // WL17279-FR2.2.2: show a warning if component is not installed and
+        // continue
+        console->print_warning(
+            "The dump contains table DDL with masked columns, but the dynamic "
+            "data masking component is not installed on the target instance. "
+            "Queries against these tables will fail to execute, unless this "
+            "component is installed.");
+      }
+    }
+  }
+
+  if (m_options.load_data() && m_dump->maybe_has_masked_table_data()) {
+    console->print_warning(
+        "The dump was created with the 'allowDataMasking' option enabled, data "
+        "from tables with masked columns may be incomplete.");
+  }
 }
 
 void Dump_loader::check_tables_without_primary_key() {
@@ -3775,7 +3811,19 @@ bool set_object_exists(const std::string &name,
 
 }  // namespace
 
-bool Dump_loader::report_duplicates(
+void Dump_loader::report_duplicate_object(const std::string &msg) const {
+  const auto console = current_console();
+
+  if (m_options.ignore_existing_objects()) {
+    console->print_note(msg + ", ignoring...");
+  } else if (m_options.drop_existing_objects()) {
+    console->print_note(msg + ", dropping...");
+  } else {
+    console->print_error(msg);
+  }
+}
+
+bool Dump_loader::report_duplicate_schema_objects(
     const std::string &what, const std::string &schema,
     std::list<Dump_reader::Object_info *> *objects,
     mysqlshdk::db::IResult *result) {
@@ -3783,17 +3831,9 @@ bool Dump_loader::report_duplicates(
 
   while (auto row = result->fetch_one()) {
     const auto name = row->get_string(0);
-    const auto msg = "Schema `" + schema + "` already contains " + what +
-                     " named `" + name + "`";
 
-    if (m_options.ignore_existing_objects()) {
-      current_console()->print_note(msg + ", ignoring...");
-    } else if (m_options.drop_existing_objects()) {
-      current_console()->print_note(msg + ", dropping...");
-    } else {
-      current_console()->print_error(msg);
-    }
-
+    report_duplicate_object("Schema `" + schema + "` already contains " + what +
+                            " named `" + name + "`");
     has_duplicates = true;
 
     if (!set_object_exists(name, objects)) {
@@ -3820,38 +3860,97 @@ void Dump_loader::check_existing_objects() {
 
   bool has_duplicates = false;
 
-  if (m_options.load_users()) {
-    std::set<std::string> accounts;
-    for (const auto &a : m_dump->accounts()) {
-      if (m_options.filters().users().is_included(a))
-        accounts.emplace(shcore::str_lower(
-            shcore::str_format("'%s'@'%s'", a.user.c_str(), a.host.c_str())));
+  has_duplicates |= check_existing_users();
+  has_duplicates |= check_existing_data_masking_policies();
+  has_duplicates |= check_existing_schema_objects();
+
+  if (has_duplicates) {
+    const auto console = current_console();
+
+    if (m_options.ignore_existing_objects()) {
+      console->print_note(
+          "One or more objects in the dump already exist in the destination "
+          "database but will be ignored because the 'ignoreExistingObjects' "
+          "option was enabled.");
+    } else if (m_options.drop_existing_objects()) {
+      console->print_note(
+          "One or more objects in the dump already exist in the destination "
+          "database but will be dropped because the 'dropExistingObjects' "
+          "option was enabled.");
+    } else {
+      console->print_error(
+          "One or more objects in the dump already exist in the destination "
+          "database. You must either exclude these objects from the load, "
+          "enable the 'dropExistingObjects' option to drop them automatically, "
+          "or enable the 'ignoreExistingObjects' option to ignore them.");
+      THROW_ERROR(SHERR_LOAD_DUPLICATE_OBJECTS_FOUND);
     }
+  }
+}
 
-    auto result = sql::ar::query(
-        m_reconnect_callback, m_session,
-        "SELECT DISTINCT grantee FROM information_schema.user_privileges");
-    for (auto row = result->fetch_one(); row; row = result->fetch_one()) {
-      auto grantee = row->get_string(0);
-      if (accounts.count(shcore::str_lower(grantee))) {
-        const auto msg = "Account " + grantee + " already exists";
+bool Dump_loader::check_existing_users() const {
+  if (!m_options.load_users()) return false;
 
-        if (m_options.ignore_existing_objects()) {
-          current_console()->print_note(msg + ", ignoring...");
-        } else if (m_options.drop_existing_objects()) {
-          current_console()->print_note(msg + ", dropping...");
-        } else {
-          current_console()->print_error(msg);
-        }
+  bool has_duplicates = false;
+  std::set<std::string> accounts;
 
-        has_duplicates = true;
-      }
+  for (const auto &a : m_dump->accounts()) {
+    if (m_options.filters().users().is_included(a))
+      accounts.emplace(shcore::str_lower(
+          shcore::str_format("'%s'@'%s'", a.user.c_str(), a.host.c_str())));
+  }
+
+  const auto result = sql::ar::query(
+      m_reconnect_callback, m_session,
+      "SELECT DISTINCT grantee FROM information_schema.user_privileges");
+
+  while (const auto row = result->fetch_one()) {
+    const auto grantee = row->get_string(0);
+
+    if (accounts.count(shcore::str_lower(grantee))) {
+      report_duplicate_object("Account " + grantee + " already exists");
+      has_duplicates = true;
     }
   }
 
+  return has_duplicates;
+}
+
+bool Dump_loader::check_existing_data_masking_policies() const {
+  if (!handle_data_masking_policies()) {
+    return false;
+  }
+
+  bool has_duplicates = false;
+  const auto &new_policies = m_dump->data_masking_policies();
+  const auto existing_policies =
+      common::Data_masking{m_session}.fetch_policies();
+
+  const auto &small = (new_policies.size() < existing_policies.size())
+                          ? new_policies
+                          : existing_policies;
+  const auto &large = (new_policies.size() < existing_policies.size())
+                          ? existing_policies
+                          : new_policies;
+
+  for (const auto &policy : small) {
+    if (large.contains(policy)) {
+      report_duplicate_object("Data masking policy " +
+                              shcore::quote_identifier(policy) +
+                              " already exists");
+      has_duplicates = true;
+    }
+  }
+
+  return has_duplicates;
+}
+
+bool Dump_loader::check_existing_schema_objects() {
   auto schemas = m_dump->schemas();
 
-  if (schemas.empty()) return;
+  if (schemas.empty()) return false;
+
+  bool has_duplicates = false;
 
   // Case handling:
   // Partition, subpartition, column, index, stored routine, event, and
@@ -3859,17 +3958,18 @@ void Dump_loader::check_existing_objects() {
   // column aliases. Schema, table and trigger names depend on the value of
   // lower_case_table_names
 
-  // Get list of schemas being loaded that already exist
-  std::string set = shcore::str_join(schemas, ",", [](const auto s) {
+  const auto set = shcore::str_join(schemas, ",", [](const auto s) {
     return shcore::quote_sql_string(s->name);
   });
 
+  // Get list of schemas being loaded that already exist
   auto result =
       sql::ar::query(m_reconnect_callback, m_session,
                      "SELECT schema_name FROM information_schema.schemata "
                      "WHERE schema_name in (" +
                          set + ")");
-  std::vector<std::string> dup_schemas = fetch_names(result.get());
+
+  const auto dup_schemas = fetch_names(result.get());
 
   for (const auto &schema : dup_schemas) {
     std::list<Dump_reader::Object_info *> tables;
@@ -3895,22 +3995,22 @@ void Dump_loader::check_existing_objects() {
                          "SELECT table_name FROM information_schema.tables"
                          " WHERE table_schema = ? AND table_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a table", schema, &tables, result.get());
+      has_duplicates |= report_duplicate_schema_objects("a table", schema,
+                                                        &tables, result.get());
 
     result = query_names(m_reconnect_callback, m_session, schema, views,
                          "SELECT table_name FROM information_schema.views"
                          " WHERE table_schema = ? AND table_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a view", schema, &views, result.get());
+      has_duplicates |= report_duplicate_schema_objects("a view", schema,
+                                                        &views, result.get());
 
     result = query_names(m_reconnect_callback, m_session, schema, triggers,
                          "SELECT trigger_name FROM information_schema.triggers"
                          " WHERE trigger_schema = ? AND trigger_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a trigger", schema, &triggers, result.get());
+      has_duplicates |= report_duplicate_schema_objects(
+          "a trigger", schema, &triggers, result.get());
 
     result =
         query_names(m_reconnect_callback, m_session, schema, functions,
@@ -3918,8 +4018,8 @@ void Dump_loader::check_existing_objects() {
                     " WHERE routine_schema = ? AND routine_type = 'FUNCTION'"
                     " AND routine_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a function", schema, &functions, result.get());
+      has_duplicates |= report_duplicate_schema_objects(
+          "a function", schema, &functions, result.get());
 
     result =
         query_names(m_reconnect_callback, m_session, schema, procedures,
@@ -3927,22 +4027,22 @@ void Dump_loader::check_existing_objects() {
                     " WHERE routine_schema = ? AND routine_type = 'PROCEDURE'"
                     " AND routine_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a procedure", schema, &procedures, result.get());
+      has_duplicates |= report_duplicate_schema_objects(
+          "a procedure", schema, &procedures, result.get());
 
     result = query_names(m_reconnect_callback, m_session, schema, libraries,
                          "SELECT library_name FROM information_schema.libraries"
                          " WHERE library_schema = ? AND library_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("a library", schema, &libraries, result.get());
+      has_duplicates |= report_duplicate_schema_objects(
+          "a library", schema, &libraries, result.get());
 
     result = query_names(m_reconnect_callback, m_session, schema, events,
                          "SELECT event_name FROM information_schema.events"
                          " WHERE event_schema = ? AND event_name in ");
     if (result)
-      has_duplicates |=
-          report_duplicates("an event", schema, &events, result.get());
+      has_duplicates |= report_duplicate_schema_objects("an event", schema,
+                                                        &events, result.get());
   }
 
   // mark the remaining schemas as non-existing
@@ -3951,28 +4051,7 @@ void Dump_loader::check_existing_objects() {
     schema->exists = false;
   }
 
-  if (has_duplicates) {
-    const auto console = current_console();
-
-    if (m_options.ignore_existing_objects()) {
-      console->print_note(
-          "One or more objects in the dump already exist in the destination "
-          "database but will be ignored because the 'ignoreExistingObjects' "
-          "option was enabled.");
-    } else if (m_options.drop_existing_objects()) {
-      console->print_note(
-          "One or more objects in the dump already exist in the destination "
-          "database but will be dropped because the 'dropExistingObjects' "
-          "option was enabled.");
-    } else {
-      console->print_error(
-          "One or more objects in the dump already exist in the destination "
-          "database. You must either exclude these objects from the load, "
-          "enable the 'dropExistingObjects' option to drop them automatically, "
-          "or enable the 'ignoreExistingObjects' option to ignore them.");
-      THROW_ERROR(SHERR_LOAD_DUPLICATE_OBJECTS_FOUND);
-    }
-  }
+  return has_duplicates;
 }
 
 void Dump_loader::setup_progress_file(bool *out_is_resuming) {
@@ -4748,11 +4827,15 @@ void Dump_loader::execute_tasks(bool testing) {
 
         if (!m_worker_interrupt.test()) execute_drop_ddl_tasks();
 
+        if (!m_worker_interrupt.test()) drop_existing_data_masking_policies();
+
         if (!m_worker_interrupt.test()) drop_existing_accounts();
 
         // user accounts have to be created first, because creating an object
         // with the DEFINER clause requires that account to exist
         if (!m_worker_interrupt.test()) create_accounts();
+
+        if (!m_worker_interrupt.test()) execute_data_masking_policy_ddl();
 
         if (!m_worker_interrupt.test()) execute_schema_ddl_tasks();
 
@@ -5921,6 +6004,62 @@ void Dump_loader::apply_grants() {
       }
     }
   });
+}
+
+bool Dump_loader::handle_data_masking_policies() const {
+  return m_dump->has_data_masking_policies() &&
+         m_options.is_ddm_component_installed();
+}
+
+void Dump_loader::drop_existing_data_masking_policies() const {
+  if (m_options.dry_run() || !m_options.drop_existing_objects() ||
+      !handle_data_masking_policies()) {
+    return;
+  }
+
+  if (Load_progress_log::Status::DONE ==
+      m_load_log->status(progress::Masking_policy_ddl{})) {
+    log_info(
+        "Data masking policies were created in the previous run, skipping.");
+    return;
+  }
+
+  const auto &new_policies = m_dump->data_masking_policies();
+  common::Data_masking data_masking{m_session};
+
+  sql::ar::run(m_reconnect_callback, [&new_policies, &data_masking]() {
+    for (const auto &policy : new_policies) {
+      data_masking.drop_policy(policy);
+    }
+  });
+}
+
+void Dump_loader::execute_data_masking_policy_ddl() {
+  if (!m_options.load_ddl() || !handle_data_masking_policies()) {
+    return;
+  }
+
+  if (Load_progress_log::Status::DONE ==
+      m_load_log->status(progress::Masking_policy_ddl{})) {
+    log_info("Data masking policies already created, skipping.");
+    return;
+  }
+
+  const auto stage =
+      m_progress_thread.start_stage("Executing data masking policy DDL");
+  shcore::on_leave_scope finish_stage([stage]() { stage->finish(); });
+
+  if (m_options.dry_run()) {
+    return;
+  }
+
+  m_load_log->log(progress::start::Masking_policy_ddl{});
+
+  execute_script(m_reconnect_callback, m_session, m_dump->data_masking_script(),
+                 "While executing data masking policy SQL",
+                 m_default_sql_transforms);
+
+  m_load_log->log(progress::end::Masking_policy_ddl{});
 }
 
 void Dump_loader::show_metadata(bool force) const {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +37,6 @@
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 using mysqlshdk::db::uri::Uri_encoder;
-using mysqlshdk::utils::nullable_options::Comparison_mode;
 using mysqlshdk::utils::nullable_options::Set_mode;
 
 namespace mysqlshdk {
@@ -92,8 +91,7 @@ std::string to_string(Transport_type type) {
 }
 
 Connection_options::Connection_options()
-    : Connection_options(
-          utils::nullable_options::Comparison_mode::CASE_INSENSITIVE) {}
+    : Connection_options(Comparison_mode::CASE_INSENSITIVE) {}
 
 Connection_options::Connection_options(Comparison_mode mode)
     : IConnection("connection", mode),

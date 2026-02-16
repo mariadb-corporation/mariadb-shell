@@ -499,7 +499,8 @@ for param in [
         "fieldsEnclosedBy",
         "fieldsOptionallyEnclosed",
         "fieldsEscapedBy",
-        "linesTerminatedBy"
+        "linesTerminatedBy",
+        "dataMaskingPolicies",
         ]:
     EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Invalid options: {param}", __sandbox_uri2, { param: "fails" })
 
@@ -707,6 +708,9 @@ src_session.run_sql("SET @@GLOBAL.time_zone = SYSTEM")
 
 #@<> WL15947 - cleanup
 src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
 
 #@<> Cleanup
 cleanup_copy_tests()

@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,7 @@ file(GLOB api_module_SOURCES
       "util/binlog/load_binlogs_options.cc"
       "util/binlog/utils.cc"
       "util/common/common_options.cc"
+      "util/common/data_masking.cc"
       "util/common/storage_options.cc"
       "util/common/utils.cc"
       "util/common/dump/basenames.cc"

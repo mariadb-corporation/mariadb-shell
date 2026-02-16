@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -179,7 +179,12 @@
   "Insufficient privileges to disable automatic invisible primary key " \
   "creation."
 
-#define SHERR_LOAD_LAST 53037
+#define SHERR_LOAD_DDM_DDL_UNSUPPORTED_SERVER_VERSION 53038
+#define SHERR_LOAD_DDM_DDL_UNSUPPORTED_SERVER_VERSION_MSG                      \
+  "The dump contains dynamic data masking DDL which requires server 9.7.0 or " \
+  "newer."
+
+#define SHERR_LOAD_LAST 53038
 
 #define SHERR_LOAD_MAX 53999
 

@@ -712,7 +712,8 @@ for param in [
         "fieldsEnclosedBy",
         "fieldsOptionallyEnclosed",
         "fieldsEscapedBy",
-        "linesTerminatedBy"
+        "linesTerminatedBy",
+        "dataMaskingPolicies",
         ]:
     EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Invalid options: {param}", __sandbox_uri2, { param: "fails" })
 
@@ -958,6 +959,9 @@ elif __version_num > __mysh_version_num:
 
 #@<> BUG#38107377 - cleanup {not __dbug_off and VER(>=8.0.0)}
 testutil.dbug_set("")
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
 
 #@<> Cleanup
 cleanup_copy_tests()

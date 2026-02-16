@@ -305,6 +305,15 @@ bool supports_gipks(const mysqlshdk::utils::Version &v);
 bool supports_pke_as_pk(const mysqlshdk::utils::Version &v);
 
 /**
+ * Checks if server with the given version supports dynamic data masking.
+ *
+ * @param v Version to be checked.
+ *
+ * @returns true If server supports dynamic data masking.
+ */
+bool supports_dynamic_data_masking(const mysqlshdk::utils::Version &v);
+
+/**
  * Replaces first occurrence of a keyword (case insensitive comparison) with the
  * given value.
  *
@@ -322,6 +331,13 @@ bool replace_keyword(std::string_view stmt, std::string_view keyword,
  * Modifies the given CREATE USER statement to set the account as locked.
  */
 std::string lock_account(std::string_view create_user);
+
+/**
+ * Lists data masking policies which are used by the given CREATE TABLE
+ * statement.
+ */
+std::unordered_set<std::string> list_data_masking_policies(
+    std::string_view create_table);
 
 }  // namespace compatibility
 }  // namespace mysqlsh

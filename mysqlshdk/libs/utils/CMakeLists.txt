@@ -46,6 +46,7 @@ set(utils_SOURCE
     syslog.cc
     syslog_level.cc
     threads.cc
+    utils_account.cc
     utils_buffered_input.cc
     utils_encoding.cc
     utils_file.cc

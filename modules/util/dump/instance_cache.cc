@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,6 +46,7 @@
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "modules/util/common/data_masking.h"
 #include "modules/util/dump/dump_errors.h"
 #include "modules/util/dump/schema_dumper.h"
 
@@ -167,6 +168,15 @@ Instance_cache_builder::Instance_cache_builder(
 Instance_cache_builder &Instance_cache_builder::metadata(
     const Partition_filters &partitions) {
   fetch_metadata(partitions);
+  return *this;
+}
+
+Instance_cache_builder &Instance_cache_builder::data_masking_policies() {
+  Profiler profiler{"fetching data masking policies"};
+
+  m_cache.data_masking_policies =
+      mysqlsh::common::Data_masking{m_session}.fetch_policies();
+
   return *this;
 }
 
@@ -657,6 +667,7 @@ void Instance_cache_builder::fetch_columns() {
     const auto extra = row->get_string(7, "");  // EXTRA
     column.generated = extra.find(" GENERATED") != std::string::npos;
     column.auto_increment = extra.find("auto_increment") != std::string::npos;
+    column.masking_policy = extra.find("MASKING POLICY") != std::string::npos;
     column.nullable = shcore::str_caseeq(row->get_string(5),
                                          "YES");  // IS_NULLABLE
     column.is_innodb_vector_store_column =
@@ -705,6 +716,11 @@ void Instance_cache_builder::fetch_columns() {
           ++m_cache.innodb_vector_store_tables;
         }
 
+        if (c.masking_policy) {
+          t.has_masking_policy = true;
+          ++m_cache.masking_policy_tables;
+        }
+
         t.all_columns.emplace_back(std::move(c));
 
         if (!t.all_columns.back().generated) {
@@ -715,6 +731,7 @@ void Instance_cache_builder::fetch_columns() {
   }
 
   m_cache.has_innodb_vector_store_tables = m_cache.innodb_vector_store_tables;
+  m_cache.has_masking_policy_tables = m_cache.masking_policy_tables;
 
   for (auto &schema : view_columns) {
     auto &s = m_cache.schemas.at(schema.first);

@@ -757,7 +757,7 @@ EXPECT_FAIL("ValueError", "Argument #3: The value of the option 's3EndpointOverr
 EXPECT_FAIL("ValueError", "Argument #3: The value of the option 's3EndpointOverride' uses an invalid scheme 'FTp://', expected: http:// or https://.", quote(types_schema, types_schema_tables[0]), test_output_absolute, { "s3BucketName": "bucket", "s3EndpointOverride": "FTp://endpoint", "showProgress": False })
 
 #@<> options param being a dictionary that contains an unknown key
-for param in { "dummy", "indexColumn", "consistent", "triggers", "events", "routines", "libraries", "users", "excludeUsers", "includeUsers", "ddlOnly", "dataOnly", "dryRun", "chunking", "bytesPerChunk", "threads", "excludeTables", "includeTables", "excludeSchemas", "includeSchemas", "excludeEvents", "includeEvents", "excludeRoutines", "includeRoutines", "excludeLibraries", "includeLibraries", "excludeTriggers", "includeTriggers", "ociParManifest", "ociParExpireTime" }:
+for param in { "dummy", "indexColumn", "consistent", "triggers", "events", "routines", "libraries", "users", "excludeUsers", "includeUsers", "ddlOnly", "dataOnly", "dryRun", "chunking", "bytesPerChunk", "threads", "excludeTables", "includeTables", "excludeSchemas", "includeSchemas", "excludeEvents", "includeEvents", "excludeRoutines", "includeRoutines", "excludeLibraries", "includeLibraries", "excludeTriggers", "includeTriggers", "ociParManifest", "ociParExpireTime", "dataMaskingPolicies" }:
     EXPECT_FAIL("ValueError", f"Argument #3: Invalid options: {param}", quote(types_schema, types_schema_tables[0]), test_output_relative, { param: "fails" })
 
 #@<> WL13804-FR15 - Once the dump is complete, the summary of the export process must be presented to the user. It must contain:
@@ -1518,6 +1518,9 @@ a"
 
 #@<> BUG#38245434 - cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [ tested_schema ])
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
 
 #@<> Cleanup
 drop_all_schemas()

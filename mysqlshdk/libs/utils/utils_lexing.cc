@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,9 @@
  */
 
 #include "mysqlshdk/libs/utils/utils_lexing.h"
+
 #include <cctype>
+#include <stdexcept>
 
 namespace mysqlshdk {
 namespace utils {
@@ -104,6 +106,84 @@ size_t span_cstyle_sql_comment(std::string_view s, size_t offset,
     // a bug. The server treats those as regular text.
     return span_cstyle_comment(s, offset);
   }
+}
+
+std::size_t span_quotable_sql_identifier(std::string_view s, std::size_t offset,
+                                         std::string *out_string,
+                                         bool allow_ansi_quotes) {
+  if (offset >= s.length()) return offset;
+
+  if (out_string) {
+    out_string->reserve(s.length() - offset);
+  }
+
+  const auto copy_current_character = [&s, &offset, out_string]() {
+    if (out_string) out_string->push_back(s[offset]);
+  };
+
+  if ('`' == s[offset] || (allow_ansi_quotes && '"' == s[offset])) {
+    const char quote = s[offset++];
+    bool esc = false;
+    bool done = false;
+
+    while (!done && offset < s.size()) {
+      if (quote == s[offset]) {
+        if (esc) {
+          copy_current_character();
+          esc = false;
+        } else {
+          esc = true;
+        }
+      } else {
+        if (esc) {
+          done = true;
+          break;
+        } else {
+          copy_current_character();
+        }
+      }
+
+      ++offset;
+    }
+
+    // was the last character a quote?
+    if (!done && esc) {
+      done = true;
+    }
+
+    if (!done) {
+      throw std::runtime_error("Invalid syntax in identifier");
+    }
+  } else {
+    const auto first = offset;
+    bool seen_not_a_digit = false;
+
+    while (offset < s.size()) {
+      if (!std::isalnum(s[offset]) && s[offset] != '_' && s[offset] != '$') {
+        if (first == offset) {
+          throw std::runtime_error("Invalid character in identifier");
+        } else {
+          break;
+        }
+      }
+
+      copy_current_character();
+
+      if (!seen_not_a_digit && !std::isdigit(s[offset])) {
+        seen_not_a_digit = true;
+      }
+
+      ++offset;
+    }
+
+    if (!seen_not_a_digit) {
+      throw std::runtime_error(
+          "Invalid identifier: identifiers may begin with a digit but unless "
+          "quoted may not consist solely of digits.");
+    }
+  }
+
+  return offset;
 }
 
 SQL_iterator::SQL_iterator(std::string_view str, size_type offset,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,8 @@ class Export_table_options : public Dump_options {
   bool dump_libraries() const override { return false; }
 
   bool dump_users() const override { return false; }
+
+  bool dump_data_masking_policies() const override { return false; }
 
   bool use_timezone_utc() const override { return false; }
 

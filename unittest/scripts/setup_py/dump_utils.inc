@@ -49,6 +49,21 @@ def snapshot_accounts(session):
         accounts[name]=user
     return accounts
 
+def snapshot_masking_policy(session, name):
+    policy = {}
+    policy["ddl"] = session.run_sql("SHOW CREATE MASKING POLICY !", [name]).fetch_one()[1]
+    return policy
+
+def snapshot_masking_policies(session):
+    policies = {}
+    if not is_dynamic_data_masking_enabled(session):
+        return policies
+    for row in session.run_sql("SELECT policy_name FROM mysql.column_masking_policies").fetch_all():
+        policy_name = row[0]
+        policy = snapshot_masking_policy(session, policy_name)
+        policies[policy_name] = policy
+    return policies
+
 def snapshot_table_data(session, schema, table):
     # CHECKSUM TABLE returns different values for floating point values when they're loaded with LOAD DATA - BUG#31071891
     # CHECKSUM TABLE doesn't work well with JSON columns (5.7)
@@ -139,6 +154,7 @@ def snapshot_tablespaces(session):
 def snapshot_instance(session):
     snapshot = {}
     snapshot["accounts"] = snapshot_accounts(session)
+    snapshot["masking-policies"] = snapshot_masking_policies(session)
     snapshot["tablespaces"] = snapshot_tablespaces(session)
     snapshot["schemas"] = snapshot_schemas(session)
     # normalize the JSON encoding
@@ -149,6 +165,12 @@ def wipeout_users(session):
         if user not in ["root", "mysql.infoschema", "mysql.sys", "mysql.session"]:
             session.run_sql("drop user ?@?", [user,host])
 
+def wipeout_masking_policies(session):
+    if not is_dynamic_data_masking_enabled(session):
+        return
+    for row in session.run_sql("SELECT policy_name FROM mysql.column_masking_policies").fetch_all():
+        session.run_sql("DROP MASKING POLICY !", [row[0]])
+
 def wipeout_server(session):
     session.run_sql("set foreign_key_checks=0")
     schemas = session.run_sql("show schemas").fetch_all()
@@ -157,6 +179,7 @@ def wipeout_server(session):
             continue
         session.run_sql("drop schema `"+schema+"`")
     wipeout_users(session)
+    wipeout_masking_policies(session)
     session.run_sql("reset " + get_reset_binary_logs_keyword())
     session.run_sql("set global foreign_key_checks=1")
 
@@ -888,4 +911,10 @@ innodb_vector_store_capability = {
     "id": "innodb_vector_store",
     "description": "InnoDB vector store - dump contains InnoDB-based vector store tables.",
     "versionRequired": "9.4.1",
+}
+
+dynamic_data_masking_capability = {
+    "id": "dynamic_data_masking",
+    "description": "Dynamic data masking - dump contains dynamic data masking DDL.",
+    "versionRequired": "9.7.0",
 }

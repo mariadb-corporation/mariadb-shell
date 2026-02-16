@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include "gtest_clean.h"
 #include "unittest/test_utils/mocks/gmock_clean.h"
 #include "unittest/test_utils/shell_test_env.h"
+#include "utils/utils_account.h"
 #include "utils/utils_general.h"
 
 #include <mysql_version.h>
@@ -392,35 +393,59 @@ TEST(utils_general, unquote_identifier) {
 }
 
 TEST(utils_general, unquote_sql_string) {
-  EXPECT_THROW_LIKE(unquote_sql_string(""), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("\"aa\""), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("'aa"), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("'aa''"), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("aa'"), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("'\\'"), std::invalid_argument,
-                    "string is not properly quoted");
-  EXPECT_THROW_LIKE(unquote_sql_string("''\\'"), std::invalid_argument,
-                    "string is not properly quoted");
+  const auto insert_quotes = [](std::string_view s, char quote) {
+    std::string str{s};
 
-  EXPECT_EQ("\n", unquote_sql_string("'\n'"));
-  EXPECT_EQ("\\", unquote_sql_string("'\\\\'"));
-  EXPECT_EQ("", unquote_sql_string("''"));
-  EXPECT_EQ("'", unquote_sql_string(R"*('\'')*"));
-  EXPECT_EQ("'", unquote_sql_string("'\\''"));
-  EXPECT_EQ("'", unquote_sql_string("'\\''"));
-  EXPECT_EQ("'", unquote_sql_string("''''"));
-  EXPECT_EQ("'''", unquote_sql_string("'\\''''''"));
-  EXPECT_EQ("''\\'", unquote_sql_string("'\\'''\\\\'''"));
-  EXPECT_EQ("'", unquote_sql_string("'\\''"));
-  EXPECT_EQ("\n", unquote_sql_string("'\\n'"));
-  EXPECT_EQ("\\n", unquote_sql_string("'\\\\n'"));
-  EXPECT_EQ("\\\n", unquote_sql_string("'\\\\\n'"));
-  EXPECT_EQ("'\n", unquote_sql_string("'\\'\n'"));
+    std::replace(str.begin(), str.end(), '*', quote);
+
+    return str;
+  };
+
+  const auto EXPECT_ERROR = [&insert_quotes](std::string_view s,
+                                             char quote = '\'') {
+    const auto str = insert_quotes(s, quote);
+    SCOPED_TRACE(str_format("string: %.*s, quote: %c", (int)str.size(),
+                            str.data(), quote));
+
+    EXPECT_THROW_LIKE(unquote_sql_string(str, quote), std::invalid_argument,
+                      "string is not properly quoted");
+  };
+
+  const auto EXPECT_SUCCESS = [&insert_quotes](std::string_view expected,
+                                               std::string_view s,
+                                               char quote = '\'') {
+    const auto str = insert_quotes(s, quote);
+    SCOPED_TRACE(str_format("string: %.*s, quote: %c", (int)str.size(),
+                            str.data(), quote));
+
+    EXPECT_EQ(insert_quotes(expected, quote), unquote_sql_string(str, quote));
+  };
+
+  EXPECT_ERROR("\"aa\"", '\'');
+  EXPECT_ERROR("'aa'", '"');
+
+  for (char quote : {'\'', '"'}) {
+    EXPECT_ERROR("");
+    EXPECT_ERROR("*aa", quote);
+    EXPECT_ERROR("*aa**", quote);
+    EXPECT_ERROR("aa*", quote);
+    EXPECT_ERROR("*\\*", quote);
+    EXPECT_ERROR("**\\*", quote);
+    EXPECT_ERROR(std::string_view{"*\\\0*", 4}, quote);
+
+    EXPECT_SUCCESS("\n", "*\n*", quote);
+    EXPECT_SUCCESS("\\", "*\\\\*", quote);
+    EXPECT_SUCCESS("", "**", quote);
+    EXPECT_SUCCESS("*", R"*(*\**)*", quote);
+    EXPECT_SUCCESS("*", "*\\**", quote);
+    EXPECT_SUCCESS("*", "****", quote);
+    EXPECT_SUCCESS("***", "*\\******", quote);
+    EXPECT_SUCCESS("**\\*", "*\\***\\\\***", quote);
+    EXPECT_SUCCESS("\n", "*\\n*", quote);
+    EXPECT_SUCCESS("\\n", "*\\\\n*", quote);
+    EXPECT_SUCCESS("\\\n", "*\\\\\n*", quote);
+    EXPECT_SUCCESS("*\n", "*\\*\n*", quote);
+  }
 }
 
 TEST(utils_general, split_string_chars) {

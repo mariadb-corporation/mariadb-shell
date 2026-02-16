@@ -309,7 +309,7 @@ dump_dir = os.path.join(outdir, "bug_33502098")
 # dump
 shell.connect(__sandbox_uri1)
 EXPECT_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ "non_existing_schema" ], "users": False }), "Filters for schemas result in an empty set.")
-EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ "non_existing_schema" ], "users": True }), "Dump")
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ "non_existing_schema" ], "users": True, "excludeUsers": ["root"] }), "Dump")
 
 # load
 shell.connect(__sandbox_uri2)
@@ -2801,14 +2801,16 @@ shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port1)
 wipe_dir(dump_dir)
 session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 100")
 WIPE_SHELL_LOG()
-EXPECT_THROWS(lambda: util.dump_instance(dump_dir, { "users": False }), "Fatal error during dump")
+# we don't specify the error message here, it can vary depending on when the error is reported
+EXPECT_THROWS(lambda: util.dump_instance(dump_dir, { "users": False }), "")
 EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpInstance\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 100\), SQL: "))
 
 # dump schemas
 wipe_dir(dump_dir)
 session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 90")
 WIPE_SHELL_LOG()
-EXPECT_THROWS(lambda: util.dump_schemas(["world"], dump_dir), "Fatal error during dump")
+# we don't specify the error message here, it can vary depending on when the error is reported
+EXPECT_THROWS(lambda: util.dump_schemas(["world"], dump_dir), "")
 EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpSchemas\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 90\), SQL: "))
 
 # dump tables
@@ -2818,7 +2820,8 @@ WIPE_SHELL_LOG()
 tables = ["City", "Country"]
 if __os_type == "windows":
     tables = [ t.lower() for t in tables ]
-EXPECT_THROWS(lambda: util.dump_tables("world", tables, dump_dir), "Fatal error during dump")
+# we don't specify the error message here, it can vary depending on when the error is reported
+EXPECT_THROWS(lambda: util.dump_tables("world", tables, dump_dir), "")
 EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpTables\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 80\), SQL: "))
 
 session1.run_sql("DROP USER admin@'%'")

@@ -1757,7 +1757,11 @@ limit.
 @li <b>showProgress</b>: bool (default: true if stdout is a TTY device, false
 otherwise) - Enable or disable dump progress information.
 @li <b>defaultCharacterSet</b>: string (default: "utf8mb4") - Character set used
-for the dump.)*");
+for the dump.
+@li <b>allowDataMasking</b>: bool (default: false) - Allows to dump data with
+masked values. When set to false, an attempt to dump data using an account that
+cannot access columns with masking policies will result in an error. When
+enabled, downgrades this error to a warning.)*");
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_DDL_COMMON_OPTIONS, R"*(
 @li <b>triggers</b>: bool (default: true) - Include triggers for each dumped
@@ -1832,8 +1836,6 @@ REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_SCHEMAS_COMMON_OPTIONS, R"*(
 views to be excluded from the dump in the format of <b>schema</b>.<b>table</b>.
 @li <b>includeTables</b>: list of strings (default: empty) - List of tables or
 views to be included in the dump in the format of <b>schema</b>.<b>table</b>.
-
-${TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS}
 
 @li <b>events</b>: bool (default: true) - Include events from each dumped
 schema.
@@ -2082,10 +2084,10 @@ The <b>tables</b> parameter cannot be an empty list.
 ${TOPIC_UTIL_DUMP_DDL_COMMON_PARAMETERS}
 
 <b>The following options are supported:</b>
+${TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS}
+
 @li <b>all</b>: bool (default: false) - Dump all views and tables from the
 specified schema.
-
-${TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS}
 
 ${TOPIC_UTIL_DUMP_DDL_COMMON_OPTIONS}
 ${TOPIC_UTIL_DUMP_EXPORT_COMMON_OPTIONS}
@@ -2181,7 +2183,10 @@ The <b>schemas</b> parameter cannot be an empty list.
 ${TOPIC_UTIL_DUMP_DDL_COMMON_PARAMETERS}
 
 <b>The following options are supported:</b>
+${TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS}
+
 ${TOPIC_UTIL_DUMP_SCHEMAS_COMMON_OPTIONS}
+
 ${TOPIC_UTIL_DUMP_DDL_COMMON_OPTIONS}
 ${TOPIC_UTIL_DUMP_EXPORT_COMMON_OPTIONS}
 ${TOPIC_UTIL_DUMP_DDL_COMPRESSION}
@@ -2247,11 +2252,11 @@ Dumps the whole database to files in the output directory.
 ${TOPIC_UTIL_DUMP_DDL_COMMON_PARAMETERS}
 
 <b>The following options are supported:</b>
-@li <b>excludeSchemas</b>: list of strings (default: empty) - List of schemas to
-be excluded from the dump.
-@li <b>includeSchemas</b>: list of strings (default: empty) - List of schemas to
-be included in the dump.
-${TOPIC_UTIL_DUMP_SCHEMAS_COMMON_OPTIONS}
+${TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS}
+
+@li <b>dataMaskingPolicies</b>: bool (default: true) - Include data masking
+policies in the dump file.
+
 @li <b>users</b>: bool (default: true) - Include users, roles and grants in the
 dump file.
 @li <b>excludeUsers</b>: array of strings (default not set) - Skip dumping the
@@ -2261,6 +2266,13 @@ is not specified, all the accounts with the given user name are excluded.
 specified users. Each user is in the format of 'user_name'[@'host']. If the host
 is not specified, all the accounts with the given user name are included. By
 default, all users are included.
+
+@li <b>excludeSchemas</b>: list of strings (default: empty) - List of schemas to
+be excluded from the dump.
+@li <b>includeSchemas</b>: list of strings (default: empty) - List of schemas to
+be included in the dump.
+
+${TOPIC_UTIL_DUMP_SCHEMAS_COMMON_OPTIONS}
 
 ${TOPIC_UTIL_DUMP_DDL_COMMON_OPTIONS}
 ${TOPIC_UTIL_DUMP_EXPORT_COMMON_OPTIONS}
@@ -2423,6 +2435,10 @@ limit.
 otherwise) - Enable or disable copy progress information.
 @li <b>defaultCharacterSet</b>: string (default: "utf8mb4") - Character set used
 for the copy.
+@li <b>allowDataMasking</b>: bool (default: false) - Allows to copy data with
+masked values. When set to false, an attempt to copy data using an account that
+cannot access columns with masking policies will result in an error. When
+enabled, downgrades this error to a warning.
 
 @li <b>analyzeTables</b>: "off", "on", "histogram" (default: off) - If 'on',
 executes ANALYZE TABLE for all tables, once copied. If set to 'histogram', only
@@ -2477,12 +2493,9 @@ a connection to the target instance.
 ${TOPIC_UTIL_COPY_COMMON_DESCRIPTION}
 
 <b>The following options are supported:</b>
-@li <b>excludeSchemas</b>: list of strings (default: empty) - List of schemas to
-be excluded from the copy.
-@li <b>includeSchemas</b>: list of strings (default: empty) - List of schemas to
-be included in the copy.
+@li <b>dataMaskingPolicies</b>: bool (default: true) - Include data masking
+policies in the copy.
 
-${TOPIC_UTIL_COPY_SCHEMAS_COMMON_OPTIONS}
 @li <b>users</b>: bool (default: true) - Include users, roles and grants in the
 copy.
 @li <b>excludeUsers</b>: list of strings (default not set) - Skip copying the
@@ -2492,6 +2505,13 @@ is not specified, all the accounts with the given user name are excluded.
 specified users. Each user is in the format of 'user_name'[@'host']. If the host
 is not specified, all the accounts with the given user name are included. By
 default, all users are included.
+
+@li <b>excludeSchemas</b>: list of strings (default: empty) - List of schemas to
+be excluded from the copy.
+@li <b>includeSchemas</b>: list of strings (default: empty) - List of schemas to
+be included in the copy.
+
+${TOPIC_UTIL_COPY_SCHEMAS_COMMON_OPTIONS}
 
 ${TOPIC_UTIL_COPY_COMMON_OPTIONS}
 

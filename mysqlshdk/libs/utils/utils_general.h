@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -237,61 +237,6 @@ std::string SHCORE_PUBLIC from_camel_case_to_dashes(std::string_view name);
 
 std::string SHCORE_PUBLIC errno_to_string(int err);
 
-struct Account {
-  enum class Auto_quote {
-    /**
-     * No auto-quotes, string must be a valid account name.
-     */
-    NO,
-    /**
-     * Host will be auto-quoted, multiple unqouted '@' characters are NOT
-     * allowed.
-     */
-    HOST,
-    /**
-     * String is a result of i.e. CURRENT_USER() function and is not quoted at
-     * all. Host will be auto-quoted, multiple unqouted '@' characters are
-     * allowed, the last one marks the beginning of the host name.
-     */
-    USER_AND_HOST,
-  };
-
-  std::string user;
-  std::string host;
-
-  bool operator<(const Account &a) const {
-    return std::tie(user, host) < std::tie(a.user, a.host);
-  }
-
-  bool operator==(const Account &a) const {
-    return user == a.user && host == a.host;
-  }
-};
-
-void SHCORE_PUBLIC split_account(
-    const std::string &account, std::string *out_user, std::string *out_host,
-    Account::Auto_quote auto_quote = Account::Auto_quote::NO);
-Account SHCORE_PUBLIC
-split_account(const std::string &account,
-              Account::Auto_quote auto_quote = Account::Auto_quote::NO);
-
-template <typename C>
-std::vector<Account> to_accounts(
-    const C &c, Account::Auto_quote auto_quote = Account::Auto_quote::NO) {
-  std::vector<Account> result;
-
-  for (const auto &i : c) {
-    result.emplace_back(split_account(i, auto_quote));
-  }
-
-  return result;
-}
-
-std::string SHCORE_PUBLIC make_account(const std::string &user,
-                                       const std::string &host,
-                                       bool no_backslash_escapes = false);
-std::string SHCORE_PUBLIC make_account(const Account &account);
-
 std::string SHCORE_PUBLIC get_member_name(std::string_view name,
                                           shcore::NamingStyle style);
 
@@ -322,10 +267,11 @@ void SHCORE_PUBLIC split_priv_level(const std::string &str,
                                     std::string *out_object,
                                     size_t *out_leftover = nullptr);
 
-std::string SHCORE_PUBLIC unquote_identifier(const std::string &str,
+std::string SHCORE_PUBLIC unquote_identifier(std::string_view str,
                                              bool allow_ansi_quotes = false);
 
-std::string SHCORE_PUBLIC unquote_sql_string(const std::string &str);
+std::string SHCORE_PUBLIC unquote_sql_string(std::string_view str,
+                                             char quote = '\'');
 
 /**
  * Check whether a variable is enabled in @@session_track_system_variables,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +54,20 @@ Dump_info dump_info(const shcore::json::Value &object) {
   info.origin = optional_string(object, "origin");
 
   info.has_users = object.HasMember("users");
+
+  if (auto policies = optional_string_array(object, "dataMaskingPolicies");
+      policies.has_value()) {
+    info.data_masking_policies.reserve(policies->size());
+
+    for (auto &policy : *policies) {
+      info.data_masking_policies.emplace(std::move(policy));
+    }
+  }
+
+  info.has_masked_table_ddl =
+      optional_bool(object, "hasMaskedTableDdl").value_or(false);
+  info.maybe_has_masked_table_data =
+      optional_bool(object, "maybeHasMaskedTableData").value_or(false);
 
   info.default_charset = optional_string(object, "defaultCharacterSet");
   info.tz_utc = optional_bool(object, "tzUtc").value_or(true);

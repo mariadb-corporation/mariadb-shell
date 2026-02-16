@@ -142,6 +142,7 @@ class Dump_reader {
   void replace_target_schema(const std::string &schema);
 
   std::string users_script() const;
+  std::string data_masking_script() const;
   std::string begin_script() const;
   std::string end_script() const;
 
@@ -384,6 +385,27 @@ class Dump_reader {
     return m_contents.innodb_vector_store;
   }
 
+  inline bool has_dynamic_data_masking_ddl() const noexcept {
+    return m_contents.has_dynamic_data_masking_ddl;
+  }
+
+  inline bool has_data_masking_policies() const noexcept {
+    return !m_contents.dump.data_masking_policies.empty();
+  }
+
+  inline const std::unordered_set<std::string> &data_masking_policies()
+      const noexcept {
+    return m_contents.dump.data_masking_policies;
+  }
+
+  inline bool has_masked_table_ddl() const noexcept {
+    return m_contents.dump.has_masked_table_ddl;
+  }
+
+  inline bool maybe_has_masked_table_data() const noexcept {
+    return m_contents.dump.maybe_has_masked_table_data;
+  }
+
   void exclude_routines_with_missing_dependencies(
       const std::shared_ptr<mysqlshdk::db::ISession> &session);
 
@@ -614,9 +636,10 @@ class Dump_reader {
     shcore::heterogeneous_map<std::string, std::shared_ptr<Schema_info>>
         schemas;
 
-    std::unique_ptr<std::string> sql;
-    std::unique_ptr<std::string> post_sql;
-    std::unique_ptr<std::string> users_sql;
+    std::optional<std::string> sql;
+    std::optional<std::string> post_sql;
+    std::optional<std::string> users_sql;
+    std::optional<std::string> data_masking_sql;
 
     bool has_invalid_view_references = false;
 
@@ -633,6 +656,8 @@ class Dump_reader {
     bool table_only = false;
 
     std::unordered_map<std::string, uint64_t> chunk_data_sizes;
+
+    bool has_dynamic_data_masking_ddl = false;
 
     volatile bool md_done = false;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -142,6 +142,12 @@ struct Transaction_bytes : detail::Value<uint64_t> {
 
 struct Create_users {
   static constexpr entry::Operation op{"CREATE-USERS"};
+
+  std::string key() const { return std::string{op.value}; }
+};
+
+struct Masking_policy_ddl {
+  static constexpr entry::Operation op{"MASKING-POLICY-DDL"};
 
   std::string key() const { return std::string{op.value}; }
 };
@@ -393,9 +399,11 @@ struct Secondary_load {
 
 template <typename T>
 concept Status_entry =
-    std::is_base_of_v<Create_users, T> || std::is_base_of_v<Gtid_update, T> ||
-    std::is_base_of_v<Schema_ddl, T> || std::is_base_of_v<Table_ddl, T> ||
-    std::is_base_of_v<Triggers_ddl, T> || std::is_base_of_v<Table_indexes, T> ||
+    std::is_base_of_v<Create_users, T> ||
+    std::is_base_of_v<Masking_policy_ddl, T> ||
+    std::is_base_of_v<Gtid_update, T> || std::is_base_of_v<Schema_ddl, T> ||
+    std::is_base_of_v<Table_ddl, T> || std::is_base_of_v<Triggers_ddl, T> ||
+    std::is_base_of_v<Table_indexes, T> ||
     std::is_base_of_v<Analyze_table, T> || std::is_base_of_v<Table_chunk, T> ||
     std::is_base_of_v<Table_subchunk, T> || std::is_base_of_v<Bulk_load, T> ||
     std::is_base_of_v<Secondary_load, T>;
@@ -403,6 +411,8 @@ concept Status_entry =
 namespace start {
 
 struct Create_users : public progress::Create_users {};
+
+struct Masking_policy_ddl : public progress::Masking_policy_ddl {};
 
 struct Gtid_update : public progress::Gtid_update {};
 
@@ -441,12 +451,12 @@ struct Secondary_load : public progress::Secondary_load {
 
 template <typename T>
 concept Entry =
-    std::is_same_v<T, Create_users> || std::is_same_v<T, Gtid_update> ||
-    std::is_same_v<T, Schema_ddl> || std::is_same_v<T, Table_ddl> ||
-    std::is_same_v<T, Triggers_ddl> || std::is_same_v<T, Table_indexes> ||
-    std::is_same_v<T, Analyze_table> || std::is_same_v<T, Table_chunk> ||
-    std::is_same_v<T, Table_subchunk> || std::is_same_v<T, Bulk_load> ||
-    std::is_same_v<T, Secondary_load>;
+    std::is_same_v<T, Create_users> || std::is_same_v<Masking_policy_ddl, T> ||
+    std::is_same_v<T, Gtid_update> || std::is_same_v<T, Schema_ddl> ||
+    std::is_same_v<T, Table_ddl> || std::is_same_v<T, Triggers_ddl> ||
+    std::is_same_v<T, Table_indexes> || std::is_same_v<T, Analyze_table> ||
+    std::is_same_v<T, Table_chunk> || std::is_same_v<T, Table_subchunk> ||
+    std::is_same_v<T, Bulk_load> || std::is_same_v<T, Secondary_load>;
 
 }  // namespace start
 
@@ -464,6 +474,8 @@ concept Entry = std::is_same_v<T, Bulk_load>;
 namespace end {
 
 struct Create_users : public progress::Create_users {};
+
+struct Masking_policy_ddl : public progress::Masking_policy_ddl {};
 
 struct Gtid_update : public progress::Gtid_update {};
 
@@ -497,12 +509,12 @@ struct Secondary_load : public progress::Secondary_load {};
 
 template <typename T>
 concept Entry =
-    std::is_same_v<T, Create_users> || std::is_same_v<T, Gtid_update> ||
-    std::is_same_v<T, Schema_ddl> || std::is_same_v<T, Table_ddl> ||
-    std::is_same_v<T, Triggers_ddl> || std::is_same_v<T, Table_indexes> ||
-    std::is_same_v<T, Analyze_table> || std::is_same_v<T, Table_chunk> ||
-    std::is_same_v<T, Table_subchunk> || std::is_same_v<T, Bulk_load> ||
-    std::is_same_v<T, Secondary_load>;
+    std::is_same_v<T, Create_users> || std::is_same_v<Masking_policy_ddl, T> ||
+    std::is_same_v<T, Gtid_update> || std::is_same_v<T, Schema_ddl> ||
+    std::is_same_v<T, Table_ddl> || std::is_same_v<T, Triggers_ddl> ||
+    std::is_same_v<T, Table_indexes> || std::is_same_v<T, Analyze_table> ||
+    std::is_same_v<T, Table_chunk> || std::is_same_v<T, Table_subchunk> ||
+    std::is_same_v<T, Bulk_load> || std::is_same_v<T, Secondary_load>;
 
 }  // namespace end
 
@@ -750,6 +762,8 @@ class Load_progress_log final {
   }
 
   static void append(Dumper *, const progress::Create_users &) {}
+
+  static void append(Dumper *, const progress::Masking_policy_ddl &) {}
 
   static void append(Dumper *, const progress::Gtid_update &) {}
 

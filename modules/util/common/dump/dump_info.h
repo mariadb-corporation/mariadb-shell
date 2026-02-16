@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "mysqlshdk/libs/utils/utils_json.h"
@@ -52,6 +53,9 @@ struct Dump_info {
   mysqlshdk::utils::Version version;
   std::string origin;
   bool has_users = false;
+  std::unordered_set<std::string> data_masking_policies;
+  bool has_masked_table_ddl = false;
+  bool maybe_has_masked_table_data = false;
   std::string default_charset;
   bool tz_utc = true;
   uint64_t bytes_per_chunk = 0;

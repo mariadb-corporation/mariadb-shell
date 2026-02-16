@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,7 @@ constexpr inline auto k_checksums_metadata_file = "@.checksums.json";
 constexpr inline auto k_preamble_sql_file = "@.sql";
 constexpr inline auto k_postamble_sql_file = "@.post.sql";
 constexpr inline auto k_users_sql_file = "@.users.sql";
+constexpr inline auto k_data_masking_file = "@.ddm.sql";
 
 }  // namespace common
 }  // namespace dump

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -549,9 +549,14 @@ class Dump_loader {
   void execute_threaded(const std::function<bool()> &schedule_next);
 
   void check_existing_objects();
-  bool report_duplicates(const std::string &what, const std::string &schema,
-                         std::list<Dump_reader::Object_info *> *objects,
-                         mysqlshdk::db::IResult *result);
+  bool check_existing_users() const;
+  bool check_existing_data_masking_policies() const;
+  bool check_existing_schema_objects();
+  bool report_duplicate_schema_objects(
+      const std::string &what, const std::string &schema,
+      std::list<Dump_reader::Object_info *> *objects,
+      mysqlshdk::db::IResult *result);
+  void report_duplicate_object(const std::string &msg) const;
 
   void open_dump();
   void open_dump(std::unique_ptr<mysqlshdk::storage::IDirectory> dumpdir);
@@ -680,6 +685,12 @@ class Dump_loader {
   void create_accounts();
 
   void apply_grants();
+
+  bool handle_data_masking_policies() const;
+
+  void drop_existing_data_masking_policies() const;
+
+  void execute_data_masking_policy_ddl();
 
   bool bulk_load_supported(const Dump_reader::Table_chunk &chunk) const;
 

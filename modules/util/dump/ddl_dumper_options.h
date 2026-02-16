@@ -73,6 +73,8 @@ class Ddl_dumper_options : public Dump_options {
 
   bool dump_triggers() const override { return m_dump_triggers; }
 
+  bool dump_data_masking_policies() const override { return false; }
+
   bool use_timezone_utc() const override { return m_timezone_utc; }
 
   bool dump_binlog_info() const override { return true; }

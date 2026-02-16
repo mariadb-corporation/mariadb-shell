@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -65,6 +65,7 @@ struct Instance_cache {
     mysqlshdk::db::Type type = mysqlshdk::db::Type::Null;
     bool is_innodb_vector_store_column = false;
     std::string collation;
+    bool masking_policy = false;
   };
 
   class Index final {
@@ -125,6 +126,7 @@ struct Instance_cache {
     std::vector<std::string> triggers;  // order of triggers is important
     std::vector<Partition> partitions;
     bool is_innodb_vector_store_table = false;
+    bool has_masking_policy = false;
   };
 
   struct View : public Table {
@@ -176,10 +178,14 @@ struct Instance_cache {
   bool has_ndbinfo = false;
   bool has_library_ddl = false;
   bool has_innodb_vector_store_tables = false;
+  bool has_masking_policy_tables = false;
   uint64_t innodb_vector_store_tables = 0;
+  uint64_t masking_policy_tables = 0;
   std::string user;
   std::string hostname;
   common::Server_info server;
+
+  std::unordered_set<std::string> data_masking_policies;
 
   std::unordered_map<std::string, Schema> schemas;
   std::unordered_map<std::string, Schema *> schemas_lowercase;
@@ -213,6 +219,8 @@ class Instance_cache_builder final {
   Instance_cache_builder &operator=(Instance_cache_builder &&) = delete;
 
   Instance_cache_builder &metadata(const Partition_filters &partitions);
+
+  Instance_cache_builder &data_masking_policies();
 
   Instance_cache_builder &users();
 

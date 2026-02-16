@@ -1096,5 +1096,11 @@ EXPECT_JSON_EQ(accounts, snapshot_accounts(tgt_session), "Verifying accounts")
 src_session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 src_session.run_sql(f"DROP USER IF EXISTS {test_user}")
 
+#@<> WL17279-FR1.1 - 'dataMaskingPolicies' option - type
+TEST_BOOL_OPTION("dataMaskingPolicies")
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
+
 #@<> Cleanup
 cleanup_copy_tests()

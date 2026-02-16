@@ -37,6 +37,7 @@
 #include "modules/util/upgrade_checker/upgrade_check_creators.h"
 #include "modules/util/upgrade_checker/upgrade_check_formatter.h"
 
+#include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlsh {

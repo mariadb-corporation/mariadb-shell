@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -165,7 +165,16 @@
 #define SHERR_DUMP_SD_LIBRARY_DDL_ERROR_MSG \
   "Error while dumping libraries for schema '%s': %s"
 
-#define SHERR_DUMP_LAST 52040
+#define SHERR_DUMP_MISSING_MANAGE_DATA_MASKING_POLICY_PRIVILEGE 52041
+#define SHERR_DUMP_MISSING_MANAGE_DATA_MASKING_POLICY_PRIVILEGE_MSG          \
+  "The current user does not have the 'MANAGE_DATA_MASKING_POLICY' policy, " \
+  "unable to check whether dumped data will be masked."
+
+#define SHERR_DUMP_CONTAINS_MASKED_TABLE_DATA 52042
+#define SHERR_DUMP_CONTAINS_MASKED_TABLE_DATA_MSG \
+  "Unable to dump unmasked table data"
+
+#define SHERR_DUMP_LAST 52042
 
 #define SHERR_DUMP_MAX 52999
 

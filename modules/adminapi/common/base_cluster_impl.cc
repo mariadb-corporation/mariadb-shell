@@ -56,6 +56,7 @@
 #include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/mysql/version_compatibility.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/utils_account.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
 #include "mysqlshdk/libs/utils/version.h"

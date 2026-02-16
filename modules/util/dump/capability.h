@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,8 @@ enum class Capability {
   MULTIFILE_SCHEMA_DDL,
   DUMP_DIR_REDIRECTION,
   INNODB_VECTOR_STORE,
-  LAST_VALUE = INNODB_VECTOR_STORE,
+  DYNAMIC_DATA_MASKING,
+  LAST_VALUE = DYNAMIC_DATA_MASKING,
 };
 
 using Capability_set =

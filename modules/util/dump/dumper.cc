@@ -33,6 +33,7 @@
 #include <limits>
 #include <list>
 #include <set>
+#include <shared_mutex>
 #include <type_traits>
 #include <utility>
 
@@ -63,6 +64,7 @@
 #include "mysqlshdk/libs/utils/profiling.h"
 #include "mysqlshdk/libs/utils/rate_limit.h"
 #include "mysqlshdk/libs/utils/strformat.h"
+#include "mysqlshdk/libs/utils/utils_account.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
@@ -73,6 +75,7 @@
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/mod_utils.h"
+#include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
 #include "modules/util/common/dump/utils.h"
@@ -121,6 +124,36 @@ FI_DEFINE(dumper, [](const mysqlshdk::utils::FI::Args &args) {
     shcore::sleep_ms(args.get_int("sleep"));
   }
 });
+
+class Scoped_session final {
+ public:
+  Scoped_session() = delete;
+
+  explicit Scoped_session(
+      shcore::Synchronized_queue<std::shared_ptr<mysqlshdk::db::ISession>>
+          &pool)
+      : m_pool(pool), m_session(pool.pop()) {}
+
+  Scoped_session(const Scoped_session &) = delete;
+  Scoped_session(Scoped_session &&) = delete;
+
+  Scoped_session &operator=(const Scoped_session &) = delete;
+  Scoped_session &operator=(Scoped_session &&) = delete;
+
+  ~Scoped_session() {
+    if (m_session) {
+      m_pool.push(std::move(m_session));
+    }
+  }
+
+  const std::shared_ptr<mysqlshdk::db::ISession> &get() const noexcept {
+    return m_session;
+  }
+
+ private:
+  shcore::Synchronized_queue<std::shared_ptr<mysqlshdk::db::ISession>> &m_pool;
+  std::shared_ptr<mysqlshdk::db::ISession> m_session;
+};
 
 std::string quote_value(const std::string &value, mysqlshdk::db::Type type) {
   if (is_string_type(type)) {
@@ -2181,6 +2214,7 @@ void Dumper::do_run() {
     validate_privileges();
     initialize_counters();
     validate_mds();
+    validate_data_masking();
 
     initialize_dump();
 
@@ -2306,6 +2340,8 @@ void Dumper::on_init_thread_session(
   if (m_options.use_timezone_utc()) {
     execute(session, "SET TIME_ZONE = '+00:00';");
   }
+
+  execute("SET SQL_QUOTE_SHOW_CREATE=1");
 }
 
 void Dumper::open_session() {
@@ -2348,15 +2384,13 @@ void Dumper::fetch_user_privileges() {
   using mysqlshdk::mysql::User_privileges;
 
   const auto instance = Instance(session());
-  std::string user;
-  std::string host;
 
-  instance.get_current_user(&user, &host);
+  instance.get_current_user(&m_user_account.user, &m_user_account.host);
 
-  m_user_privileges = instance.get_user_privileges(user, host, true);
-  m_user_account = shcore::make_account(user, host);
-  m_skip_grant_tables_active =
-      "'skip-grants user'@'skip-grants host'" == m_user_account;
+  m_user_privileges = instance.get_user_privileges(m_user_account.user,
+                                                   m_user_account.host, true);
+  m_skip_grant_tables_active = "'skip-grants user'@'skip-grants host'" ==
+                               shcore::make_account(m_user_account);
 
   if (m_server_version.number >= Version(8, 0, 0)) {
     m_user_has_backup_admin =
@@ -2381,7 +2415,8 @@ void Dumper::warn_about_backup_lock() const {
 
 std::string Dumper::why_backup_lock_is_missing() const {
   return m_server_version.number >= Version(8, 0, 0)
-             ? "available to the account " + m_user_account
+             ? "available to the account " +
+                   shcore::make_account(m_user_account)
              : "supported in MySQL " + m_server_version.number.get_short();
 }
 
@@ -2416,7 +2451,7 @@ void Dumper::lock_all_tables() {
               : "table " + quote(schema, table);
 
       THROW_ERROR(SHERR_DUMP_LOCK_TABLES_MISSING_PRIVILEGES,
-                  m_user_account.c_str(), object.c_str(),
+                  shcore::make_account(m_user_account).c_str(), object.c_str(),
                   shcore::str_join(result.missing_privileges(), ", ").c_str());
     }
   };
@@ -2855,7 +2890,12 @@ void Dumper::initialize_instance_cache() {
     builder.binlog_info();
   }
 
+  if (should_fetch_data_masking_policies()) {
+    builder.data_masking_policies();
+  }
+
   m_cache = builder.build();
+  m_cache_initialized = true;
 
   validate_schemas_list();
 
@@ -2948,6 +2988,12 @@ void Dumper::create_schema_tasks() {
     }
   }
 
+  if (should_dump_data_masking_policies() || will_dump_masked_table_ddl()) {
+    // WL17279-FR1.4: use capability if dump contains dynamic data masking DDL:
+    // either policies or table DDL with masked columns
+    m_used_capabilities.emplace(Capability::DYNAMIC_DATA_MASKING);
+  }
+
   for (const auto capability : m_used_capabilities) {
     m_capability_set.set(capability);
   }
@@ -3022,10 +3068,8 @@ void Dumper::validate_mds() {
 
     const auto producer = [this](auto &&produce) {
       return [this, produce = std::move(produce)]() {
-        auto session = session_pool().pop();
-        const shcore::on_leave_scope release{
-            [this, &session]() { session_pool().push(std::move(session)); }};
-        const auto dumper = schema_dumper(session);
+        Scoped_session session{session_pool()};
+        const auto dumper = schema_dumper(session.get());
 
         return produce(dumper.get());
       };
@@ -3227,6 +3271,385 @@ void Dumper::validate_mds() {
 
   if (status.empty()) {
     console->print_info("Compatibility checks finished.", stage_attrib("end"));
+  }
+}
+
+void Dumper::validate_data_masking() {
+  if (!will_dump_table_data_with_masked_columns()) {
+    return;
+  }
+
+  if (m_user_privileges->validate({"MANAGE_DATA_MASKING_POLICY"})
+          .has_missing_privileges()) {
+    if (m_options.allow_data_masking()) {
+      // WL17279-FR1.2.4: 'allowDataMasking' is enabled, but user doesn't
+      // have the required privilege, warn and skip the check
+      current_console()->print_warning(
+          "Dump contains tables with masked columns, current user does not "
+          "have the 'MANAGE_DATA_MASKING_POLICY' privilege and the "
+          "'allowDataMasking' option is enabled, skipping unmasked data access "
+          "check.");
+      return;
+    } else {
+      // WL17279-FR1.3: MANAGE_DATA_MASKING_POLICY privilege is needed when we
+      // need to ensure that dumped data is not masked
+      THROW_ERROR(SHERR_DUMP_MISSING_MANAGE_DATA_MASKING_POLICY_PRIVILEGE);
+    }
+  }
+
+  report_data_masking_issues(
+      verify_data_masking_policies(list_data_masking_policies_in_use()));
+}
+
+std::unordered_set<std::string> Dumper::list_data_masking_policies_in_use() {
+  shcore::Thread_pool_base<std::unordered_set<std::string>> pool{
+      m_options.threads()};
+  std::unordered_set<std::string> result;
+
+  const auto producer = [this](const std::string &table) {
+    return [this, &table]() {
+      Scoped_session session{session_pool()};
+      const auto create_table = session.get()
+                                    ->query("SHOW CREATE TABLE " + table)
+                                    ->fetch_one_or_throw()
+                                    ->get_string(1);
+
+      return compatibility::list_data_masking_policies(create_table);
+    };
+  };
+
+  const auto consumer = [&result]() {
+    return [&result](std::unordered_set<std::string> &&policies) {
+      result.merge(std::move(policies));
+    };
+  };
+
+  pool.start_threads();
+
+  for (const auto &schema : m_schema_infos) {
+    for (const auto &table : schema.tables) {
+      if (table.info->has_masking_policy) {
+        pool.add_task(producer(table.quoted_name), consumer());
+      }
+    }
+  }
+
+  pool.tasks_done();
+  pool.process();
+
+  return result;
+}
+
+namespace {
+
+template <typename Key, typename Value>
+class Synchronized_cache final {
+ public:
+  Synchronized_cache() = default;
+
+  Synchronized_cache(const Synchronized_cache &) = delete;
+  Synchronized_cache(Synchronized_cache &&) = delete;
+
+  Synchronized_cache &operator=(const Synchronized_cache &) = delete;
+  Synchronized_cache &operator=(Synchronized_cache &&) = delete;
+
+  ~Synchronized_cache() = default;
+
+  std::optional<Value> get(const Key &k) const {
+    std::shared_lock lock{m_mutex};
+
+    if (const auto it = m_cache.find(k); it != m_cache.end()) {
+      return it->second;
+    } else {
+      return std::nullopt;
+    }
+  }
+
+  void set(const Key &k, const Value &v) {
+    std::unique_lock lock{m_mutex};
+
+    m_cache.insert_or_assign(k, v);
+  }
+
+  void set(const Key &k, Value &&v) {
+    std::unique_lock lock{m_mutex};
+
+    m_cache.insert_or_assign(k, std::move(v));
+  }
+
+ private:
+  mutable std::shared_mutex m_mutex;
+  std::unordered_map<Key, Value> m_cache;
+};
+
+}  // namespace
+
+std::vector<mysqlsh::common::Data_masking::Policy>
+Dumper::verify_data_masking_policies(std::unordered_set<std::string> &&names) {
+  if (names.empty()) {
+    return {};
+  }
+
+  using Data_masking = mysqlsh::common::Data_masking;
+  using Policy = Data_masking::Policy;
+
+  shcore::Thread_pool_base<Policy> pool{m_options.threads()};
+  std::vector<Policy> result;
+
+  Synchronized_cache<std::string_view, bool> cache;
+
+  const auto producer = [this, &cache](std::string &&policy) {
+    return [this, &cache, policy = std::move(policy)]() -> Policy {
+      Scoped_session session{session_pool()};
+
+      auto p = Data_masking{session.get()}.parse_policy(policy);
+      auto allow = cache.get(p.gatekeeper);
+
+      if (!allow.has_value()) {
+        allow = session.get()
+                    ->query("SELECT " + p.gatekeeper)
+                    ->fetch_one()
+                    ->get_int(0);
+
+        cache.set(p.gatekeeper, allow.value());
+      }
+
+      if (allow.value() == p.allow) {
+        return {};
+      } else {
+        // account used for the dump does not have access to the unmasked data
+        return p;
+      }
+    };
+  };
+
+  const auto consumer = [&result]() {
+    return [&result](Policy &&policy) {
+      // if name is non-empty then policy is not satisfied
+      if (!policy.name.empty()) {
+        result.emplace_back(std::move(policy));
+      }
+    };
+  };
+
+  pool.start_threads();
+
+  while (!names.empty()) {
+    pool.add_task(producer(std::move(names.extract(names.begin()).value())),
+                  consumer());
+  }
+
+  pool.tasks_done();
+  pool.process();
+
+  return result;
+}
+
+namespace {
+
+using Policy = mysqlsh::common::Data_masking::Policy;
+
+/**
+ * Split string at unquoted commas, remove any unquoted spaces. Parse each
+ * segment as an account, ignore any errors.
+ */
+std::set<std::string> split_user_list(std::string_view user_list_in) {
+  // an empty string is at least two characters: opening and closing quote
+  if (user_list_in.length() <= 2) {
+    return {};
+  }
+
+  const auto user_list =
+      shcore::unquote_sql_string(user_list_in, user_list_in.front());
+
+  std::set<std::string> result;
+  std::string account;
+  account.reserve(user_list.length());
+
+  const auto add_account = [&result, &account]() {
+    if (account.empty()) {
+      return;
+    }
+
+    try {
+      auto a = shcore::split_account(account);
+
+      // if host is not given we assume it's '%', this is also true in case of
+      // roles
+      if (a.host.empty()) {
+        a.host = "%";
+      }
+
+      account = shcore::make_account(a);
+    } catch (...) {
+      // user list is not verified when creating the policy, ignore any errors
+      // and use the string provided by the user
+    }
+
+    result.emplace(std::move(account));
+
+    account.clear();
+  };
+
+  std::size_t i = 0;
+  const auto end = user_list.length();
+
+  const auto copy_quoted = [&user_list, &i, &account, end](const auto &f) {
+    const auto e = f(user_list, i);
+
+    if (std::string_view::npos == e) {
+      account += user_list.substr(i);
+      i = end;
+    } else {
+      account += user_list.substr(i, e - i);
+      i = e;
+    }
+  };
+
+  char c;
+
+  while (i < end) {
+    c = user_list[i];
+
+    switch (c) {
+      case '\'':
+        copy_quoted(mysqlshdk::utils::span_quoted_string_sq);
+        break;
+
+      case '"':
+        copy_quoted(mysqlshdk::utils::span_quoted_string_dq);
+        break;
+
+      case '`':
+        copy_quoted(mysqlshdk::utils::span_quoted_sql_identifier_bt);
+        break;
+
+      case ',':
+        add_account();
+        ++i;
+        break;
+
+      case ' ':
+        // skip spaces
+        ++i;
+        break;
+
+      default:
+        // append to account
+        account += c;
+        ++i;
+        break;
+    }
+  }
+
+  add_account();
+
+  return result;
+}
+
+std::set<std::string> extract_user_list(std::string_view gatekeeper) {
+  static constexpr std::string_view k_quotes = "'\"";
+
+  const auto start = gatekeeper.find_first_of(k_quotes);
+  const auto end = gatekeeper.find_last_of(k_quotes);
+
+  return split_user_list(gatekeeper.substr(start, end - start + 1));
+}
+
+std::string format_policy(const Policy &policy) {
+  using Authorization_type = Policy::Authorization_type;
+
+  std::string str;
+
+  str.reserve(64);
+
+  str += "Policy ";
+  str += shcore::quote_identifier(policy.name);
+  str += ' ';
+  str += policy.allow ? "allows" : "denies";
+  str += " access for ";
+
+  switch (policy.authorization_type) {
+    case Authorization_type::USER:
+      str += "user";
+      break;
+
+    case Authorization_type::ROLE:
+      str += "role";
+      break;
+
+    case Authorization_type::UNKNOWN:
+      assert(false);
+      break;
+  }
+
+  const auto ids = extract_user_list(policy.gatekeeper);
+
+  if (ids.size() > 1) {
+    str += 's';
+  }
+
+  str += ": ";
+  str += shcore::str_join(ids, ", ");
+
+  return str;
+}
+
+}  // namespace
+
+void Dumper::report_data_masking_issues(
+    const std::vector<Policy> &policies) const {
+  if (policies.empty()) {
+    return;
+  }
+
+  // use map to sort the policies by name
+  std::map<std::string_view, std::reference_wrapper<const Policy>> errors;
+
+  for (const auto &policy : policies) {
+    errors.emplace(policy.name, std::ref(policy));
+  }
+
+  const auto console = current_console();
+  const auto &active_roles = m_user_privileges->get_user_roles();
+  const auto as_error = !m_options.allow_data_masking();
+
+  // WL17279-FR1.2.3: 'allowDataMasking' is enabled, warn instead of reporting
+  // an error
+  std::invoke(as_error ? &IConsole::print_error : &IConsole::print_warning,
+              console,
+              "One or more data masking policies deny access to table data.",
+              IConsole::Json_attributes{});
+
+  console->print_info("");
+  console->print_info(shcore::str_format(
+      R"(Dump contains tables which use dynamic data masking, while current user %s %s not have access to unmasked data due to the following policies:
+ * %s
+)",
+      shcore::make_account(m_user_account).c_str(),
+      active_roles.empty()
+          ? "does"
+          : shcore::str_format("and its active role%s (%s) do",
+                               active_roles.size() > 1 ? "s" : "",
+                               shcore::str_join(active_roles, ", ").c_str())
+                .c_str(),
+      shcore::str_join(errors, "\n * ", [](const auto &p) {
+        return format_policy(p.second);
+      }).c_str()));
+
+  if (as_error) {
+    console->print_info(
+        R"(To continue with the dump you must do one of the following:
+ * Use an account which fulfills all the listed policies and ensure that all required roles are activated when a new session is created.
+ * Enable the "allowDataMasking" dump option to ignore this issue. Please note that dump will contain masked data.
+)");
+
+    // WL17279-FR1.2.2: 'allowDataMasking' is disabled, report an error
+    THROW_ERROR(SHERR_DUMP_CONTAINS_MASKED_TABLE_DATA);
+  } else {
+    console->print_info(
+        R"(The "allowDataMasking" dump option is enabled, ignoring this issue.
+)");
   }
 }
 
@@ -3553,6 +3976,7 @@ void Dumper::dump_ddl() const {
 
   dump_global_ddl();
   dump_users_ddl();
+  dump_data_masking_policies_ddl();
 }
 
 void Dumper::dump_global_ddl() const {
@@ -3595,6 +4019,19 @@ void Dumper::dump_users_ddl() const {
   const auto dumper = schema_dumper(session());
 
   write_ddl(*dump_users(dumper.get()), common::k_users_sql_file);
+}
+
+void Dumper::dump_data_masking_policies_ddl() const {
+  if (!should_dump_data_masking_policies()) {
+    return;
+  }
+
+  current_console()->print_status("Writing data masking policies DDL");
+
+  const auto dumper = schema_dumper(session());
+
+  write_ddl(*dump_data_masking_policies(dumper.get()),
+            common::k_data_masking_file);
 }
 
 void Dumper::write_ddl(const Memory_dumper &in_memory,
@@ -3732,6 +4169,14 @@ std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_users(
   return dump_ddl(dumper, [](Memory_dumper *m) {
     m->dump(&Schema_dumper::write_comment, std::string{}, std::string{});
     m->dump(&Schema_dumper::dump_grants);
+  });
+}
+
+std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_data_masking_policies(
+    Schema_dumper *dumper) const {
+  return dump_ddl(dumper, [](Memory_dumper *m) {
+    m->dump(&Schema_dumper::write_comment, std::string{}, std::string{});
+    m->dump(&Schema_dumper::dump_data_masking_policies);
   });
 }
 
@@ -4189,6 +4634,23 @@ void Dumper::write_dump_started_metadata() const {
     json.end_array();
   }
 
+  if (should_dump_data_masking_policies()) {
+    // list of data masking policies
+    json.append("dataMaskingPolicies");
+    json.start_array();
+
+    for (const auto &policy : m_cache.data_masking_policies) {
+      json.append(policy);
+    }
+
+    json.end_array();
+  }
+
+  json.append("hasMaskedTableDdl", will_dump_masked_table_ddl());
+  json.append("maybeHasMaskedTableData",
+              will_dump_table_data_with_masked_columns() &&
+                  m_options.allow_data_masking());
+
   json.append("defaultCharacterSet", m_options.character_set());
   json.append("tzUtc", m_options.use_timezone_utc());
   json.append("bytesPerChunk", m_options.bytes_per_chunk());
@@ -4613,6 +5075,11 @@ void Dumper::write_table_metadata(
     doc.AddMember(StringRef("isVectorStoreTable"), true, a);
   }
 
+  if (uses_dynamic_data_masking()) {
+    doc.AddMember(StringRef("hasMaskingPolicy"), table.info->has_masking_policy,
+                  a);
+  }
+
   write_json(
       make_dump_file(common::get_table_data_filename(table.basename, "json")),
       &doc);
@@ -4649,6 +5116,18 @@ void Dumper::summarize() const {
         "'targetVersion' option is set to %s, where automatic conversion to "
         "Lakehouse is not supported.",
         m_options.target_version().get_base().c_str()));
+  }
+
+  if (uses_dynamic_data_masking() &&
+      !compatibility::supports_dynamic_data_masking(
+          m_options.target_version())) {
+    // WL17279-FR1.4.1: warn if `targetVersion` doesn't support dynamic data
+    // masking
+    console->print_warning(
+        shcore::str_format("The dump contains dynamic data masking DDL, "
+                           "however the 'targetVersion' option is set to %s, "
+                           "where this feature is not supported.",
+                           m_options.target_version().get_base().c_str()));
   }
 
   if (uses_dump_dir_redirection()) {
@@ -4966,6 +5445,14 @@ void Dumper::validate_privileges() const {
     global_required.emplace(std::move(super));
   }
 
+  // WL17279-FR1.3: MANAGE_DATA_MASKING_POLICY privilege is needed when dumping
+  // data masking policies
+  if (should_dump_data_masking_policies()) {
+    std::string manage_data_masking_policy{"MANAGE_DATA_MASKING_POLICY"};
+    all_required.emplace(manage_data_masking_policy);
+    global_required.emplace(std::move(manage_data_masking_policy));
+  }
+
   if (!all_required.empty()) {
     using mysqlshdk::mysql::User_privileges_result;
 
@@ -4985,7 +5472,8 @@ void Dumper::validate_privileges() const {
     const auto global_missing = get_missing(global_result, global_required);
 
     if (!global_missing.empty()) {
-      THROW_ERROR(SHERR_DUMP_MISSING_GLOBAL_PRIVILEGES, m_user_account.c_str(),
+      THROW_ERROR(SHERR_DUMP_MISSING_GLOBAL_PRIVILEGES,
+                  shcore::make_account(m_user_account).c_str(),
                   shcore::str_join(global_missing, ", ").c_str());
     }
 
@@ -5010,7 +5498,8 @@ void Dumper::validate_privileges() const {
 
         if (!schema_missing.empty()) {
           THROW_ERROR(SHERR_DUMP_MISSING_SCHEMA_PRIVILEGES,
-                      m_user_account.c_str(), schema.quoted_name.c_str(),
+                      shcore::make_account(m_user_account).c_str(),
+                      schema.quoted_name.c_str(),
                       shcore::str_join(schema_missing, ", ").c_str());
         }
 
@@ -5025,7 +5514,8 @@ void Dumper::validate_privileges() const {
             // table-level ones
             if (table_result.has_missing_privileges()) {
               THROW_ERROR(
-                  SHERR_DUMP_MISSING_TABLE_PRIVILEGES, m_user_account.c_str(),
+                  SHERR_DUMP_MISSING_TABLE_PRIVILEGES,
+                  shcore::make_account(m_user_account).c_str(),
                   table.quoted_name.c_str(),
                   shcore::str_join(table_result.missing_privileges(), ", ")
                       .c_str());
@@ -5079,26 +5569,28 @@ void Dumper::print_object_stats() const {
 
 #undef FORMAT_OBJECT_STATS
 
-  std::string msg = stats.front() + " will be dumped";
-
-  auto current = std::next(stats.begin());
-  const auto end = stats.end();
-
-  if (end != current) {
-    msg += " and within them";
-  } else {
-    msg += '.';
-  }
-
-  for (; end != current; ++current) {
-    msg += ' ' + (*current) + ',';
-  }
-
-  msg.back() = '.';
-
   const auto console = current_console();
 
-  console->print_status(msg);
+  {
+    std::string msg = stats.front() + " will be dumped";
+
+    auto current = std::next(stats.begin());
+    const auto end = stats.end();
+
+    if (end != current) {
+      msg += " and within them";
+    } else {
+      msg += '.';
+    }
+
+    for (; end != current; ++current) {
+      msg += ' ' + (*current) + ',';
+    }
+
+    msg.back() = '.';
+
+    console->print_status(msg);
+  }
 
   if (m_options.dump_users()) {
     if (m_skip_grant_tables_active) {
@@ -5110,6 +5602,14 @@ void Dumper::print_object_stats() const {
                                                 m_cache.total.users, "users") +
                             " will be dumped.");
     }
+  }
+
+  if (should_dump_data_masking_policies()) {
+    const auto count = m_cache.data_masking_policies.size();
+
+    console->print_status(
+        format_object_stats(count, count, "data masking policies") +
+        " will be dumped.");
   }
 }
 
@@ -5274,6 +5774,11 @@ void Dumper::fetch_server_information() {
         "MySQL Server %s detected, which is newer than the MySQL Shell. Please "
         "upgrade the MySQL Shell if dump or load operation fails.",
         m_server_version.number.get_base().c_str()));
+  }
+
+  if (compatibility::supports_dynamic_data_masking(m_server_version.number)) {
+    m_data_masking_enabled =
+        mysqlsh::common::Data_masking{session()}.is_component_installed();
   }
 }
 
@@ -5661,6 +6166,36 @@ issues::Status_set Dumper::show_issues(
   }
 
   return status;
+}
+
+bool Dumper::should_fetch_data_masking_policies() const noexcept {
+  // // WL17279-FR1.5: if we're not dumping DDL then we're not dumping policies
+  return m_data_masking_enabled && m_options.dump_ddl() &&
+         m_options.dump_data_masking_policies();
+}
+
+bool Dumper::should_dump_data_masking_policies() const noexcept {
+  // cache needs to be already initialized
+  assert(m_cache_initialized);
+
+  return should_fetch_data_masking_policies() &&
+         !m_cache.data_masking_policies.empty();
+}
+
+bool Dumper::will_dump_masked_table_ddl() const noexcept {
+  // cache needs to be already initialized
+  assert(m_cache_initialized);
+
+  return m_data_masking_enabled && m_options.dump_ddl() &&
+         m_cache.has_masking_policy_tables;
+}
+
+bool Dumper::will_dump_table_data_with_masked_columns() const noexcept {
+  // cache needs to be already initialized
+  assert(m_cache_initialized);
+
+  return m_data_masking_enabled && m_options.dump_data() &&
+         m_cache.has_masking_policy_tables;
 }
 
 }  // namespace dump

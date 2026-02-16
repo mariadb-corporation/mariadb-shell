@@ -330,6 +330,12 @@ WHERE
                       establish a connection to the target instance.
 
 OPTIONS
+--allowDataMasking=<bool>
+            Allows to copy data with masked values. When set to false, an
+            attempt to copy data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --analyzeTables=<str>
             "off", "on", "histogram" (default: off) - If 'on', executes ANALYZE
             TABLE for all tables, once copied. If set to 'histogram', only
@@ -360,6 +366,9 @@ OPTIONS
             Enable or disable consistent data copies. When enabled, produces a
             transactionally consistent copy at a specific point in time.
             Default: true.
+
+--dataMaskingPolicies=<bool>
+            Include data masking policies in the copy. Default: true.
 
 --dataOnly=<bool>
             Only copy data from the database. Default: false.
@@ -555,6 +564,12 @@ WHERE
                       establish a connection to the target instance.
 
 OPTIONS
+--allowDataMasking=<bool>
+            Allows to copy data with masked values. When set to false, an
+            attempt to copy data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --analyzeTables=<str>
             "off", "on", "histogram" (default: off) - If 'on', executes ANALYZE
             TABLE for all tables, once copied. If set to 'histogram', only
@@ -765,6 +780,12 @@ OPTIONS
 --all=<bool>
             Copy all views and tables from the specified schema, requires the
             tables argument to be an empty list. Default: false.
+
+--allowDataMasking=<bool>
+            Allows to copy data with masked values. When set to false, an
+            attempt to copy data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
 
 --analyzeTables=<str>
             "off", "on", "histogram" (default: off) - If 'on', executes ANALYZE
@@ -1029,6 +1050,12 @@ WHERE
       outputUrl: Target directory to store the dump files.
 
 OPTIONS
+--allowDataMasking=<bool>
+            Allows to dump data with masked values. When set to false, an
+            attempt to dump data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --azureConfigFile=<str>
             Use the specified Azure configuration file instead of the one at
             the default location. Default: not set.
@@ -1074,6 +1101,9 @@ OPTIONS
             Enable or disable consistent data dumps. When enabled, produces a
             transactionally consistent dump at a specific point in time.
             Default: true.
+
+--dataMaskingPolicies=<bool>
+            Include data masking policies in the dump file. Default: true.
 
 --dataOnly=<bool>
             Only dump data from the database. Default: false.
@@ -1298,6 +1328,12 @@ WHERE
       schemas: List of schemas to be dumped.
 
 OPTIONS
+--allowDataMasking=<bool>
+            Allows to dump data with masked values. When set to false, an
+            attempt to dump data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --azureConfigFile=<str>
             Use the specified Azure configuration file instead of the one at
             the default location. Default: not set.
@@ -1555,6 +1591,12 @@ OPTIONS
             Dump all views and tables from the specified schema. Default:
             false.
 
+--allowDataMasking=<bool>
+            Allows to dump data with masked values. When set to false, an
+            attempt to dump data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --azureConfigFile=<str>
             Use the specified Azure configuration file instead of the one at
             the default location. Default: not set.
@@ -1765,6 +1807,12 @@ WHERE
       outputUrl: Target file to store the data.
 
 OPTIONS
+--allowDataMasking=<bool>
+            Allows to dump data with masked values. When set to false, an
+            attempt to dump data using an account that cannot access columns
+            with masking policies will result in an error. When enabled,
+            downgrades this error to a warning. Default: false.
+
 --azureConfigFile=<str>
             Use the specified Azure configuration file instead of the one at
             the default location. Default: not set.

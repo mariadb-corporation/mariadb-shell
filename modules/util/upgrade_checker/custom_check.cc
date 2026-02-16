@@ -35,6 +35,7 @@
 
 #include "mysql/strings/m_ctype.h"
 #include "mysqlshdk/libs/db/result.h"
+#include "mysqlshdk/libs/utils/logger.h"
 
 namespace mysqlsh {
 namespace upgrade_checker {

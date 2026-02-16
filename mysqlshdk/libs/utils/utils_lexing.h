@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -388,6 +388,20 @@ inline size_t span_cstyle_comment(std::string_view s, size_t offset) {
  */
 size_t span_cstyle_sql_comment(std::string_view s, size_t offset,
                                bool dollar_quote_strings = true);
+
+/**
+ * Spans quoted or unquoted SQL identifier.
+ *
+ * @param s String to parse.
+ * @param offset Position where to start parsing.
+ * @param out_string Will hold unquoted indentifier.
+ * @param allow_ansi_quotes Whether to allow ANSI style identifier quotes.
+ *
+ * @returns Position in `s` where parsing has finished.
+ */
+std::size_t span_quotable_sql_identifier(std::string_view s, std::size_t offset,
+                                         std::string *out_string = nullptr,
+                                         bool allow_ansi_quotes = false);
 
 /** Class enabling iteration over characters in SQL string skipping comments and
  * quoted strings.

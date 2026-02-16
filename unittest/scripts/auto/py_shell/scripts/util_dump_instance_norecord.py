@@ -4473,6 +4473,12 @@ EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} det
 
 testutil.dbug_set("")
 
+#@<> WL17279-FR1.1 - 'dataMaskingPolicies' option - type
+TEST_BOOL_OPTION("dataMaskingPolicies")
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
+
 #@<> Cleanup
 drop_all_schemas()
 session.run_sql("SET GLOBAL local_infile = false;")

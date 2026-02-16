@@ -34,6 +34,7 @@
 #include <utility>
 
 #include "modules/mod_utils.h"
+#include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
@@ -185,6 +186,10 @@ void Load_dump_options::on_set_session(
   DBUG_EXECUTE_IF("dump_loader_libraries_unsupported_version",
                   { m_target_server_version = Version(9, 1, 0); });
 
+  // dynamic data masking
+  DBUG_EXECUTE_IF("dump_loader_ddm_unsupported_version",
+                  { m_target_server_version = Version(9, 6, 0); });
+
   m_is_mds = m_target_server_version.is_mds();
   DBUG_EXECUTE_IF("dump_loader_force_mds", { m_is_mds = true; });
 
@@ -264,6 +269,14 @@ void Load_dump_options::on_set_session(
 
   m_supports_pke_as_pk =
       compatibility::supports_pke_as_pk(m_target_server_version);
+
+  m_is_ddm_ddl_supported =
+      compatibility::supports_dynamic_data_masking(m_target_server_version);
+
+  if (m_is_ddm_ddl_supported) {
+    m_is_ddm_component_installed =
+        common::Data_masking{session}.is_component_installed();
+  }
 
   if (is_mds()) {
     const auto result =

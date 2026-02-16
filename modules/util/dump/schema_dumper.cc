@@ -61,6 +61,7 @@
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
 #include "modules/util/dump/dump_errors.h"
@@ -1610,8 +1611,6 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
 
   log_debug("-- Retrieving table structure for table %s...",
             result_table.c_str());
-
-  query_log_and_throw("SET SQL_QUOTE_SHOW_CREATE=1");
 
   /* using SHOW CREATE statement */
   if (!skip_ddl) {
@@ -3477,6 +3476,32 @@ Schema_dumper::preprocess_users_script(
   }
 
   return result;
+}
+
+void Schema_dumper::dump_data_masking_policies(IFile *file) {
+  log_debug("Dumping data masking policies");
+
+  fputs("--\n-- Dumping data masking policies\n--\n\n", file);
+
+  mysqlsh::common::Data_masking data_masking{m_mysql};
+
+  for (const auto &policy : m_cache.data_masking_policies) {
+    Object_guard_msg guard(file, "masking policy", policy, {});
+
+    const auto create_policy = data_masking.fetch_policy(policy);
+
+    if (opt_reexecutable) {
+      fputs("CREATE MASKING POLICY IF NOT EXISTS ", file);
+      // "CREATE MASKING POLICY " is 22 characters
+      fputs(std::string_view{create_policy}.substr(22), file);
+    } else {
+      fputs(create_policy, file);
+    }
+
+    fputs(";\n", file);
+  }
+
+  fputs("-- End of dumping data masking policies\n\n", file);
 }
 
 bool Schema_dumper::partial_revokes() const {

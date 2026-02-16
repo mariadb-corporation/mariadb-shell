@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -3265,6 +3265,28 @@ TEST_F(Compatibility_test, replace_empty_passwords) {
   EXPECT(
       R"(CREATE USER u@h IDENTIFIED WITH 'sha256_password' BY 'pass' PASSWORD EXPIRE INTERVAL 5 DAY)",
       R"(CREATE USER u@h IDENTIFIED WITH 'sha256_password' BY 'pass' PASSWORD EXPIRE INTERVAL 5 DAY)");
+}
+
+TEST_F(Compatibility_test, list_data_masking_policies) {
+  EXPECT_THROW(list_data_masking_policies("CREATE SCHEMA s"),
+               std::runtime_error);
+
+  EXPECT_EQ(std::unordered_set<std::string>{},
+            list_data_masking_policies("CREATE TABLE T (a int)"));
+
+  EXPECT_EQ((std::unordered_set<std::string>{"a", "b"}),
+            list_data_masking_policies("CREATE TABLE T (a int unsigned MASKING "
+                                       "policy a, b int masking POLICY `B`)"));
+
+  EXPECT_EQ(
+      std::unordered_set<std::string>{"a"},
+      list_data_masking_policies("CREATE TABLE T (a int MASKING policy `a`, b "
+                                 "int UNSIGNED masking POLICY A)"));
+
+  EXPECT_EQ(
+      (std::unordered_set<std::string>{"zażółć", "gęślą"}),
+      list_data_masking_policies("CREATE TABLE T (a int MASKING policy "
+                                 "`ZAŻÓŁĆ`, b int MASKING POLICY `GĘŚLĄ`)"));
 }
 
 }  // namespace compatibility

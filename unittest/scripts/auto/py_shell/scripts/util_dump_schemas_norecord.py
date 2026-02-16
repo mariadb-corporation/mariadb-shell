@@ -878,7 +878,7 @@ EXPECT_FAIL("ValueError", "Argument #3: The value of the option 's3EndpointOverr
 EXPECT_FAIL("ValueError", "Argument #3: The value of the option 's3EndpointOverride' uses an invalid scheme 'FTp://', expected: http:// or https://.", [types_schema], test_output_absolute, { "s3BucketName": "bucket", "s3EndpointOverride": "FTp://endpoint", "showProgress": False })
 
 #@<> WL13807-TSFR_3_2 - options param being a dictionary that contains an unknown key
-for param in { "dummy", "users", "excludeUsers", "includeUsers", "indexColumn", "excludeSchemas", "includeSchemas", "ociParManifest", "ociParExpireTime" }:
+for param in { "dummy", "users", "excludeUsers", "includeUsers", "indexColumn", "excludeSchemas", "includeSchemas", "ociParManifest", "ociParExpireTime", "dataMaskingPolicies" }:
     EXPECT_FAIL("ValueError", f"Argument #3: Invalid options: {param}", [types_schema], test_output_relative, { param: "fails" })
 
 # WL13807-FR4 - Both new functions must accept a set of additional options:
@@ -3262,6 +3262,9 @@ EXPECT_STDOUT_CONTAINS(force_innodb_cannot_replace_engine(schema_name, table_nam
 
 #@<> BUG#38650807 - cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
+
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+TEST_BOOL_OPTION("allowDataMasking")
 
 #@<> Cleanup
 drop_all_schemas()

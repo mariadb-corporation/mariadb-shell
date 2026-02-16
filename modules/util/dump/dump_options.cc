@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -60,6 +60,8 @@ const shcore::Option_pack_def<Dump_options> &Dump_options::options() {
           .optional("maxRate", &Dump_options::set_string_option)
           .optional("compression", &Dump_options::set_string_option)
           .optional("defaultCharacterSet", &Dump_options::m_character_set)
+          // WL17279-FR1.2: `allowDataMasking` option
+          .optional("allowDataMasking", &Dump_options::m_allow_data_masking)
           .include(&Dump_options::m_dialect_unpacker)
           .on_done(&Dump_options::on_unpacked_options);
 
