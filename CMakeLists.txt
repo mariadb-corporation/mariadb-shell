@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -95,7 +95,11 @@ ELSEIF(UNIX)
       # On SunOS /opt/csw/bin/cmake is (most likely) too old.
       FIND_PROGRAM(MY_UNAME uname /bin /usr/bin /usr/local/bin /sbin)
       IF(MY_UNAME)
-        EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME)
+        EXECUTE_PROCESS(
+          COMMAND uname -s
+          OUTPUT_VARIABLE MY_HOST_SYSTEM_NAME
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
         IF(MY_HOST_SYSTEM_NAME MATCHES "SunOS")
           FIND_PROGRAM(MY_CMAKE cmake /usr/bin
             NO_CMAKE_ENVIRONMENT_PATH
@@ -103,7 +107,12 @@ ELSEIF(UNIX)
             )
           IF(MY_CMAKE)
             MESSAGE(STATUS "Found ${MY_CMAKE}")
-            EXEC_PROGRAM(${MY_CMAKE} ARGS --version)
+            EXECUTE_PROCESS(
+              COMMAND ${MY_CMAKE} --version
+              OUTPUT_VARIABLE _my_cmake_version_out
+              OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            MESSAGE(STATUS "${_my_cmake_version_out}")
           ELSE()
             MESSAGE(STATUS "Please install /usr/bin/cmake ")
           ENDIF()
@@ -141,7 +150,12 @@ IF(UNIX)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       RESULT_VARIABLE MY_UNAME_MACHINE_RESULT
       )
-    EXEC_PROGRAM(${MY_UNAME} ARGS -r OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION)
+    EXECUTE_PROCESS(
+      COMMAND ${MY_UNAME} -r
+      OUTPUT_VARIABLE MY_HOST_SYSTEM_VERSION
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE MY_UNAME_VERSION_RESULT
+    )
   ENDIF()
   FIND_PROGRAM(MY_DPKG_BUILDFLAGS dpkg-buildflags /bin /usr/bin)
   FIND_PROGRAM(MY_RPM rpm /bin /usr/bin)
@@ -810,6 +824,12 @@ if(HAVE_PYTHON)
       SET(BUNDLED_SHARED_PYTHON "YES")
     ENDIF()
   ELSE()
+    # CMP0148: FindPythonInterp/FindPythonLibs removed in CMake >= 3.27.
+    # Keep OLD behavior for now.
+    # TODO: migrate to FindPython3.
+    IF(POLICY CMP0148)
+      CMAKE_POLICY(SET CMP0148 OLD)
+    ENDIF()
     FIND_PACKAGE(PythonLibs "${USE_PYTHON_VERSION}" REQUIRED)
     IF(NOT PYTHON_EXECUTABLE)
       # Can't use FIND_PACKAGE(Python ...) as it finds the latest Python interp and not the version we want
