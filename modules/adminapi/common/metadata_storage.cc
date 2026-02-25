@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2023,7 +2023,7 @@ Instance_metadata MetadataStorage::unserialize_instance(
 
   instance.server_id = row.get_uint("server_id", 0);
   if (row.has_field("cert_subject"))
-    instance.cert_subject = row.get_string("cert_subject", 0);
+    instance.cert_subject = row.get_string("cert_subject", "");
 
   if (row.has_field("hidden_from_router"))
     instance.hidden_from_router = row.get_uint("hidden_from_router", 0);
