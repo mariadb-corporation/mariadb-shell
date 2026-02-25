@@ -370,6 +370,58 @@ void ensure_prefix_par(std::string *s) {
 
 }  // namespace
 
+class Dumper::Memory_dumper final {
+ public:
+  Memory_dumper() = delete;
+
+  explicit Memory_dumper(Schema_dumper *dumper)
+      : m_dumper(dumper), m_file("/dev/null") {}
+
+  Memory_dumper(const Memory_dumper &) = delete;
+  Memory_dumper(Memory_dumper &&) = default;
+
+  Memory_dumper &operator=(const Memory_dumper &) = delete;
+  Memory_dumper &operator=(Memory_dumper &&) = default;
+
+  ~Memory_dumper() = default;
+
+  const std::vector<Compatibility_issue> &dump(
+      const std::function<void(Memory_dumper *)> &func) {
+    m_issues.clear();
+
+    m_file.open(Mode::WRITE);
+    func(this);
+    m_file.close();
+
+    return issues();
+  }
+
+  const std::vector<Compatibility_issue> &issues() const { return m_issues; }
+
+  const std::string &content() const { return m_file.content(); }
+
+  template <typename... Args>
+  void dump(std::vector<Compatibility_issue> (Schema_dumper::*func)(
+                Schema_dumper::IFile *, const std::remove_cvref_t<Args> &...),
+            Args &&...args) {
+    auto issues = (m_dumper->*func)(&m_file, std::forward<Args>(args)...);
+
+    m_issues.insert(m_issues.end(), std::make_move_iterator(issues.begin()),
+                    std::make_move_iterator(issues.end()));
+  }
+
+  template <typename... Args>
+  void dump(void (Schema_dumper::*func)(Schema_dumper::IFile *,
+                                        const std::remove_cvref_t<Args> &...),
+            Args &&...args) {
+    (m_dumper->*func)(&m_file, std::forward<Args>(args)...);
+  }
+
+ private:
+  Schema_dumper *m_dumper;
+  Memory_file m_file;
+  std::vector<Compatibility_issue> m_issues;
+};
 class Dumper::Dump_writer_controller {
  public:
   using Create_file = std::function<std::unique_ptr<mysqlshdk::storage::IFile>(
@@ -1913,59 +1965,6 @@ template <>
 Decimal Dumper::Table_worker::sum(const Decimal &value, const Decimal &delta) {
   return value + delta;
 }
-
-class Dumper::Memory_dumper final {
- public:
-  Memory_dumper() = delete;
-
-  explicit Memory_dumper(Schema_dumper *dumper)
-      : m_dumper(dumper), m_file("/dev/null") {}
-
-  Memory_dumper(const Memory_dumper &) = delete;
-  Memory_dumper(Memory_dumper &&) = default;
-
-  Memory_dumper &operator=(const Memory_dumper &) = delete;
-  Memory_dumper &operator=(Memory_dumper &&) = default;
-
-  ~Memory_dumper() = default;
-
-  const std::vector<Compatibility_issue> &dump(
-      const std::function<void(Memory_dumper *)> &func) {
-    m_issues.clear();
-
-    m_file.open(Mode::WRITE);
-    func(this);
-    m_file.close();
-
-    return issues();
-  }
-
-  const std::vector<Compatibility_issue> &issues() const { return m_issues; }
-
-  const std::string &content() const { return m_file.content(); }
-
-  template <typename... Args>
-  void dump(std::vector<Compatibility_issue> (Schema_dumper::*func)(
-                Schema_dumper::IFile *, const std::remove_cvref_t<Args> &...),
-            Args &&...args) {
-    auto issues = (m_dumper->*func)(&m_file, std::forward<Args>(args)...);
-
-    m_issues.insert(m_issues.end(), std::make_move_iterator(issues.begin()),
-                    std::make_move_iterator(issues.end()));
-  }
-
-  template <typename... Args>
-  void dump(void (Schema_dumper::*func)(Schema_dumper::IFile *,
-                                        const std::remove_cvref_t<Args> &...),
-            Args &&...args) {
-    (m_dumper->*func)(&m_file, std::forward<Args>(args)...);
-  }
-
- private:
-  Schema_dumper *m_dumper;
-  Memory_file m_file;
-  std::vector<Compatibility_issue> m_issues;
-};
 
 Dumper::Dumper(const Dump_options &options)
     : m_options(options),
