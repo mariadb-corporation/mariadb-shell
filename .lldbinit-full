@@ -1,0 +1,18 @@
+# .lldbinit
+# Define the Python function to extract the string
+script
+def StringSummaryProvider(valobj, dict):
+    # This calls the .c_str() method directly on the C++ object
+    # and returns the underlying string.
+    c_str_ptr = valobj.GetChildMemberWithName('__r_').GetChildMemberWithName('__value_').GetChildMemberWithName('__l').GetChildMemberWithName('__data_')
+    
+    # Fallback to the short-string layout if the long-string layout fails
+    if not c_str_ptr.IsValid():
+        c_str_ptr = valobj.GetChildMemberWithName('__r_').GetChildMemberWithName('__value_').GetChildMemberWithName('__s').GetChildMemberWithName('__data_')
+    
+    # Use the debugger's ability to read the memory pointed to by the C-string pointer
+    return c_str_ptr.GetSummary()
+
+# Register the Python function as the summary provider for std::string
+# This regex catches std::string, std::__1::string, etc.
+lldb.debugger.HandleCommand('type summary add -F .StringSummaryProvider -x "std::(__1::)?basic_string<char, .*, std::(__1::)?allocator<char> >"')

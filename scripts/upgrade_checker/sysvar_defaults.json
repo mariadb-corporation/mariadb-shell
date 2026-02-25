@@ -1,0 +1,374 @@
+[
+    {
+        "name": "admin_tls_ciphersuites",
+        "reason": "This variable's options are not documented",
+        "changes": [
+            {
+                "version": "8.4.0",
+                "all": {
+                    "allowed": {
+                        "all": [
+                            "TLS_AES_128_GCM_SHA256",
+                            "TLS_AES_256_GCM_SHA384",
+                            "TLS_CHACHA20_POLY1305_SHA256",
+                            "TLS_AES_128_CCM_SHA256",
+                            ""
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "tls_ciphersuites",
+        "reason": "This variable's options are not documented",
+        "changes": [
+            {
+                "version": "8.4.0",
+                "all": {
+                    "allowed": {
+                        "all": [
+                            "TLS_AES_128_GCM_SHA256",
+                            "TLS_AES_256_GCM_SHA384",
+                            "TLS_CHACHA20_POLY1305_SHA256",
+                            "TLS_AES_128_CCM_SHA256",
+                            ""
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "admin_ssl_cipher",
+        "reason": "This variable's options are not documented",
+        "changes": [
+            {
+                "version": "8.4.0",
+                "all": {
+                    "allowed": {
+                        "all": [
+                            "ECDHE-ECDSA-AES128-GCM-SHA256",
+                            "ECDHE-ECDSA-AES256-GCM-SHA384",
+                            "ECDHE-RSA-AES128-GCM-SHA256",
+                            "ECDHE-RSA-AES256-GCM-SHA384",
+                            "ECDHE-ECDSA-CHACHA20-POLY1305",
+                            "ECDHE-RSA-CHACHA20-POLY1305",
+                            "ECDHE-ECDSA-AES256-CCM",
+                            "ECDHE-ECDSA-AES128-CCM",
+                            "DHE-RSA-AES128-GCM-SHA256",
+                            "DHE-RSA-AES256-GCM-SHA384",
+                            "DHE-RSA-AES256-CCM",
+                            "DHE-RSA-AES128-CCM",
+                            "DHE-RSA-CHACHA20-POLY1305",
+                            ""
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "ssl_cipher",
+        "reason": "This variable's options are not documented",
+        "changes": [
+            {
+                "version": "8.4.0",
+                "all": {
+                    "allowed": {
+                        "all": [
+                            "ECDHE-ECDSA-AES128-GCM-SHA256",
+                            "ECDHE-ECDSA-AES256-GCM-SHA384",
+                            "ECDHE-RSA-AES128-GCM-SHA256",
+                            "ECDHE-RSA-AES256-GCM-SHA384",
+                            "ECDHE-ECDSA-CHACHA20-POLY1305",
+                            "ECDHE-RSA-CHACHA20-POLY1305",
+                            "ECDHE-ECDSA-AES256-CCM",
+                            "ECDHE-ECDSA-AES128-CCM",
+                            "DHE-RSA-AES128-GCM-SHA256",
+                            "DHE-RSA-AES256-GCM-SHA384",
+                            "DHE-RSA-AES256-CCM",
+                            "DHE-RSA-AES128-CCM",
+                            "DHE-RSA-CHACHA20-POLY1305",
+                            ""
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "performance_schema_consumer_events_transactions_current",
+        "reason": "This variable does not seem to exist, for some reason was being checked in the shell",
+        "changes": [
+            {
+                "version": "0.0.0",
+                "all": {
+                    "default": {
+                        "all": "OFF"
+                    }
+                }
+            },
+            {
+                "version": "8.0.11",
+                "all": {
+                    "default": {
+                        "all": "ON"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "performance_schema_consumer_events_transactions_history",
+        "reason": "This variable does not seem to exist, for some reason was being checked in the shell",
+        "changes": [
+            {
+                "version": "0.0.0",
+                "all": {
+                    "default": {
+                        "all": "OFF"
+                    }
+                }
+            },
+            {
+                "version": "8.0.11",
+                "all": {
+                    "default": {
+                        "all": "ON"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "innodb_checksums",
+        "replacement": "innodb_checksum_algorithm"
+    },
+    {
+        "name": "innodb_stats_sample_pages",
+        "replacement": "innodb_stats_transient_sample_pages"
+    },
+    {
+        "name": "innodb_undo_logs",
+        "replacement": "innodb_rollback_segments"
+    },
+    {
+        "name": "log_warnings",
+        "reason": "This variable is not documented, for some reason was being checked in the shell",
+        "replacement": "log_error_verbosity",
+        "removed": "8.0.11"
+    },
+    {
+        "name": "tx_isolation",
+        "replacement": "transaction_isolation"
+    },
+    {
+        "name": "tx_read_only",
+        "replacement": "transaction_read_only"
+    },
+    {
+        "name": "master_info_file",
+        "reason": "This variable does not seem to exist, for some reason was being checked in the shell",
+        "removed": "8.3.0"
+    },
+    {
+        "name": "log_bin",
+        "initial": {
+            "all": {
+                "default": {
+                    "all": "OFF"
+                }
+            }
+        },
+        "changes": [
+            {
+                "version": "8.0.11",
+                "all": {
+                    "default": {
+                        "all": "ON"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "innodb_buffer_pool_instances",
+        "changes": [
+            {
+                "version": "5.6.6",
+                "windows": {
+                    "default": {
+                        "32": "1 (or innodb_buffer_pool_size/128MB if innodb_buffer_pool_size > 1.3GB)"
+                    }
+                }
+            },
+            {
+                "version": "8.4.0",
+                "all": {
+                    "default": {
+                        "all": "1 (or MIN(innodb_buffer_pool_size / (innodb_buffer_pool_chunk_size * 2), #vcpu/4) if innodb_buffer_pool_size > 1 GB)"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "innodb_redo_log_capacity",
+        "initial": {
+            "all": {
+                "default": {
+                    "all": "104857600"
+                }
+            }
+        },
+        "changes": [
+            {
+                "version": "8.4.0",
+                "all": {
+                    "default": {
+                        "all": "MIN ( #vcpu/2, 16 )GB"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "replica_parallel_workers",
+        "changes": [
+            {
+                "version": "9.0.0",
+                "all": {
+                    "forbidden": {
+                        "all": [
+                            "0"
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "log_syslog_facility",
+        "replacement": "syseventlog.facility"
+    },
+    {
+        "name": "log_syslog_include_pid",
+        "replacement": "syseventlog.include_pid"
+    },
+    {
+        "name": "log_syslog_tag",
+        "replacement": "syseventlog.tag"
+    },
+    {
+        "name": "default_authentication_plugin",
+        "replacement": "authentication_policy"
+    },
+    {
+        "name": "explicit_defaults_for_timestamp",
+        "changes": [
+            {
+                "version": "9.0.0",
+                "all": {
+                    "allowed": {
+                        "all": [
+                            "1"
+                        ]
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "name": "slave_allow_batching",
+        "replacement": "replica_allow_batching"
+    },
+    {
+        "name": "slave_checkpoint_group",
+        "replacement": "replica_checkpoint_group"
+    },
+    {
+        "name": "slave_checkpoint_period",
+        "replacement": "replica_checkpoint_period"
+    },
+    {
+        "name": "slave_compressed_protocol",
+        "replacement": "replica_compressed_protocol"
+    },
+    {
+        "name": "slave_max_allowed_packet",
+        "replacement": "replica_max_allowed_packet"
+    },
+    {
+        "name": "slave_parallel_type",
+        "replacement": "replica_parallel_type"
+    },
+    {
+        "name": "slave_parallel_workers",
+        "replacement": "replica_parallel_workers"
+    },
+    {
+        "name": "slave_pending_jobs_size_max",
+        "replacement": "replica_pending_jobs_size_max"
+    },
+    {
+        "name": "slave_preserve_commit_order",
+        "replacement": "replica_preserve_commit_order"
+    },
+    {
+        "name": "slave_sql_verify_checksum",
+        "replacement": "replica_sql_verify_checksum"
+    },
+    {
+        "name": "slave_transaction_retries",
+        "replacement": "replica_transaction_retries"
+    },
+    {
+        "name": "slave_type_conversions",
+        "replacement": "replica_type_conversions"
+    },
+    {
+        "name": "sql_slave_skip_counter",
+        "replacement": "sql_replica_skip_counter"
+    },
+    {
+        "name": "log_slave_updates",
+        "replacement": "log_slave_updates"
+    },
+    {
+        "name": "log_slow_slave_statements",
+        "replacement": "log_slow_replica_statements"
+    },
+    {
+        "name": "ndb_slave_conflict_role",
+        "replacement": "ndb_conflict_role"
+    },
+    {
+        "name": "pseudo_slave_mode",
+        "replacement": "pseudo_replica_mode"
+    },
+    {
+        "name": "rpl_stop_slave_timeout",
+        "replacement": "rpl_stop_replica_timeout"
+    },
+    {
+        "name": "skip-slave-start",
+        "replacement": "skip_replica_start"
+    },
+    {
+        "name": "slave_load_tmpdir",
+        "replacement": "replica_load_tmpdir"
+    },
+    {
+        "name": "slave_net_timeout",
+        "replacement": "replica_net_timeout"
+    },
+    {
+        "name": "slave-skip-errors",
+        "replacement": "replica_skip_errors"
+    },
+    {
+        "name": "init_slave",
+        "replacement": "init_replica"
+    }
+]

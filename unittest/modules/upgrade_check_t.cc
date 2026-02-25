@@ -2522,14 +2522,13 @@ TEST_F(MySQL_upgrade_check_test, sys_vars_allowed_values) {
 
   EXPECT_FIND_ISSUE(
       "admin_ssl_cipher", "", "", Upgrade_issue::ERROR,
-      "variable is set to 'NULL', allowed "
-      "values include: ECDHE-ECDSA-AES128-GCM-SHA256, "
-      "ECDHE-ECDSA-AES256-GCM-SHA384, ECDHE-RSA-AES128-GCM-SHA256, "
-      "ECDHE-RSA-AES256-GCM-SHA384, ECDHE-ECDSA-CHACHA20-POLY1305, "
-      "ECDHE-RSA-CHACHA20-POLY1305, ECDHE-ECDSA-AES256-CCM, "
-      "ECDHE-ECDSA-AES128-CCM, DHE-RSA-AES128-GCM-SHA256, "
-      "DHE-RSA-AES256-GCM-SHA384, DHE-RSA-AES256-CCM, DHE-RSA-AES128-CCM, "
-      "DHE-RSA-CHACHA20-POLY1305, .");
+      "variable value includes 'NULL', allowed values include: "
+      "ECDHE-ECDSA-AES128-GCM-SHA256, ECDHE-ECDSA-AES256-GCM-SHA384, "
+      "ECDHE-RSA-AES128-GCM-SHA256, ECDHE-RSA-AES256-GCM-SHA384, "
+      "ECDHE-ECDSA-CHACHA20-POLY1305, ECDHE-RSA-CHACHA20-POLY1305, "
+      "ECDHE-ECDSA-AES256-CCM, ECDHE-ECDSA-AES128-CCM, "
+      "DHE-RSA-AES128-GCM-SHA256, DHE-RSA-AES256-GCM-SHA384, "
+      "DHE-RSA-AES256-CCM, DHE-RSA-AES128-CCM, DHE-RSA-CHACHA20-POLY1305, .");
   EXPECT_FIND_ISSUE("explicit_defaults_for_timestamp", "", "",
                     Upgrade_issue::ERROR,
                     "variable is set to '0', allowed values include: 1.");

@@ -37,6 +37,11 @@
 namespace mysqlsh {
 namespace upgrade_checker {
 
+/* Types will be added as needed */
+enum class Variable_type { Set };
+
+Variable_type to_variable_type(const std::string &type_name);
+
 class Sysvar_platform_value {
  public:
   std::optional<std::string> get_default(size_t bits) const;
@@ -48,10 +53,14 @@ class Sysvar_platform_value {
   std::optional<std::vector<std::string>> get_forbidden(size_t bits) const;
   void set_forbidden(std::vector<std::string> forbidden, size_t bits = 0);
 
+  std::optional<Variable_type> get_vartype() const;
+  void set_vartype(Variable_type vartype);
+
  private:
   std::map<size_t, std::string> m_defaults;
   std::map<size_t, std::vector<std::string>> m_allowed;
   std::map<size_t, std::vector<std::string>> m_forbidden;
+  std::optional<Variable_type> m_vartype;
 };
 class Sysvar_configuration {
  public:
@@ -67,6 +76,9 @@ class Sysvar_configuration {
                      char platform = 'A');
   std::optional<std::vector<std::string>> get_forbidden(size_t bits,
                                                         char platform) const;
+
+  void set_vartype(Variable_type vartype, char platform = 'A');
+  std::optional<Variable_type> get_vartype(char platform) const;
 
  private:
   std::map<char, Sysvar_platform_value> m_platform_values;
@@ -123,6 +135,7 @@ struct Sysvar_version_check {
   std::optional<std::string> replacement;
   std::optional<Version> removal_version;
   std::optional<Version> deprecation_version;
+  std::optional<Variable_type> vartype;
 };
 
 class Sysvar_registry {
@@ -153,16 +166,17 @@ class Sysvar_check : public Upgrade_check {
   }
 
  private:
-  bool has_invalid_allowed_values(
+  std::vector<std::string_view> get_invalid_allowed_values(
       const Checker_cache::Sysvar_info *sysvar,
       const Sysvar_version_check &sysvar_check) const;
-  bool has_invalid_forbidden_values(
+  std::vector<std::string_view> get_invalid_forbidden_values(
       const Checker_cache::Sysvar_info *sysvar,
       const Sysvar_version_check &sysvar_check) const;
 
   Upgrade_issue get_issue(const std::string &group,
                           const Checker_cache::Sysvar_info *sysvar,
-                          const Sysvar_version_check &sysvar_check);
+                          const Sysvar_version_check &sysvar_check,
+                          const std::string &invalid_value = "");
 
   static Sysvar_registry s_registry;
 

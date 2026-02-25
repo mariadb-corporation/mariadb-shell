@@ -41,6 +41,7 @@ const char *k_sysvar_group_allowed = "allowedValues";
 const char *k_sysvar_group_forbidden = "forbiddenValues";
 const char *k_sysvar_group_defaults = "newDefaults";
 const char *k_sysvar_group_deprecated = "deprecated";
+const char *k_sysvar_type_set = "set";
 
 const std::vector<std::string> k_removed_sys_log_vars = {
     "log_syslog_facility", "log_syslog_include_pid", "log_syslog_tag",
@@ -48,6 +49,14 @@ const std::vector<std::string> k_removed_sys_log_vars = {
 
 // ensures that sysvar checks registry is only loaded once
 std::once_flag registry_load_flag;
+
+Variable_type to_variable_type(const std::string &type_name) {
+  if (type_name == k_sysvar_type_set) {
+    return Variable_type::Set;
+  }
+
+  throw std::logic_error("Unexpected variable type");
+}
 
 template <class cont_type, class value_type>
 bool cont_contains(const cont_type &cont, const value_type &value) {
@@ -58,7 +67,7 @@ char normalize_platform(const std::string &os_platform) {
   if (std::string("WLM").find(os_platform[0]) != std::string::npos)
     return os_platform[0];
 
-  if (os_platform.starts_with("OSX")) return 'M';
+  if (shcore::str_beginswith(os_platform, "OSX")) return 'M';
 
   return 'L';
 }
@@ -117,6 +126,10 @@ std::optional<std::vector<std::string>> Sysvar_platform_value::get_forbidden(
   return {};
 }
 
+std::optional<Variable_type> Sysvar_platform_value::get_vartype() const {
+  return m_vartype;
+}
+
 void Sysvar_platform_value::set_default(std::string value, size_t bits) {
   assert(bits == 0 || bits == 32 || bits == 64);
 
@@ -135,6 +148,10 @@ void Sysvar_platform_value::set_forbidden(std::vector<std::string> forbidden,
   assert(bits == 0 || bits == 32 || bits == 64);
 
   m_forbidden[bits] = std::move(forbidden);
+}
+
+void Sysvar_platform_value::set_vartype(Variable_type vartype) {
+  m_vartype = vartype;
 }
 
 void Sysvar_configuration::set_default(std::string value, size_t bits,
@@ -159,6 +176,12 @@ void Sysvar_configuration::set_forbidden(std::vector<std::string> forbidden,
   assert(bits == 0 || bits == 32 || bits == 64);
 
   m_platform_values[platform].set_forbidden(std::move(forbidden), bits);
+}
+
+void Sysvar_configuration::set_vartype(Variable_type vartype, char platform) {
+  assert(std::string("AWULM").find(platform) != std::string::npos);
+
+  m_platform_values[platform].set_vartype(vartype);
 }
 
 std::optional<std::string> Sysvar_configuration::get_default(
@@ -223,6 +246,35 @@ std::optional<std::vector<std::string>> Sysvar_configuration::get_allowed(
   }
 
   return allowed;
+}
+
+std::optional<Variable_type> Sysvar_configuration::get_vartype(
+    char platform) const {
+  std::optional<Variable_type> vartype;
+
+  // Searches for a value defined on the specific platform
+  auto it = m_platform_values.find(platform);
+  if (it != m_platform_values.end()) {
+    vartype = it->second.get_vartype();
+  }
+
+  // Searches for a value defined for Unix (non-windows)
+  if (!vartype.has_value() && platform != 'W') {
+    it = m_platform_values.find('U');
+    if (it != m_platform_values.end()) {
+      vartype = it->second.get_vartype();
+    }
+  }
+
+  // Searches for a value defined for All
+  if (!vartype.has_value()) {
+    it = m_platform_values.find('A');
+    if (it != m_platform_values.end()) {
+      vartype = it->second.get_vartype();
+    }
+  }
+
+  return vartype;
 }
 
 std::optional<std::vector<std::string>> Sysvar_configuration::get_forbidden(
@@ -325,6 +377,7 @@ constexpr const char *k_64_bits = "64";
 constexpr const char *k_default = "default";
 constexpr const char *k_allowed = "allowed";
 constexpr const char *k_forbidden = "forbidden";
+constexpr const char *k_vartype = "vartype";
 
 std::vector<std::string> parse_string_list(const rapidjson::Value &source) {
   std::vector<std::string> result;
@@ -399,6 +452,11 @@ void parse_forbidden(const rapidjson::Value &source,
 
 void parse_platform_values(const rapidjson::Value &source,
                            Sysvar_configuration *target, char platform_id) {
+  if (source.HasMember(k_vartype)) {
+    target->set_vartype(to_variable_type(get_string(source[k_vartype])),
+                        platform_id);
+  }
+
   if (source.HasMember(k_default)) {
     parse_default(source[k_default], target, platform_id);
   }
@@ -546,6 +604,7 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
       initials.get_allowed(upgrade_info.server_bits, os_platform);
   auto forbidden_values =
       initials.get_forbidden(upgrade_info.server_bits, os_platform);
+  auto vartype = initials.get_vartype(os_platform);
 
   std::optional<std::string> final_default;
 
@@ -569,6 +628,8 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
       final_default =
           change.second.get_default(upgrade_info.server_bits, os_platform);
     }
+
+    vartype = change.second.get_vartype(os_platform);
   }
 
   bool is_deprecated = deprecation_version.has_value() &&
@@ -618,6 +679,8 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
       cnf.forbidden_values = std::move(*forbidden_values);
     }
 
+    cnf.vartype = vartype;
+
     return cnf;
   }
 
@@ -651,10 +714,18 @@ std::vector<Upgrade_issue> Sysvar_check::run(const Check_context &context) {
           issue = get_issue(k_sysvar_group_removed_log, sysvar, sysvar_check);
         else
           issue = get_issue(k_sysvar_group_removed, sysvar, sysvar_check);
-      } else if (has_invalid_forbidden_values(sysvar, sysvar_check)) {
-        issue = get_issue(k_sysvar_group_forbidden, sysvar, sysvar_check);
-      } else if (has_invalid_allowed_values(sysvar, sysvar_check)) {
-        issue = get_issue(k_sysvar_group_allowed, sysvar, sysvar_check);
+      } else if (auto forbidden_values =
+                     get_invalid_forbidden_values(sysvar, sysvar_check);
+                 !forbidden_values.empty()) {
+        auto invalid_value = shcore::str_join(forbidden_values, ",");
+        issue = get_issue(k_sysvar_group_forbidden, sysvar, sysvar_check,
+                          invalid_value);
+      } else if (auto invalid_values =
+                     get_invalid_allowed_values(sysvar, sysvar_check);
+                 !invalid_values.empty()) {
+        auto invalid_value = shcore::str_join(invalid_values, ",");
+        issue = get_issue(k_sysvar_group_allowed, sysvar, sysvar_check,
+                          invalid_value);
       } else if (sysvar_check.deprecation_version.has_value()) {
         issue = get_issue(k_sysvar_group_deprecated, sysvar, sysvar_check);
       }
@@ -668,38 +739,80 @@ std::vector<Upgrade_issue> Sysvar_check::run(const Check_context &context) {
   return issues;
 }
 
-bool Sysvar_check::has_invalid_allowed_values(
+std::vector<std::string_view> Sysvar_check::get_invalid_allowed_values(
     const Checker_cache::Sysvar_info *sysvar,
     const Sysvar_version_check &sysvar_check) const {
+  std::vector<std::string_view> invalid_values;
+
   if (!sysvar_check.allowed_values.empty()) {
-    if (!cont_contains(sysvar_check.allowed_values, sysvar->value)) return true;
+    if (sysvar_check.vartype.has_value() &&
+        *sysvar_check.vartype == Variable_type::Set) {
+      shcore::str_itersplit(
+          sysvar->value,
+          [&sysvar_check, &invalid_values](std::string_view value) {
+            if (!cont_contains(sysvar_check.allowed_values, value)) {
+              invalid_values.push_back(value);
+            }
+            return true;
+          },
+          " ,");
+    } else if (!cont_contains(sysvar_check.allowed_values, sysvar->value)) {
+      invalid_values.push_back(sysvar->value);
+    }
   }
-  return false;
+
+  return invalid_values;
 }
 
-bool Sysvar_check::has_invalid_forbidden_values(
+std::vector<std::string_view> Sysvar_check::get_invalid_forbidden_values(
     const Checker_cache::Sysvar_info *sysvar,
     const Sysvar_version_check &sysvar_check) const {
+  std::vector<std::string_view> invalid_values;
+
   if (!sysvar_check.forbidden_values.empty()) {
-    if (cont_contains(sysvar_check.forbidden_values, sysvar->value))
-      return true;
+    if (sysvar_check.vartype.has_value() &&
+        *sysvar_check.vartype == Variable_type::Set) {
+      shcore::str_itersplit(
+          sysvar->value,
+          [&sysvar_check, &invalid_values](std::string_view value) {
+            if (cont_contains(sysvar_check.forbidden_values, value)) {
+              invalid_values.push_back(value);
+            }
+            return true;
+          },
+          " ,");
+    } else if (cont_contains(sysvar_check.forbidden_values, sysvar->value)) {
+      invalid_values.push_back(sysvar->value);
+    }
   }
-  return false;
+
+  return invalid_values;
 }
 
-Upgrade_issue Sysvar_check::get_issue(
-    const std::string &group, const Checker_cache::Sysvar_info *sysvar,
-    const Sysvar_version_check &sysvar_check) {
+Upgrade_issue Sysvar_check::get_issue(const std::string &group,
+                                      const Checker_cache::Sysvar_info *sysvar,
+                                      const Sysvar_version_check &sysvar_check,
+                                      const std::string &invalid_value) {
   Token_definitions tokens = {
       {"item", sysvar_check.name},
   };
 
   if (sysvar) {
-    tokens["value"] = sysvar->value;
+    if (!invalid_value.empty()) {
+      tokens["value"] = invalid_value;
+    } else {
+      tokens["value"] = sysvar->value;
+    }
     tokens["source"] = sysvar->source;
   }
 
-  const auto issue_field = "issue." + group;
+  auto issue_field = "issue." + group;
+
+  if ((group == k_sysvar_group_allowed || group == k_sysvar_group_forbidden) &&
+      sysvar_check.vartype == Variable_type::Set) {
+    issue_field += ".set";
+  }
+
   const auto &raw_description = get_text(issue_field.c_str());
 
   std::string description{raw_description};

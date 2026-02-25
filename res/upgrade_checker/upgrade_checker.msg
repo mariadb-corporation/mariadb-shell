@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2018, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -646,8 +646,14 @@ default value changed from %initial_default% to %updated_default%.
 * sysVars.issue.allowedValues
 variable is set to '%value%', allowed values include: %allowed%
 
+* sysVars.issue.allowedValues.set
+variable value includes '%value%', allowed values include: %allowed%
+
 * sysVars.issue.forbiddenValues
 variable is set to '%value%', forbidden values include: %forbidden%
+
+* sysVars.issue.forbiddenValues.set
+variable value includes '%value%', forbidden values include: %forbidden%
 
 * sysVars.replacement
 consider using '%replacement%' instead

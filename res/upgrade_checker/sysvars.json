@@ -238,6 +238,7 @@
     "version": "8.0.21",
     "initial": {
       "all": {
+        "vartype": "set",
         "default": {
           "all": "NULL"
         }
@@ -247,6 +248,7 @@
       {
         "version": "8.4.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
               "ECDHE-ECDSA-AES128-GCM-SHA256",
@@ -274,6 +276,7 @@
     "version": "8.0.21",
     "initial": {
       "all": {
+        "vartype": "set",
         "default": {
           "all": "NULL"
         }
@@ -283,6 +286,7 @@
       {
         "version": "8.4.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
               "TLS_AES_128_GCM_SHA256",
@@ -2120,6 +2124,11 @@
     "removal": "5.7.4"
   },
   {
+    "name": "innodb_native_foreign_keys",
+    "version": "9.6.0",
+    "deprecation": "9.6.0"
+  },
+  {
     "name": "innodb_numa_interleave",
     "version": "5.6.27",
     "initial": {
@@ -3367,27 +3376,44 @@
       {
         "version": "5.6.9",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "''"
           },
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3395,25 +3421,43 @@
       {
         "version": "5.7.5",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3421,26 +3465,45 @@
       {
         "version": "5.7.6",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3448,27 +3511,47 @@
       {
         "version": "5.7.8",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3476,28 +3559,49 @@
       {
         "version": "5.7.33",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "prefer_ordering_index={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "prefer_ordering_index=on",
+              "prefer_ordering_index=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3505,27 +3609,47 @@
       {
         "version": "8.0.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off"
             ]
           }
         }
@@ -3533,28 +3657,49 @@
       {
         "version": "8.0.3",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3562,29 +3707,51 @@
       {
         "version": "8.0.13",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3592,30 +3759,53 @@
       {
         "version": "8.0.18",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "hash_join={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "hash_join=on",
+              "hash_join=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3623,32 +3813,57 @@
       {
         "version": "8.0.21",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "hash_join={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "prefer_ordering_index={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "subquery_to_derived={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "hash_join=on",
+              "hash_join=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "prefer_ordering_index=on",
+              "prefer_ordering_index=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "subquery_to_derived=on",
+              "subquery_to_derived=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3656,33 +3871,59 @@
       {
         "version": "8.0.22",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_condition_pushdown={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "hash_join={on|off}",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "prefer_ordering_index={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "subquery_to_derived={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_condition_pushdown=on",
+              "derived_condition_pushdown=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "hash_join=on",
+              "hash_join=off",
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "prefer_ordering_index=on",
+              "prefer_ordering_index=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "subquery_to_derived=on",
+              "subquery_to_derived=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3690,35 +3931,62 @@
       {
         "version": "9.3.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_condition_pushdown={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "hash_join={on|off}",
-              "hash_set_operations={on|off}",
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_condition_pushdown=on",
+              "derived_condition_pushdown=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "hash_join=on",
+              "hash_join=off",
+              "hash_set_operations=on",
+              "hash_set_operations=off",
               "hypergraph_optimizer=off",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "prefer_ordering_index={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "subquery_to_derived={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "prefer_ordering_index=on",
+              "prefer_ordering_index=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "subquery_to_derived=on",
+              "subquery_to_derived=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -3726,35 +3994,62 @@
       {
         "version": "9.3.1",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
-              "batched_key_access={on|off}",
-              "block_nested_loop={on|off}",
-              "condition_fanout_filter={on|off}",
-              "derived_condition_pushdown={on|off}",
-              "derived_merge={on|off}",
-              "duplicateweedout={on|off}",
-              "engine_condition_pushdown={on|off}",
-              "firstmatch={on|off}",
-              "hash_join={on|off}",
-              "hash_set_operations={on|off}",
+              "batched_key_access=on",
+              "batched_key_access=off",
+              "block_nested_loop=on",
+              "block_nested_loop=off",
+              "condition_fanout_filter=on",
+              "condition_fanout_filter=off",
+              "derived_condition_pushdown=on",
+              "derived_condition_pushdown=off",
+              "derived_merge=on",
+              "derived_merge=off",
+              "duplicateweedout=on",
+              "duplicateweedout=off",
+              "engine_condition_pushdown=on",
+              "engine_condition_pushdown=off",
+              "firstmatch=on",
+              "firstmatch=off",
+              "hash_join=on",
+              "hash_join=off",
+              "hash_set_operations=on",
+              "hash_set_operations=off",
               "hypergraph_optimizer=on",
-              "index_condition_pushdown={on|off}",
-              "index_merge={on|off}",
-              "index_merge_intersection={on|off}",
-              "index_merge_sort_union={on|off}",
-              "index_merge_union={on|off}",
-              "loosescan={on|off}",
-              "materialization={on|off}",
-              "mrr={on|off}",
-              "mrr_cost_based={on|off}",
-              "prefer_ordering_index={on|off}",
-              "semijoin={on|off}",
-              "skip_scan={on|off}",
-              "subquery_materialization_cost_based={on|off}",
-              "subquery_to_derived={on|off}",
-              "use_index_extensions={on|off}",
-              "use_invisible_indexes={on|off}"
+              "index_condition_pushdown=on",
+              "index_condition_pushdown=off",
+              "index_merge=on",
+              "index_merge=off",
+              "index_merge_intersection=on",
+              "index_merge_intersection=off",
+              "index_merge_sort_union=on",
+              "index_merge_sort_union=off",
+              "index_merge_union=on",
+              "index_merge_union=off",
+              "loosescan=on",
+              "loosescan=off",
+              "materialization=on",
+              "materialization=off",
+              "mrr=on",
+              "mrr=off",
+              "mrr_cost_based=on",
+              "mrr_cost_based=off",
+              "prefer_ordering_index=on",
+              "prefer_ordering_index=off",
+              "semijoin=on",
+              "semijoin=off",
+              "skip_scan=on",
+              "skip_scan=off",
+              "subquery_materialization_cost_based=on",
+              "subquery_materialization_cost_based=off",
+              "subquery_to_derived=on",
+              "subquery_to_derived=off",
+              "use_index_extensions=on",
+              "use_index_extensions=off",
+              "use_invisible_indexes=on",
+              "use_invisible_indexes=off"
             ]
           }
         }
@@ -4729,6 +5024,7 @@
     "removal": "8.3.0",
     "initial": {
       "all": {
+        "vartype": "set",
         "default": {
           "all": "TABLE_SCAN,INDEX_SCAN"
         }
@@ -4738,6 +5034,7 @@
       {
         "version": "8.0.2",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "INDEX_SCAN,HASH_SCAN"
           }
@@ -4766,6 +5063,7 @@
       {
         "version": "5.6.13",
         "all": {
+          "vartype": "set",
           "default": {
             "all": ""
           },
@@ -4782,6 +5080,7 @@
       {
         "version": "5.7.0",
         "all": {
+          "vartype": "set",
           "default": {
             "all": ""
           },
@@ -4796,6 +5095,7 @@
       {
         "version": "5.7.2",
         "all": {
+          "vartype": "set",
           "default": {
             "all": ""
           },
@@ -4817,6 +5117,7 @@
       {
         "version": "5.6.6",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "NO_ENGINE_SUBSTITUTION"
           },
@@ -4851,6 +5152,7 @@
       {
         "version": "5.7.5",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "ONLY_FULL_GROUP_BY STRICT_TRANS_TABLES NO_ENGINE_SUBSTITUTION"
           },
@@ -4885,6 +5187,7 @@
       {
         "version": "5.7.7",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "ONLY_FULL_GROUP_BY STRICT_TRANS_TABLES NO_AUTO_CREATE_USER NO_ENGINE_SUBSTITUTION"
           },
@@ -4919,6 +5222,7 @@
       {
         "version": "5.7.8",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "ONLY_FULL_GROUP_BY STRICT_TRANS_TABLES NO_ZERO_IN_DATE NO_ZERO_DATE ERROR_FOR_DIVISION_BY_ZERO NO_AUTO_CREATE_USER NO_ENGINE_SUBSTITUTION"
           },
@@ -4953,6 +5257,7 @@
       {
         "version": "8.0.1",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "ONLY_FULL_GROUP_BY STRICT_TRANS_TABLES NO_ZERO_IN_DATE NO_ZERO_DATE ERROR_FOR_DIVISION_BY_ZERO NO_AUTO_CREATE_USER NO_ENGINE_SUBSTITUTION"
           },
@@ -4988,6 +5293,7 @@
       {
         "version": "8.0.11",
         "all": {
+          "vartype": "set",
           "default": {
             "all": "ONLY_FULL_GROUP_BY STRICT_TRANS_TABLES NO_ZERO_IN_DATE NO_ZERO_DATE ERROR_FOR_DIVISION_BY_ZERO NO_ENGINE_SUBSTITUTION"
           },
@@ -5028,6 +5334,7 @@
     "version": "5.0.23",
     "initial": {
       "all": {
+        "vartype": "set",
         "default": {
           "all": "NULL"
         }
@@ -5037,6 +5344,7 @@
       {
         "version": "8.4.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
               "ECDHE-ECDSA-AES128-GCM-SHA256",
@@ -5429,6 +5737,7 @@
     "version": "8.0.16",
     "initial": {
       "all": {
+        "vartype": "set",
         "default": {
           "all": "NULL"
         }
@@ -5438,6 +5747,7 @@
       {
         "version": "8.4.0",
         "all": {
+          "vartype": "set",
           "allowed": {
             "all": [
               "TLS_AES_128_GCM_SHA256",
