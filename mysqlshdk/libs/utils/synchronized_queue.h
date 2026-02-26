@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ enum class Queue_priority { LOWEST = 1, LOW, MEDIUM, HIGH };
 template <class T>
 class Synchronized_queue final {
  public:
-  Synchronized_queue() = default;
+  explicit Synchronized_queue(size_t max_size = 0) : m_max_size(max_size) {}
   Synchronized_queue(const Synchronized_queue &other) = delete;
   Synchronized_queue(Synchronized_queue &&other) = delete;
 
@@ -60,7 +60,10 @@ class Synchronized_queue final {
   template <class U = T>
   void push(U &&r, Queue_priority p = Queue_priority::MEDIUM) {
     {
-      std::lock_guard<std::mutex> lock(m_queue_mutex);
+      std::unique_lock<std::mutex> lock(m_queue_mutex);
+      if (m_max_size > 0) {
+        m_not_full.wait(lock, [this]() { return m_size < m_max_size; });
+      }
       unsynchronized_push(std::forward<U>(r), map_priority(p));
     }
     m_task_ready.notify_one();
@@ -116,7 +119,11 @@ class Synchronized_queue final {
       if (!queue.empty()) {
         auto r = std::move(queue.front());
         queue.pop_front();
+        bool was_full = (m_max_size > 0 && m_size == m_max_size);
         --m_size;
+        if (was_full) {
+          m_not_full.notify_one();
+        }
         return r;
       }
     }
@@ -132,8 +139,10 @@ class Synchronized_queue final {
 
   mutable std::mutex m_queue_mutex;
   std::condition_variable m_task_ready;
+  std::condition_variable m_not_full;
   std::array<std::deque<T>, 1 + k_max_priority> m_queues;
   std::atomic<std::size_t> m_size{0};
+  size_t m_max_size{0};
 };
 
 }  // namespace shcore
