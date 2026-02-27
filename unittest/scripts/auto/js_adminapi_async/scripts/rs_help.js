@@ -212,6 +212,15 @@ rs.help("importRoutingGuideline")
 //@ importRoutingGuideline, \help [USE:importRoutingGuideline]
 \help ReplicaSet.importRoutingGuideline
 
+//@ resetReplicationAccountsPassword
+rs.help("resetReplicationAccountsPassword")
+
+//@ resetReplicationAccountsPassword, \? [USE:resetReplicationAccountsPassword]
+\? ReplicaSet.resetReplicationAccountsPassword
+
+//@ resetReplicationAccountsPassword, \help [USE:resetReplicationAccountsPassword]
+\help ReplicaSet.resetReplicationAccountsPassword
+
 //@<> Clean-up.
 rs.disconnect();
 testutil.destroySandbox(__mysql_sandbox_port1);

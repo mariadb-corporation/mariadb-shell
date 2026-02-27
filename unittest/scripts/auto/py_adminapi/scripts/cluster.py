@@ -24,6 +24,7 @@ validate_members(cluster, [
     'remove_instance',
     'rescan',
     'reset_recovery_accounts_password',
+    'reset_replication_accounts_password',
     'options',
     'setup_admin_account',
     'setup_router_account',

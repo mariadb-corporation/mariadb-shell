@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,6 @@
 #include "modules/adminapi/cluster/remove_instance.h"
 #include "modules/adminapi/cluster/remove_replica_instance.h"
 #include "modules/adminapi/cluster/rescan.h"
-#include "modules/adminapi/cluster/reset_recovery_accounts_password.h"
 #include "modules/adminapi/cluster/set_instance_option.h"
 #include "modules/adminapi/cluster/set_option.h"
 #include "modules/adminapi/cluster/set_primary_instance.h"
@@ -66,6 +65,7 @@
 #include "modules/adminapi/common/member_recovery_monitoring.h"
 #include "modules/adminapi/common/metadata_storage.h"
 #include "modules/adminapi/common/preconditions.h"
+#include "modules/adminapi/common/reset_replication_accounts_password.h"
 #include "modules/adminapi/common/router.h"
 #include "modules/adminapi/common/server_features.h"
 #include "modules/adminapi/common/sql.h"
@@ -1726,8 +1726,7 @@ shcore::Value Cluster_impl::list_routers(bool only_upgrade_required) {
   return shcore::Value(dict);
 }
 
-void Cluster_impl::reset_recovery_password(std::optional<bool> force,
-                                           const bool interactive) {
+void Cluster_impl::reset_recovery_password(const Force_options &options) {
   {
     auto conds = Command_conditions::Builder::gen_cluster(
                      "resetRecoveryAccountsPassword")
@@ -1741,18 +1740,21 @@ void Cluster_impl::reset_recovery_password(std::optional<bool> force,
     check_preconditions(conds);
   }
 
+  // Check if Cluster is part of a ClusterSet to error out and instruct to use
+  // ClusterSet.resetReplicationAccountsPassword() instead.
+  if (is_cluster_set_member()) {
+    current_console()->print_warning(shcore::str_format(
+        "Cluster '%s' is a member of a ClusterSet, use "
+        "<ClusterSet>.<<<resetReplicationAccountsPassword>>>() instead.",
+        get_name().c_str()));
+    throw shcore::Exception::runtime_error(
+        "Function not available for ClusterSet members");
+  }
+
   // put an exclusive lock on the cluster
   auto c_lock = get_lock_exclusive();
 
-  // Create the reset_recovery_command.
-  cluster::Reset_recovery_accounts_password op_reset(interactive, force, *this);
-
-  // Always execute finish
-  shcore::on_leave_scope finally([&op_reset]() { op_reset.finish(); });
-
-  // prepare and execute
-  op_reset.prepare();
-  op_reset.execute();
+  Topology_executor<Reset_replication_accounts_password>{*this, options}.run();
 }
 
 void Cluster_impl::enable_super_read_only_globally() const {

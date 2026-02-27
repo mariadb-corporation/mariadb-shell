@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +102,7 @@ file(GLOB adminapi_module_SOURCES
       "common/replication_account.cc"
       "common/routing_guideline_impl.cc"
       "common/routing_guideline_options.cc"
+      "common/reset_replication_accounts_password.cc"
       "dba/check_instance.cc"
       "dba/configure_async_instance.cc"
       "dba/configure_instance.cc"
@@ -133,7 +134,6 @@ file(GLOB adminapi_module_SOURCES
       "cluster/describe.cc"
       "cluster/status.cc"
       "cluster/dissolve.cc"
-      "cluster/reset_recovery_accounts_password.cc"
       "cluster/options.cc"
       "cluster/set_option.cc"
       "cluster/member_recovery.cc"

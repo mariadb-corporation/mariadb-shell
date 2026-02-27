@@ -148,6 +148,15 @@ cs.help("importRoutingGuideline")
 //@ importRoutingGuideline, \help [USE:importRoutingGuideline]
 \help ClusterSet.importRoutingGuideline
 
+//@ resetReplicationAccountsPassword
+cs.help("resetReplicationAccountsPassword")
+
+//@ resetReplicationAccountsPassword, \? [USE:resetReplicationAccountsPassword]
+\? ClusterSet.resetReplicationAccountsPassword
+
+//@ resetReplicationAccountsPassword, \help [USE:resetReplicationAccountsPassword]
+\help ClusterSet.resetReplicationAccountsPassword
+
 //@<> Clean-up.
 cs.disconnect();
 testutil.destroySandbox(__mysql_sandbox_port1);

@@ -50,3 +50,6 @@ callMysqlsh(["--", "clusterset", "routing_guidelines", "--help"])
 
 //@ CLI clusterset import-routing-guideline --help
 callMysqlsh(["--", "clusterset", "import-routing-guideline", "--help"])
+
+//@ CLI clusterset reset-replication-accounts-password --help
+callMysqlsh(["--", "clusterset", "reset-replication-accounts-password", "--help"])

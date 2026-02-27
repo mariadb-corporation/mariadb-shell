@@ -60,8 +60,14 @@ The following operations are available at 'cluster':
       Rescans the Cluster.
 
    reset-recovery-accounts-password
-      Resets the password of the recovery and replication accounts of the
-      Cluster.
+      Resets the passwords of the internal replication accounts of the Cluster.
+
+      ATTENTION: This function is deprecated and will be removed in a future
+                 release of MySQL Shell. Use
+                 Cluster.resetReplicationAccountsPassword() instead.
+
+   reset-replication-accounts-password
+      Resets the passwords of the internal replication accounts of the Cluster.
 
    router-options
       Lists the configuration options of the Cluster's Routers.
@@ -335,9 +341,8 @@ OPTIONS
 
 //@<OUT> CLI cluster reset-recovery-accounts-password --help
 NAME
-      reset-recovery-accounts-password - Resets the password of the recovery
-                                         and replication accounts of the
-                                         Cluster.
+      reset-recovery-accounts-password - Resets the passwords of the internal
+                                         replication accounts of the Cluster.
 
 SYNTAX
       cluster reset-recovery-accounts-password [<options>]
@@ -350,6 +355,24 @@ OPTIONS
             Boolean, indicating if the operation will continue in case an error
             occurs when trying to reset the passwords on any of the instances,
             for example if any of them is not online. By default, set to false.
+
+//@<OUT> CLI cluster reset-replication-accounts-password --help
+NAME
+      reset-replication-accounts-password - Resets the passwords of the
+                                            internal replication accounts of
+                                            the Cluster.
+
+SYNTAX
+      cluster reset-replication-accounts-password [<options>]
+
+RETURNS
+      Nothing.
+
+OPTIONS
+--force=<bool>
+            Boolean, indicating whether the operation should continue if an
+            error occurs while resetting passwords on any instance (for
+            example, if an instance is not ONLINE). By default, false.
 
 //@<OUT> CLI cluster set-instance-option --help
 NAME

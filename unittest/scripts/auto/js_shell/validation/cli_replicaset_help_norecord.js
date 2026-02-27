@@ -46,6 +46,10 @@ The following operations are available at 'rs':
    rescan
       Rescans the ReplicaSet.
 
+   reset-replication-accounts-password
+      Resets the passwords of the internal replication accounts of the
+      ReplicaSet.
+
    router-options
       Lists the configuration options of the ReplicaSet's Routers.
 
@@ -537,3 +541,21 @@ OPTIONS
 --force=<bool>
 
 --rename=<str>
+
+//@<OUT> CLI replicaset reset-replication-accounts-password --help
+NAME
+      reset-replication-accounts-password - Resets the passwords of the
+                                            internal replication accounts of
+                                            the ReplicaSet.
+
+SYNTAX
+      rs reset-replication-accounts-password [<options>]
+
+RETURNS
+      Nothing.
+
+OPTIONS
+--force=<bool>
+            Boolean, indicating whether the operation should continue if an
+            error occurs while resetting passwords on any instance (for
+            example, if an instance is not ONLINE). By default, false.

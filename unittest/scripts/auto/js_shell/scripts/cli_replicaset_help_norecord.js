@@ -65,3 +65,6 @@ callMysqlsh(["--", "rs", "routing_guidelines", "--help"])
 
 //@ CLI replicaset import-routing-guideline --help
 callMysqlsh(["--", "rs", "import-routing-guideline", "--help"])
+
+//@ CLI replicaset reset-replication-accounts-password --help
+callMysqlsh(["--", "rs", "reset-replication-accounts-password", "--help"])

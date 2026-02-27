@@ -170,6 +170,15 @@ cluster.help("resetRecoveryAccountsPassword")
 //@ resetRecoveryAccountsPassword, \help [USE:resetRecoveryAccountsPassword]
 \help cluster.resetRecoveryAccountsPassword
 
+//@ resetReplicationAccountsPassword
+cluster.help("resetReplicationAccountsPassword")
+
+//@ resetReplicationAccountsPassword, \? [USE:resetReplicationAccountsPassword]
+\? cluster.resetReplicationAccountsPassword
+
+//@ resetReplicationAccountsPassword, \help [USE:resetReplicationAccountsPassword]
+\help cluster.resetReplicationAccountsPassword
+
 //@ createClusterSet
 cluster.help("createClusterSet")
 

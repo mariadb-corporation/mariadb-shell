@@ -42,6 +42,7 @@ validateMembers(Cluster, [
   'listRouters',
   'removeRouterMetadata',
   'resetRecoveryAccountsPassword',
+  'resetReplicationAccountsPassword',
   'forceQuorumUsingPartitionOf',
   'switchToSinglePrimaryMode',
   'switchToMultiPrimaryMode',

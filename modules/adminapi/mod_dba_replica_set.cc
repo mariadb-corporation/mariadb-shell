@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -123,6 +123,9 @@ void ReplicaSet::init() {
   expose("routingGuidelines", &ReplicaSet::routing_guidelines)->cli();
   expose("importRoutingGuideline", &ReplicaSet::import_routing_guideline,
          "file", "?options")
+      ->cli();
+  expose("resetReplicationAccountsPassword",
+         &ReplicaSet::reset_replication_accounts_password, "?options")
       ->cli();
 }
 
@@ -1259,6 +1262,20 @@ RoutingGuideline ReplicaSet::importRoutingGuideline(String file,
                                                     Dictionary options) {}
 #elif DOXYGEN_PY
 RoutingGuideline ReplicaSet::import_routing_guideline(str file, dict options) {}
+#endif
+
+REGISTER_HELP_FUNCTION(resetReplicationAccountsPassword, ReplicaSet);
+REGISTER_HELP_FUNCTION_TEXT(REPLICASET_RESETREPLICATIONACCOUNTSPASSWORD,
+                            RESETREPLICATIONACCOUNTSPASSWORD_HELP_TEXT);
+/**
+ * $(REPLICASET_RESETREPLICATIONACCOUNTSPASSWORD_BRIEF)
+ *
+ * $(REPLICASET_RESETREPLICATIONACCOUNTSPASSWORD)
+ */
+#if DOXYGEN_JS
+Undefined ReplicaSet::resetReplicationAccountsPassword(Dictionary options) {}
+#elif DOXYGEN_PY
+None ReplicaSet::reset_replication_accounts_password(dict options) {}
 #endif
 
 }  // namespace dba

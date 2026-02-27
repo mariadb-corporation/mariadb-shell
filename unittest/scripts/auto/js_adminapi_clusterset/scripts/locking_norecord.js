@@ -399,7 +399,7 @@ session.runSql("DROP FUNCTION IF EXISTS service_release_locks");
 session.runSql("set global super_read_only=1");
 
 EXPECT_NO_THROWS(function() {
-    rcluster1.resetRecoveryAccountsPassword();
+    rcluster1.setOption("autoRejoinTries", 1);
 });
 
 EXPECT_EQ(0, session.runSql("SELECT count(*) FROM mysql.func WHERE name IN ('service_get_read_locks', 'service_get_write_locks', 'service_release_locks')").fetchOne()[0]);
@@ -414,7 +414,7 @@ EXPECT_EQ(0, session.runSql("SELECT count(*) FROM mysql.func WHERE name IN ('ser
 
 WIPE_SHELL_LOG();
 EXPECT_NO_THROWS(function() {
-    rcluster1.resetRecoveryAccountsPassword();
+    rcluster1.setOption("autoRejoinTries", 1);
 });
 EXPECT_SHELL_LOG_CONTAINS(`The required MySQL Locking Service isn't installed on instance '${hostname}:${__mysql_sandbox_port3}'. The operation will continue without concurrent execution protection.`);
 

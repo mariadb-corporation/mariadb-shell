@@ -266,7 +266,7 @@ if (__version_num >= 80023) {
 }
 
 WIPE_OUTPUT();
-EXPECT_NO_THROWS(function() { cluster.resetRecoveryAccountsPassword(); });
+EXPECT_NO_THROWS(function() { cluster.resetReplicationAccountsPassword(); });
 EXPECT_OUTPUT_NOT_CONTAINS("which doesn't assign a password for the recovery users.");
 
 // cleanup cluster
@@ -354,8 +354,8 @@ if (__version_num >= 80023) {
 }
 
 WIPE_OUTPUT();
-EXPECT_NO_THROWS(function() { cluster.resetRecoveryAccountsPassword(); });
-EXPECT_OUTPUT_CONTAINS("The Cluster's authentication type is 'CERT_ISSUER', which doesn't assign a password for the recovery users.");
+EXPECT_NO_THROWS(function() { cluster.resetReplicationAccountsPassword(); });
+EXPECT_OUTPUT_CONTAINS("The Cluster's authentication type is 'CERT_ISSUER', which doesn't use passwords for replication accounts.");
 
 // cleanup cluster
 cluster.dissolve();
@@ -428,7 +428,7 @@ if (__version_num >= 80023) {
 }
 
 WIPE_OUTPUT();
-EXPECT_NO_THROWS(function() { cluster.resetRecoveryAccountsPassword(); });
+EXPECT_NO_THROWS(function() { cluster.resetReplicationAccountsPassword(); });
 EXPECT_OUTPUT_NOT_CONTAINS("which doesn't assign a password for the recovery users.");
 
 // cleanup cluster
@@ -519,7 +519,7 @@ if (__version_num >= 80023) {
 }
 
 WIPE_OUTPUT();
-EXPECT_NO_THROWS(function() { cluster.resetRecoveryAccountsPassword(); });
+EXPECT_NO_THROWS(function() { cluster.resetReplicationAccountsPassword(); });
 EXPECT_OUTPUT_NOT_CONTAINS("which doesn't assign a password for the recovery users.");
 
 //@<> FR1 create cluster (issuer + subject) with XCOM comm stack {VER(>=8.0.27)}

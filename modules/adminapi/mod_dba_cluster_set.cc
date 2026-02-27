@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -119,6 +119,9 @@ void ClusterSet::init() {
   expose("routingGuidelines", &ClusterSet::routing_guidelines)->cli();
   expose("importRoutingGuideline", &ClusterSet::import_routing_guideline,
          "file", "?options")
+      ->cli();
+  expose("resetReplicationAccountsPassword",
+         &ClusterSet::reset_replication_accounts_password, "?options")
       ->cli();
 }
 
@@ -1198,6 +1201,20 @@ RoutingGuideline ClusterSet::importRoutingGuideline(String file,
                                                     Dictionary options) {}
 #elif DOXYGEN_PY
 RoutingGuideline ClusterSet::import_routing_guideline(str file, dict options) {}
+#endif
+
+REGISTER_HELP_FUNCTION(resetReplicationAccountsPassword, ClusterSet);
+REGISTER_HELP_FUNCTION_TEXT(CLUSTERSET_RESETREPLICATIONACCOUNTSPASSWORD,
+                            RESETREPLICATIONACCOUNTSPASSWORD_HELP_TEXT);
+/**
+ * $(CLUSTERSET_RESETREPLICATIONACCOUNTSPASSWORD_BRIEF)
+ *
+ * $(CLUSTERSET_RESETREPLICATIONACCOUNTSPASSWORD)
+ */
+#if DOXYGEN_JS
+Undefined ClusterSet::resetReplicationAccountsPassword(Dictionary options) {}
+#elif DOXYGEN_PY
+None ClusterSet::reset_replication_accounts_password(dict options) {}
 #endif
 
 }  // namespace dba

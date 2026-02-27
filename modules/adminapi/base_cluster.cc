@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -196,6 +196,15 @@ std::shared_ptr<RoutingGuideline> Base_cluster::import_routing_guideline(
 
         return std::make_shared<RoutingGuideline>(rg);
       },
+      false);
+}
+
+void Base_cluster::reset_replication_accounts_password(
+    const Force_options &options) {
+  assert_valid("resetReplicationAccountsPassword");
+
+  return execute_with_pool(
+      [&]() { base_impl()->reset_replication_accounts_password(options); },
       false);
 }
 

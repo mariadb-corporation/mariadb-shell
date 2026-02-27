@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +84,9 @@ class Base_cluster : public shcore::Cpp_object_bridge {
 
   void setup_router_account(const std::string &user,
                             const Setup_account_options &options);
+
+ public:  // Internal replication passwords management
+  void reset_replication_accounts_password(const Force_options &options);
 
  protected:
   bool m_invalidated = false;
@@ -339,6 +342,45 @@ The options 'force' and 'rename' are mutually exclusive. Only one can be used
 at a time.
 
 For more information on Routing Guidelines, see \\? RoutingGuideline.
+)*"));
+
+REGISTER_HELP_SHARED_TEXT(RESETREPLICATIONACCOUNTSPASSWORD_HELP_TEXT, (R"*(
+Resets the passwords of the internal replication accounts of the <<<:Type>>>.
+
+@param options Optional dictionary with options for the operation.
+@returns Nothing.
+
+This function resets the passwords for all internal recovery and replication
+accounts used by the topology. This includes:
+
+@li Recovery accounts used for distributed recovery between members, in InnoDB
+Cluster.
+
+@li Replication accounts used by Read Replicas, in InnoDB Cluster.
+
+@li Replication accounts used by members in InnoDB ReplicaSet
+
+@li Replication accounts used between clusters in an InnoDB ClusterSet.
+
+It can be used to rotate the passwords of internal replication accounts
+for security reasons. For example:
+
+@li Periodically, to comply with a custom password lifetime policy.
+
+@li After a suspected security incident.
+
+@li As part of routine credential rotation procedures.
+
+The options dictionary may contain the following attributes:
+
+@li force: boolean, indicating whether the operation should continue if
+an error occurs while resetting passwords on any instance (for example,
+if an instance is not ONLINE). By default, false.
+
+Using the force option (set to true) is not recommended. Use it only
+when instances are permanently unavailable or will not be reused in the
+topology. Prefer to bring unavailable instances back ONLINE or remove
+them from the topology before retrying the operation.
 )*"));
 
 }  // namespace dba

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -107,6 +107,9 @@ void Cluster::init() {
   expose("dissolve", &Cluster::dissolve, "?options")->cli();
   expose("resetRecoveryAccountsPassword",
          &Cluster::reset_recovery_accounts_password, "?options")
+      ->cli();
+  expose("resetReplicationAccountsPassword",
+         &Cluster::reset_replication_accounts_password, "?options")
       ->cli();
   expose("rescan", &Cluster::rescan, "?options")->cli();
   expose("forceQuorumUsingPartitionOf",
@@ -635,11 +638,14 @@ void Cluster::dissolve(const Force_options &options) {
 
 REGISTER_HELP_FUNCTION(resetRecoveryAccountsPassword, Cluster);
 REGISTER_HELP_FUNCTION_TEXT(CLUSTER_RESETRECOVERYACCOUNTSPASSWORD, R"*(
-Resets the password of the recovery and replication accounts of the Cluster.
+Resets the passwords of the internal replication accounts of the Cluster.
 
 @param options Dictionary with options for the operation.
 
 @returns Nothing.
+
+@attention This function is deprecated and will be removed in a future release
+of MySQL Shell. Use <<<:Type>>>.resetReplicationAccountsPassword() instead.
 
 This function resets the passwords for all internal recovery user accounts
 used by the Cluster as well as for all replication accounts used by any
@@ -677,14 +683,35 @@ void Cluster::reset_recovery_accounts_password(const Force_options &options) {
   // Throw an error if the cluster has already been dissolved
   assert_valid("resetRecoveryAccountsPassword");
 
+  std::string type =
+      to_display_string(base_impl()->get_type(), Display_form::API_CLASS);
+
+  mysqlsh::current_console()->print_warning(shcore::str_format(
+      "This function is deprecated and will be removed in a future release of "
+      "MySQL Shell. Use <%s>.<<<resetReplicationAccountsPassword()>>> instead.",
+      type.c_str()));
+
   return execute_with_pool(
       [&]() {
         // Reset the recovery passwords.
-        impl()->reset_recovery_password(options.force,
-                                        current_shell_options()->get().wizards);
+        impl()->reset_recovery_password(options);
       },
       false);
 }
+
+REGISTER_HELP_FUNCTION(resetReplicationAccountsPassword, Cluster);
+REGISTER_HELP_FUNCTION_TEXT(CLUSTER_RESETREPLICATIONACCOUNTSPASSWORD,
+                            RESETREPLICATIONACCOUNTSPASSWORD_HELP_TEXT);
+/**
+ * $(CLUSTER_RESETREPLICATIONACCOUNTSPASSWORD_BRIEF)
+ *
+ * $(CLUSTER_RESETREPLICATIONACCOUNTSPASSWORD)
+ */
+#if DOXYGEN_JS
+Undefined Cluster::resetReplicationAccountsPassword(Dictionary options) {}
+#elif DOXYGEN_PY
+None Cluster::reset_replication_accounts_password(dict options) {}
+#endif
 
 REGISTER_HELP_FUNCTION(rescan, Cluster);
 REGISTER_HELP_FUNCTION_TEXT(CLUSTER_RESCAN, R"*(

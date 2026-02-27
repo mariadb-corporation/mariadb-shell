@@ -280,7 +280,6 @@ clusterset = dba.getClusterSet();
 //  - Remove instance
 //  - Rejoin instance
 //  - Rescan
-//  - Reset recovery account
 //  - Set instance option
 //  - Set option
 //  - Set primary instance
@@ -309,10 +308,6 @@ session.runSql("DELETE FROM mysql_innodb_cluster_metadata.instances WHERE instan
 
 EXPECT_NO_THROWS(function() { cluster.rescan({addUnmanaged: "true"}); });
 testutil.waitMemberState(__mysql_sandbox_port3, "ONLINE");
-CHECK_PRIMARY_CLUSTER([__sandbox_uri1, __sandbox_uri2, __sandbox_uri3], cluster);
-
-//@<> resetRecoveryAccountsPassword() on a primary cluster
-EXPECT_NO_THROWS(function() { cluster.resetRecoveryAccountsPassword(); });
 CHECK_PRIMARY_CLUSTER([__sandbox_uri1, __sandbox_uri2, __sandbox_uri3], cluster);
 
 //@<> setInstanceOption() on a primary cluster
@@ -353,10 +348,6 @@ connect_no_timeout(__sandbox_uri4);
 testutil.waitMemberState(__mysql_sandbox_port3, "ONLINE");
 CHECK_REPLICA_CLUSTER([__sandbox_uri4, __sandbox_uri3], cluster, replicacluster, undefined, __secure_password);
 
-//@<> resetRecoveryAccountsPassword() on a replica cluster
-EXPECT_NO_THROWS(function() { replicacluster.resetRecoveryAccountsPassword(); });
-CHECK_REPLICA_CLUSTER([__sandbox_uri4, __sandbox_uri3], cluster, replicacluster, undefined, __secure_password);
-
 //@<> setInstanceOption() on a replica cluster
 EXPECT_NO_THROWS(function() { replicacluster.setInstanceOption(__sandbox_uri3, "memberWeight", 25); });
 
@@ -371,6 +362,11 @@ EXPECT_NO_THROWS(function() { replicacluster.setupRouterAccount("routerreplica@'
 
 //@<> removeInstance on replica cluster
 EXPECT_NO_THROWS(function() { replicacluster.removeInstance(__sandbox_uri3); });
+CHECK_REPLICA_CLUSTER([__sandbox_uri4], cluster, replicacluster, undefined, __secure_password);
+
+//@<> resetReplicationAccountsPassword()
+EXPECT_NO_THROWS(function() { clusterset.resetReplicationAccountsPassword(); });
+CHECK_PRIMARY_CLUSTER([__sandbox_uri1, __sandbox_uri2], cluster);
 CHECK_REPLICA_CLUSTER([__sandbox_uri4], cluster, replicacluster, undefined, __secure_password);
 
 //@<> removeCluster()

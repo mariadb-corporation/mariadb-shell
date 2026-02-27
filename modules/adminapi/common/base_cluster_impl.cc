@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,10 +43,12 @@
 #include "modules/adminapi/common/member_recovery_monitoring.h"
 #include "modules/adminapi/common/metadata_storage.h"
 #include "modules/adminapi/common/preconditions.h"
+#include "modules/adminapi/common/reset_replication_accounts_password.h"
 #include "modules/adminapi/common/router.h"
 #include "modules/adminapi/common/routing_guideline_impl.h"
 #include "modules/adminapi/common/server_features.h"
 #include "modules/adminapi/common/setup_account.h"
+#include "modules/adminapi/common/topology_executor.h"
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/libs/db/mutable_result.h"
 #include "mysqlshdk/libs/mysql/group_replication.h"
@@ -2061,6 +2063,39 @@ Base_cluster_impl::import_routing_guideline(
 
 std::vector<Router_metadata> Base_cluster_impl::get_routers() const {
   return get_metadata_storage()->get_routers(get_id());
+}
+
+void Base_cluster_impl::reset_replication_accounts_password(
+    const Force_options &options) {
+  {
+    auto conds = Command_conditions::Builder::gen_cluster(
+                     "resetReplicationAccountsPassword")
+                     .target_instance(TargetType::InnoDBCluster,
+                                      TargetType::InnoDBClusterSet,
+                                      TargetType::AsyncReplicaSet)
+                     .quorum_state(ReplicationQuorum::States::Normal)
+                     .primary_required()
+                     .cluster_global_status_any_ok()
+                     .build();
+
+    check_preconditions(conds);
+
+    // Check if Cluster is part of a ClusterSet to error out and instruct to use
+    // ClusterSet.resetReplicationAccountsPassword() instead.
+    if (is_cluster_clusterset_member()) {
+      current_console()->print_warning(shcore::str_format(
+          "Cluster '%s' is a member of a ClusterSet, use "
+          "<ClusterSet>.<<<resetReplicationAccountsPassword>>>() instead.",
+          get_name().c_str()));
+      throw shcore::Exception::runtime_error(
+          "Function not available for ClusterSet members");
+    }
+  }
+
+  // put an exclusive lock on the topology
+  auto c_lock = get_lock_exclusive();
+
+  Topology_executor<Reset_replication_accounts_password>{*this, options}.run();
 }
 
 }  // namespace mysqlsh::dba

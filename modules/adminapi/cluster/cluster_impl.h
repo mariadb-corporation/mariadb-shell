@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -146,8 +146,7 @@ class Cluster_impl final : public Base_cluster_impl,
       const cluster::Set_primary_instance_options &options);
   shcore::Value execute(const std::string &cmd, const shcore::Value &instances,
                         const Execute_options &options) override;
-  void reset_recovery_password(std::optional<bool> force,
-                               const bool interactive);
+  void reset_recovery_password(const Force_options &options);
   void fence_all_traffic();
   void fence_writes();
   void unfence_writes();

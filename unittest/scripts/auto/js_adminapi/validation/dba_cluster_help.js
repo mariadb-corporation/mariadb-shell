@@ -86,7 +86,15 @@ FUNCTIONS
             Rescans the Cluster.
 
       resetRecoveryAccountsPassword(options)
-            Resets the password of the recovery and replication accounts of the
+            Resets the passwords of the internal replication accounts of the
+            Cluster.
+
+            ATTENTION: This function is deprecated and will be removed in a
+                       future release of MySQL Shell. Use
+                       Cluster.resetReplicationAccountsPassword() instead.
+
+      resetReplicationAccountsPassword([options])
+            Resets the passwords of the internal replication accounts of the
             Cluster.
 
       routerOptions(options)
@@ -1303,7 +1311,7 @@ DESCRIPTION
 
 //@<OUT> resetRecoveryAccountsPassword
 NAME
-      resetRecoveryAccountsPassword - Resets the password of the recovery and
+      resetRecoveryAccountsPassword - Resets the passwords of the internal
                                       replication accounts of the Cluster.
 
 SYNTAX
@@ -1316,6 +1324,10 @@ RETURNS
       Nothing.
 
 DESCRIPTION
+      ATTENTION: This function is deprecated and will be removed in a future
+                 release of MySQL Shell. Use
+                 Cluster.resetReplicationAccountsPassword() instead.
+
       This function resets the passwords for all internal recovery user
       accounts used by the Cluster as well as for all replication accounts used
       by any Read Replica instance. It can be used to reset the passwords of
@@ -1335,6 +1347,48 @@ DESCRIPTION
       reachable) or never going to be reused again in a cluster. Prefer to
       bring the non available instances back ONLINE or remove them from the
       cluster if they will no longer be used.
+
+//@<OUT> resetReplicationAccountsPassword
+NAME
+      resetReplicationAccountsPassword - Resets the passwords of the internal
+                                         replication accounts of the Cluster.
+
+SYNTAX
+      <Cluster>.resetReplicationAccountsPassword([options])
+
+WHERE
+      options: Dictionary with options for the operation.
+
+RETURNS
+      Nothing.
+
+DESCRIPTION
+      This function resets the passwords for all internal recovery and
+      replication accounts used by the topology. This includes:
+
+      - Recovery accounts used for distributed recovery between members, in
+        InnoDB Cluster.
+      - Replication accounts used by Read Replicas, in InnoDB Cluster.
+      - Replication accounts used by members in InnoDB ReplicaSet
+      - Replication accounts used between clusters in an InnoDB ClusterSet.
+
+      It can be used to rotate the passwords of internal replication accounts
+      for security reasons. For example:
+
+      - Periodically, to comply with a custom password lifetime policy.
+      - After a suspected security incident.
+      - As part of routine credential rotation procedures.
+
+      The options dictionary may contain the following attributes:
+
+      - force: boolean, indicating whether the operation should continue if an
+        error occurs while resetting passwords on any instance (for example, if
+        an instance is not ONLINE). By default, false.
+
+      Using the force option (set to true) is not recommended. Use it only when
+      instances are permanently unavailable or will not be reused in the
+      topology. Prefer to bring unavailable instances back ONLINE or remove
+      them from the topology before retrying the operation.
 
 //@<OUT> createClusterSet
 NAME

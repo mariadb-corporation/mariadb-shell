@@ -39,6 +39,9 @@ callMysqlsh(["--", "cluster", "rescan", "--help"])
 //@ CLI cluster reset-recovery-accounts-password --help
 callMysqlsh(["--", "cluster", "reset-recovery-accounts-password", "--help"])
 
+//@ CLI cluster reset-replication-accounts-password --help
+callMysqlsh(["--", "cluster", "reset-replication-accounts-password", "--help"])
+
 //@ CLI cluster set-instance-option --help
 callMysqlsh(["--", "cluster", "set-instance-option", "--help"])
 

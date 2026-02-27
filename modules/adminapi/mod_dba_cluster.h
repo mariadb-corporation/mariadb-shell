@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +71,7 @@ class Cluster : public std::enable_shared_from_this<Cluster>,
   Undefined removeInstance(InstanceDef instance, Dictionary options);
   Undefined rescan(Dictionary options);
   Undefined resetRecoveryAccountsPassword(Dictionary options);
+  Undefined resetReplicationAccountsPassword(Dictionary options);
   Dictionary status(Dictionary options);
   Undefined switchToSinglePrimaryMode(InstanceDef instance);
   Undefined switchToMultiPrimaryMode();
@@ -111,6 +112,7 @@ class Cluster : public std::enable_shared_from_this<Cluster>,
   None remove_instance(InstanceDef instance, dict options);
   None rescan(dict options);
   None reset_recovery_accounts_password(dict options);
+  None reset_replication_accounts_password(dict options);
   dict status(dict options);
   None switch_to_single_primary_mode(InstanceDef instance);
   None switch_to_multi_primary_mode();

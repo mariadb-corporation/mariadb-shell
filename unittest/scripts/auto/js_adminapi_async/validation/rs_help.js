@@ -66,6 +66,10 @@ FUNCTIONS
       rescan(options)
             Rescans the ReplicaSet.
 
+      resetReplicationAccountsPassword([options])
+            Resets the passwords of the internal replication accounts of the
+            ReplicaSet.
+
       routerOptions(options)
             Lists the configuration options of the ReplicaSet's Routers.
 
@@ -1151,3 +1155,46 @@ DESCRIPTION
       used at a time.
 
       For more information on Routing Guidelines, see \? RoutingGuideline.
+
+//@<OUT> resetReplicationAccountsPassword
+NAME
+      resetReplicationAccountsPassword - Resets the passwords of the internal
+                                         replication accounts of the
+                                         ReplicaSet.
+
+SYNTAX
+      <ReplicaSet>.resetReplicationAccountsPassword([options])
+
+WHERE
+      options: Dictionary with options for the operation.
+
+RETURNS
+      Nothing.
+
+DESCRIPTION
+      This function resets the passwords for all internal recovery and
+      replication accounts used by the topology. This includes:
+
+      - Recovery accounts used for distributed recovery between members, in
+        InnoDB Cluster.
+      - Replication accounts used by Read Replicas, in InnoDB Cluster.
+      - Replication accounts used by members in InnoDB ReplicaSet
+      - Replication accounts used between clusters in an InnoDB ClusterSet.
+
+      It can be used to rotate the passwords of internal replication accounts
+      for security reasons. For example:
+
+      - Periodically, to comply with a custom password lifetime policy.
+      - After a suspected security incident.
+      - As part of routine credential rotation procedures.
+
+      The options dictionary may contain the following attributes:
+
+      - force: boolean, indicating whether the operation should continue if an
+        error occurs while resetting passwords on any instance (for example, if
+        an instance is not ONLINE). By default, false.
+
+      Using the force option (set to true) is not recommended. Use it only when
+      instances are permanently unavailable or will not be reused in the
+      topology. Prefer to bring unavailable instances back ONLINE or remove
+      them from the topology before retrying the operation.
