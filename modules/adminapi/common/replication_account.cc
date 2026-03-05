@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1607,8 +1607,8 @@ Replication_account::refresh_replication_user(
     }
   } catch (const std::exception &e) {
     throw shcore::Exception::runtime_error(shcore::str_format(
-        "Error while resetting password for replication account: %s",
-        e.what()));
+        "Error while resetting password for replication account: %s: %s",
+        target.descr().c_str(), e.what()));
   }
 
   return auth_options;

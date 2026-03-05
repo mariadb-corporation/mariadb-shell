@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -747,7 +747,8 @@ mysqlshdk::mysql::Auth_options create_recovery_user(
     // Accounts are created at the primary replica regardless of who will use
     // them, since they'll get replicated everywhere.
 
-    if (options.requires_password && !options.password.has_value()) {
+    if (options.requires_password &&
+        (!options.password.has_value() || options.password->empty())) {
       // finalize user options
       user_options.disable_pwd_expire = true;
       user_options.cert_issuer = options.cert_issuer;

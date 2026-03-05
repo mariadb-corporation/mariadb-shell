@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -549,42 +549,8 @@ void Instance::uninstall_plugin(const std::string &plugin_name) const {
  */
 void Instance::create_user(std::string_view user, std::string_view host,
                            const Create_user_options &options) const {
-  auto user_stmt = ("CREATE USER IF NOT EXISTS ?@?"_sql << user << host).str();
-
-  if (options.password.has_value())
-    user_stmt.append(
-        (" IDENTIFIED BY /*((*/ ? /*))*/"_sql << *options.password).str());
-
-  if (options.cert_issuer.empty() && options.cert_subject.empty()) {
-    user_stmt.append(" REQUIRE NONE");
-  } else if (!options.cert_issuer.empty() && !options.cert_subject.empty()) {
-    user_stmt.append((" REQUIRE ISSUER ? AND SUBJECT ?"_sql
-                      << options.cert_issuer << options.cert_subject)
-                         .str());
-
-  } else {
-    if (!options.cert_issuer.empty())
-      user_stmt.append((" REQUIRE ISSUER ?"_sql << options.cert_issuer).str());
-    else
-      user_stmt.append(
-          (" REQUIRE SUBJECT ?"_sql << options.cert_subject).str());
-  }
-
-  if (options.password.has_value() && options.disable_pwd_expire)
-    user_stmt.append(" PASSWORD EXPIRE NEVER");
-
-  execute(user_stmt);
-
-  // grant privileges
-  for (const auto &grant : options.grants) {
-    auto grant_stmt = shcore::str_format(
-        "GRANT %s ON %s TO ?@?%s", grant.privileges.c_str(),
-        grant.target.c_str(), grant.grant_option ? " WITH GRANT OPTION" : "");
-
-    shcore::sqlstring sql_str(grant_stmt.c_str(), 0);
-    (sql_str << user << host).done();
-    execute(sql_str);
-  }
+  execute(build_create_user_stmt(user, host, options));
+  grant_user_privileges(*this, user, host, options);
 }
 
 /**

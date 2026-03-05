@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -96,6 +96,16 @@ void drop_all_accounts_for_user(const IInstance &instance,
 std::vector<std::string> get_all_hostnames_for_user(const IInstance &instance,
                                                     const std::string &user);
 
+// Helper for CREATE USER statement generation.
+std::string build_create_user_stmt(
+    std::string_view user, std::string_view host,
+    const IInstance::Create_user_options &options);
+
+// Helper for applying grants in Create_user_options.
+void grant_user_privileges(const IInstance &instance, std::string_view user,
+                           std::string_view host,
+                           const IInstance::Create_user_options &options);
+
 void create_user_with_random_password(
     const IInstance &instance, std::string_view user,
     const std::vector<std::string> &hosts,
@@ -110,6 +120,11 @@ void set_random_password(const IInstance &instance, const std::string &user,
                          std::string *out_password);
 
 std::string generate_password(size_t password_length = kPASSWORD_LENGTH);
+
+std::optional<std::string> create_user_with_random_password(
+    const IInstance &instance, std::string_view user,
+    const std::vector<std::string> &hosts,
+    const IInstance::Create_user_options &options);
 
 void drop_view_or_table(const IInstance &instance, const std::string &schema,
                         const std::string &name, bool if_exists);

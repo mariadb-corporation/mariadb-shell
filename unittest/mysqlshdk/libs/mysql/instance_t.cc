@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1059,6 +1059,19 @@ TEST_F(Instance_test, create_user_ssl_options) {
   test_options.cert_subject = "cSubject";
   test_options.disable_pwd_expire = true;
   instance.create_user("test_ssl_user_4", "test_ssl_host", test_options);
+
+  // Create user with random password and ssl options
+  EXPECT_EXECUTE_CALL(
+      session,
+      "CREATE USER IF NOT EXISTS 'test_ssl_user_5'@'test_ssl_host' "
+      "IDENTIFIED BY RANDOM PASSWORD REQUIRE ISSUER 'cIssuer' AND "
+      "SUBJECT 'cSubject' PASSWORD EXPIRE NEVER");
+  test_options.password.reset();
+  test_options.random_password = true;
+  test_options.cert_issuer = "cIssuer";
+  test_options.cert_subject = "cSubject";
+  test_options.disable_pwd_expire = true;
+  instance.create_user("test_ssl_user_5", "test_ssl_host", test_options);
 
   EXPECT_CALL(session, do_close());
   EXPECT_CALL(session, is_open()).WillOnce(Return(false));

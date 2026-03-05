@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,10 +26,15 @@
 #include "unittest/gtest_clean.h"
 #include "unittest/test_utils.h"
 
+#include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_result.h"
+#include "unittest/test_utils/mocks/mysqlshdk/libs/mysql/mock_instance.h"
+
 namespace mysqlshdk {
 namespace mysql {
 
 class Mysql_utils : public tests::Shell_test_env {};
+
+class Mysql_utils_mocked : public ::testing::Test {};
 
 #define COMPARE_ACCOUNTS(user1, host1, user2, host2)                          \
   EXPECT_EQ(                                                                  \
@@ -222,6 +227,228 @@ TEST_F(Mysql_utils, drop_view_or_table) {
       drop_view_or_table(instance, "drop_view_or_table", "tsample", true));
 
   instance.execute("DROP SCHEMA drop_view_or_table");
+}
+
+TEST_F(Mysql_utils_mocked,
+       create_user_with_random_password_uses_server_random) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 18)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+
+  auto rs = std::make_shared<testing::Mock_result>();
+  rs->add_result({"user", "host", "generated password", "auth_factor"},
+                 {mysqlshdk::db::Type::String, mysqlshdk::db::Type::String,
+                  mysqlshdk::db::Type::String, mysqlshdk::db::Type::Integer})
+      .add_row({"mysqlsh.test", "%", "exampleRandomPass", "1"});
+  EXPECT_CALL(*rs, has_resultset()).WillRepeatedly(testing::Return(true));
+
+  EXPECT_CALL(instance, query(testing::_, true))
+      .WillOnce(testing::Invoke([&](const std::string &sql, bool) {
+        EXPECT_THAT(sql, testing::HasSubstr("IDENTIFIED BY RANDOM PASSWORD"));
+        rs->rewind();
+        return rs;
+      }));
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_)).Times(0);
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_EQ("exampleRandomPass", *password);
+}
+
+TEST_F(Mysql_utils_mocked, create_user_with_random_password_applies_grants) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+  options.grants.push_back(
+      mysqlshdk::mysql::IInstance::Create_user_options::Grant{"SELECT", "*.*",
+                                                              false});
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 18)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+
+  auto rs = std::make_shared<testing::Mock_result>();
+  rs->add_result({"user", "host", "generated password", "auth_factor"},
+                 {mysqlshdk::db::Type::String, mysqlshdk::db::Type::String,
+                  mysqlshdk::db::Type::String, mysqlshdk::db::Type::Integer})
+      .add_row({"mysqlsh.test", "%", "exampleRandomPass", "1"});
+  EXPECT_CALL(*rs, has_resultset()).WillRepeatedly(testing::Return(true));
+
+  EXPECT_CALL(instance, query(testing::_, true)).WillOnce(testing::Return(rs));
+  EXPECT_CALL(
+      instance,
+      execute(testing::HasSubstr("GRANT SELECT ON *.* TO 'mysqlsh.test'@'%'")))
+      .Times(1);
+  EXPECT_CALL(instance, create_user(testing::_, testing::_, testing::_))
+      .Times(0);
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_EQ("exampleRandomPass", *password);
+}
+
+TEST_F(Mysql_utils_mocked,
+       create_user_with_random_password_multi_host_reuses_password) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 18)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+
+  auto rs = std::make_shared<testing::Mock_result>();
+  rs->add_result({"user", "host", "generated password", "auth_factor"},
+                 {mysqlshdk::db::Type::String, mysqlshdk::db::Type::String,
+                  mysqlshdk::db::Type::String, mysqlshdk::db::Type::Integer})
+      .add_row({"mysqlsh.test", "%", "exampleRandomPass", "1"});
+  EXPECT_CALL(*rs, has_resultset()).WillRepeatedly(testing::Return(true));
+
+  EXPECT_CALL(instance, query(testing::_, true)).WillOnce(testing::Return(rs));
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "localhost", testing::_))
+      .WillOnce(testing::Invoke(
+          [&](std::string_view, std::string_view,
+              const mysqlshdk::mysql::IInstance::Create_user_options &opts) {
+            ASSERT_TRUE(opts.password.has_value());
+            EXPECT_EQ("exampleRandomPass", *opts.password);
+            EXPECT_FALSE(opts.random_password);
+          }));
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%", "localhost"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_EQ("exampleRandomPass", *password);
+}
+
+TEST_F(Mysql_utils_mocked, create_user_with_random_password_missing_password) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 18)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+
+  auto empty_result = std::make_shared<testing::Mock_result>();
+  empty_result
+      ->add_result({"user", "host"},
+                   {mysqlshdk::db::Type::String, mysqlshdk::db::Type::String})
+      .add_row({"mysqlsh.test", "%"});
+  EXPECT_CALL(*empty_result, has_resultset())
+      .WillRepeatedly(testing::Return(true));
+
+  EXPECT_CALL(instance, query(testing::_, true))
+      .WillOnce(testing::Return(empty_result));
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_)).Times(0);
+
+  EXPECT_THROW(mysqlshdk::mysql::create_user_with_random_password(
+                   instance, "mysqlsh.test", {"%"}, options),
+               std::runtime_error);
+}
+
+TEST_F(Mysql_utils_mocked, create_user_with_random_password_respects_length) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 17)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+  EXPECT_CALL(instance, get_sysvar_int("validate_password.length", testing::_))
+      .WillOnce(testing::Return(std::optional<int64_t>(64)));
+
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_))
+      .WillOnce(testing::Invoke(
+          [&](std::string_view, std::string_view,
+              const mysqlshdk::mysql::IInstance::Create_user_options &opts) {
+            ASSERT_TRUE(opts.password.has_value());
+            EXPECT_GE(opts.password->size(), static_cast<size_t>(64));
+          }));
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_GE(password->size(), static_cast<size_t>(64));
+}
+
+TEST_F(Mysql_utils_mocked,
+       create_user_with_random_password_uses_session_length) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 17)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+  EXPECT_CALL(instance, get_sysvar_int("validate_password.length", testing::_))
+      .WillOnce(testing::Return(std::optional<int64_t>(32)));
+
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_))
+      .WillOnce(testing::Invoke(
+          [&](std::string_view, std::string_view,
+              const mysqlshdk::mysql::IInstance::Create_user_options &opts) {
+            ASSERT_TRUE(opts.password.has_value());
+            EXPECT_GE(opts.password->size(), static_cast<size_t>(32));
+          }));
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_GE(password->size(), static_cast<size_t>(32));
+}
+
+TEST_F(Mysql_utils_mocked, create_user_with_random_password_length_fallback) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 17)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+  EXPECT_CALL(instance, get_sysvar_int("validate_password.length", testing::_))
+      .WillOnce(testing::Return(std::optional<int64_t>()));
+
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_))
+      .WillOnce(testing::Invoke(
+          [&](std::string_view, std::string_view,
+              const mysqlshdk::mysql::IInstance::Create_user_options &opts) {
+            ASSERT_TRUE(opts.password.has_value());
+            EXPECT_GE(opts.password->size(),
+                      static_cast<size_t>(kPASSWORD_LENGTH));
+          }));
+
+  auto password = mysqlshdk::mysql::create_user_with_random_password(
+      instance, "mysqlsh.test", {"%"}, options);
+
+  ASSERT_TRUE(password.has_value());
+  EXPECT_GE(password->size(), static_cast<size_t>(kPASSWORD_LENGTH));
+}
+
+TEST_F(Mysql_utils_mocked, create_user_with_random_password_retries_exhausted) {
+  mysqlshdk::mysql::Mock_instance instance;
+  mysqlshdk::mysql::IInstance::Create_user_options options;
+
+  EXPECT_CALL(instance, get_version())
+      .WillRepeatedly(testing::Return(mysqlshdk::utils::Version(8, 0, 17)));
+  EXPECT_CALL(instance, descr()).WillRepeatedly(testing::Return("mock"));
+  EXPECT_CALL(instance, get_sysvar_int("validate_password.length", testing::_))
+      .WillOnce(testing::Return(std::optional<int64_t>(kPASSWORD_LENGTH)));
+
+  EXPECT_CALL(instance, create_user("mysqlsh.test", "%", testing::_))
+      .WillRepeatedly(testing::Invoke(
+          [](std::string_view, std::string_view,
+             const mysqlshdk::mysql::IInstance::Create_user_options &) {
+            throw mysqlshdk::db::Error("weak password", ER_NOT_VALID_PASSWORD,
+                                       "HY000");
+          }));
+
+  EXPECT_THROW(mysqlshdk::mysql::create_user_with_random_password(
+                   instance, "mysqlsh.test", {"%"}, options),
+               std::runtime_error);
 }
 
 void verify_schema_structure(const mysqlshdk::mysql::Instance &instance,

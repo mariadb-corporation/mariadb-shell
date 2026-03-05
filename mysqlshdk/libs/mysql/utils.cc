@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +50,55 @@ namespace mysqlshdk {
 namespace mysql {
 
 static constexpr int kMAX_WEAK_PASSWORD_RETRIES = 100;
+static constexpr mysqlshdk::utils::Version k_random_password_min_version(8, 0,
+                                                                         18);
+
+std::string build_create_user_stmt(
+    std::string_view user, std::string_view host,
+    const IInstance::Create_user_options &options) {
+  auto user_stmt = ("CREATE USER IF NOT EXISTS ?@?"_sql << user << host).str();
+
+  if (options.random_password) {
+    user_stmt.append(" IDENTIFIED BY RANDOM PASSWORD");
+  } else if (options.password.has_value()) {
+    user_stmt.append(
+        (" IDENTIFIED BY /*((*/ ? /*))*/"_sql << *options.password).str());
+  }
+
+  if (options.cert_issuer.empty() && options.cert_subject.empty()) {
+    user_stmt.append(" REQUIRE NONE");
+  } else if (!options.cert_issuer.empty() && !options.cert_subject.empty()) {
+    user_stmt.append((" REQUIRE ISSUER ? AND SUBJECT ?"_sql
+                      << options.cert_issuer << options.cert_subject)
+                         .str());
+  } else {
+    if (!options.cert_issuer.empty())
+      user_stmt.append((" REQUIRE ISSUER ?"_sql << options.cert_issuer).str());
+    else
+      user_stmt.append(
+          (" REQUIRE SUBJECT ?"_sql << options.cert_subject).str());
+  }
+
+  if ((options.password.has_value() || options.random_password) &&
+      options.disable_pwd_expire)
+    user_stmt.append(" PASSWORD EXPIRE NEVER");
+
+  return user_stmt;
+}
+
+void grant_user_privileges(const IInstance &instance, std::string_view user,
+                           std::string_view host,
+                           const IInstance::Create_user_options &options) {
+  for (const auto &grant : options.grants) {
+    auto grant_stmt = shcore::str_format(
+        "GRANT %s ON %s TO ?@?%s", grant.privileges.c_str(),
+        grant.target.c_str(), grant.grant_option ? " WITH GRANT OPTION" : "");
+
+    shcore::sqlstring sql_str(grant_stmt.c_str(), 0);
+    (sql_str << user << host).done();
+    instance.execute(sql_str);
+  }
+}
 
 namespace detail {
 
@@ -456,13 +505,110 @@ std::string generate_password(size_t password_length) {
   return pwd;
 }
 
+namespace {
+std::optional<std::string> extract_generated_password(
+    mysqlshdk::db::IResult &result) {
+  if (!result.has_resultset()) return std::nullopt;
+
+  result.rewind();
+  auto row = result.fetch_one_named();
+  if (!row) {
+    log_debug("Generated password not found; resultset has no rows.");
+    return std::nullopt;
+  }
+
+  std::vector<std::string> column_names;
+  column_names.reserve(row.num_fields());
+  for (size_t i = 0; i < row.num_fields(); ++i) {
+    column_names.emplace_back(row.field_name(i));
+  }
+
+  // CREATE USER ... IDENTIFIED BY RANDOM PASSWORD returns a resultset with
+  // columns: user, host, generated password, auth_factor.
+  if (row.has_field("generated password")) {
+    auto password = row.get_string("generated password", "");
+    if (!password.empty()) return password;
+  }
+
+  if (row.num_fields() > 2) {
+    auto password = row.get_string(row.field_name(2), "");
+    if (!password.empty()) return password;
+  }
+
+  log_debug("Generated password not found; resultset columns: %s",
+            shcore::str_join(column_names, ", ").c_str());
+  return std::nullopt;
+}
+
+size_t get_validate_password_length(const IInstance &instance) {
+  auto length = instance.get_sysvar_int("validate_password.length",
+                                        Var_qualifier::GLOBAL);
+
+  if (!length.has_value() || *length <= 0) return kPASSWORD_LENGTH;
+
+  return static_cast<size_t>(*length);
+}
+}  // namespace
+
 void create_user_with_random_password(
     const IInstance &instance, std::string_view user,
     const std::vector<std::string> &hosts,
     const IInstance::Create_user_options &options, std::string *out_password) {
+  auto password =
+      create_user_with_random_password(instance, user, hosts, options);
+  if (out_password) *out_password = password.value_or("");
+}
+
+std::optional<std::string> create_user_with_random_password(
+    const IInstance &instance, std::string_view user,
+    const std::vector<std::string> &hosts,
+    const IInstance::Create_user_options &options) {
   assert(!hosts.empty());
 
   auto cur_options = options;
+
+  if (instance.get_version() >= k_random_password_min_version) {
+    log_debug(
+        "Creating recovery account '%.*s'@'%s' with random password at '%s'",
+        static_cast<int>(user.length()), user.data(), hosts.front().c_str(),
+        instance.descr().c_str());
+
+    cur_options.random_password = true;
+
+    // Fetch the generated password before issuing GRANTs, as executing
+    // additional statements can invalidate the CREATE USER resultset.
+    auto result = instance.query(
+        build_create_user_stmt(user, hosts.front(), cur_options), true);
+
+    auto generated_password = extract_generated_password(*result);
+    if (!generated_password.has_value()) {
+      throw std::runtime_error(shcore::str_format(
+          "Unable to retrieve generated password for account %.*s@%s. "
+          "Server version: %s",
+          static_cast<int>(user.length()), user.data(), hosts.front().c_str(),
+          instance.get_version().get_full().c_str()));
+    }
+
+    grant_user_privileges(instance, user, hosts.front(), cur_options);
+
+    cur_options.password = *generated_password;
+    cur_options.random_password = false;
+
+    // Only the first host uses server-side random generation. We reuse the
+    // generated password to keep credentials consistent across all hosts.
+    // Subsequent user creations shouldn't fail because of password.
+    for (size_t i = 1; i < hosts.size(); i++)
+      instance.create_user(user, hosts[i], cur_options);
+
+    return generated_password;
+  }
+
+  log_info(
+      "Generating random password locally for '%s' because the server "
+      "version %s does not support 'IDENTIFIED BY RANDOM PASSWORD'.",
+      instance.descr().c_str(), instance.get_version().get_full().c_str());
+
+  const auto password_length = get_validate_password_length(instance);
 
   for (int num_tries = 0;; num_tries++) {
     try {
@@ -471,7 +617,8 @@ void create_user_with_random_password(
           static_cast<int>(user.length()), user.data(), hosts.front().c_str(),
           instance.descr().c_str());
 
-      cur_options.password = mysqlshdk::mysql::generate_password();
+      cur_options.password =
+          mysqlshdk::mysql::generate_password(password_length);
       instance.create_user(user, hosts.front(), cur_options);
       break;
     } catch (const mysqlshdk::db::Error &e) {
@@ -490,11 +637,11 @@ void create_user_with_random_password(
     }
   }
 
-  if (out_password) *out_password = *cur_options.password;
-
   // subsequent user creations shouldn't fail b/c of password
   for (size_t i = 1; i < hosts.size(); i++)
     instance.create_user(user, hosts[i], cur_options);
+
+  return cur_options.password;
 }
 
 void create_user(const IInstance &instance, std::string_view user,
@@ -527,6 +674,31 @@ void set_random_password(const IInstance &instance, const std::string &user,
                          const std::vector<std::string> &hosts,
                          std::string *out_password) {
   assert(!hosts.empty());
+
+  if (instance.get_version() >= k_random_password_min_version) {
+    auto stmt = ("ALTER USER ?@? IDENTIFIED BY RANDOM PASSWORD"_sql
+                 << user << hosts.front())
+                    .str();
+    auto result = instance.query(stmt, true);
+    auto generated_password = extract_generated_password(*result);
+    if (!generated_password.has_value()) {
+      throw std::runtime_error(shcore::str_format(
+          "Unable to retrieve generated password for account %.*s@%s. "
+          "Server version: %s",
+          static_cast<int>(user.length()), user.data(), hosts.front().c_str(),
+          instance.get_version().get_full().c_str()));
+    }
+
+    *out_password = std::move(*generated_password);
+
+    // subsequent operations shouldn't fail b/c of password
+    for (size_t i = 1; i < hosts.size(); i++) {
+      instance.executef("SET PASSWORD FOR ?@? = /*((*/?/*))*/", user, hosts[i],
+                        *out_password);
+    }
+
+    return;
+  }
 
   *out_password = generate_password();
 
