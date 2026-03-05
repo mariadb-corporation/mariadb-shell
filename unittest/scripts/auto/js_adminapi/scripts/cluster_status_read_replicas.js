@@ -307,6 +307,40 @@ EXPECT_EQ("WARNING: Read Replica's replication channel is misconfigured: the cur
 // Restore the replicationSources
 session.runSql("UPDATE mysql_innodb_cluster_metadata.instances SET attributes = JSON_SET(attributes, '$.replicationSources', ?) WHERE mysql_server_uuid = ?", [replication_sources, uuid]);
 
+//@<> While on multi-primary mode with replicationSources: "primary", an automatic failover should not lead to warnings about incorrect sources on read-replicas
+EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__endpoint4); });
+EXPECT_NO_THROWS(function() { cluster.switchToMultiPrimaryMode(); });
+
+// Force the current source to go away and let the read-replica switch sources
+testutil.killSandbox(__mysql_sandbox_port1);
+shell.connect(__sandbox_uri2);
+testutil.waitMemberState(__mysql_sandbox_port1, "(MISSING)");
+testutil.waitReadReplicaState(__mysql_sandbox_port4, "ONLINE");
+
+cluster = dba.getCluster();
+var status = cluster.status({extended: 1});
+print(status);
+
+// Check if it moved to instance2, if not then it moved to instance3
+var read_replica1 = status["defaultReplicaSet"]["topology"][__endpoint2]["readReplicas"][__endpoint4];
+if (read_replica1 == undefined) {
+  read_replica1 = status["defaultReplicaSet"]["topology"][__endpoint3]["readReplicas"][__endpoint4];
+}
+
+EXPECT_TRUE(read_replica1 != undefined,
+            "Read-replica should move to another source after failover");
+
+// Confirm there are no instanceErrors
+check_default_status(1, read_replica1, __endpoint4, "PRIMARY");
+
+// Restore the cluster back to what it was for the remaining tests
+testutil.startSandbox(__mysql_sandbox_port1);
+cluster.rejoinInstance(__endpoint1);
+testutil.waitReplicationChannelState(__mysql_sandbox_port4, "read_replica_replication", "ON");
+
+EXPECT_NO_THROWS(function() { cluster.switchToSinglePrimaryMode(__endpoint1); });
+shell.connect(__sandbox_uri1);
+
 //@<> Status with replicationSources configured for "secondary" and no secondary members - Should not include warnings
 EXPECT_NO_THROWS(function() { cluster.removeInstance(__endpoint4); });
 EXPECT_NO_THROWS(function() { cluster.removeInstance(__endpoint5); });

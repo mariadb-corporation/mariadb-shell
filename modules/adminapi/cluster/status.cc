@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2086,9 +2086,11 @@ shcore::Array_t Status::read_replica_diagnostics(
       sources_mismatch = true;
     }
   } else {
+    const bool is_multi_primary = m_cluster->get_cluster_topology_type() ==
+                                  mysqlshdk::gr::Topology_mode::MULTI_PRIMARY;
     sources_mismatch =
         (replication_sources.source_type == Source_type::PRIMARY &&
-         !is_primary);
+         !is_primary && !is_multi_primary);
   }
 
   if (sources_mismatch) {
