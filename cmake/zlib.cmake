@@ -1,4 +1,4 @@
-# Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 # cmake -DWITH_ZLIB=bundled|system
 # bundled is the default
 
-SET(ZLIB_VERSION "1.3.1")
+SET(ZLIB_VERSION "1.3.2")
 
 macro (FIND_SYSTEM_ZLIB)
   find_path(PATH_TO_ZLIB NAMES zlib.h zconf.h)
