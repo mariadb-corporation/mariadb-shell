@@ -254,7 +254,8 @@ class Base_cluster_impl {
 
   virtual std::vector<Router_metadata> get_routers() const;
 
-  void reset_replication_accounts_password(const Force_options &options);
+  void reset_replication_accounts_password(
+      const Reset_replication_accounts_password_options &options);
 
  public:
   /*
@@ -307,17 +308,16 @@ class Base_cluster_impl {
       const = 0;
 
   void create_clone_recovery_user_nobinlog(
-      mysqlshdk::mysql::IInstance *target_instance,
+      const mysqlshdk::mysql::IInstance &donor_instance,
+      const mysqlshdk::mysql::IInstance &target_instance,
       const mysqlshdk::mysql::Auth_options &donor_account,
-      const std::string &account_host, const std::string &account_cert_issuer,
-      const std::string &account_cert_subject, bool dry_run);
+      const std::string &account_host, bool dry_run);
 
   void handle_clone_provisioning(
       const std::shared_ptr<mysqlsh::dba::Instance> &recipient,
       const std::shared_ptr<mysqlsh::dba::Instance> &donor,
       const Async_replication_options &ar_options,
-      const std::string &repl_account_host, const std::string &cert_issuer,
-      const std::string &cert_subject,
+      const std::string &repl_account_host,
       const Recovery_progress_style &progress_style, int sync_timeout,
       bool dry_run);
 

@@ -78,6 +78,12 @@ Replication_account::create_replication_user(
   if (topo_holds<Cluster_impl>()) {
     const auto &cluster = topo_as<Cluster_impl>();
 
+    // Keep account creation strategy explicit: when caller provides
+    // credentials, we clone the existing account instead of creating one with
+    // that password.
+    const bool clone_from_existing_creds =
+        creds.password.has_value() && only_on_target;
+
     const mysqlshdk::mysql::IInstance *primary = &target;
 
     auto host = get_replication_user_host();
@@ -207,9 +213,21 @@ Replication_account::create_replication_user(
     std::vector<std::string> hosts;
     hosts.push_back(host);
 
-    return {mysqlshdk::gr::create_recovery_user(creds.user, *primary, hosts,
-                                                user_options),
-            std::move(host)};
+    if (clone_from_existing_creds) {
+      log_info("Copying user '%s'@'%s' to instance '%s'.", creds.user.c_str(),
+               host.c_str(), target.descr().c_str());
+      clone_user(*cluster.get_primary_master(), target, creds.user, host);
+
+      mysqlshdk::mysql::Auth_options ret_creds;
+      ret_creds.password = user_options.password;
+      ret_creds.user = creds.user;
+
+      return {std::move(ret_creds), std::move(host)};
+    } else {
+      return {mysqlshdk::gr::create_recovery_user(creds.user, *primary, hosts,
+                                                  user_options),
+              std::move(host)};
+    }
   }
 
   // for ReplicaSets

@@ -31,6 +31,52 @@ EXPECT_OUTPUT_CONTAINS(
 var after = snapshot_cluster_accounts([server_id1, server_id2, server_id3]);
 expect_all_changed(before, after);
 
+//@<> Validate resetReplicationAccountsPassword(recreate:true) recreates Cluster recovery accounts
+shell.connect(__sandbox_uri1);
+var expected_users = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_cluster_%'"
+).fetchOne()[0];
+
+session.runSql(
+  "DROP USER " +
+  "'mysql_innodb_cluster_11111'@'%', " +
+  "'mysql_innodb_cluster_22222'@'%', " +
+  "'mysql_innodb_cluster_33333'@'%'"
+);
+
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_cluster_%'"
+).fetchOne()[0]);
+
+WIPE_OUTPUT();
+EXPECT_NO_THROWS(function() { c.resetReplicationAccountsPassword({recreate:true}); });
+
+EXPECT_OUTPUT_CONTAINS(
+  "The replication account passwords of all the Cluster instances were successfully recreated.");
+
+shell.connect(__sandbox_uri1);
+EXPECT_EQ(expected_users, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_cluster_%'"
+).fetchOne()[0]);
+EXPECT_EQ("caching_sha2_password", session.runSql(
+  "select plugin from mysql.user where user='mysql_innodb_cluster_11111' and host='%'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri2);
+EXPECT_EQ("mysql_innodb_cluster_22222", session.runSql(
+  "select user_name from mysql.slave_master_info where channel_name='group_replication_recovery'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri3);
+EXPECT_EQ("mysql_innodb_cluster_33333", session.runSql(
+  "select user_name from mysql.slave_master_info where channel_name='group_replication_recovery'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri1);
+
 // make sure the recovery credentials that were reset work correctly.
 // Note: by restarting the gr plugin on the instances, if they are able to join the
 // group again and become online we know the new recovery credentials work.
@@ -183,6 +229,46 @@ WIPE_SHELL_LOG();
 
 c.removeInstance(__sandbox_uri3);
 c.addReplicaInstance(__sandbox_uri3);
+
+//@<> Validate resetReplicationAccountsPassword(recreate:true) recreates read-replica accounts {VER(>=8.0.23)}
+shell.connect(__sandbox_uri1);
+var expected_rr_users = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_replica_%'"
+).fetchOne()[0];
+
+session.runSql("DROP USER 'mysql_innodb_replica_33333'@'%'");
+
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_replica_%'"
+).fetchOne()[0]);
+
+WIPE_OUTPUT();
+EXPECT_NO_THROWS(function(){ c.resetReplicationAccountsPassword({recreate:true}); });
+
+EXPECT_OUTPUT_CONTAINS("The replication account passwords of all the Cluster instances were successfully recreated.");
+EXPECT_OUTPUT_CONTAINS(`* Updating replication credentials on '${hostname}:${__mysql_sandbox_port3}' (channel: read_replica_replication). The replication receiver will be temporarily stopped and restarted.`);
+
+shell.connect(__sandbox_uri1);
+EXPECT_EQ(expected_rr_users, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_replica_%'"
+).fetchOne()[0]);
+EXPECT_EQ("caching_sha2_password", session.runSql(
+  "select plugin from mysql.user where user='mysql_innodb_replica_33333' and host='%'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri3);
+EXPECT_EQ("mysql_innodb_replica_33333", session.runSql(
+  "select user_name from mysql.slave_master_info where channel_name='read_replica_replication'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri1);
+testutil.waitReadReplicaState(__mysql_sandbox_port3, "ONLINE");
+testutil.waitMemberTransactions(__mysql_sandbox_port3, __mysql_sandbox_port1);
+
+CHECK_READ_REPLICA(__sandbox_uri3, c, "primary", __endpoint1);
 
 var old_auth_string_3 = snapshot_read_replica_accounts([server_id3])[0];
 

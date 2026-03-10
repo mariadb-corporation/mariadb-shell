@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -433,9 +433,7 @@ shcore::Value Create_replica_cluster::execute() {
         Member_recovery_method::CLONE) {
       m_cluster_set->handle_clone_provisioning(
           m_target_instance, m_donor_instance, ar_options, repl_account_host,
-          m_cluster_set->query_clusterset_auth_cert_issuer(),
-          m_options.cert_subject, m_progress_style, m_options.timeout,
-          m_options.dry_run);
+          m_progress_style, m_options.timeout, m_options.dry_run);
     }
 
     // Set debug trap to test reversion of replication user creation

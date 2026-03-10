@@ -99,7 +99,8 @@ std::vector<std::string> get_all_hostnames_for_user(const IInstance &instance,
 // Helper for CREATE USER statement generation.
 std::string build_create_user_stmt(
     std::string_view user, std::string_view host,
-    const IInstance::Create_user_options &options);
+    const IInstance::Create_user_options &options,
+    const mysqlshdk::utils::Version &instance_version);
 
 // Helper for applying grants in Create_user_options.
 void grant_user_privileges(const IInstance &instance, std::string_view user,

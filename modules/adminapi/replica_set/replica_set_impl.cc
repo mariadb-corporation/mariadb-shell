@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1036,8 +1036,7 @@ void Replica_set_impl::add_instance(
       // Do and monitor the clone
       Base_cluster_impl::handle_clone_provisioning(
           target_instance, donor_instance, ar_options, auth_options.host,
-          query_cluster_auth_cert_issuer(), auth_cert_subject, progress_style,
-          sync_timeout, dry_run);
+          progress_style, sync_timeout, dry_run);
 
       // When clone is used, the target instance will restart and all
       // connections are closed so we need to test if the connection to the
@@ -1395,8 +1394,7 @@ void Replica_set_impl::rejoin_instance(const std::string &instance_def,
       // Do and monitor the clone
       Base_cluster_impl::handle_clone_provisioning(
           target_instance, donor_instance, ar_options, repl_account_host,
-          query_cluster_auth_cert_issuer(), cert_subject, progress_style,
-          sync_timeout, dry_run);
+          progress_style, sync_timeout, dry_run);
 
       // When clone is used, the target instance will restart and all
       // connections are closed so we need to test if the connection to the

@@ -45,6 +45,47 @@ EXPECT_OUTPUT_CONTAINS(`* Updating replication credentials on '${hostname_ip}:${
 var after = snapshot_replicaset_accounts([server_id1, server_id2, server_id3]);
 expect_all_changed(before, after);
 
+//@<> Validate resetReplicationAccountsPassword(recreate:true) actually recreates ReplicaSet accounts
+shell.connect(__sandbox_uri1);
+var expected_users = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_rs_%'"
+).fetchOne()[0];
+
+// Drop all accounts
+session.runSql(
+  "DROP USER " +
+  "'mysql_innodb_rs_1111'@'%', " +
+  "'mysql_innodb_rs_2222'@'%', " +
+  "'mysql_innodb_rs_3333'@'%'"
+);
+
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_rs_%'"
+).fetchOne()[0]);
+
+WIPE_OUTPUT();
+EXPECT_NO_THROWS(function() { rs.resetReplicationAccountsPassword({recreate:true}); });
+
+EXPECT_OUTPUT_CONTAINS("The replication account passwords of all the ReplicaSet instances were successfully recreated.");
+
+shell.connect(__sandbox_uri1);
+EXPECT_EQ(expected_users, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user like 'mysql_innodb_rs_%'"
+).fetchOne()[0]);
+EXPECT_EQ("caching_sha2_password", session.runSql(
+  "select plugin from mysql.user where user='mysql_innodb_rs_1111' and host='%'"
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri2);
+EXPECT_EQ("mysql_innodb_rs_2222", session.runSql("select user_name from mysql.slave_master_info").fetchOne()[0]);
+
+shell.connect(__sandbox_uri3);
+EXPECT_EQ("mysql_innodb_rs_3333", session.runSql("select user_name from mysql.slave_master_info").fetchOne()[0]);
+shell.connect(__sandbox_uri1);
+
 //@<> An error is thrown if instance not reachable and force option is not used (non-interactive)
 testutil.killSandbox(__mysql_sandbox_port2);
 

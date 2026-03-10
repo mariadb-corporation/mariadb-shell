@@ -1367,6 +1367,10 @@ DESCRIPTION
       - force: boolean, indicating whether the operation should continue if an
         error occurs while resetting passwords on any instance (for example, if
         an instance is not ONLINE). By default, false.
+      - recreate: boolean, indicating whether the internal replication accounts
+        should be re-created instead of only rotating their passwords. This can
+        be used to migrate accounts from a deprecated or removed authentication
+        plugin (for example, mysql_native_password). By default, false.
 
       Using the force option (set to true) is not recommended. Use it only when
       instances are permanently unavailable or will not be reused in the

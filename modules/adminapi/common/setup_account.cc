@@ -181,10 +181,18 @@ void Setup_account::create_account() {
 
   if (m_options.dry_run) return;
 
+  const bool set_caching_sha2_auth_plugin =
+      m_primary_server.get_version() >= mysqlshdk::utils::Version(8, 0, 4);
+
   sql += shcore::sqlformat(" ?@?", m_name, m_host);
   if (m_options.password.has_value()) {
-    sql += shcore::sqlformat(" IDENTIFIED BY /*((*/ ? /*))*/",
-                             m_options.password.value());
+    if (set_caching_sha2_auth_plugin) {
+      sql += " IDENTIFIED WITH 'caching_sha2_password' BY";
+      sql += shcore::sqlformat(" /*((*/ ? /*))*/", m_options.password.value());
+    } else {
+      sql += shcore::sqlformat(" IDENTIFIED BY /*((*/ ? /*))*/",
+                               m_options.password.value());
+    }
   }
   if (m_options.require_cert_issuer.has_value() ||
       m_options.require_cert_subject.has_value()) {

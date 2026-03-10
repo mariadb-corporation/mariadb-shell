@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 
+#include "adminapi/common/api_options.h"
 #include "modules/adminapi/cluster/cluster_impl.h"
 #include "modules/adminapi/common/accounts.h"
 #include "modules/adminapi/common/async_topology.h"
@@ -251,30 +252,32 @@ void Base_cluster_impl::sync_transactions(
 }
 
 void Base_cluster_impl::create_clone_recovery_user_nobinlog(
-    mysqlshdk::mysql::IInstance *target_instance,
+    const mysqlshdk::mysql::IInstance &donor_instance,
+    const mysqlshdk::mysql::IInstance &target_instance,
     const mysqlshdk::mysql::Auth_options &donor_account,
-    const std::string &account_host, const std::string &account_cert_issuer,
-    const std::string &account_cert_subject, bool dry_run) {
+    const std::string &account_host, bool dry_run) {
   log_info("Creating clone recovery user %s@%s at %s%s.",
            donor_account.user.c_str(), account_host.c_str(),
-           target_instance->descr().c_str(), dry_run ? " (dryRun)" : "");
+           target_instance.descr().c_str(), dry_run ? " (dryRun)" : "");
 
   if (dry_run) return;
 
   try {
-    mysqlshdk::mysql::Suppress_binary_log nobinlog(*target_instance);
+    mysqlshdk::mysql::Suppress_binary_log nobinlog(target_instance);
 
-    // Create recovery user for clone equal to the donor user
+    // Ensure account does not exist in the recipient
+    target_instance.drop_user(donor_account.user, account_host, true);
 
-    mysqlshdk::mysql::IInstance::Create_user_options options;
-    options.password = donor_account.password;
-    options.cert_issuer = account_cert_issuer;
-    options.cert_subject = account_cert_subject;
-    options.grants.push_back({"CLONE_ADMIN, EXECUTE", "*.*", false});
-    options.grants.push_back({"SELECT", "performance_schema.*", false});
+    // Re-create in the recipient from donor metadata instead creating the same
+    // account using the same set of grants and passing a plaintext password
+    mysqlshdk::mysql::clone_user(donor_instance, target_instance,
+                                 donor_account.user, account_host);
 
-    mysqlshdk::mysql::create_user(*target_instance, donor_account.user,
-                                  {account_host}, options);
+    // Ensure clone-required recipient privileges are present.
+    target_instance.executef("GRANT CLONE_ADMIN, EXECUTE ON *.* TO ?@?",
+                             donor_account.user, account_host);
+    target_instance.executef("GRANT SELECT ON performance_schema.* TO ?@?",
+                             donor_account.user, account_host);
   } catch (const shcore::Error &e) {
     throw shcore::Exception::mysql_error_with_code(e.what(), e.code());
   }
@@ -284,8 +287,7 @@ void Base_cluster_impl::handle_clone_provisioning(
     const std::shared_ptr<mysqlsh::dba::Instance> &recipient,
     const std::shared_ptr<mysqlsh::dba::Instance> &donor,
     const Async_replication_options &ar_options,
-    const std::string &repl_account_host, const std::string &cert_issuer,
-    const std::string &cert_subject,
+    const std::string &repl_account_host,
     const Recovery_progress_style &progress_style, int sync_timeout,
     bool dry_run) {
   auto console = current_console();
@@ -388,9 +390,9 @@ void Base_cluster_impl::handle_clone_provisioning(
   //
   // For that reason, we create a user in the recipient with the same username
   // and password as the replication user created in the donor.
-  create_clone_recovery_user_nobinlog(
-      recipient.get(), *ar_options.repl_credentials, repl_account_host,
-      cert_issuer, cert_subject, dry_run);
+  create_clone_recovery_user_nobinlog(*donor, *recipient,
+                                      *ar_options.repl_credentials,
+                                      repl_account_host, dry_run);
 
   if (!dry_run) {
     // Ensure the donor's recovery account has the clone usage required
@@ -2067,7 +2069,7 @@ std::vector<Router_metadata> Base_cluster_impl::get_routers() const {
 }
 
 void Base_cluster_impl::reset_replication_accounts_password(
-    const Force_options &options) {
+    const Reset_replication_accounts_password_options &options) {
   {
     auto conds = Command_conditions::Builder::gen_cluster(
                      "resetReplicationAccountsPassword")
