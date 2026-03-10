@@ -53,7 +53,8 @@ Reset_replication_accounts_password::make_topology_ref(
 }
 
 Reset_replication_accounts_password::Reset_replication_accounts_password(
-    Base_cluster_impl &topo, const Force_options &options) noexcept
+    Base_cluster_impl &topo,
+    const Reset_replication_accounts_password_options &options) noexcept
     : m_topo{make_topology_ref(topo)},
       m_topo_type{topo.get_type()},
       m_options{options} {}
@@ -168,7 +169,7 @@ void Reset_replication_accounts_password::handle_not_online_instances(
 }
 
 void Reset_replication_accounts_password::reset_clusterset_replication_channel(
-    Cluster_set_impl &cs, Cluster_impl &cluster) const {
+    Cluster_set_impl &cs, Cluster_impl &cluster, bool recreate_accounts) const {
   // Get current replication channel options for this cluster
   auto ar_options =
       cs.get_clusterset_replication_options(cluster.get_id(), nullptr);
@@ -176,10 +177,29 @@ void Reset_replication_accounts_password::reset_clusterset_replication_channel(
   // Rotate the password for the ClusterSet replication account associated with
   // this cluster
   Replication_account repl_account{cs};
-  auto account = repl_account.refresh_replication_user(*cs.get_primary_master(),
-                                                       cluster.get_id(), false);
+  mysqlshdk::mysql::Auth_options repl_credentials;
 
-  ar_options.repl_credentials = std::move(account.auth);
+  // Recreate the account
+  if (recreate_accounts) {
+    auto auth_type = cs.query_clusterset_auth_type();
+    auto auth_cert_issuer = cs.query_clusterset_auth_cert_issuer();
+    auto auth_cert_subject =
+        cs.query_cluster_instance_auth_cert_subject(*cs.get_primary_master());
+
+    // Recreate the ClusterSet replication account using the target cluster's
+    // identity (server_id-derived username)
+    auto auth_host = repl_account.create_cluster_replication_user(
+        *cluster.get_cluster_server(), "", auth_type, auth_cert_issuer,
+        auth_cert_subject, false);
+
+    repl_credentials = std::move(auth_host.auth);
+  } else {
+    auto account = repl_account.refresh_replication_user(
+        *cs.get_primary_master(), cluster.get_id(), false);
+    repl_credentials = std::move(account.auth);
+  }
+
+  ar_options.repl_credentials = std::move(repl_credentials);
 
   // If this is the PRIMARY cluster then there are no inbound ClusterSet
   // channels to reconfigure
@@ -375,20 +395,88 @@ bool Reset_replication_accounts_password::prepare_replicaset_targets(
 
 void Reset_replication_accounts_password::reset_cluster_replication_accounts(
     Cluster_impl &cluster, const Prepared_targets &targets) {
+  const bool recreate_accounts = should_recreate_accounts();
+
   const auto primary = cluster.get_cluster_server();
   const std::string primary_repr = primary->descr();
 
   auto md_server = cluster.get_metadata_storage()->get_md_server();
   Replication_account repl{cluster};
 
-  mysqlsh::current_console()->print_info(shcore::str_format(
-      "* Resetting replication account passwords of Cluster '%s'...",
-      cluster.get_name().c_str()));
+  mysqlsh::current_console()->print_info(
+      shcore::str_format("* %s replication accounts of Cluster '%s'...",
+                         recreate_accounts ? "Recreating" : "Resetting",
+                         cluster.get_name().c_str()));
+
+  // In ClusterSet replica clusters, account changes are made on the PRIMARY
+  // Cluster and must be replicated before channels are restarted with new
+  // credentials.
+  auto sync_with_primary_if_needed = [&]() {
+    if (cluster.is_cluster_set_member() && !cluster.is_primary_cluster()) {
+      mysqlsh::current_console()->print_info(
+          "* Waiting for the Cluster to synchronize with the PRIMARY "
+          "Cluster...");
+      cluster.sync_transactions(
+          *primary, k_clusterset_async_channel_name,
+          current_shell_options()->get().dba_gtid_wait_timeout);
+    }
+  };
+
+  auto update_read_replica_channel = [&](const Scoped_instance &inst,
+                                         std::string_view user,
+                                         const std::string *password =
+                                             nullptr) {
+    // Read-replica channel updates require a stop/start cycle to apply
+    // credentials safely and consistently.
+    mysqlsh::current_console()->print_info(shcore::str_format(
+        "* Updating replication credentials on '%s' (channel: %s). The "
+        "replication receiver will be temporarily stopped and restarted.",
+        inst->descr().c_str(), k_read_replica_async_channel_name));
+
+    mysqlshdk::mysql::stop_replication_receiver(
+        *inst, k_read_replica_async_channel_name);
+    auto inst_copy = inst;
+    shcore::Scoped_callback restart([inst_copy]() {
+      mysqlshdk::mysql::start_replication_receiver(
+          *inst_copy, k_read_replica_async_channel_name);
+    });
+
+    mysqlshdk::mysql::Replication_credentials_options cred_opts;
+    // Reset mode rotates password in-place, so pass it explicitly.
+    // Recreate mode may rely on already-created account state and can omit it.
+    if (password) cred_opts.password = *password;
+    mysqlshdk::mysql::change_replication_credentials(
+        *inst, k_read_replica_async_channel_name, std::string{user}, cred_opts);
+  };
 
   for (const auto &t : targets.online_instances) {
     const auto &inst = t.instance;
     const std::string inst_repr = inst->descr();
 
+    if (recreate_accounts) {
+      auto cert_subject =
+          cluster.query_cluster_instance_auth_cert_subject(inst->get_uuid());
+
+      if (t.is_read_replica) {
+        Async_replication_options ar_options;
+        std::string repl_account_host;
+        std::tie(ar_options, repl_account_host) =
+            cluster.create_read_replica_replication_user(
+                inst.get(), cert_subject,
+                current_shell_options()->get().dba_gtid_wait_timeout, false);
+
+        const auto &auth = ar_options.repl_credentials.value();
+        update_read_replica_channel(
+            inst, auth.user, auth.password ? &auth.password.value() : nullptr);
+      } else {
+        repl.recreate_replication_user(*inst, cert_subject);
+      }
+
+      sync_with_primary_if_needed();
+      continue;
+    }
+
+    // Reset mode keeps account identity and only rotates passwords.
     Replication_account::User_hosts user_hosts;
     log_debug("Getting replication account for instance '%s'",
               inst_repr.c_str());
@@ -419,24 +507,15 @@ void Reset_replication_accounts_password::reset_cluster_replication_accounts(
       md_server->set_user_password(user_hosts.user, host, password);
     }
 
-    if (cluster.is_cluster_set_member() && !cluster.is_primary_cluster()) {
-      // Ensure the new password is replicated to the replica cluster before
-      // restarting channels that will use it.
-      mysqlsh::current_console()->print_info(
-          "* Waiting for the Cluster to synchronize with the PRIMARY "
-          "Cluster...");
-      cluster.sync_transactions(
-          *primary, k_clusterset_async_channel_name,
-          current_shell_options()->get().dba_gtid_wait_timeout);
-    }
-
-    mysqlshdk::mysql::Replication_credentials_options cred_opts;
-    cred_opts.password = std::move(password);
-
-    const char *channel = nullptr;
+    // Ensure the new password is replicated before channel restart
+    sync_with_primary_if_needed();
 
     if (!t.is_read_replica) {
-      channel = mysqlshdk::gr::k_gr_recovery_channel;
+      // GR recovery channel accepts direct credential update
+      mysqlshdk::mysql::Replication_credentials_options cred_opts;
+      cred_opts.password = std::move(password);
+
+      const char *channel = mysqlshdk::gr::k_gr_recovery_channel;
       log_info("Updating replication credentials on '%s' (channel: %s)",
                inst_repr.c_str(), channel);
 
@@ -445,55 +524,62 @@ void Reset_replication_accounts_password::reset_cluster_replication_accounts(
       continue;
     }
 
-    channel = mysqlsh::dba::k_read_replica_async_channel_name;
+    // Read-replica async channel needs stop/start and explicit password.
     log_info("Updating replication credentials on '%s' (channel: %s)",
-             inst_repr.c_str(), channel);
-
-    mysqlsh::current_console()->print_info(shcore::str_format(
-        "* Updating replication credentials on '%s' (channel: %s). The "
-        "replication receiver will be temporarily stopped and restarted.",
-        inst_repr.c_str(), channel));
-
-    mysqlshdk::mysql::stop_replication_receiver(*inst, channel);
-
-    // Always attempt to restart the channel
-    auto inst_copy = inst;  // copy Scoped_instance to keep session alive
-    shcore::Scoped_callback restart([inst_copy, channel]() {
-      mysqlshdk::mysql::start_replication_receiver(*inst_copy, channel);
-    });
-
-    mysqlshdk::mysql::change_replication_credentials(
-        *inst, channel, user_hosts.user, cred_opts);
+             inst_repr.c_str(), k_read_replica_async_channel_name);
+    update_read_replica_channel(inst, user_hosts.user, &password);
   }
 }
 
 void Reset_replication_accounts_password::reset_replicaset_replication_accounts(
     Replica_set_impl &rs, const Prepared_targets &targets) {
-  const auto primary = rs.get_primary_master();
-  const auto primary_uuid = primary->get_uuid();
+  const bool recreate_accounts = should_recreate_accounts();
+  const auto primary_uuid = rs.get_primary_master()->get_uuid();
 
   Replication_account repl{rs};
 
   mysqlsh::current_console()->print_info(shcore::str_format(
-      "* Resetting replication account passwords of ReplicaSet '%s'...",
-      rs.get_name().c_str()));
+      "* %s replication accounts of ReplicaSet '%s'...",
+      recreate_accounts ? "Recreating" : "Resetting", rs.get_name().c_str()));
 
   for (const auto &t : targets.online_instances) {
     const auto &inst = t.instance;
     const auto inst_uuid = inst->get_uuid();
 
-    auto account = repl.refresh_replication_user(*inst, false);
-
-    // Primary has no inbound channel, just rotate its own account
+    // Primary has no inbound channel, only refresh/recreate local account
     if (inst_uuid == primary_uuid) {
+      if (recreate_accounts) {
+        auto cert_subject =
+            rs.query_cluster_instance_auth_cert_subject(inst->get_uuid());
+        repl.create_replication_user(*inst.get(), cert_subject, {}, {}, {}, {},
+                                     false);
+      } else {
+        // Rotate the password
+        repl.refresh_replication_user(*inst, false);
+      }
       continue;
+    }
+
+    mysqlshdk::mysql::Auth_options auth;
+    if (recreate_accounts) {
+      // Recreate mode creates a fresh account definition and uses returned auth
+      // for channel update
+      auto cert_subject =
+          rs.query_cluster_instance_auth_cert_subject(inst->get_uuid());
+      auto account = repl.create_replication_user(*inst.get(), cert_subject, {},
+                                                  {}, {}, {}, false);
+      auth = std::move(account.auth);
+    } else {
+      // Reset mode keeps user/host and rotates only password.
+      auto account = repl.refresh_replication_user(*inst, false);
+      auth = std::move(account.auth);
     }
 
     // Get current replication channel options for instance
     Async_replication_options ar_options;
     rs.read_replication_options(inst_uuid, &ar_options, nullptr);
     // Add the new auth/password
-    ar_options.repl_credentials = std::move(account.auth);
+    ar_options.repl_credentials = std::move(auth);
 
     log_info("Updating replication credentials on '%s' (channel: %s)",
              inst->descr().c_str(), k_replicaset_channel_name);
@@ -515,11 +601,14 @@ void Reset_replication_accounts_password::print_summary(
 
   const std::string api_class_name =
       to_display_string(m_topo_type, Display_form::API_CLASS);
+  const bool recreate_accounts = should_recreate_accounts();
+  const char *action = recreate_accounts ? "recreated" : "reset";
 
   if (!targets.skipped_instances.empty()) {
-    std::string msg =
-        "Not all replication account passwords were successfully reset, the "
-        "following instance";
+    std::string msg = shcore::str_format(
+        "Not all replication account passwords were successfully %s, the "
+        "following instance",
+        action);
 
     msg.append(targets.skipped_instances.size() > 1 ? "s were " : " was ");
     msg.append("skipped: '");
@@ -542,8 +631,8 @@ void Reset_replication_accounts_password::print_summary(
     console->print_info();
     console->print_info(shcore::str_format(
         "The replication account passwords of all the %s instances were "
-        "successfully reset.",
-        api_class_name.c_str()));
+        "successfully %s.",
+        api_class_name.c_str(), action));
     console->print_info();
   }
 }
@@ -577,7 +666,8 @@ void Reset_replication_accounts_password::do_run() {
             reset_cluster_replication_accounts(*cluster_plan.cluster,
                                                cluster_plan.targets);
 
-            reset_clusterset_replication_channel(cs, *cluster_plan.cluster);
+            reset_clusterset_replication_channel(cs, *cluster_plan.cluster,
+                                                 should_recreate_accounts());
 
             // Aggregate skipped instances for the final summary
             overall_targets.skipped_instances.insert(

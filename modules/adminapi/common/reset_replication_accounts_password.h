@@ -41,7 +41,8 @@ class Replica_set_impl;
 class Reset_replication_accounts_password {
  public:
   explicit Reset_replication_accounts_password(
-      Base_cluster_impl &topo, const Force_options &options) noexcept;
+      Base_cluster_impl &topo,
+      const Reset_replication_accounts_password_options &options) noexcept;
 
   Reset_replication_accounts_password(
       const Reset_replication_accounts_password &) = delete;
@@ -97,6 +98,10 @@ class Reset_replication_accounts_password {
            !m_options.force.has_value();
   }
 
+  bool should_recreate_accounts() const noexcept {
+    return m_options.get_recreate();
+  }
+
   // Generic helper (used by Cluster/ClusterSet/ReplicaSet)
   using Connect_fn = std::function<std::shared_ptr<mysqlsh::dba::Instance>(
       const std::string &endpoint)>;
@@ -135,8 +140,9 @@ class Reset_replication_accounts_password {
                                    const char *api_class,
                                    Prepared_targets &targets) const;
 
-  void reset_clusterset_replication_channel(Cluster_set_impl &cs,
-                                            Cluster_impl &cluster) const;
+  void reset_clusterset_replication_channel(
+      Cluster_set_impl &cs, Cluster_impl &cluster,
+      bool recreate_accounts = false) const;
 
   bool prepare_cluster_targets(Cluster_impl &cluster,
                                Prepared_targets &targets);
@@ -152,7 +158,7 @@ class Reset_replication_accounts_password {
  private:
   Topology_ref m_topo;
   Cluster_type m_topo_type = Cluster_type::NONE;
-  Force_options m_options;
+  Reset_replication_accounts_password_options m_options;
 };
 
 }  // namespace mysqlsh::dba

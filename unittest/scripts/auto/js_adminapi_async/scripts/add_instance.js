@@ -504,23 +504,21 @@ shell.options.useWizards = false;
 // BUG#30628746: ADD_INSTANCE: CLONEDONOR FAILS, USER DOES NOT EXIST
 // This bug caused a failure when a clone donor was selected that was processing transactions.
 // A new sync was added to ensure the donor was in sync with the primary before starting clone
-// so to test the fix we need to simulate an wait for that sync to happen. To simplify the test
-// we simply lock the mysql.user table triggering that desired wait and wait until the timeout happens.
+// so to test the fix we need to simulate an wait for that sync to happen.
 
 //@<> BUG#30628746: preparation {VER(>=8.0.17)}
 rs.removeInstance(__sandbox3);
 var session2 = mysql.getSession(__sandbox_uri2);
-session2.runSql("lock tables mysql.user read");
+testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
 //@ BUG#30628746: wait for timeout {VER(>=8.0.17)}
 shell.options.useWizards = true;
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox2});
+testutil.dbugSet("");
 
 //@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17)}
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox1});
 shell.options.useWizards = false;
-
-session2.runSql("unlock tables");
 
 //@<> BUG#30632029: preparation
 rs.removeInstance(__sandbox3);

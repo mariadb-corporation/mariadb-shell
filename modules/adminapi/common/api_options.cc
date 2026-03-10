@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -241,6 +241,17 @@ const shcore::Option_pack_def<Import_routing_guideline_options>
 
     return b.build();
   });
+
+  return opts;
+}
+
+const shcore::Option_pack_def<Reset_replication_accounts_password_options>
+    &Reset_replication_accounts_password_options::options() {
+  static const auto opts =
+      shcore::Option_pack_def<Reset_replication_accounts_password_options>()
+          .optional(kOptionRecreate,
+                    &Reset_replication_accounts_password_options::recreate)
+          .include<Force_options>();
 
   return opts;
 }

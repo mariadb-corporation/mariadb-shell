@@ -200,7 +200,7 @@ std::shared_ptr<RoutingGuideline> Base_cluster::import_routing_guideline(
 }
 
 void Base_cluster::reset_replication_accounts_password(
-    const Force_options &options) {
+    const Reset_replication_accounts_password_options &options) {
   assert_valid("resetReplicationAccountsPassword");
 
   return execute_with_pool(

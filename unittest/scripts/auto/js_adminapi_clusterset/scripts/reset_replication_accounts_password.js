@@ -63,6 +63,82 @@ shell.connect(__sandbox_uri3);
 EXPECT_EQ(acct_after.user, get_replication_channel_user("clusterset_replication"));
 testutil.waitReplicationChannelState(__mysql_sandbox_port3, "clusterset_replication", "ON");
 
+//@<> Verify ClusterSet.resetReplicationAccountsPassword(recreate:true) recreates Cluster and ClusterSet accounts when all instances are ONLINE
+shell.connect(__sandbox_uri1);
+var expected_primary_users = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_11111', 'mysql_innodb_cluster_22222')"
+).fetchOne()[0];
+
+shell.connect(__sandbox_uri3);
+var expected_replica_users = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_33333', 'mysql_innodb_cluster_44444')"
+).fetchOne()[0];
+
+shell.connect(__sandbox_uri1);
+session.runSql(
+  "DROP USER " +
+  "'mysql_innodb_cluster_33333'@'%', " +
+  "'mysql_innodb_cluster_44444'@'%'"
+);
+
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_33333', 'mysql_innodb_cluster_44444')"
+).fetchOne()[0]);
+
+var cs_acct_before_recreate = get_clusterset_repl_account_for_cluster("rcluster");
+var cs_acct_before_recreate_uh = cs_acct_before_recreate.user + "@" + cs_acct_before_recreate.host;
+var expected_cs_user = session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) from mysql.user where user=? and host=?",
+  [cs_acct_before_recreate.user, cs_acct_before_recreate.host]
+).fetchOne()[0];
+
+session.runSql(
+  "DROP USER " +
+  "'mysql_innodb_cluster_11111'@'%', " +
+  "'mysql_innodb_cluster_22222'@'%', " +
+  "'" + cs_acct_before_recreate.user + "'@'" + cs_acct_before_recreate.host + "'"
+);
+
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_11111', 'mysql_innodb_cluster_22222')"
+).fetchOne()[0]);
+EXPECT_EQ(null, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) from mysql.user where user=? and host=?",
+  [cs_acct_before_recreate.user, cs_acct_before_recreate.host]
+).fetchOne()[0]);
+
+shell.connect(__sandbox_uri1);
+WIPE_OUTPUT();
+EXPECT_NO_THROWS(function() { cset.resetReplicationAccountsPassword({recreate:true}); });
+
+EXPECT_OUTPUT_CONTAINS("The replication account passwords of all the ClusterSet instances were successfully recreated.");
+EXPECT_OUTPUT_CONTAINS(`* Updating ClusterSet replication credentials on '${hostname}:${__mysql_sandbox_port3}' (channel: clusterset_replication). The replication channel will be temporarily stopped and restarted to apply the new credentials.`);
+
+shell.connect(__sandbox_uri1);
+EXPECT_EQ(expected_primary_users, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_11111', 'mysql_innodb_cluster_22222')"
+).fetchOne()[0]);
+
+var cs_acct_after_recreate = get_clusterset_repl_account_for_cluster("rcluster");
+EXPECT_EQ(expected_cs_user, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) from mysql.user where user=? and host=?",
+  [cs_acct_before_recreate.user, cs_acct_before_recreate.host]
+).fetchOne()[0]);
+EXPECT_EQ(cs_acct_before_recreate_uh, cs_acct_after_recreate.user + "@" + cs_acct_after_recreate.host);
+
+shell.connect(__sandbox_uri3);
+EXPECT_EQ(expected_replica_users, session.runSql(
+  "select group_concat(concat(user,'@',host) order by user) " +
+  "from mysql.user where user in ('mysql_innodb_cluster_33333', 'mysql_innodb_cluster_44444')"
+).fetchOne()[0]);
+EXPECT_EQ(cs_acct_after_recreate.user, get_replication_channel_user("clusterset_replication"));
+testutil.waitReplicationChannelState(__mysql_sandbox_port3, "clusterset_replication", "ON");
+
 // Prove it still replicates after rotation
 shell.connect(__sandbox_uri1);
 session.runSql("CREATE DATABASE IF NOT EXISTS cs_pwd_test");

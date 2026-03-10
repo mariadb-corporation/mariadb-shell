@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -119,6 +119,18 @@ struct Import_routing_guideline_options : public Force_options {
       &options();
 
   std::optional<std::string> rename;
+};
+
+struct Reset_replication_accounts_password_options : public Force_options {
+  static const shcore::Option_pack_def<
+      Reset_replication_accounts_password_options>
+      &options();
+
+  bool get_recreate(bool default_value = false) const noexcept {
+    return recreate.value_or(default_value);
+  }
+
+  std::optional<bool> recreate;
 };
 
 }  // namespace dba

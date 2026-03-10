@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2341,8 +2341,15 @@ void Dba::deploy_sandbox_instance(int port,
       std::string pwd;
       if (instance_def.has_password()) pwd = instance_def.get_password();
 
+      const bool set_caching_sha2_auth_plugin =
+          instance->get_version() >= mysqlshdk::utils::Version(8, 0, 4);
+
       shcore::sqlstring create_user(
-          "CREATE USER root@? IDENTIFIED BY /*((*/ ? /*))*/", 0);
+          set_caching_sha2_auth_plugin
+              ? "CREATE USER root@? IDENTIFIED WITH 'caching_sha2_password' "
+                "BY /*((*/ ? /*))*/"
+              : "CREATE USER root@? IDENTIFIED BY /*((*/ ? /*))*/",
+          0);
       create_user << options.allow_root_from << pwd;
       create_user.done();
       instance->execute(create_user);

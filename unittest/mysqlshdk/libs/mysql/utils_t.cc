@@ -247,7 +247,10 @@ TEST_F(Mysql_utils_mocked,
 
   EXPECT_CALL(instance, query(testing::_, true))
       .WillOnce(testing::Invoke([&](const std::string &sql, bool) {
-        EXPECT_THAT(sql, testing::HasSubstr("IDENTIFIED BY RANDOM PASSWORD"));
+        EXPECT_THAT(
+            sql,
+            testing::HasSubstr(
+                "IDENTIFIED WITH 'caching_sha2_password' BY RANDOM PASSWORD"));
         rs->rewind();
         return rs;
       }));

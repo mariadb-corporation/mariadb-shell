@@ -36,7 +36,7 @@ var add_instance_sql = [
     "select cluster_type, instance_type from `mysql_innodb_cluster_metadata`.v2_this_instance",
     "show GLOBAL variables where `variable_name` in ('group_replication_ssl_mode')",
     "show GLOBAL variables where `variable_name` in ('server_id')",
-    "CREATE USER IF NOT EXISTS '*'@'%' IDENTIFIED BY **** PASSWORD EXPIRE NEVER",
+    "CREATE USER IF NOT EXISTS '*'@'%' IDENTIFIED WITH 'caching_sha2_password' BY **** PASSWORD EXPIRE NEVER",
     "SET * `group_replication_single_primary_mode` = 'ON'",
     "INSERT INTO mysql_innodb_cluster_metadata.instances"
 ];
