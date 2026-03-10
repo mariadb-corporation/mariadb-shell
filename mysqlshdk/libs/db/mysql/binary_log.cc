@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -207,19 +207,34 @@ class Binary_log::Impl {
       throw_error("could not find server version - server returned NULL");
     }
 
+    bool supported_version = false;
+
     switch (*version) {
       case '5':
       case '8':
       case '9':
+        supported_version = true;
         break;
 
+      case '1':
+        switch (version[1]) {
+          case '0':
+            supported_version = true;
+            break;
+
+          default:
+            break;
+        }
+
       default:
-        throw_error(
-            shcore::str_format("could not find server version - server "
-                               "reported unrecognized MySQL version '%s'",
-                               version)
-                .c_str());
         break;
+    }
+
+    if (!supported_version) {
+      throw_error(shcore::str_format("could not find server version - server "
+                                     "reported unrecognized MySQL version '%s'",
+                                     version)
+                      .c_str());
     }
 
     if (mysql_query(m_mysql,
