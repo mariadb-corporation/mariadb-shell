@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@ namespace regions {
 namespace {
 
 // clang-format off
+// OCI SDK version: 2.168.0
 const std::unordered_map<std::string_view, std::string_view> k_short_names = {
     {"yny", "ap-chuncheon-1"},
     {"hyd", "ap-hyderabad-1"},
@@ -79,8 +80,9 @@ const std::unordered_map<std::string_view, std::string_view> k_short_names = {
     {"onm", "ap-delhi-1"},
     {"hsg", "ap-batam-1"},
     {"orf", "eu-madrid-3"},
-    {"des", "ap-chennai-1"},
-    {"vkz", "us-columbus-1"},
+    {"nrq", "eu-turin-1"},
+    {"jbp", "ap-kulai-2"},
+    {"lej", "af-casablanca-1"},
     {"lfi", "us-langley-1"},
     {"luf", "us-luke-1"},
     {"ric", "us-gov-ashburn-1"},
@@ -118,6 +120,7 @@ const std::unordered_map<std::string_view, std::string_view> k_short_names = {
     {"yxj", "us-ashburn-2"},
     {"pgc", "us-newark-1"},
     {"jsk", "eu-budapest-1"},
+    {"hnw", "sa-riodejaneiro-1"},
 };
 // clang-format on
 
