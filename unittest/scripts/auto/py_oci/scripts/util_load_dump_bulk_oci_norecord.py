@@ -113,7 +113,7 @@ load_src = par
 #@<> WL15432-TSFR_1_2 - unsupported version {bulk_load_supported and not __dbug_off}
 testutil.dbug_set("+d,dump_loader_bulk_unsupported_version")
 
-TEST_LOAD(expect_bulk_loaded = 0)
+TEST_LOAD(expect_bulk_loaded = 0, options = { "ignoreVersion": True })
 EXPECT_STDOUT_CONTAINS("Target is MySQL 8.3.0.")
 EXPECT_SHELL_LOG_CONTAINS("BULK LOAD: unsupported version")
 
