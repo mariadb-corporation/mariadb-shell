@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -875,6 +875,11 @@ void setup_test_environment() {
 
   // explicitly disable IMDS credentials
   shcore::setenv("AWS_EC2_METADATA_DISABLED", "true");
+
+  // disable Python's cryptography warning regarding OpenSSL < 3.0
+  shcore::setenv(
+      "PYTHONWARNINGS",
+      "ignore::UserWarning:cryptography.hazmat.backends.openssl.backend");
 
 #ifdef __APPLE__
   setup_test_keychain();
