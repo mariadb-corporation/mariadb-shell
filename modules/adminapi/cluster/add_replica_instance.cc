@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -474,8 +474,6 @@ void Add_replica_instance::do_run() {
 
       m_cluster_impl->handle_clone_provisioning(
           m_target_instance, m_donor_instance, ar_options, repl_account_host,
-          m_cluster_impl->query_cluster_auth_cert_issuer(),
-          m_options.cert_subject,
           m_options.recovery_progress.get_recovery_progress(),
           m_options.timeout, m_options.dry_run);
 

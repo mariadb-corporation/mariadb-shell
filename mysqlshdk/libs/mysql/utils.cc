@@ -25,6 +25,7 @@
 
 #include "mysqlshdk/libs/mysql/utils.h"
 
+#include <my_dbug.h>
 #include <mysqld_error.h>
 #include <rapidjson/document.h>
 
@@ -55,14 +56,40 @@ static constexpr mysqlshdk::utils::Version k_random_password_min_version(8, 0,
 
 std::string build_create_user_stmt(
     std::string_view user, std::string_view host,
-    const IInstance::Create_user_options &options) {
+    const IInstance::Create_user_options &options,
+    const mysqlshdk::utils::Version &instance_version) {
   auto user_stmt = ("CREATE USER IF NOT EXISTS ?@?"_sql << user << host).str();
 
+  const bool set_caching_sha2_auth_plugin =
+      instance_version >= mysqlshdk::utils::Version(8, 0, 4);
+  bool force_native_password_plugin = false;
+
+  // Debug trap to force the usage of mysql_native_password and test migration
+  // to caching_sha2_password
+  DBUG_EXECUTE_IF("dba_create_user_force_mysql_native_password",
+                  { force_native_password_plugin = true; });
+
   if (options.random_password) {
-    user_stmt.append(" IDENTIFIED BY RANDOM PASSWORD");
+    if (force_native_password_plugin) {
+      user_stmt.append(
+          " IDENTIFIED WITH 'mysql_native_password' BY RANDOM PASSWORD");
+    } else if (set_caching_sha2_auth_plugin) {
+      user_stmt.append(
+          " IDENTIFIED WITH 'caching_sha2_password' BY RANDOM PASSWORD");
+    } else {
+      user_stmt.append(" IDENTIFIED BY RANDOM PASSWORD");
+    }
   } else if (options.password.has_value()) {
-    user_stmt.append(
-        (" IDENTIFIED BY /*((*/ ? /*))*/"_sql << *options.password).str());
+    if (force_native_password_plugin) {
+      user_stmt.append(" IDENTIFIED WITH 'mysql_native_password' BY");
+      user_stmt.append((" /*((*/ ? /*))*/"_sql << *options.password).str());
+    } else if (set_caching_sha2_auth_plugin) {
+      user_stmt.append(" IDENTIFIED WITH 'caching_sha2_password' BY");
+      user_stmt.append((" /*((*/ ? /*))*/"_sql << *options.password).str());
+    } else {
+      user_stmt.append(
+          (" IDENTIFIED BY /*((*/ ? /*))*/"_sql << *options.password).str());
+    }
   }
 
   if (options.cert_issuer.empty() && options.cert_subject.empty()) {
@@ -577,8 +604,10 @@ std::optional<std::string> create_user_with_random_password(
 
     // Fetch the generated password before issuing GRANTs, as executing
     // additional statements can invalidate the CREATE USER resultset.
-    auto result = instance.query(
-        build_create_user_stmt(user, hosts.front(), cur_options), true);
+    auto result =
+        instance.query(build_create_user_stmt(user, hosts.front(), cur_options,
+                                              instance.get_version()),
+                       true);
 
     auto generated_password = extract_generated_password(*result);
     if (!generated_password.has_value()) {

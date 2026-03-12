@@ -550,7 +550,7 @@ void Instance::uninstall_plugin(const std::string &plugin_name) const {
  */
 void Instance::create_user(std::string_view user, std::string_view host,
                            const Create_user_options &options) const {
-  execute(build_create_user_stmt(user, host, options));
+  execute(build_create_user_stmt(user, host, options, get_version()));
   grant_user_privileges(*this, user, host, options);
 }
 

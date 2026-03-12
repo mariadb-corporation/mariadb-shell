@@ -1754,7 +1754,11 @@ void Cluster_impl::reset_recovery_password(const Force_options &options) {
   // put an exclusive lock on the cluster
   auto c_lock = get_lock_exclusive();
 
-  Topology_executor<Reset_replication_accounts_password>{*this, options}.run();
+  Reset_replication_accounts_password_options reset_options;
+  reset_options.force = options.force;
+
+  Topology_executor<Reset_replication_accounts_password>{*this, reset_options}
+      .run();
 }
 
 void Cluster_impl::enable_super_read_only_globally() const {

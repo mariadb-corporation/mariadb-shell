@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -282,6 +282,7 @@ inline constexpr const char kReplicationSourcesAutoSecondary[] = "secondary";
 inline constexpr const char kRouter[] = "router";
 inline constexpr const char kExecuteInstances[] = "instances";
 inline constexpr const char kExecuteExclude[] = "exclude";
+inline constexpr const char kOptionRecreate[] = "recreate";
 
 inline constexpr const int k_group_replication_members_limit = 9;
 

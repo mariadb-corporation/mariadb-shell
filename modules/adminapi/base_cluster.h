@@ -86,7 +86,8 @@ class Base_cluster : public shcore::Cpp_object_bridge {
                             const Setup_account_options &options);
 
  public:  // Internal replication passwords management
-  void reset_replication_accounts_password(const Force_options &options);
+  void reset_replication_accounts_password(
+      const Reset_replication_accounts_password_options &options);
 
  protected:
   bool m_invalidated = false;
@@ -376,6 +377,11 @@ The options dictionary may contain the following attributes:
 @li force: boolean, indicating whether the operation should continue if
 an error occurs while resetting passwords on any instance (for example,
 if an instance is not ONLINE). By default, false.
+
+@li recreate: boolean, indicating whether the internal replication accounts
+should be re-created instead of only rotating their passwords. This can be
+used to migrate accounts from a deprecated or removed authentication plugin
+(for example, mysql_native_password). By default, false.
 
 Using the force option (set to true) is not recommended. Use it only
 when instances are permanently unavailable or will not be reused in the

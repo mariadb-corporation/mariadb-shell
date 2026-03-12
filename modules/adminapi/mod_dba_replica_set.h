@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -82,6 +82,7 @@ class ReplicaSet : public std::enable_shared_from_this<ReplicaSet>,
   Undefined removeRoutingGuideline(String name);
   List routingGuidelines();
   RoutingGuideline importRoutingGuideline(String file, Dictionary options);
+  Undefined resetReplicationAccountsPassword(Dictionary options);
 #elif DOXYGEN_PY
   str name;  //!< $(REPLICASET_GETNAME_BRIEF)
   None add_instance(str instance, dict options);
@@ -111,6 +112,7 @@ class ReplicaSet : public std::enable_shared_from_this<ReplicaSet>,
   None remove_routing_guideline(str name);
   list routing_guidelines();
   RoutingGuideline import_routing_guideline(str file, dict options);
+  None reset_replication_accounts_password(dict options);
 #endif
 
   explicit ReplicaSet(const std::shared_ptr<Replica_set_impl> &cluster);

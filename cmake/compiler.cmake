@@ -23,8 +23,8 @@
 
 include(CheckCXXCompilerFlag)
 
-# Check for C++ 20 support
-set(CXX_STD "20")
+# Check for C++ 23 support
+set(CXX_STD "23")
 
 macro(APPEND_FLAG _string_var _addition)
   set(${_string_var} "${${_string_var}} ${_addition}")

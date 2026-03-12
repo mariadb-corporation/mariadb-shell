@@ -424,7 +424,7 @@
 //@ BUG#30628746: wait for timeout {VER(>=8.0.17)}
 |* Waiting for the donor to synchronize with PRIMARY...|
 |ERROR: The donor instance failed to synchronize its transaction set with the PRIMARY.|
-||Timeout reached waiting for transactions from <<<hostname_ip>>>:<<<__mysql_sandbox_port1>>> to be applied on instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port2>>>' (MYSQLSH 51157)
+||Timeout reached waiting for all received transactions to be applied on instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port2>>>' (debug) (MYSQLSH 51157)
 
 //@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17)}
 |The instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port3>>>' was added to the replicaset and is replicating from <<<hostname_ip>>>:<<<__mysql_sandbox_port1>>>.|
