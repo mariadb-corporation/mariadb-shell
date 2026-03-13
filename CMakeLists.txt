@@ -128,12 +128,14 @@ ENDIF()
 CMAKE_MINIMUM_REQUIRED(VERSION 3.14.6)
 INCLUDE(CMakePushCheckState)
 
-# On Linux el6/el7/el8/el9 the default gcc is too old,
+# On Linux el7/el8/el9 the default gcc is too old,
 # see if devtoolset/gcc-toolset is installed.
-# Same with SUSE linux, look for gcc 10/12 there.
+# Same with SUSE linux 15, look for gcc 12 there.
 # We need to look for gcc before calling PROJECT below.
 OPTION(FORCE_UNSUPPORTED_COMPILER "Disable compiler version checks" OFF)
 MARK_AS_ADVANCED(FORCE_UNSUPPORTED_COMPILER)
+
+OPTION(MAINTAINER_MODE "Enable maintainer-specific build checks" OFF)
 
 # Use 'uname -r' and 'rpm -qf /' to figure out host system.
 # For Docker images we cannot trust uname, so use rpm instead.
@@ -246,17 +248,12 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
     ENDIF()
     IF(LINUX_RHEL AND NOT LINUX_RHEL10)
       MESSAGE(STATUS "Looking for a devtoolset compiler")
-      IF(LINUX_RHEL6)
-        SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-8")
-      ELSEIF(LINUX_RHEL7)
-        # gcc11 not available yet
-        IF(MY_HOST_MACHINE_NAME MATCHES "aarch64")
-          SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-10")
-        ELSE()
-          SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-11")
-        ENDIF()
-      ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
-        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-13")
+      IF(LINUX_RHEL7)
+        SET(ALTERNATIVE_PATHS "/opt/rh/devtoolset-11")
+      ELSEIF(LINUX_RHEL8)
+        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-14")
+      ELSEIF(LINUX_RHEL9)
+        SET(ALTERNATIVE_PATHS "/opt/rh/gcc-toolset-14")
       ELSEIF(LINUX_RHEL10)
         # Use default /usr/bin/gcc which is 14.2.1
       ENDIF()
@@ -271,7 +268,13 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         FIND_PROGRAM(ALTERNATIVE_LD ld
           NO_DEFAULT_PATH
           PATHS "${OPT_PATH}/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_AR gcc-ar
+          NO_DEFAULT_PATH
+          PATHS "${OPT_PATH}/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_AR ar
+          NO_DEFAULT_PATH
+          PATHS "${OPT_PATH}/root/usr/bin")
+        FIND_PROGRAM(ALTERNATIVE_RANLIB gcc-ranlib
           NO_DEFAULT_PATH
           PATHS "${OPT_PATH}/root/usr/bin")
         FIND_PROGRAM(ALTERNATIVE_RANLIB ranlib
@@ -304,22 +307,19 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
       ELSE()
-        IF(LINUX_RHEL6)
+        IF(LINUX_RHEL7)
           SET(DEV_PACKAGES
-            "devtoolset-8-gcc devtoolset-8-gcc-c++ devtoolset-8-binutils")
-        ELSEIF(LINUX_RHEL7)
-          IF(MY_HOST_MACHINE_NAME MATCHES "aarch64")
-            SET(DEV_PACKAGES
-              "devtoolset-10-gcc devtoolset-10-gcc-c++ devtoolset-10-binutils")
-          ELSE()
-            SET(DEV_PACKAGES
-              "devtoolset-11-gcc devtoolset-11-gcc-c++ devtoolset-11-binutils")
-          ENDIF()
-        ELSEIF(LINUX_RHEL8 OR LINUX_RHEL9)
+            "devtoolset-11-gcc devtoolset-11-gcc-c++ devtoolset-11-binutils")
+        ELSEIF(LINUX_RHEL8)
           SET(DEV_PACKAGES
-            "gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-binutils")
-          STRING_APPEND(DEV_PACKAGES " gcc-toolset-13-annobin-annocheck")
-          STRING_APPEND(DEV_PACKAGES " gcc-toolset-13-annobin-plugin-gcc")
+            "gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-binutils")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-14-annobin-annocheck")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-14-annobin-plugin-gcc")
+        ELSEIF(LINUX_RHEL9)
+          SET(DEV_PACKAGES
+            "gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-binutils")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-14-annobin-annocheck")
+          STRING_APPEND(DEV_PACKAGES " gcc-toolset-14-annobin-plugin-gcc")
         ENDIF()
         MESSAGE(WARNING
           "Could not find devtoolset compiler/linker in ${ALTERNATIVE_PATHS}")
@@ -329,66 +329,19 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
           "Or you can set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
 
-    ELSEIF(LINUX_UBUNTU_18_04)
-      MESSAGE(STATUS "Looking for gcc-8 on Ubuntu 18.04")
-      FIND_PROGRAM(ALTERNATIVE_GCC gcc-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(ALTERNATIVE_GPP g++-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-8
-        NO_DEFAULT_PATH
-        PATHS "/usr/bin")
-      IF(GCC_AR_EXECUTABLE)
-        SET(CMAKE_AR ${GCC_AR_EXECUTABLE})
-        SET(CMAKE_AR ${GCC_AR_EXECUTABLE} CACHE PATH "Alternative ar")
-      ENDIF()
-      IF(GCC_RANLIB_EXECUTABLE)
-        SET(CMAKE_RANLIB ${GCC_RANLIB_EXECUTABLE})
-        SET(CMAKE_RANLIB ${GCC_RANLIB_EXECUTABLE} CACHE PATH "Alternative ranlib")
-      ENDIF()
-      IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
-        SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
-        SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
-        MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
-        MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-      ELSE()
-        MESSAGE(WARNING "Could not find gcc-8")
-        MESSAGE(FATAL_ERROR
-          "Please do 'apt install gcc-8 g++-8'\n"
-          "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-      ENDIF()
-
-    ELSEIF(LINUX_SUSE_12 OR LINUX_SUSE_15)
+    ELSEIF(LINUX_SUSE_15)
       MESSAGE(STATUS "We need to look for a newer GCC on SUSE Linux.")
-      IF(LINUX_SUSE_12)
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-10
+      IF(LINUX_SUSE_15)
+        FIND_PROGRAM(ALTERNATIVE_GCC gcc-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-10
+        FIND_PROGRAM(ALTERNATIVE_GPP g++-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-10
+        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-10
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-      ELSEIF(LINUX_SUSE_15)
-        FIND_PROGRAM(ALTERNATIVE_GCC gcc-12
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(ALTERNATIVE_GPP g++-12
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_AR_EXECUTABLE gcc-ar-12
-          NO_DEFAULT_PATH
-          PATHS "/usr/bin")
-        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-12
+        FIND_PROGRAM(GCC_RANLIB_EXECUTABLE gcc-ranlib-13
           NO_DEFAULT_PATH
           PATHS "/usr/bin")
       ENDIF()
@@ -405,36 +358,26 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
         SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
-        # Use the new ABI so that std::string can be used with allocators
-        # that are not default-constructible (e.g. Memroot_allocator)
-        IF(LINUX_SUSE_12)
-          ADD_DEFINITIONS(-D_GLIBCXX_USE_CXX11_ABI=1)
-        ENDIF()
       ELSE()
         MESSAGE(WARNING "Could not find newer gcc.")
-        IF(LINUX_SUSE_12)
-          MESSAGE(FATAL_ERROR "Please do zypper install gcc10 gcc10-c++\n"
-            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-        ELSE()
-          MESSAGE(FATAL_ERROR "Please do zypper install gcc12 gcc12-c++\n"
-            "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
-        ENDIF()
+        MESSAGE(FATAL_ERROR "Please do zypper install gcc13 gcc13-c++\n"
+          "or set CMAKE_C_COMPILER and CMAKE_CXX_COMPILER explicitly.")
       ENDIF()
     ELSEIF(SOLARIS)
-      MESSAGE(STATUS "Looking for GCC 10 on Solaris.")
+      MESSAGE(STATUS "Looking for GCC 11 on Solaris.")
       FIND_PROGRAM(ALTERNATIVE_GCC gcc
         NO_DEFAULT_PATH
-        PATHS "/usr/gcc/10/bin")
+        PATHS "/usr/gcc/11/bin")
       FIND_PROGRAM(ALTERNATIVE_GPP g++
         NO_DEFAULT_PATH
-        PATHS "/usr/gcc/10/bin")
+        PATHS "/usr/gcc/11/bin")
       IF (ALTERNATIVE_GCC AND ALTERNATIVE_GPP)
         SET(CMAKE_C_COMPILER ${ALTERNATIVE_GCC})
         SET(CMAKE_CXX_COMPILER ${ALTERNATIVE_GPP})
         MESSAGE(STATUS "Using ${ALTERNATIVE_GCC}")
         MESSAGE(STATUS "Using ${ALTERNATIVE_GPP}")
       ELSE()
-        MESSAGE(WARNING "Could not find /usr/gcc/10/bin/gcc")
+        MESSAGE(WARNING "Could not find /usr/gcc/11/bin/gcc")
       ENDIF()
     ENDIF()
   ENDIF()
@@ -1147,11 +1090,11 @@ IF(MYSQL_BUILD_DIR)
       ENDFOREACH()
     ENDFOREACH()
 
-    IF(AUTH_CLIENT_PLUGINS_COPY)
+    IF(AUTH_CLIENT_PLUGINS_COPY AND MAINTAINER_MODE)
       MESSAGE(FATAL_ERROR "Found unexpected client authentication plugins: ${AUTH_CLIENT_PLUGINS_COPY}")
     ENDIF()
 
-    IF(EXPECTED_AUTH_CLIENT_PLUGINS)
+    IF(EXPECTED_AUTH_CLIENT_PLUGINS AND MAINTAINER_MODE)
       MESSAGE(FATAL_ERROR "Didn't find expected client authentication plugins: ${EXPECTED_AUTH_CLIENT_PLUGINS}")
     ENDIF()
 

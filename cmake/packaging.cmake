@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ endif()
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "MySQL Shell ${MYSH_VERSION}, a command line shell and scripting environment for MySQL")
 set(CPACK_PACKAGE_NAME                "mysql-shell${EXTRA_NAME_SUFFIX}")
 set(CPACK_PACKAGE_VENDOR              "Oracle and/or its affiliates")
-set(CPACK_PACKAGE_DESCRIPTION_FILE    "${CMAKE_SOURCE_DIR}/README")
+set(CPACK_PACKAGE_DESCRIPTION_FILE    "${CMAKE_SOURCE_DIR}/README.md")
 if(WIN32)
   # WiX wants the license file to end in ".txt"
   configure_file(${CMAKE_SOURCE_DIR}/LICENSE
@@ -135,8 +135,8 @@ if(WIN32)
 # TODO: line-ending conversions unix->dos
 
 # install(FILES ChangeLog     DESTINATION . RENAME ChangeLog.txt)
-  install(FILES README        DESTINATION . RENAME README.txt COMPONENT main)
-# install(FILES INSTALL       DESTINATION . RENAME INSTALL.txt)
+  install(FILES README.md        DESTINATION . RENAME README.txt COMPONENT main)
+# install(FILES INSTALL.md       DESTINATION . RENAME INSTALL.txt)
   install(FILES LICENSE       DESTINATION . RENAME LICENSE.txt COMPONENT main)
 
   # Install all .pdb files to enable debugging. Note that what build
@@ -167,9 +167,9 @@ if(WIN32)
 else()
 
 # install(FILES ChangeLog    DESTINATION .)
-  install(FILES README       DESTINATION share/mysqlsh/ COMPONENT main)
-  install(FILES README       DESTINATION share/mysqlsh/ COMPONENT dev)
-# install(FILES INSTALL      DESTINATION .)
+  install(FILES README.md       DESTINATION share/mysqlsh/ COMPONENT main)
+  install(FILES README.md       DESTINATION share/mysqlsh/ COMPONENT dev)
+# install(FILES INSTALL.md     DESTINATION .)
   install(FILES LICENSE      DESTINATION share/mysqlsh/ COMPONENT main)
   install(FILES LICENSE      DESTINATION share/mysqlsh/ COMPONENT dev)
 
