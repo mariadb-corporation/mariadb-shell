@@ -99,7 +99,12 @@ ENDIF()
 FIND_PACKAGE(Protobuf "${PROTOBUF_VERSION}" REQUIRED)
 
 IF(NOT WITH_PROTOBUF)
-  SET(ABSEIL_DIR "extra/abseil/abseil-cpp-20250814.1")
+  set(_abseil_parent "${MYSQL_SOURCE_DIR}/extra/abseil")
+  file(GLOB _abseil_candidates RELATIVE "${MYSQL_SOURCE_DIR}" "${_abseil_parent}/abseil-cpp-*")
+  if(NOT _abseil_candidates)
+    message(FATAL_ERROR "Could not locate abseil-cpp directory under ${_abseil_parent}")
+  endif()
+  list(GET _abseil_candidates 0 ABSEIL_DIR)
   list(APPEND PROTOBUF_INCLUDE_DIRS "${MYSQL_SOURCE_DIR}/${ABSEIL_DIR}")
 
   IF(WIN32)
