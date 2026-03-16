@@ -2554,7 +2554,7 @@ void Dump_reader::handle_vector_store_dump() {
         // make sure that this table is excluded from further processing
         exclude_table(schema.first, name);
         // remove the table metadata
-        schema.second->tables.erase(name);
+        schema.second->tables.erase(name.get());
       }
     }
 
