@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -90,6 +90,22 @@ const auto optional_uint = [](const shcore::json::Value &o, const char *n) {
 
 }  // namespace
 
+std::string gtid_executed(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+  try {
+    const auto result = session->query("SELECT @@GLOBAL.GTID_EXECUTED");
+
+    if (const auto row = result->fetch_one()) {
+      return row->get_string(0);
+    }
+  } catch (const mysqlshdk::db::Error &e) {
+    log_error("Failed to fetch value of @@GLOBAL.GTID_EXECUTED: %s.",
+              e.format().c_str());
+  }
+
+  return {};
+}
+
 Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
               const Server_version &version, bool quiet) {
   Binlog binlog;
@@ -127,6 +143,9 @@ Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
         current_console()->print_warning(
             "Could not fetch the binary log information: " + e.format());
       }
+
+      // try to at least get the value of gtid_executed
+      binlog.gtid_executed = gtid_executed(session);
     } else {
       throw;
     }
