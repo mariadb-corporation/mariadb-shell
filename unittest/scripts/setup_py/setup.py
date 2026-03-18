@@ -1123,17 +1123,18 @@ def install_dynamic_data_masking(uri: str, sess=None, verbose=True) -> bool:
             sess = shell.open_session(uri)
 
         basedir = sess.run_sql("SELECT @@basedir").fetch_one()[0]
-        install_script = os.path.join(basedir, "share", "install_component_object_policy.sql")
 
-        if not os.path.exists(install_script):
-            return False
+        for subdir in ["", f"mysql-{__version[:__version.rfind(".")]}"]:
+            install_script = os.path.join(basedir, "share", subdir, "install_component_object_policy.sql")
 
-        ec = testutil.call_mysqlsh([uri, "--quiet-start=2", "--sql", "--file", install_script])
-        return 0 == ec
+            if os.path.exists(install_script):
+                ec = testutil.call_mysqlsh([uri, "--quiet-start=2", "--sql", "--file", install_script])
+                return 0 == ec
     except Exception as e:
         if verbose:
             print(e)
-        return False
+
+    return False
 
 def enable_dynamic_data_masking(sess, verbose=True) -> bool:
     try:
