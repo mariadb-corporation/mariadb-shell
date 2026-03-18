@@ -3903,12 +3903,12 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_fil
 with open(progress_file, "r") as f:
     progress_file_contents = f.readlines()
 
-# copy the progress file, removing the DONE entry for the schema
+# copy the progress file, removing the DONE entry for the schema and view
 with open(progress_file, "w") as f:
     for line in progress_file_contents:
         if line:
             content = json.loads(line)
-            if "SCHEMA-DDL" != content["op"] or not content["done"]:
+            if ("SCHEMA-DDL" != content["op"] and "VIEW-DDL" != content["op"]) or not content["done"]:
                 f.write(line)
 
 # we expect schema objects to be re-created, table and trigger should be untouched,
@@ -3930,12 +3930,12 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_fil
 with open(progress_file, "r") as f:
     progress_file_contents = f.readlines()
 
-# copy the progress file, removing the DONE entry for the schema, table and trigger
+# copy the progress file, removing the DONE entry for the schema, view, table and trigger
 with open(progress_file, "w") as f:
     for line in progress_file_contents:
         if line:
             content = json.loads(line)
-            if ("SCHEMA-DDL" != content["op"] and "TABLE-DDL" != content["op"] and "TRIGGERS-DDL" != content["op"]) or not content["done"]:
+            if ("SCHEMA-DDL" != content["op"] and "VIEW-DDL" != content["op"] and "TABLE-DDL" != content["op"] and "TRIGGERS-DDL" != content["op"]) or not content["done"]:
                 f.write(line)
 
 # all objects will be recreated
@@ -4389,6 +4389,33 @@ if __version_num >= 90700:
     session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
     session2.run_sql("SET @@GLOBAL.sql_require_primary_key = OFF")
     session2.run_sql("DROP USER IF EXISTS admin@'%'")
+
+#@<> BUG#38945132 - load a view which uses an index with 'deferTableIndexes':'all'
+# constants
+tested_schema = "test_38945132"
+tested_table = "t1"
+
+dump_dir = os.path.join(outdir, "bug_38945132")
+
+# setup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+session1.run_sql("CREATE TABLE !.! (`a1` int NOT NULL AUTO_INCREMENT, `a2` int, PRIMARY KEY (`a1`), KEY `a2` (`a2`))", [tested_schema, tested_table])
+session1.run_sql("CREATE VIEW !.v1 AS SELECT a1, a2 FROM !.! USE INDEX (a2);", [tested_schema, tested_schema, tested_table])
+
+#@<> BUG#38945132 - test
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "showProgress": False }), "Dump should not fail")
+
+wipeout_server(session2)
+
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"deferTableIndexes": "all", "showProgress": False}), "Load should not fail")
+
+EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session2, tested_schema), "Verifying schemas")
+
+#@<> BUG#38945132 - cleanup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
