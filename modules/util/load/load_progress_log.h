@@ -177,6 +177,25 @@ struct Schema_ddl {
   }
 };
 
+struct View_ddl {
+  static constexpr entry::Operation op{"VIEW-DDL"};
+
+  entry::Schema schema;
+
+  std::string key() const {
+    std::string k;
+
+    k.reserve(op.value.length() + 2 + schema.value.length() + 1);
+
+    k += op.value;
+    k += ":`";
+    k += schema.value;
+    k += '`';
+
+    return k;
+  }
+};
+
 struct Table_ddl {
   static constexpr entry::Operation op{"TABLE-DDL"};
 
@@ -402,8 +421,8 @@ concept Status_entry =
     std::is_base_of_v<Create_users, T> ||
     std::is_base_of_v<Masking_policy_ddl, T> ||
     std::is_base_of_v<Gtid_update, T> || std::is_base_of_v<Schema_ddl, T> ||
-    std::is_base_of_v<Table_ddl, T> || std::is_base_of_v<Triggers_ddl, T> ||
-    std::is_base_of_v<Table_indexes, T> ||
+    std::is_base_of_v<View_ddl, T> || std::is_base_of_v<Table_ddl, T> ||
+    std::is_base_of_v<Triggers_ddl, T> || std::is_base_of_v<Table_indexes, T> ||
     std::is_base_of_v<Analyze_table, T> || std::is_base_of_v<Table_chunk, T> ||
     std::is_base_of_v<Table_subchunk, T> || std::is_base_of_v<Bulk_load, T> ||
     std::is_base_of_v<Secondary_load, T>;
@@ -417,6 +436,8 @@ struct Masking_policy_ddl : public progress::Masking_policy_ddl {};
 struct Gtid_update : public progress::Gtid_update {};
 
 struct Schema_ddl : public progress::Schema_ddl {};
+
+struct View_ddl : public progress::View_ddl {};
 
 struct Table_ddl : public progress::Table_ddl {
   entry::Task task;
@@ -453,10 +474,11 @@ template <typename T>
 concept Entry =
     std::is_same_v<T, Create_users> || std::is_same_v<Masking_policy_ddl, T> ||
     std::is_same_v<T, Gtid_update> || std::is_same_v<T, Schema_ddl> ||
-    std::is_same_v<T, Table_ddl> || std::is_same_v<T, Triggers_ddl> ||
-    std::is_same_v<T, Table_indexes> || std::is_same_v<T, Analyze_table> ||
-    std::is_same_v<T, Table_chunk> || std::is_same_v<T, Table_subchunk> ||
-    std::is_same_v<T, Bulk_load> || std::is_same_v<T, Secondary_load>;
+    std::is_same_v<T, View_ddl> || std::is_same_v<T, Table_ddl> ||
+    std::is_same_v<T, Triggers_ddl> || std::is_same_v<T, Table_indexes> ||
+    std::is_same_v<T, Analyze_table> || std::is_same_v<T, Table_chunk> ||
+    std::is_same_v<T, Table_subchunk> || std::is_same_v<T, Bulk_load> ||
+    std::is_same_v<T, Secondary_load>;
 
 }  // namespace start
 
@@ -480,6 +502,8 @@ struct Masking_policy_ddl : public progress::Masking_policy_ddl {};
 struct Gtid_update : public progress::Gtid_update {};
 
 struct Schema_ddl : public progress::Schema_ddl {};
+
+struct View_ddl : public progress::View_ddl {};
 
 struct Table_ddl : public progress::Table_ddl {};
 
@@ -511,10 +535,11 @@ template <typename T>
 concept Entry =
     std::is_same_v<T, Create_users> || std::is_same_v<Masking_policy_ddl, T> ||
     std::is_same_v<T, Gtid_update> || std::is_same_v<T, Schema_ddl> ||
-    std::is_same_v<T, Table_ddl> || std::is_same_v<T, Triggers_ddl> ||
-    std::is_same_v<T, Table_indexes> || std::is_same_v<T, Analyze_table> ||
-    std::is_same_v<T, Table_chunk> || std::is_same_v<T, Table_subchunk> ||
-    std::is_same_v<T, Bulk_load> || std::is_same_v<T, Secondary_load>;
+    std::is_same_v<T, View_ddl> || std::is_same_v<T, Table_ddl> ||
+    std::is_same_v<T, Triggers_ddl> || std::is_same_v<T, Table_indexes> ||
+    std::is_same_v<T, Analyze_table> || std::is_same_v<T, Table_chunk> ||
+    std::is_same_v<T, Table_subchunk> || std::is_same_v<T, Bulk_load> ||
+    std::is_same_v<T, Secondary_load>;
 
 }  // namespace end
 
@@ -768,6 +793,10 @@ class Load_progress_log final {
   static void append(Dumper *, const progress::Gtid_update &) {}
 
   static void append(Dumper *json, const progress::Schema_ddl &entry) {
+    append(json, entry.schema);
+  }
+
+  static void append(Dumper *json, const progress::View_ddl &entry) {
     append(json, entry.schema);
   }
 

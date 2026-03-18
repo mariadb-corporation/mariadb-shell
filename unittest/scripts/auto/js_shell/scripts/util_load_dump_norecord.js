@@ -646,7 +646,8 @@ util.loadDump(__tmp_dir+"/ldtest/dump", {dryRun: 1, ignoreExistingObjects: true}
 EXPECT_OUTPUT_CONTAINS("NOTE: One or more objects in the dump already exist in the destination database but will be ignored because the 'ignoreExistingObjects' option was enabled.");
 
 //@<> no dryRun to get errors from mismatched definitions of tables that already exist
-EXPECT_THROWS(function () {util.loadDump(__tmp_dir+"/ldtest/dump", {ignoreExistingObjects: true, deferTableIndexes:"all"});}, "Unknown column ");
+EXPECT_THROWS(function () {util.loadDump(__tmp_dir+"/ldtest/dump", {ignoreExistingObjects: true, deferTableIndexes:"all"});}, "Error loading dump");
+EXPECT_STDOUT_CONTAINS("Unknown column ");
 
 testutil.rmfile(__tmp_dir+"/ldtest/dump/load-progress*");
 wipe_instance(session);
@@ -954,7 +955,13 @@ testutil.cpfile(corrupted_file + ".bak", corrupted_file);
 WIPE_SHELL_LOG();
 testutil.callMysqlsh([__sandbox_uri1, "--", "util", "load-dump", __tmp_dir+"/ldtest/dump-big", "--showProgress=true"]);
 
-EXPECT_SHELL_LOG_NOT_CONTAINS("Executing DDL script for ");
+for (const obj of ["schema", "libraries", "events", "routines"]) {
+  EXPECT_SHELL_LOG_NOT_CONTAINS(`Executing DDL script for ${obj} `);
+}
+
+// views are loaded last
+EXPECT_SHELL_LOG_CONTAINS("Executing DDL script for view ");
+
 EXPECT_STDOUT_CONTAINS("Load progress file detected. Load will be resumed from where it was left, assuming no external updates were made.");
 // also check that progress didn't restart from 0, since some data was already loaded
 EXPECT_STDOUT_CONTAINS("100%");

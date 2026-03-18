@@ -2366,6 +2366,15 @@ void Dump_loader::on_dump_begin() {
 }
 
 void Dump_loader::on_dump_end() {
+  if (m_options.load_ddl() || m_options.load_deferred_indexes()) {
+    // exec DDL for all views after all tables, users and indexes are created
+    execute_view_ddl_tasks();
+  }
+
+  if (m_worker_interrupt.test()) {
+    return;
+  }
+
   // Execute schema end scripts
   for (const auto schema : m_dump->schemas()) {
     on_schema_end(schema->name);
@@ -4443,6 +4452,8 @@ void Dump_loader::execute_schema_ddl_tasks() {
 
 void Dump_loader::execute_table_ddl_tasks() {
   m_ddl_executed = 0;
+  m_table_ddl_tasks_per_schema.clear();
+
   std::atomic<uint64_t> ddl_to_execute = 0;
   std::atomic<bool> all_tasks_scheduled = false;
 
@@ -4468,17 +4479,20 @@ void Dump_loader::execute_table_ddl_tasks() {
   std::string schema;
   std::list<Dump_reader::Name_and_file> tables;
   std::list<Dump_reader::Name_and_file> view_placeholders;
+  uint64_t schema_tasks;
 
   const auto thread_pool_ptr = m_dump->create_thread_pool();
   const auto pool = thread_pool_ptr.get();
   shcore::Synchronized_queue<std::unique_ptr<Worker::Table_ddl_task>>
       worker_tasks;
 
-  const auto handle_ddl_files = [this, pool, &worker_tasks, &ddl_to_execute](
+  const auto handle_ddl_files = [this, pool, &worker_tasks, &ddl_to_execute,
+                                 &schema_load_status](
                                     const std::string &s,
                                     std::list<Dump_reader::Name_and_file> *list,
-                                    bool placeholder,
-                                    Load_progress_log::Status schema_status) {
+                                    bool placeholder) {
+    uint64_t scheduled_tasks = 0;
+
 // GCC 12 may warn about a possibly uninitialized usage of IFile in the lambda
 // capture
 #if __GNUC__ >= 12 && !defined(__clang__)
@@ -4505,7 +4519,7 @@ void Dump_loader::execute_table_ddl_tasks() {
 
         const auto status =
             placeholder
-                ? schema_status
+                ? schema_load_status
                 : m_load_log->status(progress::Table_ddl{s, item.first});
 
         ++ddl_to_execute;
@@ -4524,11 +4538,15 @@ void Dump_loader::execute_table_ddl_tasks() {
               worker_tasks.push(std::make_unique<Worker::Table_ddl_task>(
                   s, table, std::move(data), placeholder, status, exists));
             });
+
+        ++scheduled_tasks;
       }
     }
 #if __GNUC__ >= 12 && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
+
+    return scheduled_tasks;
   };
 
   log_debug("Begin loading table DDL");
@@ -4543,16 +4561,26 @@ void Dump_loader::execute_table_ddl_tasks() {
     }
 
     schema_load_status = m_load_log->status(progress::Schema_ddl{schema});
+    schema_tasks = 0;
 
     if (schema_load_status == Load_progress_log::DONE ||
         !m_options.load_ddl()) {
-      // we track views together with the schema DDL, so no need to
-      // load placeholders if schemas was already loaded
+      // we track views together with the schema DDL, so no need to load
+      // placeholders if schema was already loaded
     } else {
-      handle_ddl_files(schema, &view_placeholders, true, schema_load_status);
+      schema_tasks += handle_ddl_files(schema, &view_placeholders, true);
     }
 
-    handle_ddl_files(schema, &tables, false, schema_load_status);
+    schema_tasks += handle_ddl_files(schema, &tables, false);
+
+    if (m_options.load_ddl() && schema_load_status != Load_progress_log::DONE &&
+        0 == schema_tasks) {
+      on_schema_ddl_end(schema);
+    }
+
+    if (schema_tasks) {
+      m_table_ddl_tasks_per_schema.emplace(schema, schema_tasks);
+    }
   }
 
   all_tasks_scheduled = true;
@@ -4656,8 +4684,9 @@ void Dump_loader::execute_table_ddl_tasks() {
     pool->wait_for_process();
   }
 
-  // no need to keep this any more
+  // no need to keep these any more
   m_ddl_in_progress_per_schema.clear();
+  m_table_ddl_tasks_per_schema.clear();
 
   log_debug("End loading table DDL");
 }
@@ -4686,7 +4715,7 @@ void Dump_loader::execute_view_ddl_tasks() {
     m_total_ddl_execution_seconds += stage->duration().seconds();
   });
 
-  Load_progress_log::Status schema_load_status;
+  Load_progress_log::Status view_load_status;
   std::string schema;
   std::list<Dump_reader::Name_and_file> views;
   std::unordered_map<std::string, uint64_t> views_per_schema;
@@ -4707,13 +4736,15 @@ void Dump_loader::execute_view_ddl_tasks() {
       break;
     }
 
-    schema_load_status = m_load_log->status(progress::Schema_ddl{schema});
+    view_load_status = m_load_log->status(progress::View_ddl{schema});
 
-    if (schema_load_status != Load_progress_log::DONE) {
+    if (view_load_status != Load_progress_log::DONE) {
       if (views.empty()) {
-        // there are no views, mark schema as ready
-        on_schema_ddl_end(schema);
+        // there are no views, mark view DDL as done
+        on_view_ddl_end(schema);
       } else {
+        on_view_ddl_start(schema);
+
         ddl_to_execute += views.size();
         views_per_schema[schema] = views.size();
 
@@ -4742,7 +4773,7 @@ void Dump_loader::execute_view_ddl_tasks() {
                 return script;
               },
               [this, schema, view = item.first,
-               resuming = schema_load_status == Load_progress_log::INTERRUPTED,
+               resuming = view_load_status == Load_progress_log::INTERRUPTED,
                pool, &views_per_schema](std::string &&script) {
                 log_info("%s DDL script for view `%s`.`%s`",
                          (resuming ? "Re-executing" : "Executing"),
@@ -4763,7 +4794,7 @@ void Dump_loader::execute_view_ddl_tasks() {
                 ++m_ddl_executed;
 
                 if (0 == --views_per_schema[schema]) {
-                  on_schema_ddl_end(schema);
+                  on_view_ddl_end(schema);
                 }
 
                 if (m_worker_interrupt.test()) {
@@ -4848,9 +4879,6 @@ void Dump_loader::execute_tasks(bool testing) {
         // clause requires that user to exist and to have appropriate privileges
         // for that view
         if (!m_worker_interrupt.test()) apply_grants();
-
-        // exec DDL for all views after all tables and users are created
-        if (!m_worker_interrupt.test()) execute_view_ddl_tasks();
       }
 
       if (!m_worker_interrupt.test() && !testing) setup_temp_tables();
@@ -5057,6 +5085,14 @@ void Dump_loader::on_schema_ddl_end(const std::string &schema) {
   m_dump->set_schema_exists(schema);
 }
 
+void Dump_loader::on_view_ddl_start(const std::string &schema) {
+  m_load_log->log(progress::start::View_ddl{schema});
+}
+
+void Dump_loader::on_view_ddl_end(const std::string &schema) {
+  m_load_log->log(progress::end::View_ddl{schema});
+}
+
 void Dump_loader::on_table_ddl_start(std::size_t worker_id,
                                      const Worker::Table_ddl_task *task) {
   if (!task->placeholder()) {
@@ -5086,6 +5122,16 @@ void Dump_loader::on_table_ddl_end(std::size_t, Worker::Table_ddl_task *task) {
   }
 
   on_ddl_done_for_schema(schema);
+
+  if (const auto it = m_table_ddl_tasks_per_schema.find(schema);
+      m_table_ddl_tasks_per_schema.end() != it) {
+    assert(it->second > 0);
+
+    if (0 == --(it->second)) {
+      m_table_ddl_tasks_per_schema.erase(it);
+      on_schema_ddl_end(schema);
+    }
+  }
 }
 
 void Dump_loader::on_chunk_load_start(std::size_t worker_id,
