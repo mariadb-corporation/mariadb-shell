@@ -876,11 +876,6 @@ void setup_test_environment() {
   // explicitly disable IMDS credentials
   shcore::setenv("AWS_EC2_METADATA_DISABLED", "true");
 
-  // disable Python's cryptography warning regarding OpenSSL < 3.0
-  shcore::setenv(
-      "PYTHONWARNINGS",
-      "ignore::UserWarning:cryptography.hazmat.backends.openssl.backend");
-
 #ifdef __APPLE__
   setup_test_keychain();
 #endif  // __APPLE__
