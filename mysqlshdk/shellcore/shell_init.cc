@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026 Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 
 #include <curl/curl.h>
 #include <mysql.h>
+#include <openssl/opensslv.h>
 #include <stdlib.h>
 #include <stdexcept>
 
@@ -65,6 +66,13 @@ void global_init() {
   srand(time(0));
   curl_global_init(CURL_GLOBAL_ALL);
   init_openssl_modules();
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000L /* 3.0.x */
+  // disable Python's cryptography warning regarding OpenSSL < 3.0
+  shcore::setenv(
+      "PYTHONWARNINGS",
+      "ignore::UserWarning:cryptography.hazmat.backends.openssl.backend");
+#endif
 }
 
 void global_end() {
