@@ -246,12 +246,12 @@ make DESTDIR=%{buildroot} install
 rm -rf %{buildroot}%{_includedir} 2>/dev/null
 rm -f %{buildroot}%{_prefix}/lib*/*.{so*,a} 2>/dev/null
 # License and readme are included using %%doc below
-rm -f %{buildroot}%{_datadir}/mysqlsh/{LICENSE,README}
+rm -f %{buildroot}%{_datadir}/mysqlsh/{LICENSE,README.md}
 
 %files
 # FIXME EL6 doesn't like 'license' macro here, so we use 'doc'
 %doc LICENSE
-%doc README
+%doc README.md
 %{_bindir}/mysqlsh
 %{_bindir}/mysql-secret-store-login-path
 %{_bindir}/mysql-secret-store-secret-service

@@ -313,8 +313,16 @@ OPTIONS
 --outputFormat=<str>
             Value can be either TEXT (default) or JSON.
 
+--showProgress=<bool>
+            Bool value to indicate whether check progress should be emitted
+            during the execution. (JSON output only)
+
 --targetVersion=<str>
             Version to which upgrade will be checked.
+
+--threads=<int>
+            Number of threads to use for checks execution. Default is the
+            smallest of 4 or the number of CPU cores.
 
 //@<OUT> CLI util copy-instance --help
 NAME
@@ -1037,6 +1045,8 @@ OPTIONS
 --threads=<uint>
             unsigned int. Use N threads to dump the data from the instance.
             Default: 4.
+
+
 
 //@<OUT> CLI util dump-instance --help
 NAME

@@ -52,6 +52,7 @@ Upgrade_check_config::Upgrade_check_config(const Upgrade_check_options &options)
       m_list_checks(options.list_checks),
       m_check_timeout(options.check_timeout),
       m_threads(options.threads),
+      m_show_progress(options.show_progress),
       m_db_filters(&options.filters) {
   m_upgrade_info.target_version = options.get_target_version();
   m_upgrade_info.explicit_target_version = options.target_version.has_value();

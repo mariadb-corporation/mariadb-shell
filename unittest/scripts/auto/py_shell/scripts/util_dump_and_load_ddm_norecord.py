@@ -337,7 +337,7 @@ testutil.dbug_set("")
 #@<> WL17279-FR2.2 - unload the component
 disable_dynamic_data_masking(tgt_session)
 
-#@<> WL17279-FR2.2 - load when component is not installed {False} fails due to BUG#39045673
+#@<> WL17279-FR2.2 - load when component is not installed
 EXPECT_LOAD_SUCCESS()
 
 EXPECT_STDOUT_CONTAINS("WARNING: The dump contains data masking policy DDL, but the dynamic data masking component is not installed on the target instance. Data masking policies will not be loaded.")
@@ -384,7 +384,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: Data masking policy `mask_ssn` already exists, ign
 # existing policy was not changed
 EXPECT_IN("hippa", snapshot_masking_policies(tgt_session)["mask_ssn"]["ddl"])
 
-#@<> WL17279-FR2.5 - load when target has a policy with the same name - data only {False} fails due to BUG#39045673
+#@<> WL17279-FR2.5 - load when target has a policy with the same name - data only
 tgt_session.run_sql("DROP MASKING POLICY IF EXISTS unmask_ssn")
 
 EXPECT_LOAD_SUCCESS({"loadDdl": False}, wipe_target=False)
@@ -406,8 +406,7 @@ EXPECT_FALSE(snapshot_masking_policies(tgt_session))
 #@<> WL17279-FR2 - regular load
 EXPECT_LOAD_SUCCESS()
 EXPECT_JSON_EQ(snapshot_masking_policies(src_session), snapshot_masking_policies(tgt_session))
-# masked tables are currently not loaded correctly due to BUG#39045673
-# EXPECT_JSON_EQ(snapshot_schemas(src_session), snapshot_schemas(tgt_session))
+EXPECT_JSON_EQ(snapshot_schemas(src_session), snapshot_schemas(tgt_session))
 
 #@<> WL17279-FR3 - dry run
 prepare_for_copy()
@@ -422,8 +421,7 @@ prepare_for_copy()
 EXPECT_NO_THROWS(lambda: util.copy_instance(__sandbox_uri2, {"allowDataMasking": True, "excludeUsers": ["root"], "showProgress": False}))
 
 EXPECT_JSON_EQ(snapshot_masking_policies(src_session), snapshot_masking_policies(tgt_session))
-# masked tables are currently not loaded correctly due to BUG#39045673
-# EXPECT_JSON_EQ(snapshot_schemas(src_session), snapshot_schemas(tgt_session))
+EXPECT_JSON_EQ(snapshot_schemas(src_session), snapshot_schemas(tgt_session))
 
 #@<> WL17279-FR4 - util.dumpSchemas() - do not allow data masking
 prepare_for_dump()
@@ -481,7 +479,7 @@ The "allowDataMasking" dump option is enabled, ignoring this issue.
 prepare_for_copy()
 EXPECT_THROWS(lambda: util.copy_schemas([target_schema], __sandbox_uri2, {"allowDataMasking": False, "showProgress": False}), "Shell Error (52042): Unable to dump unmasked table data")
 
-#@<> WL17279-FR4 - util.copySchemas() - allow data masking {False} fails due to BUG#39045673
+#@<> WL17279-FR4 - util.copySchemas() - allow data masking
 prepare_for_copy()
 EXPECT_NO_THROWS(lambda: util.copy_schemas([target_schema], __sandbox_uri2, {"allowDataMasking": True, "showProgress": False}))
 
@@ -499,7 +497,7 @@ SRC: The "allowDataMasking" dump option is enabled, ignoring this issue.
 prepare_for_copy()
 EXPECT_THROWS(lambda: util.copy_tables(target_schema, [table_with_allow_user_policy], __sandbox_uri2, {"allowDataMasking": False, "showProgress": False}), "Shell Error (52042): Unable to dump unmasked table data")
 
-#@<> WL17279-FR4 - util.copyTables() - allow data masking {False} fails due to BUG#39045673
+#@<> WL17279-FR4 - util.copyTables() - allow data masking
 prepare_for_copy()
 EXPECT_NO_THROWS(lambda: util.copy_tables(target_schema, [table_with_allow_user_policy], __sandbox_uri2, {"allowDataMasking": True, "showProgress": False}))
 

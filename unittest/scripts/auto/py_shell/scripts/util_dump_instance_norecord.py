@@ -2499,9 +2499,10 @@ constantly_create_tables.stop(drop_schema=False)
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
+EXPECT_STDOUT_CONTAINS(f"NOTE: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK, backup lock is not {reason} and DDL changes cannot be blocked. The DDL consistency will be checked using the binary log.")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were not blocked. The DDL is consistent, the world may resume now.")
 
-#@<> BUG#33697289 fail if binlog and gtid are disabled {not __dbug_off}
+#@<> BUG#33697289 fail if binlog and gtid are disabled while SHOW * STATUS privilege is available {not __dbug_off}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2509,7 +2510,6 @@ EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a 
 EXPECT_STDOUT_CONTAINS(f"""
 WARNING: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
  * Backup lock is not {reason} and DDL changes cannot be blocked.
- * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE.
  * The binary logging is disabled.
 ERROR: The consistency of the dump cannot be guaranteed.
 """)
@@ -2517,8 +2517,69 @@ ERROR: The consistency of the dump cannot be guaranteed.
 # BUG#38452568 - add an explanation on how to achieve a consistent dump
 EXPECT_STDOUT_CONTAINS(f"""
 NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+ * Enable binary logging.
+""")
+
+testutil.dbug_set("")
+
+#@<> BUG#39035448 fail if binlog is disabled and gtid is enabled while SHOW * STATUS privilege is available  {not __dbug_off}
+testutil.dbug_set("+d,dumper_binlog_disabled,dumper_replication_client_unavailable")
+
+EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
+
+EXPECT_STDOUT_CONTAINS(f"""
+WARNING: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
+ * Backup lock is not {reason} and DDL changes cannot be blocked.
+ * The binary logging is disabled.
+ERROR: The consistency of the dump cannot be guaranteed.
+""")
+
+EXPECT_STDOUT_CONTAINS(f"""
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+ * Enable binary logging.
+""")
+
+testutil.dbug_set("")
+
+#@<> BUG#39035448 fail if binlog and gtid are disabled and SHOW * STATUS privilege is missing {not __dbug_off}
+testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled,dumper_replication_client_unavailable")
+
+EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
+
+EXPECT_STDOUT_CONTAINS(f"""
+WARNING: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
+ * Backup lock is not {reason} and DDL changes cannot be blocked.
+ * The binary logging is disabled.
+ * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE.
+ * The current user does not have required privileges to execute SHOW {get_binary_log_status_keyword()} STATUS.
+ERROR: The consistency of the dump cannot be guaranteed.
+""")
+
+EXPECT_STDOUT_CONTAINS(f"""
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
  * Enable binary logging and set the gtid_mode system variable to ON or ON_PERMISSIVE.
- * Enable binary logging and use the same account.
+ * Enable binary logging and use an account which has the REPLICATION CLIENT or SUPER privileges.
+""")
+
+testutil.dbug_set("")
+
+#@<> BUG#39035448 fail if binlog is enabled, gtid is disabled and SHOW * STATUS privilege is missing {not __dbug_off}
+testutil.dbug_set("+d,dumper_gtid_disabled,dumper_replication_client_unavailable")
+
+EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
+
+EXPECT_STDOUT_CONTAINS(f"""
+WARNING: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
+ * Backup lock is not {reason} and DDL changes cannot be blocked.
+ * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE.
+ * The current user does not have required privileges to execute SHOW {get_binary_log_status_keyword()} STATUS.
+ERROR: The consistency of the dump cannot be guaranteed.
+""")
+
+EXPECT_STDOUT_CONTAINS(f"""
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+ * Set the gtid_mode system variable to ON or ON_PERMISSIVE.
+ * Use an account which has the REPLICATION CLIENT or SUPER privileges.
 """)
 
 testutil.dbug_set("")
@@ -2581,15 +2642,11 @@ session.run_sql("DROP SCHEMA IF EXISTS !;", [ tested_schema ])
 EXPECT_FAIL("ValueError", "Directory handling for oci+os protocol is not supported.", 'oci+os://sakila')
 
 #@<> BUG#32490714 - running a dump should not change binlog position
-if __version_num < 80200:
-    [binlog_file, binlog_position, _, _, _] = session.run_sql('SHOW MASTER STATUS;').fetch_one()
-else:
-    [binlog_file, binlog_position, _, _, _] = session.run_sql('SHOW BINARY LOG STATUS;').fetch_one()
+[binlog_file, binlog_position, _, _, _] = session.run_sql(f'SHOW {get_binary_log_status_keyword()} STATUS;').fetch_one()
+
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
-if __version_num < 80200:
-    [new_binlog_file, new_binlog_position, _, _, _] = session.run_sql('SHOW MASTER STATUS;').fetch_one()
-else:
-    [new_binlog_file, new_binlog_position, _, _, _] = session.run_sql('SHOW BINARY LOG STATUS;').fetch_one()
+
+[new_binlog_file, new_binlog_position, _, _, _] = session.run_sql(f'SHOW {get_binary_log_status_keyword()} STATUS;').fetch_one()
 
 EXPECT_EQ(binlog_file, new_binlog_file, "binlog file should not change")
 EXPECT_EQ(binlog_position, new_binlog_position, "binlog position should not change")

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -94,6 +94,9 @@ struct Server_info {
   Server_variables sysvars;
   Replication_topology topology;
 };
+
+std::string gtid_executed(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session);
 
 Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
               const Server_version &version, bool quiet = false);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2026, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -257,6 +257,47 @@ class Shell_test_output_handler {
     SCOPED_TRACE("...in stderr empty check\n");       \
     output_handler.validate_stderr_content("", true); \
   } while (0)
+
+// Use like EXPECT_THAT(full, ContainsAll(want));
+template <typename Subset>
+class ContainsAllMatcher {
+ public:
+  explicit ContainsAllMatcher(const Subset &subset) : subset_(subset) {}
+
+  template <typename Container>
+  bool MatchAndExplain(const Container &superset,
+                       ::testing::MatchResultListener *listener) const {
+    for (const auto &elem : subset_) {
+      // Prefer the C++20 `contains` if available.
+      bool found = false;
+      if constexpr (requires { superset.contains(elem); }) {
+        found = superset.contains(elem);
+      } else {
+        found =
+            std::find(superset.begin(), superset.end(), elem) != superset.end();
+      }
+      if (!found) {
+        *listener << "missing element \"" << elem << "\"";
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void DescribeTo(::std::ostream *os) const { *os << "contains all of "; }
+  void DescribeNegationTo(::std::ostream *os) const {
+    *os << "does NOT contain all of ";
+  }
+
+ private:
+  const Subset &subset_;
+};
+
+template <typename Subset>
+inline ::testing::PolymorphicMatcher<ContainsAllMatcher<Subset>> ContainsAll(
+    const Subset &subset) {
+  return ::testing::MakePolymorphicMatcher(ContainsAllMatcher<Subset>(subset));
+}
 
 /**
  * \ingroup UTFramework

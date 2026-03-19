@@ -70,6 +70,7 @@ const shcore::Option_pack_def<Upgrade_check_options>
           .optional("list", &Upgrade_check_options::list_checks)
           .optional("checkTimeout", &Upgrade_check_options::check_timeout)
           .optional("threads", &Upgrade_check_options::threads)
+          .optional("showProgress", &Upgrade_check_options::show_progress)
           .include(&Upgrade_check_options::filters,
                    &mysqlshdk::db::Filtering_options::schemas)
           .include(&Upgrade_check_options::filters,

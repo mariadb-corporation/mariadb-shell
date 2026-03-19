@@ -578,6 +578,9 @@ class Dump_loader {
                          const Worker::Schema_ddl_task *task);
   void on_schema_ddl_end(const std::string &schema);
 
+  void on_view_ddl_start(const std::string &schema);
+  void on_view_ddl_end(const std::string &schema);
+
   void on_table_ddl_start(std::size_t worker_id,
                           const Worker::Table_ddl_task *task);
   void on_table_ddl_end(std::size_t worker_id, Worker::Table_ddl_task *task);
@@ -871,6 +874,7 @@ class Dump_loader {
   bool m_all_secondary_load_tasks_scheduled = false;
 
   std::unordered_map<std::string, uint64_t> m_ddl_in_progress_per_schema;
+  std::unordered_map<std::string, uint64_t> m_table_ddl_tasks_per_schema;
 
   // progress thread needs to be placed after any of the fields it uses, in
   // order to ensure that it is destroyed (and stopped) before any of those

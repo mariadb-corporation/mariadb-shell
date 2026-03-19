@@ -2755,38 +2755,44 @@ void Dumper::lock_instance() {
         throw;
       }
     }
-  } else if (!m_ftwrl_used && !m_gtid_enabled) {
-    const auto execute_show_status =
+  } else if (!m_ftwrl_used) {
+    auto can_execute_show_status =
         2 != m_user_privileges->validate({"REPLICATION CLIENT", "SUPER"})
                  .missing_privileges()
                  .size();
+    DBUG_EXECUTE_IF("dumper_replication_client_unavailable",
+                    { can_execute_show_status = false; });
+    const auto can_check_dump_consistency =
+        can_execute_show_status || m_gtid_enabled;
+    const auto console = current_console();
 
-    if (!m_binlog_enabled || !execute_show_status) {
-      const auto console = current_console();
-
+    if (m_binlog_enabled && can_check_dump_consistency) {
+      console->print_note(shcore::str_format(
+          "The current user does not have required privileges to execute FLUSH "
+          "TABLES WITH READ LOCK, backup lock is not %s and DDL changes cannot "
+          "be blocked. The DDL consistency will be checked using the binary "
+          "log.",
+          why_backup_lock_is_missing().c_str()));
+    } else {
       const auto fatal_error = shcore::str_caseeq(name(), "dumpInstance");
 
       auto msg = shcore::str_format(
           R"(The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
- * Backup lock is not %s and DDL changes cannot be blocked.
- * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE.
- * The binary logging is %s)",
-          why_backup_lock_is_missing().c_str(),
-          m_binlog_enabled ? "enabled" : "disabled");
+ * Backup lock is not %s and DDL changes cannot be blocked.)",
+          why_backup_lock_is_missing().c_str());
 
-      if (execute_show_status) {
-        // nothing more to add, finish the sentence
-        msg += '.';
-      } else {
-        if (m_binlog_enabled) {
-          msg += ", but";
-        } else {
-          msg += " and";
-        }
+      if (!m_binlog_enabled) {
+        msg += shcore::str_format("\n * The binary logging is disabled.");
+      }
+
+      if (!can_check_dump_consistency) {
+        msg +=
+            "\n * The gtid_mode system variable is set to OFF or "
+            "OFF_PERMISSIVE.";
 
         msg += shcore::str_format(
-            "the current user does not have required privileges to execute "
-            "SHOW %s STATUS.",
+            "\n * The current user does not have required privileges to "
+            "execute SHOW %s STATUS.",
             mysqlshdk::mysql::get_binary_logs_keyword(m_server_version.number,
                                                       true));
       }
@@ -2807,34 +2813,26 @@ void Dumper::lock_instance() {
         msg += "\n * Use an account which has the BACKUP_ADMIN privilege.";
       }
 
-      msg += "\n * ";
-
-      if (m_binlog_enabled) {
-        msg += "Set the gtid_mode system variable to ON or ON_PERMISSIVE.";
-      } else {
-        msg +=
-            "Enable binary logging and set the gtid_mode system variable to ON "
-            "or ON_PERMISSIVE.";
-      }
-
-      msg += "\n * ";
-
-      if (m_binlog_enabled) {
-        if (execute_show_status) {
-          msg += "Use the same account.";
+      if (!m_binlog_enabled) {
+        if (can_check_dump_consistency) {
+          msg += "\n * Enable binary logging.";
         } else {
           msg +=
-              "Use an account which has the REPLICATION CLIENT or SUPER "
-              "privileges.";
-        }
-      } else {
-        if (execute_show_status) {
-          msg += "Enable binary logging and use the same account.";
-        } else {
+              "\n * Enable binary logging and set the gtid_mode system "
+              "variable to ON or ON_PERMISSIVE.";
+
           msg +=
-              "Enable binary logging and use an account which has the "
+              "\n * Enable binary logging and use an account which has the "
               "REPLICATION CLIENT or SUPER privileges.";
         }
+      } else {
+        assert(!can_check_dump_consistency);
+
+        msg += "\n * Set the gtid_mode system variable to ON or ON_PERMISSIVE.";
+
+        msg +=
+            "\n * Use an account which has the REPLICATION CLIENT or SUPER "
+            "privileges.";
       }
 
       console->print_note(msg);
@@ -5916,18 +5914,7 @@ void Dumper::handle_mismatched_view_references(issues::Status_set status,
 
 std::string Dumper::gtid_executed(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
-  try {
-    const auto result = query(session, "SELECT @@GLOBAL.GTID_EXECUTED");
-
-    if (const auto row = result->fetch_one()) {
-      return row->get_string(0);
-    }
-  } catch (const mysqlshdk::db::Error &e) {
-    log_error("Failed to fetch value of @@GLOBAL.GTID_EXECUTED: %s.",
-              e.format().c_str());
-  }
-
-  return {};
+  return common::gtid_executed(session);
 }
 
 common::Binlog Dumper::binlog(

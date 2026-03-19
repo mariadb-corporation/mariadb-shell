@@ -108,7 +108,7 @@ std::vector<Upgrade_issue> Sql_upgrade_check::run(
         "This check requires server to be at minimum at %s version",
         m_minimal_version));
 
-  auto workers = context.make_worker_pool(true);
+  auto workers = context.make_worker_pool({}, true);
 
   for (const auto &stm : m_set_up) context.session()->execute(stm);
 
