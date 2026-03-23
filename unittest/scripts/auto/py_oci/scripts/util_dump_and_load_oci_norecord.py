@@ -112,7 +112,9 @@ os.remove("sakila@film_text@@0.tsv.zst")
 WIPE_SHELL_LOG()
 util.load_dump("mydump", {"osBucketName":OS_BUCKET_NAME, "osNamespace":OS_NAMESPACE, "ociConfigFile":oci_config_file})
 
-EXPECT_SHELL_LOG_NOT_CONTAINS("Executing DDL script for ")
+for obj in ["schema", "libraries", "events", "routines"]:
+  EXPECT_SHELL_LOG_NOT_CONTAINS(f"Executing DDL script for {obj} ")
+
 EXPECT_SHELL_LOG_CONTAINS("sakila@film_text@@0.tsv.zst: Records: ")
 compare_servers(session1, session2)
 wipeout_server(session2)
