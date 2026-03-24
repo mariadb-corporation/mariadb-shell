@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +43,8 @@
 
 namespace shcore {
 namespace {
+constexpr size_t k_max_json_nesting_depth = 512;
+
 std::string hexify(const std::string &data) {
   if (data.size() == 0) {
     return std::string{};
@@ -157,7 +159,7 @@ std::string Json_reader::next() {
   std::deque<char> context;
   m_source->skip_whitespaces();
 
-  Json_document_parser parser(m_source, m_options);
+  Json_document_parser parser(m_source, m_options, 0, m_source->peek() == '[');
   return parser.parse();
 }
 
@@ -166,7 +168,7 @@ void Json_reader::parse_bom() {
   header.reserve(4);
   for (int i = 0; i < 4; i++) {
     const auto c = m_source->peek();
-    if (c == '{' || ::isspace(c) || m_source->eof()) {
+    if (c == '{' || c == '[' || ::isspace(c) || m_source->eof()) {
       break;
     } else {
       header += m_source->get();
@@ -891,18 +893,30 @@ void Json_document_parser::get_value(std::string *target) {
       break;
 
     case '{': {
+      const auto next_depth = m_depth + 1;
+      if (next_depth > k_max_json_nesting_depth) {
+        throw invalid_json("JSON document nesting exceeds maximum depth of " +
+                               std::to_string(k_max_json_nesting_depth),
+                           m_source->offset());
+      }
       std::string context;
       if (!m_as_array) {
         size_t size = m_last_attribute_end - m_last_attribute_start;
         context = m_document->substr(m_last_attribute_start, size);
       }
-      Json_document_parser parser(m_source, m_options, m_depth + 1, false,
+      Json_document_parser parser(m_source, m_options, next_depth, false,
                                   context);
       parser.parse(m_document);
       break;
     }
     case '[': {
-      Json_document_parser parser(m_source, m_options, m_depth + 1, true);
+      const auto next_depth = m_depth + 1;
+      if (next_depth > k_max_json_nesting_depth) {
+        throw invalid_json("JSON document nesting exceeds maximum depth of " +
+                               std::to_string(k_max_json_nesting_depth),
+                           m_source->offset());
+      }
+      Json_document_parser parser(m_source, m_options, next_depth, true);
       parser.parse(m_document);
       break;
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +50,10 @@ except:
     from urlparse import parse_qsl, urlparse
 
 
+def base64url_encode(data):
+    return base64.urlsafe_b64encode(data).rstrip(b'=')
+
+
 class TestRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -59,6 +63,7 @@ class TestRequestHandler(BaseHTTPRequestHandler):
         self._handlers = {
             r'^/timeout/([0-9]*\.?[0-9]*)$': self.handle_timeout,
             r'^/redirect/([1-9][0-9]*)$': self.handle_redirect,
+            r'^/redirect_to\?.+$': self.handle_redirect_to,
             r'^/server_error/([1-9][0-9]*)/?([^/]*)/?(.*)$': self.handle_server_error,
             r'^/basic/([^/]+)/(.+)$': self.handle_basic,
             r'^/headers?.+$': self.handle_headers,
@@ -106,6 +111,14 @@ class TestRequestHandler(BaseHTTPRequestHandler):
         self.send_header(
             'Location', '/%s' % self.command.lower()
             if n == 1 else '/redirect/%d' % (n - 1))
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+        return True
+
+    def handle_redirect_to(self, args):
+        location = dict(parse_qsl(urlparse(self.path).query)).get('url', '/get')
+        self.send_response(302)
+        self.send_header('Location', location)
         self.send_header('Content-Length', '0')
         self.end_headers()
         return True

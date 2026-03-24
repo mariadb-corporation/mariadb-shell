@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -57,6 +57,19 @@ static constexpr auto k_content_type = "Content-Type";
 static constexpr auto k_application_json = "application/json";
 
 constexpr const char *get_user_agent() { return "mysqlsh/" MYSH_VERSION; }
+constexpr const char *k_allowed_rest_protocols = "http,https";
+
+void configure_allowed_protocols(CURL *handle) {
+#if LIBCURL_VERSION_NUM >= 0x075500
+  curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, k_allowed_rest_protocols);
+  curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR,
+                   k_allowed_rest_protocols);
+#else
+  constexpr long k_allowed_protocols = CURLPROTO_HTTP | CURLPROTO_HTTPS;
+  curl_easy_setopt(handle, CURLOPT_PROTOCOLS, k_allowed_protocols);
+  curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS, k_allowed_protocols);
+#endif
+}
 
 size_t request_callback(char *, size_t, size_t, void *) {
   // some older versions of CURL may call this callback when performing
@@ -203,6 +216,8 @@ class Rest_service::Impl {
     curl_easy_setopt(m_handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
     // most modern browsers allow for more or less 20 redirections
     curl_easy_setopt(m_handle.get(), CURLOPT_MAXREDIRS, 20L);
+    // This client is only meant to speak HTTP(S), including redirect targets.
+    configure_allowed_protocols(m_handle.get());
     // introduce ourselves to the server
     curl_easy_setopt(m_handle.get(), CURLOPT_USERAGENT, get_user_agent());
 
