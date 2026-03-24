@@ -1,4 +1,4 @@
-//@ {DEF(MYSQLD_SECONDARY_SERVER_A) && VER(>=8.0.27) && testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, "between", "[8.0.27,9.0.0)")}
+//@ {DEF(MYSQLD_SECONDARY_SERVER_A) && VER(>=8.0.27) && testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, "between", "[8.0.27,9.0.0)") && !__dbug_off}
 
 //@<> INCLUDE clusterset_utils.inc
 
