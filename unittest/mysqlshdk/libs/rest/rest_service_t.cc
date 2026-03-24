@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -405,6 +405,22 @@ TEST_F(Rest_service_test, redirect) {
   // 20 redirections is OK
   auto request = Request("/redirect/20");
   EXPECT_EQ(Response::Status_code::OK, m_service.get(&request).status);
+}
+
+TEST_F(Rest_service_test, redirect_to_non_http_protocol_is_rejected) {
+  FAIL_IF_NO_SERVER
+
+  EXPECT_THROW(
+      {
+        try {
+          auto request = Request("/redirect_to?url=file:///etc/passwd");
+          m_service.get(&request);
+        } catch (const Connection_error &ex) {
+          EXPECT_THAT(ex.what(), ::testing::HasSubstr("file"));
+          throw;
+        }
+      },
+      Connection_error);
 }
 
 TEST_F(Rest_service_test, user_agent) {
