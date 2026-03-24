@@ -505,18 +505,17 @@ shell.options.useWizards = false;
 // This bug caused a failure when a clone donor was selected that was processing transactions.
 // A new sync was added to ensure the donor was in sync with the primary before starting clone
 // so to test the fix we need to simulate an wait for that sync to happen.
-
-//@<> BUG#30628746: preparation {VER(>=8.0.17)}
+//@<> BUG#30628746: preparation {VER(>=8.0.17) && !__dbug_off}
 rs.removeInstance(__sandbox3);
 var session2 = mysql.getSession(__sandbox_uri2);
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
-//@ BUG#30628746: wait for timeout {VER(>=8.0.17)}
+//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && !__dbug_off}
 shell.options.useWizards = true;
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox2});
 testutil.dbugSet("");
 
-//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17)}
+//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && !__dbug_off}
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox1});
 shell.options.useWizards = false;
 
@@ -578,13 +577,15 @@ shell.options["dba.restartWaitTimeout"] = 60;
 
 // if DBUG is OFF and we don't have traces, this test will fail
 // if we're running in replay mode, we assume traces were recorded in Jenkins, where DBUG is ON
-
-if (!__recording && !__replaying && __dbug_off) {
-    testutil.skip("Running in direct mode and DBUG is OFF");
-}
-
 if (__recording && __dbug_off) {
+  if (!__replaying) {
+    testutil.skip("Running in direct mode and DBUG is OFF");
+  } else {
     testutil.skip("Recording and DBUG is OFF");
+  }
+  testutil.destroySandbox(__mysql_sandbox_port1);
+  testutil.destroySandbox(__mysql_sandbox_port2);
+  testutil.destroySandbox(__mysql_sandbox_port3);
 }
 
 shell.connect(__sandbox_uri1);
