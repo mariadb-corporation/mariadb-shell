@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +84,8 @@ std::map<std::string, std::string> load_info(const std::string &path);
 
 class sequence_error : public db::Error {
  public:
-  explicit sequence_error(const std::string &what);
+  explicit sequence_error(const std::string &what,
+                          bool print_stacktrace = true);
 };
 
 class Row_hook : public db::IRow {
@@ -158,6 +159,9 @@ class Trace {
   explicit Trace(const std::string &path);
   ~Trace();
 
+  void remember_first_mismatch(const std::string &msg,
+                               const std::string &summary);
+
   std::map<std::string, std::string> get_metadata();
 
   mysqlshdk::db::Connection_options expected_connect();
@@ -176,6 +180,10 @@ class Trace {
   size_t trace_index() const { return static_cast<size_t>(_index); }
 
  private:
+  [[noreturn]] void fail_sequence(const std::string &msg,
+                                  bool invalidate = true);
+  std::string root_cause_message(const std::string &msg) const;
+
   void next(rapidjson::Value *entry);
   void unserialize_result_rows(
       rapidjson::Value *rlist, std::shared_ptr<Result_mysql> result,
@@ -189,6 +197,8 @@ class Trace {
   rapidjson::SizeType _index;
   std::string _trace_path;
   bool _got_error = false;
+  std::string _first_error;
+  std::string _first_error_summary;
 
   std::string _last_request;
 };

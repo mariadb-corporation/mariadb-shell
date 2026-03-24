@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -77,12 +77,17 @@ class Replayer_impl {
 
     if (data.has_port() && expected.has_port() &&
         data.get_port() != expected.get_port()) {
+      const auto msg =
+          "Replay divergence while connecting.\n"
+          "Expected trace connection: " +
+          expected.as_uri() + "\n" + "Actual connection: " + data.as_uri() +
+          "\n" +
+          "Hint: this is often caused by DBUG-only paths, version-gated "
+          "chunks, prompt differences, or changed connection ordering.";
+      _trace->remember_first_mismatch(msg, "connection divergence");
       std::cerr << "Connect to: " << data.as_uri() << "\n";
       std::cerr << "trace is for: " << expected.as_uri() << "\n";
-      throw sequence_error(
-          ("Connection happening at unexpected order expecting " +
-           expected.as_uri() + " but got " + data.as_uri())
-              .c_str());
+      throw sequence_error(msg);
     }
 
     _trace->expected_connect_status(&_info);
@@ -128,16 +133,20 @@ class Replayer_impl {
         shcore::str_ibeginswith(sql, "show grants ")) {
       // skip checking if statement is the same
     } else if (filter_query(expected) != filter_query(sql)) {
+      const auto msg = shcore::str_format(
+          "Replay divergence while executing query.\n"
+          "Actual query: %s\n"
+          "Expected from replay session %s: %s\n"
+          "Hint: this is often caused by DBUG-only paths, version-gated "
+          "chunks, prompt differences, or changed connection ordering.",
+          sql.c_str(), _trace->trace_path().c_str(), expected.c_str());
+      _trace->remember_first_mismatch(msg, "query divergence");
       std::cerr
           << shcore::str_format(
                  "Executing query:\n\t%s\nbut replayed session %s has:\n\t%s",
                  sql.c_str(), _trace->trace_path().c_str(), expected.c_str())
           << "\n";
-      throw sequence_error(
-          shcore::str_format(
-              "Executing query: %s\nbut replayed session %s has: %s",
-              sql.c_str(), _trace->trace_path().c_str(), expected.c_str())
-              .c_str());
+      throw sequence_error(msg);
     }
 
     return sql;
