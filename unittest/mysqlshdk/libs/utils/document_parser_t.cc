@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -53,6 +53,34 @@ size_t process_input(const std::string &content) {
     }
   }
   return docs_number;
+}
+
+std::string nested_object_document(size_t child_levels) {
+  std::string content{"{"};
+  content.reserve(6 * (child_levels + 1) + 8);
+
+  for (size_t i = 0; i < child_levels; ++i) {
+    content += "\"a\":{";
+  }
+
+  content += "\"a\":1";
+  content.append(child_levels + 1, '}');
+
+  return content;
+}
+
+std::string nested_array_document(size_t child_levels) {
+  std::string content{"["};
+  content.reserve(child_levels * 2 + 8);
+
+  for (size_t i = 0; i < child_levels; ++i) {
+    content += '[';
+  }
+
+  content += '1';
+  content.append(child_levels + 1, ']');
+
+  return content;
 }
 
 TEST(Document_parser, plain) {
@@ -168,5 +196,21 @@ TEST(Document_parser, bom_utf32be) {
     EXPECT_THROW_LIKE(process_input(content), std::runtime_error,
                       "UTF-32BE encoded document is not supported.");
   }
+}
+
+TEST(Document_parser, nested_object_depth_limit) {
+  EXPECT_EQ(1, process_input(nested_object_document(512)));
+
+  EXPECT_THROW_LIKE(process_input(nested_object_document(513)),
+                    shcore::invalid_json,
+                    "JSON document nesting exceeds maximum depth of 512");
+}
+
+TEST(Document_parser, nested_array_depth_limit) {
+  EXPECT_EQ(1, process_input(nested_array_document(512)));
+
+  EXPECT_THROW_LIKE(process_input(nested_array_document(513)),
+                    shcore::invalid_json,
+                    "JSON document nesting exceeds maximum depth of 512");
 }
 }  // namespace shcore
