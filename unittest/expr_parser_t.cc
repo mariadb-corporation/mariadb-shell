@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -79,6 +79,38 @@ void assert_member_type(Mysqlx::Expr::Expr *expr,
     Mysqlx::Expr::DocumentPathItem_Type type = item.type();
     EXPECT_EQ(type, type_expected);
   }
+}
+
+std::string nested_parenthesized_expr(size_t levels) {
+  std::string input;
+  input.reserve(2 * levels + 1);
+  input.append(levels, '(');
+  input += '1';
+  input.append(levels, ')');
+  return input;
+}
+
+std::string nested_array_expr(size_t levels) {
+  std::string input;
+  input.reserve(2 * levels + 1);
+  input.append(levels, '[');
+  input += '1';
+  input.append(levels, ']');
+  return input;
+}
+
+std::string nested_function_call_expr(size_t levels) {
+  std::string input;
+  input.reserve(3 * levels + 1);
+
+  for (size_t i = 0; i < levels; ++i) {
+    input += "f(";
+  }
+
+  input += '1';
+  input.append(levels, ')');
+
+  return input;
 }
 
 TEST(Expr_parser_tests, x_test) {
@@ -602,6 +634,30 @@ TEST(Expr_parser_tests, too_many_parts) {
                    "Too many parts to identifier, at position 13,\n"
                    "in: one.two.three.four\n"
                    "                 ^    ");
+}
+
+TEST(Expr_parser_tests, nested_parenthesized_depth_limit) {
+  EXPECT_NO_THROW(Expr_parser(nested_parenthesized_expr(512)).expr());
+
+  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_parenthesized_expr(513)).expr(),
+                            Parser_error,
+                            "Expression nesting exceeds maximum depth of 512");
+}
+
+TEST(Expr_parser_tests, nested_array_depth_limit) {
+  EXPECT_NO_THROW(Expr_parser(nested_array_expr(512), true).expr());
+
+  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_array_expr(513), true).expr(),
+                            Parser_error,
+                            "Expression nesting exceeds maximum depth of 512");
+}
+
+TEST(Expr_parser_tests, nested_function_call_depth_limit) {
+  EXPECT_NO_THROW(Expr_parser(nested_function_call_expr(512)).expr());
+
+  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_function_call_expr(513)).expr(),
+                            Parser_error,
+                            "Expression nesting exceeds maximum depth of 512");
 }
 
 }  // namespace expr_parser_tests

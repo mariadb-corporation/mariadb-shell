@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -10,6 +10,7 @@
  * as designated in a particular file or component or in included license
  * documentation.  The authors of MySQL hereby grant you an additional
  * permission to link the program and your derivative works with the
+ *
  * separately licensed software that they have either included with
  * the program or referenced in the documentation.
  *
@@ -43,6 +44,14 @@
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlx {
+namespace {
+// NOTE: for reference, this limit is fixed in python: 200, in JavaScript it
+// would be based on memory limits but i.e. V8 has a default recursion limit of
+// 10k, and in MySQL itself the max allowed depth of nested subqueries is 61,
+// so 512 should be more than enough for any reasonable expression and still
+// protect against stack overflow in case of malicious input
+constexpr size_t k_max_expression_nesting_depth = 512;
+}  // namespace
 
 struct Expr_parser::operator_list Expr_parser::_ops;
 
@@ -121,6 +130,16 @@ Expr_parser::Expr_parser(const std::string &expr_str, bool document_mode,
   _tokenizer.get_tokens();
 }
 
+void Expr_parser::enter_nested_expression(const Token &token) {
+  if (_nesting_depth >= k_max_expression_nesting_depth) {
+    throw Parser_error("Expression nesting exceeds maximum depth of " +
+                           std::to_string(k_max_expression_nesting_depth),
+                       token, _tokenizer.get_input());
+  }
+
+  ++_nesting_depth;
+}
+
 /*
  * paren_expr_list ::= LPAREN expr ( COMMA expr )* RPAREN
  */
@@ -128,6 +147,9 @@ void Expr_parser::paren_expr_list(
     ::google::protobuf::RepeatedPtrField<::Mysqlx::Expr::Expr> *expr_list) {
   // Parse a paren-bounded expression list for function arguments or IN list and
   // return a list of Expr objects
+  const Token &tok = _tokenizer.peek_token();
+  enter_nested_expression(tok);
+  auto restore_depth = shcore::on_leave_scope([this]() { --_nesting_depth; });
   _tokenizer.consume_token(Token::Type::LPAREN);
   if (!_tokenizer.cur_token_type_is(Token::Type::RPAREN)) {
     expr_list->AddAllocated(my_expr().release());
@@ -404,6 +426,9 @@ std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::atomic_expr() {
       _tokenizer.unget_token();
       return placeholder();
     case Token::Type::LPAREN: {
+      enter_nested_expression(t);
+      auto restore_depth =
+          shcore::on_leave_scope([this]() { --_nesting_depth; });
       std::unique_ptr<Mysqlx::Expr::Expr> e(my_expr());
       _tokenizer.consume_token(Token::Type::RPAREN);
       return e;
@@ -425,9 +450,13 @@ std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::atomic_expr() {
       }
     // fallthrough
     case Token::Type::NOT:
-    case Token::Type::NEG:
+    case Token::Type::NEG: {
+      enter_nested_expression(t);
+      auto restore_depth =
+          shcore::on_leave_scope([this]() { --_nesting_depth; });
       return std::unique_ptr<Mysqlx::Expr::Expr>(
           build_unary_op(t.get_text(), atomic_expr()));
+    }
     case Token::Type::LSTRING:
       return std::unique_ptr<Mysqlx::Expr::Expr>(
           build_literal_expr(build_string_scalar(t.get_text())));
@@ -450,6 +479,9 @@ std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::atomic_expr() {
       return std::unique_ptr<Mysqlx::Expr::Expr>(
           build_literal_expr(build_bool_scalar(type == Token::Type::TRUE_)));
     case Token::Type::INTERVAL: {
+      enter_nested_expression(t);
+      auto interval_restore_depth =
+          shcore::on_leave_scope([this]() { --_nesting_depth; });
       auto e = std::make_unique<Mysqlx::Expr::Expr>();
       e->set_type(Mysqlx::Expr::Expr::OPERATOR);
 
@@ -535,6 +567,9 @@ std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::atomic_expr() {
  */
 std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::array_() {
   auto result = std::make_unique<Mysqlx::Expr::Expr>();
+  const Token &tok = _tokenizer.peek_token();
+  enter_nested_expression(tok);
+  auto restore_depth = shcore::on_leave_scope([this]() { --_nesting_depth; });
 
   result->set_type(Mysqlx::Expr::Expr_Type_ARRAY);
   Mysqlx::Expr::Array *a = result->mutable_array();
@@ -575,6 +610,9 @@ void Expr_parser::json_key_value(Mysqlx::Expr::Object *obj) {
  */
 std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::json_doc() {
   auto result = std::make_unique<Mysqlx::Expr::Expr>();
+  const Token &tok = _tokenizer.peek_token();
+  enter_nested_expression(tok);
+  auto restore_depth = shcore::on_leave_scope([this]() { --_nesting_depth; });
   Mysqlx::Expr::Object *obj = result->mutable_object();
   result->set_type(Mysqlx::Expr::Expr_Type_OBJECT);
   _tokenizer.consume_token(Token::Type::LCURLY);
@@ -633,6 +671,9 @@ std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::placeholder() {
  * cast ::= CAST LPAREN expr AS cast_data_type RPAREN
  */
 std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::cast() {
+  const Token &tok = _tokenizer.peek_token();
+  enter_nested_expression(tok);
+  auto restore_depth = shcore::on_leave_scope([this]() { --_nesting_depth; });
   _tokenizer.consume_token(Token::Type::CAST);
   _tokenizer.consume_token(Token::Type::LPAREN);
   std::unique_ptr<Mysqlx::Expr::Expr> e(my_expr());
@@ -804,6 +845,9 @@ std::string Expr_parser::charset_def() {
  */
 std::unique_ptr<Mysqlx::Expr::Expr> Expr_parser::binary() {
   // binary
+  const Token &tok = _tokenizer.peek_token();
+  enter_nested_expression(tok);
+  auto restore_depth = shcore::on_leave_scope([this]() { --_nesting_depth; });
   _tokenizer.consume_token(Token::Type::BINARY);
 
   auto e = std::make_unique<Mysqlx::Expr::Expr>();
