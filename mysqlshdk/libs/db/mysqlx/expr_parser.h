@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -70,6 +70,7 @@ class Expr_parser {
   std::unique_ptr<Mysqlx::Expr::Expr> and_expr();
   std::unique_ptr<Mysqlx::Expr::Expr> or_expr();
   std::unique_ptr<Mysqlx::Expr::Expr> expr();
+  void enter_nested_expression(const Token &token);
 
   std::vector<Token>::const_iterator begin() const {
     return _tokenizer.begin();
@@ -136,6 +137,7 @@ class Expr_parser {
   Tokenizer _tokenizer;
   bool _document_mode;
   bool _allow_alias;
+  size_t _nesting_depth = 0;
 };
 
 class Expr_unparser {
