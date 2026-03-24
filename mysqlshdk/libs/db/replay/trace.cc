@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,11 +46,43 @@ namespace mysqlshdk {
 namespace db {
 namespace replay {
 
-sequence_error::sequence_error(const std::string &what)
+void Trace::remember_first_mismatch(const std::string &msg,
+                                    const std::string &summary) {
+  if (_first_error.empty()) {
+    _first_error = msg;
+    _first_error_summary = summary;
+  }
+}
+
+std::string Trace::root_cause_message(const std::string &msg) const {
+  if (_first_error.empty() || _first_error == msg) return msg;
+
+  std::string summary = _first_error_summary;
+  if (summary.empty()) {
+    const auto newline = _first_error.find('\n');
+    summary = newline == std::string::npos ? _first_error
+                                           : _first_error.substr(0, newline);
+  }
+
+  return msg + " (caused by earlier replay mismatch: " + summary + ")";
+}
+
+[[noreturn]] void Trace::fail_sequence(const std::string &msg,
+                                       bool invalidate) {
+  const bool first_occurrence = _first_error.empty();
+  if (first_occurrence) {
+    _first_error = msg;
+    if (_first_error_summary.empty()) _first_error_summary = msg;
+  }
+  if (invalidate) _got_error = true;
+  throw sequence_error(root_cause_message(msg), first_occurrence);
+}
+
+sequence_error::sequence_error(const std::string &what, bool print_stacktrace)
     : db::Error(what.c_str(), 9999) {
   std::cerr << "SESSION REPLAY ERROR: " << what << "\n";
 
-  mysqlshdk::utils::print_stacktrace();
+  if (print_stacktrace) mysqlshdk::utils::print_stacktrace();
 
   if (getenv("TEST_DEBUG")) assert(0);
 }
@@ -444,7 +476,7 @@ Trace::Trace(const std::string &path) : _trace_path(path) {
 Trace::~Trace() = default;
 
 void Trace::next(rapidjson::Value *entry) {
-  if (_index >= _doc.Size() - 1) throw sequence_error("Session trace is over");
+  if (_index >= _doc.Size() - 1) fail_sequence("Session trace is over", false);
 
   *entry = _doc[_index++];
 
@@ -458,28 +490,21 @@ std::map<std::string, std::string> Trace::get_metadata() { return {}; }
 void Trace::expect_request(rapidjson::Value *doc, const char *subtype,
                            const char *detail) {
   if (_got_error)
-    throw sequence_error("Session " + _trace_path + " is invalidated");
+    fail_sequence("Session " + _trace_path + " is invalidated", false);
 
   if (strcmp((*doc)["type"].GetString(), "request") != 0) {
-    _got_error = true;
-    throw sequence_error(("Attempted a request in replayed session " +
-                          _trace_path +
-                          ", but got something else: " + to_json(doc))
-                             .c_str());
+    fail_sequence("Attempted a request in replayed session " + _trace_path +
+                  ", but got something else: " + to_json(doc));
   }
   if (strcmp((*doc)["subtype"].GetString(), subtype) != 0) {
-    _got_error = true;
     if (detail)
-      throw sequence_error(
-          shcore::str_format(
-              "Attempting '%s' (%s) but replayed session %s has %s", subtype,
-              detail, _trace_path.c_str(), to_json(doc).c_str())
-              .c_str());
+      fail_sequence(shcore::str_format(
+          "Attempting '%s' (%s) but replayed session %s has %s", subtype,
+          detail, _trace_path.c_str(), to_json(doc).c_str()));
     else
-      throw sequence_error(
-          shcore::str_format("Attempting '%s' but replayed session %s has %s",
-                             subtype, _trace_path.c_str(), to_json(doc).c_str())
-              .c_str());
+      fail_sequence(shcore::str_format(
+          "Attempting '%s' but replayed session %s has %s", subtype,
+          _trace_path.c_str(), to_json(doc).c_str()));
   }
 
   _last_request = to_json(doc);
@@ -531,7 +556,7 @@ void Trace::expected_status() {
   next(&obj);
 
   if (strcmp(obj["type"].GetString(), "response") != 0)
-    throw sequence_error(shcore::str_format(
+    fail_sequence(shcore::str_format(
         "Expected OK response in session trace, but got something else: %s",
         to_json(&obj).c_str()));
 
@@ -548,7 +573,7 @@ void Trace::expected_connect_status(
   next(&obj);
 
   if (strcmp(obj["type"].GetString(), "response") != 0)
-    throw sequence_error(shcore::str_format(
+    fail_sequence(shcore::str_format(
         "Expected CONNECT_OK in session trace, but got something else: %s",
         to_json(&obj).c_str()));
 
@@ -672,7 +697,7 @@ std::shared_ptr<Result_mysql> Trace::expected_result(
   next(&obj);
 
   if (strcmp(obj["type"].GetString(), "response") != 0) {
-    throw sequence_error(shcore::str_format(
+    fail_sequence(shcore::str_format(
         "Expected RESULT for %s in session trace, but got something else: %s",
         _last_request.c_str(), to_json(&obj).c_str()));
   }
@@ -712,7 +737,7 @@ std::shared_ptr<Result_mysqlx> Trace::expected_result_x(
   next(&obj);
 
   if (strcmp(obj["type"].GetString(), "response") != 0)
-    throw sequence_error(shcore::str_format(
+    fail_sequence(shcore::str_format(
         "Expected RESULT in session trace, but got something else: %s",
         to_json(&obj).c_str()));
 
