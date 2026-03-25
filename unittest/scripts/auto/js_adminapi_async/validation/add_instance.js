@@ -308,10 +308,10 @@
 |<<<hostname_ip>>>:<<<__mysql_sandbox_port1>>>|
 |blargh|
 
-//@# timeout -1 {__dbug}
+//@# timeout -1 {!__dbug_off && !__replaying && !__recording}
 ||
 
-//@# timeout 2 and rollback (should fail) {__dbug}
+//@# timeout 2 and rollback (should fail) {!__dbug_off && !__replaying && !__recording}
 |Reverting topology changes...|
 ||Timeout reached waiting for transactions from <<<__endpoint_uri1>>> to be applied on instance '<<<__endpoint_uri2>>>' (MYSQLSH 51157)
 |{|
@@ -332,10 +332,10 @@
 |    }|
 |}|
 
-//@# timeout 10 {__dbug}
+//@# timeout 10 {!__dbug_off && !__replaying && !__recording}
 ||
 
-//@# timeout 0 {__dbug}
+//@# timeout 0 {!__dbug_off && !__replaying && !__recording}
 ||
 
 //@# rebuild test setup
@@ -421,12 +421,12 @@
 |NOTE: <<<hostname_ip>>>:<<<__mysql_sandbox_port3>>> is being cloned from <<<hostname_ip>>>:<<<__mysql_sandbox_port2>>>|
 |The instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port3>>>' was added to the replicaset and is replicating from <<<hostname_ip>>>:<<<__mysql_sandbox_port1>>>.|
 
-//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && (!__dbug_off || __replaying)}
+//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
 |* Waiting for the donor to synchronize with PRIMARY...|
 |ERROR: The donor instance failed to synchronize its transaction set with the PRIMARY.|
 ||Timeout reached waiting for all received transactions to be applied on instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port2>>>' (debug) (MYSQLSH 51157)
 
-//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && (!__dbug_off || __replaying)}
+//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
 |The instance '<<<hostname_ip>>>:<<<__mysql_sandbox_port3>>>' was added to the replicaset and is replicating from <<<hostname_ip>>>:<<<__mysql_sandbox_port1>>>.|
 
 //@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17)}
