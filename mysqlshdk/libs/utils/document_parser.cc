@@ -43,7 +43,7 @@
 
 namespace shcore {
 namespace {
-constexpr size_t k_max_json_nesting_depth = 512;
+constexpr size_t k_max_json_nesting_depth = 220;
 
 std::string hexify(const std::string &data) {
   if (data.size() == 0) {
