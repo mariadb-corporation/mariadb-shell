@@ -57,10 +57,10 @@ static constexpr auto k_content_type = "Content-Type";
 static constexpr auto k_application_json = "application/json";
 
 constexpr const char *get_user_agent() { return "mysqlsh/" MYSH_VERSION; }
-constexpr const char *k_allowed_rest_protocols = "http,https";
 
 void configure_allowed_protocols(CURL *handle) {
 #if LIBCURL_VERSION_NUM >= 0x075500
+  constexpr const char *k_allowed_rest_protocols = "http,https";
   curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, k_allowed_rest_protocols);
   curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR,
                    k_allowed_rest_protocols);
