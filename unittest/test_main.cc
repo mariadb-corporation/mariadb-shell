@@ -916,16 +916,14 @@ int main(int argc, char **argv) {
       exit(1);
     }
   }
+#endif
 
-#else
-  auto locale = std::setlocale(LC_ALL, "en_US.UTF-8");
-  if (!locale) {
+  if (const auto locale = std::setlocale(LC_ALL, "en_US.UTF-8"); !locale) {
     // logger is not yet initialized here
     std::cerr << "Failed to set LC_ALL locale to en_US.UTF-8: "
               << strerror(errno) << '\n';
   }
   shcore::setenv("LC_ALL", "en_US.UTF-8");
-#endif
 
 #if defined(WIN32)
   g_test_color_output = _isatty(_fileno(stdout));

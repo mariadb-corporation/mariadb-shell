@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -429,16 +429,16 @@ int main(int argc, char **argv) {
       exit(1);
     }
   }
-#else
-  auto locale = std::setlocale(LC_ALL, "en_US.UTF-8");
-  // logger is not initialized yet here
-  if (!locale)
+#endif  // _WIN32
+
+  if (const auto locale = std::setlocale(LC_ALL, "en_US.UTF-8"); !locale) {
+    // logger is not initialized yet here
     fprintf(stderr, "Cannot set LC_ALL to locale en_US.UTF-8: %s\n",
             strerror(errno));
+  }
   // set the environment variable as well, this ensures that locale is not
   // reset using setlocale(LC_XXX, "") call by any of our dependencies
   shcore::setenv("LC_ALL", "en_US.UTF-8");
-#endif  // _WIN32
 
   mysqlsh::global_init();
 

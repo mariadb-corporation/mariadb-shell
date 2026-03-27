@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -3420,7 +3420,7 @@ TEST_F(Interactive_shell_test, windows_python_locale) {
   execute("import locale");
   ASSERT_TRUE(output_handler.std_err.empty());
   wipe_all();
-  execute("locale.getlocale() == (None, None)");
+  execute("locale.getlocale() == ('en_US', 'UTF-8')");
   EXPECT_EQ("true\n", output_handler.std_out);
   EXPECT_TRUE(output_handler.std_err.empty());
 }
