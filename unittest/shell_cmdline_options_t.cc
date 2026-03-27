@@ -1246,6 +1246,17 @@ TEST_F(Shell_cmdline_options, conflicts_output) {
                            "json, ndjson, json/raw, json/array, json/pretty\n");
 }
 
+TEST_F(Shell_cmdline_options, conflicts_passwords_from_stdin_and_no_wizard) {
+  char *argv[] = {const_cast<char *>("ut"),
+                  const_cast<char *>("--passwords-from-stdin"),
+                  const_cast<char *>("--nw"), nullptr};
+
+  test_conflicting_options(
+      "--passwords-from-stdin --nw", 3, argv,
+      "Conflicting options: --passwords-from-stdin cannot be used together "
+      "with --no-wizard.\n");
+}
+
 TEST_F(Shell_cmdline_options, override_port) {
   char uri[] = {"--uri=mysqlx://root:password@localhost:3307"};
   char *argv0[] = {const_cast<char *>("ut"), const_cast<char *>("--port=3306"),

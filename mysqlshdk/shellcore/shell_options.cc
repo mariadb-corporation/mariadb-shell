@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1288,6 +1288,12 @@ void Shell_options::check_password_conflicts() {
           "password in the SSH-URI.";
       throw std::runtime_error(error);
     }
+  }
+
+  if (storage.passwords_from_stdin && !storage.wizards) {
+    throw std::runtime_error(
+        "Conflicting options: --passwords-from-stdin cannot be used together "
+        "with --no-wizard.");
   }
 }
 
