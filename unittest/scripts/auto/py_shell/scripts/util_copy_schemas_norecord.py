@@ -717,7 +717,7 @@ for param in [
         ]:
     EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Invalid options: {param}", __sandbox_uri2, { param: "fails" })
 
-#@<> WL15887 - setup {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887 - setup {__dbug and VER(>=8.2.0)}
 schema_name = "wl15887"
 test_table_primary = "ttp"
 test_schema_event = "tse"
@@ -739,7 +739,7 @@ def setup_db(account):
 setup_db(test_user_account)
 testutil.dbug_set("+d,copy_utils_force_mds")
 
-#@<> WL15887-TSFR_3_1_1 - restricted accounts {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_3_1_1 - restricted accounts {__dbug and VER(>=8.2.0)}
 for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "ocidbm", "ocirpl"]:
     account = f"`{account}`@`localhost`"
     setup_db(account)
@@ -754,7 +754,7 @@ for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "o
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_3_2_1 - valid account {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_3_2_1 - valid account {__dbug and VER(>=8.2.0)}
 EXPECT_SUCCESS(__sandbox_uri2, { "dryRun": True, "showProgress": False, "ddlOnly": True }, schemas = [ schema_name ])
 
 # no warnings about DEFINER=
@@ -772,11 +772,11 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_definers_security_clause(schema_name, test_view
 # WL15887-TSFR_3_3_1 - no account is not included in the dump
 EXPECT_STDOUT_CONTAINS(definer_clause_uses_unknown_account_once().warning(True))
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0)}
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "strip_definers" ], "dryRun": True, "showProgress": False, "ddlOnly": True }, schemas = [ schema_name ])
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887 - cleanup {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887 - cleanup {__dbug and VER(>=8.2.0)}
 src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 testutil.dbug_set("")
 
@@ -935,7 +935,7 @@ src_session.run_sql("SET @@GLOBAL.time_zone = SYSTEM")
 #@<> WL15947 - cleanup
 src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#38107377 - copy works if target server has an unsupported version and 'ignoreVersion' is enabled {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38107377 - copy works if target server has an unsupported version and 'ignoreVersion' is enabled {__dbug and VER(>=8.0.0)}
 # setup
 testutil.dbug_set("+d,copy_utils_force_mds,copy_utils_unsupported_target_version")
 
@@ -945,10 +945,10 @@ target_version = ".".join(target_version)
 
 msg = f"Target MySQL version '{target_version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell"
 
-#@<> BUG#38107377 - copy without 'ignoreVersion' fails {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38107377 - copy without 'ignoreVersion' fails {__dbug and VER(>=8.0.0)}
 EXPECT_FAIL("ValueError", msg, __sandbox_uri2)
 
-#@<> BUG#38107377 - copy with 'ignoreVersion' succeeds {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38107377 - copy with 'ignoreVersion' succeeds {__dbug and VER(>=8.0.0)}
 EXPECT_SUCCESS(__sandbox_uri2, { "ignoreVersion": True })
 EXPECT_STDOUT_CONTAINS(f"WARNING: {msg}")
 
@@ -957,7 +957,7 @@ if __version_num == __mysh_version_num:
 elif __version_num > __mysh_version_num:
     EXPECT_STDOUT_CONTAINS(f"Source MySQL Server {__version} is newer than the MySQL Shell, skipping upgrade compatibility checks")
 
-#@<> BUG#38107377 - cleanup {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38107377 - cleanup {__dbug and VER(>=8.0.0)}
 testutil.dbug_set("")
 
 #@<> WL17279-FR1.2 - 'allowDataMasking' option - type

@@ -699,7 +699,7 @@ else {
     cluster.removeInstance(__sandbox_uri2);
 }
 
-//@<> Check if fails when GR local address isn't properly read {!__dbug_off}
+//@<> Check if fails when GR local address isn't properly read {__dbug}
 if (testutil.versionCheck(__version, "<", "8.0.21")) {
     testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
     testutil.deploySandbox(__mysql_sandbox_port2, "root", {report_host: hostname});
@@ -721,7 +721,7 @@ testutil.dbugSet("");
 EXPECT_NO_THROWS(function(){ cluster.addInstance(__sandbox_uri2); });
 EXPECT_OUTPUT_CONTAINS("The instance '" + hostname + ":" + __mysql_sandbox_port2 + "' was successfully added to the cluster.");
 
-//@<> Failure in clone should revert changes and stop GR {VER(>=8.0.27) && !__dbug_off}
+//@<> Failure in clone should revert changes and stop GR {VER(>=8.0.27) && __dbug}
 EXPECT_NO_THROWS(function(){ cluster.removeInstance(__sandbox_uri2); });
 
 testutil.dbugSet("+d,dba_clone_trigger_recovery_exception");
@@ -735,7 +735,7 @@ EXPECT_FALSE("instanceErrors" in status["defaultReplicaSet"]["topology"][`${host
 
 testutil.dbugSet("");
 
-//@<> Check if proper clone validations regarding compatibility are done {!__dbug_off}
+//@<> Check if proper clone validations regarding compatibility are done {__dbug}
 shell.connect(__sandbox_uri2);
 reset_instance(session);
 

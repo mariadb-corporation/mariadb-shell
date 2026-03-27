@@ -1793,14 +1793,13 @@ void Shell_script_tester::set_defaults() {
 #endif
 
 #ifdef NDEBUG
-  // TODO(.) - remove __dbug_off and replace all uses with __dbug
-  def_var("__dbug_off", "1");
-  // dbug tests should only run in direct mode, so that traces aren't affected
-  // by different code branches being taken
-  def_var("__dbug", !_replaying && !_recording ? "1==1" : "0==1");
-#else
-  def_var("__dbug_off", "0");
   def_var("__dbug", "0==1");
+  def_var("__dbug_direct", "0==1");
+#else
+  def_var("__dbug", "1==1");
+  // dbug tests which should only run in direct mode (or _norecord tests), so
+  // that traces aren't affected by different code branches being taken
+  def_var("__dbug_direct", !_replaying && !_recording ? "1==1" : "0==1");
 #endif
   // Variables for OCI Tests
   def_string_var_from_env("OCI_CONFIG_HOME");

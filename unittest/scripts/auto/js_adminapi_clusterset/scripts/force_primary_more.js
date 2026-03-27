@@ -195,7 +195,7 @@ session3.close();
 session4.close();
 session5.close();
 
-//@<> the GTID sets must be applied in all instances {!__dbug_off}
+//@<> the GTID sets must be applied in all instances {__dbug}
 
 shell.connect(__sandbox_uri4);
 session.runSql("stop replica for channel 'clusterset_replication'");

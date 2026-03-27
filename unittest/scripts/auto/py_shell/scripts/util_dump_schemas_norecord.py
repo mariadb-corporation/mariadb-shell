@@ -1755,10 +1755,10 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Backup lock is not {reason} and DDL changes we
 #@<> BUG#33697289 terminate the process immediately
 constantly_create_tables.stop()
 
-#@<> BUG#33697289 create a process which will add tables in the background (2) {not __dbug_off}
+#@<> BUG#33697289 create a process which will add tables in the background (2) {__dbug}
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#33697289 fail if gtid is disabled and DDL changes {not __dbug_off}
+#@<> BUG#33697289 fail if gtid is disabled and DDL changes {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False, "threads": 1 })
@@ -1769,10 +1769,10 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Backup lock is not {reason} and DDL changes we
 
 testutil.dbug_set("")
 
-#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {not __dbug_off}
+#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {__dbug}
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 warning if binlog and gtid are disabled {not __dbug_off}
+#@<> BUG#33697289 warning if binlog and gtid are disabled {__dbug}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False })

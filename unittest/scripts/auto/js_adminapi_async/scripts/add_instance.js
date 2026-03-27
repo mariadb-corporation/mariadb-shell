@@ -325,7 +325,7 @@ rs.addInstance(__sandbox2, {label:"blargh"});
 shell.dumpRows(session.runSql("SELECT instance_name FROM mysql_innodb_cluster_metadata.instances"), "tabbed");
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout -1 {!__dbug_off && !__replaying && !__recording}
+//@ timeout -1 {__dbug_direct}
 testutil.dbugSet("+d,dba_add_instance_master_delay"); // add a master_delay of 3s
 session.runSql("create schema foobar1");
 
@@ -333,7 +333,7 @@ rs.addInstance(__sandbox2, {timeout:-1}); // should finish without waiting
 EXPECT_EQ(null, session2.runSql("SHOW SCHEMAS LIKE 'foobar1'").fetchOne());
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout 2 and rollback (should fail) {!__dbug_off && !__replaying && !__recording}
+//@ timeout 2 and rollback (should fail) {__dbug_direct}
 var snap1 = repl_snapshot(session);
 var snap2 = repl_snapshot(session2);
 
@@ -348,14 +348,14 @@ rs.status();
 EXPECT_JSON_EQ(snap1, repl_snapshot(session));
 EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
 
-//@ timeout 10 {!__dbug_off && !__replaying && !__recording}
+//@ timeout 10 {__dbug_direct}
 session.runSql("create schema foobar3");
 
 rs.addInstance(__sandbox2, {timeout:10}); // should wait for 3s
 EXPECT_EQ(['foobar3'], session2.runSql("SHOW SCHEMAS LIKE 'foobar3'").fetchOne());
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout 0 {!__dbug_off && !__replaying && !__recording}
+//@ timeout 0 {__dbug_direct}
 session.runSql("create schema foobar4");
 
 rs.addInstance(__sandbox2, {timeout:0}); // should wait for 3s
@@ -505,17 +505,17 @@ shell.options.useWizards = false;
 // This bug caused a failure when a clone donor was selected that was processing transactions.
 // A new sync was added to ensure the donor was in sync with the primary before starting clone
 // so to test the fix we need to simulate an wait for that sync to happen.
-//@<> BUG#30628746: preparation {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@<> BUG#30628746: preparation {VER(>=8.0.17) && __dbug_direct}
 rs.removeInstance(__sandbox3);
 var session2 = mysql.getSession(__sandbox_uri2);
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
-//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && __dbug_direct}
 shell.options.useWizards = true;
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox2});
 testutil.dbugSet("");
 
-//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && __dbug_direct}
 rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox1});
 shell.options.useWizards = false;
 
@@ -598,7 +598,7 @@ testutil.waitMemberTransactions(__mysql_sandbox_port2, __mysql_sandbox_port1);
 EXPECT_NO_THROWS(function() { rs.addInstance(__sandbox_uri3, {recoveryMethod:"clone"}); });
 EXPECT_STDOUT_NOT_CONTAINS(`Unable to find instance '${hostname_ip}:${__mysql_sandbox_port2}' in the topology.`)
 
-//@<> BUG#33237648: check if output is all-JSON {VER(>= 8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@<> BUG#33237648: check if output is all-JSON {VER(>= 8.0.17) && __dbug_direct}
 shell.connect(__sandbox_uri1);
 
 reset_instance(session);
@@ -608,8 +608,7 @@ var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
 
 WIPE_OUTPUT();
 
-// if DBUG is OFF, use some other option, as using --debug will result in non-JSON message
-EXPECT_EQ(0, testutil.callMysqlsh([__dbug_off ? "--log-level=8" : "--debug=+d,clone_rig_poll_interval", "--json=raw", "--js", "-e", `shell.connect('${__sandbox_uri1}'); dba.getReplicaSet().addInstance('${__sandbox2}', {'recoveryMethod': 'clone'})`], "", [ "MYSQLSH_RECORDER_QUIET=1" ]))
+EXPECT_EQ(0, testutil.callMysqlsh(["--debug=+d,clone_rig_poll_interval", "--json=raw", "--js", "-e", `shell.connect('${__sandbox_uri1}'); dba.getReplicaSet().addInstance('${__sandbox2}', {'recoveryMethod': 'clone'})`], "", [ "MYSQLSH_RECORDER_QUIET=1" ]))
 
 EXPECT_STDOUT_MATCHES(new RegExp(`(${__endpoint_uri2} is shutting down...)|(Connection to server lost, restart probably in progress...)`))
 EXPECT_STDOUT_CONTAINS("* Waiting for server restart...")

@@ -1202,7 +1202,7 @@ loader_test(setup_lakehouse_test(Load_test_case(
     output="4 InnoDB-based vector store tables were converted to Lakehouse, 4 were loaded into HeatWave cluster.",
 )))
 
-#@<> WL16802-TSFR_2_3_5_1 - SECONDARY_LOAD failure during the load, then resuming the load {run_lakehouse_tests and not __dbug_off}
+#@<> WL16802-TSFR_2_3_5_1 - SECONDARY_LOAD failure during the load, then resuming the load {run_lakehouse_tests and __dbug}
 testutil.set_trap("mysql", [f"sql regex ALTER TABLE `{test_schema}`\\.`genai_2` SECONDARY_LOAD.*"], { "code": 6068, "msg": "Injected error.", "state": "HY000" })
 
 tc = setup_lakehouse_test(Load_test_case(

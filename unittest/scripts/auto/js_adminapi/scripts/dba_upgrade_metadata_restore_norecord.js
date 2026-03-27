@@ -1,4 +1,4 @@
-//@{!__dbug_off}
+//@{__dbug}
 
 //@<> INCLUDE metadata_schema_utils.inc
 

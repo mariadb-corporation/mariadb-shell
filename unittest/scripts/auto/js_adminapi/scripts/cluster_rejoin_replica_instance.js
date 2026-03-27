@@ -393,7 +393,7 @@ EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__endpoint4, {recoveryMetho
 
 CHECK_READ_REPLICA(__sandbox_uri4, cluster, [__endpoint1], __endpoint1);
 
-//@<> Test a failure due to version check of the donor {!__dbug_off}
+//@<> Test a failure due to version check of the donor {__dbug}
 session4 = mysql.getSession(__sandbox_uri4);
 session4.runSql("STOP replica");
 testutil.dbugSet("+d,dba_clone_version_check_fail");
@@ -408,7 +408,7 @@ testutil.dbugSet("");
 EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__endpoint4); });
 CHECK_READ_REPLICA(__sandbox_uri4, cluster, [__endpoint1], __endpoint1);
 
-//@<> Test a failure due to version check of the donor (automatic) {!__dbug_off}
+//@<> Test a failure due to version check of the donor (automatic) {__dbug}
 session4 = mysql.getSession(__sandbox_uri4);
 session4.runSql("STOP replica");
 session4.runSql("RESET " + get_reset_binary_logs_keyword());
@@ -435,7 +435,7 @@ session1.runSql("create schema if not exists testing");
 session1.runSql("create table if not exists testing.data (k int primary key auto_increment, v longtext)");
 session1.runSql("insert into testing.data values (default, repeat('#', 1000))");
 
-//@<> Attempt to rejoin a read-replica but with limited timeout {!__dbug_off}
+//@<> Attempt to rejoin a read-replica but with limited timeout {__dbug}
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
 EXPECT_THROWS_TYPE(function() { cluster.rejoinInstance(__sandbox_uri4, {timeout: 1, recoveryMethod: "incremental"}); }, `Timeout reached waiting for all received transactions to be applied on instance '${hostname}:${__mysql_sandbox_port4}' (debug)`, "MYSQLSH");
@@ -449,7 +449,7 @@ testutil.dbugSet("");
 // Confirm the revert was done
 CHECK_READ_REPLICA(__sandbox_uri4, cluster, [], undefined, true, true);
 
-//@<> Attempt to rejoin a read-replica but with unlimited timeout {!__dbug_off}
+//@<> Attempt to rejoin a read-replica but with unlimited timeout {__dbug}
 EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__sandbox_uri4, {timeout: 0, recoveryMethod: "incremental"}); });
 
 CHECK_READ_REPLICA(__sandbox_uri4, cluster, [__endpoint1], __endpoint1);

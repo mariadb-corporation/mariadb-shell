@@ -311,7 +311,7 @@ EXPECT_NO_THROWS(function() {cluster.rescan(); });
 testutil.restartSandbox(__mysql_sandbox_port2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
 
-//@<> A failure in addInstance() while using MYSQL comm stack must not leave inconsistencies related to the recovery accounts and/or metadata {VER(>=8.0.27) && !__dbug_off}
+//@<> A failure in addInstance() while using MYSQL comm stack must not leave inconsistencies related to the recovery accounts and/or metadata {VER(>=8.0.27) && __dbug}
 shutdown_cluster(cluster);
 EXPECT_NO_THROWS(function() { cluster = dba.rebootClusterFromCompleteOutage("test", {switchCommunicationStack: "MYSQL"}) });
 

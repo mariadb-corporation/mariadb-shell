@@ -1,4 +1,4 @@
-//@{!__dbug_off && VER(>=8.0.11)}
+//@{__dbug && VER(>=8.0.11)}
 
 //@<> INCLUDE metadata_schema_utils.inc
 

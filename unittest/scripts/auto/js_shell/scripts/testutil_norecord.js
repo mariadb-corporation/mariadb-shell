@@ -34,7 +34,7 @@ testutil.importData(__sandbox_uri1, "badfile.sql");
 //@<> importData badpass
 EXPECT_THROWS(function(){testutil.importData("root:bla@localhost:"+__mysql_sandbox_port1, "dump.sql");}, "mysql exited with code");
 
-//@<> setTrap {!__dbug_off && !__recording && !__replaying}
+//@<> setTrap {__dbug}
 
 EXPECT_NO_THROWS(function(){session.runSql("select 1").fetchOne()});
 
@@ -73,7 +73,7 @@ session.runSql("select 1");
 session.runSql("select 2");
 EXPECT_THROWS(function(){session.runSql("select * from mysql.host")}, "too many selects");
 
-//@<> throw error after 3 stmts (in mysqlshrec) {!__dbug_off && !__recording && !__replaying}
+//@<> throw error after 3 stmts (in mysqlshrec) {__dbug}
 testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug=[{'on':'mysql','if':['++match_counter == 3'],'code':1234,'msg':'injected error'}]", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mysqlshrec");
 EXPECT_STDOUT_CONTAINS("ERROR: 1234 at line 1: injected error");
 EXPECT_STDOUT_CONTAINS_MULTILINE(`5
@@ -81,7 +81,7 @@ EXPECT_STDOUT_CONTAINS_MULTILINE(`5
 7
 7`);
 
-//@<> crash after 3 stmts (in mysqlshrec) {!__dbug_off && !__recording && !__replaying}
+//@<> crash after 3 stmts (in mysqlshrec) {__dbug}
 r = testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug={'on':'mysql','if':['++match_counter == 3'],'abort':1}", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mysqlshrec");
 EXPECT_NE(0, r);
 EXPECT_STDOUT_CONTAINS_MULTILINE(`5
@@ -89,7 +89,7 @@ EXPECT_STDOUT_CONTAINS_MULTILINE(`5
 7
 7`);
 
-//@<> throw error when a specific stmt is executed twice {!__dbug_off && !__recording && !__replaying}
+//@<> throw error when a specific stmt is executed twice {__dbug}
 testutil.clearTraps();
 testutil.setTrap("mysql", ["sql == select 42", "++match_counter > 1"], {code:3333, msg:"trap hit"});
 session.runSql("select 42");

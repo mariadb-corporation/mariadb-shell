@@ -561,7 +561,7 @@ shell.options.useWizards=1;
 testutil.expectPrompt("Please select a recovery method [C]lone/[A]bort (default Clone): ", "a");
 EXPECT_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4); }, "Cancelled");
 
-//@<> Attempt to add an instance as read-replica when binlogs were purged in the cluster and recoveryMethod: auto but there are no compatible clone donors - interactive {!__dbug_off}
+//@<> Attempt to add an instance as read-replica when binlogs were purged in the cluster and recoveryMethod: auto but there are no compatible clone donors - interactive {__dbug}
 testutil.dbugSet("+d,dba_clone_version_check_fail");
 
 EXPECT_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4); }, "Instance provisioning required");
@@ -570,7 +570,7 @@ EXPECT_OUTPUT_CONTAINS(`WARNING: Clone-based recovery not available: Instance '$
 
 testutil.assertNoPrompts(); // No prompts
 
-//@<> Attempt to add an instance as read-replica when binlogs were purged in the cluster and recoveryMethod: auto but there are no compatible clone donors - non-interactive {!__dbug_off}
+//@<> Attempt to add an instance as read-replica when binlogs were purged in the cluster and recoveryMethod: auto but there are no compatible clone donors - non-interactive {__dbug}
 shell.options.useWizards=0;
 
 EXPECT_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4); }, "Instance provisioning required");
@@ -581,17 +581,17 @@ testutil.dbugSet("");
 
 // --- cloneDonor tests
 
-//@<> addReplicaInstance: recoveryMethod: clone, automatic donor not valid {!__dbug_off}
+//@<> addReplicaInstance: recoveryMethod: clone, automatic donor not valid {__dbug}
 testutil.dbugSet("+d,dba_clone_version_check_fail");
 
 EXPECT_THROWS_TYPE(function() { cluster.addReplicaInstance(__sandbox_uri4, {recoveryMethod: "clone"}); }, "Instance '" + __endpoint1 + "' cannot be a donor because its version (8.0.17) isn't compatible with the recipient's (" + __version + ").", "MYSQLSH");
 
-//@<> addReplicaInstance: recoveryMethod: clone, cloneDonor not valid {!__dbug_off}
+//@<> addReplicaInstance: recoveryMethod: clone, cloneDonor not valid {__dbug}
 EXPECT_THROWS_TYPE(function() { cluster.addReplicaInstance(__sandbox_uri4, {recoveryMethod: "clone", cloneDonor: __endpoint2}); }, "Instance '" + __endpoint2 + "' cannot be a donor because its version (8.0.17) isn't compatible with the recipient's (" + __version + ").", "MYSQLSH");
 
 testutil.dbugSet("");
 
-//@<> addReplicaInstance: recoveryMethod: clone, cloneDonor valid {!__dbug_off}
+//@<> addReplicaInstance: recoveryMethod: clone, cloneDonor valid {__dbug}
 EXPECT_NO_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4, {recoveryMethod: "clone", cloneDonor: __endpoint3}); });
 
 EXPECT_OUTPUT_CONTAINS(`NOTE: ${hostname}:${__mysql_sandbox_port4} is being cloned from ${hostname}:${__mysql_sandbox_port3}`)
@@ -607,7 +607,7 @@ reset_instance(session4);
 
 // FR1.3.6: `timeout`: maximum number of seconds to wait for the instance to sync up with the PRIMARY after it's provisioned and the replication channel is established. If reached, the operation is rolled-back. Default is unlimited (zero).
 
-//@<> Attempt to add a read-replica but with limited timeout {!__dbug_off}
+//@<> Attempt to add a read-replica but with limited timeout {__dbug}
 
 // Re-create cluster
 scene.destroy();
@@ -630,7 +630,7 @@ EXPECT_OUTPUT_CONTAINS("Changes successfully reverted.");
 
 testutil.dbugSet("");
 
-//@<> Attempt to add a read-replica but with unlimited timeout {!__dbug_off}
+//@<> Attempt to add a read-replica but with unlimited timeout {__dbug}
 EXPECT_NO_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4, {timeout: 0, recoveryMethod: "incremental"}); });
 
 CHECK_READ_REPLICA(__sandbox_uri4, cluster, "primary", __endpoint1);

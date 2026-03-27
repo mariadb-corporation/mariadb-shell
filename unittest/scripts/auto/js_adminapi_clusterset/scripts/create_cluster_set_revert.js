@@ -1,4 +1,4 @@
-//@{!__dbug_off && VER(>=8.0.27)}
+//@{__dbug && VER(>=8.0.27)}
 
 function retry_with_success() {
   // Retry the operation, should succeed now

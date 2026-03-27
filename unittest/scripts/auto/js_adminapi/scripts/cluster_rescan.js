@@ -1129,7 +1129,7 @@ Result of the rescanning operation for the 'cluster' cluster:
 }
 `);
 
-//@<> Cluster.rescan() - view_change_uuid handling in mixed version scenario {VER(>=8.0.27) && !__dbug_off}
+//@<> Cluster.rescan() - view_change_uuid handling in mixed version scenario {VER(>=8.0.27) && __dbug}
 
 // When the Primary Cluster is running a version >= 8.3.0, view_change_uuid is not required so it won't be set. If any Replica Cluster is running a version < 8.3.0 then view_change_uuid is required for itself and will be set.
 // When a user runs .rescan() on that Cluster the command must do the view_change_uuid validations on the Cluster itself and not on the Primary Cluster.

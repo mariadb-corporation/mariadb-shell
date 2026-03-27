@@ -110,7 +110,7 @@ EXPECT_SHELL_LOG_CONTAINS("BULK LOAD: unsupported FS")
 
 load_src = par
 
-#@<> WL15432-TSFR_1_2 - unsupported version {bulk_load_supported and not __dbug_off}
+#@<> WL15432-TSFR_1_2 - unsupported version {bulk_load_supported and __dbug}
 testutil.dbug_set("+d,dump_loader_bulk_unsupported_version")
 
 TEST_LOAD(expect_bulk_loaded = 0, options = { "ignoreVersion": True })
@@ -236,7 +236,7 @@ prepare_test_table("(f1 INT PRIMARY KEY)")
 TEST_DUMP_AND_LOAD(expect_bulk_loaded = 1)
 TEST_LOAD(expect_bulk_loaded = 0, cleanup = False)
 
-#@<> WL15432-TSFR_1_2_7 - resume interrupted load operation {bulk_load_supported and not __dbug_off}
+#@<> WL15432-TSFR_1_2_7 - resume interrupted load operation {bulk_load_supported and __dbug}
 prepare_test_table("(f1 INT PRIMARY KEY, f2 CHAR(200))", nrows = 10000)
 DUMP()
 
@@ -273,7 +273,7 @@ DUMP()
 
 TEST_LOAD(expect_bulk_loaded = 1)
 
-#@<> WL15432-TSFR_1_3_2 - resume interrupted load operation - partitioned table {bulk_load_supported and not __dbug_off}
+#@<> WL15432-TSFR_1_3_2 - resume interrupted load operation - partitioned table {bulk_load_supported and __dbug}
 prepare_test_table("""(f1 INT PRIMARY KEY, f2 CHAR(200))
 PARTITION BY RANGE (f1) (
     PARTITION p0 VALUES LESS THAN (250),
@@ -388,7 +388,7 @@ prepare_test_table("(first_name VARCHAR(10), last_name VARCHAR(10), full_name VA
 TEST_DUMP_AND_LOAD(expect_bulk_loaded = 0)
 EXPECT_STDOUT_NOT_CONTAINS("error 1261: Row 1 doesn't contain data for all columns")
 
-#@<> BUG#36499646 - failed BULK LOAD was not printed to the console {bulk_load_supported and not __dbug_off}
+#@<> BUG#36499646 - failed BULK LOAD was not printed to the console {bulk_load_supported and __dbug}
 prepare_test_table("(f1 INT PRIMARY KEY)")
 DUMP()
 
