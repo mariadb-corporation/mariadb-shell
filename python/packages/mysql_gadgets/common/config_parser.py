@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -240,6 +240,18 @@ class MySQLOptionsParser(object):  # pylint: disable=R0901
             # separator and ignore space at the start of an option.
             self._optcre = MYSQL_OPTCRE_NV
 
+            comment_prefixes = kargs.get('comment_prefixes')
+            if comment_prefixes is None:
+                comment_prefixes = ('#', ';')
+            inline_comment_prefixes = kargs.get(
+                'inline_comment_prefixes')
+            if inline_comment_prefixes is None:
+                inline_comment_prefixes = ()
+
+            self.__comment_prefixes = tuple(comment_prefixes)
+            self.__inline_comment_prefixes = tuple(
+                inline_comment_prefixes)
+
         if PY2:
             # Overwrite _read() for Python 2 to remove multiline support.
             def _read(self, fp, fpname):
@@ -367,7 +379,7 @@ class MySQLOptionsParser(object):  # pylint: disable=R0901
                     # Use dict comprehension syntax compatible with Python 2.6:
                     # inline_prefixes = {p: -1 for p in
                     #                    self._inline_comment_prefixes}
-                    inline_prefixes = self._inline_comment_prefixes if hasattr(self, '_inline_comment_prefixes') else self._prefixes.inline
+                    inline_prefixes = self.__inline_comment_prefixes
                     inline_prefixes = dict((p, -1) for p in inline_prefixes)
                     while comment_start == sys.maxsize and inline_prefixes:
                         next_prefixes = {}
@@ -381,7 +393,7 @@ class MySQLOptionsParser(object):  # pylint: disable=R0901
                                 comment_start = min(comment_start, index)
                         inline_prefixes = next_prefixes
                     # strip full line comments
-                    comment_prefixes = self._comment_prefixes if hasattr(self, '_comment_prefixes') else self._prefixes.full
+                    comment_prefixes = self.__comment_prefixes
                     for prefix in comment_prefixes:
                         if line.strip().startswith(prefix):
                             comment_start = 0
