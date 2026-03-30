@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -172,6 +172,18 @@ if(BUNDLED_OPENSSL)
         COMPONENT main
       )
     ENDIF()
+  ELSEIF(APPLE)
+    SET(OPENSSL_LIBS "${CRYPTO_FULL_NAME}" "${OPENSSL_FULL_NAME}" "${CRYPTO_LIBRARY}" "${OPENSSL_LIBRARY}")
+
+    install_bundled_binaries(
+        BINARIES ${OPENSSL_LIBS}
+        DESTINATION "${INSTALL_LIBDIR}"
+        TARGET mysqlsh
+    )
+
+    IF(OPENSSL_MODULES_DIR)
+      install_bundled_binaries(BINARIES ${OPENSSL_MODULES_LIST} DESTINATION "${INSTALL_LIBDIR}/ossl-modules" TARGET mysqlsh)
+    ENDIF()
   ELSE()
     # Copy the OpenSSL libraries to the build dir (for running tests in build tree)
     ADD_CUSTOM_COMMAND(TARGET mysqlsh POST_BUILD
@@ -188,37 +200,6 @@ if(BUNDLED_OPENSSL)
       DESTINATION ${INSTALL_LIBDIR}
       COMPONENT main
     )
-
-    IF(APPLE)
-      # Replace dependency "/Volumes/.../lib/libcrypto... of libssl
-      EXECUTE_PROCESS(
-        COMMAND otool -L "${OPENSSL_LIBRARY}"
-        OUTPUT_VARIABLE OTOOL_OPENSSL_DEPS)
-      STRING(REPLACE "\n" ";" DEPS_LIST ${OTOOL_OPENSSL_DEPS})
-      FOREACH(LINE ${DEPS_LIST})
-        STRING(REGEX MATCH "(/.*/lib/${CRYPTO_VERSION})" XXXXX ${LINE})
-        IF(CMAKE_MATCH_1)
-          SET(OPENSSL_DEPS "${CMAKE_MATCH_1}")
-        ENDIF()
-      ENDFOREACH()
-
-      IF(OPENSSL_DEPS)
-        # install_name_tool -change old new file
-        ADD_CUSTOM_COMMAND(TARGET mysqlsh POST_BUILD
-          COMMAND chmod +w "${CRYPTO_VERSION}" "${OPENSSL_VERSION}"
-          COMMAND install_name_tool -change "${OPENSSL_DEPS}" "@loader_path/${CRYPTO_VERSION}" "${OPENSSL_VERSION}"
-          WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}"
-        )
-      ENDIF()
-
-      # include the soft links
-      INSTALL(PROGRAMS
-        "${CRYPTO_LIBRARY}"
-        "${OPENSSL_LIBRARY}"
-        DESTINATION ${INSTALL_LIBDIR}
-        COMPONENT main
-      )
-    ENDIF()
 
     IF(OPENSSL_MODULES_DIR)
       install_bundled_binaries(BINARIES ${OPENSSL_MODULES_LIST} DESTINATION "${INSTALL_LIBDIR}/ossl-modules" TARGET mysqlsh)
@@ -337,25 +318,32 @@ IF(HAVE_PYTHON)
     if(BUNDLED_SHARED_PYTHON)
       if(APPLE)
         set(_PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}")
+
+        install_bundled_binaries(
+            BINARIES "${_PYTHON_SHARED_LIB}"
+            DESTINATION "${INSTALL_LIBDIR}"
+            TARGET mysqlsh
+            WRITE_RPATH FALSE
+        )
       else()
         file(GLOB _PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}.*")
+
+        INSTALL(PROGRAMS
+          "${_PYTHON_SHARED_LIB}"
+          DESTINATION ${INSTALL_LIBDIR}
+          COMPONENT main
+        )
+
+        if(STRIP_LIBCRYPT_DEPS)
+          foreach(_PYTHON_LIB IN LISTS _PYTHON_SHARED_LIB)
+            execute_patchelf(--remove-needed libcrypt.so.1 "${_PYTHON_LIB}")
+          endforeach()
+        endif()
+
+        ADD_CUSTOM_COMMAND(TARGET mysqlsh POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy "${_PYTHON_SHARED_LIB}"
+                    "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/.")
       endif()
-
-      INSTALL(PROGRAMS
-        "${_PYTHON_SHARED_LIB}"
-        DESTINATION ${INSTALL_LIBDIR}
-        COMPONENT main
-      )
-
-      if(STRIP_LIBCRYPT_DEPS)
-        foreach(_PYTHON_LIB IN LISTS _PYTHON_SHARED_LIB)
-          execute_patchelf(--remove-needed libcrypt.so.1 "${_PYTHON_LIB}")
-        endforeach()
-      endif()
-
-      ADD_CUSTOM_COMMAND(TARGET mysqlsh POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy "${_PYTHON_SHARED_LIB}"
-                  "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/.")
     endif()
   else()
     IF(PYTHON_DEPS)
@@ -426,20 +414,6 @@ IF(BUNDLED_KRB5_DIR)
     ENDIF()
 
     LIST(APPEND _KRB5_LIBRARIES ${_libs})
-
-    IF(APPLE)
-      FOREACH(_lib ${_libs})
-        IF(NOT IS_SYMLINK "${_lib}")
-          # reset the ID to something predictible
-          get_filename_component(_lib_name "${_lib}" NAME)
-          EXECUTE_PROCESS(COMMAND install_name_tool -id "${_lib_name}" "${_lib}" RESULT_VARIABLE COMMAND_RESULT)
-
-          IF(NOT "${COMMAND_RESULT}" STREQUAL "0")
-            MESSAGE(FATAL_ERROR "Failed to execute: install_name_tool -id ${_lib_name} ${_lib}")
-          ENDIF()
-        ENDIF()
-      ENDFOREACH()
-    ENDIF()
   ENDFOREACH()
 
   install_bundled_binaries(BINARIES ${_KRB5_LIBRARIES} DESTINATION "${INSTALL_LIBDIR}" TARGET mysqlsh)
@@ -486,6 +460,8 @@ IF(BUNDLED_ANTLR_DIR)
     ADD_CUSTOM_COMMAND(TARGET mysqlsh POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_ANTLR4_SHARED_LIB}"
                   "$<TARGET_FILE_DIR:mysqlsh>/.")
+  ELSEIF(APPLE)
+    install_bundled_binaries(BINARIES ${_ANTLR4_SHARED_LIB} DESTINATION "${INSTALL_LIBDIR}" TARGET mysqlsh)
   ELSE()
     foreach(CURRENT_ANTLR4_SHARED_LIB ${_ANTLR4_SHARED_LIB})
        INSTALL(PROGRAMS

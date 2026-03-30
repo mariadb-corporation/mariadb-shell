@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -56,56 +56,19 @@ function(add_shell_executable)
     install(TARGETS "${ARGV0}" RUNTIME COMPONENT main DESTINATION "${INSTALL_BINDIR}")
   endif()
 
-  if(APPLE)
-    if(BUNDLED_OPENSSL)
-      add_custom_command(TARGET "${ARGV0}" POST_BUILD
-        COMMAND install_name_tool -change
-                "${CRYPTO_VERSION}" "@loader_path/../${INSTALL_LIBDIR}/${CRYPTO_VERSION}"
-                $<TARGET_FILE:${ARGV0}>
-        COMMAND install_name_tool -change
-                "${OPENSSL_VERSION}" "@loader_path/../${INSTALL_LIBDIR}/${OPENSSL_VERSION}"
-                $<TARGET_FILE:${ARGV0}>
-      )
-    endif()
-    if(BUNDLED_SHARED_PYTHON)
-      get_filename_component(PYTHON_VERSION "${PYTHON_LIBRARIES}" NAME)
-      add_custom_command(TARGET "${ARGV0}" POST_BUILD
-        COMMAND install_name_tool -change
-                "${PYTHON_VERSION}" "@loader_path/../${INSTALL_LIBDIR}/${PYTHON_VERSION}"
-                $<TARGET_FILE:${ARGV0}>
-      )
-    endif()
-    if(BUNDLED_SSH_DIR)
-      get_target_property(_SSH_LIBRARY_LOCATION ssh LOCATION)
-      get_filename_component(_SSH_LIBRARY_NAME ${_SSH_LIBRARY_LOCATION} NAME)
-      add_custom_command(TARGET "${ARGV0}" POST_BUILD
-        COMMAND install_name_tool -change
-                "${_SSH_LIBRARY_NAME}" "@loader_path/../${INSTALL_LIBDIR}/${_SSH_LIBRARY_NAME}"
-                $<TARGET_FILE:${ARGV0}>)
-    endif()
-    if(BUNDLED_ANTLR_DIR)
-      add_custom_command(TARGET "${ARGV0}" POST_BUILD
-        COMMAND install_name_tool -change
-                "${ANTLR4_LIB_FILENAME}" "@loader_path/../${INSTALL_LIBDIR}/${ANTLR4_LIB_FILENAME}"
-                $<TARGET_FILE:${ARGV0}>)
-    endif()
-    if(JIT_EXECUTOR_LIB)
-      add_custom_command(TARGET "${ARGV0}" POST_BUILD
-        COMMAND install_name_tool -change
-                "${JIT_EXECUTOR_LIBRARY_NAME}" "@loader_path/../${INSTALL_LIBDIR}/${JIT_EXECUTOR_LIBRARY_NAME}"
-                $<TARGET_FILE:${ARGV0}>
-      )
-    endif()
-  elseif(NOT WIN32)
-  if(BUNDLED_OPENSSL OR BUNDLED_SHARED_PYTHON OR BUNDLED_SSH_DIR OR BUNDLED_KRB5_DIR OR BUNDLED_ANTLR_DIR OR BUNDLED_SASL_DIR)
+  if(NOT WIN32)
     # newer versions of linker enable new dtags by default, causing -Wl,-rpath to create RUNPATH
     # entry instead of RPATH this results in loader loading system libraries (if they are available)
     # instead of bundled ones, this has special impact when bundled libraries are linked using a bundled
     # version of OpenSSL (which might be newer than the system one)
-    set_property(TARGET "${ARGV0}" PROPERTY LINK_OPTIONS "-Wl,--disable-new-dtags")
-    set_property(TARGET "${ARGV0}" PROPERTY INSTALL_RPATH "\$ORIGIN/../${INSTALL_LIBDIR}")
-    set_property(TARGET "${ARGV0}" PROPERTY PROPERTY BUILD_WITH_INSTALL_RPATH TRUE)
-  endif()
+    if(APPLE)
+      set_property(TARGET "${ARGV0}" PROPERTY INSTALL_RPATH "@executable_path/../${INSTALL_LIBDIR}")
+    else()
+      set_property(TARGET "${ARGV0}" PROPERTY LINK_OPTIONS "-Wl,--disable-new-dtags")
+      set_property(TARGET "${ARGV0}" PROPERTY INSTALL_RPATH "\$ORIGIN/../${INSTALL_LIBDIR}")
+    endif()
+
+    set_property(TARGET "${ARGV0}" PROPERTY BUILD_WITH_INSTALL_RPATH TRUE)
   endif()
 
   if(HAVE_JS)
@@ -140,8 +103,13 @@ function(install_bundled_binaries)
   cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   if(NOT DEFINED ARG_WRITE_RPATH)
-    # if not explicitly specified, we always add an RPATH
-    set(ARG_WRITE_RPATH TRUE)
+    if(APPLE)
+      # if we bundle OpenSSL, then we want the bundled binary to use it instead of the system one
+      set(ARG_WRITE_RPATH ${BUNDLED_OPENSSL})
+    else()
+      # if not explicitly specified, we always add an RPATH
+      set(ARG_WRITE_RPATH TRUE)
+    endif()
   endif()
 
   if(WIN32 AND (ARG_DESTINATION STREQUAL INSTALL_LIBDIR OR ARG_DESTINATION MATCHES "^${INSTALL_LIBDIR}/.*"))
@@ -182,8 +150,25 @@ function(install_bundled_binaries)
           message(STATUS "  will execute: ${RPATH_COMMAND}")
         endif()
       elseif(APPLE)
+        # reset the ID to something predictable (file name)
+        get_filename_component(_ext "${SOURCE_BINARY_NAME}" LAST_EXT)
+        set(BINARY_ID "${SOURCE_BINARY_NAME}")
+
+        if(_ext STREQUAL ".so" OR _ext STREQUAL ".dylib")
+          # if this is a shared library, modify the source and prepend @rpath, this will simplify linking
+          set(BINARY_ID "@rpath/${SOURCE_BINARY_NAME}")
+        endif()
+
+        execute_process(
+            COMMAND install_name_tool -id "${BINARY_ID}" "${SOURCE_BINARY}"
+            RESULT_VARIABLE COMMAND_RESULT)
+
+        if(NOT "${COMMAND_RESULT}" STREQUAL "0")
+          message(FATAL_ERROR "Failed to change ID of ${SOURCE_BINARY} to ${BINARY_ID}.")
+        endif()
+
         # if we bundle OpenSSL, then we want the bundled binary to use it instead of the system one
-        if(BUNDLED_OPENSSL)
+        if(ARG_WRITE_RPATH)
           SET_BUNDLED_OPEN_SSL(BINARIES "${SOURCE_BINARY}")
         endif()
       endif()

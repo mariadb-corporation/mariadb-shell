@@ -803,16 +803,6 @@ IF (JIT_EXECUTOR_LIB)
       "${JIT_EXECUTOR_LIB}"
     NO_DEFAULT_PATH)
 
-  IF(APPLE)
-    # reset the ID to something predictible
-    get_filename_component(JIT_EXECUTOR_LIBRARY_NAME "${JIT_EXECUTOR_LIBRARY}" NAME)
-    EXECUTE_PROCESS(COMMAND install_name_tool -id "${JIT_EXECUTOR_LIBRARY_NAME}" "${JIT_EXECUTOR_LIBRARY}" RESULT_VARIABLE COMMAND_RESULT)
-
-    IF(NOT "${COMMAND_RESULT}" STREQUAL "0")
-      MESSAGE(FATAL_ERROR "Failed to execute: install_name_tool -id ${JIT_EXECUTOR_LIBRARY_NAME} ${JIT_EXECUTOR_LIBRARY}")
-    ENDIF()
-  ENDIF()
-
   INCLUDE_DIRECTORIES(SYSTEM "${JIT_EXECUTOR_LIB}")
   MESSAGE(STATUS "Jit Executor library: ${JIT_EXECUTOR_LIBRARY}")
   SET(HAVE_JS 1)
@@ -1153,6 +1143,16 @@ FUNCTION(SET_BUNDLED_OPEN_SSL)
   cmake_parse_arguments(SET_BUNDLED_OPEN_SSL "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   FOREACH(OPEN_SSL_LIB_DEPENDENT ${SET_BUNDLED_OPEN_SSL_BINARIES})
+    SET(pattern "@executable_path|@loader_path|/usr/local/mysql/lib/")
+
+    IF(NOT bin MATCHES "${CRYPTO_VERSION}")
+      STRING(APPEND pattern "|${CRYPTO_VERSION}")
+    ENDIF()
+
+    IF(NOT bin MATCHES "${OPENSSL_VERSION}")
+      STRING(APPEND pattern "|${OPENSSL_VERSION}")
+    ENDIF()
+
     EXECUTE_PROCESS(COMMAND otool -L ${OPEN_SSL_LIB_DEPENDENT} OUTPUT_VARIABLE COMMAND_OUTPUT)
 
     STRING(REGEX MATCHALL "[^ \t]+[ \t]" TOKENS ${COMMAND_OUTPUT})
@@ -1160,7 +1160,7 @@ FUNCTION(SET_BUNDLED_OPEN_SSL)
     FOREACH(TOKEN ${TOKENS})
       STRING(STRIP "${TOKEN}" TOKEN)
 
-      IF(TOKEN MATCHES "${CRYPTO_VERSION}|${OPENSSL_VERSION}|@executable_path|@loader_path|/usr/local/mysql/lib/")
+      IF(TOKEN MATCHES "${pattern}")
         SET(ENTRY "${TOKEN}")
         STRING(FIND "${ENTRY}" "/" POS REVERSE)
 
@@ -1172,7 +1172,7 @@ FUNCTION(SET_BUNDLED_OPEN_SSL)
         ENDIF()
 
         EXECUTE_PROCESS(COMMAND install_name_tool -change
-            "${ENTRY}" "@executable_path/../${INSTALL_LIBDIR}/${LIB}"
+            "${ENTRY}" "@rpath/${LIB}"
             ${OPEN_SSL_LIB_DEPENDENT} RESULT_VARIABLE COMMAND_RESULT)
 
         IF("${COMMAND_RESULT}" STREQUAL "1")
