@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -75,7 +75,7 @@ TEST_F(Shell_python, stdin_read) {
 TEST_F(Shell_python, help) {
   // Regression test for Bug #24554329
   // CALLING HELP() IN MYSQLSH --PY RESULTS IN ATTRIBUTEERROR
-  output_handler.feed_to_prompt("");
+  output_handler.feed_to_prompt("quit");
   execute("help()");
   EXPECT_EQ("", output_handler.std_err);
   MY_EXPECT_STDOUT_NOT_CONTAINS("AttributeError");
@@ -84,7 +84,7 @@ TEST_F(Shell_python, help) {
   output_handler.wipe_all();
 
   output_handler.feed_to_prompt("spam");
-  output_handler.feed_to_prompt("");
+  output_handler.feed_to_prompt("quit");
   execute("help()");
 
 #if PY_VERSION_HEX == 0x030b0000

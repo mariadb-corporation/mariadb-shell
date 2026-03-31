@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1491,12 +1491,17 @@ PyObject *ao_index(Array_object *self, PyObject *args) {
       }
     }
 
+#if PY_VERSION_HEX >= 0x030e0000
+    Python_context::set_python_error(PyExc_ValueError,
+                                     "list.index(x): x not in list");
+#else
     py::Release repr{PyObject_Repr(v)};
     std::string repr_str;
 
     Python_context::pystring_to_string(repr, &repr_str);
     Python_context::set_python_error(PyExc_ValueError,
                                      repr_str + " is not in list");
+#endif
   } catch (const std::exception &exc) {
     Python_context::set_python_error(PyExc_RuntimeError, exc.what());
   }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2026, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -106,7 +106,7 @@ struct Chunk_t {
 /**
  * Base class for the Shell Script Testing engine.
  */
-class Shell_script_tester : public Crud_test_wrapper {
+class Shell_script_tester : public Shell_core_test_wrapper {
  public:
   // You can define per-test set-up and tear-down logic as usual.
   Shell_script_tester();

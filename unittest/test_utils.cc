@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -717,66 +717,4 @@ void Shell_core_test_wrapper::exec_and_out_contains(const std::string &code,
   }
 
   output_handler.wipe_all();
-}
-
-void Crud_test_wrapper::set_functions(const std::string &functions) {
-  std::vector<std::string> str_spl = split_string_chars(functions, ", ", true);
-  std::copy(str_spl.begin(), str_spl.end(),
-            std::inserter(_functions, _functions.end()));
-}
-
-// Validates only the specified functions are available
-// non listed functions are validated for unavailability
-void Crud_test_wrapper::ensure_available_functions(
-    const std::string &functions) {
-  bool is_js = _interactive_shell->interactive_mode() ==
-               shcore::Shell_core::Mode::JavaScript;
-  std::vector<std::string> v = split_string_chars(functions, ", ", true);
-  std::set<std::string> valid_functions(v.begin(), v.end());
-
-  // Retrieves the active functions on the crud operation
-  if (is_js)
-    exec_and_out_equals("var real_functions = dir(crud)");
-  else
-    exec_and_out_equals("real_functions = dir(crud)");
-
-  // Ensures the number of available functions is the expected
-  std::stringstream ss;
-  ss << valid_functions.size();
-
-  {
-    SCOPED_TRACE("Unexpected number of available functions.");
-    if (is_js)
-      exec_and_out_equals("print(real_functions.length)", ss.str());
-    else
-      exec_and_out_equals("print(len(real_functions))", ss.str());
-  }
-
-  std::set<std::string>::iterator index, end = _functions.end();
-  for (index = _functions.begin(); index != end; index++) {
-    // If the function is suppossed to be valid it needs to be available on
-    // the crud dir
-    if (valid_functions.find(*index) != valid_functions.end()) {
-      SCOPED_TRACE("Function " + *index + " should be available and is not.");
-      if (is_js)
-        exec_and_out_equals(
-            "print(real_functions.indexOf('" + *index + "') != -1)", "true");
-      else
-        exec_and_out_equals("index=real_functions.index('" + *index + "')");
-    }
-
-    // If not, should not be on the crud dir and calling it should be illegal
-    else {
-      SCOPED_TRACE("Function " + *index + " should NOT be available.");
-      if (is_js)
-        exec_and_out_equals(
-            "print(real_functions.indexOf('" + *index + "') == -1)", "true");
-      else
-        exec_and_out_contains("print(real_functions.index('" + *index + "'))",
-                              "", "is not in list");
-
-      exec_and_out_contains("crud." + *index + "('');", "",
-                            "Forbidden usage of " + *index);
-    }
-  }
 }

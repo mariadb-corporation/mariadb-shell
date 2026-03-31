@@ -1124,7 +1124,7 @@ def install_dynamic_data_masking(uri: str, sess=None, verbose=True) -> bool:
 
         basedir = sess.run_sql("SELECT @@basedir").fetch_one()[0]
 
-        for subdir in ["", f"mysql-{__version[:__version.rfind(".")]}"]:
+        for subdir in ["", f"mysql-{__version[:__version.rfind('.')]}"]:
             install_script = os.path.join(basedir, "share", subdir, "install_component_object_policy.sql")
 
             if os.path.exists(install_script):

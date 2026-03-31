@@ -457,22 +457,4 @@ class Shell_core_test_wrapper : public tests::Shell_base_test {
   friend class tests::Testutils;
 };
 
-/**
- * \ingroup UTFramework
- * Helper class to ease the creation of tests on the CRUD operations specially
- * on the chained methods
- */
-class Crud_test_wrapper : public ::Shell_core_test_wrapper {
- protected:
-  std::set<std::string> _functions;
-
-  // Sets the functions that will be available for chaining
-  // in a CRUD operation
-  void set_functions(const std::string &functions);
-
-  // Validates only the specified functions are available
-  // non listed functions are validated for unavailability
-  void ensure_available_functions(const std::string &functions);
-};
-
 #endif  // UNITTEST_TEST_UTILS_H_
