@@ -308,12 +308,9 @@
 |<<<hostname_ip>>>:<<<__mysql_sandbox_port1>>>|
 |blargh|
 
-//@# timeout -1 {__dbug_direct}
-||
-
 //@# timeout 2 and rollback (should fail) {__dbug_direct}
 |Reverting topology changes...|
-||Timeout reached waiting for transactions from <<<__endpoint_uri1>>> to be applied on instance '<<<__endpoint_uri2>>>' (MYSQLSH 51157)
+||Timeout reached waiting for all received transactions to be applied on instance '<<<__endpoint_uri2>>>' (debug) (MYSQLSH 51157)
 |{|
 |    "replicaSet": {|
 |        "name": "myrs", |

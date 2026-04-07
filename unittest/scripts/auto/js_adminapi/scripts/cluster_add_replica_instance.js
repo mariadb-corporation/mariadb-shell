@@ -605,7 +605,11 @@ reset_instance(session4);
 
 // --- timeout tests
 
-// FR1.3.6: `timeout`: maximum number of seconds to wait for the instance to sync up with the PRIMARY after it's provisioned and the replication channel is established. If reached, the operation is rolled-back. Default is unlimited (zero).
+// FR1.3.6: `timeout`: maximum number of seconds to wait for the instance to
+// sync up with the PRIMARY after it's provisioned and the replication channel
+// is established. If reached, rollback is attempted. Configuration changes are
+// reverted, but the target may already have applied replicated transactions, so
+// manual cleanup is required before reuse.
 
 //@<> Attempt to add a read-replica but with limited timeout {__dbug}
 
@@ -622,18 +626,18 @@ session.runSql("create table if not exists testing.data (k int primary key auto_
 session.runSql("insert into testing.data values (default, repeat('#', 1000))");
 
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
-EXPECT_THROWS_TYPE(function() { cluster.addReplicaInstance(__sandbox_uri4, {timeout: 1, recoveryMethod: "incremental"}); }, `Timeout reached waiting for all received transactions to be applied on instance '${hostname}:${__mysql_sandbox_port4}' (debug)`, "MYSQLSH");
+EXPECT_THROWS_TYPE(function() { cluster.addReplicaInstance(__sandbox_uri4, {timeout: 1, recoveryMethod: "incremental"}); }, `The Read-Replica setup timed out while waiting for replicated transactions to be applied on target instance '${hostname}:${__mysql_sandbox_port4}'. The configuration changes were reverted, but the target may already contain replicated transactions from the cluster and may not be back to its original pre-operation state.`, "MYSQLSH");
 
+EXPECT_OUTPUT_CONTAINS(`Timeout reached waiting for all received transactions to be applied on instance '${hostname}:${__mysql_sandbox_port4}' (debug)`);
 EXPECT_OUTPUT_CONTAINS("WARNING: The Read-Replica failed to synchronize its transaction set with the Cluster. You may increase or disable the transaction sync timeout with the option 'timeout'");
 EXPECT_OUTPUT_CONTAINS("NOTE: Reverting changes...");
-EXPECT_OUTPUT_CONTAINS("Changes successfully reverted.");
+EXPECT_OUTPUT_NOT_CONTAINS("Changes successfully reverted.");
 
 testutil.dbugSet("");
 
-//@<> Attempt to add a read-replica but with unlimited timeout {__dbug}
-EXPECT_NO_THROWS(function() { cluster.addReplicaInstance(__sandbox_uri4, {timeout: 0, recoveryMethod: "incremental"}); });
-
-CHECK_READ_REPLICA(__sandbox_uri4, cluster, "primary", __endpoint1);
+// No retry here: after a timeout that already advanced the target GTID state,
+// the operation must fail hard and require manual cleanup instead of pretending
+// the instance can be safely reused.
 
 //@<> Cleanup
 scene.destroy();

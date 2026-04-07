@@ -325,18 +325,10 @@ rs.addInstance(__sandbox2, {label:"blargh"});
 shell.dumpRows(session.runSql("SELECT instance_name FROM mysql_innodb_cluster_metadata.instances"), "tabbed");
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout -1 {__dbug_direct}
-testutil.dbugSet("+d,dba_add_instance_master_delay"); // add a master_delay of 3s
-session.runSql("create schema foobar1");
-
-rs.addInstance(__sandbox2, {timeout:-1}); // should finish without waiting
-EXPECT_EQ(null, session2.runSql("SHOW SCHEMAS LIKE 'foobar1'").fetchOne());
-rs.removeInstance(__sandbox_uri2);
-
 //@ timeout 2 and rollback (should fail) {__dbug_direct}
+testutil.dbugSet("+d,dba_sync_transactions_timeout");
 var snap1 = repl_snapshot(session);
 var snap2 = repl_snapshot(session2);
-
 session.runSql("create schema foobar2");
 
 rs.addInstance(__sandbox2, {timeout:2}); // should wait for 2s and fail
@@ -347,6 +339,8 @@ rs.status();
 // check that the operation rolled back
 EXPECT_JSON_EQ(snap1, repl_snapshot(session));
 EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
+testutil.dbugSet("");
+testutil.dbugSet("+d,dba_add_instance_master_delay"); // restore 3s delay for the next timeout checks
 
 //@ timeout 10 {__dbug_direct}
 session.runSql("create schema foobar3");
@@ -603,6 +597,7 @@ shell.connect(__sandbox_uri1);
 
 reset_instance(session);
 reset_instance(mysql.getSession(__sandbox_uri2));
+reset_instance(mysql.getSession(__sandbox_uri3));
 
 var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
 

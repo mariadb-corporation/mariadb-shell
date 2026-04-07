@@ -1075,10 +1075,12 @@ void Replica_set_impl::add_instance(
         sync_transactions(*target_instance, {k_replicaset_channel_name},
                           sync_timeout);
       } catch (const shcore::Exception &e) {
-        if (e.code() != SHERR_DBA_GTID_SYNC_TIMEOUT) throw;
-        console->print_info(
-            "You may increase or disable the transaction sync timeout with "
-            "the timeout option for <<<addInstance>>>()");
+        if (e.code() == SHERR_DBA_GTID_SYNC_TIMEOUT) {
+          console->print_info(
+              "You may increase or disable the transaction sync timeout with "
+              "the timeout option for <<<addInstance>>>()");
+        }
+        throw;
       } catch (const cancel_sync &) {
         throw;
       }
