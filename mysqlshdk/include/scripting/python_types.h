@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,30 +35,53 @@
 #include <vector>
 
 #include "mysqlshdk/include/scripting/types.h"
-#include "mysqlshdk/include/scripting/types/cpp.h"
 
 namespace shcore {
 
-class SHCORE_PUBLIC Python_object : public Cpp_object_bridge {
+class SHCORE_PUBLIC Python_object : public Object_bridge {
  public:
   explicit Python_object(PyObject *object);
   ~Python_object() override;
 
+  bool operator==(const Object_bridge &other) const override;
+
   std::string class_name() const override;
-  PyObject *object();
+
+  std::string &append_repr(std::string &s_out) const override;
 
   std::string &append_descr(std::string &s_out, int indent = -1,
                             int quote_strings = 0) const override;
+
+  std::vector<std::string> get_members() const override;
+
+  Value get_member(const std::string &prop) const override;
+
+  bool has_member(const std::string &prop) const override;
+
+  void set_member(const std::string &prop, Value value) override;
+
+  bool is_indexed() const override;
+
+  Value get_member(size_t index) const override;
+
+  void set_member(size_t index, Value value) override;
+
+  size_t length() const override;
+
+  bool has_method(const std::string &name) const override;
+
+  Value call(const std::string &name, const Argument_list &args) override;
+
+  inline PyObject *object() const { return m_object.get(); }
 
  private:
   py::Store m_object;
   std::string m_class;
 };
 
-class SHCORE_PUBLIC Python_function final : public Function_base {
+class SHCORE_PUBLIC Python_callable : public Function_base {
  public:
-  Python_function(Python_context *context, PyObject *function);
-  ~Python_function() override;
+  ~Python_callable() override;
 
   const std::string &name() const override { return m_name; }
 
@@ -75,11 +98,35 @@ class SHCORE_PUBLIC Python_function final : public Function_base {
 
   PyObject *invoke(PyObject *args);
 
+ protected:
+  Python_callable(Python_context *context, PyObject *callable,
+                  PyObject *introspection_target,
+                  uint64_t implicit_positional_args = 0);
+
+  inline PyObject *callable() const { return m_callable.get(); }
+
  private:
+  void initialize_metadata(PyObject *introspection_target,
+                           uint64_t implicit_positional_args);
+
+  bool matches_kwargs_arity(size_t argc) const;
+
+  py::Release call_with_error_translation(PyObject *args, PyObject *kwargs);
+
   Python_context *_py{nullptr};
-  py::Store m_function;
+  py::Store m_callable;
   std::string m_name;
   uint64_t m_arg_count{0};
+};
+
+class SHCORE_PUBLIC Python_function final : public Python_callable {
+ public:
+  Python_function(Python_context *context, PyObject *function);
+};
+
+class SHCORE_PUBLIC Python_bound_method final : public Python_callable {
+ public:
+  Python_bound_method(Python_context *context, PyObject *method);
 };
 
 }  // namespace shcore

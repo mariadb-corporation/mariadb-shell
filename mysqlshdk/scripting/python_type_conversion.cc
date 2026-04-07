@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -164,7 +164,7 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
     return Value(map);
   }
 
-  if (PyFunction_Check(py)) {
+  const auto get_context = [context]() {
     if (!*context) {
       try {
         *context = Python_context::get();
@@ -174,7 +174,15 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
       }
     }
 
-    return Value(std::make_shared<Python_function>(*context, py));
+    return *context;
+  };
+
+  if (PyFunction_Check(py)) {
+    return Value(std::make_shared<Python_function>(get_context(), py));
+  }
+
+  if (PyMethod_Check(py)) {
+    return Value(std::make_shared<Python_bound_method>(get_context(), py));
   }
   // TODO: else if (Buffer/MemoryView || Tuple || DateTime || generic_object
 
@@ -185,21 +193,12 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
       unwrap_method(py, &function) || unwrap(py, function))
     return Value(function);
 
-  if (!*context) {
-    try {
-      *context = Python_context::get();
-    } catch (const std::exception &e) {
-      throw std::runtime_error(std::string{"Could not get SHELL context: "} +
-                               e.what());
-    }
-  }
-
   auto get_int64 = [](PyObject *obj, const char *name) {
     py::Release att{PyObject_GetAttrString(obj, name)};
     return PyLong_AsLongLong(att.get());
   };
 
-  if (PyObject_TypeCheck(py, (*context)->get_datetime_type())) {
+  if (PyObject_TypeCheck(py, get_context()->get_datetime_type())) {
     auto year = get_int64(py, "year");
     auto month = get_int64(py, "month");
     auto day = get_int64(py, "day");
@@ -211,14 +210,14 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
     return shcore::Value(
         Object_bridge_ref(new Date(year, month, day, hour, min, sec, usec)));
   }
-  if (PyObject_TypeCheck(py, (*context)->get_date_type())) {
+  if (PyObject_TypeCheck(py, get_context()->get_date_type())) {
     auto year = get_int64(py, "year");
     auto month = get_int64(py, "month");
     auto day = get_int64(py, "day");
 
     return shcore::Value(Object_bridge_ref(new Date(year, month, day)));
   }
-  if (PyObject_TypeCheck(py, (*context)->get_time_type())) {
+  if (PyObject_TypeCheck(py, get_context()->get_time_type())) {
     auto hour = get_int64(py, "hour");
     auto min = get_int64(py, "minute");
     auto sec = get_int64(py, "second");
