@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -817,6 +817,18 @@ TEST_F(Shell_cmdline_options, default_values) {
 #ifdef _WIN32
   EXPECT_FALSE(options.connection_options().has_kerberos_auth_mode());
 #endif
+}
+
+TEST_F(Shell_cmdline_options, default_mode_none_is_rejected) {
+  char arg0[] = "ut";
+  char arg1[] = "--js";
+  char *argv[] = {arg0, arg1, nullptr};
+
+  Shell_options cmd_options(2, argv);
+
+  EXPECT_THROW_LIKE(
+      cmd_options.set_and_notify("defaultMode", "none"), shcore::Exception,
+      "defaultMode: Valid values for shell mode are sql, js or py.");
 }
 
 TEST_F(Shell_cmdline_options, app) {

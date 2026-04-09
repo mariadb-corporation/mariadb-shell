@@ -358,8 +358,8 @@
 |(User defined)|
 
 //@ Verify error messages
-||Valid values for shell mode are sql, js, py or none. (ArgumentError)
-||Valid values for shell mode are sql, js, py or none.
+||Valid values for shell mode are sql, js or py. (ArgumentError)
+||Valid values for shell mode are sql, js or py.
 ||InvalidOption is not defined (ReferenceError)
 ||Unrecognized option: InvalidOption.
 ||No help found for filter: InvalidOption

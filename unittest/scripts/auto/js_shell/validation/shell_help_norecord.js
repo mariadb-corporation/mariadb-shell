@@ -171,7 +171,7 @@ DESCRIPTION
       - defaultCompress: Enable compression in client/server protocol by
         default in global shell sessions.
       - defaultMode: shell mode to use when shell is started, allowed values:
-        "js", "py", "sql" or "none"
+        "js", "py" or "sql"
       - devapi.dbObjectHandles: true to enable schema collection and table name
         aliases in the db object, for DevAPI operations
       - history.autoSave: true to save command history when exiting the shell

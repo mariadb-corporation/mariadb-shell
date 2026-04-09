@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -308,6 +308,23 @@ TEST_F(Mysqlsh_misc, autodetect_script_type) {
   shcore::delete_file("bla.js");
   shcore::delete_file("bla.py");
   shcore::delete_file("bla.sql");
+}
+
+TEST_F(Mysqlsh_misc, Bug36648483) {
+  try {
+    shcore::delete_file(shcore::path::join_path(shcore::get_user_config_path(),
+                                                "options.json"));
+  } catch (...) {
+  }
+
+  const auto rc = execute({_mysqlsh, "--js", "-e",
+                           "println(shell.options['defaultMode']); "
+                           "shell.options.setPersist('defaultMode', 'none'); "
+                           "println(shell.options['defaultMode'])",
+                           nullptr});
+  EXPECT_NE(0, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "Valid values for shell mode are sql, js or py.");
 }
 
 TEST_F(Mysqlsh_misc, run_python_module) {
