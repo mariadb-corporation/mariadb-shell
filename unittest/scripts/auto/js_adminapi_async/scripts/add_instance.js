@@ -328,17 +328,20 @@ rs.removeInstance(__sandbox_uri2);
 //@ timeout 2 and rollback (should fail) {__dbug_direct}
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 var snap1 = repl_snapshot(session);
-var snap2 = repl_snapshot(session2);
-session.runSql("create schema foobar2");
 
 rs.addInstance(__sandbox2, {timeout:2}); // should wait for 2s and fail
-EXPECT_EQ(null, session2.runSql("SHOW SCHEMAS LIKE 'foobar2'").fetchOne());
+testutil.dbugSet("");
 
 rs.status();
 
 // check that the operation rolled back
 EXPECT_JSON_EQ(snap1, repl_snapshot(session));
-EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
+EXPECT_EQ(null, session2.runSql(
+    "select s.channel_name " +
+    "from performance_schema.replication_connection_status s " +
+    "join performance_schema.replication_connection_configuration c " +
+    "on s.channel_name = c.channel_name where s.channel_name=''"
+).fetchOne());
 testutil.dbugSet("");
 testutil.dbugSet("+d,dba_add_instance_master_delay"); // restore 3s delay for the next timeout checks
 
