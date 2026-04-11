@@ -546,13 +546,10 @@ shell.options["dba.restartWaitTimeout"] = 60;
 testutil.waitSandboxDead(__mysql_sandbox_port2);
 
 //@<> BUG#30281908: restart the instance manually {VER(>= 8.0.17)}
-testutil.removeFromSandboxConf(__mysql_sandbox_port2, "foo");
 testutil.killSandbox(__mysql_sandbox_port2, true);
-try {
-    testutil.startSandbox(__mysql_sandbox_port2);
-} catch (e) {
-    testutil.waitSandboxAlive(__mysql_sandbox_port2);
-}
+testutil.removeFromSandboxConf(__mysql_sandbox_port2, "foo");
+testutil.startSandbox(__mysql_sandbox_port2);
+testutil.waitSandboxAlive(__mysql_sandbox_port2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
 
 //@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17)}
