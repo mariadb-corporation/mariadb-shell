@@ -529,35 +529,6 @@ EXPECT_OUTPUT_CONTAINS("See https://dev.mysql.com/doc/refman/en/group-replicatio
 var num_recovery_users_after = number_of_gr_recovery_accounts(session);
 EXPECT_EQ(num_recovery_users, num_recovery_users_after);
 
-// BUG#30281908: MYSQL SHELL CRASHED WHILE ADDING A INSTANCE TO INNODB CLUSTER
-// This bug was caused by a segmentation fault in the post-clone restart handling
-// that did not cover the timeout waiting for the instance to start after clone restarts it.
-// To test it, we change the sandbox configuration file to introduce a bogus setting which will
-// cause the failure of the instance restart, simulating then a timeout.
-
-//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17)}
-testutil.changeSandboxConf(__mysql_sandbox_port2, "foo", "bar");
-// Also tests the restartWaitTimeout option
-shell.options["dba.restartWaitTimeout"] = 1;
-shell.options["useWizards"] = 1;
-c.addInstance(__sandbox_uri2, {recoveryMethod:"clone"});
-shell.options["useWizards"] = 0;
-shell.options["dba.restartWaitTimeout"] = 60;
-testutil.waitSandboxDead(__mysql_sandbox_port2);
-
-//@<> BUG#30281908: restart the instance manually {VER(>= 8.0.17)}
-testutil.killSandbox(__mysql_sandbox_port2, true);
-testutil.removeFromSandboxConf(__mysql_sandbox_port2, "foo");
-testutil.startSandbox(__mysql_sandbox_port2);
-testutil.waitSandboxAlive(__mysql_sandbox_port2);
-testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
-
-//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17)}
-shell.options["useWizards"] = 1;
-testutil.expectPrompt("Would you like to add it to the cluster metadata? [Y/n]:", "y");
-c.rescan();
-shell.options["useWizards"] = 0;
-
 //@<> BUG#25503159: clean-up.
 c.disconnect();
 session.close();
@@ -776,6 +747,26 @@ EXPECT_THROWS(function(){
 EXPECT_OUTPUT_CONTAINS(`WARNING: None of the online Cluster members are compatible with the recipient (${__endpoint2}) for cloning due to version/platform incompatibilities. Therefore, no instance is available to serve as a valid donor for cloning`);
 
 testutil.dbugSet("");
+shell.options.useWizards = 0;
+
+// BUG#30281908: MYSQL SHELL CRASHED WHILE ADDING A INSTANCE TO INNODB CLUSTER
+// This bug was caused by a segmentation fault in the post-clone restart
+// handling that did not cover the timeout waiting for the instance to start
+// after clone restarts it.
+
+//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17)}
+// Use a debug trap to abort the restart wait path after clone has requested the restart.
+testutil.dbugSet("+d,dba_abort_monitor_clone_recovery_wait_restart");
+shell.options["useWizards"] = 1;
+cluster.addInstance(__sandbox_uri2, {recoveryMethod:"clone"});
+testutil.dbugSet("");
+testutil.waitSandboxAlive(__mysql_sandbox_port2);
+testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
+
+//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17)}
+testutil.expectPrompt("Would you like to add it to the cluster metadata? [Y/n]:", "y");
+cluster.rescan();
+shell.options["useWizards"] = 0;
 
 //@<> Cleanup
 session.close();
