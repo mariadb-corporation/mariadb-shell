@@ -209,9 +209,11 @@ REGISTER_MODULE(Mysql, mysql) {
          "?password");
   expose("getSession", &Mysql::get_session, "connectionData", "?password");
 
-  expose("splitScript", &Mysql::split_script, "script");
-  expose("parseStatementAst", &Mysql::parse_statement_ast, "statement");
-  expose("tokenizeStatement", &Mysql::tokenize_statement, "statement");
+  expose("splitScript", &Mysql::split_script, "script", "?options");
+  expose("parseStatementAst", &Mysql::parse_statement_ast, "statement",
+         "?options");
+  expose("tokenizeStatement", &Mysql::tokenize_statement, "statement",
+         "?options");
 
   expose("quoteIdentifier", &Mysql::quote_identifier, "string");
   expose("unquoteIdentifier", &Mysql::unquote_identifier, "string");
@@ -317,17 +319,70 @@ std::shared_ptr<shcore::Object_bridge> Mysql::get_session(
 }
 #endif
 
+namespace {
+
+mysqlshdk::parser::Parser_config get_parser_config(
+    const shcore::Dictionary_t &options, bool default_ansi_quotes) {
+  mysqlshdk::parser::Parser_config config;
+  config.ansi_quotes = default_ansi_quotes;
+
+  if (!options) {
+    return config;
+  }
+
+  bool ansi_quotes = config.ansi_quotes;
+  bool no_backslash_escapes = config.no_backslash_escapes;
+
+  mysqlsh::Unpack_options unpacker(options);
+  unpacker.optional("ansiQuotes", &ansi_quotes)
+      .optional("noBackslashEscapes", &no_backslash_escapes)
+      .end("parser options");
+
+  config.ansi_quotes = ansi_quotes;
+  config.no_backslash_escapes = no_backslash_escapes;
+  return config;
+}
+
+mysqlshdk::parser::Parser_config get_tokenizer_config(
+    const shcore::Dictionary_t &options, bool default_ansi_quotes) {
+  mysqlshdk::parser::Parser_config config;
+  config.ansi_quotes = default_ansi_quotes;
+
+  if (!options) {
+    return config;
+  }
+
+  bool ansi_quotes = config.ansi_quotes;
+  bool no_backslash_escapes = config.no_backslash_escapes;
+
+  mysqlsh::Unpack_options unpacker(options);
+  unpacker.optional("ansiQuotes", &ansi_quotes)
+      .optional("noBackslashEscapes", &no_backslash_escapes)
+      .end("tokenizer options");
+
+  config.ansi_quotes = ansi_quotes;
+  config.no_backslash_escapes = no_backslash_escapes;
+  return config;
+}
+
+}  // namespace
+
 REGISTER_HELP_FUNCTION(splitScript, mysql);
 REGISTER_HELP_FUNCTION_TEXT(MYSQL_SPLITSCRIPT, R"*(
 Split a SQL script into individual statements.
 
 @param script A SQL script as a string containing multiple statements
+@param options Optional dictionary of parser options
 
 @returns A list of statements
 
 The default statement delimiter is `;` but it can be changed with the
 DELIMITER keyword, which must be followed by the delimiter character(s)
 and a newline.
+
+Supported options are:
+- ansiQuotes: if true, treat `"` as an identifier quote
+- noBackslashEscapes: if true, backslashes do not escape characters in strings
 )*");
 
 /**
@@ -337,13 +392,16 @@ and a newline.
  * $(MYSQL_SPLITSCRIPT)
  */
 #if DOXYGEN_JS
-Array splitScript(String script) {}
+Array splitScript(String script, Dictionary options) {}
 #elif DOXYGEN_PY
-list split_script(str script) {}
+list split_script(str script, dict options) {}
 #endif
-shcore::Value Mysql::split_script(const std::string &script) const {
+shcore::Value Mysql::split_script(const std::string &script,
+                                  const shcore::Dictionary_t &options) const {
   shcore::Array_t array = shcore::make_array();
-  for (auto s : mysqlshdk::utils::split_sql(script))
+  const auto config = get_parser_config(options, false);
+  for (auto s : mysqlshdk::utils::split_sql(script, config.ansi_quotes,
+                                            config.no_backslash_escapes))
     array->emplace_back(std::move(s));
   return shcore::Value(array);
 }
@@ -353,8 +411,13 @@ REGISTER_HELP_FUNCTION_TEXT(MYSQL_PARSESTATEMENTAST, R"*(
 Parse MySQL statements and return its AST representation.
 
 @param statements SQL statements to be parsed
+@param options Optional dictionary of parser options
 
 @returns AST encoded as a JSON structure
+
+Supported options are:
+- ansiQuotes: if true, treat `"` as an identifier quote
+- noBackslashEscapes: if true, backslashes do not escape characters in strings
 )*");
 
 /**
@@ -364,11 +427,12 @@ Parse MySQL statements and return its AST representation.
  * $(MYSQL_PARSESTATEMENTAST)
  */
 #if DOXYGEN_JS
-Dictionary parseStatementAst(String statements) {}
+Dictionary parseStatementAst(String statements, Dictionary options) {}
 #elif DOXYGEN_PY
-dict parse_statement_ast(str statements) {}
+dict parse_statement_ast(str statements, dict options) {}
 #endif
-shcore::Value Mysql::parse_statement_ast(const std::string &sql) const {
+shcore::Value Mysql::parse_statement_ast(
+    const std::string &sql, const shcore::Dictionary_t &options) const {
   class Listener : public mysqlshdk::parser::Parser_listener<shcore::Value> {
    public:
     Listener() : Parser_listener(&m_root) {}
@@ -422,7 +486,8 @@ shcore::Value Mysql::parse_statement_ast(const std::string &sql) const {
 
   Listener listener;
 
-  mysqlshdk::parser::traverse_script_ast(sql, {}, {}, &listener);
+  mysqlshdk::parser::traverse_script_ast(sql, get_parser_config(options, true),
+                                         {}, &listener);
 
   return listener.ast();
 }
@@ -432,8 +497,13 @@ REGISTER_HELP_FUNCTION_TEXT(MYSQL_TOKENIZESTATEMENT, R"*(
 Lexes a MySQL statement into a list of tokens.
 
 @param statement SQL statement to be tokenized
+@param options Optional dictionary of tokenizer options
 
 @returns A list of objects with type and token fields
+
+Supported options are:
+- ansiQuotes: if true, treat `"` as an identifier quote
+- noBackslashEscapes: if true, backslashes do not escape characters in strings
 )*");
 
 /**
@@ -443,13 +513,14 @@ Lexes a MySQL statement into a list of tokens.
  * $(MYSQL_TOKENIZESTATEMENT)
  */
 #if DOXYGEN_JS
-Array tokenizeStatement(String statement) {}
+Array tokenizeStatement(String statement, Dictionary options) {}
 #elif DOXYGEN_PY
-list tokenize_statement(str statement) {}
+list tokenize_statement(str statement, dict options) {}
 #endif
-shcore::Value Mysql::tokenize_statement(const std::string &sql) const {
+shcore::Value Mysql::tokenize_statement(
+    const std::string &sql, const shcore::Dictionary_t &options) const {
   shcore::Array_t tokens = shcore::make_array();
-  mysqlshdk::parser::Parser_config config;
+  const auto config = get_tokenizer_config(options, true);
 
   mysqlshdk::parser::tokenize_statement(
       sql, config, [&tokens](std::string_view type, std::string_view token) {

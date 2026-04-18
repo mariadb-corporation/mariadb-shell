@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <algorithm>
+
 #include "unittest/gtest_clean.h"
 
 #include "mysqlshdk/libs/parser/mysql_parser_utils.h"
@@ -31,6 +33,38 @@ namespace mysqlshdk {
 namespace parser {
 
 using Version = mysqlshdk::utils::Version;
+
+namespace {
+
+class Terminal_collector final : public IParser_listener {
+ public:
+  void on_rule(const AST_rule_node &, bool) override {}
+
+  void on_terminal(const AST_terminal_node &node) override {
+    terminals.push_back(node.name);
+  }
+
+  void on_error(const AST_error_node &node) override { errors.push_back(node); }
+
+  std::vector<std::string> terminals;
+  std::vector<AST_error_node> errors;
+};
+
+std::vector<std::string> collect_token_types(std::string_view stmt,
+                                             const Parser_config &config) {
+  std::vector<std::string> token_types;
+
+  EXPECT_TRUE(tokenize_statement(
+      stmt, config,
+      [&token_types](std::string_view type, std::string_view /*token*/) {
+        token_types.emplace_back(type);
+        return true;
+      }));
+
+  return token_types;
+}
+
+}  // namespace
 
 TEST(MysqlParserUtils, check_syntax_ok) {
   EXPECT_NO_THROW(check_sql_syntax(R"*(select 1, '1', "1")*", {}));
@@ -140,6 +174,78 @@ DELIMITER ;
 )*",
                                 {}),
                Sql_syntax_error);
+}
+
+TEST(MysqlParserUtils, respects_ansi_quotes_mode) {
+  Parser_config ansi_quotes_on;
+  ansi_quotes_on.ansi_quotes = true;
+
+  EXPECT_NO_THROW(check_sql_syntax(R"*(select "a")*", {}));
+  EXPECT_THROW(check_sql_syntax(R"*(select "a" from "t")*", {}),
+               Sql_syntax_error);
+  EXPECT_NO_THROW(check_sql_syntax(R"*(select "a" from "t")*", ansi_quotes_on));
+}
+
+TEST(MysqlParserUtils, respects_no_backslash_escapes_mode) {
+  Parser_config no_backslash_escapes_on;
+  no_backslash_escapes_on.no_backslash_escapes = true;
+
+  EXPECT_NO_THROW(check_sql_syntax(R"(select 'a\'b')", {}));
+  EXPECT_THROW(check_sql_syntax(R"(select 'a\'b')", no_backslash_escapes_on),
+               Sql_syntax_error);
+  EXPECT_NO_THROW(
+      check_sql_syntax(R"(select 'a''b')", no_backslash_escapes_on));
+}
+
+TEST(MysqlParserUtils, uses_string_terminals_when_ansi_quotes_is_disabled) {
+  Terminal_collector collector;
+
+  EXPECT_NO_THROW(traverse_statement_ast(R"*(select "a")*", {}, &collector));
+  EXPECT_TRUE(collector.errors.empty());
+  EXPECT_NE(std::find(collector.terminals.begin(), collector.terminals.end(),
+                      "SINGLE_QUOTED_TEXT"),
+            collector.terminals.end());
+  EXPECT_EQ(std::find(collector.terminals.begin(), collector.terminals.end(),
+                      "DOUBLE_QUOTED_TEXT"),
+            collector.terminals.end());
+}
+
+TEST(MysqlParserUtils, uses_quoted_identifier_terminals_with_ansi_quotes) {
+  Terminal_collector collector;
+  Parser_config ansi_quotes_on;
+  ansi_quotes_on.ansi_quotes = true;
+
+  EXPECT_NO_THROW(traverse_statement_ast(R"*(select "a" from "t")*",
+                                         ansi_quotes_on, &collector));
+  EXPECT_TRUE(collector.errors.empty());
+  EXPECT_NE(std::find(collector.terminals.begin(), collector.terminals.end(),
+                      "BACK_TICK_QUOTED_ID"),
+            collector.terminals.end());
+  EXPECT_EQ(std::find(collector.terminals.begin(), collector.terminals.end(),
+                      "SINGLE_QUOTED_TEXT"),
+            collector.terminals.end());
+}
+
+TEST(MysqlParserUtils, tokenizes_double_quotes_according_to_ansi_quotes_mode) {
+  Parser_config ansi_quotes_on;
+  ansi_quotes_on.ansi_quotes = true;
+
+  const auto text_tokens = collect_token_types(R"*(select "a")*", {});
+  EXPECT_NE(
+      std::find(text_tokens.begin(), text_tokens.end(), "SINGLE_QUOTED_TEXT"),
+      text_tokens.end());
+  EXPECT_EQ(
+      std::find(text_tokens.begin(), text_tokens.end(), "BACK_TICK_QUOTED_ID"),
+      text_tokens.end());
+
+  const auto identifier_tokens =
+      collect_token_types(R"*(select "a")*", ansi_quotes_on);
+  EXPECT_NE(std::find(identifier_tokens.begin(), identifier_tokens.end(),
+                      "BACK_TICK_QUOTED_ID"),
+            identifier_tokens.end());
+  EXPECT_EQ(std::find(identifier_tokens.begin(), identifier_tokens.end(),
+                      "SINGLE_QUOTED_TEXT"),
+            identifier_tokens.end());
 }
 
 TEST(MysqlParserUtils, extract_table_references) {
@@ -265,6 +371,19 @@ TEST(MysqlParserUtils, extract_table_references) {
       {});
 }
 
+TEST(MysqlParserUtils, extract_table_references_respects_ansi_quotes_mode) {
+  Parser_config ansi_quotes_on;
+  ansi_quotes_on.mysql_version = mysqlshdk::utils::k_shell_version;
+  ansi_quotes_on.ansi_quotes = true;
+
+  const auto stmt = R"*(SELECT * FROM "test"."quoted table")*";
+  const auto expected = std::vector<Table_reference>{{"test", "quoted table"}};
+
+  std::vector<Table_reference> actual;
+  EXPECT_NO_THROW(actual = extract_table_references(stmt, ansi_quotes_on));
+  EXPECT_EQ(expected, actual);
+}
+
 TEST(MysqlParserUtils, extract_table_references_class) {
   Extract_table_references etr{mysqlshdk::utils::k_shell_version};
 
@@ -387,6 +506,22 @@ TEST(MysqlParserUtils, extract_table_references_class) {
       "WITH cte (c1, c2) AS (SELECT 1, 2 UNION ALL SELECT 3, 4) SELECT c1, c2 "
       "FROM cte;",
       {});
+}
+
+TEST(MysqlParserUtils,
+     extract_table_references_class_respects_ansi_quotes_mode) {
+  Parser_config ansi_quotes_on;
+  ansi_quotes_on.mysql_version = mysqlshdk::utils::k_shell_version;
+  ansi_quotes_on.ansi_quotes = true;
+
+  Extract_table_references etr{ansi_quotes_on};
+
+  const auto stmt = R"*(SELECT * FROM "test"."quoted table")*";
+  const auto expected = std::vector<Table_reference>{{"test", "quoted table"}};
+
+  std::vector<Table_reference> actual;
+  EXPECT_NO_THROW(actual = etr.run(stmt));
+  EXPECT_EQ(expected, actual);
 }
 
 TEST(MysqlParserUtils, bug_37393439) {

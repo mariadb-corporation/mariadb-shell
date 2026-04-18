@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -93,8 +93,6 @@ class Parser_context {
       : Parser_context({}, config) {}
 
   inline MySQLParser::QueryContext *query() {
-    // improve the performance using the approach described here:
-    // https://tomassetti.me/improving-the-performance-of-an-antlr-parser/#chapter13
     set_prediction_mode(true);
 
     try {
@@ -126,8 +124,7 @@ class Parser_context {
 
     SqlMode mode = SqlMode::NoMode;
 
-    // TODO(alfredo) stop forcing ansi_quotes when BUG#37018247 is fixed
-    if (config.ansi_quotes || true) {
+    if (config.ansi_quotes) {
       mode = SqlMode(mode | SqlMode::AnsiQuotes);
     }
 
@@ -186,7 +183,7 @@ class Parser_context {
         AST_error_node node;
 
         node.terminal_symbol = token->getType();
-        node.name = m_vocabulary.getSymbolicName(token->getType());
+        node.name = m_vocabulary.getSymbolicName(node.terminal_symbol);
         node.text = error->getText();
         node.line = token->getLine();
         node.offset = token->getCharPositionInLine();
@@ -282,8 +279,7 @@ class Tokenizer_context {
 
     SqlMode mode = SqlMode::NoMode;
 
-    // TODO(alfredo) stop forcing ansi_quotes when BUG#37018247 is fixed
-    if (config.ansi_quotes || true) {
+    if (config.ansi_quotes) {
       mode = SqlMode(mode | SqlMode::AnsiQuotes);
     }
 
@@ -378,8 +374,8 @@ namespace {
 
 class Table_ref_listener : public parsers::MySQLParserBaseListener {
  public:
-  explicit Table_ref_listener(std::vector<Table_reference> *references)
-      : m_references(references) {}
+  Table_ref_listener(std::vector<Table_reference> *references, bool ansi_quotes)
+      : m_references(references), m_ansi_quotes(ansi_quotes) {}
 
   void exitTableRef(MySQLParser::TableRefContext *ctx) override {
     Table_reference reference;
@@ -398,11 +394,13 @@ class Table_ref_listener : public parsers::MySQLParserBaseListener {
     }
 
     if (is_quoted(reference.schema)) {
-      reference.schema = shcore::unquote_identifier(reference.schema);
+      reference.schema =
+          shcore::unquote_identifier(reference.schema, m_ansi_quotes);
     }
 
     if (is_quoted(reference.table)) {
-      reference.table = shcore::unquote_identifier(reference.table);
+      reference.table =
+          shcore::unquote_identifier(reference.table, m_ansi_quotes);
     }
 
     m_references->emplace_back(std::move(reference));
@@ -414,7 +412,7 @@ class Table_ref_listener : public parsers::MySQLParserBaseListener {
     auto id = ctx->identifier()->getText();
 
     if (is_quoted(id)) {
-      id = shcore::unquote_identifier(id);
+      id = shcore::unquote_identifier(id, m_ansi_quotes);
     }
 
     m_cte_identifiers.emplace(std::move(id));
@@ -433,38 +431,46 @@ class Table_ref_listener : public parsers::MySQLParserBaseListener {
 
  private:
   inline bool is_quoted(const std::string &s) {
-    return s.length() >= 2 && '`' == s.front() && s.front() == s.back();
+    return s.length() >= 2 &&
+           ('`' == s.front() || (m_ansi_quotes && '"' == s.front())) &&
+           s.front() == s.back();
   }
 
   std::vector<Table_reference> *m_references;
   std::unordered_set<std::string> m_cte_identifiers;
+  bool m_ansi_quotes;
 };
 
 }  // namespace
 
 std::vector<Table_reference> extract_table_references(
-    std::string_view stmt, const mysqlshdk::utils::Version &version) {
-  Parser_context context{stmt, Parser_config{version}};
+    std::string_view stmt, const Parser_config &config) {
+  Parser_context context{stmt, config};
 
   const auto tree = context.query();
   std::vector<Table_reference> result;
 
-  Table_ref_listener listener{&result};
+  Table_ref_listener listener{&result, config.ansi_quotes};
   ParseTreeWalker::DEFAULT.walk(&listener, tree);
 
   return result;
 }
 
+std::vector<Table_reference> extract_table_references(
+    std::string_view stmt, const mysqlshdk::utils::Version &version) {
+  return extract_table_references(stmt, Parser_config{version});
+}
+
 class Extract_table_references::Impl {
  public:
-  explicit Impl(const mysqlshdk::utils::Version &version)
-      : m_context(Parser_config{version}) {}
+  explicit Impl(const Parser_config &config)
+      : m_context(config), m_ansi_quotes(config.ansi_quotes) {}
 
   std::vector<Table_reference> run(std::string_view stmt) {
     const auto tree = m_context.query(stmt);
     std::vector<Table_reference> result;
 
-    Table_ref_listener listener{&result};
+    Table_ref_listener listener{&result, m_ansi_quotes};
     ParseTreeWalker::DEFAULT.walk(&listener, tree);
 
     return result;
@@ -472,11 +478,15 @@ class Extract_table_references::Impl {
 
  private:
   Parser_context m_context;
+  bool m_ansi_quotes;
 };
+
+Extract_table_references::Extract_table_references(const Parser_config &config)
+    : m_impl(std::make_unique<Impl>(config)) {}
 
 Extract_table_references::Extract_table_references(
     const mysqlshdk::utils::Version &version)
-    : m_impl(std::make_unique<Impl>(version)) {}
+    : Extract_table_references(Parser_config{version}) {}
 
 Extract_table_references::~Extract_table_references() = default;
 

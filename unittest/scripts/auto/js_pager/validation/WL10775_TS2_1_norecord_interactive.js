@@ -46,7 +46,7 @@ FUNCTIONS
       makeAccount(user, host)
             Joins user and host into an quoted account string.
 
-      parseStatementAst(statements)
+      parseStatementAst(statements[, options])
             Parse MySQL statements and return its AST representation.
 
       quoteIdentifier(s)
@@ -56,10 +56,10 @@ FUNCTIONS
       splitAccount(account)
             Splits account string into user and host.
 
-      splitScript(script)
+      splitScript(script[, options])
             Split a SQL script into individual statements.
 
-      tokenizeStatement(statement)
+      tokenizeStatement(statement[, options])
             Lexes a MySQL statement into a list of tokens.
 
       unquoteIdentifier(s)
@@ -167,5 +167,4 @@ DESCRIPTION
 
       The server autocommit mode will return back to it's state before calling
       startTransaction().
-
 

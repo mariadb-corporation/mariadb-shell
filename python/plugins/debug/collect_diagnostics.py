@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -384,6 +384,23 @@ def process_path(path: str) -> Tuple[str, str]:
     return path, prefix
 
 
+def get_session_sql_mode(session) -> str:
+    sql_mode = session.run_sql("select @@session.sql_mode").fetch_one()[0]
+    return sql_mode if sql_mode else ""
+
+
+def set_session_sql_mode(session, sql_mode: str) -> None:
+    session.run_sql("set session sql_mode = ?", [sql_mode])
+
+
+def parser_options_for_sql_mode(sql_mode: str) -> dict:
+    modes = {mode.strip().upper() for mode in sql_mode.split(",") if mode.strip()}
+    return {
+        "ansiQuotes": "ANSI_QUOTES" in modes,
+        "noBackslashEscapes": "NO_BACKSLASH_ESCAPES" in modes,
+    }
+
+
 def do_collect_diagnostics(
     session_,
     path,
@@ -608,15 +625,21 @@ def do_collect_high_load_diagnostics(
 
 
 def extract_referenced_tables(session: InstanceSession, query: str) -> List[Tuple[str, str]]:
+    sql_mode = get_session_sql_mode(session)
     default_schema = session.run_sql("select schema()").fetch_one()[0]
 
     def find_table_refs(ast):
+        def normalize_identifier(text):
+            if len(text) >= 2 and text[0] == text[-1]:
+                if text[0] == "`":
+                    return mysql.unquote_identifier(text)
+                if text[0] == '"':
+                    return text[1:-1].replace('""', '"')
+            return text
+
         def extract_table_ref(node):
             if "rule" in node and node["rule"] == "pureIdentifier":
-                if node["children"][0]["symbol"] == "BACK_TICK_QUOTED_ID":
-                    return [mysql.unquote_identifier(node["children"][0]["text"])]
-                else:
-                    return [node["children"][0]["text"]]
+                return [normalize_identifier(node["children"][0]["text"])]
             elif "children" in node:
                 ref = []
                 for n in node["children"]:
@@ -636,7 +659,7 @@ def extract_referenced_tables(session: InstanceSession, query: str) -> List[Tupl
                 refs += find_table_refs(child)
         return refs
 
-    ast = mysql.parse_statement_ast(query)
+    ast = mysql.parse_statement_ast(query, parser_options_for_sql_mode(sql_mode))
 
     return find_table_refs(ast)
 
@@ -697,9 +720,11 @@ def do_collect_slow_query_diagnostics(
         raise Error(
             "Option 'customShell' is only allowed when connected to localhost")
 
+    original_sql_mode = get_session_sql_mode(session)
     referenced_tables = extract_referenced_tables(session, query)
 
     helper_session = globals.shell.open_session()
+    set_session_sql_mode(helper_session, original_sql_mode)
 
     print(f"Collecting diagnostics information from {session.uri}...")
     try:

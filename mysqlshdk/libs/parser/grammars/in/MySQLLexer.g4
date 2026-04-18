@@ -1,7 +1,7 @@
 lexer grammar MySQLLexer;
 
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -63,7 +63,7 @@ tokens {
 //-------------------------------------------------------------------------------------------------
 
 @header {/*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1161,9 +1161,14 @@ fragment DOUBLE_QUOTE: '"';
 BACK_TICK_QUOTED_ID:
     BACK_TICK (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? BACK_TICK;
 
-DOUBLE_QUOTED_TEXT: (
+DOUBLE_QUOTED_TEXT:
+    {this.isSqlModeActive(SqlMode.AnsiQuotes)}?
+        DOUBLE_QUOTE ('""' | ~'"')* DOUBLE_QUOTE
+        { this.type = MySQLLexer.BACK_TICK_QUOTED_ID; }
+    | (
         DOUBLE_QUOTE (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? DOUBLE_QUOTE
-    )+;
+      )+ { this.type = MySQLLexer.SINGLE_QUOTED_TEXT; }
+;
 
 SINGLE_QUOTED_TEXT: (
         SINGLE_QUOTE (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? SINGLE_QUOTE

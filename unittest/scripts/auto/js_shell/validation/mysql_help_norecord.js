@@ -36,7 +36,7 @@ FUNCTIONS
       makeAccount(user, host)
             Joins user and host into an quoted account string.
 
-      parseStatementAst(statements)
+      parseStatementAst(statements[, options])
             Parse MySQL statements and return its AST representation.
 
       quoteIdentifier(s)
@@ -46,10 +46,10 @@ FUNCTIONS
       splitAccount(account)
             Splits account string into user and host.
 
-      splitScript(script)
+      splitScript(script[, options])
             Split a SQL script into individual statements.
 
-      tokenizeStatement(statement)
+      tokenizeStatement(statement[, options])
             Lexes a MySQL statement into a list of tokens.
 
       unquoteIdentifier(s)
@@ -142,13 +142,19 @@ NAME
                           representation.
 
 SYNTAX
-      mysql.parseStatementAst(statements)
+      mysql.parseStatementAst(statements[, options])
 
 WHERE
       statements: SQL statements to be parsed
+      options: Dictionary of parser options
 
 RETURNS
       AST encoded as a JSON structure
+
+DESCRIPTION
+      Supported options are: - ansiQuotes: if true, treat `"` as an identifier
+      quote - noBackslashEscapes: if true, backslashes do not escape characters
+      in strings
 
 //@<OUT> quoteIdentifier
 NAME
@@ -169,10 +175,11 @@ NAME
       splitScript - Split a SQL script into individual statements.
 
 SYNTAX
-      mysql.splitScript(script)
+      mysql.splitScript(script[, options])
 
 WHERE
       script: A SQL script as a string containing multiple statements
+      options: Dictionary of parser options
 
 RETURNS
       A list of statements
@@ -181,6 +188,10 @@ DESCRIPTION
       The default statement delimiter is `;` but it can be changed with the
       DELIMITER keyword, which must be followed by the delimiter character(s)
       and a newline.
+
+      Supported options are: - ansiQuotes: if true, treat `"` as an identifier
+      quote - noBackslashEscapes: if true, backslashes do not escape characters
+      in strings
 
 //@<OUT> unquoteIdentifier
 NAME

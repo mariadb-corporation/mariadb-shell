@@ -1,6 +1,14 @@
 // Assumptions: validateMembers exists
 var mysql = require('mysql');
 
+function astContainsRule(ast, rule) {
+    return JSON.stringify(ast).includes('"rule":"' + rule + '"');
+}
+
+function astContainsSymbol(ast, symbol) {
+    return JSON.stringify(ast).includes('"symbol":"' + symbol + '"');
+}
+
 // The tests assume the next variables have been put in place
 // on the JS Context
 // __uri: <user>@<host>
@@ -59,8 +67,34 @@ mysql.tokenizeStatement("`")
 mysql.tokenizeStatement('"')
 mysql.tokenizeStatement('\\')
 
-//@<> BUG#37018247 - quoted literals when ANSI quotes is disabled - TODO
+//@<> BUG#37018247 - double quotes follow sql_mode token classes
 EXPECT_NO_THROWS(function () { mysql.parseStatementAst('SELECT "1"'); });
+EXPECT_EQ(true, astContainsRule(mysql.parseStatementAst('SELECT "1"'), 'pureIdentifier'));
+var doubleQuotedLiteralAst = mysql.parseStatementAst('SELECT "1"', {ansiQuotes: false});
+EXPECT_EQ(true, astContainsRule(doubleQuotedLiteralAst, 'textStringLiteral'));
+EXPECT_EQ(true, astContainsSymbol(doubleQuotedLiteralAst, 'SINGLE_QUOTED_TEXT'));
+EXPECT_EQ(false, astContainsSymbol(doubleQuotedLiteralAst, 'DOUBLE_QUOTED_TEXT'));
+var doubleQuotedIdentifierAst = mysql.parseStatementAst('SELECT "quoted"', {ansiQuotes: true});
+EXPECT_EQ(true, astContainsRule(doubleQuotedIdentifierAst, 'pureIdentifier'));
+EXPECT_EQ(true, astContainsSymbol(doubleQuotedIdentifierAst, 'BACK_TICK_QUOTED_ID'));
+EXPECT_THROWS_LIKE(function () { mysql.parseStatementAst('SELECT "a" FROM "t"', {ansiQuotes: false}); }, /".*"/);
+
+EXPECT_EQ(1, mysql.tokenizeStatement('SELECT "a"').filter(function (token) {
+    return token.type === 'BACK_TICK_QUOTED_ID';
+}).length);
+EXPECT_EQ(1, mysql.tokenizeStatement('SELECT "a"', {ansiQuotes: false}).filter(function (token) {
+    return token.type === 'SINGLE_QUOTED_TEXT';
+}).length);
+EXPECT_EQ(1, mysql.tokenizeStatement('SELECT "a"', {ansiQuotes: true}).filter(function (token) {
+    return token.type === 'BACK_TICK_QUOTED_ID';
+}).length);
+EXPECT_EQ(1, mysql.tokenizeStatement("SELECT 'a\\''", {noBackslashEscapes: false}).filter(function (token) {
+    return token.type === 'SINGLE_QUOTED_TEXT';
+}).length);
+EXPECT_THROWS_LIKE(function () { mysql.tokenizeStatement("SELECT 'a\\''", {noBackslashEscapes: true}); }, /token recognition error/);
+
+EXPECT_EQ(2, mysql.splitScript("SELECT 'a\\''; SELECT 2", {noBackslashEscapes: false}).length);
+EXPECT_EQ(1, mysql.splitScript("SELECT 'a\\''; SELECT 2", {noBackslashEscapes: true}).length);
 
 //@ splitScript
 mysql.splitScript("select 1")

@@ -574,7 +574,7 @@ void Instance_cache_builder::fetch_view_metadata() {
   info.table_name = "views";
 
   mysqlshdk::parser::Extract_table_references etr{
-      m_cache.server.version.number};
+      mysqlshdk::parser::Parser_config{m_cache.server.version.number, true}};
 
   iterate_views(info, [&etr](const std::string &schema, const std::string &,
                              Instance_cache::View *view,
