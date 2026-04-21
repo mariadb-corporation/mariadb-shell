@@ -635,28 +635,47 @@ TEST(Expr_parser_tests, too_many_parts) {
                    "                 ^    ");
 }
 
-TEST(Expr_parser_tests, nested_parenthesized_depth_limit) {
-  EXPECT_NO_THROW(Expr_parser(nested_parenthesized_expr(512)).expr());
+namespace {
+constexpr size_t k_max_expression_nesting_depth = 220;
+}  // namespace
 
-  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_parenthesized_expr(513)).expr(),
-                            Parser_error,
-                            "Expression nesting exceeds maximum depth of 512");
+TEST(Expr_parser_tests, nested_parenthesized_depth_limit) {
+  EXPECT_NO_THROW(
+      Expr_parser(nested_parenthesized_expr(k_max_expression_nesting_depth))
+          .expr());
+
+  EXPECT_THROW_MSG_CONTAINS(
+      Expr_parser(nested_parenthesized_expr(k_max_expression_nesting_depth + 1))
+          .expr(),
+      Parser_error,
+      "Expression nesting exceeds maximum depth of " +
+          std::to_string(k_max_expression_nesting_depth));
 }
 
 TEST(Expr_parser_tests, nested_array_depth_limit) {
-  EXPECT_NO_THROW(Expr_parser(nested_array_expr(512), true).expr());
+  EXPECT_NO_THROW(
+      Expr_parser(nested_array_expr(k_max_expression_nesting_depth), true)
+          .expr());
 
-  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_array_expr(513), true).expr(),
-                            Parser_error,
-                            "Expression nesting exceeds maximum depth of 512");
+  EXPECT_THROW_MSG_CONTAINS(
+      Expr_parser(nested_array_expr(k_max_expression_nesting_depth + 1), true)
+          .expr(),
+      Parser_error,
+      "Expression nesting exceeds maximum depth of " +
+          std::to_string(k_max_expression_nesting_depth));
 }
 
 TEST(Expr_parser_tests, nested_function_call_depth_limit) {
-  EXPECT_NO_THROW(Expr_parser(nested_function_call_expr(512)).expr());
+  EXPECT_NO_THROW(
+      Expr_parser(nested_function_call_expr(k_max_expression_nesting_depth))
+          .expr());
 
-  EXPECT_THROW_MSG_CONTAINS(Expr_parser(nested_function_call_expr(513)).expr(),
-                            Parser_error,
-                            "Expression nesting exceeds maximum depth of 512");
+  EXPECT_THROW_MSG_CONTAINS(
+      Expr_parser(nested_function_call_expr(k_max_expression_nesting_depth + 1))
+          .expr(),
+      Parser_error,
+      "Expression nesting exceeds maximum depth of " +
+          std::to_string(k_max_expression_nesting_depth));
 }
 
 }  // namespace expr_parser_tests

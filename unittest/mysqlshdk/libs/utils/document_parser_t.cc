@@ -198,19 +198,27 @@ TEST(Document_parser, bom_utf32be) {
   }
 }
 
-TEST(Document_parser, nested_object_depth_limit) {
-  EXPECT_EQ(1, process_input(nested_object_document(512)));
+namespace {
+constexpr size_t k_max_json_nesting_depth = 220;
+}  // namespace
 
-  EXPECT_THROW_LIKE(process_input(nested_object_document(513)),
-                    shcore::invalid_json,
-                    "JSON document nesting exceeds maximum depth of 512");
+TEST(Document_parser, nested_object_depth_limit) {
+  EXPECT_EQ(1, process_input(nested_object_document(k_max_json_nesting_depth)));
+
+  EXPECT_THROW_LIKE(
+      process_input(nested_object_document(k_max_json_nesting_depth + 1)),
+      shcore::invalid_json,
+      "JSON document nesting exceeds maximum depth of " +
+          std::to_string(k_max_json_nesting_depth));
 }
 
 TEST(Document_parser, nested_array_depth_limit) {
-  EXPECT_EQ(1, process_input(nested_array_document(512)));
+  EXPECT_EQ(1, process_input(nested_array_document(k_max_json_nesting_depth)));
 
-  EXPECT_THROW_LIKE(process_input(nested_array_document(513)),
-                    shcore::invalid_json,
-                    "JSON document nesting exceeds maximum depth of 512");
+  EXPECT_THROW_LIKE(
+      process_input(nested_array_document(k_max_json_nesting_depth + 1)),
+      shcore::invalid_json,
+      "JSON document nesting exceeds maximum depth of " +
+          std::to_string(k_max_json_nesting_depth));
 }
 }  // namespace shcore

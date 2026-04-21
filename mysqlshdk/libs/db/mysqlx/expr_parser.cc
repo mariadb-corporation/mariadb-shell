@@ -48,9 +48,9 @@ namespace {
 // NOTE: for reference, this limit is fixed in python: 200, in JavaScript it
 // would be based on memory limits but i.e. V8 has a default recursion limit of
 // 10k, and in MySQL itself the max allowed depth of nested subqueries is 61,
-// so 512 should be more than enough for any reasonable expression and still
+// so 220 should be more than enough for any reasonable expression and still
 // protect against stack overflow in case of malicious input
-constexpr size_t k_max_expression_nesting_depth = 512;
+constexpr size_t k_max_expression_nesting_depth = 220;
 }  // namespace
 
 struct Expr_parser::operator_list Expr_parser::_ops;
