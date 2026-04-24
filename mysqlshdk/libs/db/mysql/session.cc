@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 
 #include <mysql_version.h>
 
+#include <cctype>
 #include <mutex>
 #include <regex>
 #include <utility>
@@ -53,7 +54,62 @@ namespace mysql {
 namespace {
 std::once_flag trace_register_flag;
 constexpr size_t K_MAX_QUERY_ATTRIBUTES = 32;
+
+void log_rejected_local_infile_request(const char *filename) noexcept {
+  constexpr size_t k_max_local_infile_request_log_length = 256;
+  constexpr std::string_view k_null_local_infile_request = "<null>";
+
+  char sanitized[k_max_local_infile_request_log_length + 1];
+  bool truncated = false;
+  size_t i = 0;
+
+  if (filename) {
+    for (; i < k_max_local_infile_request_log_length && filename[i] != '\0';
+         ++i) {
+      sanitized[i] = std::isprint(static_cast<unsigned char>(filename[i]))
+                         ? filename[i]
+                         : '?';
+    }
+    truncated = filename[i] != '\0';
+  } else {
+    std::memcpy(sanitized, k_null_local_infile_request.data(),
+                k_null_local_infile_request.size());
+    i = k_null_local_infile_request.size();
+  }
+
+  sanitized[i] = '\0';
+
+  log_warning("Rejected unexpected LOCAL INFILE request for \"%s\"%s",
+              sanitized, truncated ? " (truncated)" : "");
+}
+
+int reject_local_infile_init(void ** /* buffer */, const char *filename,
+                             void * /* userdata */) noexcept {
+  log_rejected_local_infile_request(filename);
+  return 1;
+}
+
+int reject_local_infile_read(void * /* userdata */, char * /* buffer */,
+                             unsigned int /* length */) noexcept {
+  return -1;
+}
+
+void reject_local_infile_end(void * /* userdata */) noexcept {}
+
+int reject_local_infile_error(void * /* userdata */, char * /* error_msg */,
+                              unsigned int /* error_msg_len */) noexcept {
+  return CR_LOAD_DATA_LOCAL_INFILE_REJECTED;
+}
 }  // namespace
+
+const Session_impl::Local_infile_callbacks
+    Session_impl::k_reject_local_infile_callbacks{
+        reject_local_infile_init,
+        reject_local_infile_read,
+        reject_local_infile_end,
+        reject_local_infile_error,
+        nullptr,
+    };
 
 FI_DEFINE(mysql, [](const mysqlshdk::utils::FI::Args &args) {
   if (args.get_int("abort", 0)) {
@@ -201,6 +257,22 @@ void Session_impl::throw_on_connection_fail() {
 }
 
 Session_impl::Session_impl() = default;
+
+void Session_impl::apply_local_infile_callbacks(
+    const Local_infile_callbacks &callbacks) {
+  if (!_mysql) return;
+
+  _mysql->options.local_infile_init = callbacks.init;
+  _mysql->options.local_infile_read = callbacks.read;
+  _mysql->options.local_infile_end = callbacks.end;
+  _mysql->options.local_infile_error = callbacks.error;
+  _mysql->options.local_infile_userdata = callbacks.userdata;
+}
+
+void Session_impl::set_reject_local_infile_callbacks() {
+  m_local_infile = k_reject_local_infile_callbacks;
+  apply_local_infile_callbacks(m_local_infile);
+}
 
 void Session_impl::connect(
     const mysqlshdk::db::Connection_options &connection_options) {
@@ -357,11 +429,15 @@ void Session_impl::connect(
     mysql_options(_mysql, MYSQL_OPT_LOCAL_INFILE, &local_infile);
   }
 
-  _mysql->options.local_infile_init = m_local_infile.init;
-  _mysql->options.local_infile_read = m_local_infile.read;
-  _mysql->options.local_infile_end = m_local_infile.end;
-  _mysql->options.local_infile_error = m_local_infile.error;
-  _mysql->options.local_infile_userdata = m_local_infile.userdata;
+  // m_local_infile stores the callbacks explicitly configured on the Session.
+  // reject_local_infile_requests() only affects the callbacks installed on
+  // this MYSQL handle for the current connect() call, so reconnecting with
+  // different Connection_options does not rewrite the session callback state.
+  if (_connection_options.reject_local_infile_requests()) {
+    apply_local_infile_callbacks(k_reject_local_infile_callbacks);
+  } else {
+    apply_local_infile_callbacks(m_local_infile);
+  }
 
   // set max_allowed_packet and net_buffer_length
   // Note: Manual is wrong about docs for this, but my understanding is:
@@ -893,6 +969,10 @@ std::function<std::shared_ptr<Session>()> Session::set_factory_function(
 std::shared_ptr<Session> Session::create() {
   if (g_session_factory) return g_session_factory();
   return std::shared_ptr<Session>(new Session());
+}
+
+void Session::reject_local_infile() {
+  _impl->set_reject_local_infile_callbacks();
 }
 
 std::string Session::track_system_variable(const std::string &variable) {
