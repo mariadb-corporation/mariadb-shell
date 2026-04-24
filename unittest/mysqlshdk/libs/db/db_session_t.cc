@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -251,6 +251,39 @@ TEST_F(Db_tests, connect_write_timeout) {
   EXPECT_NO_THROW(session->connect(connection_options));
 
   // no way to easily test this
+}
+
+TEST_F(Db_tests, connect_local_infile_reject_policy_is_per_connection) {
+  const auto mysql_session =
+      std::dynamic_pointer_cast<mysqlshdk::db::mysql::Session>(session);
+  ASSERT_NE(nullptr, mysql_session);
+
+  auto reject_options = mysqlshdk::db::Connection_options(uri());
+  reject_options.set(mysqlshdk::db::kLocalInfile, "true");
+  reject_options.set_reject_local_infile_requests(true);
+
+  ASSERT_NO_THROW(mysql_session->connect(reject_options));
+  auto *handle = mysql_session->get_handle();
+  ASSERT_NE(nullptr, handle);
+  EXPECT_NE(nullptr, handle->options.local_infile_init);
+  EXPECT_NE(nullptr, handle->options.local_infile_read);
+  EXPECT_NE(nullptr, handle->options.local_infile_end);
+  EXPECT_NE(nullptr, handle->options.local_infile_error);
+  EXPECT_EQ(nullptr, handle->options.local_infile_userdata);
+
+  mysql_session->close();
+
+  auto regular_options = mysqlshdk::db::Connection_options(uri());
+  regular_options.set(mysqlshdk::db::kLocalInfile, "true");
+
+  ASSERT_NO_THROW(mysql_session->connect(regular_options));
+  handle = mysql_session->get_handle();
+  ASSERT_NE(nullptr, handle);
+  EXPECT_EQ(nullptr, handle->options.local_infile_init);
+  EXPECT_EQ(nullptr, handle->options.local_infile_read);
+  EXPECT_EQ(nullptr, handle->options.local_infile_end);
+  EXPECT_EQ(nullptr, handle->options.local_infile_error);
+  EXPECT_EQ(nullptr, handle->options.local_infile_userdata);
 }
 
 TEST_F(Db_tests, connect_max_allowed_packet) {
