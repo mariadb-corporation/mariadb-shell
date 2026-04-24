@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -189,6 +189,7 @@ void Load_dump_options::set_session(
   m_base_session = session;
 
   m_target = get_classic_connection_options(m_base_session);
+  m_target.set_reject_local_infile_requests(true);
 
   if (m_target.has(mysqlshdk::db::kLocalInfile)) {
     m_target.remove(mysqlshdk::db::kLocalInfile);

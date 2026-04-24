@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -271,6 +271,14 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   void set_interactive(bool value);
   bool is_interactive() const;
 
+  inline void set_reject_local_infile_requests(bool value) {
+    m_reject_local_infile_requests = value;
+  }
+
+  inline bool reject_local_infile_requests() const {
+    return m_reject_local_infile_requests;
+  }
+
  private:
   void _set_fixed(const std::string &key, const std::string &val);
   bool is_extra_option(const std::string &option);
@@ -295,6 +303,7 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   std::optional<std::string> m_mfa_password_2;
   std::optional<std::string> m_mfa_password_3;
   bool m_interactive = false;
+  bool m_reject_local_infile_requests = false;
 
   // whether a (mfa) password is needed even if not given
   // regular password is assumed to be required for compatibility options

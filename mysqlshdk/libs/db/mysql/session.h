@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -218,6 +218,11 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
 
   MYSQL *get_handle() { return _mysql; }
 
+  struct Local_infile_callbacks;
+
+  void apply_local_infile_callbacks(const Local_infile_callbacks &callbacks);
+  void set_reject_local_infile_callbacks();
+
   std::string _uri;
   MYSQL *_mysql = nullptr;
   std::shared_ptr<MYSQL_RES> _prev_result;
@@ -232,6 +237,7 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
     int (*error)(void *, char *, unsigned int) = nullptr;
     void *userdata = nullptr;
   };
+  static const Local_infile_callbacks k_reject_local_infile_callbacks;
   Local_infile_callbacks m_local_infile;
 };
 
@@ -333,6 +339,8 @@ class SHCORE_PUBLIC Session : public ISession,
     if (_impl->_mysql)
       _impl->_mysql->options.local_infile_userdata = local_infile_userdata;
   }
+
+  void reject_local_infile();
 
   socket_t get_socket_fd() const override {
     if (!_impl || !_impl->_mysql || _impl->_mysql->net.fd == -1)

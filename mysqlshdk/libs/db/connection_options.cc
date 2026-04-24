@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -135,6 +135,7 @@ void Connection_options::override_with(const Connection_options &options) {
 
   m_default_transport_type = options.m_default_transport_type;
   m_transport_type = options.m_transport_type;
+  m_reject_local_infile_requests = options.m_reject_local_infile_requests;
 
   for (int f = 0; f < k_max_auth_factors; f++) {
     if (options.has_needs_password(f))
@@ -735,7 +736,8 @@ bool Connection_options::operator==(const Connection_options &other) const {
          m_enable_connection_attributes ==
              other.m_enable_connection_attributes &&
          m_connection_attributes == other.m_connection_attributes &&
-         m_port == other.m_port && m_transport_type == other.m_transport_type;
+         m_port == other.m_port && m_transport_type == other.m_transport_type &&
+         m_reject_local_infile_requests == other.m_reject_local_infile_requests;
 }
 
 bool Connection_options::operator!=(const Connection_options &other) const {

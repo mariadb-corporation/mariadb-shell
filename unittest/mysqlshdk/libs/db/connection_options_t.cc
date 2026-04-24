@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2026, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -768,6 +768,25 @@ TEST(Connection_options, invalid_options_after_WL10912) {
       "sslCipher", "sslCert", "sslKey",    "authMethod", "sslTlsVersion"};
 
   for (auto property : invalid_options) combine(property, callback);
+}
+
+TEST(Connection_options, reject_local_infile_requests) {
+  mysqlshdk::db::Connection_options options;
+
+  EXPECT_FALSE(options.reject_local_infile_requests());
+
+  options.set_reject_local_infile_requests(true);
+  EXPECT_TRUE(options.reject_local_infile_requests());
+
+  mysqlshdk::db::Connection_options copy(options);
+  EXPECT_TRUE(copy.reject_local_infile_requests());
+
+  mysqlshdk::db::Connection_options overridden;
+  overridden.override_with(options);
+  EXPECT_TRUE(overridden.reject_local_infile_requests());
+
+  overridden.set_reject_local_infile_requests(false);
+  EXPECT_FALSE(overridden.reject_local_infile_requests());
 }
 
 }  // namespace testing
