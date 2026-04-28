@@ -2220,10 +2220,10 @@ if __version_num >= 80000:
         f"NOTE: Backup lock is not available to the account {test_user_account} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.",
         fatal=False
     )
-    # 8.0 has roles which are checked prior to running the dump, if user is missing the SELECT privilege, error will be reported at this stage
-    required_privileges["SELECT"] = PrivilegeError(  # table-level privilege
-        "Unable to get roles information.",
-        f"ERROR: Unable to check privileges for user {test_user_account}. User requires SELECT privilege on mysql.* to obtain information about all roles."
+    # 8.0 requires SELECT on mysql.* before dumping users
+    required_privileges["SELECT"] = PrivilegeError(  # schema-level privilege
+        re.compile(r"While 'Initializing': User {0} is missing the following privilege\(s\) for schema `mysql`: SELECT.".format(test_user_account)),
+        exception_type = "Error: Shell Error (52008)",
     )
 
 # setup the user, grant only required privileges
@@ -4535,6 +4535,33 @@ TEST_BOOL_OPTION("dataMaskingPolicies")
 
 #@<> WL17279-FR1.2 - 'allowDataMasking' option - type
 TEST_BOOL_OPTION("allowDataMasking")
+
+#@<> BUG#36247713 - setup {VER(>=8.0.19)}
+# revoke SELECT ON mysql.*
+setup_session()
+session.run_sql("SET GLOBAL partial_revokes=1")
+
+session.run_sql(f"GRANT ALL ON *.* TO {test_user_account}")
+session.run_sql(f"REVOKE SELECT ON mysql.* FROM {test_user_account}")
+
+# connect
+shell.connect(test_user_uri(__mysql_sandbox_port1))
+
+#@<> BUG#36247713 - dry run works {VER(>=8.0.19)}
+EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "users": False, "showProgress": False })
+
+#@<> BUG#36247713 - dump works {VER(>=8.0.19)}
+EXPECT_SUCCESS([types_schema], test_output_absolute, { "users": False, "showProgress": False })
+
+#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19)}
+EXPECT_FAIL("Error: Shell Error (52008)", f"While 'Initializing': User {test_user_account} is missing the following privilege(s) for schema `mysql`: SELECT.", test_output_absolute, { "users": True, "showProgress": False })
+
+#@<> BUG#36247713 - cleanup {VER(>=8.0.19)}
+setup_session()
+create_users()
+
+#@<> BUG#36247713 - restore partial_revokes {VER(>=8.0.19)}
+session.run_sql("SET GLOBAL partial_revokes=0")
 
 #@<> Cleanup
 drop_all_schemas()

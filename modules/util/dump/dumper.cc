@@ -2162,6 +2162,7 @@ void Dumper::do_run() {
     throw_if_cannot_dump_users();
 
     fetch_user_privileges();
+    validate_preflight_privileges();
 
     {
       shcore::on_leave_scope read_locks([this]() { release_read_locks(); });
@@ -2210,7 +2211,7 @@ void Dumper::do_run() {
 
     create_schema_tasks();
 
-    validate_privileges();
+    validate_object_privileges();
     initialize_counters();
     validate_mds();
     validate_data_masking();
@@ -5409,7 +5410,35 @@ bool Dumper::should_dump_data(const Table_task &table) const {
   }
 }
 
-void Dumper::validate_privileges() const {
+void Dumper::validate_preflight_privileges() const {
+  if (!dump_users()) {
+    return;
+  }
+
+  if (m_server_version.is_5_6) {
+    const auto result = m_user_privileges->validate({"SUPER"});
+
+    if (result.has_missing_privileges()) {
+      THROW_ERROR(SHERR_DUMP_MISSING_GLOBAL_PRIVILEGES,
+                  shcore::make_account(m_user_account).c_str(),
+                  shcore::str_join(result.missing_privileges(), ", ").c_str());
+    }
+  }
+
+  if (m_server_version.is_8_0) {
+    // SHOW CREATE USER requires access to the mysql schema.
+    const auto result = m_user_privileges->validate({"SELECT"}, "mysql");
+
+    if (result.has_missing_privileges()) {
+      THROW_ERROR(SHERR_DUMP_MISSING_SCHEMA_PRIVILEGES,
+                  shcore::make_account(m_user_account).c_str(),
+                  shcore::quote_identifier("mysql").c_str(),
+                  shcore::str_join(result.missing_privileges(), ", ").c_str());
+    }
+  }
+}
+
+void Dumper::validate_object_privileges() const {
   std::set<std::string> all_required;
   std::set<std::string> global_required;
   std::set<std::string> schema_required;
@@ -5433,13 +5462,6 @@ void Dumper::validate_privileges() const {
     std::string select{"SELECT"};
     all_required.emplace(select);
     table_required.emplace(std::move(select));
-  }
-
-  if (m_cache.server.version.is_5_6 && dump_users()) {
-    // on 5.6, SUPER is required to get the real hash value from SHOW GRANTS
-    std::string super{"SUPER"};
-    all_required.emplace(super);
-    global_required.emplace(std::move(super));
   }
 
   // WL17279-FR1.3: MANAGE_DATA_MASKING_POLICY privilege is needed when dumping

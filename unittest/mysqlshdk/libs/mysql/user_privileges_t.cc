@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -172,6 +172,23 @@ void setup(const Setup_options &options, Mock_session *session) {
     }
 
     if (options.activate_all_roles_on_login.has_value()) {
+      bool use_applicable_roles_table = false;
+
+      if (options.version >= Version(8, 0, 19)) {
+        session->expect_query("SELECT CURRENT_USER()")
+            .then_return({{"",
+                           {"CURRENT_USER()"},
+                           {Type::String},
+                           {{options.current_user}}}});
+
+        std::string user;
+        std::string host;
+
+        shcore::split_account(options.current_user, &user, &host);
+        use_applicable_roles_table =
+            options.user == user && options.host == host;
+      }
+
       std::string query;
 
       if (*options.activate_all_roles_on_login) {
@@ -196,13 +213,29 @@ void setup(const Setup_options &options, Mock_session *session) {
                   {{"mandatory_roles",
                     shcore::str_join(options.mandatory_roles, ",")}}}});
 
-        query =
-            "SELECT from_user, from_host FROM mysql.role_edges WHERE "
-            "to_user=? AND to_host=?";
+        if (use_applicable_roles_table) {
+          query =
+              "SELECT ROLE_NAME, ROLE_HOST FROM "
+              "information_schema.applicable_roles";
+        } else {
+          query =
+              "SELECT from_user, from_host FROM mysql.role_edges WHERE "
+              "to_user=? AND to_host=?";
+        }
       } else {
-        query =
-            "SELECT default_role_user, default_role_host FROM "
-            "mysql.default_roles WHERE user=? AND host=?";
+        if (use_applicable_roles_table) {
+          query =
+              "SELECT ROLE_NAME, ROLE_HOST FROM "
+              "information_schema.applicable_roles WHERE IS_DEFAULT='YES'";
+        } else {
+          query =
+              "SELECT default_role_user, default_role_host FROM "
+              "mysql.default_roles WHERE user=? AND host=?";
+        }
+      }
+
+      if (!use_applicable_roles_table) {
+        query = shcore::sqlformat(std::move(query), options.user, options.host);
       }
 
       std::vector<std::vector<std::string>> active_roles;
@@ -213,12 +246,8 @@ void setup(const Setup_options &options, Mock_session *session) {
         all_roles.emplace(shcore::make_account(role));
       }
 
-      session
-          ->expect_query(shcore::sqlformat(query, options.user, options.host))
-          .then_return({{"",
-                         {"user", "host"},
-                         {Type::String, Type::String},
-                         active_roles}});
+      session->expect_query(query).then_return(
+          {{"", {"user", "host"}, {Type::String, Type::String}, active_roles}});
     }
 
     if (options.version >= Version(8, 0, 16)) {
@@ -774,6 +803,8 @@ TEST_F(User_privileges_test, partial_revokes) {
 
 TEST_F(User_privileges_test, parse_grants) {
   Setup_options setup;
+  setup.user = "dba_user";
+  setup.host = "dba_host";
 
   setup.grants = {
       "REVOKE SELECT ON `1`.* FROM u@h",
@@ -1139,6 +1170,66 @@ TEST_F(User_privileges_test, wildcard_grants) {
       EXPECT_FALSE(result.has_grant_option());
       EXPECT_FALSE(result.has_missing_privileges());
     }
+  }
+}
+
+TEST_F(User_privileges_test, bug_36247713) {
+  // don't use mysql schema when fetching roles, if possible
+  {
+    SCOPED_TRACE("activate all roles");
+
+    Setup_options setup;
+    // server has INFORMATION_SCHEMA.APPLICABLE_ROLES
+    setup.version = Version(8, 0, 19);
+    setup.activate_all_roles_on_login = true;
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+
+    setup.mandatory_roles = {
+        "read_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{
+                  "'admin_role'@'dba_host'",
+                  "'read_role'@'dba_host'",
+              }),
+              up.get_user_roles());
+  }
+
+  {
+    SCOPED_TRACE("don't activate all roles");
+
+    Setup_options setup;
+    // server has INFORMATION_SCHEMA.APPLICABLE_ROLES
+    setup.version = Version(8, 0, 19);
+    setup.activate_all_roles_on_login = false;
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+
+    setup.mandatory_roles = {
+        "read_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{
+                  "'admin_role'@'dba_host'",
+              }),
+              up.get_user_roles());
   }
 }
 

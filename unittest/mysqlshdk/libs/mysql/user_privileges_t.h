@@ -49,6 +49,7 @@ struct Setup_options {
   std::vector<std::string> grants;
   bool allow_skip_grants_user = false;
   std::optional<bool> partial_revokes;
+  std::string current_user = "username@hostname";
 };
 
 void setup(const Setup_options &options, Mock_session *session);

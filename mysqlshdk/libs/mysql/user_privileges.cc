@@ -29,10 +29,8 @@
 #include <algorithm>
 #include <functional>
 #include <iterator>
-#include <vector>
 
 #include "mysqlshdk/include/shellcore/console.h"
-#include "mysqlshdk/libs/mysql/clone.h"
 #include "mysqlshdk/libs/utils/utils_account.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_lexing.h"
@@ -530,8 +528,10 @@ std::set<std::string> User_privileges::get_mandatory_roles(
 
 void User_privileges::read_user_roles(
     const mysqlshdk::mysql::IInstance &instance) {
+  const auto version = instance.get_version();
+
   // Roles are not supported in MySQL 5.7
-  if (instance.get_version() < Version(8, 0, 0)) {
+  if (version < Version(8, 0, 0)) {
     return;
   }
 
@@ -547,6 +547,16 @@ void User_privileges::read_user_roles(
     return;
   }
 
+  // BUG#36247713 - avoid using mysql schema if possible
+  bool use_applicable_roles_table = false;
+
+  if (version >= Version(8, 0, 19)) {
+    std::string user, host;
+    instance.get_current_user(&user, &host);
+
+    use_applicable_roles_table = m_user == user && m_host == host;
+  }
+
   std::string query;
 
   if (all_roles_active) {
@@ -554,22 +564,35 @@ void User_privileges::read_user_roles(
     // activated when user logs in
 
     // get mandatory roles and add them to the active roles
-    std::set<std::string> mandatory_roles = get_mandatory_roles(instance);
-    std::move(mandatory_roles.begin(), mandatory_roles.end(),
-              std::inserter(m_roles, m_roles.begin()));
+    auto mandatory_roles = get_mandatory_roles(instance);
+    m_roles.merge(mandatory_roles);
 
     // get all the roles user has
-    query =
-        "SELECT from_user, from_host FROM mysql.role_edges WHERE to_user=? "
-        "AND to_host=?";
+    if (use_applicable_roles_table) {
+      query =
+          "SELECT ROLE_NAME, ROLE_HOST FROM "
+          "information_schema.applicable_roles";
+    } else {
+      query =
+          "SELECT from_user, from_host FROM mysql.role_edges WHERE to_user=? "
+          "AND to_host=?";
+    }
   } else {
     // activate_all_roles_on_login is disabled, only default roles are activated
-    query =
-        "SELECT default_role_user, default_role_host FROM mysql.default_roles "
-        "WHERE user=? AND host=?";
+    if (use_applicable_roles_table) {
+      query =
+          "SELECT ROLE_NAME, ROLE_HOST FROM "
+          "information_schema.applicable_roles WHERE IS_DEFAULT='YES'";
+    } else {
+      query =
+          "SELECT default_role_user, default_role_host FROM "
+          "mysql.default_roles WHERE user=? AND host=?";
+    }
   }
 
-  const auto result = instance.queryf(query, m_user, m_host);
+  const auto result = use_applicable_roles_table
+                          ? instance.query(query)
+                          : instance.queryf(query, m_user, m_host);
 
   while (const auto row = result->fetch_one()) {
     m_roles.emplace(

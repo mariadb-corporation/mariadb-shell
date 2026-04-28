@@ -489,7 +489,9 @@ class Dumper {
   std::string get_query_comment(const Table_data_task &task,
                                 const char *context) const;
 
-  void validate_privileges() const;
+  void validate_preflight_privileges() const;
+
+  void validate_object_privileges() const;
 
   bool is_gtid_executed_inconsistent() const;
 
