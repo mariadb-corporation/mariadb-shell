@@ -301,6 +301,10 @@ TEST_P(Auto_script_js, run_and_check) {
   run_and_check();
 }
 
+#ifdef _WIN32
+#undef IGNORE
+#endif
+
 enum class Dbug_tests {
   IGNORE,
   INCLUDE,
