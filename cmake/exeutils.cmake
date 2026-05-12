@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -152,6 +152,11 @@ function(install_bundled_binaries)
   cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   message(STATUS "Bundling ${ARG_DESCRIPTION}")
+
+  if(WITH_PARFAIT)
+    message(STATUS "  Skipping bundled binaries for Parfait build")
+    return()
+  endif()
 
   if(NOT DEFINED ARG_WRITE_RPATH)
     if(APPLE)

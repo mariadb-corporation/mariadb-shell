@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -139,7 +139,7 @@ IF(WITH_TESTS)
 ENDIF()
 
 ### Bundling of OpenSSL libraries (if needed)
-if(BUNDLED_OPENSSL)
+if(BUNDLED_OPENSSL AND NOT WITH_PARFAIT)
   IF(WIN32)
     SET(OPENSSL_LIBS "${HAVE_CRYPTO_DLL}" "${HAVE_OPENSSL_DLL}")
   ELSE()
