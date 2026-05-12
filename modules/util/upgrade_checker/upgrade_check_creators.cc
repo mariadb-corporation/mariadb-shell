@@ -681,8 +681,10 @@ class Check_table_command : public Upgrade_check {
           });
     };
 
-    const std::unordered_map<std::string, Checker_cache::Table_info> *tables;
-    const std::unordered_map<std::string, Checker_cache::Table_info> *views;
+    const std::unordered_map<std::string, Checker_cache::Table_info> *tables =
+        nullptr;
+    const std::unordered_map<std::string, Checker_cache::Table_info> *views =
+        nullptr;
     {
       auto workers =
           context.make_worker_pool([&context](int current, int total) {

@@ -696,6 +696,14 @@ std::shared_ptr<Result_mysql> Trace::expected_result(
   rapidjson::Value obj;
   next(&obj);
 
+  // RapidJSON object member access asserts unless the value is known to be an
+  // object, so validate the trace entry before reading its fields.
+  if (!obj.IsObject()) {
+    fail_sequence(shcore::str_format(
+        "Expected RESULT for %s in session trace, but got something else: %s",
+        _last_request.c_str(), to_json(&obj).c_str()));
+  }
+
   if (strcmp(obj["type"].GetString(), "response") != 0) {
     fail_sequence(shcore::str_format(
         "Expected RESULT for %s in session trace, but got something else: %s",
@@ -735,6 +743,14 @@ std::shared_ptr<Result_mysqlx> Trace::expected_result_x(
     std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept) {
   rapidjson::Value obj;
   next(&obj);
+
+  // RapidJSON object member access asserts unless the value is known to be an
+  // object, so validate the trace entry before reading its fields.
+  if (!obj.IsObject()) {
+    fail_sequence(shcore::str_format(
+        "Expected RESULT in session trace, but got something else: %s",
+        to_json(&obj).c_str()));
+  }
 
   if (strcmp(obj["type"].GetString(), "response") != 0)
     fail_sequence(shcore::str_format(

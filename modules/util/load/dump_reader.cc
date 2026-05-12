@@ -2621,7 +2621,9 @@ std::string Dump_reader::get_vector_store_engine_attribute(
 
   const auto t = find_table(schema, table, "engine attributes are checked");
 
-  if (!t->is_innodb_vector_store) {
+  // The context above makes find_table() throw on missing metadata, but keep
+  // the guard explicit because static analysis does not prove that invariant.
+  if (!t || !t->is_innodb_vector_store) {
     return {};
   }
 
