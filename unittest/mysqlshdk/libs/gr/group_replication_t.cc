@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -293,9 +293,10 @@ TEST_F(Group_replication_test, start_stop_gr) {
         "'ROW'.");
   }
 
-  // Test: member is not part of any group, state must be MISSING.
+  // Test: member is not active in any group.
   Member_state state_res = mysqlshdk::gr::get_member_state(*m_instance);
-  EXPECT_EQ(state_res, Member_state::MISSING);
+  EXPECT_TRUE(state_res == Member_state::MISSING ||
+              state_res == Member_state::OFFLINE);
 
   // Install GR plugin if needed.
   std::optional<std::string> init_plugin_state =
@@ -309,11 +310,20 @@ TEST_F(Group_replication_test, start_stop_gr) {
       m_instance->get_sysvar_string("group_replication_group_name");
   std::optional<std::string> gr_local_address =
       m_instance->get_sysvar_string("group_replication_local_address");
+  std::optional<std::string> gr_communication_stack =
+      m_instance->get_sysvar_string("group_replication_communication_stack");
+  const bool changed_communication_stack =
+      gr_communication_stack.has_value() &&
+      shcore::str_caseeq(*gr_communication_stack, "MYSQL");
 
   // Set GR variable to start GR.
   std::string group_name = m_instance->generate_uuid();
   m_instance->set_sysvar("group_replication_group_name", group_name,
                          Var_qualifier::GLOBAL);
+  if (changed_communication_stack) {
+    m_instance->set_sysvar("group_replication_communication_stack",
+                           std::string{"XCOM"}, Var_qualifier::GLOBAL);
+  }
   std::string local_address = "localhost:13013";
   m_instance->set_sysvar("group_replication_local_address", local_address,
                          Var_qualifier::GLOBAL);
@@ -369,6 +379,10 @@ TEST_F(Group_replication_test, start_stop_gr) {
                            Var_qualifier::GLOBAL);
   m_instance->set_sysvar("group_replication_local_address", *gr_local_address,
                          Var_qualifier::GLOBAL);
+  if (changed_communication_stack) {
+    m_instance->set_sysvar("group_replication_communication_stack",
+                           *gr_communication_stack, Var_qualifier::GLOBAL);
+  }
   if (!init_plugin_state.has_value()) {
     mysqlshdk::gr::uninstall_group_replication_plugin(*m_instance, nullptr);
   }
@@ -1454,6 +1468,8 @@ TEST_F(Group_replication_test, update_auto_increment) {
 
   std::shared_ptr<Mock_session> mock_session = std::make_shared<Mock_session>();
   mysqlshdk::mysql::Instance instance{mock_session};
+  EXPECT_CALL(*mock_session, get_server_version())
+      .WillRepeatedly(Return(mysqlshdk::utils::Version(8, 0, 1)));
 
   // Create config objects with 3 server handlers.
   mysqlshdk::config::Config cfg_global;

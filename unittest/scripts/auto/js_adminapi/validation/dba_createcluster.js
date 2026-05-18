@@ -34,7 +34,7 @@
 
 //@<OUT> WL#12049: exitStateAction must be persisted on mysql >= 8.0.12 {VER(>=8.0.12)}
 group_replication_bootstrap_group = OFF
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_enforce_update_everywhere_checks = OFF
@@ -118,7 +118,7 @@ group_replication_start_on_boot = ON
 
 //@<OUT> WL#11032: memberWeight must be persisted on mysql >= 8.0.11 {VER(>=8.0.12)}
 group_replication_bootstrap_group = OFF
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_enforce_update_everywhere_checks = OFF

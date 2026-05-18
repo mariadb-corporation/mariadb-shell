@@ -115,6 +115,9 @@ function start_standalone_gr(session, grport) {
     session.runSql("install plugin group_replication soname /*(*/'group_replication."+dllext+"'/*)*/");
     session.runSql("SET GLOBAL group_replication_bootstrap_group=1");
     session.runSql("SET GLOBAL group_replication_group_name=uuid()");
+    if (__version_num >= 100000) {
+        session.runSql("SET GLOBAL group_replication_communication_stack='XCOM'");
+    }
     session.runSql("SET GLOBAL group_replication_local_address='localhost:"+grport+"'");
     session.runSql("START group_replication");
 }
