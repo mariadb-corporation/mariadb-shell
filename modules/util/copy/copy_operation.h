@@ -76,14 +76,16 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
       storage, common::Storage_options::Storage_type::Memory);
   copy_options->dump_options()->set_url(output->full_path().real());
 
+  using mysqlshdk::utils::k_shell_version;
   using mysqlshdk::utils::Version;
   auto version = Version(
       load_session->query("SELECT @@version")->fetch_one()->get_string(0));
   auto is_mds = version.is_mds();
   DBUG_EXECUTE_IF("copy_utils_force_mds", { is_mds = true; });
   DBUG_EXECUTE_IF("copy_utils_unsupported_target_version", {
-    version = Version(version.get_major(), version.get_minor() + 1,
-                      version.get_patch());
+    version =
+        Version(k_shell_version.get_major(), k_shell_version.get_minor() + 1,
+                k_shell_version.get_patch());
   });
 
   // if target is MDS, then we want to validate the version, so we won't copy

@@ -2868,10 +2868,13 @@ for i in range(3):
     version[i] = str(int(version[i]) + 1)
     version = ".".join(version)
     if i < 2:
-        EXPECT_FAIL("ValueError", f"Argument #3: Target MySQL version '{version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
+        EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg(version)}", [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "showProgress": False })
+
+EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg('10.0.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
+EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg('26.6.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower
 EXPECT_FAIL("ValueError", "Argument #3: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })

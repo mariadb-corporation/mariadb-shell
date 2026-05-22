@@ -78,29 +78,31 @@ namespace suggested_version {
  * bugfix:     5.7.whatever    want-to: 9.0   suggestion=8.0
  * bugfix:     8.0.whatever    want-to: 9.0   suggestion=8.4
  * Innovation: 8.1..8.3        want-to: 9.0   suggestion=8.4
- * LTS:        8.4.whatever    want-to: 10.0  suggestion=9.7
- * Innovation: 9.0..9.6        want-to: 10.0	suggestion=9.7
- * LTS:        9.7.whatever    want-to: 10.7	suggestion=10.7
- * Innovation: 10.0..10.6
- * LTS:        10.7.whatever
+ * LTS:        8.4.whatever    want-to: 26.7   suggestion=9.7
+ * Innovation: 9.0..9.6        want-to: 26.7   suggestion=9.7
+ * LTS:        9.7.whatever    want-to: 28.4   suggestion=28.4
+ * Innovation: 26.7..28.1      want-to: 28.7   suggestion=28.4
+ * LTS:        28.4.whatever   want-to: 30.4   suggestion=30.4
  */
 std::optional<Version> get_next_suggested_lts_version(
     const Version &version, std::string *out_key = nullptr) {
   std::optional<Version> next_lts;
   decltype(k_latest_versions)::const_iterator item = k_latest_versions.end();
 
-  // versions before 8.0.0 must be first updated to 8.0 series
+  // 8.0 has reached EOL, but the upgrade checker keeps a fixed 8.0.46
+  // intermediate suggestion for pre-8.0 sources.
   if (version < Version(8, 0, 0)) {
     item = k_latest_versions.find("8.0");
-  } else if (mysqlshdk::utils::is_lts_release(version) &&
+  } else if (mysqlshdk::utils::version::is_lts(version) &&
              !(version.get_major() == 8 && version.get_minor() == 0)) {
     // We might be already on the LTS release of the series, so it jumps to
     // the LTS in the next series (If they exist)
-    auto first_lts = get_first_lts_version(Version(version.get_major() + 1, 0));
-    item = k_latest_versions.find(first_lts.get_short());
+    item = k_latest_versions.find(
+        mysqlshdk::utils::version::next_lts(version).get_short());
   } else {
     // in other cases lets find the latest LTS version in the series
-    item = k_latest_versions.find(get_first_lts_version(version).get_short());
+    item = k_latest_versions.find(
+        mysqlshdk::utils::version::first_lts(version).get_short());
   }
 
   if (item != k_latest_versions.end()) {

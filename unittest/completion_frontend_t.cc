@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 #include "mysqlsh/cmdline_shell.h"
+#include "mysqlshdk/libs/parser/code-completion/mysql_code_completion_api.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
@@ -40,6 +41,32 @@
 #include "modules/devapi/mod_mysqlx_session.h"
 
 namespace mysqlsh {
+
+TEST(Completer_frontend_options,
+     auto_complete_sql_options_normalizes_unsupported_server_versions) {
+  const auto unpack_options = [](const char *server_version) {
+    auto dict = shcore::make_dict();
+    dict->set(mysqlshdk::Auto_complete_sql_options::server_version_option(),
+              shcore::Value(server_version));
+    dict->set(mysqlshdk::Auto_complete_sql_options::sql_mode_option(),
+              shcore::Value(""));
+
+    mysqlshdk::Auto_complete_sql_options options;
+    mysqlshdk::Auto_complete_sql_options::options().unpack(dict, &options);
+    return options;
+  };
+
+  EXPECT_EQ(mysqlshdk::utils::Version(5, 7, 0),
+            unpack_options("1.2.3").server_version());
+  EXPECT_EQ(mysqlshdk::utils::Version(5, 7, 44),
+            unpack_options("5.7.44").server_version());
+  EXPECT_EQ(mysqlshdk::utils::Version(26, 7, 99),
+            unpack_options("26.7.99").server_version());
+  EXPECT_EQ(mysqlshdk::utils::k_shell_version,
+            unpack_options("10.0.0").server_version());
+  EXPECT_EQ(mysqlshdk::utils::k_shell_version,
+            unpack_options("26.6.0").server_version());
+}
 
 class Completer_frontend : public Shell_core_test_wrapper {
   struct linenoiseCompletions {
@@ -1744,13 +1771,18 @@ TEST_F(Completer_frontend, WL13397_TSFR_1_1_1_2) {
   connect_classic();
   execute("\\sql");
 
-  // wrong version (higher), auto-completion falls-back to latest 8.0 server
+  // wrong version (higher), auto-completion falls back to current version
   EXPECT_TAB_DOES_NOTHING("FLUSH qu");
   EXPECT_AFTER_TAB("CREATE ro", "CREATE ROLE");
 
+  const auto unsupported_version =
+      mysqlshdk::utils::Version(
+          mysqlshdk::utils::k_shell_version.get_major() + 1, 1, 0)
+          .get_base();
+
   MY_EXPECT_LOG_CONTAINS(
-      "Connected to an unsupported server version 10.9.8, SQL auto-completion "
-      "is falling back to: " MYSH_VERSION);
+      "Connected to an unsupported server version " + unsupported_version +
+      ", SQL auto-completion is falling back to: " MYSH_VERSION);
 
   output_handler.set_log_level(log_level);
   DBUG_SET("");

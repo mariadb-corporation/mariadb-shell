@@ -108,6 +108,11 @@ namespace {
 static constexpr const int k_mysql_server_net_write_timeout = 30 * 60;
 static constexpr const int k_mysql_server_wait_timeout = 365 * 24 * 60 * 60;
 
+bool is_unsupported_historical_dump_source_version(const Version &version) {
+  return version >= Version(8, 0, 0) && version <= k_shell_version &&
+         !mysqlshdk::utils::version::is_supported_server(version);
+}
+
 // 255 characters total:
 // - 225 - base name
 // -   5 - base name ordinal number
@@ -5772,11 +5777,22 @@ void Dumper::fetch_server_information() {
     m_server_version.number = Version(k_shell_version.get_major() + 1, 0, 0);
   });
 
-  if (m_server_version.number.get_major() > k_shell_version.get_major()) {
-    throw std::runtime_error(
+  DBUG_EXECUTE_IF("dumper_unsupported_calendar_gap_server_version",
+                  { m_server_version.number = Version(26, 6, 0); });
+
+  const auto unsupported_server_error = [this]() {
+    return std::runtime_error(
         shcore::str_format("Unsupported MySQL Server %s detected, please "
                            "upgrade the MySQL Shell first",
                            m_server_version.number.get_base().c_str()));
+  };
+
+  if (m_server_version.number.get_major() > k_shell_version.get_major()) {
+    throw unsupported_server_error();
+  }
+
+  if (is_unsupported_historical_dump_source_version(m_server_version.number)) {
+    throw unsupported_server_error();
   }
 
   // BUG#36701854 given that minor versions may introduce breaking changes, we

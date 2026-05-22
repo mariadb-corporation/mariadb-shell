@@ -55,13 +55,69 @@ PYTHON_MIN_VERSION = (2, 6, 0)
 PYTHON_MAX_VERSION = (4, 0, 0)
 # Minimum connector-python version that supports secure connection by default.
 CONNECTOR_MIN_VERSION = (2, 1, 7)
+CALENDAR_RELEASE_MONTHS = (1, 4, 7, 10)
 
-# Using mathematical notation for intervals, supported MYSQL versions are as
-# follows: [MIN_MYSQL_VERSION, MAX_MYSQL_VERSION [
+
+def _version_to_string(version):
+    return ".".join(str(part) for part in tuple(version))
+
+
+def _normalize_version(version):
+    version = tuple(version)
+
+    if len(version) < 3:
+        version += (0,) * (3 - len(version))
+
+    return version
+
+
+def _next_calendar_mysql_version_series(version):
+    major, minor, _ = _normalize_version(version)
+
+    month_index = CALENDAR_RELEASE_MONTHS.index(minor)
+
+    if month_index == len(CALENDAR_RELEASE_MONTHS) - 1:
+        return major + 1, 1, 0
+
+    return major, CALENDAR_RELEASE_MONTHS[month_index + 1], 0
+
+
+# Using mathematical notation for intervals, supported MySQL versions are:
+# [MIN_MYSQL_VERSION, 10.0.0 [ and [26.7.0, next after MAX_MYSQL_VERSION [
 MIN_MYSQL_VERSION = (5, 7, 17)  # minimum required version (supported)
-MAX_MYSQL_VERSION = (11, )      # maximum mysql version (not supported)
+MIN_CALENDAR_MYSQL_VERSION = (26, 7, 0)
+MAX_MYSQL_VERSION = (28, 4)  # maximum supported MySQL version series
+MYSQL_VERSION_RANGES = (
+    (MIN_MYSQL_VERSION, (10, 0, 0)),
+    (MIN_CALENDAR_MYSQL_VERSION,
+     _next_calendar_mysql_version_series(MAX_MYSQL_VERSION)),
+)
+MYSQL_VERSION_RANGE_DESCRIPTION = (
+    ">= '{0}' and < '{1}', or >= '{2}' and <= '{3}'".format(
+        _version_to_string(MYSQL_VERSION_RANGES[0][0]),
+        _version_to_string(MYSQL_VERSION_RANGES[0][1]),
+        _version_to_string(MYSQL_VERSION_RANGES[1][0]),
+        _version_to_string(MAX_MYSQL_VERSION)))
 MIN_PERSIST_MYSQL_VERSION = (8, 0, 11)  # minimum mysql version that supports
                                         # set persist syntax.
+
+
+def _is_valid_calendar_mysql_version(version):
+    major, minor, _ = _normalize_version(version)
+
+    return (minor in CALENDAR_RELEASE_MONTHS and
+            (major, minor, 0) >= MIN_CALENDAR_MYSQL_VERSION)
+
+
+def is_supported_mysql_version(version):
+    """Check if the given MySQL version is supported."""
+    version = _normalize_version(version)
+    legacy_min, legacy_max = MYSQL_VERSION_RANGES[0]
+    calendar_min, calendar_max = MYSQL_VERSION_RANGES[1]
+
+    return (legacy_min <= version < legacy_max or
+            (_is_valid_calendar_mysql_version(version) and
+             calendar_min <= version < calendar_max))
 
 
 def check_expected_version(expected_version):

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +41,20 @@ using utils::Version;
 
 const Version &k_current_version = utils::k_shell_version;
 
+Version normalize_auto_completion_server_version(
+    const Version &server_version) {
+  if (server_version < Version(5, 7, 0)) {
+    return Version(5, 7, 0);
+  }
+
+  if (server_version < Version(8, 0, 0) ||
+      utils::version::is_supported_server(server_version)) {
+    return server_version;
+  }
+
+  return k_current_version;
+}
+
 const shcore::Option_pack_def<Auto_complete_sql_options>
     &Auto_complete_sql_options::options() {
   static const auto opts =
@@ -59,11 +73,7 @@ const shcore::Option_pack_def<Auto_complete_sql_options>
 }
 
 void Auto_complete_sql_options::on_unpacked_options() {
-  if (m_server_version < Version(5, 7, 0)) {
-    m_server_version = Version(5, 7, 0);
-  } else if (m_server_version > k_current_version) {
-    m_server_version = k_current_version;
-  }
+  m_server_version = normalize_auto_completion_server_version(m_server_version);
 
   const auto modes = shcore::str_split(m_sql_mode, ",");
   std::set<std::string_view> missing_modes;

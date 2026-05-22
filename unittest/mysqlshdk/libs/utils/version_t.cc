@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -34,7 +34,9 @@ namespace mysqlshdk {
 namespace utils {
 namespace {
 
+using testing::Contains;
 using testing::ElementsAre;
+using testing::Not;
 
 TEST(Version, version_parsing) {
   // Full version
@@ -144,77 +146,194 @@ TEST(Version, version_parsing) {
   EXPECT_EQ(80000, Version("8.0.0").numeric());
   EXPECT_EQ(10203, Version("1.2.3").numeric());
   EXPECT_EQ(12345, Version("1.23.45").numeric());
+
+  EXPECT_STREQ("26.7", Version(26, 7, 0).get_short().c_str());
+  EXPECT_STREQ("26.7.0", Version(26, 7, 0).get_base().c_str());
+  EXPECT_STREQ("26.7.1-rc", Version("26.7.1-rc").get_full().c_str());
+  EXPECT_STREQ("8.4.0", Version(8, 4, 0).get_base().c_str());
 }
 
 TEST(Version, corresponding_versions) {
-  EXPECT_THAT(corresponding_versions(Version(8, 1, 0)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 1, 0)),
               ElementsAre(Version(8, 0, 34), Version(8, 1, 0)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 1, 1)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 1, 1)),
               ElementsAre(Version(8, 0, 34), Version(8, 1, 1)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 2, 0)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 2, 0)),
               ElementsAre(Version(8, 0, 35), Version(8, 2, 0)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 2, 1)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 2, 1)),
               ElementsAre(Version(8, 0, 35), Version(8, 2, 1)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 4, 0)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 0)),
               ElementsAre(Version(8, 0, 37), Version(8, 4, 0)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 4, 1)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 1)),
               ElementsAre(Version(8, 0, 38), Version(8, 4, 1)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 4, 2)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 2)),
               ElementsAre(Version(8, 0, 39), Version(8, 4, 2)));
 
-  EXPECT_THAT(corresponding_versions(Version(8, 4, 3)),
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 3)),
               ElementsAre(Version(8, 0, 40), Version(8, 4, 3)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 0, 0)),
+      version::corresponding_versions(Version(9, 0, 0)),
       ElementsAre(Version(8, 0, 38), Version(8, 4, 1), Version(9, 0, 0)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 0, 1)),
+      version::corresponding_versions(Version(9, 0, 1)),
       ElementsAre(Version(8, 0, 39), Version(8, 4, 2), Version(9, 0, 1)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 0, 2)),
+      version::corresponding_versions(Version(9, 0, 2)),
       ElementsAre(Version(8, 0, 39), Version(8, 4, 2), Version(9, 0, 2)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 1, 0)),
+      version::corresponding_versions(Version(9, 1, 0)),
       ElementsAre(Version(8, 0, 40), Version(8, 4, 3), Version(9, 1, 0)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 1, 1)),
+      version::corresponding_versions(Version(9, 1, 1)),
       ElementsAre(Version(8, 0, 40), Version(8, 4, 3), Version(9, 1, 1)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 7, 0)),
+      version::corresponding_versions(Version(9, 7, 0)),
       ElementsAre(Version(8, 0, 46), Version(8, 4, 9), Version(9, 7, 0)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(9, 7, 1)),
+      version::corresponding_versions(Version(9, 7, 1)),
       ElementsAre(Version(8, 0, 47), Version(8, 4, 10), Version(9, 7, 1)));
 
-  EXPECT_THAT(corresponding_versions(Version(10, 0, 0)),
-              ElementsAre(Version(8, 0, 47), Version(8, 4, 10),
-                          Version(9, 7, 1), Version(10, 0, 0)));
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 10)),
+              ElementsAre(Version(8, 0, 47), Version(8, 4, 10)));
 
-  EXPECT_THAT(corresponding_versions(Version(10, 0, 1)),
-              ElementsAre(Version(8, 0, 47), Version(8, 4, 10),
-                          Version(9, 7, 1), Version(10, 0, 1)));
+  EXPECT_THAT(version::corresponding_versions(Version(8, 4, 15)),
+              ElementsAre(Version(8, 4, 15)));
 
-  EXPECT_THAT(corresponding_versions(Version(10, 7, 0)),
-              ElementsAre(Version(8, 0, 54), Version(8, 4, 17),
-                          Version(9, 7, 8), Version(10, 7, 0)));
+  EXPECT_THAT(version::corresponding_versions(Version(9, 7, 5)),
+              ElementsAre(Version(8, 4, 15), Version(9, 7, 5)));
+
+  EXPECT_THAT(version::corresponding_versions(Version(9, 7, 10)),
+              ElementsAre(Version(8, 4, 20), Version(9, 7, 10)));
 
   EXPECT_THAT(
-      corresponding_versions(Version(11, 0, 0)),
-      ElementsAre(Version(8, 0, 55), Version(8, 4, 18), Version(9, 7, 9),
-                  Version(10, 7, 1), Version(11, 0, 0)));
+      version::corresponding_versions(Version(26, 7, 0)),
+      ElementsAre(Version(8, 4, 15), Version(9, 7, 5), Version(26, 7, 0)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(26, 7, 1)),
+      ElementsAre(Version(8, 4, 16), Version(9, 7, 6), Version(26, 7, 1)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(26, 10, 0)),
+      ElementsAre(Version(8, 4, 16), Version(9, 7, 6), Version(26, 10, 0)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(27, 1, 0)),
+      ElementsAre(Version(8, 4, 17), Version(9, 7, 7), Version(27, 1, 0)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(28, 4, 0)),
+      ElementsAre(Version(8, 4, 22), Version(9, 7, 12), Version(28, 4, 0)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(28, 4, 1)),
+      ElementsAre(Version(8, 4, 23), Version(9, 7, 13), Version(28, 4, 1)));
+
+  EXPECT_THAT(
+      version::corresponding_versions(Version(28, 4, 5)),
+      ElementsAre(Version(8, 4, 27), Version(9, 7, 17), Version(28, 4, 5)));
+
+  EXPECT_THAT(version::corresponding_versions(Version(28, 7, 0)),
+              ElementsAre(Version(8, 4, 23), Version(9, 7, 13),
+                          Version(28, 4, 1), Version(28, 7, 0)));
+
+  const auto overlap_versions =
+      version::corresponding_versions(Version(63, 1, 1));
+  EXPECT_EQ(Version(63, 1, 1), overlap_versions.back());
+  EXPECT_THAT(overlap_versions, Contains(Version(62, 4, 4)));
+  EXPECT_THAT(overlap_versions, Not(Contains(Version(62, 4, 5))));
+}
+
+TEST(Version, release_flavour_helpers) {
+  EXPECT_TRUE(version::is_lts(Version(8, 0, 41)));
+  EXPECT_TRUE(version::is_lts(Version(8, 4, 4)));
+  EXPECT_TRUE(version::is_lts(Version(9, 7, 1)));
+
+  EXPECT_FALSE(version::is_lts(Version(26, 7, 0)));
+  EXPECT_FALSE(version::is_lts(Version(26, 7, 1)));
+  EXPECT_TRUE(version::is_lts(Version(28, 4, 0)));
+  EXPECT_TRUE(version::is_lts(Version(28, 4, 1)));
+  EXPECT_FALSE(version::is_lts(Version(28, 7, 0)));
+
+  EXPECT_FALSE(version::calendar::is_calendar_version(Version(26, 6, 99)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(26, 7, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(26, 8, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(26, 10, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(26, 11, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(26, 12, 5)));
+  EXPECT_FALSE(version::calendar::is_calendar_version(Version(27, 0, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(27, 1, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(27, 2, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(27, 4, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(27, 7, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(27, 10, 0)));
+  EXPECT_TRUE(version::calendar::is_calendar_version(Version(28, 5, 0)));
+
+  EXPECT_TRUE(version::calendar::is_release_cadence_version(Version(26, 7, 0)));
+  EXPECT_TRUE(
+      version::calendar::is_release_cadence_version(Version(26, 10, 0)));
+  EXPECT_FALSE(
+      version::calendar::is_release_cadence_version(Version(26, 11, 0)));
+  EXPECT_FALSE(
+      version::calendar::is_release_cadence_version(Version(28, 5, 0)));
+
+  EXPECT_EQ(Version(8, 4, 0), version::first_lts(Version(8, 1, 0)));
+  EXPECT_EQ(Version(9, 7, 0), version::first_lts(Version(9, 0, 0)));
+  EXPECT_EQ(Version(28, 4, 0), version::first_lts(Version(26, 7, 0)));
+  EXPECT_EQ(Version(28, 4, 0), version::first_lts(Version(28, 4, 1)));
+  EXPECT_EQ(Version(30, 4, 0), version::first_lts(Version(28, 7, 0)));
+
+  EXPECT_EQ(Version(8, 4, 0), version::next_lts(Version(8, 0, 41)));
+  EXPECT_EQ(Version(8, 4, 0), version::next_lts(Version(8, 1, 0)));
+  EXPECT_EQ(Version(9, 7, 0), version::next_lts(Version(8, 4, 4)));
+  EXPECT_EQ(Version(9, 7, 0), version::next_lts(Version(9, 0, 0)));
+  EXPECT_EQ(Version(28, 4, 0), version::next_lts(Version(9, 7, 1)));
+  EXPECT_EQ(Version(28, 4, 0), version::next_lts(Version(26, 7, 0)));
+  EXPECT_EQ(Version(30, 4, 0), version::next_lts(Version(28, 4, 1)));
+  EXPECT_EQ(Version(30, 4, 0), version::next_lts(Version(28, 5, 0)));
+  EXPECT_EQ(Version(30, 4, 0), version::next_lts(Version(28, 7, 0)));
+
+  EXPECT_EQ(Version(8, 1, 0), version::first_innovation(Version(8, 4, 1)));
+  EXPECT_EQ(Version(9, 0, 0), version::first_innovation(Version(9, 7, 1)));
+  EXPECT_EQ(Version(26, 7, 0), version::first_innovation(Version(28, 4, 1)));
+  EXPECT_EQ(Version(28, 7, 0), version::first_innovation(Version(28, 7, 0)));
+
+  EXPECT_EQ(Version(26, 3, 0), version::calendar::to_legacy(Version(59, 4, 0)));
+  EXPECT_EQ(Version(26, 7, 0), version::legacy::first_lts(Version(26, 3, 0)));
+  EXPECT_FALSE(version::legacy::is_lts(Version(28, 4, 1)));
+  EXPECT_TRUE(version::calendar::is_lts(Version(28, 4, 1)));
+}
+
+TEST(Version, major_difference_calendar_transition) {
+  EXPECT_EQ(1, version::major_difference(Version(9, 7, 1), Version(26, 7, 0)));
+  EXPECT_EQ(-1, version::major_difference(Version(26, 7, 0), Version(9, 7, 1)));
+  EXPECT_EQ(0, version::major_difference(Version(26, 7, 0), Version(28, 4, 0)));
+  EXPECT_EQ(1, version::major_difference(Version(28, 4, 0), Version(28, 5, 0)));
+  EXPECT_EQ(1, version::major_difference(Version(28, 4, 0), Version(28, 7, 0)));
+}
+
+TEST(Version, supported_servers) {
+  EXPECT_FALSE(version::is_supported_server(Version(5, 7, 44)));
+  EXPECT_TRUE(version::is_supported_server(Version(8, 0, 0)));
+  EXPECT_TRUE(version::is_supported_server(Version(9, 7, 1)));
+  EXPECT_FALSE(version::is_supported_server(Version(10, 0, 0)));
+  EXPECT_FALSE(version::is_supported_server(Version(26, 6, 99)));
+  EXPECT_TRUE(version::is_supported_server(Version(26, 7, 0)));
+  EXPECT_TRUE(version::is_supported_server(Version(26, 7, 99)));
+  EXPECT_FALSE(version::is_supported_server(Version(26, 10, 0)));
 }
 
 }  // namespace

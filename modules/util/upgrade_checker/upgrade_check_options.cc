@@ -32,6 +32,7 @@
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_filtering.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_string.h"
 #include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
@@ -46,6 +47,23 @@ void normalize_value(const Upgrade_check_options::Check_id_uset &value,
     }
   }
 }
+
+bool is_supported_target_version_format(const std::string &value) {
+  const auto tokens = shcore::str_split(value, ".");
+  return tokens.size() == 2 || tokens.size() == 3;
+}
+
+bool is_canonical_target_version(const std::string &value,
+                                 const mysqlshdk::utils::Version &version) {
+  if (!mysqlshdk::utils::version::calendar::is_calendar_version(version)) {
+    return true;
+  }
+
+  const auto tokens = shcore::str_split(value, ".");
+  return tokens.size() == 2 ? value == version.get_short()
+                            : value == version.get_base();
+}
+
 }  // namespace
 
 Upgrade_check_options::Upgrade_check_options() {
@@ -93,10 +111,25 @@ mysqlshdk::utils::Version Upgrade_check_options::get_target_version() const {
 
 void Upgrade_check_options::set_target_version(const std::string &value) {
   if (!value.empty()) {
-    if (k_latest_versions.contains(value)) {
-      target_version = k_latest_versions.at(value);
+    if (auto latest_version = k_latest_versions.find(value);
+        latest_version != k_latest_versions.end()) {
+      target_version = latest_version->second;
     } else {
-      target_version = Version(value);
+      if (!is_supported_target_version_format(value)) {
+        throw std::invalid_argument(
+            "Invalid targetVersion format, expected MAJOR.MINOR or "
+            "MAJOR.MINOR.PATCH");
+      }
+
+      auto version = Version(value);
+
+      if (!is_canonical_target_version(value, version)) {
+        throw std::invalid_argument(
+            "Invalid targetVersion format, expected canonical MAJOR.MINOR or "
+            "MAJOR.MINOR.PATCH");
+      }
+
+      target_version = std::move(version);
     }
   }
 }

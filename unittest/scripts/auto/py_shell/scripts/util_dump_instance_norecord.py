@@ -4209,10 +4209,13 @@ for i in range(3):
     version[i] = str(int(version[i]) + 1)
     version = ".".join(version)
     if i < 2:
-        EXPECT_FAIL("ValueError", f"Argument #2: Target MySQL version '{version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+        EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg(version)}", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "users": False, "showProgress": False })
+
+EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg('10.0.0')}", test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg('26.6.0')}", test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower
 EXPECT_FAIL("ValueError", "Argument #2: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
@@ -4524,6 +4527,16 @@ unsupported_version[0] = str(int(unsupported_version[0]) + 1)
 unsupported_version[1] = "0"
 unsupported_version[2] = "0"
 unsupported_version = ".".join(unsupported_version)
+
+# trying to dump from an unsupported version results in an error
+EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
+
+testutil.dbug_set("")
+
+#@<> BUG#37866205 - dumps from an unsupported calendar-gap server are disallowed {__dbug}
+testutil.dbug_set("+d,dumper_unsupported_calendar_gap_server_version")
+
+unsupported_version = "26.6.0"
 
 # trying to dump from an unsupported version results in an error
 EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })

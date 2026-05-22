@@ -35,6 +35,7 @@
 
 #include "mysqlshdk/libs/utils/fault_injection.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlshdk {
 namespace db {
@@ -53,6 +54,23 @@ FI_DEFINE(binlog, [](const mysqlshdk::utils::FI::Args &args) {
 #define LOG_POS_OFFSET 13
 
 constexpr uint8_t k_rotate_event_type = 4;
+const mysqlshdk::utils::Version k_max_supported_calendar_mysql_server_version(
+    28, 4);
+
+bool is_supported_server_version(const mysqlshdk::utils::Version &version) {
+  using mysqlshdk::utils::Version;
+
+  const auto major = version.get_major();
+
+  const auto legacy_release = major == 5 || major == 8 || major == 9;
+  const auto calendar_release =
+      mysqlshdk::utils::version::calendar::is_calendar_version(version) &&
+      version.numeric_version_series() <=
+          k_max_supported_calendar_mysql_server_version
+              .numeric_version_series();
+
+  return legacy_release || calendar_release;
+}
 
 #if IS_BIG_ENDIAN
 inline uint32_t uint4korr(const unsigned char *ptr) {
@@ -209,25 +227,11 @@ class Binary_log::Impl {
 
     bool supported_version = false;
 
-    switch (*version) {
-      case '5':
-      case '8':
-      case '9':
-        supported_version = true;
-        break;
+    try {
+      const auto server_version = mysqlshdk::utils::Version(version);
 
-      case '1':
-        switch (version[1]) {
-          case '0':
-            supported_version = true;
-            break;
-
-          default:
-            break;
-        }
-
-      default:
-        break;
+      supported_version = is_supported_server_version(server_version);
+    } catch (const std::exception &) {
     }
 
     if (!supported_version) {

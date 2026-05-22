@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -130,39 +130,152 @@ class Version {
 
 inline const Version k_shell_version = Version(MYSH_VERSION EXTRA_NAME_SUFFIX);
 
+namespace version {
+
+namespace legacy {
+
 /**
- * Provides the difference between major versions of source and target. This
- * difference is positive if target has greater version than source.
+ * Provides the difference between legacy release-major versions of source and
+ * target. This difference is positive if target has greater version than
+ * source.
+ */
+int major_difference(const Version &source, const Version &target);
+
+/**
+ * Returns all legacy versions which were current when the given version was
+ * released, sorted in ascending order.
+ */
+std::vector<Version> corresponding_versions(const Version &version);
+
+/**
+ * Get first LTS version in the same legacy major version as the given version.
+ */
+Version first_lts(const Version &version);
+
+/**
+ * Get the next LTS version for the given legacy version.
+ */
+Version next_lts(const Version &version);
+
+/**
+ * Get first innovation version in the same legacy major version as the given
+ * version.
+ */
+Version first_innovation(const Version &version);
+
+/**
+ * Checks if this is a legacy LTS release.
+ */
+bool is_lts(const Version &v);
+
+}  // namespace legacy
+
+namespace calendar {
+
+/**
+ * Checks if this version belongs to the calendar versioning scheme.
+ *
+ * Calendar versions use month numbers 1..12, starting with 26.7.0.
+ */
+bool is_calendar_version(const Version &v);
+
+/**
+ * Checks if this calendar version belongs to the Shell release cadence.
+ *
+ * Shell releases use January, April, July, and October.
+ */
+bool is_release_cadence_version(const Version &v);
+
+/**
+ * Converts a calendar version to the matching legacy release slot.
+ */
+Version to_legacy(const Version &version);
+
+/**
+ * Converts a legacy LTS release slot to the matching calendar LTS version.
+ */
+Version lts_from_legacy(const Version &version);
+
+/**
+ * Get first LTS version in the same calendar release cycle as the given
+ * version.
+ */
+Version first_lts(const Version &version);
+
+/**
+ * Get the next LTS version for the given calendar version.
+ */
+Version next_lts(const Version &version);
+
+/**
+ * Get first innovation version in the same calendar release cycle as the given
+ * version.
+ */
+Version first_innovation(const Version &version);
+
+/**
+ * Checks if this is a calendar LTS release.
+ */
+bool is_lts(const Version &v);
+
+}  // namespace calendar
+
+/**
+ * Provides the difference between release-major versions of source and target.
+ * This difference is positive if target has greater version than source.
  *
  * NOTE: for sake of simplicity, the difference between 5.7 and 8.0 is one.
+ * NOTE: calendar versions map 26.7 to the release slot after 9.x.
  *
  * @param source The source version.
  * @param target The target version.
  *
  * @returns difference between major versions
  */
-int major_version_difference(const Version &source, const Version &target);
+int major_difference(const Version &source, const Version &target);
 
 /**
  * Returns all versions which were current when the given version was released,
  * sorted in ascending order.
  */
-std::vector<Version> corresponding_versions(Version version);
+std::vector<Version> corresponding_versions(const Version &version);
 
 /**
  * Get first LTS version in the same major version as the given version
  */
-Version get_first_lts_version(Version version);
+Version first_lts(const Version &version);
+
+/**
+ * Get the next LTS version for the given version. Innovation releases return
+ * the LTS version in their release cycle, while LTS releases return the
+ * following LTS anchor.
+ */
+Version next_lts(const Version &version);
 
 /**
  * Get first innovation version in the same major version as the given version
  */
-Version get_first_innovation_version(Version version);
+Version first_innovation(const Version &version);
 
 /**
  * Checks if this is an LTS release.
  */
-bool is_lts_release(const Version &v);
+bool is_lts(const Version &v);
+
+/**
+ * Checks if this version belongs to a MySQL Server release range supported by
+ * this Shell build: legacy 8.x/9.x releases, or calendar releases from 26.7
+ * up to the current Shell series.
+ */
+bool is_supported_server(const Version &v);
+
+/**
+ * Returns a human-readable description of supported MySQL Server release
+ * ranges.
+ */
+std::string supported_servers();
+
+}  // namespace version
 
 }  // namespace utils
 }  // namespace mysqlshdk

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -107,11 +107,11 @@ TEST_F(Admin_api_clone_test, check_clone_version_compatibility) {
   // Cloning is NOT allowed when either Major and/or Minor versions are
   // different between the source and the recipient.
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
-      Version(10, 7, 3), Version(9, 7, 4)));
+      Version(28, 4, 3), Version(9, 7, 4)));
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(9, 7, 4), Version(9, 6, 4)));
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
-      Version(9, 6, 4), Version(10, 7, 3)));
+      Version(9, 6, 4), Version(28, 4, 3)));
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(9, 1, 0), Version(9, 0, 0)));
 
@@ -120,7 +120,9 @@ TEST_F(Admin_api_clone_test, check_clone_version_compatibility) {
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(9, 6, 4), Version("9.6.53-release")));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
-      Version(10, 7, 36), Version(10, 7, 16)));
+      Version(26, 7, 36), Version(26, 7, 16)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 36), Version(28, 4, 16)));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version("8.4.1-release"), Version(8, 4, 0)));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(

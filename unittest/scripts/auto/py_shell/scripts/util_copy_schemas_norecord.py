@@ -939,11 +939,11 @@ src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 # setup
 testutil.dbug_set("+d,copy_utils_force_mds,copy_utils_unsupported_target_version")
 
-target_version = __version.split(".")
+target_version = __mysh_version.split(".")
 target_version[1] = str(int(target_version[1]) + 1)
 target_version = ".".join(target_version)
 
-msg = f"Target MySQL version '{target_version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell"
+msg = unsupported_target_version_msg(target_version)
 
 #@<> BUG#38107377 - copy without 'ignoreVersion' fails {__dbug and VER(>=8.0.0)}
 EXPECT_FAIL("ValueError", msg, __sandbox_uri2)

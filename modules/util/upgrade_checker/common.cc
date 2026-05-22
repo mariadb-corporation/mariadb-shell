@@ -39,6 +39,7 @@
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 #include "mysqlshdk/libs/utils/utils_translate.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
 namespace upgrade_checker {
@@ -92,38 +93,36 @@ const std::set<std::string_view> all = {
 
 }  // namespace ids
 
-namespace {
+const Version k_fixed_upgrade_checker_8_0_version(8, 0, 46);
 
-std::unordered_map<std::string, Version> generate_mapping() {
+std::unordered_map<std::string, Version> generate_latest_versions_mapping(
+    const Version &shell_version) {
   std::unordered_map<std::string, Version> result;
-  int major;
+  result.emplace("8.0", k_fixed_upgrade_checker_8_0_version);
 
-  for (auto &ver : mysqlshdk::utils::corresponding_versions(
-           mysqlshdk::utils::k_shell_version)) {
-    major = ver.get_major();
-
-    if (major == 8) {
-      // 8 series had two LTS releases
-      auto key = std::to_string(major);
-      key += '.';
-      key += std::to_string(ver.get_minor());
-
-      result.emplace(std::move(key), ver);
-    }
-
-    if (major > 8 || ver.get_minor() > 0) {
-      if (auto first_lts = mysqlshdk::utils::get_first_lts_version(ver);
-          first_lts <= ver) {
-        result.emplace(ver.get_short(), ver);
-      }
-
-      // major version corresponds to the latest release in series
-      auto key = std::to_string(major);
-      result.emplace(std::move(key), std::move(ver));
-    }
+  for (auto &ver :
+       mysqlshdk::utils::version::corresponding_versions(shell_version)) {
+    auto key = ver.get_short();
+    result.emplace(std::move(key), std::move(ver));
   }
 
   return result;
+}
+
+namespace {
+
+bool is_supported_source_server_version(const Version &version) {
+  return version < Version(8, 0, 0) ||
+         mysqlshdk::utils::version::is_supported_server(version);
+}
+
+std::string supported_source_server_versions() {
+  return "5.7 <= version < 8.0 or " +
+         mysqlshdk::utils::version::supported_servers();
+}
+
+std::unordered_map<std::string, Version> generate_mapping() {
+  return generate_latest_versions_mapping(mysqlshdk::utils::k_shell_version);
 }
 
 }  // namespace
@@ -145,17 +144,21 @@ void Upgrade_info::validate(bool listing) const {
                                   "instances for upgrade if they "
                                   "are at a version the same as or higher than "
                                   "the MySQL Shell version.");
+
+    if (!is_supported_source_server_version(server_version))
+      throw std::invalid_argument(shcore::str_format(
+          "Detected MySQL server version is %s, but this tool supports "
+          "checking upgrades from MySQL Server versions %s",
+          server_version.get_base().c_str(),
+          supported_source_server_versions().c_str()));
   }
 
   if (!skip_target_version_check) {
-    if (target_version < Version(8, 0, 0) ||
-        target_version.numeric_version_series() >
-            mysqlshdk::utils::k_shell_version.numeric_version_series()) {
+    if (!mysqlshdk::utils::version::is_supported_server(target_version)) {
       throw std::invalid_argument(shcore::str_format(
           "This tool supports checking upgrade to MySQL "
-          "servers of the following versions: 8.0 to %d.%d.*",
-          mysqlshdk::utils::k_shell_version.get_major(),
-          mysqlshdk::utils::k_shell_version.get_minor()));
+          "servers of the following versions: %s",
+          mysqlshdk::utils::version::supported_servers().c_str()));
     }
   }
 

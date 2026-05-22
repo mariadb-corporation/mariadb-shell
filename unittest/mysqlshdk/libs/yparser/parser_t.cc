@@ -133,9 +133,9 @@ TEST(Parser_test, version) {
     EXPECT_EQ(k_mysql_9_7, parser.version());
   }
 
-  // this test needs to be adjusted once 10.7 parser is added
+  // this test needs to be adjusted once the next LTS parser is added
   {
-    Parser parser{Version{10, 0, 0}};
+    Parser parser{Version{26, 7, 0}};
     EXPECT_EQ(k_mysql_current, parser.version());
   }
 
@@ -316,7 +316,7 @@ TEST(Parser_test, check_syntax) {
       EXPECT_TRUE(parser_X_X.check_syntax(show_parse_tree).empty());
     }
 
-    // TODO(pawel): add a test which uses 10.0-only feature
+    // TODO(pawel): add a test which uses a 26.7-only feature
   }
 
   {

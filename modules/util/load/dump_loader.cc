@@ -3442,10 +3442,11 @@ void Dump_loader::check_server_version() {
     }
   }
 
-  if (target_server.get_major() != source_server.get_major()) {
-    // BUG#35359364 - we allow for migration between consecutive major versions
-    const auto diff = major_version_difference(source_server, target_server);
+  // BUG#35359364 - we allow for migration between consecutive major versions.
+  const auto diff =
+      mysqlshdk::utils::version::major_difference(source_server, target_server);
 
+  if (0 != diff) {
     if (diff < 0) {
       msg =
           "Destination MySQL version is older than the one where the dump was "

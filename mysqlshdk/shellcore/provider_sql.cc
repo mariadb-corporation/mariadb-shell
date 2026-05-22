@@ -40,6 +40,7 @@
 #include "mysqlshdk/libs/db/mysql/result.h"
 #include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/parser/base/symbol-info.h"
+#include "mysqlshdk/libs/parser/code-completion/mysql_code_completion_api.h"
 #include "mysqlshdk/libs/parser/server/sql_modes.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/logger.h"
@@ -914,11 +915,12 @@ void Provider_sql::update_completion_context(
   DBUG_EXECUTE_IF("sql_auto_completion_unsupported_version_lower",
                   { server_version = Version(1, 2, 3); });
 
-  DBUG_EXECUTE_IF("sql_auto_completion_unsupported_version_higher",
-                  { server_version = Version(10, 9, 8); });
+  DBUG_EXECUTE_IF("sql_auto_completion_unsupported_version_higher", {
+    server_version = Version(k_current_version.get_major() + 1, 1, 0);
+  });
 
-  auto version = std::max(server_version, Version(5, 7, 0));
-  version = std::min(version, k_current_version);
+  const auto version =
+      mysqlshdk::normalize_auto_completion_server_version(server_version);
 
   if (version != server_version) {
     log_warning(
