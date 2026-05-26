@@ -136,6 +136,8 @@ class Base_cluster_impl {
     return m_admin_credentials;
   }
 
+  void set_current_instance_pool_context() const;
+
   virtual std::tuple<mysqlsh::dba::Instance *, mysqlshdk::mysql::Lock_scoped>
   acquire_primary_locked(
       [[maybe_unused]] mysqlshdk::mysql::Lock_mode mode,

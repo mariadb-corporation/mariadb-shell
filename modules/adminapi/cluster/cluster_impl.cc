@@ -3675,7 +3675,7 @@ std::shared_ptr<Cluster_set_impl>
 Cluster_impl::check_and_get_cluster_set_for_cluster() {
   auto cs = get_cluster_set_object(true);
 
-  current_ipool()->set_metadata(cs->get_metadata_storage());
+  cs->set_current_instance_pool_context();
 
   if (is_invalidated()) {
     current_console()->print_warning(

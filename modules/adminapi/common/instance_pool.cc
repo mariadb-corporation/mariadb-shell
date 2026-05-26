@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1200,7 +1200,9 @@ class Scoped_storage {
   std::stack<std::shared_ptr<T>> m_objects;
 };
 
-Scoped_storage<Instance_pool> g_ipool_storage;
+// AdminAPI calls running in different mysqlsh threads must not share the
+// active Instance_pool stack
+thread_local Scoped_storage<Instance_pool> g_ipool_storage;
 
 }  // namespace
 

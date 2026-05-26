@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -186,7 +186,7 @@ Cluster_set_member_metadata Cluster_set_impl::get_cluster_metadata(
 mysqlsh::dba::Instance *Cluster_set_impl::connect_primary() {
   Cluster_set_member_metadata primary_cluster = get_primary_cluster_metadata();
 
-  current_ipool()->set_metadata(m_metadata_storage);
+  set_current_instance_pool_context();
 
   m_primary_cluster = get_cluster_object(primary_cluster, true);
 
@@ -198,6 +198,8 @@ mysqlsh::dba::Instance *Cluster_set_impl::connect_primary() {
 }
 
 bool Cluster_set_impl::reconnect_target_if_invalidated(bool print_warnings) {
+  set_current_instance_pool_context();
+
   // Connect to all REPLICA Clusters and ensure none of them have a higher
   // view_id generation than the global primary (which would it was
   // invalidated). If a higher view_id generation is found, the cluster_server
@@ -372,6 +374,8 @@ std::shared_ptr<Cluster_impl> Cluster_set_impl::get_cluster(
 
 std::shared_ptr<Cluster_impl> Cluster_set_impl::get_cluster_object(
     const Cluster_set_member_metadata &cluster_md, bool allow_unavailable) {
+  set_current_instance_pool_context();
+
   auto md = get_metadata_storage();
 
   auto ipool = current_ipool();

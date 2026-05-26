@@ -125,6 +125,15 @@ bool Base_cluster_impl::check_valid() const {
   return true;
 }
 
+void Base_cluster_impl::set_current_instance_pool_context() const {
+  auto ipool = current_ipool();
+
+  // Keep metadata and default credentials bound to the same AdminAPI object
+  // when switching between Cluster and ClusterSet contexts
+  ipool->set_metadata(get_metadata_storage());
+  ipool->set_default_auth_options(default_admin_credentials());
+}
+
 void Base_cluster_impl::check_preconditions(const Command_conditions &conds) {
   log_debug("Checking '%s' preconditions.", conds.name.c_str());
 
@@ -136,7 +145,7 @@ void Base_cluster_impl::check_preconditions(const Command_conditions &conds) {
 
   bool primary_available = false;
   try {
-    current_ipool()->set_metadata(get_metadata_storage());
+    set_current_instance_pool_context();
 
     primary_available =
         (acquire_primary(conds.primary_required, true) != nullptr);
