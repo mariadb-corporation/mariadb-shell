@@ -2,6 +2,19 @@
 
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 
+This is a release of MySQL Shell, an advanced client and code editor for MySQL.
+
+License information can be found in the [LICENSE](LICENSE) file.
+This distribution may include materials developed by third parties. For license
+and attribution notices for these materials, please refer to the [LICENSE](LICENSE) file.
+
+For more information on MySQL Shell visit https://dev.mysql.com/doc/mysql-shell/en/
+For additional downloads and the source of MySQL Shell visit https://dev.mysql.com/downloads/shell/
+
+Contributing information for code and non-code submissions can be found in the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+
+MySQL Shell is brought to you by the MySQL team at Oracle.
+
 MySQL Shell is part of MySQL Server and provides an interactive console for **JavaScript**, **Python**, and **SQL**. It supports MySQL development and administration, and includes utilities for dump/load, upgrade readiness checks, and management of high-availability MySQL topologies.
 
 ## Key Features
@@ -134,15 +147,3 @@ WHERE
 ## Reporting Bugs
 
 Please file bugs and feature requests at https://bugs.mysql.com
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## License
-
-License information can be found in the LICENSE file.
-
-This distribution may include materials developed by third parties.
-For license and attribution notices for these materials, please refer to
-the [LICENSE](LICENSE) file.
