@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -214,6 +214,63 @@ std::string SHCORE_PUBLIC string_to_hex(std::string_view s, bool prefix) {
   }
 
   return encoded;
+}
+
+namespace {
+
+inline bool is_utf8_continuation_byte(unsigned char byte) {
+  return (byte & 0xC0) == 0x80;
+}
+
+inline bool is_invalid_utf8_codepoint(uint32_t cp, size_t bytes) {
+  return (cp <= 0x7F && bytes != 1) ||  // overlong encoding
+         (cp >= 0x80 && cp <= 0x07FF && bytes != 2) ||
+         (cp >= 0x0800 && cp <= 0xFFFF && bytes != 3) ||
+         (cp >= 0x10000 && cp <= 0x10FFFF && bytes != 4) ||
+         (cp >= 0xD800 && cp <= 0xDFFF) ||  // UTF-16 surrogate halves
+         cp > 0x10FFFF;                     // not encodable by UTF-16
+}
+
+}  // namespace
+
+size_t get_utf8_codepoint_size(std::string_view s, size_t offset,
+                               uint32_t *codepoint) {
+  if (offset >= s.size()) return 0;
+
+  const auto byte = static_cast<unsigned char>(s[offset]);
+  size_t bytes = 0;
+  uint32_t decoded = 0;
+
+  if ((byte & 0x80) == 0) {
+    bytes = 1;
+    decoded = byte & 0x7F;
+  } else if ((byte & 0xE0) == 0xC0) {
+    bytes = 2;
+    decoded = byte & 0x1F;
+  } else if ((byte & 0xF0) == 0xE0) {
+    bytes = 3;
+    decoded = byte & 0x0F;
+  } else if ((byte & 0xF8) == 0xF0) {
+    bytes = 4;
+    decoded = byte & 0x07;
+  } else {
+    return 0;
+  }
+
+  if (s.size() - offset < bytes) return 0;
+
+  for (size_t i = 1; i < bytes; ++i) {
+    const auto next = static_cast<unsigned char>(s[offset + i]);
+    if (!is_utf8_continuation_byte(next)) return 0;
+
+    decoded = (decoded << 6) | (next & 0x3F);
+  }
+
+  if (is_invalid_utf8_codepoint(decoded, bytes)) return 0;
+
+  if (codepoint) *codepoint = decoded;
+
+  return bytes;
 }
 
 std::string quote_string(const std::string &s, char quote) {
@@ -462,56 +519,11 @@ std::wstring truncate(const wchar_t *str, const size_t length,
 }
 
 bool is_valid_utf8(std::string_view s) {
-  auto c = reinterpret_cast<const unsigned char *>(s.data());
-  const auto end = c + s.size();
-  uint32_t cp = 0;
-  size_t bytes = 0;
+  for (size_t offset = 0; offset < s.size();) {
+    const auto codepoint_size = get_utf8_codepoint_size(s, offset);
+    if (codepoint_size == 0) return false;
 
-  while (c < end) {
-    if (0x00 == (*c & 0x80)) {
-      // 0xxxxxxx, U+0000 - U+007F
-      bytes = 1;
-      cp = *c & 0x7F;
-    } else if (0xC0 == (*c & 0xE0)) {
-      // 110xxxxx, U+0080 - U+07FF
-      bytes = 2;
-      cp = *c & 0x1F;
-    } else if (0xE0 == (*c & 0xF0)) {
-      // 1110xxxx, U+0800 - U+FFFF
-      bytes = 3;
-      cp = *c & 0x0F;
-    } else if (0xF0 == (*c & 0xF8)) {
-      // 11110xxx, U+10000 - U+10FFFF
-      bytes = 4;
-      cp = *c & 0x07;
-    } else {
-      return false;
-    }
-
-    // advance one byte
-    ++c;
-
-    for (size_t b = 1; b < bytes; ++b) {
-      // each byte should be: 10xxxxxx
-      if (0x80 != (*c & 0xC0)) {
-        return false;
-      }
-
-      cp = (cp << 6) | (*c & 0x3F);
-
-      // advance one byte
-      ++c;
-    }
-
-    // invalid code points
-    if ((cp <= 0x7F && 1 != bytes) ||  // overlong encoding
-        (cp >= 0x80 && cp <= 0x07FF && 2 != bytes) ||
-        (cp >= 0x0800 && cp <= 0xFFFF && 3 != bytes) ||
-        (cp >= 0x10000 && cp <= 0x10FFFF && 4 != bytes) ||
-        (cp >= 0xD800 && cp <= 0xDFFF) ||  // UTF-16 surrogate halves
-        cp > 0x10FFFF) {                   // not encodable by UTF-16
-      return false;
-    }
+    offset += codepoint_size;
   }
 
   return true;

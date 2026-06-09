@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,11 @@
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 #include "mysqlshdk/libs/textui/term_vt100.h"
+#include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/strformat.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -42,6 +44,14 @@ namespace mysqlsh {
 
 static const int k_min_prompt_space = 20;
 static const int k_max_variable_recursion_depth = 32;
+
+namespace {
+
+inline std::string sanitize_prompt_variable(std::string_view value) {
+  return mysqlshdk::textui::sanitize_utf8_terminal_text(value);
+}
+
+}  // namespace
 
 class Custom_variable_matches : public Prompt_manager::Custom_variable {
  public:
@@ -234,9 +244,12 @@ std::string Prompt_manager::do_apply_vars(
     ret.append(s.substr(pos, p - pos));
 
     std::string var = s.substr(p + 1, end - p - 1);
+    const auto append_var = [&ret](std::string_view value) {
+      ret.append(sanitize_prompt_variable(value));
+    };
     auto it = vars->find(var);
     if (it != vars->end()) {
-      ret.append(it->second);
+      append_var(it->second);
     } else {
       std::string lvar = shcore::str_lower(var);
       if (var == "time") {
@@ -246,18 +259,18 @@ std::string Prompt_manager::do_apply_vars(
       } else if (shcore::str_beginswith(var, "env:")) {
         const char *v = getenv(var.substr(4).c_str());
         if (v) {
-          ret.append(v);
+          append_var(v);
         }
       } else if (shcore::str_beginswith(lvar, "sysvar:") && query_var) {
-        ret.append(getvar(var, Prompt_manager::Mysql_system_variable));
+        append_var(getvar(var, Prompt_manager::Mysql_system_variable));
       } else if (shcore::str_beginswith(lvar, "sessvar:") && query_var) {
-        ret.append(getvar(var, Prompt_manager::Mysql_session_variable));
+        append_var(getvar(var, Prompt_manager::Mysql_session_variable));
       } else if (shcore::str_beginswith(lvar, "status:") && query_var) {
-        ret.append(getvar(var, Prompt_manager::Mysql_status));
+        append_var(getvar(var, Prompt_manager::Mysql_status));
       } else if (shcore::str_beginswith(lvar, "sessstatus:") && query_var) {
-        ret.append(getvar(var, Prompt_manager::Mysql_session_status));
+        append_var(getvar(var, Prompt_manager::Mysql_session_status));
       } else if (lvar == "linectx" && query_var) {
-        ret.append(query_var(lvar, Prompt_manager::Shell_status));
+        append_var(query_var(lvar, Prompt_manager::Shell_status));
       } else if (custom_variables_.find(var) != custom_variables_.end()) {
         if (recursion_depth >= k_max_variable_recursion_depth) {
           return "<<Recursion detected during variable evaluation>>";

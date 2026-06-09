@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -778,6 +778,37 @@ TEST(Shell_prompt_manager, variables) {
   // Uppercase, so skip cache
   EXPECT_EQ(2, num_queries);
   EXPECT_EQ(5, vars.size());
+}
+
+TEST(Shell_prompt_manager, sanitizes_terminal_controls_in_variables) {
+  auto theme = shcore::Value::parse(
+      "{'segments':[{'text':'%host%'}, {'text':'%schema%'}, "
+      "{'text':'%sysvar:prompt_value%'}]}");
+  Prompt_manager prompt;
+  prompt.set_theme(theme);
+
+  Prompt_manager::Variables_map vars;
+  vars["host"] =
+      "host\x1B]52;c;AAAA\x07"
+      "after";
+  vars["schema"] =
+      "schema\x1B]52;c;AAAA\x07"
+      "after";
+
+  EXPECT_EQ(
+      "host\\x1B]52;c;AAAA\\x07after "
+      "schema\\x1B]52;c;AAAA\\x07after "
+      "dynamic\\x1B]52;c;AAAA\\x07after> ",
+      prompt.get_prompt(
+          &vars,
+          [](const std::string &,
+             Prompt_manager::Dynamic_variable_type type) -> std::string {
+            if (type == Prompt_manager::Mysql_system_variable) {
+              return "dynamic\x1B]52;c;AAAA\x07"
+                     "after";
+            }
+            return "";
+          }));
 }
 
 TEST(Shell_prompt_manager, custom_variable) {

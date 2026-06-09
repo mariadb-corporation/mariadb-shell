@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -551,6 +551,19 @@ std::string SHCORE_PUBLIC bits_to_string_hex(uint64_t bits, int nbits);
 size_t SHCORE_PUBLIC bits_to_string_hex_size(int nbits);
 
 std::string SHCORE_PUBLIC string_to_hex(std::string_view s, bool prefix = true);
+
+/**
+ * Checks a single UTF-8 code point and returns its encoded size in bytes.
+ *
+ * @param s String to inspect.
+ * @param offset Offset in bytes where the code point starts.
+ * @param codepoint Optional output for the decoded Unicode code point.
+ *
+ * @returns 0 if the sequence is invalid or incomplete; otherwise the number of
+ * bytes used by the UTF-8 sequence.
+ */
+size_t SHCORE_PUBLIC get_utf8_codepoint_size(std::string_view s, size_t offset,
+                                             uint32_t *codepoint = nullptr);
 
 /**
  * Escape `quote` and `\` chars.
