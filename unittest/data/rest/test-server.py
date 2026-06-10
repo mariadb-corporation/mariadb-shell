@@ -58,12 +58,23 @@ class TestRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     token_expiration = int(time.time()) + 60 * 60
+    redirect_counters = {}
 
     def __init__(self, *args, **kwargs):
         self._handlers = {
             r'^/timeout/([0-9]*\.?[0-9]*)$': self.handle_timeout,
             r'^/redirect/([1-9][0-9]*)$': self.handle_redirect,
             r'^/redirect_to\?.+$': self.handle_redirect_to,
+            r'^/redirect_counter/reset$': self.handle_redirect_counter_reset,
+            r'^/redirect_counter/count/([^/]+)$': self.handle_redirect_counter_count,
+            r'^/redirect_counter/target/([^/]+)$': self.handle_redirect_counter_target,
+            r'^/redirect_counter/same/([^/]+)$': self.handle_redirect_counter_same,
+            r'^/redirect_counter/cross/([^/]+)$': self.handle_redirect_counter_cross,
+            r'^/redirect_counter/cross_single_slash_scheme/([^/]+)$': self.handle_redirect_counter_cross_single_slash_scheme,
+            r'^/redirect_counter/same_chain_1/([^/]+)$': self.handle_redirect_counter_same_chain_1,
+            r'^/redirect_counter/same_chain_2/([^/]+)$': self.handle_redirect_counter_same_chain_2,
+            r'^/redirect_counter/cross_chain_1/([^/]+)$': self.handle_redirect_counter_cross_chain_1,
+            r'^/redirect_counter/cross_chain_2/([^/]+)$': self.handle_redirect_counter_cross_chain_2,
             r'^/server_error/([1-9][0-9]*)/?([^/]*)/?(.*)$': self.handle_server_error,
             r'^/basic/([^/]+)/(.+)$': self.handle_basic,
             r'^/headers?.+$': self.handle_headers,
@@ -122,6 +133,78 @@ class TestRequestHandler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', '0')
         self.end_headers()
         return True
+
+    def handle_redirect_counter_reset(self, args):
+        TestRequestHandler.redirect_counters = {}
+        self.reply()
+        return True
+
+    def handle_redirect_counter_count(self, args):
+        self.reply(extra_response={
+            "count": TestRequestHandler.redirect_counters.get(args[0], 0),
+        })
+        return True
+
+    def handle_redirect_counter_target(self, args):
+        self.increment_redirect_counter(args[0] + "-target")
+        self.reply(extra_headers={"x-final-only": args[0]})
+        return True
+
+    def handle_redirect_counter_same(self, args):
+        self.increment_redirect_counter(args[0] + "-source")
+        self.redirect_to_same_origin(args[0], "/redirect_counter/target/" + args[0])
+        return True
+
+    def handle_redirect_counter_cross(self, args):
+        self.increment_redirect_counter(args[0] + "-source")
+        self.redirect_to_cross_host(args[0], "/redirect_counter/target/" + args[0])
+        return True
+
+    def handle_redirect_counter_cross_single_slash_scheme(self, args):
+        self.increment_redirect_counter(args[0] + "-source")
+        self.redirect_to_cross_host(args[0], "/redirect_counter/target/" + args[0],
+                                    single_slash_scheme=True)
+        return True
+
+    def handle_redirect_counter_same_chain_1(self, args):
+        self.increment_redirect_counter(args[0] + "-source")
+        self.redirect_to_same_origin(args[0],
+                                     "/redirect_counter/same_chain_2/" + args[0])
+        return True
+
+    def handle_redirect_counter_same_chain_2(self, args):
+        self.redirect_to_same_origin(args[0], "/redirect_counter/target/" + args[0])
+        return True
+
+    def handle_redirect_counter_cross_chain_1(self, args):
+        self.increment_redirect_counter(args[0] + "-source")
+        self.redirect_to_same_origin(args[0],
+                                     "/redirect_counter/cross_chain_2/" + args[0])
+        return True
+
+    def handle_redirect_counter_cross_chain_2(self, args):
+        self.redirect_to_cross_host(args[0], "/redirect_counter/target/" + args[0])
+        return True
+
+    def increment_redirect_counter(self, name):
+        TestRequestHandler.redirect_counters[name] = (
+            TestRequestHandler.redirect_counters.get(name, 0) + 1)
+
+    def redirect_to_same_origin(self, name, path):
+        self.redirect_to_location(
+            name, f"{self.server.scheme}://127.0.0.1:{self.server.server_port}{path}")
+
+    def redirect_to_cross_host(self, name, path, single_slash_scheme=False):
+        scheme_separator = ':/' if single_slash_scheme else '://'
+        self.redirect_to_location(
+            name, f"{self.server.scheme}{scheme_separator}localhost:{self.server.server_port}{path}")
+
+    def redirect_to_location(self, name, location):
+        self.send_response(302)
+        self.send_header('Location', location)
+        self.send_header('x-redirect-only', name)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
 
     def handle_basic(self, args):
         user = args[0]
@@ -332,6 +415,7 @@ def usage():
 
 def test_server(port, https):
     server = ThreadedHTTPServer(('127.0.0.1', port), TestRequestHandler)
+    server.scheme = 'https' if https else 'http'
     server_type = 'HTTP'
 
     if https:

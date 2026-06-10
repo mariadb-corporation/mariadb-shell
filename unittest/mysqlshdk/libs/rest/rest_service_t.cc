@@ -69,6 +69,18 @@ class Rest_service_test : public ::testing::Test {
     }
   }
 
+  void reset_redirect_counters() {
+    auto request = Request("/redirect_counter/reset");
+    EXPECT_EQ(Response::Status_code::OK, m_service.get(&request).status);
+  }
+
+  int redirect_counter(const std::string &name) {
+    auto request = Request("/redirect_counter/count/" + name);
+    const auto response = m_service.get(&request);
+    EXPECT_EQ(Response::Status_code::OK, response.status);
+    return response.json().as_map()->get_int("count");
+  }
+
   static std::unique_ptr<tests::Test_server> s_test_server;
 
   Rest_service m_service;
@@ -190,6 +202,103 @@ TEST_F(Rest_service_test, redirect) {
   // 20 redirections is OK
   auto request = Request("/redirect/20");
   EXPECT_EQ(Response::Status_code::OK, m_service.get(&request).status);
+}
+
+TEST_F(Rest_service_test, redirect_to_same_origin_is_allowed) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  auto request = Request("/redirect_counter/same/same");
+  const auto response = m_service.get(&request);
+
+  EXPECT_EQ(Response::Status_code::OK, response.status);
+  EXPECT_EQ(1, redirect_counter("same-source"));
+  EXPECT_EQ(1, redirect_counter("same-target"));
+  const auto final_header = response.headers.find("x-final-only");
+  ASSERT_NE(response.headers.end(), final_header);
+  EXPECT_EQ("same", final_header->second);
+  EXPECT_EQ(response.headers.end(), response.headers.find("x-redirect-only"));
+}
+
+TEST_F(Rest_service_test, redirect_to_same_origin_chain_is_allowed) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  auto request = Request("/redirect_counter/same_chain_1/same-chain");
+  const auto response = m_service.get(&request);
+
+  EXPECT_EQ(Response::Status_code::OK, response.status);
+  EXPECT_EQ(1, redirect_counter("same-chain-source"));
+  EXPECT_EQ(1, redirect_counter("same-chain-target"));
+}
+
+TEST_F(Rest_service_test, redirect_to_cross_host_is_rejected) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  auto request = Request("/redirect_counter/cross/cross");
+
+  EXPECT_THROW_LIKE(m_service.get(&request), Redirect_policy_error,
+                    "Redirect to a different origin is not allowed");
+  EXPECT_EQ(1, redirect_counter("cross-source"));
+  EXPECT_EQ(0, redirect_counter("cross-target"));
+}
+
+TEST_F(Rest_service_test,
+       redirect_to_cross_host_with_single_slash_scheme_is_rejected) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  auto request =
+      Request("/redirect_counter/cross_single_slash_scheme/single-slash");
+
+  EXPECT_THROW_LIKE(m_service.get(&request), Redirect_policy_error,
+                    "Redirect to a different origin is not allowed");
+  EXPECT_EQ(1, redirect_counter("single-slash-source"));
+  EXPECT_EQ(0, redirect_counter("single-slash-target"));
+}
+
+TEST_F(Rest_service_test, redirect_to_cross_host_chain_is_rejected) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  auto request = Request("/redirect_counter/cross_chain_1/cross-chain");
+
+  EXPECT_THROW_LIKE(m_service.get(&request), Redirect_policy_error,
+                    "Redirect to a different origin is not allowed");
+  EXPECT_EQ(1, redirect_counter("cross-chain-source"));
+  EXPECT_EQ(0, redirect_counter("cross-chain-target"));
+}
+
+TEST_F(Rest_service_test,
+       redirect_to_cross_host_is_not_retried_as_unknown_error) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  const auto retry_strategy =
+      Retry_strategy_builder{0}.set_max_attempts(2).build();
+  auto request = Request("/redirect_counter/cross/no-unknown-retry");
+  request.retry_strategy = retry_strategy.get();
+
+  EXPECT_THROW_LIKE(m_service.get(&request), Redirect_policy_error,
+                    "Redirect to a different origin is not allowed");
+  EXPECT_EQ(1, redirect_counter("no-unknown-retry-source"));
+  EXPECT_EQ(0, redirect_counter("no-unknown-retry-target"));
+}
+
+TEST_F(Rest_service_test,
+       redirect_to_cross_host_is_not_retried_as_terminal_error) {
+  FAIL_IF_NO_SERVER
+  reset_redirect_counters();
+
+  const auto retry_strategy = retry_terminal_errors_strategy();
+  auto request = Request("/redirect_counter/cross/no-terminal-retry");
+  request.retry_strategy = retry_strategy.get();
+
+  EXPECT_THROW_LIKE(m_service.get(&request), Redirect_policy_error,
+                    "Redirect to a different origin is not allowed");
+  EXPECT_EQ(1, redirect_counter("no-terminal-retry-source"));
+  EXPECT_EQ(0, redirect_counter("no-terminal-retry-target"));
 }
 
 TEST_F(Rest_service_test, redirect_to_non_http_protocol_is_rejected) {

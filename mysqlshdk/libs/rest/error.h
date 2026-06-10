@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -153,6 +153,14 @@ class Connection_error : public std::runtime_error {
 
  private:
   Error_code m_curl_code;
+};
+
+/**
+ * Redirect rejected by REST service policy.
+ */
+class Redirect_policy_error : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
 };
 
 }  // namespace rest
