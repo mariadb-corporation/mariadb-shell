@@ -631,6 +631,12 @@
                     "value": "",
                     "variable": "group_replication_force_members"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_force_pqc"
+                },
+?{}
                 {
                     "value": "bbbbbbbb-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                     "variable": "group_replication_group_name"
@@ -769,6 +775,12 @@
                     "value": "ON",
                     "variable": "group_replication_start_on_boot"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "",
+                    "variable": "group_replication_tls_kex"
+                },
+?{}
 ?{VER(>=8.0.21)}
                 {
                     "value": "MYSQL_MAIN",
@@ -783,6 +795,12 @@
                     "value": "0",
                     "variable": "group_replication_unreachable_majority_timeout"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_use_pqc_sign"
+                },
+?{}
 ?{VER(>=8.0.26)}
                 {
                     "value": "<<<__gr_view_change_uuid>>>",
@@ -1007,6 +1025,12 @@
                     "value": "",
                     "variable": "group_replication_force_members"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_force_pqc"
+                },
+?{}
                 {
                     "value": "bbbbbbbb-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                     "variable": "group_replication_group_name"
@@ -1145,6 +1169,12 @@
                     "value": "ON",
                     "variable": "group_replication_start_on_boot"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "",
+                    "variable": "group_replication_tls_kex"
+                },
+?{}
 ?{VER(>=8.0.21)}
                 {
                     "value": "MYSQL_MAIN",
@@ -1159,6 +1189,12 @@
                     "value": "0",
                     "variable": "group_replication_unreachable_majority_timeout"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_use_pqc_sign"
+                },
+?{}
 ?{VER(>=8.0.26)}
                 {
                     "value": "<<<__gr_view_change_uuid>>>",
@@ -1383,6 +1419,12 @@
                     "value": "",
                     "variable": "group_replication_force_members"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_force_pqc"
+                },
+?{}
                 {
                     "value": "bbbbbbbb-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                     "variable": "group_replication_group_name"
@@ -1521,6 +1563,12 @@
                     "value": "ON",
                     "variable": "group_replication_start_on_boot"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "",
+                    "variable": "group_replication_tls_kex"
+                },
+?{}
 ?{VER(>=8.0.21)}
                 {
                     "value": "MYSQL_MAIN",
@@ -1535,6 +1583,12 @@
                     "value": "0",
                     "variable": "group_replication_unreachable_majority_timeout"
                 },
+?{VER(>=10.0.0)}
+                {
+                    "value": "OFF",
+                    "variable": "group_replication_use_pqc_sign"
+                },
+?{}
 ?{VER(>=8.0.26)}
                 {
                     "value": "<<<__gr_view_change_uuid>>>",
