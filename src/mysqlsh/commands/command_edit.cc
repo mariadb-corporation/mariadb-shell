@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,15 @@
 
 #include "src/mysqlsh/commands/command_edit.h"
 
+#include <algorithm>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+
 #include "mysqlshdk/include/shellcore/console.h"
+#ifdef _WIN32
+#include "mysqlshdk/libs/utils/process_launcher.h"
+#endif  // _WIN32
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -51,6 +59,61 @@ std::string select_editor() {
   return editor;
 }
 
+std::string quote_shell_argument(const std::string &argument) {
+#ifdef _WIN32
+  static constexpr const char *kDummy_command = "mysqlsh";
+  const char *argv[] = {kDummy_command, argument.c_str(), nullptr};
+  const auto command_line =
+      shcore::Process_launcher::make_windows_cmdline(argv);
+
+  return command_line.substr(strlen(kDummy_command) + 1);
+#else
+  std::string quoted = "'";
+
+  quoted.reserve(argument.length() + 2);
+
+  for (const auto c : argument) {
+    if ('\'' == c) {
+      quoted += "'\\''";
+    } else {
+      quoted += c;
+    }
+  }
+
+  quoted += "'";
+
+  return quoted;
+#endif  // _WIN32
+}
+
+void write_private_file(const std::string &path, const std::string &content) {
+  FILE *file = shcore::create_private_file(path);
+
+  const auto close_file = shcore::on_leave_scope([&file]() {
+    if (file) {
+      fclose(file);
+    }
+  });
+
+  if (!content.empty() &&
+      content.size() != fwrite(content.data(), 1, content.size(), file)) {
+    throw std::runtime_error("Failed to write to temporary file: " + path);
+  }
+
+  if (0 != fflush(file)) {
+    throw std::runtime_error("Failed to flush temporary file: " + path + ". " +
+                             shcore::errno_to_string(errno));
+  }
+
+  if (0 != fclose(file)) {
+    file = nullptr;
+    throw std::runtime_error("Failed to close temporary file: " + path + ". " +
+                             shcore::errno_to_string(errno));
+  }
+
+  file = nullptr;
+}
+
 }  // namespace
 
 bool Command_edit::execute(const std::vector<std::string> &args) {
@@ -73,30 +136,19 @@ bool Command_edit::execute(const std::vector<std::string> &args) {
 bool Command_edit::execute(const std::string &command) {
   const auto final_command = get_command(command);
 
-  const auto temp_file = shcore::get_tempfile_path(
-      shcore::path::join_path(shcore::path::tmpdir(), "mysqlsh.edit"));
+  const auto temp_dir = shcore::create_temporary_folder();
+  const auto temp_file = shcore::path::join_path(temp_dir, "mysqlsh.edit");
 
-  const auto finally = shcore::on_leave_scope([&temp_file]() {
-    if (shcore::is_file(temp_file)) {
-      shcore::delete_file(temp_file);
+  const auto finally = shcore::on_leave_scope([&temp_dir]() {
+    if (shcore::is_folder(temp_dir)) {
+      shcore::remove_directory(temp_dir, true);
     }
   });
 
-  if (!shcore::create_file(temp_file, "")) {
-    throw std::runtime_error("Failed to create temporary file: " + temp_file);
-  }
-
-  if (0 != shcore::set_user_only_permissions(temp_file)) {
-    throw std::runtime_error("Failed to set permissions of temporary file: " +
-                             temp_file);
-  }
-
-  if (!shcore::create_file(temp_file, final_command)) {
-    throw std::runtime_error("Failed to write to temporary file: " + temp_file);
-  }
+  write_private_file(temp_file, final_command);
 
   const auto editor = select_editor();
-  const auto editor_command = editor + " " + temp_file;
+  const auto editor_command = editor + " " + quote_shell_argument(temp_file);
 
   const int status = system(editor_command.c_str());
   std::string error;

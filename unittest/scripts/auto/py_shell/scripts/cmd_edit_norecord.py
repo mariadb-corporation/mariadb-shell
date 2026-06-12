@@ -1,6 +1,8 @@
 #@ initialization
 import os
 import os.path
+import shutil
+import tempfile
 
 shell = os.path.join(__bin_dir, "mysqlsh")
 helper = os.path.join(__data_path, "py", "edit_command.py")
@@ -77,14 +79,39 @@ print(py_two)
 print('end')
 
 # WL12763-TSFR2_5 - When calling the `\edit` command, validate that:
-# - A temporary file is created in the system temporary directory and contains the command to edit.
-# - The temporary file is deleted when the editor is closed.
+# - A temporary file is created in a private temporary directory and contains
+#   the command to edit.
+# - The temporary file and its parent directory are deleted when the editor is
+#   closed.
+
+temp_env_vars = ("TMP", "TEMP") if os.name == "nt" else ("TMPDIR",)
+original_temp_env = {name: os.environ.get(name) for name in temp_env_vars}
+spaced_temp_root = tempfile.mkdtemp(prefix="mysqlsh edit ")
+
+for name in temp_env_vars:
+    os.environ[name] = spaced_temp_root
 
 #@ \edit - get path to the temporary file
 \edit temporary
 
-#@ temporary file should not exist after it was used by the editor
+#@ temporary file and directory should not exist after use
+temporary_directory = os.path.normcase(os.path.abspath(temporary_directory_path))
+spaced_temp_root = os.path.normcase(os.path.abspath(spaced_temp_root))
+
+EXPECT_TRUE(temporary_directory.startswith(spaced_temp_root + os.sep))
 EXPECT_FALSE(os.path.exists(temporary_file_path))
+EXPECT_FALSE(os.path.exists(temporary_directory_path))
+
+if os.name != "nt":
+    EXPECT_EQ(0o600, temporary_file_mode)
+
+for name, value in original_temp_env.items():
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+
+shutil.rmtree(spaced_temp_root, ignore_errors=True)
 
 # WL12763-TSFR2_8 - When calling the `\edit` command with arguments, validate that the arguments are loaded into the temporary file.
 

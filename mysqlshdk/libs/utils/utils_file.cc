@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,10 +27,10 @@
 
 #include <fcntl.h>
 #include <cassert>
+#include <cerrno>
 #include <climits>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -50,6 +50,8 @@
 #include <Shlwapi.h>
 #include <comdef.h>
 #include <direct.h>
+#include <io.h>
+#include <share.h>
 #include <windows.h>
 #pragma comment(lib, "Shlwapi.lib")
 #else
@@ -89,6 +91,27 @@ class Existing_folder_error : public std::runtime_error {
  public:
   using runtime_error::runtime_error;
 };
+
+// The file descriptor is owned by create_private_file(); this helper only
+// enforces the final private permissions. Windows needs the ACL-based helper
+// because CRT mode bits do not express user-only access. POSIX uses fchmod()
+// on the just-created descriptor because open(..., 0600) is still filtered by
+// umask, and using the descriptor avoids another pathname lookup.
+void set_private_file_permissions(const std::string &path, int fd) {
+#ifdef _WIN32
+  if (0 != set_user_only_permissions(path)) {
+    throw std::runtime_error(shcore::str_format(
+        "Error setting permissions on private file '%s'", path.c_str()));
+  }
+#else
+  if (0 != fchmod(fd, S_IRUSR | S_IWUSR)) {
+    const auto error = errno;
+    throw std::runtime_error(
+        shcore::str_format("Error setting permissions on private file '%s': %s",
+                           path.c_str(), get_error(error).c_str()));
+  }
+#endif  // _WIN32
+}
 
 }  // namespace
 
@@ -516,28 +539,29 @@ void SHCORE_PUBLIC create_directory(const std::string &path, bool recursive,
                      last_error_to_string(last_error).c_str()));
     }
 #else
-    if (mkdir(path.c_str(), mode) == 0 || errno == EEXIST) {
-      const auto error = errno;
+    if (mkdir(path.c_str(), mode) == 0) {
+      break;
+    }
 
-      if (error == EEXIST) {
-        if (!is_folder(path)) {
-          // path already exist but it's not a directory
-          throw std::runtime_error(
-              str_format("Could not create directory %s: %s", path.c_str(),
-                         strerror(error)));
-        } else if (!reuse_existing) {
-          throw Existing_folder_error(strerror(error));
-        }
+    const auto error = errno;
+
+    if (error == EEXIST) {
+      if (!is_folder(path)) {
+        // path already exist but it's not a directory
+        throw std::runtime_error(str_format("Could not create directory %s: %s",
+                                            path.c_str(), strerror(error)));
+      } else if (!reuse_existing) {
+        throw Existing_folder_error(strerror(error));
       }
 
       break;
     }
 
-    if (errno == ENOENT && recursive) {
+    if (error == ENOENT && recursive) {
       create_directory(path::dirname(path), recursive, mode, reuse_existing);
     } else {
       throw std::runtime_error(str_format("Could not create directory %s: %s",
-                                          path.c_str(), strerror(errno)));
+                                          path.c_str(), strerror(error)));
     }
 #endif
   }
@@ -1466,28 +1490,65 @@ std::string get_tempfile_path(const std::string &cnf_path) {
   return tmp_file_path;
 }
 
-FILE *create_private_file(const std ::string &path) {
+FILE *create_private_file(const std::string &path) {
   FILE *file = nullptr;
   int fd = 0;
 
 #ifdef _WIN32
   const auto wpath = shcore::utf8_to_wide(path);
-  _wsopen_s(&fd, wpath.c_str(), O_RDWR | O_CREAT | O_BINARY, _SH_DENYWR,
-            _S_IREAD | _S_IWRITE);
+  const auto rc =
+      _wsopen_s(&fd, wpath.c_str(), _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY,
+                _SH_DENYWR, _S_IREAD | _S_IWRITE);
+  if (0 != rc) {
+    errno = rc;
+    fd = -1;
+  }
 #else
-  fd = ::open(path.c_str(), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+  int flags = O_RDWR | O_CREAT | O_EXCL;
+#ifdef O_NOFOLLOW
+  flags |= O_NOFOLLOW;
+#endif  // O_NOFOLLOW
+#ifdef O_CLOEXEC
+  flags |= O_CLOEXEC;
+#endif  // O_CLOEXEC
+
+  fd = ::open(path.c_str(), flags, S_IRUSR | S_IWUSR);
+
+#ifndef O_CLOEXEC
+  if (fd >= 0) {
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+  }
+#endif  // !O_CLOEXEC
 #endif
 
   if (fd >= 0) {
+    try {
+      set_private_file_permissions(path, fd);
+
 #ifdef _WIN32
-    file = _fdopen(fd, "w+b");
+      file = _fdopen(fd, "w+b");
 #else
-    file = fdopen(fd, "w+b");
+      file = fdopen(fd, "w+b");
 #endif
-    if (nullptr == file) {
-      throw std::runtime_error(
-          shcore::str_format("Error opening private file '%s': %s",
-                             path.c_str(), strerror(errno)));
+      if (nullptr == file) {
+        const auto error = errno;
+        throw std::runtime_error(
+            shcore::str_format("Error opening private file '%s': %s",
+                               path.c_str(), strerror(error)));
+      }
+
+      // Ownership of the descriptor has been transferred to FILE*.
+      fd = -1;
+    } catch (...) {
+      if (fd >= 0) {
+#ifdef _WIN32
+        _close(fd);
+#else
+        close(fd);
+#endif  // _WIN32
+      }
+
+      throw;
     }
 
   } else {
@@ -1508,10 +1569,26 @@ std::string create_temporary_folder(size_t max_attempts) {
           shcore::get_random_string(10,
                                     "_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno"
                                     "pqrstuvwxyz1234567890"));
-      dir_path = path::join_path(
-          std::filesystem::temp_directory_path().string(), name);
+      dir_path = path::join_path(shcore::path::tmpdir(), name);
 
       create_directory(dir_path, true, 0700, false);
+
+      if (0 != set_user_only_permissions(dir_path)) {
+#ifdef _WIN32
+        const auto permission_error = GetLastError();
+#else
+        const auto permission_error = errno;
+#endif  // _WIN32
+
+        try {
+          remove_directory(dir_path, true);
+        } catch (...) {
+        }
+
+        throw std::runtime_error(shcore::str_format(
+            "Error setting permissions on temporary directory '%s': %s",
+            dir_path.c_str(), get_error(permission_error).c_str()));
+      }
 
       break;
     } catch (const Existing_folder_error &err) {
