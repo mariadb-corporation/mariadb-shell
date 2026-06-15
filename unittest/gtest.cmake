@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2026, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,9 +21,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-SET(GOOGLETEST_RELEASE googletest-1.17.0)
-SET(GMOCK_SOURCE_DIR "${MYSQL_SOURCE_DIR}/extra/googletest/${GOOGLETEST_RELEASE}/googlemock")
-SET(GTEST_SOURCE_DIR "${MYSQL_SOURCE_DIR}/extra/googletest/${GOOGLETEST_RELEASE}/googletest")
+include(mysql_server_dependency)
+
+mysql_resolve_versioned_dependency("googletest"
+    "${MYSQL_SOURCE_DIR}/extra/googletest" "googletest-"
+    GOOGLETEST_SOURCE_DIR GOOGLETEST_VERSION)
+
+SET(GMOCK_SOURCE_DIR "${GOOGLETEST_SOURCE_DIR}/googlemock")
+SET(GTEST_SOURCE_DIR "${GOOGLETEST_SOURCE_DIR}/googletest")
 
 IF(NOT IS_DIRECTORY "${GTEST_SOURCE_DIR}")
   MESSAGE(FATAL_ERROR "googletest directory not found: ${GTEST_SOURCE_DIR}")

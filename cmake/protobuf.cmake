@@ -28,7 +28,7 @@
 # default locations will be searched.
 #
 
-SET(PROTOBUF_VERSION "4.24.4")
+include(mysql_server_dependency)
 
 IF(WITH_PROTOBUF)
   IF(NOT WITH_PROTOBUF STREQUAL "system")
@@ -37,7 +37,7 @@ IF(WITH_PROTOBUF)
 
   # Lowest checked system version is 3.5.0 on Oracle Linux 8.
   # Older versions may generate code which breaks the -Werror build.
-  SET(PROTOBUF_VERSION "3.5.0")
+  SET(PROTOBUF_MIN_VERSION "3.5.0")
 ELSE()
   IF(NOT DEFINED WITH_PROTOBUF_LITE AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     # if not set explicitly, non-Debug builds use protobuf-lite
@@ -51,15 +51,12 @@ ELSE()
     NO_DEFAULT_PATH
   )
 
-  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" PROTOBUF_VERSION_MATCH "${PROTOBUF_VERSION}")
-  SET(PROTOBUF_VERSION_MAJOR "${CMAKE_MATCH_1}")
-  SET(PROTOBUF_VERSION_MINOR "${CMAKE_MATCH_2}")
-  SET(PROTOBUF_VERSION_PATCH "${CMAKE_MATCH_3}")
+  mysql_resolve_versioned_dependency("protobuf"
+      "${MYSQL_SOURCE_DIR}/extra/protobuf" "protobuf-" PROTOBUF_SOURCE_DIR
+      PROTOBUF_BUNDLED_VERSION)
 
-  SET(PROTOBUF_BUNDLED_VERSION "${PROTOBUF_VERSION_MINOR}.${PROTOBUF_VERSION_PATCH}")
-  SET(PROTOBUF_SO_VERSION "${PROTOBUF_VERSION_MINOR}.${PROTOBUF_VERSION_PATCH}.0")
-
-  SET(PROTOBUF_INCLUDE_DIR "${MYSQL_SOURCE_DIR}/extra/protobuf/protobuf-${PROTOBUF_BUNDLED_VERSION}/src")
+  SET(PROTOBUF_SO_VERSION "${PROTOBUF_BUNDLED_VERSION}.0")
+  SET(PROTOBUF_INCLUDE_DIR "${PROTOBUF_SOURCE_DIR}/src")
 
   SET(_protobuf_lib_dir "${MYSQL_BUILD_DIR}/library_output_directory")
 
@@ -79,32 +76,34 @@ ELSE()
     SET(_protobuf_lib_suffix "-lite")
   ENDIF()
 
-  SET(PROTOBUF_LIBRARY "${_protobuf_lib_dir}/libprotobuf${_protobuf_lib_suffix}.${_protobuf_lib_ext}")
-  SET(BUNDLED_PROTOBUF_LIBRARY "${PROTOBUF_LIBRARY}")
-  get_filename_component(BUNDLED_PROTOBUF_LIBRARY_NAME "${BUNDLED_PROTOBUF_LIBRARY}" NAME)
+  mysql_resolve_single_file("protobuf"
+      "${_protobuf_lib_dir}/libprotobuf${_protobuf_lib_suffix}.${_protobuf_lib_ext}"
+      BUNDLED_PROTOBUF_LIBRARY)
+
+  SET(PROTOBUF_LIBRARY "${BUNDLED_PROTOBUF_LIBRARY}")
 
   IF(WIN32)
     # on Windows we need to link with the .lib file
     SET(PROTOBUF_LIBRARY "${MYSQL_BUILD_DIR}/bin/${CMAKE_BUILD_TYPE}/libprotobuf${_protobuf_lib_suffix}.lib")
+
+    IF(NOT EXISTS "${PROTOBUF_LIBRARY}")
+      MESSAGE(FATAL_ERROR "Could not find Protobuf library: ${PROTOBUF_LIBRARY}")
+    ENDIF()
   ENDIF()
 
-  IF(NOT EXISTS "${PROTOBUF_LIBRARY}")
-    MESSAGE(FATAL_ERROR "Could not find Protobuf library: ${PROTOBUF_LIBRARY}")
-  ENDIF()
-  IF(NOT EXISTS "${BUNDLED_PROTOBUF_LIBRARY}")
-    MESSAGE(FATAL_ERROR "Could not find bundled Protobuf library: ${BUNDLED_PROTOBUF_LIBRARY}")
-  ENDIF()
 ENDIF()
 
-FIND_PACKAGE(Protobuf "${PROTOBUF_VERSION}" REQUIRED)
+IF(PROTOBUF_MIN_VERSION)
+  FIND_PACKAGE(Protobuf "${PROTOBUF_MIN_VERSION}" REQUIRED)
+ELSE()
+  FIND_PACKAGE(Protobuf REQUIRED)
+ENDIF()
 
 IF(NOT WITH_PROTOBUF)
-  set(_abseil_parent "${MYSQL_SOURCE_DIR}/extra/abseil")
-  file(GLOB _abseil_candidates RELATIVE "${MYSQL_SOURCE_DIR}" "${_abseil_parent}/abseil-cpp-*")
-  if(NOT _abseil_candidates)
-    message(FATAL_ERROR "Could not locate abseil-cpp directory under ${_abseil_parent}")
-  endif()
-  list(GET _abseil_candidates 0 ABSEIL_DIR)
+  mysql_resolve_versioned_dependency("abseil"
+      "${MYSQL_SOURCE_DIR}/extra/abseil" "abseil-cpp-" ABSEIL_SOURCE_DIR
+      ABSEIL_VERSION)
+  file(RELATIVE_PATH ABSEIL_DIR "${MYSQL_SOURCE_DIR}" "${ABSEIL_SOURCE_DIR}")
   list(APPEND PROTOBUF_INCLUDE_DIRS "${MYSQL_SOURCE_DIR}/${ABSEIL_DIR}")
 
   IF(WIN32)
