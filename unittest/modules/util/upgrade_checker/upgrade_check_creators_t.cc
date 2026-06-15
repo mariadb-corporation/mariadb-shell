@@ -158,5 +158,62 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
   }
 }
 
+TEST(Upgrade_check_creators,
+     foreign_key_references_check_uses_schema_qualified_target_names) {
+  auto check = get_foreign_key_references_check();
+  auto sql_check = dynamic_cast<Sql_upgrade_check *>(check.get());
+  ASSERT_NE(nullptr, sql_check);
+
+  const auto &queries = sql_check->get_queries();
+  ASSERT_EQ(2, queries.size());
+
+  EXPECT_NE(std::string::npos,
+            queries[0].first.find("CONCAT(kc.REFERENCED_TABLE_SCHEMA,'.',"
+                                  "rc.REFERENCED_TABLE_NAME) as "
+                                  "target_table"));
+
+  EXPECT_NE(std::string::npos,
+            queries[1].first.find("CONCAT(fk.referenced_table_schema,'.',"
+                                  "fk.referenced_table_name) AS "
+                                  "target_table"));
+  EXPECT_EQ(std::string::npos,
+            queries[1].first.find("fk.referenced_table_name AS target_table"));
+}
+
+TEST(Upgrade_check_creators,
+     foreign_key_references_check_uses_referenced_schema_for_non_unique_keys) {
+  auto check = get_foreign_key_references_check();
+  auto sql_check = dynamic_cast<Sql_upgrade_check *>(check.get());
+  ASSERT_NE(nullptr, sql_check);
+
+  const auto &queries = sql_check->get_queries();
+  ASSERT_EQ(2, queries.size());
+
+  EXPECT_NE(std::string::npos,
+            queries[0].first.find("rc.UNIQUE_CONSTRAINT_SCHEMA = "
+                                  "kc.REFERENCED_TABLE_SCHEMA"));
+  EXPECT_EQ(std::string::npos,
+            queries[0].first.find("rc.constraint_schema = "
+                                  "kc.REFERENCED_TABLE_SCHEMA"));
+}
+
+TEST(Upgrade_check_creators,
+     foreign_key_references_check_does_not_user_filter_referenced_indexes) {
+  auto check = get_foreign_key_references_check();
+  auto sql_check = dynamic_cast<Sql_upgrade_check *>(check.get());
+  ASSERT_NE(nullptr, sql_check);
+
+  const auto &queries = sql_check->get_queries();
+  ASSERT_EQ(2, queries.size());
+
+  for (const auto &query : queries) {
+    EXPECT_EQ(std::string::npos,
+              query.first.find("<<schema_filter:table_schema>>"));
+    EXPECT_NE(std::string::npos,
+              query.first.find(
+                  "<<schema_filter_without_user_filters:table_schema>>"));
+  }
+}
+
 }  // namespace upgrade_checker
 }  // namespace mysqlsh

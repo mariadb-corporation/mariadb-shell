@@ -71,6 +71,14 @@ mysqlshdk::db::Iterate_table parse_schema_table_info(std::string_view text,
 
   return result;
 }
+
+std::string schema_filter_without_user_filters(std::string_view schema_column) {
+  Upgrade_check_options options;
+  mysqlshdk::db::Query_helper qh(options.filters);
+  qh.set_schema_filter(true);
+
+  return qh.schema_filter(std::string{schema_column});
+}
 }  // namespace
 
 using mysqlshdk::utils::Version;
@@ -124,6 +132,9 @@ std::vector<Upgrade_issue> Sql_upgrade_check::run(
           std::string filter;
           if (key.compare("schema_filter") == 0) {
             filter = qh.schema_filter();
+          } else if (shcore::str_beginswith(
+                         key, "schema_filter_without_user_filters:")) {
+            filter = schema_filter_without_user_filters(key.substr(35));
           } else if (shcore::str_beginswith(key, "schema_filter:")) {
             filter = qh.schema_filter(std::string(key.substr(14)));
           } else if (key.compare("schema_and_table_filter") == 0) {

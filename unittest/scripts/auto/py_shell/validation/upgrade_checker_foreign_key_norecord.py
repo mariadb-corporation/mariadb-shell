@@ -16,7 +16,7 @@ No known compatibility errors or issues were found.
 
    foreign_test_db.test_table_c.test_constraint_two - invalid foreign key
       defined as 'test_table_c(other_column)' references a non unique key at table
-      'test_table_a'.
+      'foreign_test_db.test_table_a'.
 
    Solutions:
    - Convert non unique key to unique key if values do not have any duplicates.
@@ -33,4 +33,3 @@ No known compatibility errors or issues were found.
 Errors:   0
 Warnings: 1
 Notices:  0
-

@@ -5354,7 +5354,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
   EXPECT_EQ(
       "invalid foreign key defined as "
       "'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique "
-      "key at table 'parent'.",
+      "key at table 'fk_invalid_reference.parent'.",
       issue_table1.description);
 
   auto issue_table2 =
@@ -5368,7 +5368,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
       "invalid foreign key defined as "
       "'fk_invalid_reference.child_bbb_partial_fk_to_unique_index(a)' "
       "references a "
-      "partial key at table 'parent'.",
+      "partial key at table 'fk_invalid_reference.parent'.",
       issue_table2.description);
 
   auto issue_table3 = *find_issue("child_aaa_partial_fk_to_primary_ibfk_1");
@@ -5379,7 +5379,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
   EXPECT_EQ(
       "invalid foreign key defined as "
       "'fk_invalid_reference.child_aaa_partial_fk_to_primary(a)' "
-      "references a partial key at table 'parent'.",
+      "references a partial key at table 'fk_invalid_reference.parent'.",
       issue_table3.description);
 
   {

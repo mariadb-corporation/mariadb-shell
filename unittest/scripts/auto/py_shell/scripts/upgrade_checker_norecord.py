@@ -131,15 +131,15 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
    uctest3.child_aaa_partial_fk_to_primary.child_aaa_partial_fk_to_primary_ibfk_1
       - invalid foreign key defined as
       'uctest3.child_aaa_partial_fk_to_primary(a)' references a partial key at
-      table 'parent'.
+      table 'uctest3.parent'.
    uctest3.child_bbb_partial_fk_to_unique_index.child_bbb_partial_fk_to_unique_index_ibfk_1
       - invalid foreign key defined as
       'uctest3.child_bbb_partial_fk_to_unique_index(a)' references a partial key
-      at table 'parent'.
+      at table 'uctest3.parent'.
    uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1
       - invalid foreign key defined as
       'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at
-      table 'parent'.
+      table 'uctest3.parent'.
 
    Solutions:
    - Convert non unique key to unique key if values do not have any duplicates.
@@ -181,19 +181,19 @@ EXPECT_STDOUT_CONTAINS_MULTILINE("""
                 {
                     "level": "Warning",
                     "dbObject": "uctest3.child_aaa_partial_fk_to_primary.child_aaa_partial_fk_to_primary_ibfk_1",
-                    "description": "invalid foreign key defined as 'uctest3.child_aaa_partial_fk_to_primary(a)' references a partial key at table 'parent'.",
+                    "description": "invalid foreign key defined as 'uctest3.child_aaa_partial_fk_to_primary(a)' references a partial key at table 'uctest3.parent'.",
                     "dbObjectType": "ForeignKey"
                 },
                 {
                     "level": "Warning",
                     "dbObject": "uctest3.child_bbb_partial_fk_to_unique_index.child_bbb_partial_fk_to_unique_index_ibfk_1",
-                    "description": "invalid foreign key defined as 'uctest3.child_bbb_partial_fk_to_unique_index(a)' references a partial key at table 'parent'.",
+                    "description": "invalid foreign key defined as 'uctest3.child_bbb_partial_fk_to_unique_index(a)' references a partial key at table 'uctest3.parent'.",
                     "dbObjectType": "ForeignKey"
                 },
                 {
                     "level": "Warning",
                     "dbObject": "uctest3.child_ccc_full_fk_to_non_unique_index.child_ccc_full_fk_to_non_unique_index_ibfk_1",
-                    "description": "invalid foreign key defined as 'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at table 'parent'.",
+                    "description": "invalid foreign key defined as 'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique key at table 'uctest3.parent'.",
                     "dbObjectType": "ForeignKey"
                 }
             ],
@@ -279,6 +279,54 @@ EXPECT_OUTPUT_NOT_CONTAINS("Warnings: 0")
 #@<> false positive FK - with warning - cleanup
 session.run_sql("drop schema if exists fktesttwo;")
 session.run_sql("drop schema if exists fktestone;")
+
+#@<> Bug#39132467 cross-schema FK to non-unique key - with warning
+session.run_sql("create schema sample;")
+session.run_sql("create schema collection;")
+
+session.run_sql("""
+CREATE TABLE `sample`.`sample_101` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `k` int NOT NULL DEFAULT '0',
+  `c` char(120) NOT NULL DEFAULT '',
+  `pad` char(60) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `k` (`k`)
+) ENGINE=InnoDB;""")
+
+session.run_sql("""
+CREATE TABLE `collection`.`collect_101` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `k` int NOT NULL DEFAULT '0',
+  `c` char(120) NOT NULL DEFAULT '',
+  `pad` char(60) NOT NULL DEFAULT '',
+  `blob_column` blob,
+  PRIMARY KEY (`id`),
+  KEY `k` (`k`),
+  CONSTRAINT `collect_101_ibfk_1` FOREIGN KEY (`k`) REFERENCES `sample`.`sample_101` (`k`)
+) ENGINE=InnoDB;""")
+
+session.run_sql("""
+CREATE TABLE `collection`.`collect_102` (
+  `id` int NOT NULL,
+  `k` int NOT NULL DEFAULT '0',
+  `c` char(120) NOT NULL DEFAULT '',
+  `pad` char(60) NOT NULL DEFAULT '',
+  `blob_column` blob,
+  KEY `k` (`k`),
+  CONSTRAINT `collect_102_ibfk_1` FOREIGN KEY (`k`) REFERENCES `collection`.`collect_101` (`k`)
+) ENGINE=InnoDB;""")
+
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+EXPECT_OUTPUT_CONTAINS("collection.collect_101.collect_101_ibfk_1")
+EXPECT_OUTPUT_CONTAINS("table 'sample.sample_101'")
+EXPECT_OUTPUT_CONTAINS("collection.collect_102.collect_102_ibfk_1")
+EXPECT_OUTPUT_CONTAINS("'collection.collect_101'.")
+EXPECT_OUTPUT_CONTAINS("Warnings: 2")
+
+#@<> Bug#39132467 cross-schema FK to non-unique key - cleanup
+session.run_sql("drop schema if exists collection;")
+session.run_sql("drop schema if exists sample;")
 
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
