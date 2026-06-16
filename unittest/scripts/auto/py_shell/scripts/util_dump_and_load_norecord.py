@@ -3738,6 +3738,63 @@ session.run_sql("SET @@GLOBAL.explain_json_format_version = @saved_explain_json_
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 
+#@<> composite integer key chunking uses later key parts
+# constants
+dump_dir = os.path.join(outdir, "composite_integer_chunking")
+test_schema = "test_composite_integer_chunking"
+test_table = "test_table"
+row_count = 1200
+
+# setup
+shell.connect(__sandbox_uri1)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
+session1.run_sql("CREATE SCHEMA !", [ test_schema ])
+session1.run_sql("""CREATE TABLE !.! (
+  a INT NOT NULL,
+  b INT NOT NULL,
+  payload VARBINARY(1024) NOT NULL,
+  PRIMARY KEY (a, b)
+)
+DEFAULT CHARACTER SET = utf8mb4
+""", [ test_schema, test_table ])
+values = ",".join([f"(1,{i},REPEAT('x', 1024))" for i in range(row_count)])
+session1.run_sql(f"INSERT INTO !.! (a, b, payload) VALUES {values}", [ test_schema, test_table ])
+session1.run_sql("ANALYZE TABLE !.!", [ test_schema, test_table ])
+
+#@<> composite integer key chunking uses later key parts - test
+EXPECT_NO_THROWS(lambda: util.dump_schemas([ test_schema ], dump_dir, { "bytesPerChunk": "128k", "compression": "none", "showProgress": False }), "Dump should not throw")
+
+table_basename = encode_table_basename(test_schema, test_table)
+chunk_files = sorted([f for f in os.listdir(dump_dir) if f.startswith(table_basename + "@") and f.endswith(".tsv")])
+EXPECT_TRUE(len(chunk_files) > 1, "Composite integer key should be split into multiple chunks")
+
+last_chunk_files = [f for f in chunk_files if f.startswith(table_basename + "@@")]
+EXPECT_EQ(1, len(last_chunk_files), "There should be exactly one final chunk marker")
+
+def chunk_index(filename):
+    suffix = filename[len(table_basename):]
+    if suffix.startswith("@@"):
+        suffix = suffix[2:]
+    else:
+        suffix = suffix[1:]
+    return int(suffix.split(".")[0])
+
+chunk_indexes = sorted([chunk_index(f) for f in chunk_files])
+EXPECT_EQ(list(range(len(chunk_files))), chunk_indexes, "Chunk indexes should be consecutive")
+EXPECT_EQ(len(chunk_files) - 1, chunk_index(last_chunk_files[0]), "The final chunk marker should use the last chunk index")
+
+wipeout_server(session2)
+
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Load should not throw")
+
+compare_schema(session1, session2, test_schema, check_rows=True)
+
+#@<> composite integer key chunking uses later key parts - cleanup
+shell.connect(__sandbox_uri1)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
+wipe_dir(dump_dir)
+
 #@<> BUG#36509026 - warn if there's mismatch between source's and target's lower_case_table_names
 # constants
 dump_dir = os.path.join(outdir, "bug_36509026")

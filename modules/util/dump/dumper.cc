@@ -27,13 +27,16 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cinttypes>
 #include <cstdint>
 #include <functional>
 #include <iterator>
 #include <limits>
 #include <list>
+#include <optional>
 #include <set>
 #include <shared_mutex>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -192,6 +195,22 @@ void write_json(std::unique_ptr<mysqlshdk::storage::IFile> file,
 std::string quote(const std::string &schema, const std::string &table) {
   return shcore::quote_identifier(schema) + "." +
          shcore::quote_identifier(table);
+}
+
+// Returns a `FORCE INDEX (...)` clause (with leading space) that pins the query
+// to the index used by the chunker, or an empty string when no index is in use.
+// Used by the EXPLAIN COUNT(*) probes in `adaptive_step_v2` for the integer
+// chunking path, to stabilize optimizer row-count estimates - without it, the
+// optimizer may pick a different access path (e.g. a `ref` lookup on a shorter
+// index that ignores the BETWEEN predicate on a later key part), making the
+// EXPLAIN row counts non-monotonic in the range width and breaking the binary
+// chop loop.
+std::string force_index_clause(const Instance_cache::Index *index) {
+  if (!index) {
+    return {};
+  }
+
+  return " FORCE INDEX (" + index->quoted_name() + ")";
 }
 
 Row fetch_row(const mysqlshdk::db::IRow *row) {
@@ -787,6 +806,51 @@ void Dumper::Output_config::create_directory() {
 
 void Dumper::Output_config::fini() { dir.reset(); }
 
+namespace debug {
+
+inline const char *str(const char *value) { return value ? value : "<null>"; }
+
+inline const char *str(char *value) {
+  return str(static_cast<const char *>(value));
+}
+
+inline const char *str(const std::string &value) { return value.c_str(); }
+
+inline const char *str(bool value) { return value ? "true" : "false"; }
+
+template <typename T,
+          std::enable_if_t<std::is_arithmetic_v<std::decay_t<T>> &&
+                               !std::is_same_v<std::decay_t<T>, bool>,
+                           int> = 0>
+std::string str(T value) {
+  return std::to_string(value);
+}
+
+inline std::string str(const Decimal &value) { return value.to_string(); }
+
+inline const char *c_str(const char *value) { return value; }
+
+inline const char *c_str(const std::string &value) { return value.c_str(); }
+
+template <typename T>
+std::string str(const std::optional<T> &value) {
+  return value ? str(*value) : "<empty>";
+}
+
+}  // namespace debug
+
+#define V2S(x) debug::c_str(debug::str(x))
+
+// DLOG3 guards dumper-only DEBUG3 logging so expensive printf arguments are
+// built only when this trace level is enabled.
+#define DLOG3(...)                                   \
+  do {                                               \
+    if (shcore::current_logger()->get_log_level() >= \
+        shcore::Logger::LOG_DEBUG3) [[unlikely]] {   \
+      log_debug3(__VA_ARGS__);                       \
+    }                                                \
+  } while (0)
+
 class Dumper::Table_worker final {
  public:
   enum class Exception_strategy { ABORT, CONTINUE };
@@ -1347,6 +1411,25 @@ class Dumper::Table_worker final {
     return where(*info.table, info.boundary);
   }
 
+  template <typename T>
+  static T next_value(T value) {
+    ++value;
+
+    return value;
+  }
+
+  template <typename T>
+  static T previous_value(T value) {
+    --value;
+
+    return value;
+  }
+
+  template <typename T>
+  static bool is_single_value_step(const T &step) {
+    return step != 0 && previous_value(step) == 0;
+  }
+
   template <typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
   static uint64_t distance(const T &min, const T &max) {
     // it should be (max - min + 1), but this can potentially overflow, check
@@ -1361,7 +1444,7 @@ class Dumper::Table_worker final {
   }
 
   static Decimal distance(const Decimal &min, const Decimal &max) {
-    return max - min + 1;
+    return next_value(max - min);
   }
 
   template <typename T>
@@ -1393,24 +1476,241 @@ class Dumper::Table_worker final {
   }
 
   template <typename T>
-  static T constant_step(const T & /* from */, const T &step) {
-    return step;
+  T constant_step(const T &, const T &step_hint, const T & /*max*/,
+                  const Chunking_info &info, const std::string &,
+                  uint64_t *rows_cnt, bool *) const {
+    *rows_cnt = info.rows_per_chunk;
+
+    return step_hint;
   }
 
+  template <class T>
+  class Chunk_coalescer final {
+   public:
+    struct Coalesce_result {
+      std::optional<T> begin;
+      std::optional<T> end;
+      uint64_t rows_cnt;
+      bool empty;
+      bool flushed;
+
+      Coalesce_result()
+          : begin(), end(), rows_cnt(0), empty(true), flushed(false) {}
+
+      Coalesce_result(T b, T e, uint64_t r, bool em, bool f)
+          : begin(std::move(b)),
+            end(std::move(e)),
+            rows_cnt(r),
+            empty(em),
+            flushed(f) {
+        assert(!empty);
+      }
+
+      static Coalesce_result empty_result(bool flushed) {
+        Coalesce_result result;
+        result.flushed = flushed;
+
+        return result;
+      }
+
+      const T &begin_value() const {
+        assert(begin.has_value());
+
+        return *begin;
+      }
+
+      const T &end_value() const {
+        assert(end.has_value());
+
+        return *end;
+      }
+    };
+
+    explicit Chunk_coalescer(uint64_t max_rows_cnt, uint64_t accuracy)
+        : m_rows_cnt(0),
+          m_max_rows_cnt(std::max(max_rows_cnt, UINT64_C(1))),
+          m_min_accepted_rows(m_max_rows_cnt -
+                              std::min(accuracy, m_max_rows_cnt - 1)),
+          m_max_accepted_rows(compute_max_accepted_rows(
+              m_max_rows_cnt, std::min(accuracy, m_max_rows_cnt - 1))),
+          m_empty(true) {}
+
+    ~Chunk_coalescer() {
+      // Before Chunk_coalescer deletion, it has to be empty (and flushed).
+      const auto valid_state = m_empty && m_rows_cnt == 0 && !m_begin && !m_end;
+
+      if (!valid_state) [[unlikely]] {
+        DLOG3("destroying non-empty coalescer! (%s - %s) rows: %" PRIu64
+              ", empty: %s",
+              V2S(m_begin), V2S(m_end), m_rows_cnt, V2S(m_empty));
+      }
+
+      assert(valid_state);
+    }
+
+    Coalesce_result flush() {
+      DLOG3("flush() (%s - %s) rows: %" PRIu64 ", empty: %s", V2S(m_begin),
+            V2S(m_end), m_rows_cnt, V2S(m_empty));
+
+      auto result = m_empty ? Coalesce_result::empty_result(true)
+                            : Coalesce_result(*m_begin, *m_end, m_rows_cnt,
+                                              m_empty, true);
+
+      m_begin.reset();
+      m_end.reset();
+      m_rows_cnt = 0;
+      m_empty = true;
+
+      return result;
+    }
+
+    Coalesce_result coalesce(const T &begin, const T &end, uint64_t rows_cnt,
+                             bool last) {
+      DLOG3("coalesce() %s - %s, rows: %" PRIu64
+            ", last: %s (current: %s - %s, %" PRIu64 ")",
+            V2S(begin), V2S(end), rows_cnt, V2S(last), V2S(m_begin), V2S(m_end),
+            m_rows_cnt);
+
+      if (m_empty) {
+        // Whatever is the chunk, wait for the next one to decide
+        DLOG3("coalesce() - coalescer empty, starting new coalescing");
+
+        m_begin = begin;
+        m_end = end;
+        m_rows_cnt = rows_cnt;
+        m_empty = false;
+      } else {
+        // We have some rows accumulated
+
+        // If we decided to coalesce, the next chunk needs to follow what we
+        // already accumulated.
+        assert(m_end.has_value());
+        const auto expected_begin = next_value(*m_end);
+
+        assert(begin == expected_begin);
+
+        if (begin != expected_begin) [[unlikely]] {
+          DLOG3("coalesce() inconsistency detected! end: %s, begin: %s",
+                V2S(*m_end), V2S(begin));
+        }
+
+        if (ready_to_flush() || !can_coalesce(rows_cnt)) {
+          // The accumulated rows are within the accepted accuracy window. Flush
+          // them instead of coalescing another range into an already good
+          // chunk, or if coalescing would create a chunk outside of the
+          // accepted row-count window.
+          DLOG3("coalesce() - return current, start new");
+
+          return return_current_and_start_new(begin, end, rows_cnt);
+        } else {
+          // we didn't accumulate enough rows yet
+          // coalesce it
+          DLOG3("coalesce() - coalescing");
+
+          if (add_would_overflow(m_rows_cnt, rows_cnt)) [[unlikely]] {
+            DLOG3(
+                "coalesce() - row count overflow detected, return current, "
+                "start new");
+
+            return return_current_and_start_new(begin, end, rows_cnt);
+          }
+
+          m_end = end;
+          m_rows_cnt += rows_cnt;
+        }
+
+        if (flush_threshold_exceeded() || last) {
+          // flush coalescer if we accumulated a lot of chunks or this is the
+          // last one
+          DLOG3("coalesce() - coalescer full. rows: %" PRIu64 ", last: %s",
+                m_rows_cnt, V2S(last));
+
+          return flush();
+        }
+      }
+
+      if (last) {
+        // flush last chunk
+        DLOG3("coalesce() - Last chunk. Flushing. rows: %" PRIu64 ", last: %s",
+              m_rows_cnt, V2S(last));
+
+        return flush();
+      }
+
+      // The chunk was accumulated
+      DLOG3("coalesce() - accumulated %s - %s, rows: %" PRIu64, V2S(m_begin),
+            V2S(m_end), m_rows_cnt);
+
+      return Coalesce_result::empty_result(false);
+    }
+
+   private:
+    static constexpr uint64_t k_flush_threshold_multiplier = 3;
+
+    static bool add_would_overflow(uint64_t lhs, uint64_t rhs) {
+      return std::numeric_limits<uint64_t>::max() - lhs < rhs;
+    }
+
+    static uint64_t compute_max_accepted_rows(uint64_t max_rows_cnt,
+                                              uint64_t accuracy) {
+      constexpr auto max_value = std::numeric_limits<uint64_t>::max();
+
+      if (max_value - max_rows_cnt < accuracy) [[unlikely]] {
+        return max_value;
+      }
+
+      return max_rows_cnt + accuracy;
+    }
+
+    bool flush_threshold_exceeded() const {
+      const auto quotient = m_rows_cnt / k_flush_threshold_multiplier;
+      const auto remainder = m_rows_cnt % k_flush_threshold_multiplier;
+
+      return quotient > m_max_rows_cnt ||
+             (quotient == m_max_rows_cnt && remainder > 0);
+    }
+
+    bool ready_to_flush() const { return m_rows_cnt >= m_min_accepted_rows; }
+
+    bool can_coalesce(uint64_t rows_cnt) const {
+      return rows_cnt < m_min_accepted_rows &&
+             rows_cnt <= m_max_accepted_rows &&
+             m_rows_cnt <= m_max_accepted_rows - rows_cnt;
+    }
+
+    Coalesce_result return_current_and_start_new(const T &begin, const T &end,
+                                                 uint64_t rows_cnt) {
+      assert(!m_empty);
+      assert(m_begin.has_value());
+      assert(m_end.has_value());
+
+      auto result =
+          Coalesce_result(*m_begin, *m_end, m_rows_cnt, m_empty, false);
+
+      m_begin = begin;
+      m_end = end;
+      m_rows_cnt = rows_cnt;
+      m_empty = false;
+
+      return result;
+    }
+
+    std::optional<T> m_begin;
+    std::optional<T> m_end;
+    uint64_t m_rows_cnt;
+    uint64_t m_max_rows_cnt;
+    uint64_t m_min_accepted_rows;
+    uint64_t m_max_accepted_rows;
+    bool m_empty;
+  };
+
   template <typename T>
-  T adaptive_step(const T &from, const T &step, const T &max,
-                  const Chunking_info &info,
-                  const std::string &chunk_id) const {
-    static constexpr int k_chunker_retries = 10;
-    static constexpr int k_chunker_iterations = 20;
-
-    const auto double_step = 2 * step;
-    auto middle = from;
-
+  T adaptive_step_v2(const T &from, const T &step_hint, const T &max,
+                     const Chunking_info &info, const std::string &chunk_id,
+                     uint64_t *rows_cnt, bool *use_returned_cnt) const {
     auto rows = info.rows_per_chunk;
     const auto comment = this->get_query_comment(*info.table, chunk_id);
 
-    int retry = 0;
     uint64_t delta = info.accuracy + 1;
 
     const auto row_count = [&info, &comment, this](const auto begin,
@@ -1419,86 +1719,195 @@ class Dumper::Table_worker final {
           query("EXPLAIN FORMAT=JSON SELECT " +
                 m_dumper->optimizer_hints(info.table->info) + "COUNT(*) FROM " +
                 info.table->quoted_name + info.partition +
+                force_index_clause(info.table->index.info) +
                 where(*info.table, between(info, begin, end)) + info.order_by +
                 comment)
               ->fetch_one_or_throw()
               ->get_as_string(0));
     };
 
-    while (delta > info.accuracy && retry < k_chunker_retries) {
-      if (max - retry * double_step <= from) {
-        // if left boundary is greater than max, stop here
-        middle = max;
+    static constexpr int k_adaptive_expansion_probes = 10;
+
+    auto right = from;
+    auto search_range = step_hint;
+    std::optional<T> last_underfilled_right;
+    uint64_t last_underfilled_rows = 0;
+    int expansion_probes = 1;
+    bool reached_probe_limit = false;
+
+    *use_returned_cnt = false;
+
+    // Phase 1: Exponential expansion.
+    // Expand the range until we have enough rows or we reach the maximum range.
+    while (true) {
+      // Calculate the current search range
+      right = sum(from, search_range);
+      right = std::min(right, max);
+
+      DLOG3(
+          "Nest level: %zu, searching range: %s - %s (%s), step_hint: %s, "
+          "probe: %d/%d",
+          info.index_column, V2S(from), V2S(right), V2S(right - from),
+          V2S(step_hint), expansion_probes, k_adaptive_expansion_probes);
+
+      // check if there is enough rows in currently checked range
+      rows = row_count(from, right);
+
+      DLOG3("Nest level: %zu, rows: %" PRIu64 " in range: %s - %s",
+            info.index_column, rows, V2S(from), V2S(right));
+
+      if (rows >= info.rows_per_chunk) {
+        // We have enough rows, no need to expand the range, move to the next
+        // phase
         break;
       }
 
-      // each time search in a different range, we didn't find the answer in the
-      // previous one
-      auto left = from + retry * double_step;
-      auto right = sum(left, double_step);
+      last_underfilled_right = right;
+      last_underfilled_rows = rows;
 
-      assert(left < right);
+      if (right >= max) {
+        // We have reached the maximum range, stop here.
+        break;
+      }
 
-      for (int i = 0; i < k_chunker_iterations; ++i) {
-        middle = left + (right - left) / 2;
+      if (++expansion_probes > k_adaptive_expansion_probes) {
+        // We didn't find enough rows within the probe budget. Check the full
+        // remaining range once and let the shrink phase refine it if needed.
+        right = max;
 
-        if (middle >= right || middle <= left) {
+        DLOG3(
+            "Nest level: %zu, reached adaptive expansion probe limit. "
+            "Checking full range: %s - %s",
+            info.index_column, V2S(from), V2S(right));
+
+        rows = row_count(from, right);
+        reached_probe_limit = true;
+
+        DLOG3("Nest level: %zu, rows: %" PRIu64 " in full range: %s - %s",
+              info.index_column, rows, V2S(from), V2S(right));
+
+        break;
+      }
+
+      // We didn't find enough rows in this range, move farther to the right.
+      search_range = sum(search_range, search_range);
+    }
+
+    if (!reached_probe_limit && right >= max &&
+        rows > info.rows_per_chunk + info.accuracy && last_underfilled_right &&
+        *last_underfilled_right > from) {
+      right = *last_underfilled_right;
+      rows = last_underfilled_rows;
+      *use_returned_cnt = true;
+
+      DLOG3(
+          "Nest level: %zu, using last underfilled range before max: %s - %s "
+          "(rows: %" PRIu64 ")",
+          info.index_column, V2S(from), V2S(right), rows);
+    }
+
+    // Phase 2: Binary chop - shrinking (if needed)
+    if (rows > info.rows_per_chunk + info.accuracy) {
+      // We have too many rows.
+      // The previous step produced a range that contains too many rows.
+      // Here we will try to shrink it by doing a binary search in the range.
+      // We may eventually end up with a range of 1 and still too many rows.
+      // We will return this range and the caller will try to chunk by the next
+      // keypart if possible.
+
+      DLOG3("Nest level: %zu, rows: %" PRIu64
+            " Trying to chop the last range: %s - %s",
+            info.index_column, rows, V2S(from), V2S(right));
+
+      auto left = from;
+      right = from + (right - left) / 2;
+
+      while (true) {
+        DLOG3("Nest level: %zu, checking range: %s - %s (left: %s)",
+              info.index_column, V2S(from), V2S(right), V2S(left));
+
+        rows = row_count(from, right);
+
+        delta = rows > info.rows_per_chunk ? rows - info.rows_per_chunk
+                                           : info.rows_per_chunk - rows;
+
+        if (delta <= info.accuracy) {
+          DLOG3("Nest level: %zu, close enough: rows: %" PRIu64
+                ", rows_per_chunk: %" PRIu64 ", delta: %" PRIu64
+                ", range: %s - %s",
+                info.index_column, rows, info.rows_per_chunk, delta, V2S(from),
+                V2S(right));
+
+          *use_returned_cnt = true;
           break;
         }
 
-        rows = row_count(from, middle);
+        if (right == from) {
+          // We shrank the range to 1. Cannot shrink it more.
+          // It means that for this keypart there are more rows than requested.
+          // Return the current result, the caller will try to chunk by the next
+          // keypart if possible.
+          DLOG3("Nest level: %zu, reached range 1, rows: %" PRIu64
+                ", range: %s - %s",
+                info.index_column, rows, V2S(from), V2S(right));
 
-        if (0 == i && rows < info.rows_per_chunk) {
-          // if in the first iteration there's not enough rows, check the whole
-          // range, if there's still not enough rows we can skip this range
-          const auto total_rows = row_count(from, right);
+          break;
+        }
 
-          if (total_rows < info.rows_per_chunk) {
-            middle = right;
-            delta = info.rows_per_chunk - total_rows;
-            break;
-          }
+        if (left >= right) {
+          // No way to chop it more. Use the current estimate.
+          DLOG3(
+              "Nest level: %zu, No way to chop it more. Will use the current "
+              "estimate. rows: %" PRIu64 ", rows_per_chunk: %" PRIu64
+              ", delta: %" PRIu64 ", range: %s - %s",
+              info.index_column, rows, info.rows_per_chunk, delta, V2S(from),
+              V2S(right));
+
+          *use_returned_cnt = true;
+          break;
         }
 
         if (rows > info.rows_per_chunk) {
-          right = middle;
-          delta = rows - info.rows_per_chunk;
-        } else {
-          left = middle;
-          delta = info.rows_per_chunk - rows;
-        }
+          // Shrink the range
+          DLOG3("Nest level: %zu, (shrink) > rows: %" PRIu64
+                ", rows_per_chunk: %" PRIu64 ", range: %s - %s",
+                info.index_column, rows, info.rows_per_chunk, V2S(from),
+                V2S(right));
 
-        if (delta <= info.accuracy) {
-          // we're close enough
-          break;
-        }
-      }
-
-      if (delta > info.accuracy) {
-        if (rows >= info.rows_per_chunk) {
-          // we have too many rows, but that's OK...
-          retry = k_chunker_retries;
+          right = right - ensure_not_zero((right - left) / 2);
         } else {
-          if (middle >= max) {
-            // we've reached the upper boundary, stop here
-            retry = k_chunker_retries;
-          } else {
-            // we didn't find enough rows here, move farther to
-            // the right
-            ++retry;
-          }
+          // Expand the range
+          DLOG3("Nest level: %zu, (expand) <= rows: %" PRIu64
+                ", rows_per_chunk: %" PRIu64 ", range: %s - %s",
+                info.index_column, rows, info.rows_per_chunk, V2S(from),
+                V2S(right));
+
+          auto left_tmp = right;
+          right = right + (right - left) / 2;
+          left = std::move(left_tmp);
         }
       }
     }
 
-    return ensure_not_zero(middle - from);
+    *rows_cnt = rows;
+
+    DLOG3("Nest level: %zu, adaptive_step_v2() returning %" PRIu64
+          " rows (left: %s, right: %s, ret: %s)",
+          info.index_column, rows, V2S(from), V2S(right),
+          V2S(ensure_not_zero(right - from)));
+
+    return ensure_not_zero(right - from);
+  }
+
+  bool optimized_chunking_possible(mysqlshdk::db::Type type) const {
+    return (type == mysqlshdk::db::Type::Integer ||
+            type == mysqlshdk::db::Type::UInteger ||
+            type == mysqlshdk::db::Type::Decimal);
   }
 
   template <typename T>
   std::size_t chunk_integer_column(const Chunking_info &info, const T &min,
                                    const T &max) const {
-    std::size_t ranges_count = 0;
-
     // if rows_per_chunk <= 1 it may mean that the rows are bigger than chunk
     // size, which means we # chunks ~= # rows
     const auto estimated_chunks =
@@ -1519,52 +1928,318 @@ class Dumper::Table_worker final {
              ? index_range - info.row_count
              : info.row_count - index_range) <= row_count_accuracy;
 
+    DLOG3(
+        "Nest level: %zu, chunk_integer_column(). min: %s, max: %s, "
+        "row_count: %" PRIu64 ", estimated_chunks: %" PRIu64
+        ", estimated_step: %s, constant: %s",
+        info.index_column, V2S(min), V2S(max), info.row_count, estimated_chunks,
+        V2S(estimated_step), V2S(use_constant_step));
+
+    const auto next_step = use_constant_step
+                               ? &Table_worker::constant_step<T>
+                               : &Table_worker::adaptive_step_v2<T>;
+
     std::string chunk_id;
-    const auto next_step =
-        use_constant_step
-            ? std::function<step_t(const step_t &, const step_t &)>(
-                  constant_step<T>)
-            // using the default capture [&] below results in problems with
-            // GCC 5.4.0 (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80543)
-            : [&info, &max, &chunk_id, this](const auto &from,
-                                             const auto &step) {
-                return this->adaptive_step(from, step, max, info, chunk_id);
-              };
+    auto current_chunk_begin = min;
 
-    auto current = min;
-    const auto step = estimated_step;
-
-    log_info("%sChunking %s using integer algorithm with %s step",
+    log_info("%sChunking %s using integer algorithm with %s step: %s",
              m_log_id.c_str(), info.table->task_name.c_str(),
-             use_constant_step ? "constant" : "adaptive");
+             use_constant_step ? "constant" : "adaptive", V2S(estimated_step));
 
-    bool last_chunk = false;
+    DLOG3("Nest level: %zu, trying to chunk by %zu, rows to chunk: %" PRIu64
+          ", rows per chunk: %" PRIu64 ", index columns cnt: %zu",
+          info.index_column, info.index_column, info.row_count,
+          info.rows_per_chunk, info.table->index.info->columns().size());
 
-    while (!last_chunk) {
+    bool last_chunk_in_dump = false;
+    bool last_chunk_on_this_level = false;
+    bool coalescing_to_next_chunk = false;
+
+    Chunk_coalescer<T> coalescer(info.rows_per_chunk, info.accuracy);
+
+    while (!last_chunk_in_dump && !last_chunk_on_this_level) {
       if (m_dumper->m_worker_interrupt.test()) {
-        return ranges_count;
+        // Interrupt exits without emitting the accumulated coalesced chunk.
+        // Empty the coalescer so its destructor invariant remains true.
+        coalescer.flush();
+
+        return m_chunking_ranges_counter;
       }
 
-      chunk_id = std::to_string(ranges_count);
-      const auto begin = current;
-      auto new_step = next_step(current, step);
+      chunk_id = std::to_string(m_chunking_ranges_counter);
+      uint64_t rows_cnt = 0;
+      bool use_returned_cnt = false;
+      bool processed_by_deep_chunking = false;
+
+      const auto step_size =
+          std::invoke(next_step, this, current_chunk_begin, estimated_step, max,
+                      info, chunk_id, &rows_cnt, &use_returned_cnt);
+
+      const auto idx_columns_cnt = info.table->index.info->columns().size();
+      const bool possible_to_chunk_next_column =
+          info.index_column < idx_columns_cnt - 1;
+      const bool single_value_step = is_single_value_step(step_size);
+
+      if (single_value_step && !possible_to_chunk_next_column) {
+        DLOG3(
+            "Nest level: %zu, Not possible to chunk deeper. Use the current "
+            "result",
+            info.index_column);
+
+        use_returned_cnt = true;
+      }
+
+      if (!use_returned_cnt && single_value_step &&
+          possible_to_chunk_next_column) {
+        // We reached the range of 1. It is possible that:
+        // 1. There are still too many rows
+        // 2. Row count is OK, or too small
+        if (rows_cnt > info.rows_per_chunk + info.accuracy) {
+          // For this keypart, there are too many rows.
+          // We will try to use the next keypart for chunking.
+          const auto type =
+              info.table->index.info->columns()[info.index_column + 1]->type;
+
+          if (!optimized_chunking_possible(type)) {
+            // The next column is not INT-like type, so it is not possible to
+            // use optimized chunking when using it.
+            // TODO: Maybe we could mix chunk_integer_column and
+            // chunk_non_integer_column approaches in the future? In such a case
+            // it would be possible to deep chunk all kinds of PKs. On one level
+            // (non-INT) it would do the full range scan (not necessarily
+            // the full table scan) and on another level (INT) it would use the
+            // optimized approach.
+            DLOG3("Nest level: %zu, range: %s, but rows_cnt: %" PRIu64
+                  ". Next PK column not compatible with deep chunking. Dumping "
+                  "as is.",
+                  info.index_column, V2S(step_size), rows_cnt);
+
+            use_returned_cnt = true;
+            coalescing_to_next_chunk = false;
+          } else {
+            // The next column is compatible with deep chunking.
+            Chunking_info new_info = info;
+
+            if (!new_info.boundary.empty()) {
+              new_info.boundary += " AND ";
+            }
+
+            new_info.boundary +=
+                info.table->index.info->columns()[info.index_column]
+                    ->quoted_name +
+                "=" + quote(current_chunk_begin);
+            ++new_info.index_column;
+            new_info.row_count = rows_cnt;
+
+            DLOG3(
+                "Nest level: %zu, too many rows (tried chunk by %zu), trying "
+                "to chunk by %zu, rows to chunk: %" PRIu64
+                ", rows per chunk: %" PRIu64
+                ", rows_cnt (from previous): %" PRIu64 ", step_size: %s",
+                info.index_column, new_info.index_column - 1,
+                new_info.index_column, new_info.row_count,
+                new_info.rows_per_chunk, rows_cnt, V2S(step_size));
+
+            // If we have anything accumulated in the coalescer before going to
+            // the next level - flush it.
+            const auto coalesce_res = coalescer.flush();
+
+            if (!coalesce_res.empty) {
+              DLOG3(
+                  "Nest level: %zu, will chunk deeper. creating dump task for "
+                  "chunk: %s, rows_cnt: %" PRIu64 " (r: %2f, rpc: %" PRIu64
+                  ", acc: %" PRIu64
+                  "), step_size: %s, last: %s, idx_column: %zu, cond: %s",
+                  info.index_column, chunk_id.c_str(), coalesce_res.rows_cnt,
+                  (double)coalesce_res.rows_cnt / (double)info.rows_per_chunk,
+                  info.rows_per_chunk, info.accuracy, V2S(step_size),
+                  V2S(last_chunk_in_dump), info.index_column,
+                  between(info, coalesce_res.begin_value(),
+                          coalesce_res.end_value())
+                      .c_str());
+
+              create_and_push_table_data_chunk_task(
+                  *info.table,
+                  between(info, coalesce_res.begin_value(),
+                          coalesce_res.end_value()),
+                  chunk_id, m_chunking_ranges_counter++, last_chunk_in_dump);
+            }
+
+            chunk_column(new_info);
+            processed_by_deep_chunking = true;
+          }  // optimized chunking possible
+        } else {
+          // We have some rows. For sure not too many.
+          if (coalescing_to_next_chunk) {
+            // We already tried to coalesce the previous chunk with this one,
+            // but still not enough rows. It might happen that the chunker logic
+            // produced the same chunk again. This is the case when small chunk
+            // precedes a huge one. Most probably in the next iteration we will
+            // go into the nested chunking. Just use this chunk.
+            DLOG3("Nest level: %zu, range: %s, but rows_cnt: %" PRIu64
+                  ". No possibility to coalesce. Using it.",
+                  info.index_column, V2S(step_size), rows_cnt);
+
+            use_returned_cnt = true;
+            coalescing_to_next_chunk = false;
+          } else {
+            // Try to coalesce this chunk with the next one.
+            DLOG3("Nest level: %zu, range: %s, but rows_cnt: %" PRIu64
+                  ". Trying to coalesce.",
+                  info.index_column, V2S(step_size), rows_cnt);
+
+            coalescing_to_next_chunk = true;
+          }
+        }
+      }  // nested chunking
 
       // ensure that there's no integer overflow
-      --new_step;
-      current = (current > max - new_step ? max : current + new_step);
+      const auto step_offset = previous_value(step_size);
+      const auto current_chunk_end = (current_chunk_begin > max - step_offset
+                                          ? max
+                                          : current_chunk_begin + step_offset);
 
-      const auto end = current;
+      if (current_chunk_end >= max) {
+        DLOG3(
+            "Nest level: %zu, End of range. rows (%" PRIu64
+            "). No more rows in range. This was the last chunk on this level. "
+            "Need to dump it as it is",
+            info.index_column, rows_cnt);
 
-      last_chunk = (current >= max);
+        last_chunk_on_this_level = true;
+      }
 
-      create_and_push_table_data_chunk_task(*info.table,
-                                            between(info, begin, end), chunk_id,
-                                            ranges_count++, last_chunk);
+      last_chunk_in_dump = last_chunk_on_this_level && info.index_column == 0;
 
-      ++current;
+      // If the current chunk was processed by nested chunking, we have
+      // nothing to dump. Just go to the next chunk on this level.
+      // In other case, we need to coalesce.
+      const auto current_chunk_begin_for_coalesce = current_chunk_begin;
+
+      current_chunk_begin = current_chunk_end;
+      ++current_chunk_begin;
+
+      if (processed_by_deep_chunking) {
+        if (!last_chunk_in_dump) {
+          continue;
+        }
+
+        // This is the last chunk in the dump and it was processed by nested
+        // chunking. Nothing else to dump. We need to create an empty chunk
+        // to mark the end of dump.
+        DLOG3(
+            "Nest level: %zu, this is the last chunk in the dump. It was "
+            "processed by nested chunking. Creating an empty chunk to mark the "
+            "end of dump.",
+            info.index_column);
+
+        // The following condition will evaluate to 'false' always, causing
+        // the empty chunk to be created.
+        const_cast<Chunking_info &>(info).boundary = "1=0";
+        chunk_id = std::to_string(m_chunking_ranges_counter);
+        rows_cnt = 0;
+      }
+
+      // Put the chunk through coalescer logic
+      const auto coalesce_res = coalescer.coalesce(
+          current_chunk_begin_for_coalesce, current_chunk_end, rows_cnt,
+          last_chunk_on_this_level || last_chunk_in_dump);
+
+      if (!coalesce_res.empty) {
+        if (last_chunk_in_dump && coalesce_res.flushed) [[unlikely]] {
+          DLOG3(
+              "Nest level: %zu, this is the last chunk in the dump. Was "
+              "flushed during last coalescing.",
+              info.index_column);
+        }
+
+        if (coalesce_res.flushed && last_chunk_on_this_level) [[unlikely]] {
+          if (!last_chunk_in_dump) {
+            DLOG3(
+                "Nest level: %zu, this is the last chunk on this nested level. "
+                "Was flushed during last coalescing.",
+                info.index_column);
+          }
+        }
+
+        DLOG3(
+            "Nest level: %zu, creating dump task for chunk: %s, "
+            "rows_cnt: %" PRIu64 " (r: %2f, rpc: %" PRIu64 ", acc: %" PRIu64
+            "), step_size: %s, last: %s, idx_column: %zu, cond: %s",
+            info.index_column, chunk_id.c_str(), coalesce_res.rows_cnt,
+            (double)coalesce_res.rows_cnt / (double)info.rows_per_chunk,
+            info.rows_per_chunk, info.accuracy, V2S(step_size),
+            V2S(last_chunk_in_dump), info.index_column,
+            between(info, coalesce_res.begin_value(), coalesce_res.end_value())
+                .c_str());
+
+        create_and_push_table_data_chunk_task(
+            *info.table,
+            between(info, coalesce_res.begin_value(), coalesce_res.end_value()),
+            chunk_id, m_chunking_ranges_counter++,
+            last_chunk_in_dump && coalesce_res.flushed);
+      }
+
+      if (!coalesce_res.flushed &&
+          (last_chunk_on_this_level || last_chunk_in_dump)) {
+        // Coalescer was not flushed during last coalescing, and this is the
+        // last chunk on this level or on top level
+        chunk_id = std::to_string(m_chunking_ranges_counter);
+        const auto flush_res = coalescer.flush();
+
+        if (last_chunk_in_dump) {
+          // top level. Create even an empty last chunk
+          const auto boundary = flush_res.empty
+                                    ? std::string{"1=0"}
+                                    : between(info, flush_res.begin_value(),
+                                              flush_res.end_value());
+
+          DLOG3(
+              "Nest level: %zu, this is the last chunk in the dump. Needed "
+              "additional flush after last coalescing.",
+              info.index_column);
+
+          DLOG3(
+              "Nest level: %zu, creating dump task for chunk: %s, rows_cnt: "
+              "%" PRIu64 " (r: %2f, rpc: %" PRIu64 ", acc: %" PRIu64
+              "), step_size: %s, last: %s, idx_column: %zu, cond: %s",
+              info.index_column, chunk_id.c_str(), flush_res.rows_cnt,
+              (double)flush_res.rows_cnt / (double)info.rows_per_chunk,
+              info.rows_per_chunk, info.accuracy, V2S(step_size),
+              V2S(last_chunk_in_dump), info.index_column, boundary.c_str());
+
+          create_and_push_table_data_chunk_task(*info.table, boundary, chunk_id,
+                                                m_chunking_ranges_counter++,
+                                                true);
+        } else {
+          // Nested level. If there is something to dump, do it.
+          if (!flush_res.empty) {
+            DLOG3(
+                "Nest level: %zu, this is the last chunk on this nested level. "
+                "Needed additional flush after last coalescing.",
+                info.index_column);
+
+            DLOG3(
+                "Nest level: %zu, creating dump task for chunk: %s, rows_cnt: "
+                "%" PRIu64 " (r: %2f, rpc: %" PRIu64 ", acc: %" PRIu64
+                "), step_size: %s, last: %s, idx_column: %zu, cond: %s",
+                info.index_column, chunk_id.c_str(), flush_res.rows_cnt,
+                (double)flush_res.rows_cnt / (double)info.rows_per_chunk,
+                info.rows_per_chunk, info.accuracy, V2S(step_size),
+                V2S(last_chunk_in_dump), info.index_column,
+                between(info, flush_res.begin_value(), flush_res.end_value())
+                    .c_str());
+
+            create_and_push_table_data_chunk_task(
+                *info.table,
+                between(info, flush_res.begin_value(), flush_res.end_value()),
+                chunk_id, m_chunking_ranges_counter++, false);
+          }
+        }
+      }
     }
 
-    return ranges_count;
+    return m_chunking_ranges_counter;
   }
 
   std::size_t chunk_integer_column(const Chunking_info &info, const Row &begin,
@@ -1667,8 +2342,12 @@ class Dumper::Table_worker final {
     auto row = result->fetch_one();
 
     const auto handle_empty_table = [&info, this]() {
-      create_and_push_table_data_chunk_task(*info.table, info.boundary, "0", 0,
-                                            true);
+      // If this is PK top level, it means the table is empty
+      if (info.index_column == 0) {
+        create_and_push_table_data_chunk_task(*info.table, info.boundary, "0",
+                                              0, true);
+      }
+
       return 1;
     };
 
@@ -1755,13 +2434,15 @@ class Dumper::Table_worker final {
         current_console()->print_note(msg);
       }
     }
+    m_chunking_ranges_counter = 0;
 
     Chunking_info info;
 
     info.table = &table;
     info.row_count = partition ? partition->row_count : table.info->row_count;
     info.rows_per_chunk =
-        m_dumper->m_options.bytes_per_chunk() / average_row_length;
+        std::max(m_dumper->m_options.bytes_per_chunk() / average_row_length,
+                 UINT64_C(1));
     info.accuracy = std::max(info.rows_per_chunk / 10, UINT64_C(10));
     info.partition = std::move(partition_clause);
 
@@ -1894,8 +2575,8 @@ class Dumper::Table_worker final {
 
   uint64_t row_count_from_explain(const std::string &explain) const {
     const auto error = [&explain](const std::string &msg) {
-      log_error("JSON output of malformed EXPLAIN statement:\n%s",
-                explain.c_str());
+      log_error("JSON output of malformed EXPLAIN statement:\n%s\nmsg: %s",
+                explain.c_str(), msg.c_str());
       return std::runtime_error(msg);
     };
 
@@ -1907,6 +2588,51 @@ class Dumper::Table_worker final {
       throw error(shcore::str_format(
           "Failed to parse JSON output of an EXPLAIN statement: %s", e.what()));
     }
+
+    const auto has_no_rows_message = [&json]() {
+      // This function is fragile, as it expects row-count information to be in
+      // a specific place in the JSON output of EXPLAIN statement. Moreover it
+      // expects it to be a number. However, in some cases (e.g. when there are
+      // no rows to process) the output may differ between MySQL versions.
+      // That's why we're trying to detect this case if we cannot find the row
+      // count in the expected place.
+      for (const auto path : {
+               "/query_block/message",
+               "/query_plan/access_type",
+           }) {
+        const auto value = rapidjson::Pointer(path).Get(json);
+
+        if (!value) {
+          continue;
+        }
+
+        if (!value->IsString()) {
+          break;
+        }
+
+        const std::string_view msg{value->GetString(),
+                                   value->GetStringLength()};
+
+        for (const auto message : {
+                 "no matching row",
+                 "no rows",
+                 "zero_rows_aggregated",
+             }) {
+          if (msg.find(message) != std::string_view::npos) {
+            log_info(
+                "EXPLAIN statement returned message indicating that there are "
+                "no rows to process: %.*s",
+                static_cast<int>(msg.length()), msg.data());
+
+            return true;
+          }
+        }
+
+        break;
+      }
+
+      return false;
+    };
 
     if (!m_json_path) {
       for (const auto path : {
@@ -1923,6 +2649,10 @@ class Dumper::Table_worker final {
       }
 
       if (!m_json_path) {
+        if (has_no_rows_message()) {
+          return 0;
+        }
+
         throw error(
             "Couldn't find the row count in JSON output of an EXPLAIN "
             "statement");
@@ -1932,6 +2662,10 @@ class Dumper::Table_worker final {
     const auto value = rapidjson::Pointer(m_json_path).Get(json);
 
     if (!value) {
+      if (has_no_rows_message()) {
+        return 0;
+      }
+
       throw error(
           shcore::str_format("Couldn't find the row count in JSON output of an "
                              "EXPLAIN statement using path: %s",
@@ -1945,6 +2679,14 @@ class Dumper::Table_worker final {
         return value->GetUint64();
       }
     } else {
+      if (has_no_rows_message()) {
+        return 0;
+      }
+
+      log_error(
+          "The row count in JSON output of an EXPLAIN statement is not a "
+          "number: %s, path: '%s'",
+          shcore::json::to_string(*value).c_str(), m_json_path);
       throw error(
           "The row count in JSON output of an EXPLAIN statement is not a "
           "number");
@@ -1956,6 +2698,7 @@ class Dumper::Table_worker final {
   Dumper *m_dumper;
   Exception_strategy m_strategy;
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
+  mutable std::size_t m_chunking_ranges_counter = 0;
   // JSON path in an output of EXPLAIN statement to the row count
   mutable const char *m_json_path = nullptr;
 };
