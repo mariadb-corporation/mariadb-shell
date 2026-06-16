@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -143,7 +143,7 @@ void Rescan::prepare() {
   }
 }
 
-void Rescan::check_mismatched_hostnames_addresses(
+void Rescan::check_mismatched_instance_metadata(
     shcore::Array_t instances) const {
   m_cluster->execute_in_members(
       [&instances](const std::shared_ptr<Instance> &instance,
@@ -189,7 +189,9 @@ void Rescan::check_mismatched_hostnames_addresses(
 
         bool xport_equal = false;
         bool address_equal = false;
+        bool grendpoint_equal = true;
         std::string x_address;
+        std::string gr_local_address;
 
         auto canonical_hostname = instance->get_canonical_hostname();
 
@@ -203,6 +205,16 @@ void Rescan::check_mismatched_hostnames_addresses(
           xport_equal = true;
         }
 
+        // Get the group_replication_local_address to check if it changed in
+        // metadata
+        gr_local_address =
+            instance->get_sysvar_string(kGrLocalAddress).value_or("");
+
+        if (grendpoint_valid && !gr_local_address.empty()) {
+          grendpoint_equal = mysqlshdk::utils::are_endpoints_equal(
+              info.first.grendpoint, gr_local_address);
+        }
+
         if (grendpoint_valid &&
             mysqlshdk::utils::are_endpoints_equal(info.first.endpoint,
                                                   address) &&
@@ -211,7 +223,8 @@ void Rescan::check_mismatched_hostnames_addresses(
           address_equal = true;
         }
 
-        if (xport_equal && address_equal) return true;
+        // No metadata drift
+        if (xport_equal && address_equal && grendpoint_equal) return true;
 
         shcore::Dictionary_t dict = shcore::make_dict();
 
@@ -222,6 +235,7 @@ void Rescan::check_mismatched_hostnames_addresses(
         dict->set(
             "xport_endpoint",
             shcore::Value(x_address.empty() ? k_xplugin_disabled : x_address));
+        dict->set("grendpoint", shcore::Value(gr_local_address));
 
         instances->emplace_back(shcore::Value(dict));
 
@@ -231,6 +245,10 @@ void Rescan::check_mismatched_hostnames_addresses(
 
         if (!xport_equal) {
           dict->set("old_xport_endpoint", shcore::Value(info.first.xendpoint));
+        }
+
+        if (!grendpoint_equal) {
+          dict->set("old_grendpoint", shcore::Value(info.first.grendpoint));
         }
 
         return true;
@@ -390,7 +408,7 @@ shcore::Value::Map_type_ref Rescan::get_rescan_report() {
     }
   }
 
-  check_mismatched_hostnames_addresses(updated_instances);
+  check_mismatched_instance_metadata(updated_instances);
 
   // Add the missing_instances list to the result Map
   (*cluster_map)["unavailableInstances"] = shcore::Value(unavailable_instances);
@@ -644,8 +662,9 @@ void Rescan::update_metadata_for_instances(
       }
 
       // update instance label if it's the default value
-      if (instance_map->get_string("label") ==
-          instance_map->get_string("old_host")) {
+      if (instance_map->has_key("old_host") &&
+          instance_map->get_string("label") ==
+              instance_map->get_string("old_host")) {
         label = instance_map->get_string("host");
       }
 
@@ -660,6 +679,16 @@ void Rescan::update_metadata_for_instances(
             instance_address.c_str(),
             instance_map->get_string("old_xport_endpoint").c_str(),
             xport_endpoint_str.c_str()));
+      }
+
+      if (instance_map->has_key("old_grendpoint")) {
+        console->print_info(shcore::str_format(
+            "The instance '%s' is part of the Cluster but its Group "
+            "Replication local address has changed. "
+            "Old address: %s. Current address: %s.",
+            instance_address.c_str(),
+            instance_map->get_string("old_grendpoint").c_str(),
+            instance_map->get_string("grendpoint").c_str()));
       }
     }
 

@@ -973,6 +973,7 @@ Result of the rescanning operation for the 'cluster' cluster:
     "unavailableInstances": [],
     "updatedInstances": [
         {
+            "grendpoint": "${hostname_ip}:${__mysql_sandbox_gr_port3}",
             "host": "${hostname_ip}:${__mysql_sandbox_port3}",
             "id": 2,
             "label": "hooray",
@@ -1022,6 +1023,7 @@ Result of the rescanning operation for the 'cluster' cluster:
     "unavailableInstances": [],
     "updatedInstances": [
         {
+            "grendpoint": "${hostname_ip}:${__mysql_sandbox_gr_port3}",
             "host": "${hostname_ip}:${__mysql_sandbox_port3}",
             "id": 2,
             "label": "hooray",
@@ -1088,6 +1090,7 @@ Result of the rescanning operation for the 'cluster' cluster:
     "unavailableInstances": [],
     "updatedInstances": [
         {
+            "grendpoint": "${hostname_ip}:${__mysql_sandbox_gr_port3}",
             "host": "${hostname_ip}:${__mysql_sandbox_port3}",
             "id": 2,
             "label": "hooray",
