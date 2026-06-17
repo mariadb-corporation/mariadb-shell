@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -101,14 +101,22 @@ int ProvisioningInterface::execute_mysqlprovision(
     return false;
   });
 
+  const auto &shell_options = mysqlsh::current_shell_options()->get();
+
   std::string log_level = "--log-level=";
-  if (mysqlsh::current_shell_options()->get().log_to_stderr)
-    log_level.append("@");
+  if (shell_options.log_to_stderr) log_level.append("@");
   log_level.append(std::to_string(
       static_cast<int>(shcore::current_logger()->get_log_level())));
 
   args_script.push_back(g_mysqlsh_path);
   args_script.push_back(log_level.c_str());
+
+  // Keep the child Shell's plugin loading behavior aligned with the parent
+  if (shell_options.disable_user_plugins)
+    args_script.push_back("--disable-plugins");
+  if (shell_options.disable_builtin_plugins)
+    args_script.push_back("--disable-builtin-plugins");
+
   args_script.push_back("--pym");
 
   args_script.push_back("mysql_gadgets");

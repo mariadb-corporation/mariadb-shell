@@ -84,6 +84,7 @@ if(WITH_TESTS)
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/preconditions_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/clone_handling_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/metadata_management_t.cc"
+        "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/provisioning_interface_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/router_options_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/replication_version_compatibility_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/devapi/mod_mysqlx_collection_find_t.cc"
