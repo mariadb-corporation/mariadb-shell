@@ -34,6 +34,7 @@
 
 #include "mysqlshdk/libs/mysql/user_privileges.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_lexing.h"
 
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_result.h"
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session.h"
@@ -189,14 +190,23 @@ void setup(const Setup_options &options, Mock_session *session) {
             options.user == user && options.host == host;
       }
 
-      std::string query;
-
-      if (*options.activate_all_roles_on_login) {
+      const auto add_mandatory_roles = [&]() {
         for (const auto &role : options.mandatory_roles) {
+          mysqlshdk::utils::SQL_iterator it(role, 0, false);
+          std::string role_account{it.next_token()};
+          const auto token = it.next_token();
+
+          if (shcore::str_caseeq(token, "@")) {
+            role_account += token;
+            role_account += it.next_token();
+          } else {
+            role_account += "@%";
+          }
+
           std::string user;
           std::string host;
 
-          shcore::split_account(role, &user, &host);
+          shcore::split_account(role_account, &user, &host);
 
           if (host.empty()) {
             host = '%';
@@ -212,6 +222,12 @@ void setup(const Setup_options &options, Mock_session *session) {
                   {Type::String, Type::String},
                   {{"mandatory_roles",
                     shcore::str_join(options.mandatory_roles, ",")}}}});
+      };
+
+      std::string query;
+
+      if (*options.activate_all_roles_on_login) {
+        add_mandatory_roles();
 
         if (use_applicable_roles_table) {
           query =
@@ -223,6 +239,23 @@ void setup(const Setup_options &options, Mock_session *session) {
               "to_user=? AND to_host=?";
         }
       } else {
+        {
+          auto &r = session
+                        ->expect_query(
+                            "show GLOBAL variables where `variable_name` in "
+                            "('activate_mandatory_roles')")
+                        .then({"Variable_name", "Value"});
+
+          if (options.activate_mandatory_roles.has_value()) {
+            r.add_row({"activate_mandatory_roles",
+                       *options.activate_mandatory_roles ? "1" : "0"});
+          }
+        }
+
+        if (options.activate_mandatory_roles.value_or(false)) {
+          add_mandatory_roles();
+        }
+
         if (use_applicable_roles_table) {
           query =
               "SELECT ROLE_NAME, ROLE_HOST FROM "
@@ -582,6 +615,95 @@ TEST_F(User_privileges_test, get_user_roles) {
         up.get_user_roles());
   }
 
+  // User with mandatory roles and activate mandatory roles.
+  {
+    SCOPED_TRACE("User with mandatory roles and activate_mandatory_roles=ON.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = true;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ(
+        (std::set<std::string>{"'admin_role'@'dba_host'", "'m_role'@'dba_host'",
+                               "'write_role'@'dba_host'"}),
+        up.get_user_roles());
+  }
+
+  // User with mandatory roles, but activate mandatory roles is disabled.
+  {
+    SCOPED_TRACE("User with mandatory roles and activate_mandatory_roles=OFF.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = false;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'"}),
+              up.get_user_roles());
+  }
+
+  // User with mandatory roles, but activate_mandatory_roles is not available.
+  {
+    SCOPED_TRACE("User with mandatory roles and no activate_mandatory_roles.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles.reset();
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'"}),
+              up.get_user_roles());
+  }
+
   // BUG#35963431 - server has a version which should support roles, but
   // activate_all_roles_on_login system variable is not available
   {
@@ -675,6 +797,38 @@ TEST_F(User_privileges_test, validate_role_privileges) {
   };
 
   validate_role_privileges(setup_test(setup));
+}
+
+TEST_F(User_privileges_test, validate_mandatory_role_privileges) {
+  // Verify privileges inherited through a mandatory role while
+  // activate_all_roles_on_login is disabled.
+  Setup_options setup;
+
+  setup.user = "test_user";
+  setup.host = "%";
+  setup.version = Version(8, 0, 0);
+  setup.activate_all_roles_on_login = false;
+  setup.activate_mandatory_roles = true;
+
+  setup.mandatory_roles = {
+      "mandatory_role@%",
+  };
+
+  setup.grants = {
+      "GRANT USAGE ON *.* TO u@h",
+      "GRANT SELECT ON *.* TO u@h",
+  };
+
+  const auto up = setup_test(setup);
+  const auto result = up.validate({"SELECT"});
+
+  EXPECT_TRUE(up.user_exists());
+  EXPECT_EQ((std::set<std::string>{"'mandatory_role'@'%'"}),
+            up.get_user_roles());
+  EXPECT_TRUE(result.user_exists());
+  EXPECT_FALSE(result.has_missing_privileges());
+  EXPECT_FALSE(result.has_grant_option());
+  EXPECT_TRUE(result.missing_privileges().empty());
 }
 
 TEST_F(User_privileges_test, validate_role_privileges_direct) {

@@ -508,7 +508,11 @@ std::set<std::string> User_privileges::get_mandatory_roles(
       account += it.next_token();
       // read , (if it's there)
       it.next_token();
-    }  // else it's , or end of roles
+    } else {
+      // Quoted hostless roles need an explicit host separator before
+      // split_account() can handle them.
+      account += "@%";
+    }
 
     // Split each role account to handle backticks and the optional host part.
     std::string user, host;
@@ -578,7 +582,15 @@ void User_privileges::read_user_roles(
           "AND to_host=?";
     }
   } else {
-    // activate_all_roles_on_login is disabled, only default roles are activated
+    if (instance
+            .get_sysvar_bool("activate_mandatory_roles", Var_qualifier::GLOBAL)
+            .value_or(false)) {
+      // get mandatory roles and add them to the active roles
+      auto mandatory_roles = get_mandatory_roles(instance);
+      m_roles.merge(mandatory_roles);
+    }
+
+    // activate_all_roles_on_login is disabled, default roles are activated
     if (use_applicable_roles_table) {
       query =
           "SELECT ROLE_NAME, ROLE_HOST FROM "
