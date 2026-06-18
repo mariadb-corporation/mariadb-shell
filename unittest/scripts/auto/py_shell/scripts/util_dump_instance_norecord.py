@@ -4265,6 +4265,14 @@ setup_db(test_user_account)
 #@<> WL15887-TSFR_3_2_1 - valid account
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
 
+if __version_num < 80000:
+    # BUG#39441374 - dump uses upgrade checker for MHS compatibility checks, but
+    # must not display the in-place upgrade target-version suggestion.
+    EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": "8.4.0", "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
+    EXPECT_STDOUT_CONTAINS("NOTE: MySQL Server 5.7 detected, please consider upgrading to 8.0 first.")
+    EXPECT_STDOUT_NOT_CONTAINS("Upgrading MySQL Server from version")
+    EXPECT_STDOUT_NOT_CONTAINS("targetVersion=8.0")
+
 # no warnings about DEFINER=
 EXPECT_STDOUT_NOT_CONTAINS(strip_definers_definer_clause(schema_name, test_schema_event, "Event", test_user_account).warning())
 EXPECT_STDOUT_NOT_CONTAINS(strip_definers_definer_clause(schema_name, test_schema_function, "Function", test_user_account).warning())

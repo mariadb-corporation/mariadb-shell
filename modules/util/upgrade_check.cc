@@ -229,13 +229,17 @@ bool run_checks_for_upgrade(const Upgrade_check_config &config,
                             Upgrade_check_output_formatter &print) {
   assert(config.session());
 
-  print.check_info(
-      config.session()->get_connection_options().uri_endpoint(),
-      config.upgrade_info().server_version_long,
-      config.upgrade_info().target_version.get_base(),
-      config.upgrade_info().explicit_target_version,
-      check_for_version_suggestion(config.upgrade_info().server_version,
-                                   config.upgrade_info().target_version));
+  const auto version_suggestion =
+      config.upgrade_info().skip_target_version_check
+          ? ""
+          : check_for_version_suggestion(config.upgrade_info().server_version,
+                                         config.upgrade_info().target_version);
+
+  print.check_info(config.session()->get_connection_options().uri_endpoint(),
+                   config.upgrade_info().server_version_long,
+                   config.upgrade_info().target_version.get_base(),
+                   config.upgrade_info().explicit_target_version,
+                   version_suggestion);
   config.upgrade_info().validate();
 
   Upgrade_check_registry::Upgrade_check_vec rejected;
