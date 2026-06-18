@@ -266,7 +266,7 @@ def dump_cluster_status(zf, prefix: str, cluster_type: Optional[str]):
         try:
             status = globals.dba.get_cluster().status({"extended": 2})
             with zf.open(make_zipinfo(f"{prefix}cluster_status.yaml"), "w") as f:
-                f.write(yaml.dump(eval(repr(status))).encode("utf-8"))
+                f.write(yaml.dump(normalize(status)).encode("utf-8"))
         except Exception as e:
             with zf.open(make_zipinfo(f"{prefix}cluster_status.error"), "w") as f:
                 f.write(b"cluster.status({'extended':2})\n")
@@ -275,7 +275,7 @@ def dump_cluster_status(zf, prefix: str, cluster_type: Optional[str]):
         try:
             status = globals.dba.get_cluster_set().status({"extended": 2})
             with zf.open(make_zipinfo(f"{prefix}cluster_set_status.yaml"), "w") as f:
-                f.write(yaml.dump(eval(repr(status))).encode("utf-8"))
+                f.write(yaml.dump(normalize(status)).encode("utf-8"))
         except Exception as e:
             with zf.open(make_zipinfo(f"{prefix}cluster_set_status.error"), "w") as f:
                 f.write(b"cluster_set.status({'extended':2})\n")
@@ -284,7 +284,7 @@ def dump_cluster_status(zf, prefix: str, cluster_type: Optional[str]):
         try:
             status = globals.dba.get_replica_set().status({"extended": 2})
             with zf.open(make_zipinfo(f"{prefix}replica_set_status.yaml"), "w") as f:
-                f.write(yaml.dump(eval(repr(status))).encode("utf-8"))
+                f.write(yaml.dump(normalize(status)).encode("utf-8"))
         except Exception as e:
             with zf.open(make_zipinfo(f"{prefix}replica_set_status.error"), "w") as f:
                 f.write(b"replica_set.status({'extended':2})\n")
