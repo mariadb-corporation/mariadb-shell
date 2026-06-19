@@ -103,9 +103,13 @@ TEST_F(Admin_api_clone_test, check_clone_version_compatibility) {
       Version(9, 1, 4), Version(9, 1, 4)));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version("8.0.28-debug"), Version("8.0.28-debug")));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(26, 7, 0), Version(26, 7, 0)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 0), Version(28, 4, 0)));
 
-  // Cloning is NOT allowed when either Major and/or Minor versions are
-  // different between the source and the recipient.
+  // Cross-series cloning is only allowed from an LTS donor to the recipient's
+  // next LTS series, starting with 9.7.
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(28, 4, 3), Version(9, 7, 4)));
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
@@ -114,13 +118,63 @@ TEST_F(Admin_api_clone_test, check_clone_version_compatibility) {
       Version(9, 6, 4), Version(28, 4, 3)));
   EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(9, 1, 0), Version(9, 0, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(8, 0, 37), Version(8, 4, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(8, 0, 37), Version(9, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(8, 4, 9), Version(9, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(8, 4, 0), Version(8, 0, 37)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 0), Version(8, 4, 9)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 0), Version(30, 4, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 0), Version(28, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 4), Version(9, 7, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(30, 4, 4), Version(9, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(30, 4, 4), Version(28, 4, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 4), Version(32, 4, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 4), Version(32, 4, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(26, 7, 0), Version(28, 4, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 0), Version(26, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 6, 4), Version(9, 7, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(26, 7, 0), Version(26, 10, 0)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 1, 1), Version(28, 4, 2)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 2), Version(28, 1, 1)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 7, 1), Version(28, 10, 2)));
+  EXPECT_FALSE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 10, 2), Version(28, 7, 1)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 5), Version(28, 4, 0)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(28, 4, 4), Version(30, 4, 1)));
 
   // For 8.4 series and above, cloning is allowed when Major and Minor versions
   // are same.
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(9, 6, 4), Version("9.6.53-release")));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(9, 7, 0), Version(9, 7, 1)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(26, 7, 36), Version(26, 7, 16)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(26, 7, 0), Version(26, 7, 5)));
+  EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
+      Version(26, 7, 4), Version(26, 7, 2)));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
       Version(28, 4, 36), Version(28, 4, 16)));
   EXPECT_TRUE(mysqlshdk::mysql::verify_compatible_clone_versions(
