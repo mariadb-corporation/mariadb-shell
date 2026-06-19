@@ -155,7 +155,9 @@ User_privileges::User_privileges(const mysqlshdk::mysql::IInstance &instance,
   const bool is_skip_grants_user =
       ("'skip-grants user'@'skip-grants host'" == m_account) &&
       allow_skip_grants_user;
-  m_user_exists = is_skip_grants_user ? true : check_if_user_exists(instance);
+  m_user_exists = is_skip_grants_user
+                      ? true
+                      : check_if_user_exists(instance, m_user, m_host);
 
   // Set list of individual privileges included by ALL.
   set_all_privileges(instance);
@@ -200,12 +202,13 @@ User_privileges::User_privileges(const mysqlshdk::mysql::IInstance &instance,
 bool User_privileges::user_exists() const { return m_user_exists; }
 
 bool User_privileges::check_if_user_exists(
-    const mysqlshdk::mysql::IInstance &instance) const {
+    const mysqlshdk::mysql::IInstance &instance, const std::string &user,
+    const std::string &host) {
   // user_privileges.grantee column stores account as raw 'user'@'host' strings,
   // so to properly accommodate special escape characters (like quotes), it
   // needs to be escaped on the query level
   const auto raw_account =
-      shcore::str_format("'%s'@'%s'", m_user.c_str(), m_host.c_str());
+      shcore::str_format("'%s'@'%s'", user.c_str(), host.c_str());
   // all users have at least one privilege: USAGE
   const auto result = instance.queryf(
       "SELECT PRIVILEGE_TYPE FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE "
@@ -502,7 +505,7 @@ std::set<std::string> User_privileges::get_mandatory_roles(
     // @ or ,
     const auto token = it.next_token();
 
-    if (shcore::str_caseeq(token, "@")) {
+    if (!token.empty() && shcore::str_caseeq(token, "@")) {
       // host name will follow
       account += token;
       account += it.next_token();
@@ -521,6 +524,12 @@ std::set<std::string> User_privileges::get_mandatory_roles(
     // If the host part is not defined then % must be used by default.
     if (host.empty()) {
       host = '%';
+    }
+
+    if (!check_if_user_exists(instance, user, host)) {
+      log_warning("Skipping non-existing mandatory role '%s'@'%s'",
+                  user.c_str(), host.c_str());
+      continue;
     }
 
     // Insert role in the resulting set with the desired format.

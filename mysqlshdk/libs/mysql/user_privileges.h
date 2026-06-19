@@ -136,10 +136,14 @@ class User_privileges {
    * Checks if the account exists in the database.
    *
    * @param instance The Instance object used to query the database.
+   * @param user The username part for the user account to check.
+   * @param host The host part for the user account to check.
    *
    * @returns true if account exists in the database
    */
-  bool check_if_user_exists(const mysqlshdk::mysql::IInstance &instance) const;
+  static bool check_if_user_exists(const mysqlshdk::mysql::IInstance &instance,
+                                   const std::string &user,
+                                   const std::string &host);
 
   /**
    * Fetches and parses all the grants account has. If this account has roles

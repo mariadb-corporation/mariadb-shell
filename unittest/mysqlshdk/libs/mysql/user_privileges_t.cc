@@ -190,31 +190,37 @@ void setup(const Setup_options &options, Mock_session *session) {
             options.user == user && options.host == host;
       }
 
-      const auto add_mandatory_roles = [&]() {
-        for (const auto &role : options.mandatory_roles) {
-          mysqlshdk::utils::SQL_iterator it(role, 0, false);
-          std::string role_account{it.next_token()};
-          const auto token = it.next_token();
+      const auto make_mandatory_role_account = [](const std::string &role) {
+        mysqlshdk::utils::SQL_iterator it(role, 0, false);
+        std::string role_account{it.next_token()};
+        const auto token = it.next_token();
 
-          if (shcore::str_caseeq(token, "@")) {
-            role_account += token;
-            role_account += it.next_token();
-          } else {
-            role_account += "@%";
-          }
-
-          std::string user;
-          std::string host;
-
-          shcore::split_account(role_account, &user, &host);
-
-          if (host.empty()) {
-            host = '%';
-          }
-
-          all_roles.emplace(shcore::make_account(user, host));
+        if (!token.empty() && shcore::str_caseeq(token, "@")) {
+          role_account += token;
+          role_account += it.next_token();
+        } else {
+          role_account += "@%";
         }
 
+        std::string user;
+        std::string host;
+
+        shcore::split_account(role_account, &user, &host);
+
+        if (host.empty()) {
+          host = '%';
+        }
+
+        return shcore::make_account(user, host);
+      };
+
+      std::set<std::string> missing_mandatory_roles;
+
+      for (const auto &role : options.missing_mandatory_roles) {
+        missing_mandatory_roles.emplace(make_mandatory_role_account(role));
+      }
+
+      const auto add_mandatory_roles = [&]() {
         session->expect_query("SHOW GLOBAL VARIABLES LIKE 'mandatory_roles'")
             .then_return(
                 {{"",
@@ -222,6 +228,30 @@ void setup(const Setup_options &options, Mock_session *session) {
                   {Type::String, Type::String},
                   {{"mandatory_roles",
                     shcore::str_join(options.mandatory_roles, ",")}}}});
+
+        for (const auto &role : options.mandatory_roles) {
+          const auto role_account = make_mandatory_role_account(role);
+          auto &role_exists =
+              session
+                  ->expect_query(shcore::sqlformat(
+                      "SELECT PRIVILEGE_TYPE FROM "
+                      "INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE=? "
+                      "LIMIT 1",
+                      role_account))
+                  .then({"PRIVILEGE_TYPE"});
+
+          const auto missing = missing_mandatory_roles.contains(role_account);
+
+          if (!missing) {
+            role_exists.add_row({"USAGE"});
+          }
+
+          if (missing) {
+            continue;
+          }
+
+          all_roles.emplace(role_account);
+        }
       };
 
       std::string query;
@@ -644,6 +674,39 @@ TEST_F(User_privileges_test, get_user_roles) {
         (std::set<std::string>{"'admin_role'@'dba_host'", "'m_role'@'dba_host'",
                                "'write_role'@'dba_host'"}),
         up.get_user_roles());
+  }
+
+  // User with missing mandatory role.
+  {
+    SCOPED_TRACE("User with missing mandatory role.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = true;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "public",
+    };
+    setup.missing_mandatory_roles = {
+        "public",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'",
+                                     "'m_role'@'dba_host'"}),
+              up.get_user_roles());
   }
 
   // User with mandatory roles, but activate mandatory roles is disabled.

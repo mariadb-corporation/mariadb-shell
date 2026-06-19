@@ -46,6 +46,7 @@ struct Setup_options {
   std::optional<bool> activate_all_roles_on_login = false;
   std::optional<bool> activate_mandatory_roles;
   std::vector<std::string> mandatory_roles;
+  std::vector<std::string> missing_mandatory_roles;
   std::vector<shcore::Account> active_roles;
   std::vector<std::string> grants;
   bool allow_skip_grants_user = false;
