@@ -754,7 +754,7 @@ shell.options.useWizards = 0;
 // handling that did not cover the timeout waiting for the instance to start
 // after clone restarts it.
 
-//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17)}
+//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17) && __dbug}
 // Use a debug trap to abort the restart wait path after clone has requested the restart.
 testutil.dbugSet("+d,dba_abort_monitor_clone_recovery_wait_restart");
 shell.options["useWizards"] = 1;
@@ -763,7 +763,7 @@ testutil.dbugSet("");
 testutil.waitSandboxAlive(__mysql_sandbox_port2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
 
-//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17)}
+//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17) && __dbug}
 testutil.expectPrompt("Would you like to add it to the cluster metadata? [Y/n]:", "y");
 cluster.rescan();
 shell.options["useWizards"] = 0;
