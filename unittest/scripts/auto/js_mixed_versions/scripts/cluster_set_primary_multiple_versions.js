@@ -1,12 +1,33 @@
 //@ {DEF(MYSQLD_SECONDARY_SERVER_A) && VER(>=8.0.13) && testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, ">=", "8.0.13")}
 
-if (testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, '<', __version)) {
-    testutil.deploySandbox(__mysql_sandbox_port1, "root", { report_host: localhost }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
-    testutil.deploySandbox(__mysql_sandbox_port2, "root", { report_host: localhost });
-} else {
-    testutil.deploySandbox(__mysql_sandbox_port1, "root", { report_host: localhost });
-    testutil.deploySandbox(__mysql_sandbox_port2, "root", { report_host: localhost }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+function get_sandbox_version(uri) {
+    let version_session = mysql.getSession(uri);
+    let version = version_session.runSql('SELECT @@version').fetchOne()[0];
+    version_session.close();
+    return version.split('-')[0];
 }
+
+function deploy_default_sandbox(port) {
+    testutil.deploySandbox(port, "root", { report_host: localhost });
+}
+
+function deploy_secondary_sandbox(port) {
+    testutil.deploySandbox(port, "root", { report_host: localhost }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+}
+
+deploy_default_sandbox(__mysql_sandbox_port1);
+deploy_secondary_sandbox(__mysql_sandbox_port2);
+
+if (testutil.versionCheck(get_sandbox_version(__sandbox_uri1), '>', get_sandbox_version(__sandbox_uri2))) {
+    testutil.destroySandbox(__mysql_sandbox_port1);
+    testutil.destroySandbox(__mysql_sandbox_port2);
+
+    deploy_secondary_sandbox(__mysql_sandbox_port1);
+    deploy_default_sandbox(__mysql_sandbox_port2);
+}
+
+WIPE_OUTPUT()
+WIPE_SHELL_LOG()
 
 shell.connect(__sandbox_uri1);
 

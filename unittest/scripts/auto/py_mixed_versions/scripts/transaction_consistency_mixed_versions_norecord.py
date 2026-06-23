@@ -6,16 +6,76 @@
 
 #@<> Setup
 
-if testutil.version_check(MYSQLD_SECONDARY_SERVER_A["version"], '<', __version):
-    testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", {"report_host":hostname}, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
-    testutil.deploy_raw_sandbox(__mysql_sandbox_port2, "root", {"report_host":hostname}, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
-    testutil.deploy_sandbox(__mysql_sandbox_port3, "root", {"report_host":hostname})
-    testutil.deploy_sandbox(__mysql_sandbox_port4, "root", {"report_host":hostname})
-else:
-    testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", {"report_host":hostname})
-    testutil.deploy_raw_sandbox(__mysql_sandbox_port2, "root", {"report_host":hostname})
-    testutil.deploy_sandbox(__mysql_sandbox_port3, "root", {"report_host":hostname}, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
-    testutil.deploy_sandbox(__mysql_sandbox_port4, "root", {"report_host":hostname}, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
+primary_view_change_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+replica_view_change_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+primary_cluster_options = {"report_host":hostname, "group_replication_view_change_uuid":primary_view_change_uuid}
+replica_cluster_options = {"report_host":hostname, "group_replication_view_change_uuid":replica_view_change_uuid}
+
+
+def get_sandbox_version(uri):
+    version_session = mysql.get_session(uri)
+    version = version_session.run_sql("SELECT @@version").fetch_one()[0]
+    version_session.close()
+    return version.split("-")[0]
+
+
+def deploy_default_raw_sandboxes():
+    testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", primary_cluster_options)
+    testutil.deploy_raw_sandbox(__mysql_sandbox_port2, "root", replica_cluster_options)
+
+
+def deploy_secondary_raw_sandboxes():
+    testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", primary_cluster_options, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
+    testutil.deploy_raw_sandbox(__mysql_sandbox_port2, "root", replica_cluster_options, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
+
+
+def deploy_default_member_sandboxes():
+    testutil.deploy_sandbox(__mysql_sandbox_port3, "root", replica_cluster_options)
+    testutil.deploy_sandbox(__mysql_sandbox_port4, "root", primary_cluster_options)
+
+
+def deploy_secondary_member_sandboxes():
+    testutil.deploy_sandbox(__mysql_sandbox_port3, "root", replica_cluster_options, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
+    testutil.deploy_sandbox(__mysql_sandbox_port4, "root", primary_cluster_options, { "mysqldPath": MYSQLD_SECONDARY_SERVER_A["path"] })
+
+
+deploy_default_raw_sandboxes()
+deploy_secondary_member_sandboxes()
+
+default_server_version = get_sandbox_version(__sandbox_uri1)
+secondary_server_version = get_sandbox_version(__sandbox_uri3)
+
+if testutil.version_check(default_server_version, ">", secondary_server_version):
+    testutil.destroy_sandbox(__mysql_sandbox_port1)
+    testutil.destroy_sandbox(__mysql_sandbox_port2)
+    testutil.destroy_sandbox(__mysql_sandbox_port3)
+    testutil.destroy_sandbox(__mysql_sandbox_port4)
+    deploy_secondary_raw_sandboxes()
+    deploy_default_member_sandboxes()
+
+lower_server_version = get_sandbox_version(__sandbox_uri1)
+higher_server_version = get_sandbox_version(__sandbox_uri3)
+default_to_secondary_replication_incompatible = testutil.version_check(default_server_version, "between", "[26.7.0,28.4.0)") and \
+    testutil.version_check(secondary_server_version, "between", "[9.7.0,10.0.0)")
+higher_to_lower_replication_downgrade_only = testutil.version_check(higher_server_version, "between", "[9.7.0,10.0.0)") and \
+    testutil.version_check(lower_server_version, "between", "[8.4.0,9.0.0)")
+
+
+def current_to_secondary_replication_is_incompatible():
+    return default_to_secondary_replication_incompatible
+
+
+def higher_to_lower_replication_is_downgrade_only():
+    return higher_to_lower_replication_downgrade_only
+
+
+if not current_to_secondary_replication_is_incompatible() and \
+        not higher_to_lower_replication_is_downgrade_only():
+    testutil.destroy_sandbox(__mysql_sandbox_port1)
+    testutil.destroy_sandbox(__mysql_sandbox_port2)
+    testutil.destroy_sandbox(__mysql_sandbox_port3)
+    testutil.destroy_sandbox(__mysql_sandbox_port4)
+    testutil.skip("Unsupported mixed-version replication compatibility scenario.")
 
 EXPECT_NO_THROWS(lambda:dba.configure_instance(__sandbox_uri1), "")
 EXPECT_NO_THROWS(lambda:dba.configure_instance(__sandbox_uri2), "")
@@ -35,8 +95,12 @@ shell.connect(__sandbox_uri1)
 pc = dba.create_cluster("primary", {"gtidSetIsComplete":1})
 cs = pc.create_cluster_set("cs")
 rc = cs.create_replica_cluster(__sandbox_uri2, "replica")
-rc.add_instance(__sandbox_uri3)
-pc.add_instance(__sandbox_uri4)
+session1.run_sql("UPDATE mysql_innodb_cluster_metadata.clusters SET attributes = JSON_SET(attributes, '$.group_replication_view_change_uuid', ?) WHERE cluster_name = 'primary'", [primary_view_change_uuid])
+session1.run_sql("UPDATE mysql_innodb_cluster_metadata.clusters SET attributes = JSON_SET(attributes, '$.group_replication_view_change_uuid', ?) WHERE cluster_name = 'replica'", [replica_view_change_uuid])
+
+if higher_to_lower_replication_is_downgrade_only():
+    rc.add_instance(__sandbox_uri3)
+    pc.add_instance(__sandbox_uri4)
 
 #@<> Regression test to ensure only VCLEs are injected by ensure_transaction_set_consistent()
 # Bug #34462141 clusterset.rejoinCluster() hangs
