@@ -82,6 +82,7 @@ class TestRequestHandler(BaseHTTPRequestHandler):
             r'^/20180711/resourcePrincipalToken/(.+)$': self.handle_rpt,
             r'^/20180711/resourcePrincipalTokenV2/(.+)$': self.handle_rpt_v2,
             r'^/v1/resourcePrincipalSessionToken$': self.handle_rpst,
+            r'^/$': self.handle_nested_rpt_root,
             r'^/nested_rpt/([1-9][0-9]*)$': self.handle_nested_rpt,
             r'^/ecs?.+$': self.handle_ecs,
             r'^/imds(.+)$': self.handle_imds,
@@ -265,6 +266,22 @@ class TestRequestHandler(BaseHTTPRequestHandler):
         }, extra_headers={
             "opc-parent-rpt-url": f"http://127.0.0.1:{args[0]}/20180711/resourcePrincipalToken/id"
         })
+        return True
+
+    def handle_nested_rpt_root(self, args):
+        if self.command != 'GET':
+            return False
+
+        extra_headers = {}
+        host = self.getheader('Host', '')
+
+        if host.startswith('127.0.0.1:'):
+            extra_headers["opc-parent-rpt-url"] = f"http://localhost:{self.server.server_port}"
+
+        self.reply(extra_response={
+            "resourcePrincipalToken": self.to_jwt({"nested": True, "token_type": "rpt"}),
+            "servicePrincipalSessionToken": self.to_jwt({"nested": True, "token_type": "spst"}),
+        }, extra_headers=extra_headers)
         return True
 
     def handle_rpst(self, args):

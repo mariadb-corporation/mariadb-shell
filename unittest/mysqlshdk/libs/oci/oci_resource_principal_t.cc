@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -557,8 +557,7 @@ TEST_F(Oci_resource_principal_test, version_3_0_leaf_version_1_1) {
   auto cleanup = Cleanup::set_env_var("OCI_RESOURCE_PRINCIPAL_VERSION", "3.0");
   cleanup +=
       Cleanup::set_env_var("OCI_RESOURCE_PRINCIPAL_RPT_URL_FOR_PARENT_RESOURCE",
-                           s_test_server->address() + "/nested_rpt/" +
-                               std::to_string(s_test_server->port()));
+                           s_test_server->address());
   cleanup += Cleanup::set_env_var(
       "OCI_RESOURCE_PRINCIPAL_RPST_ENDPOINT_FOR_PARENT_RESOURCE",
       s_test_server->address());
@@ -851,8 +850,7 @@ TEST_F(Oci_resource_principal_test, version_3_0_leaf_version_2_2) {
   auto cleanup = Cleanup::set_env_var("OCI_RESOURCE_PRINCIPAL_VERSION", "3.0");
   cleanup +=
       Cleanup::set_env_var("OCI_RESOURCE_PRINCIPAL_RPT_URL_FOR_PARENT_RESOURCE",
-                           s_test_server->address() + "/nested_rpt/" +
-                               std::to_string(s_test_server->port()));
+                           s_test_server->address());
   cleanup += Cleanup::set_env_var(
       "OCI_RESOURCE_PRINCIPAL_RPST_ENDPOINT_FOR_PARENT_RESOURCE",
       s_test_server->address());

@@ -30,6 +30,7 @@
 #include <openssl/opensslv.h>
 #include <stdlib.h>
 #include <stdexcept>
+#include <string>
 
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -52,6 +53,16 @@ void init_openssl_modules() {
 #endif
 }
 
+void append_python_warning_filter(const char *filter) {
+  constexpr auto k_env_var = "PYTHONWARNINGS";
+
+  if (const auto current = ::getenv(k_env_var); current && *current) {
+    shcore::setenv(k_env_var, std::string{current} + "," + filter);
+  } else {
+    shcore::setenv(k_env_var, filter);
+  }
+}
+
 }  // namespace
 
 void thread_init() { mysql_thread_init(); }
@@ -67,10 +78,11 @@ void global_init() {
   curl_global_init(CURL_GLOBAL_ALL);
   init_openssl_modules();
 
+  append_python_warning_filter("ignore::FutureWarning:urllib3.poolmanager");
+
 #if OPENSSL_VERSION_NUMBER < 0x30000000L /* 3.0.x */
   // disable Python's cryptography warning regarding OpenSSL < 3.0
-  shcore::setenv(
-      "PYTHONWARNINGS",
+  append_python_warning_filter(
       "ignore::UserWarning:cryptography.hazmat.backends.openssl.backend");
 #endif
 }
