@@ -287,7 +287,7 @@ inline Version lts_for_cycle(int cycle, int patch = 0) {
   return Version(k_lts_start_year + cycle * 2, k_lts_month, patch);
 }
 
-inline bool is_legacy_lts_slot(const Version &v) {
+[[maybe_unused]] inline bool is_legacy_lts_slot(const Version &v) {
   return v.get_major() >= k_legacy_anchor_major &&
          v.get_minor() == k_legacy_lts_minor;
 }
