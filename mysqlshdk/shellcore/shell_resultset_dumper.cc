@@ -445,6 +445,10 @@ class Field_formatter {
                  text[index] == '\0') {
         buffer[next_index++] = ' ';
       } else if (m_flags.is_set(Print_flag::PRINT_CTRL) &&
+                 text[index] == '\r' && index + 1 < length &&
+                 text[index + 1] == '\n') {
+        continue;
+      } else if (m_flags.is_set(Print_flag::PRINT_CTRL) &&
                  text[index] == '\t') {
         buffer[next_index++] = '\\';
         buffer[next_index++] = 't';

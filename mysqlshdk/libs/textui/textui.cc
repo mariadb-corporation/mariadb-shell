@@ -40,10 +40,17 @@ inline bool is_c1_control(uint32_t codepoint) {
   return codepoint >= 0x80 && codepoint <= 0x9F;
 }
 
-inline bool is_allowed_control(unsigned char byte, Sanitization_mode mode) {
+inline bool is_crlf_newline(std::string_view text, size_t offset) {
+  return text[offset] == '\r' && offset + 1 < text.size() &&
+         text[offset + 1] == '\n';
+}
+
+inline bool is_allowed_control(std::string_view text, size_t offset,
+                               Sanitization_mode mode) {
   // Result fields have existing NUL rendering semantics through
   // PRINT_0_AS_ESC. Other terminal text has no such contract, so encode NUL.
-  return byte == '\n' || byte == '\t' ||
+  const auto byte = text[offset];
+  return byte == '\n' || byte == '\t' || is_crlf_newline(text, offset) ||
          (mode == Sanitization_mode::Result_field && byte == '\0');
 }
 
@@ -363,7 +370,7 @@ std::string sanitize_utf8_terminal_text(std::string_view text,
     }
 
     if (byte < 0x20) {
-      if (is_allowed_control(byte, mode)) {
+      if (is_allowed_control(text, i, mode)) {
         sanitized.push_back(static_cast<char>(byte));
       } else {
         append_hex_escape(byte, &sanitized);
@@ -419,7 +426,7 @@ std::string sanitize_and_strip_ansi(std::string_view text) {
     }
 
     if (byte < 0x20) {
-      if (is_allowed_control(byte, Sanitization_mode::Text)) {
+      if (is_allowed_control(text, i, Sanitization_mode::Text)) {
         sanitized.push_back(static_cast<char>(byte));
       } else {
         append_hex_escape(byte, &sanitized);

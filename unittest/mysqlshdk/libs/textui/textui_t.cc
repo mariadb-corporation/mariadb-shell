@@ -843,6 +843,9 @@ TEST(Textui, sanitize_utf8_terminal_text_for_text) {
   EXPECT_EQ("plain text", sanitize_utf8_terminal_text("plain text"));
   EXPECT_EQ("line 1\nline 2\tend",
             sanitize_utf8_terminal_text("line 1\nline 2\tend"));
+  EXPECT_EQ("line 1\r\nline 2",
+            sanitize_utf8_terminal_text("line 1\r\nline 2"));
+  EXPECT_EQ("line 1\\x0Dline 2", sanitize_utf8_terminal_text("line 1\rline 2"));
   EXPECT_EQ("before\\x1B]52;c;AAAA\\x07after",
             sanitize_utf8_terminal_text("before\x1B]52;c;AAAA\x07"
                                         "after"));
@@ -865,6 +868,10 @@ TEST(Textui, sanitize_utf8_terminal_text_for_result_field) {
   std::string controls{"a\0b\nc\td", 7};
 
   EXPECT_EQ(controls, sanitize_utf8_terminal_text(controls, mode));
+  EXPECT_EQ("line 1\r\nline 2",
+            sanitize_utf8_terminal_text("line 1\r\nline 2", mode));
+  EXPECT_EQ("line 1\\x0Dline 2",
+            sanitize_utf8_terminal_text("line 1\rline 2", mode));
   EXPECT_EQ("safe\\x1B]52;c;AAAA\\x07",
             sanitize_utf8_terminal_text("safe\x1B]52;c;AAAA\x07", mode));
   EXPECT_EQ("field\\x1B[31mred\\x1B[0m",

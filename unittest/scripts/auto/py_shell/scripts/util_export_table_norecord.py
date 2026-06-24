@@ -1392,10 +1392,18 @@ class Http_file_server(BaseHTTPRequestHandler):
     def __file_path(self):
         return os.path.join(tmp_dir, "file-server", self.path[1:].replace("/", os.path.sep))
     def __reply(self, response, status=200, content_type="application/json", extra_headers={}):
-        self.log_message("Content-Length: %s", str(len(response)))
+        content_length = str(len(response))
+        has_content_length = False
+        for k, v in extra_headers.items():
+            if k.lower() == "content-length":
+                content_length = v
+                has_content_length = True
+                break
+        self.log_message("Content-Length: %s", content_length)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(response)))
+        if not has_content_length:
+            self.send_header("Content-Length", content_length)
         self.send_header("Accept-Ranges", "bytes")
         for k, v in extra_headers.items():
             self.send_header(k, v)

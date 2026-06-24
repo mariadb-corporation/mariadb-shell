@@ -66,7 +66,7 @@ std::string current_log_level_arg() {
 
 TEST(ProvisioningInterface_test, forwards_plugin_disable_options) {
 #ifdef _WIN32
-  GTEST_SKIP() << "This test uses a POSIX shell script as fake mysqlsh";
+  SKIP_TEST("This test uses a POSIX shell script as fake mysqlsh");
 #else
   const auto test_dir = shcore::create_temporary_folder();
   tests::Cleanup cleanup;

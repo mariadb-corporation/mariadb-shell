@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cerrno>
 #include <climits>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -1496,12 +1497,25 @@ FILE *create_private_file(const std::string &path) {
 
 #ifdef _WIN32
   const auto wpath = shcore::utf8_to_wide(path);
-  const auto rc =
-      _wsopen_s(&fd, wpath.c_str(), _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY,
-                _SH_DENYWR, _S_IREAD | _S_IWRITE);
-  if (0 != rc) {
-    errno = rc;
-    fd = -1;
+  HANDLE handle = CreateFileW(
+      wpath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+      CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr);
+  if (INVALID_HANDLE_VALUE != handle) {
+    fd = _open_osfhandle(reinterpret_cast<intptr_t>(handle),
+                         _O_RDWR | _O_BINARY);
+    if (fd < 0) {
+      const auto error = errno;
+      CloseHandle(handle);
+      throw std::runtime_error(
+          shcore::str_format("Error opening private file '%s': %s",
+                             path.c_str(), strerror(error)));
+    }
+  } else {
+    const auto error = GetLastError();
+    throw std::runtime_error(
+        shcore::str_format("Error creating private file '%s': %s", path.c_str(),
+                           get_error(error).c_str()));
   }
 #else
   int flags = O_RDWR | O_CREAT | O_EXCL;
