@@ -28,7 +28,7 @@ EXPECT_THROWS(function(){ cluster.createRoutingGuideline("test", null, {force: t
 var rg;
 EXPECT_NO_THROWS(function() { rg = cluster.createRoutingGuideline("default_cluster_rg");} );
 
-EXPECT_OUTPUT_CONTAINS(`NOTE: Routing guideline 'default_cluster_rg' won't be made active by default. To activate this guideline, please use .setRoutingOption() with the option 'guideline'.`);
+EXPECT_OUTPUT_CONTAINS(`NOTE: Routing guideline 'default_cluster_rg' won't be made active by default. To activate this guideline, please use Cluster.setRoutingOption() with the option 'guideline'.`);
 EXPECT_OUTPUT_CONTAINS(`Routing Guideline 'default_cluster_rg' successfully created.`);
 
 EXPECT_THROWS(function(){ cluster.createRoutingGuideline("default_cluster_rg");}, "A Routing Guideline with the name 'default_cluster_rg' already exists");

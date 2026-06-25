@@ -1748,9 +1748,9 @@ void Base_cluster_impl::store_routing_guideline(
     console->print_info();
     console->print_note(shcore::str_format(
         "Routing guideline '%s' won't be made active by default. To activate "
-        "this guideline, please use .<<<setRoutingOption()>>> with the option "
-        "'guideline'.",
-        guideline->get_name().c_str()));
+        "this guideline, please use %s.<<<setRoutingOption()>>> with the "
+        "option 'guideline'.",
+        guideline->get_name().c_str(), api_class(get_type()).c_str()));
   } else if (!active_rg.empty()) {
     // Print a message indicating which Guideline is the active one, if any
     console->print_info();
