@@ -937,6 +937,9 @@ cluster is detected as being invalidated. Default value is 'drop_all'.
 is to make to its statistics in the InnoDB Cluster metadata.
 @li use_replica_primary_as_rw: Enable/Disable the RW Port in Replica Clusters.
 Disabled by default.
+@li unreachable_quorum_allowed_traffic: Routing policy to define Router's
+behavior regarding traffic destinations (ports) when it loses access to the
+target Cluster's quorum.
 @li tags: Associates an arbitrary JSON object with custom key/value pairs with
 the ClusterSet metadata.
 @li read_only_targets: Routing policy to define Router's usage of Read
@@ -971,6 +974,23 @@ seconds; TTL=5, stats_updates_frequency=13, effective frequency is 15 seconds.
 
 If the value is null, the option value is cleared and the default value (0)
 takes effect.
+
+The unreachable_quorum_allowed_traffic option allows configuring Router's behavior
+in the event of a loss of quorum on the only reachable target Cluster partition.
+By default, Router will disconnect all existing connections and refuse new ones,
+but that can be configured using the following options:
+
+@li read: Router will keep using ONLINE members as Read-Only destination, leaving
+the RO and RW-split ports open.
+@li all: Router will keep ONLINE members as Read/Write destinations, leaving all
+ports (RW, RO, and RW-split), open.
+@li none: All current connections are disconnected and new ones are refused (default behavior).
+
+@attention Setting this option to a value other than the default may have unwanted consequences: the consistency guarantees provided by InnoDB ClusterSet are broken since the data read can be stale; different Routers may be accessing different partitions of the target Cluster, thus return different data; and different Routers may also have different behavior (i.e. some provide only read traffic while others read and write traffic). Note that writes on a partition of the target Cluster with no quorum will block until quorum is restored.
+
+This option has no practical effect if group_replication_unreachable_majority_timeout
+is set to a positive value and group_replication_exit_state_action is either
+OFFLINE_MODE or ABORT_SERVER.
 
 The use_replica_primary_as_rw option accepts a boolean value to configure
 whether the Router should enable or disable the RW Port for the target Cluster.

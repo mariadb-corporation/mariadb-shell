@@ -103,6 +103,15 @@ CHECK_SET_ROUTING_OPTION('stats_updates_frequency', 15, 15);
 
 CHECK_SET_ROUTING_OPTION('use_replica_primary_as_rw', false, false);
 CHECK_SET_ROUTING_OPTION('use_replica_primary_as_rw', true, true);
+CHECK_SET_ROUTING_OPTION('unreachable_quorum_allowed_traffic', 'none', 'none');
+CHECK_SET_ROUTING_OPTION('unreachable_quorum_allowed_traffic', 'read', 'read');
+CHECK_SET_ROUTING_OPTION('unreachable_quorum_allowed_traffic', 'all', 'all');
+CHECK_SET_ROUTING_OPTION('unreachable_quorum_allowed_traffic', 'ALL', 'all');
+
+WIPE_OUTPUT();
+clusterset.setRoutingOption('unreachable_quorum_allowed_traffic', 'read');
+EXPECT_OUTPUT_CONTAINS("Setting the 'unreachable_quorum_allowed_traffic' option to 'read' may have unwanted consequences: the consistency guarantees provided by InnoDB ClusterSet are broken");
+clusterset.setRoutingOption('unreachable_quorum_allowed_traffic', null);
 
 CHECK_SET_ROUTING_OPTION('tags', {}, {});
 CHECK_SET_ROUTING_OPTION('tags', { "a": 123 }, { "a": 123 });
@@ -221,6 +230,12 @@ EXPECT_THROWS(function(){ clusterset.setRoutingOption(cm_router, 'use_replica_pr
   "Invalid value for routing option 'use_replica_primary_as_rw', value is expected to be a boolean.");
 EXPECT_THROWS(function(){ clusterset.setRoutingOption(cm_router, 'use_replica_primary_as_rw', -1); },
   "Invalid value for routing option 'use_replica_primary_as_rw', value is expected to be a boolean.");
+
+// unreachable_quorum_allowed_traffic
+EXPECT_THROWS(function(){ clusterset.setRoutingOption(cm_router, 'unreachable_quorum_allowed_traffic', 'any_not_supported_value'); },
+  "Invalid value for routing option 'unreachable_quorum_allowed_traffic', value is expected to be either 'read', 'all' or 'none'.");
+EXPECT_THROWS(function(){ clusterset.setRoutingOption(cm_router, 'unreachable_quorum_allowed_traffic', 1); },
+  "Invalid value for routing option 'unreachable_quorum_allowed_traffic', value is expected to be either 'read', 'all' or 'none'.");
 
 //@<> Routers that don't belong to the clusterset
 EXPECT_THROWS(function(){ clusterset.setRoutingOption("abra", 'invalidated_cluster_policy', 'drop_all'); },

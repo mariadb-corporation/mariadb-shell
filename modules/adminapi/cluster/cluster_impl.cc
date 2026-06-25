@@ -4391,9 +4391,12 @@ void Cluster_impl::set_routing_option(const std::string &option,
 void Cluster_impl::set_routing_option(const std::string &router,
                                       const std::string &option,
                                       const shcore::Value &value) {
-  if (((option == k_router_option_read_only_targets) ||
-       (option == k_router_option_stats_updates_frequency)) &&
-      is_cluster_set_member()) {
+  const bool blocked_option_if_clusterset =
+      (option == k_router_option_read_only_targets) ||
+      (option == k_router_option_stats_updates_frequency) ||
+      (option == k_router_option_unreachable_quorum_allowed_traffic);
+
+  if (blocked_option_if_clusterset && is_cluster_set_member()) {
     current_console()->print_error(shcore::str_format(
         "Cluster '%s' is a member of ClusterSet '%s', use "
         "<ClusterSet>.<<<setRoutingOption>>>() to change the option '%s'",
