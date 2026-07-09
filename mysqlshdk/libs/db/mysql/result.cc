@@ -27,6 +27,7 @@
 #include "mysqlshdk/libs/db/mysql/result.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 
@@ -183,9 +184,7 @@ void Result::fetch_metadata() {
           fields[index].catalog, fields[index].db, fields[index].org_table,
           fields[index].table, fields[index].org_name, fields[index].name,
           fields[index].length, fields[index].decimals,
-          map_data_type(fields[index].type, fields[index].flags,
-                        fields[index].charsetnr),
-          fields[index].charsetnr,
+          map_data_type(fields[index]), fields[index].charsetnr,
           static_cast<bool>(fields[index].flags & UNSIGNED_FLAG),
           static_cast<bool>(fields[index].flags & ZEROFILL_FLAG),
           static_cast<bool>(fields[index].flags & BINARY_FLAG),
@@ -413,7 +412,30 @@ std::shared_ptr<Field_names> Result::field_names() const {
   return _field_names;
 }
 
-Type Result::map_data_type(int raw_type, int flags, int collation_id) {
+Type Result::map_data_type(const MYSQL_FIELD &field) {
+  int raw_type = field.type;
+  int flags = field.flags;
+  int collation_id = field.charsetnr;
+
+#ifdef MARIADB_BUILD
+  // MariaDB has no dedicated JSON wire type: a JSON column/expression is sent
+  // as a TEXT/BLOB (LONGTEXT) and the only reliable marker is the extended
+  // metadata "format" attribute, which the server sets to "json". This is
+  // carried in FORMAT_NAME (not DATA_TYPE_NAME, which stays empty for JSON),
+  // and it is present regardless of the result-set collation. The connector
+  // negotiates extended metadata automatically, so field.extension is only
+  // populated for columns that actually carry it.
+  if (field.extension) {
+    MARIADB_CONST_STRING format{nullptr, 0};
+    if (mariadb_field_attr(&format, &field, MARIADB_FIELD_ATTR_FORMAT_NAME) ==
+            0 &&
+        format.str && format.length == 4 &&
+        strncmp(format.str, "json", 4) == 0) {
+      return Type::Json;
+    }
+  }
+#endif
+
   switch (raw_type) {
     case MYSQL_TYPE_NULL:
       return Type::Null;

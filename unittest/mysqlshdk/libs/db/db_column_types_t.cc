@@ -207,6 +207,22 @@ TEST_F(Db_tests, metadata_columns_alltypes) {
       CHECK(1, Type::Set, 0, false, false, false);
     }
 
+    {
+      TABLE("t_json");
+      ASSERT_EQ(1, columns.size());
+      // Length is skipped: a JSON column reports LONGTEXT_LENGTH
+      // (4294967295), which is not meaningful to assert here.
+      if (is_classic) {
+        // Classic protocol reports the BINARY flag for JSON (MySQL uses the
+        // binary collation; MariaDB sends LONGTEXT with a _bin collation).
+        CHECK(0, Type::Json, 0, false, false, true);
+      } else {
+        // X Protocol derives Json from the BYTES content-type and does not
+        // set the binary flag.
+        CHECK(0, Type::Json, 0, false, false, false);
+      }
+    }
+
 #ifndef MARIADB_BUILD
     // PORT-TODO: Verify Vector data type handling
     if (_target_server_version >= mysqlshdk::utils::Version(9, 0, 0)) {

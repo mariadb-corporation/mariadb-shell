@@ -190,6 +190,14 @@ INSERT INTO t_set  VALUES (NULL, NULL);
 /*!50708 INSERT INTO t_json VALUES('{"char": "varchar", "binary": "varbinary"}') */;
 /*!50708 INSERT INTO t_json VALUES('{"çhár": "varçhár", "çínary": "çarbínary"}') */;
 /*!50708 INSERT INTO t_json VALUES('["abc", 10, null, true, false]') */;
+-- MariaDB skips /*!NNNNN*/ comments whose version is below its own base
+-- (100000), so the /*!50708*/ lines above never run against MariaDB. MariaDB
+-- has the JSON type (a LONGTEXT alias) since 10.2.7, so recreate it via the
+-- MariaDB-only /*M! ... */ executable comments below (ignored by MySQL).
+/*M!100207 CREATE TABLE t_json (jdoc JSON) */;
+/*M!100207 INSERT INTO t_json VALUES('{"char": "varchar", "binary": "varbinary"}') */;
+/*M!100207 INSERT INTO t_json VALUES('{"çhár": "varçhár", "çínary": "çarbínary"}') */;
+/*M!100207 INSERT INTO t_json VALUES('["abc", 10, null, true, false]') */;
 
 CREATE TABLE t_geom (g GEOMETRY);
 INSERT INTO t_geom VALUES (ST_GeomFromText('POINT(1 1)'));

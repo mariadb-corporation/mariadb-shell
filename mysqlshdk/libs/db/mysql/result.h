@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +99,7 @@ class SHCORE_PUBLIC Result : public mysqlshdk::db::IResult,
 
   void fetch_metadata();
   void fetch_statement_id();
-  Type map_data_type(int raw_type, int flags, int collation_id);
+  Type map_data_type(const MYSQL_FIELD &field);
 
   void on_end_fetch();
 
