@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +27,7 @@
 #include "mysqlshdk/libs/utils/utils_file.h"
 
 #include <fcntl.h>
+#include <algorithm>
 #include <cassert>
 #include <climits>
 #include <cstdio>
@@ -769,14 +771,15 @@ std::string get_last_error() {
 
 bool load_text_file(const std::string &path, std::string &data,
                     bool preserve_cr) {
-// NOTE: File needs to be opened in binary mode to avoid CRLF being treated as
-// a single character as it will turn on the fail bit when attempting to read
-// <size> chars from the file
+  // NOTE: The file is always opened in binary mode. Relying on the platform's
+  // text-mode CRLF translation is not portable: on Windows the size reported by
+  // seekg(end)/tellg() in text mode does not match the number of characters
+  // read(), and the translation is not guaranteed to strip the CRs. Instead we
+  // read the exact bytes and strip CRs ourselves when preserve_cr is false.
 #ifdef _WIN32
-  std::ifstream s(utf8_to_wide(path),
-                  preserve_cr ? std::ios::binary : std::ios::in);
+  std::ifstream s(utf8_to_wide(path), std::ios::binary);
 #else
-  std::ifstream s(path, preserve_cr ? std::ios::binary : std::ios::in);
+  std::ifstream s(path, std::ios::binary);
 #endif
   if (s.fail()) {
     return false;
@@ -786,8 +789,6 @@ bool load_text_file(const std::string &path, std::string &data,
   s.seekg(0, std::ios_base::beg);
   data.resize(fsize);
   s.read(data.data(), fsize);
-  // if preserve_cr is true, we may read less characters, in which case read()
-  // sets both failbit and eofbit
   data.resize(s.gcount());
 
   // OK if no errors reading
@@ -796,6 +797,11 @@ bool load_text_file(const std::string &path, std::string &data,
     s.close();
     errno = err;
     return false;
+  }
+
+  if (!preserve_cr) {
+    // Normalize CRLF -> LF (as text-mode reads would do on Windows).
+    data.erase(std::remove(data.begin(), data.end(), '\r'), data.end());
   }
 
   return true;
