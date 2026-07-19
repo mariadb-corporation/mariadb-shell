@@ -8,7 +8,7 @@ test_account_quoted1 = f"\"{test_user1}\"@\"{test_host}\""
 test_account_quoted2 = f"\"{test_user2}\"@\"{test_host}\""
 
 default_auth_method = "caching_sha2_password"
-if __version_num < 80000:
+if __version_num < 80000 or sandbox.vendor() == "MariaDB":
     default_auth_method = "mysql_native_password"
 
 def recreate_test_user(username: str, password: str = None, auth_method: str = default_auth_method):
@@ -19,7 +19,10 @@ def recreate_test_user(username: str, password: str = None, auth_method: str = d
     else:
         args.append(auth_method)
         args.append(password)
-        session.run_sql("create user ?@? identified with ? by ?;", args)
+        if sandbox.vendor() == "MariaDB":
+            session.run_sql("create user ?@? identified with ? using password(?);", args)
+        else:
+            session.run_sql("create user ?@? identified with ? by ?;", args)
 
 
 def get_test_user_uri(username: str, password: str = None):
@@ -75,7 +78,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 
 
-#@<> Change password to a random one {VER(>=8.0.0)}
+#@<> Change password to a random one {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "testother")
 shell.options["useWizards"] = 1
@@ -96,7 +99,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 
 
-#@<> Change password and retain old one (dual) {VER(>=8.0.0)}
+#@<> Change password and retain old one (dual) {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -114,7 +117,7 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
-#@<> Warn about dual password {VER(>=8.0.0)}
+#@<> Warn about dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -139,7 +142,7 @@ shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
 
-#@<> Error when dual a dual password account {VER(>=8.0.0)}
+#@<> Error when dual a dual password account {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -157,7 +160,7 @@ shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
 
-#@<> Discard old password from dual account {VER(>=8.0.0)}
+#@<> Discard old password from dual account {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -187,7 +190,7 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
-#@<> Check if account has dual password {VER(>=8.0.0)}
+#@<> Check if account has dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -240,7 +243,7 @@ EXPECT_OUTPUT_CONTAINS(
     "Please use the \"util.change_auth_method\" function to upgrade it to caching_sha2_password.")
 testutil.assert_no_prompts()
 
-#@<> Check for mysql_native_password {VER(<8.0.0)}
+#@<> Check for mysql_native_password {VER(<8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.connect(get_test_user_uri(test_user1, "test"))
@@ -419,12 +422,12 @@ EXPECT_OUTPUT_CONTAINS(f"ERROR: The account {test_account1} has a retained old (
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Setup password policy validation {VER(>=8.0.0)}
+#@<> Setup password policy validation {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 ensure_plugin_enabled('validate_password', session)
 session.run_sql("set global validate_password_policy=MEDIUM")
 
-#@<> Entering password for policy validation above 3 times {VER(>=8.0.0)}
+#@<> Entering password for policy validation above 3 times {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?")
 shell.connect(get_test_user_uri(test_user1, "Testpass1234?"))
@@ -440,7 +443,7 @@ EXPECT_THROWS(lambda: util.change_password(),
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Entering password for policy validation max 3 times {VER(>=8.0.0)}
+#@<> Entering password for policy validation max 3 times {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?")
 shell.connect(get_test_user_uri(test_user1, "Testpass1234?"))
@@ -459,7 +462,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Entering password for policy validation max 2 times {VER(>=8.0.0)}
+#@<> Entering password for policy validation max 2 times {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?")
 shell.connect(get_test_user_uri(test_user1, "Testpass1234?"))
@@ -476,7 +479,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation above 3 times {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Entering password for mysql_native_password upgrade for policy validation above 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)
@@ -493,7 +496,7 @@ EXPECT_THROWS(lambda: util.upgrade_auth_method(),
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation max 3 times {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Entering password for mysql_native_password upgrade for policy validation max 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)
@@ -513,7 +516,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation max 2 times {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Entering password for mysql_native_password upgrade for policy validation max 2 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)

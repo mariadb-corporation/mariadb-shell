@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1779,9 +1780,50 @@ void Shell_script_tester::set_defaults() {
     def_var("__default_gr_auto_rejoin_tries", "0");
   }
 
+#ifdef HAVE_ADMIN_API
   if (mysqlsh::dba::supports_paxos_single_leader(_target_server_version)) {
     def_var("__default_gr_paxos_single_leader", "'OFF'");
   }
+  def_bool_var("__have_admin_api", true);
+#else
+  def_bool_var("__have_admin_api", false);
+#endif
+
+#ifdef HAVE_X_PROTOCOL
+  def_bool_var("__have_x_protocol", true);
+#else
+  def_bool_var("__have_x_protocol", false);
+#endif
+
+#ifdef MARIADB_BUILD
+  def_bool_var("__mariadb_build", true);
+#else
+  def_bool_var("__mariadb_build", false);
+#endif
+
+#ifdef HAVE_JS
+  def_bool_var("__have_js", true);
+#else
+  def_bool_var("__have_js", false);
+#endif
+
+#ifdef HAVE_UPGRADE_CHECKER
+  def_bool_var("__have_upgrade_checker", true);
+#else
+  def_bool_var("__have_upgrade_checker", false);
+#endif
+
+#ifdef HAVE_DUMP_AND_LOAD
+  def_bool_var("__have_dump_and_load", true);
+#else
+  def_bool_var("__have_dump_and_load", false);
+#endif
+
+#ifdef HAVE_DUMP_AND_LOAD
+  def_bool_var("__have_login_path", true);
+#else
+  def_bool_var("__have_login_path", false);
+#endif
 
   def_var("__user_config_path",
           shcore::quote_string(shcore::get_user_config_path(), '\''));
@@ -1903,7 +1945,12 @@ void Shell_script_tester::set_defaults() {
   def_string_var_from_env("MYSQLSH_S3_ENDPOINT_OVERRIDE");
 
   def_var("__libmysql_version_id",
+#ifdef MARIADB_BUILD
+          // libmariadb exposes MYSQL_VERSION_ID, not LIBMYSQL_VERSION_ID.
+          shcore::str_format("'%d'", MYSQL_VERSION_ID));
+#else
           shcore::str_format("'%d'", LIBMYSQL_VERSION_ID));
+#endif
 }
 
 void Shell_js_script_tester::set_defaults() {
@@ -1917,6 +1964,12 @@ void Shell_js_script_tester::set_defaults() {
 #endif
 }
 
+void Shell_js_script_tester::def_bool_var(std::string_view var, bool value) {
+  exec_and_out_equals(shcore::str_format("var %.*s = %s",
+                                         static_cast<int>(var.size()),
+                                         var.data(), value ? "true" : "false"));
+}
+
 void Shell_py_script_tester::set_defaults() {
   _interactive_shell->process_line("\\py");
   Shell_script_tester::set_defaults();
@@ -1926,6 +1979,12 @@ void Shell_py_script_tester::set_defaults() {
 #else
   exec_and_out_equals("__have_javascript = False");
 #endif
+}
+
+void Shell_py_script_tester::def_bool_var(std::string_view var, bool value) {
+  exec_and_out_equals(shcore::str_format("%.*s = %s",
+                                         static_cast<int>(var.size()),
+                                         var.data(), value ? "True" : "False"));
 }
 
 std::string_view Shell_script_tester::get_current_mode_command() const {

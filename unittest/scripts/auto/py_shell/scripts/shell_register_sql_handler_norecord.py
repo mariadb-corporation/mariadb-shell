@@ -218,16 +218,17 @@ EXPECT_STDOUT_NOT_CONTAINS("====> SQL HANDLER: show databases")
 WIPE_OUTPUT()
 
 # X
-call_mysqlsh([__uripwd, "-i", "--tabbed", "--py",
-             "-e", "session.run_sql('showme')"])
-EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme
-Database
-""")
-EXPECT_STDOUT_NOT_CONTAINS("====> SQL HANDLER: show databases")
-WIPE_OUTPUT()
+if __have_x_protocol:
+    call_mysqlsh([__uripwd, "-i", "--tabbed", "--py",
+                "-e", "session.run_sql('showme')"])
+    EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme
+    Database
+    """)
+    EXPECT_STDOUT_NOT_CONTAINS("====> SQL HANDLER: show databases")
+    WIPE_OUTPUT()
 
 # -e
-call_mysqlsh([__uripwd, "-e", "showme"])
+call_mysqlsh([__mysqluripwd, "-e", "showme"])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme
 Database
 """)
@@ -237,14 +238,14 @@ WIPE_OUTPUT()
 # -f interactive
 testutil.create_file(sql_file_path, "showme;")
 
-call_mysqlsh([__uripwd, "-i", "-f", sql_file_path])
+call_mysqlsh([__mysqluripwd, "-i", "-f", sql_file_path])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme""")
 EXPECT_STDOUT_CONTAINS("| Database")
 EXPECT_STDOUT_NOT_CONTAINS("====> SQL HANDLER: show databases")
 WIPE_OUTPUT()
 
 # -f batch
-call_mysqlsh([__uripwd, "-f", sql_file_path])
+call_mysqlsh([__mysqluripwd, "-f", sql_file_path])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme
 Database
 """)

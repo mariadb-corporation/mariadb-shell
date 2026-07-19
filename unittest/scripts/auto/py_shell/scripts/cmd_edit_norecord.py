@@ -50,10 +50,10 @@ multiline(1)
 multiline(2, True)
 print('end')
 
-#@ switch to JS
+#@ switch to JS {__have_js}
 \js
 
-#@ \edit with multiple statements - JS
+#@ \edit with multiple statements - JS {__have_js}
 \edit js_statements
 
 println(js_one)

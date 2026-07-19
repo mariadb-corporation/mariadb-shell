@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -222,10 +223,12 @@ Date Date::from_ms(int64_t ms_since_epoch) {
               t.tm_sec, ms * 1000);
 }
 
+#ifdef HAVE_X_PROTOCOL
 Date Date::from_mysqlx_datetime(const xcl::DateTime &date) {
   return Date(date.year(), date.month(), date.day(), date.hour(),
               date.minutes(), date.seconds(), date.useconds());
 }
+#endif
 
 void Date::validate() {
   if (_has_date) {

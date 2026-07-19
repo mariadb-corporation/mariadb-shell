@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -58,7 +59,9 @@ class Command_line_connection_test : public Command_line_test {
     // Default ssl-mode as required must work regardless if the server has or
     // not SSL enabled (i.e. commercial vs gpl)
     std::string query{"show variables like 'have_ssl'"};
-    if (g_target_server_version >= mysqlshdk::utils::Version(8, 0, 21)) {
+
+    if (_server_vendor == mysqlshdk::db::ServerVendor::MySQL &&
+        g_target_server_version >= mysqlshdk::utils::Version(8, 0, 21)) {
       query =
           "SELECT value FROM performance_schema.tls_channel_status WHERE "
           "channel='mysql_main' AND property = 'Enabled'";
@@ -139,6 +142,7 @@ TEST_F(Command_line_connection_test, classic_port) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Classic 10");
 }
 
+#ifdef HAVE_JS
 TEST_F(Command_line_connection_test, bug25268670) {
   execute(
       {_mysqlsh, "--js", "-e",
@@ -167,6 +171,7 @@ TEST_F(Command_line_connection_test, bug28899522) {
 
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected);
 }
+#endif  // HAVE_JS
 
 // This example tests shows a case where the password will be prompted by the
 // Shell. The password is provided appart as a second parameter after the
@@ -225,6 +230,7 @@ TEST_F(Command_line_connection_test, session_cmdline_options) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             Classic 10");
 
   // FR2_7 : mysqlsh -u <user> -p --port=<mysqlx_port>
+#ifdef HAVE_X_PROTOCOL
   execute(
       {_mysqlsh, "-u", _user.c_str(), "-p", port.c_str(), "--interactive=full",
        "--passwords-from-stdin", "-e", "\\status", NULL},
@@ -283,6 +289,8 @@ TEST_F(Command_line_connection_test, session_cmdline_options) {
       "Requested session assumes MySQL X Protocol but '" + _host + ":" +
           _mysql_port + "' seems to speak the classic MySQL protocol");
 
+#endif
+
   // FR_EXTRA_SUCCEED_1 : mysqlsh --uri mysql://user@host:3306/db
   execute({_mysqlsh, "--uri", mysql_uri_scheme_db.c_str(), "--interactive=full",
            "-e", "\\status", NULL});
@@ -297,6 +305,7 @@ TEST_F(Command_line_connection_test, session_cmdline_options) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session to ");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             Classic 10");
 
+#ifdef HAVE_X_PROTOCOL
   // FR_EXTRA_SUCCEED_3 : mysqlsh --uri mysqlx://user@host:33060/db
   execute({_mysqlsh, uri_xscheme_db.c_str(), "--interactive=full", "-e",
            "\\status", NULL});
@@ -310,6 +319,7 @@ TEST_F(Command_line_connection_test, session_cmdline_options) {
 
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating an X protocol session to ");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             X protocol");
+#endif
 }
 
 TEST_F(Command_line_connection_test, uri_ssl_mode_classic) {
@@ -337,10 +347,16 @@ TEST_F(Command_line_connection_test, uri_ssl_mode_classic) {
 
     execute_in_session(ssl_uri, "--mysql");
     MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session to");
-    MY_EXPECT_CMD_OUTPUT_CONTAINS(
-        "MySQL Error 3159 (HY000): Connections using "
+    auto sql_state = _server_vendor == mysqlshdk::db::ServerVendor::MySQL
+                         ? "HY000"
+                         : "08004";
+    auto error = shcore::str_format(
+        "MySQL Error 3159 (%s): Connections using "
         "insecure transport are prohibited while "
-        "--require_secure_transport=ON.");
+        "--require_secure_transport=ON.",
+        sql_state);
+
+    MY_EXPECT_CMD_OUTPUT_CONTAINS(error.c_str());
     _output.clear();
 
     if (!require_secure_transport)
@@ -354,10 +370,16 @@ TEST_F(Command_line_connection_test, uri_ssl_mode_classic) {
 
     execute_in_session(ssl_uri, "--mysql");
     MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session to");
-    MY_EXPECT_CMD_OUTPUT_CONTAINS(
-        "MySQL Error 2026: SSL connection error: SSL is required "
-        "but the server doesn't support it");
-    _output.clear();
+
+    if (_server_vendor == mysqlshdk::db::ServerVendor::MariaDB) {
+      MY_EXPECT_CMD_OUTPUT_CONTAINS(
+          "SSL:                          Not in use.");
+    } else {
+      MY_EXPECT_CMD_OUTPUT_CONTAINS(
+          "MySQL Error 2026: SSL connection error: SSL is required "
+          "but the server doesn't support it");
+      _output.clear();
+    }
   }
 }
 
@@ -379,6 +401,7 @@ TEST_F(Command_line_connection_test, uri_ssl_mode_node) {
       _output.clear();
     }
 
+#ifdef HAVE_X_PROTOCOL
     // Tests the ssl-mode=DISABLED to make sure it is not
     // ignored when coming in a URI
     std::string ssl_uri = _uri + "?ssl-mode=DISABLED";
@@ -395,11 +418,13 @@ TEST_F(Command_line_connection_test, uri_ssl_mode_node) {
           "TCP+SSL or UNIX socket connection.");
     }
     _output.clear();
+#endif
 
     if (!require_secure_transport)
       execute_in_session(_mysql_uri, "--mysql",
                          "set global require_secure_transport=OFF;");
   } else {
+#ifdef HAVE_X_PROTOCOL
     // Having SSL disabled test the ssl-mode=REQUIRED to make sure
     // it is not ignored when coming in a URI
 
@@ -410,9 +435,11 @@ TEST_F(Command_line_connection_test, uri_ssl_mode_node) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS(
         "MySQL Error 5001: Capability prepare failed for 'tls'");
     _output.clear();
+#endif
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Command_line_connection_test, basic_ssl_check_x) {
   const char *ssl_check =
       "SELECT IF(VARIABLE_VALUE='', 'SSL_OFF', 'SSL_ON')"
@@ -446,6 +473,7 @@ TEST_F(Command_line_connection_test, basic_ssl_check_x) {
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS("SSL_ON");
 }
+#endif
 
 TEST_F(Command_line_connection_test, basic_ssl_check_classic) {
   const char *ssl_check =
@@ -467,12 +495,14 @@ TEST_F(Command_line_connection_test, basic_ssl_check_classic) {
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS("SSL_ON");
 
-  // disabled
+// disabled
+#ifndef MARIADB_BUILD
   _output.clear();
   rc = execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--ssl-mode=DISABLED",
                 "-e", ssl_check, nullptr});
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS("SSL_OFF");
+#endif
 
   // preferred
   _output.clear();
@@ -482,6 +512,7 @@ TEST_F(Command_line_connection_test, basic_ssl_check_classic) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("SSL_ON");
 }
 
+#ifdef HAVE_JS
 TEST_F(Command_line_connection_test, expired_account) {
   _output.clear();
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "-e",
@@ -595,8 +626,10 @@ TEST_F(Command_line_connection_test, invalid_options_WL10912) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS(prefix + "sslTlsVersion");
   }
 }
+#endif  // HAVE_JS
 
 #ifndef _WIN32
+#ifdef HAVE_JS
 TEST_F(Command_line_connection_test, socket_connection) {
   {
     std::string cmd = "shell.connect(\"" + _user + ":" + _pwd + "@(" +
@@ -651,9 +684,11 @@ TEST_F(Command_line_connection_test, socket_connection_with_default_path) {
     }
   }
 }
+#endif  // HAVE_JS
 #endif  // !_WIN32
 
 TEST_F(Command_line_connection_test, compression) {
+#ifdef HAVE_X_PROTOCOL
   // X protocol
   if (_target_server_version >= mysqlshdk::utils::Version(8, 0, 19)) {
     std::string cmd_x =
@@ -669,6 +704,7 @@ TEST_F(Command_line_connection_test, compression) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS("COMPRESSION_ON");
   }
   wipe_out();
+#endif
 
   // classic protocol
   std::string cmd = "show session status like 'compression%';";
@@ -681,6 +717,9 @@ TEST_F(Command_line_connection_test, compression) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Compression\tON");
   wipe_out();
 
+// MariaDB does not support compression algorithms or compression levels, so
+// skip these tests
+#ifndef MARIADB_BUILD
   if (_target_server_version >= mysqlshdk::utils::Version(8, 0, 18)) {
     execute({_mysqlsh, _mysql_uri.c_str(), "--compression-algorithms=zstd",
              "--compression-level=12", "--sql", "-e", cmd.c_str(), nullptr});
@@ -696,9 +735,11 @@ TEST_F(Command_line_connection_test, compression) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS("Compression_level\t12");
     wipe_out();
   }
+#endif
 }
 
 TEST_F(Command_line_connection_test, auth_method) {
+#ifdef HAVE_X_PROTOCOL
   const auto protocol_mismatch_error =
       _target_server_version >= mysqlshdk::utils::Version("8.0.0")
           ? "MySQL Error 2007 (HY000): Protocol mismatch; server version = 11, "
@@ -724,6 +765,7 @@ TEST_F(Command_line_connection_test, auth_method) {
            "-e", "\\status", NULL});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a session to");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             X protocol");
+#endif
 
   // auto: classic port - invalid authentication method ignored in favor of the
   // authentication method sent by the server
@@ -745,6 +787,7 @@ TEST_F(Command_line_connection_test, auth_method) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a session to");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             Classic 10");
 
+#ifdef HAVE_X_PROTOCOL
   // mysqlx: X port - invalid authentication method
   execute({_mysqlsh, _uri.c_str(), "--interactive=full",
            "--auth-method=invalid", "--mysqlx", "-e", "\\status", NULL});
@@ -782,6 +825,7 @@ TEST_F(Command_line_connection_test, auth_method) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "seems to speak the classic MySQL protocol (Unexpected response received "
       "from server, msg-id:");
+#endif
 
   // mysql: classic port - invalid authentication method is ignored in favor of
   // the authentication plugin sent by the server
@@ -797,11 +841,13 @@ TEST_F(Command_line_connection_test, auth_method) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Protocol version:             Classic 10");
 
+#ifdef HAVE_X_PROTOCOL
   // mysql: X port - invalid authentication method
   execute({_mysqlsh, _uri.c_str(), "--interactive=full",
            "--auth-method=invalid", "--mysql", "-e", "\\status", NULL});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(protocol_mismatch_error);
+#endif
 }
 
 TEST_F(Command_line_connection_test, invalid_port) {
@@ -837,6 +883,7 @@ TEST_F(Command_line_connection_test, kerberos_auth_mode) {
 }
 
 TEST_F(Command_line_connection_test, local_infile) {
+#ifdef HAVE_X_PROTOCOL
   // X protocol is not supported
   execute({_mysqlsh, _uri.c_str(), "--local-infile", "--interactive=full",
            nullptr});
@@ -844,6 +891,7 @@ TEST_F(Command_line_connection_test, local_infile) {
                                 "?local-infile=true'");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "X Protocol: LOAD DATA LOCAL INFILE is not supported.");
+#endif
 
   // classic protocol is supported
   execute({_mysqlsh, _mysql_uri.c_str(), "--local-infile", "--interactive=full",

@@ -94,7 +94,7 @@ EXPECT_EXECUTION_TIME(1, lambda: shell.connect(f"{mysql_uri}?connect-timeout=100
 # reset the value
 \option --unset connectTimeout
 
-#@<> WL14698-ET_1 - X protocol
+#@<> WL14698-ET_1 - X protocol {__have_x_protocol}
 # default value of the "connectTimeout" is 10 seconds
 EXPECT_EXECUTION_TIME(10, lambda: shell.connect(mysqlx_uri))
 
@@ -116,7 +116,7 @@ EXPECT_EXECUTION_TIME(1, lambda: shell.connect(f"{mysqlx_uri}?connect-timeout=10
 # reset the value
 \option --unset connectTimeout
 
-#@<> AdminAPI tests - setup
+#@<> AdminAPI tests - setup {__have_admin_api}
 testutil.deploy_sandbox(__mysql_sandbox_port1, 'root', {'report_host': hostname})
 
 shell.connect(__sandbox_uri1)
@@ -125,7 +125,7 @@ if __version_num < 80027:
 else:
     cluster = dba.create_cluster("test")
 
-#@<> WL14698-ET_2 - classic protocol
+#@<> WL14698-ET_2 - classic protocol {__have_admin_api}
 # default value of the "dba.connectTimeout" is 5 seconds, set "connectTimeout" to something else to make sure it's not used
 shell.options["connectTimeout"] = 6
 EXPECT_EXECUTION_TIME(5, lambda: cluster.add_instance(mysql_uri))
@@ -149,13 +149,13 @@ EXPECT_EXECUTION_TIME(1, lambda: cluster.add_instance(f"{mysql_uri}?connect-time
 \option --unset connectTimeout
 \option --unset dba.connectTimeout
 
-#@<> WL14698-ET_2 - X protocol - not supported by AAPI
+#@<> WL14698-ET_2 - X protocol - not supported by AAPI {__have_admin_api}
 
-#@<> AdminAPI tests - cleanup
+#@<> AdminAPI tests - cleanup {__have_admin_api}
 session.close()
 testutil.destroy_sandbox(__mysql_sandbox_port1)
 
-#@<> WL14698-ET_3 - classic protocol
+#@<> WL14698-ET_3 - classic protocol {__have_upgrade_checker}
 # default value of the "connectTimeout" is 10 seconds
 EXPECT_EXECUTION_TIME(10, lambda: util.check_for_server_upgrade(mysql_uri))
 
@@ -177,7 +177,7 @@ EXPECT_EXECUTION_TIME(1, lambda: util.check_for_server_upgrade(f"{mysql_uri}?con
 # reset the value
 \option --unset connectTimeout
 
-#@<> WL14698-ET_3 - X protocol
+#@<> WL14698-ET_3 - X protocol {__have_x_protocol}
 # default value of the "connectTimeout" is 10 seconds
 EXPECT_EXECUTION_TIME(10, lambda: util.check_for_server_upgrade(mysqlx_uri))
 

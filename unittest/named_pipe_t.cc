@@ -1,4 +1,21 @@
 /*
+  Copyright (c) 2026, MariaDB Corporation.
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; version 2 of the License.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA
+*/
+
+/*
  * Copyright (c) 2018, 2024 Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -78,7 +95,13 @@ class Named_pipe_test : public Command_line_test {
 
   static std::string localhost() { return "--host=localhost"; }
 
-  static std::string socket() { return "--socket=" + s_named_pipe; }
+  static std::string socket(bool get_dummy = false) {
+    if (get_dummy) {
+      return "--socket=dummy";
+    } else {
+      return "--socket=" + s_named_pipe;
+    }
+  }
 
   static std::string uri_userinfo() { return _user + ":" + _pwd + "@"; }
 
@@ -92,7 +115,14 @@ class Named_pipe_test : public Command_line_test {
   }
 
   // Named pipe as listed in status() is limitted to 32 characters
-  static std::string expected_pipe() { return s_named_pipe.substr(0, 32); }
+  static std::string expected_pipe() {
+#ifndef MARIADB_BUILD
+    return shcore::str_format("Connection:                   Named pipe: %s",
+                              s_named_pipe.substr(0, 32).c_str());
+#else
+    return "via named pipe";
+#endif
+  }
 
   int status(const std::vector<std::string> &v) {
     return execute(v, "shell.status()");
@@ -138,30 +168,28 @@ bool Named_pipe_test::s_named_pipe_enabled = false;
 bool Named_pipe_test::s_is_default_named_pipe = false;
 std::string Named_pipe_test::s_named_pipe;
 
-#define DEFAULT_PIPE_TEST(name, call)                                         \
-  TEST_F(Named_pipe_test, name) {                                             \
-    if (!s_named_pipe_enabled) {                                              \
-      FAIL() << "Named Pipe connections are disabled, they must be enabled."; \
-    } else {                                                                  \
-      EXPECT_EQ(0, call);                                                     \
-      MY_EXPECT_CMD_OUTPUT_CONTAINS(                                          \
-          "Connection:                   Named pipe: " + expected_pipe());    \
-      MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Unix socket:");                      \
-    }                                                                         \
+#define DEFAULT_PIPE_TEST(name, call)                                          \
+  TEST_F(Named_pipe_test, name) {                                              \
+    if (!s_named_pipe_enabled) {                                               \
+      SKIP_TEST("Named Pipe connections are disabled, they must be enabled."); \
+    } else {                                                                   \
+      EXPECT_EQ(0, call);                                                      \
+      MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_pipe());                          \
+      MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Unix socket:");                       \
+    }                                                                          \
   }
 
-#define PIPE_TEST(name, call)                                                 \
-  TEST_F(Named_pipe_test, name) {                                             \
-    if (!s_named_pipe_enabled) {                                              \
-      FAIL() << "Named Pipe connections are disabled, they must be enabled."; \
-    } else {                                                                  \
-      const auto code = call;                                                 \
-                                                                              \
-      EXPECT_EQ(0, code);                                                     \
-      MY_EXPECT_CMD_OUTPUT_CONTAINS(                                          \
-          "Connection:                   Named pipe: " + expected_pipe());    \
-      MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Unix socket:");                      \
-    }                                                                         \
+#define PIPE_TEST(name, call)                                                  \
+  TEST_F(Named_pipe_test, name) {                                              \
+    if (!s_named_pipe_enabled) {                                               \
+      SKIP_TEST("Named Pipe connections are disabled, they must be enabled."); \
+    } else {                                                                   \
+      const auto code = call;                                                  \
+                                                                               \
+      EXPECT_EQ(0, code);                                                      \
+      MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_pipe());                          \
+      MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Unix socket:");                       \
+    }                                                                          \
   }
 
 #define TCP_TEST(name, call)                                   \
@@ -179,7 +207,7 @@ DEFAULT_PIPE_TEST(cmdline_default_named_pipe_uri,
 
 PIPE_TEST(cmdline_socket, status({user(), pwd(), host(), socket()}));
 TCP_TEST(cmdline_localhost_socket,
-         status({user(), pwd(), localhost(), socket()}));
+         status({user(), pwd(), localhost(), socket(true)}));
 PIPE_TEST(cmdline_uri_socket, status({uri_userinfo() + ".", socket()}));
 PIPE_TEST(cmdline_uri, status({uri_userinfo() + "(\\\\.\\" + pipe() + ")"}));
 PIPE_TEST(cmdline_encoded_uri,

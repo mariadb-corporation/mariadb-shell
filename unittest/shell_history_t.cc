@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -118,6 +119,7 @@ TEST_F(Shell_history, check_history_sql_not_connected) {
   EXPECT_STREQ("select 2;", linenoiseHistoryLine(1));
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Shell_history, check_password_history_linenoise) {
   // TS_HM#6 in SQL mode, commands that match the glob patterns IDENTIFIED,
   // PASSWORD or any pattern specified in the
@@ -414,6 +416,7 @@ TEST_F(Shell_history, history_ignore_wildcard_questionmark) {
   shell.process_line(" A\n  ;");
   EXPECT_EQ(1, linenoiseHistorySize());
 }
+#endif
 
 TEST_F(Shell_history, history_set_option) {
   // All user input shall be caputered in the history
@@ -441,6 +444,7 @@ TEST_F(Shell_history, history_set_option) {
   EXPECT_STREQ("a = 1;", linenoiseHistoryLine(1));
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, history_ignore_pattern_js) {
   char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
                   nullptr};
@@ -452,6 +456,7 @@ TEST_F(Shell_history, history_ignore_pattern_js) {
 
   EXPECT_STREQ("// SELECT", linenoiseHistoryLine(1));
 }
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_ignore_pattern_py) {
   char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
@@ -473,6 +478,7 @@ TEST_F(Shell_history, history_ignore_pattern_py) {
   EXPECT_STREQ("# WHAT A PROPERTY NAME", linenoiseHistoryLine(1));
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, history_linenoise) {
   // Test cases covered here:
   // TS_CLE#1 Commands executed by the user in the shell are saved to the
@@ -626,7 +632,9 @@ TEST_F(Shell_history, history_linenoise) {
   }
   shcore::delete_file(hist_file);
 }
+#endif  // HAVE_JS
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, check_help_shows_history) {
   // We should have one test that checks the output of \h for compleness
   // TODO(ulf) (Remove my [Ulf] note when checked): I don't mind if we have one
@@ -674,6 +682,7 @@ TEST_F(Shell_history, history_autosave_int) {
     EXPECT_TRUE(strstr(m_capture.c_str(), "\"history.autoSave\": true"));
   }
 }
+#endif  // HAVE_JS
 
 #ifdef HAVE_JS
 TEST_F(Shell_history, check_history_source_js) {
@@ -887,6 +896,7 @@ TEST_F(Shell_history, check_history_source_py_nonl_continuedstate_interactive) {
   shcore::delete_file("test_source_nonl.py");
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, check_history_overflow_del) {
   // See if the history numbering still works for users when the history
   // overflows, entries are dropped and renumbering might take place.
@@ -951,6 +961,7 @@ TEST_F(Shell_history, check_history_overflow_del) {
     EXPECT_EQ(3, shell._history.size());
   }
 }
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_management) {
   mysqlsh::Command_line_shell shell(
@@ -1087,6 +1098,7 @@ TEST_F(Shell_history, history_management) {
   shcore::remove_directory(histfile, false);
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, history_sizes) {
   // We use a secondary history list to provide entry numbers that do not
   // change when the list contents changes so that \history del works.
@@ -1166,6 +1178,7 @@ TEST_F(Shell_history, history_sizes) {
       "    4  print(42);\n\n",
       m_capture);
 }
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_del_invisible_entry) {
   // See also TEST_F(Shell_history, history_sizes)
@@ -1186,6 +1199,7 @@ TEST_F(Shell_history, history_del_invisible_entry) {
   EXPECT_TRUE(strstr(m_capture.c_str(), "Invalid"));
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, history_source_history) {
   // Generate a history, save it, load and execute saved history
   // using \source. \source shall not add any executed commands to history
@@ -1297,6 +1311,7 @@ TEST_F(Shell_history, history_entry_number_reset) {
   EXPECT_EQ("    1  \\history clear\n\n", m_capture);
   EXPECT_EQ(2, shell._history.size());
 }
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_delete_range) {
 #define LOAD_HISTORY(data)                                          \
@@ -1498,6 +1513,7 @@ TEST_F(Shell_history, history_delete_range) {
   shcore::delete_file("testhistory");
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, history_numbering) {
   char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
                   nullptr};
@@ -1610,6 +1626,7 @@ TEST_F(Shell_history, history_numbering) {
 #undef CHECK_NUMBERING
   shcore::delete_file("testhistory");
 }
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, never_filter_latest) {
   mysqlsh::Command_line_shell shell(
@@ -1720,6 +1737,7 @@ TEST_F(Shell_history, migrate_old_history) {
 #endif
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_history, get_entry) {
   char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
                   nullptr};
@@ -1742,5 +1760,6 @@ TEST_F(Shell_history, get_entry) {
   EXPECT_EQ("a = 1", history.get_entry(history.first_entry()));
   EXPECT_EQ("c = 3", history.get_entry(history.last_entry()));
 }
+#endif  // HAVE_JS
 
 }  // namespace mysqlsh

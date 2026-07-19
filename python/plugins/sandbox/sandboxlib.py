@@ -33,6 +33,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -397,6 +398,29 @@ def _resolve_admin(basedir):
     return _find_in_dirs(_ADMIN_NAMES, basedir) or _find_in_path(_ADMIN_NAMES)
 
 
+def _shell_bundled_openssl():
+    """Find the openssl CLI the shell bundles next to its own binary.
+
+    On Windows the MariaDB build bundles openssl into the shell's bin directory
+    (see src/CMakeLists.txt) so sandbox SSL works out of the box without a system
+    openssl. Locate the shell home via MYSQLSH_HOME, else derive it from the
+    embedded interpreter prefix (which is ``<mysqlsh_home>/lib/Python<X.Y>`` on
+    Windows). Returns the openssl path or None.
+    """
+    homes = []
+    env_home = os.environ.get("MYSQLSH_HOME")
+    if env_home:
+        homes.append(env_home)
+    if sys.platform == "win32" and sys.prefix:
+        # sys.prefix == <mysqlsh_home>/lib/Python<X.Y>
+        homes.append(os.path.dirname(os.path.dirname(sys.prefix)))
+    for home in homes:
+        found = _find_in_dirs(_OPENSSL_NAMES, home)
+        if found:
+            return found
+    return None
+
+
 def _resolve_openssl(basedir, openssl_path):
     """Locate the openssl command used to generate the sandbox certificates.
 
@@ -415,7 +439,10 @@ def _resolve_openssl(basedir, openssl_path):
         raise Error("Provided 'opensslPath' '{0}' does not point to an openssl "
                     "executable or a directory containing one.".format(
                         openssl_path))
+    # Search order: the server basedir (a packaged install ships one), then the
+    # openssl the shell bundles beside itself (Windows/MariaDB), then the PATH.
     return _find_in_dirs(_OPENSSL_NAMES, basedir) or \
+        _shell_bundled_openssl() or \
         _find_in_path(_OPENSSL_NAMES)
 
 

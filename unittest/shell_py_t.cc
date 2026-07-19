@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +27,7 @@
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/gmock_clean.h"
 
-#include <Python.h>
+#include "mysqlshdk/include/scripting/python_utils.h"
 
 namespace mysqlsh {
 
@@ -138,7 +139,9 @@ t.join()
 
 TEST_F(Shell_python, non_string_index) {
   for (const auto &texts : std::vector<std::pair<const char *, const char *>>{
+#ifdef HAVE_ADMIN_API
            {"dba[1]", "TypeError: attribute name must be string, not 'int'"},
+#endif
            {"util[True]",
             "TypeError: attribute name must be string, not 'bool'"},
            {"shell[('ene', 'due')]",

@@ -1,5 +1,6 @@
 /*
   Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+  Copyright (c) 2026, MariaDB Corporation.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +26,22 @@
 
 #include "mysqlshdk/libs/utils/uuid_gen.h"
 
-#include <my_rnd.h>
 #include <mysql.h>
+#ifdef MARIADB_BUILD
+
+#include <mariadb_com.h>
+#include <my_global.h>
+#endif
+#include <my_rnd.h>
 #include <sstream>
+
+#ifdef MARIADB_BUILD
+// MariaDB renamed MySQL's `rand_struct`/`randominit()` to `my_rnd_struct`/
+// `my_rnd_init()` (the signatures are otherwise identical, and `my_rnd()` keeps
+// its name). Map the MySQL spellings used below to the MariaDB ones.
+#define rand_struct my_rnd_struct
+#define randominit my_rnd_init
+#endif
 
 #ifdef _WIN32
 // clang-format off
@@ -94,8 +108,10 @@ typedef struct thread_attr {
 #define __builtin_expect(x, expected_value) (x)
 #endif
 
+#ifndef MARIADB_BUILD
 #define likely(x) __builtin_expect((x), 1)
 #define unlikely(x) __builtin_expect((x), 0)
+#endif
 
 typedef unsigned int uint32;
 typedef unsigned short uint16;
@@ -336,7 +352,11 @@ my_bool my_gethwaddr(unsigned char *to) {
 my_bool my_gethwaddr(unsigned char *to __attribute__((unused))) { return 1; }
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
+// MySQL exposes my_getsystime() via my_systime.h; MariaDB has neither the
+// header nor the function (its mysys provides my_hrtime()/my_interval_timer()
+// instead). For MariaDB fall through to the local definition below, whose
+// _WIN32 branch computes the value with QueryPerformanceCounter.
 #include "my_systime.h"
 extern unsigned long long my_getsystime();
 #else

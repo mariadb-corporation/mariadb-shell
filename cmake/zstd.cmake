@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +23,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 # cmake -DWITH_ZSTD=bundled|system
-# bundled is the default
+# system is the default
 
 macro (FIND_SYSTEM_ZSTD)
   find_path(PATH_TO_ZSTD NAMES zstd.h)
@@ -58,8 +59,45 @@ macro(MYSQL_USE_BUNDLED_ZSTD)
   endif()
 endmacro()
 
+macro(MYSQL_USE_ZSTD_SOURCE_DIR)
+  if(NOT EXISTS "${WITH_ZSTD}/lib/zstd.h")
+    message(FATAL_ERROR "Could not find \"zstd.h\" in \"${WITH_ZSTD}/lib\". "
+      "WITH_ZSTD must be bundled, system or a path to the zstd sources.")
+  endif()
+
+  if(NOT EXISTS "${WITH_ZSTD}/build/cmake/CMakeLists.txt")
+    message(FATAL_ERROR "Could not find \"${WITH_ZSTD}/build/cmake/CMakeLists.txt\". "
+      "WITH_ZSTD must be bundled, system or a path to the zstd sources.")
+  endif()
+
+  include_directories(BEFORE SYSTEM "${WITH_ZSTD}/lib")
+  add_subdirectory("${WITH_ZSTD}/build/cmake" zstd)
+  set(ZSTD_LIBRARY libzstd_static)
+
+  message(STATUS "PATH_TO_ZSTD ${WITH_ZSTD}/lib")
+  message(STATUS "ZSTD_LIBRARY ${ZSTD_LIBRARY}")
+endmacro()
+
+macro(USE_BUNDLED_ZSTD)
+  file(GLOB_RECURSE ZSTD_INCLUDE_FILE ${WITH_ZSTD}/include/zstd.h)
+
+  if(NOT ZSTD_INCLUDE_FILE)
+    message(FATAL_ERROR "Could not find \"zstd.h\" in \"${WITH_ZSTD}/include\". WITH_ZSTD must point to the zstd install directory.")
+  endif()
+
+  get_filename_component(ZSTD_INCLUDE_DIR ${ZSTD_INCLUDE_FILE} DIRECTORY)
+  include_directories(BEFORE SYSTEM ${ZSTD_INCLUDE_DIR})
+
+  if(WIN32)
+    find_file(ZSTD_LIBRARY NAMES zstd.lib PATHS "${WITH_ZSTD}/lib/"
+      PATH_SUFFIXES ${CMAKE_BUILD_TYPE} RelWithDebInfo Release Debug)
+  else()
+    find_file(ZSTD_LIBRARY NAMES libzstd.a PATHS "${WITH_ZSTD}/lib/" "${WITH_ZSTD}/lib64/")
+  endif()
+endmacro()
+
 if(NOT WITH_ZSTD)
-  set(WITH_ZSTD "bundled" CACHE STRING "By default use bundled zstd library")
+  set(WITH_ZSTD "system" CACHE STRING "By default use system zstd library")
 endif()
 
 macro(MYSQL_CHECK_ZSTD)
@@ -71,6 +109,10 @@ macro(MYSQL_CHECK_ZSTD)
       message(FATAL_ERROR "Cannot find system zstd libraries.")
     endif()
   else()
-    message(FATAL_ERROR "WITH_ZSTD must be bundled or system")
+    IF (MARIADB_BUILD)
+      USE_BUNDLED_ZSTD()
+    ELSE()
+      MYSQL_USE_ZSTD_SOURCE_DIR()
+    ENDIF()
   endif()
 endmacro()

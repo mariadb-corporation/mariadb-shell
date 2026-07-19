@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -87,7 +88,15 @@
 #include "mysqlshdk/shellcore/shell_cli_operation.h"
 #include "shellcore/ishell_core.h"
 
+#ifdef MARIADB_BUILD
+// In MariaDB, MEM_ROOT is a typedef for `struct st_mem_root`, so it must be
+// forward-declared the same way to avoid conflicting with my_alloc.h.
+struct st_mem_root;
+typedef struct st_mem_root MEM_ROOT;
+#else
+// In MySQL, MEM_ROOT is itself a class type.
 struct MEM_ROOT;
+#endif
 
 namespace mysqlsh {
 
@@ -158,6 +167,7 @@ class Shell_options final : public shcore::Options {
     int history_max_size = 1000;
     bool history_autosave = false;
     bool history_sql_syslog = false;
+#ifdef HAVE_ADMIN_API
     enum class Redirect_to {
       None,
       Primary,
@@ -166,6 +176,7 @@ class Shell_options final : public shcore::Options {
     std::string default_cluster;
     bool default_cluster_set = false;
     bool default_replicaset_set = false;
+#endif
     bool get_server_public_key = false;
     std::string server_public_key_path;
     // cmdline params to be passed to script
@@ -322,6 +333,11 @@ class Shell_options final : public shcore::Options {
 
   std::function<void(const std::string &)> m_on_error;
   std::function<void(const std::string &)> m_on_warning;
+
+#ifdef MARIADB_BUILD
+  // argv buffer allocated by my_load_defaults(); released with free_defaults().
+  char **m_mariadb_defaults_argv = nullptr;
+#endif
 
   bool print_cmd_line_helper = false;
   bool print_cmd_line_version = false;

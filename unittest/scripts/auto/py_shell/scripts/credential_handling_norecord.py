@@ -9,7 +9,10 @@ shell.delete_all_credentials()
 # Create the sample user
 shell.connect(__mysqluripwd)
 session.run_sql("DROP USER IF EXISTS sample@localhost")
-session.run_sql("CREATE USER sample@localhost IDENTIFIED WITH caching_sha2_password by 'password'")
+if sandbox.vendor() == "MariaDB":
+    session.run_sql("CREATE USER sample@localhost IDENTIFIED by 'password'")
+else:
+    session.run_sql("CREATE USER sample@localhost IDENTIFIED WITH caching_sha2_password by 'password'")
 session.run_sql("GRANT ALL on *.* to sample@localhost")
 shell.disconnect()
 
@@ -51,7 +54,7 @@ EXPECT_STDOUT_CONTAINS(f"<ClassicSession:{sample_user}>")
 testutil.call_mysqlsh(parameters, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"], "mysqlshrec")
 EXPECT_STDOUT_CONTAINS(f"<ClassicSession:{sample_user}>")
 
-#@<> Dump, using the stored password just once for the initial connection, not for the dump operation
+#@<> Dump, using the stored password just once for the initial connection, not for the dump operation {__have_dump_and_load}
 shell.connect(__mysqluripwd)
 session.run_sql('drop schema if exists connection_handling')
 session.run_sql('create schema connection_handling')
@@ -61,7 +64,7 @@ WIPE_SHELL_LOG()
 testutil.call_mysqlsh(parameters[:5] + ["--", "util", "dump-instance", "testing"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"], "mysqlshrec")
 EXPECT_SHELL_LOG_CONTAINS_COUNT("Retrieving password from credential manager", 1)
 
-#@<> Load, using the stored password just once for the initial connection, not for the load operation
+#@<> Load, using the stored password just once for the initial connection, not for the load operation {__have_dump_and_load}
 shell.connect(__mysqluripwd)
 session.run_sql('drop schema connection_handling')
 session.close()
@@ -70,7 +73,8 @@ testutil.call_mysqlsh(parameters[:5] + ["--", "util", "load-dump", "testing"], "
 EXPECT_SHELL_LOG_CONTAINS_COUNT("Retrieving password from credential manager", 1)
 
 #@<> Cleanup
-testutil.rmdir('testing', True)
+if __have_dump_and_load:
+    testutil.rmdir('testing', True)
 shell.options["credentialStore.helper"] = current_helper
 shell.connect(__mysqluripwd)
 session.run_sql("DROP USER IF EXISTS sample@localhost")

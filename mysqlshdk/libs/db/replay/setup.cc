@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -133,23 +134,29 @@ void setup_mysql_session_injector(Mode mode) {
   switch (mode) {
     case Mode::Direct:
       mysql::Session::set_factory_function({});
+#ifdef HAVE_X_PROTOCOL
       mysqlx::Session::set_factory_function({});
+#endif
       break;
     case Mode::Record:
       mysql::Session::set_factory_function([]() {
         return std::shared_ptr<mysql::Session>(new replay::Recorder_mysql());
       });
+#ifdef HAVE_X_PROTOCOL
       mysqlx::Session::set_factory_function([]() {
         return std::shared_ptr<mysqlx::Session>(new replay::Recorder_mysqlx());
       });
+#endif
       break;
     case Mode::Replay:
       mysql::Session::set_factory_function([]() {
         return std::shared_ptr<mysql::Session>(new replay::Replayer_mysql());
       });
+#ifdef HAVE_X_PROTOCOL
       mysqlx::Session::set_factory_function([]() {
         return std::shared_ptr<mysqlx::Session>(new replay::Replayer_mysqlx());
       });
+#endif
       break;
   }
 }

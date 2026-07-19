@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +32,10 @@
 #include <string>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
 #include "mysqlshdk/libs/db/replay/mysqlx.h"
+#endif
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
@@ -279,6 +282,7 @@ Result_mysql::Result_mysql(uint64_t affected_rows, unsigned int warning_count,
 
 // ---
 
+#ifdef HAVE_X_PROTOCOL
 Replayer_mysqlx::Replayer_mysqlx() { _impl.reset(new Replayer_impl()); }
 
 Replayer_mysqlx::~Replayer_mysqlx() = default;
@@ -371,6 +375,7 @@ Result_mysqlx::Result_mysqlx(uint64_t affected_rows, unsigned int warning_count,
   if (info) _info = info;
   _fetched_warning_count = warning_count;
 }
+#endif
 
 }  // namespace replay
 }  // namespace db

@@ -68,7 +68,7 @@ def sample():
     pass
 
 EXPECT_THROWS(lambda: shell.create_result({'data':[{'column':sample}]}), "Unsupported data type in custom results: Function")
-EXPECT_THROWS(lambda: shell.create_result({'data':[{'column':mysqlx}]}), "Unsupported data type in custom results: Object")
+EXPECT_THROWS(lambda: shell.create_result({'data':[{'column':mysql}]}), "Unsupported data type in custom results: Object")
 
 
 #@<> Verifies the allowed data types for user defined columns

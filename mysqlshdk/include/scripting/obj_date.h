@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +27,9 @@
 #ifndef MYSQLSHDK_INCLUDE_SCRIPTING_OBJ_DATE_H_
 #define MYSQLSHDK_INCLUDE_SCRIPTING_OBJ_DATE_H_
 
+#ifdef HAVE_X_PROTOCOL
 #include <mysqlxclient/xdatetime.h>
+#endif
 #include <string>
 
 #include "mysqlshdk/include/scripting/types/cpp.h"
@@ -72,8 +75,9 @@ class SHCORE_PUBLIC Date : public Cpp_object_bridge {
  public:
   static Date unrepr(const std::string &s);
   static Date from_ms(int64_t ms_since_epoch);
+#ifdef HAVE_X_PROTOCOL
   static Date from_mysqlx_datetime(const ::xcl::DateTime &dt);
-
+#endif
  private:
   void validate();
 

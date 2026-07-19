@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -144,7 +145,7 @@ TEST_F(Options_test, range_validation) {
   EXPECT_NO_THROW(res = Range<int>(-10, 0)("-1", Source::User));
   EXPECT_EQ(-1, res);
 
-  double resd;
+  double resd = 0.0;
   EXPECT_THROW(Range<double>(-0.5, 0.0)("1", Source::User), std::out_of_range);
   EXPECT_NO_THROW(resd = Range<double>(0.1, 0.2)("0.15", Source::User));
   EXPECT_EQ(0.15, resd);

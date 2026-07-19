@@ -1,4 +1,5 @@
 # Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,19 +27,31 @@ set(mysql_SOURCE
     mycnf.cc
     sandbox.cc
     script.cc
-    async_replication.cc
-    replication.cc
-    clone.cc
-    repl_config.cc
-    group_replication.cc
-    user_privileges.cc
     utils.cc
     plugin.cc
-    lock_service.cc
-    gtid_utils.cc
-    binlog_utils.cc
     undo.cc
     version_compatibility.cc
 )
+
+IF(NOT MARIADB_BUILD)
+  list(APPEND mysql_SOURCE
+    lock_service.cc
+    gtid_utils.cc
+    binlog_utils.cc
+    user_privileges.cc
+    )
+ENDIF()
+
+
+IF(HAVE_ADMIN_API)
+  list(APPEND mysql_SOURCE
+      repl_config.cc
+      replication.cc
+      async_replication.cc
+      clone.cc
+      repl_config.cc
+      group_replication.cc)
+ENDIF()
+
 
 add_convenience_library(mysql ${mysql_SOURCE})

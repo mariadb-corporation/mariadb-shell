@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -39,6 +40,10 @@
 
 #include <mysql_version.h>
 #include "my_config.h"
+
+// my_config.h (just above) re-defines the setenv/sleep/strtok_r macros; the
+// tests below call shcore::setenv, so undo them here. Inert off Windows/MySQL.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace shcore {
 TEST(utils_general, compare_floating_point) {
@@ -640,7 +645,13 @@ TEST(utils_general, get_long_version) {
                            mysqlshdk::utils::k_shell_version.get_full()));
   EXPECT_THAT(version, ::testing::HasSubstr(SYSTEM_TYPE));
   EXPECT_THAT(version, ::testing::HasSubstr(MACHINE_TYPE));
+#ifdef MARIADB_BUILD
+  // get_long_version() reports MYSQL_SERVER_VERSION for MariaDB (libmariadb's
+  // LIBMYSQL_VERSION is not reachable via the server's <mysql_version.h>).
+  EXPECT_THAT(version, ::testing::HasSubstr(MYSQL_SERVER_VERSION));
+#else
   EXPECT_THAT(version, ::testing::HasSubstr(LIBMYSQL_VERSION));
+#endif
   EXPECT_THAT(version, ::testing::HasSubstr(MYSQL_COMPILATION_COMMENT));
 }
 

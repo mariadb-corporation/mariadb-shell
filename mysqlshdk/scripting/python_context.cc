@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1738,9 +1739,12 @@ bool Python_context::load_plugin(const Plugin_definition &plugin) {
 
     // PyRun_FileEx() will close the file
     // plugins are loaded in sandboxed environment, we're not using
-    // the compiler flags here
-    result = PyRun_FileEx(file, shcore::path::basename(file_name).c_str(),
-                          Py_file_input, globals, nullptr, true);
+    // the compiler flags here.
+    // Use the full path (not just the basename) as the code object's
+    // co_filename so it matches __file__ (set above) and debuggers can map
+    // breakpoints in the plugin's init.py to the real file.
+    result = PyRun_FileEx(file, file_name.c_str(), Py_file_input, globals,
+                          nullptr, true);
 
     executed = true;
 

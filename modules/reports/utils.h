@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,11 +35,13 @@
 #include "mysqlshdk/include/scripting/types.h"
 #include "mysqlshdk/libs/db/session.h"
 
+#ifdef HAVE_X_PROTOCOL
 namespace Mysqlx {
 namespace Expr {
 class Expr;
 }  // namespace Expr
 }  // namespace Mysqlx
+#endif
 
 namespace mysqlsh {
 namespace reports {
@@ -187,6 +190,9 @@ shcore::Array_t create_report_from_json_object(
 /**
  * Parses an SQL condition (i.e. WHERE, HAVING)
  */
+#ifdef HAVE_X_PROTOCOL
+// Sql_condition is built on the X protocol expression parser/protobuf, which is
+// not available in the MariaDB build.
 class Sql_condition {
  public:
   /**
@@ -245,6 +251,7 @@ class Sql_condition {
   Validator m_identifier;
   Validator m_operator;
 };
+#endif  // HAVE_X_PROTOCOL
 
 }  // namespace reports
 }  // namespace mysqlsh

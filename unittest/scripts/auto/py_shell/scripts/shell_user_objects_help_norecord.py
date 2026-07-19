@@ -1,3 +1,9 @@
+#@<> Initialization
+if __have_x_protocol:
+  session_class = "Session"
+else:
+  session_class = "ClassicSession"
+
 #@<> Original globals in help
 \?
 
@@ -108,7 +114,7 @@ shell.add_extension_object_member(obj, "mySecondFunction", my_native_function, {
     {
       "name": "two",
       "type": "object",
-      "class": "Session",
+      "class": session_class,
       "brief": "A session object for DB work execution."
       },
     {
@@ -199,7 +205,7 @@ shell.add_extension_object_member(obj2, "mySecondFunction", my_native_function, 
     {
       "name": "two",
       "type": "object",
-      "class": "Session",
+      "class": session_class,
       "brief": "A session object for DB work execution."
       },
     {

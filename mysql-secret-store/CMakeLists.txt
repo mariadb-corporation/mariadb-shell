@@ -1,4 +1,5 @@
 # Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,7 +37,9 @@ if (WIN32)
 else()
   # mysql_config_editor reads password from TTY, Process_launcher cannot handle
   # that on Windows
-  add_subdirectory(login-path)
+  IF (HAVE_LOGIN_PATH)
+    add_subdirectory(login-path)
+  ENDIF()
 
   if (APPLE)
     add_subdirectory(keychain)

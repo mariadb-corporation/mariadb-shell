@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +31,10 @@
 namespace mysqlsh {
 
 REGISTER_MODULE(Mysqlsh, mysqlsh) {
+#ifdef HAVE_ADMIN_API
+  // connectDba returns a Dba (AdminAPI) object, not available for MariaDB.
   expose("connectDba", &Mysqlsh::connect_dba, "connectionData");
+#endif
   expose("threadInit", &Mysqlsh::thread_init);
   expose("threadEnd", &Mysqlsh::thread_end);
 }
@@ -40,6 +44,7 @@ REGISTER_MODULE(Mysqlsh, mysqlsh) {
 shcore::Value Mysqlsh::get_member(const std::string &) const { return {}; }
 #endif
 
+#ifdef HAVE_ADMIN_API
 REGISTER_HELP_FUNCTION(connectDba, Mysqlsh);
 REGISTER_HELP_FUNCTION_TEXT(MYSQLSH_CONNECTDBA, R"*(
 Creates a new Dba object for the given target server.
@@ -66,6 +71,7 @@ std::shared_ptr<dba::Dba> Mysqlsh::connect_dba(
   return std::make_shared<dba::Dba>(ShellBaseSession::wrap_session(session));
 }
 #endif
+#endif  // HAVE_ADMIN_API
 
 REGISTER_HELP_FUNCTION(threadInit, Mysqlsh);
 REGISTER_HELP_FUNCTION_TEXT(MYSQLSH_THREADINIT, R"*(

@@ -1,4 +1,4 @@
-#@<> utils CLI calls
+#@<> utils CLI calls {__have_upgrade_checker}
 rc = testutil.call_mysqlsh(["--", "util", "check-for-server-upgrade"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("ERROR: ArgumentError: Please connect the shell to the MySQL server to be checked or specify the server URI as a parameter.")
 WIPE_OUTPUT()
@@ -57,13 +57,13 @@ EXPECT_STDOUT_CONTAINS("ERROR: Invalid operation for shell object: connect")
 EXPECT_NE(0, rc)
 WIPE_OUTPUT()
 
-#@<> cluster CLI calls
+#@<> cluster CLI calls {__have_admin_api}
 rc = testutil.call_mysqlsh(["--", "cluster", "status"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("ERROR: RuntimeError: An open session is required to perform this operation.")
 EXPECT_NE(0, rc)
 WIPE_OUTPUT()
 
-#@<> dba CLI calls
+#@<> dba CLI calls {__have_admin_api}
 rc = testutil.call_mysqlsh(["--", "dba", "drop-metadata-schema", "--force"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("ERROR: RuntimeError: An open session is required to perform this operation.")
 EXPECT_NE(0, rc)

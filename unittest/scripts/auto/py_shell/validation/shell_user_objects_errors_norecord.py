@@ -299,14 +299,16 @@ For additional information on these global objects use: <object>.help()
 #@<OUT> Registering global using existing global names
 A global named 'shell' already exists.
 
+?{__have_admin_api}
 A global named 'dba' already exists.
-
+?{}
 A global named 'util' already exists.
 
 The name 'mysql' is reserved.
 
+?{__have_x_protocol}
 The name 'mysqlx' is reserved.
-
+?{}
 A global named 'session' already exists.
 
 A global named 'db' already exists.

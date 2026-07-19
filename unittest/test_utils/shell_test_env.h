@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +39,9 @@
 #include <vector>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 #include "mysqlshdk/libs/utils/version.h"
@@ -234,8 +237,10 @@ class Shell_test_env : public ::testing::Test {
 
   static std::shared_ptr<mysqlshdk::db::mysql::Session> create_mysql_session(
       const std::string &uri = "");
+#ifdef HAVE_X_PROTOCOL
   std::shared_ptr<mysqlshdk::db::mysqlx::Session> create_mysqlx_session(
       const std::string &uri = "");
+#endif
 
  public:
   static std::string get_path_to_mysqlsh();

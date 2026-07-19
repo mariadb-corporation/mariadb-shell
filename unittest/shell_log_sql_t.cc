@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -91,6 +92,13 @@ class Shell_log_sql_parameterized_tests
   void SetUp() override {
     Shell_core_test_wrapper::SetUp();
 
+    std::string unknown_column_err;
+    if (server_vendor == "MySQL") {
+      unknown_column_err = "Unknown column 'asdf' in 'field list'";
+    } else {
+      unknown_column_err = "Unknown column 'asdf' in 'SELECT'";
+    }
+
     // workaround issue in windows where files can't be deleted because
     // "it's in use by another process"
     static int counter = 0;
@@ -103,17 +111,16 @@ class Shell_log_sql_parameterized_tests
 
     m_queries.emplace_back(
         Test_query{sql_ok, {std::string("SQL: ") + sql_ok}, false});
-    m_queries.emplace_back(Test_query{
-        sql_error,
-        {
-            std::string("Error while executing: '") + sql_error +
-                "': *Unknown column 'asdf' in 'field list'",
-            std::string("SQL: ") + sql_error,
-            std::string("Unknown column 'asdf' in 'field list'"),
-            std::string("Unknown column 'asdf' in 'field list', SQL: ") +
-                sql_error,
-        },
-        true});
+    m_queries.emplace_back(
+        Test_query{sql_error,
+                   {
+                       std::string("Error while executing: '") + sql_error +
+                           "': *" + unknown_column_err,
+                       std::string("SQL: ") + sql_error,
+                       std::string(unknown_column_err),
+                       std::string(unknown_column_err) + ", SQL: " + sql_error,
+                   },
+                   true});
     m_queries.emplace_back(
         Test_query{sql_filter, {std::string("SQL: ") + sql_filter}, false});
     m_queries.emplace_back(
@@ -124,13 +131,16 @@ class Shell_log_sql_parameterized_tests
         sql_filter_error,
         {std::string(": SQL: ") + sql_filter_error,
          std::string("You have an error in your SQL syntax; check the manual "
-                     "that corresponds to your MySQL server version for the "
-                     "right syntax to use near 'showasdf' at line 1, SQL: ") +
+                     "that corresponds to your ") +
+             server_vendor +
+             " server version for the right syntax to use near 'showasdf' at "
+             "line 1, SQL: " +
              sql_filter_error,
-         std::string(
-             "You have an error in your SQL syntax; check the manual that "
-             "corresponds to your MySQL server version for the right syntax to "
-             "use near 'showasdf' at line 1, SQL: <filtered: ")},
+         std::string("You have an error in your SQL syntax; check the manual "
+                     "that corresponds to your ") +
+             server_vendor +
+             " server version for the right syntax to use near 'showasdf' at "
+             "line 1, SQL: <filtered: "},
         true});
   }
 
@@ -231,9 +241,8 @@ INSTANTIATE_TEST_SUITE_P(
             Log_sql_test_params{
                 "Dba.test", "unfiltered", {1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0}},
 
-            Log_sql_test_params{"Cluster.test",
-                                "off",
-                                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+            Log_sql_test_params{
+                "Cluster.test", "off", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
             Log_sql_test_params{"Cluster.test",
                                 "error",
                                 {0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0}},
@@ -243,6 +252,6 @@ INSTANTIATE_TEST_SUITE_P(
             Log_sql_test_params{"Cluster.test",
                                 "unfiltered",
                                 {1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 0}}),
-        ::testing::Values("Classic", "X")));
+        ::testing::Values("Classic")));
 
 }  // namespace shcore

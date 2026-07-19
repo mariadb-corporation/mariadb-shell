@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -426,7 +427,7 @@ mysql-sql []> )";
   // Set command to be executed using --execute option.
   set_command("SELECT 1;");
   // Run MySQL Shell in full interactive mode.
-  run(true, {"--sql", "--uri", _uri});
+  run(true, {"--sql", "--uri", _mysql_uri});
   // Verify that running the specified command did not produce output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_mysqlsh_output);
   // Verify that pager received the output of executed command.
@@ -452,7 +453,7 @@ mysql-sql []> )";
   // Set script to be executed using --file option.
   set_script("SELECT 1;");
   // Run MySQL Shell in full interactive mode.
-  run(true, {"--sql", "--uri", _uri});
+  run(true, {"--sql", "--uri", _mysql_uri});
   // Verify that running the specified script did not produce output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_mysqlsh_output);
   // Verify that pager received the output of executed script.
@@ -473,7 +474,7 @@ TEST_F(Pager_script_test, WL10755_TS11_2_1) {
   // Set command to be executed using --execute option.
   set_command("SELECT 1;");
   // Run MySQL Shell in non-interactive mode.
-  run(false, {"--sql", "--vertical", "--uri", _uri});
+  run(false, {"--sql", "--vertical", "--uri", _mysql_uri});
   // Verify that running the specified command produced output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_mysqlsh_output);
   // Verify that pager did not receive the output of executed command.
@@ -494,7 +495,7 @@ TEST_F(Pager_script_test, WL10755_TS11_2_2) {
   // Set script to be executed using --file option.
   set_script("SELECT 1;");
   // Run MySQL Shell in non-interactive mode.
-  run(false, {"--sql", "--vertical", "--uri", _uri});
+  run(false, {"--sql", "--vertical", "--uri", _mysql_uri});
   // Verify that running the specified script produced output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_mysqlsh_output);
   // Verify that pager did not receive the output of executed script.
@@ -525,7 +526,7 @@ end)";
               "\\sql\n"
               "SELECT 1;\n" CHANGE_MODE "\n" PRINT "('end');\n");
   // Run MySQL Shell in interactive mode.
-  run(false, {"--interactive", SCRIPTING_MODE, "--uri", _uri});
+  run(false, {"--interactive", SCRIPTING_MODE, "--uri", _mysql_uri});
   // Verify that running the specified command did not produce output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       shcore::str_format(expected_mysqlsh_output, SCRIPTING_LANGUAGE));
@@ -557,7 +558,7 @@ end)";
              "\\sql\n"
              "SELECT 1;\n" CHANGE_MODE "\n" PRINT "('end');\n");
   // Run MySQL Shell in interactive mode.
-  run(false, {"--interactive", SCRIPTING_MODE, "--uri", _uri});
+  run(false, {"--interactive", SCRIPTING_MODE, "--uri", _mysql_uri});
   // Verify that running the specified script did not produce output.
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       shcore::str_format(expected_mysqlsh_output, SCRIPTING_LANGUAGE));
@@ -591,7 +592,7 @@ operable program or batch file.)";
   // Set pager to an invalid command.
   set_pager("invalid_command");
   // Run MySQL Shell in full interactive mode.
-  run(true, {"--sql", "--uri", _uri});
+  run(true, {"--sql", "--uri", _mysql_uri});
   // Verify that running the specified command reported an error.
   EXPECT_THAT(_output,
               ::testing::AnyOf(::testing::HasSubstr(expected_mysqlsh_output),

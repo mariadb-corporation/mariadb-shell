@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,8 +57,10 @@
 #include "mysqlshdk/libs/config/config_file.h"
 #include "mysqlshdk/libs/db/mysql/session.h"
 #include "mysqlshdk/libs/db/replay/setup.h"
+#ifdef HAVE_ADMIN_API
 #include "mysqlshdk/libs/mysql/binlog_utils.h"
 #include "mysqlshdk/libs/mysql/group_replication.h"
+#endif
 #include "mysqlshdk/libs/mysql/instance.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
@@ -75,7 +78,9 @@
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/shell_test_env.h"
 #endif
+#ifdef HAVE_ADMIN_API
 #include "modules/adminapi/common/metadata_management_mysql.h"
+#endif
 #include "modules/mod_mysql_session.h"
 #include "modules/mod_utils.h"
 #include "mysqlshdk/libs/aws/s3_bucket.h"
@@ -111,12 +116,19 @@ extern bool g_bp;
 namespace tests {
 constexpr int k_wait_sandbox_dead_timeout = 120;
 constexpr int k_wait_sandbox_alive_timeout = 120;
+#ifdef HAVE_ADMIN_API
 constexpr int k_wait_repl_connection_error = 300;
 constexpr int k_wait_member_timeout = 120;
 constexpr int k_wait_delayed_gr_start_timeout = 300;
+#endif
 const char *k_boilerplate_root_password = "root";
 
 namespace {
+
+#ifndef HAVE_ADMIN_API
+constexpr const char *k_mariadb_no_sandbox =
+    "Sandbox provisioning is not supported in the MariaDB port yet";
+#endif
 
 void syslog_hook(shcore::syslog::Level level, const char *msg, void *data) {
   const auto syslog_trace = reinterpret_cast<std::ofstream *>(data);
@@ -176,6 +188,10 @@ std::unique_ptr<mysqlshdk::azure::Blob_container> azure_container(
   }
 }
 
+#ifndef MARIADB_BUILD
+// These helpers configure the root accounts of a freshly deployed sandbox. In
+// the MariaDB port that work is done by the 'sandbox' plugin instead,
+// so they would otherwise be unused.
 void update_root_user_password(mysqlshdk::db::ISession *session,
                                const std::string &rootpass) {
   session->execute("SET sql_log_bin = 0");
@@ -231,6 +247,7 @@ void install_hashing_component(
   } catch (...) {
   }
 }
+#endif  // MARIADB_BUILD
 
 }  // namespace
 
@@ -288,7 +305,7 @@ Testutils::Testutils(const std::string &sandbox_dir, bool dummy_mode,
          "?default_schema", "?default_charset");
 
   expose("getShellLogPath", &Testutils::get_shell_log_path);
-
+#ifdef HAVE_ADMIN_API
   expose("waitMemberState", &Testutils::wait_member_state, "port", "states",
          "?direct");
   expose("waitReadReplicaState", &Testutils::wait_read_replica_state, "port",
@@ -303,7 +320,7 @@ Testutils::Testutils(const std::string &sandbox_dir, bool dummy_mode,
   expose("injectGtidSet", &Testutils::inject_gtid_set, "port", "gtidset");
 
   expose("stopGroup", &Testutils::stop_group, "ports", "?rootpass");
-
+#endif
   expose("expectPrompt", &Testutils::expect_prompt, "prompt", "value",
          "?options");
   expose("expectPassword", &Testutils::expect_password, "prompt", "value",
@@ -330,12 +347,14 @@ Testutils::Testutils(const std::string &sandbox_dir, bool dummy_mode,
   expose("fail", &Testutils::fail, "context");
   expose("skip", &Testutils::skip, "reason");
   expose("versionCheck", &Testutils::version_check, "v1", "op", "v2");
+#ifdef HAVE_ADMIN_API
   expose("waitForDelayedGRStart", &Testutils::wait_for_delayed_gr_start, "port",
          "rootpass", "?timeout",
          static_cast<int>(k_wait_delayed_gr_start_timeout));
   expose("waitReplicationChannelState",
          &Testutils::wait_replication_channel_state, "port", "channelName",
          "states");
+#endif
   expose("mkdir", &Testutils::mk_dir, "name", "?recursive");
   expose("rmdir", &Testutils::rm_dir, "name", "?recursive");
   expose("rename", &Testutils::rename, "path", "newpath");
@@ -352,18 +371,22 @@ Testutils::Testutils(const std::string &sandbox_dir, bool dummy_mode,
   expose("clearTraps", &Testutils::clear_traps, "?type");
   expose("getUserConfigPath", &Testutils::get_user_config_path);
   expose("setenv", &Testutils::setenv, "variable", "?value");
+#ifdef HAVE_ADMIN_API
   expose("getCurrentMetadataVersion",
          &Testutils::get_current_metadata_version_string);
   expose("getInstalledMetadataVersion",
          &Testutils::get_installed_metadata_version_string);
+#endif
   expose("wipeAllOutput", &Testutils::wipe_all_output);
 
+#ifndef MARIADB_BUILD
   expose("getExclusiveLock", &Testutils::get_exclusive_lock, "classic_session",
          "name_space", "name", "?timeout");
   expose("getSharedLock", &Testutils::get_shared_lock, "classic_session",
          "name_space", "name", "?timeout");
   expose("releaseLocks", &Testutils::release_locks, "classic_session",
          "name_space");
+#endif
 
   // expose("slowify", &Testutils::slowify, "port", "start");
   expose("bp", &Testutils::bp, "flag");
@@ -402,6 +425,8 @@ Testutils::Testutils(const std::string &sandbox_dir, bool dummy_mode,
 }
 
 Testutils::~Testutils() { stop_tracing_syslog(); }
+
+#ifdef HAVE_ADMIN_API
 
 //!<  @name Testing Utilities
 ///@{
@@ -450,6 +475,7 @@ std::string Testutils::get_installed_metadata_version_string() {
 
   return "";
 }
+#endif
 
 std::string Testutils::get_mysqld_version(const std::string &mysqld_path) {
   std::string mysqld_active_path{"mysqld"};
@@ -1001,7 +1027,7 @@ void Testutils::import_data(const std::string &uri, const std::string &path,
                              ": " + dump.read_all());
   }
 }
-
+#ifdef HAVE_ADMIN_API
 //!<  @name InnoDB Cluster Utilities
 ///@{
 /**
@@ -1181,6 +1207,7 @@ void Testutils::stop_group(const shcore::Array_t &ports,
 
   for (auto &thd : workers) thd.join();
 }
+#endif
 
 //!<  @name Misc Utilities
 ///@{
@@ -1459,6 +1486,108 @@ void Testutils::end_snapshot_sandbox_error_log(int port) {
   }
 }
 
+#ifdef MARIADB_BUILD
+// In the MariaDB port the AdminAPI (and its mysqlprovision/mysql_gadgets based
+// sandbox provisioning) is not built. The sandbox lifecycle operations are
+// instead delegated to the bundled 'sandbox' Python shell plugin,
+// exposed as the global 'sandbox' object. We drive it through a child shell in
+// Python mode, the same mechanism used by callMysqlsh().
+
+// Builds the option dictionary shared by every sandbox plugin operation.
+shcore::Dictionary_t Testutils::sandbox_plugin_base_options(
+    const shcore::Dictionary_t &opts) {
+  auto out = shcore::make_dict();
+  (*out)["sandboxDir"] = shcore::Value(_sandbox_dir);
+
+  if (opts) {
+    // Tests pass the path to the server binary/basedir under the legacy
+    // "mysqldPath" key; the plugin expects it as "mariadbdPath".
+    const auto server_path = opts->get_string("mysqldPath", "");
+    if (!server_path.empty())
+      (*out)["mariadbdPath"] = shcore::Value(server_path);
+  }
+
+  return out;
+}
+
+// Invokes sandbox.<operation>(<port>, <options>) on the plugin.
+void Testutils::run_sandbox_plugin(const std::string &operation, int port,
+                                   const shcore::Dictionary_t &options) {
+  // The plugin options dictionary is serialized as JSON, which is also a valid
+  // Python literal for the value types we use here (strings, ints and lists of
+  // strings).
+  const std::string opts_literal =
+      options ? shcore::Value(options).json() : std::string{"{}"};
+  const std::string code = shcore::str_format(
+      "sandbox.%s(%d, %s)", operation.c_str(), port, opts_literal.c_str());
+
+  if (g_test_trace_scripts)
+    std::cerr << "Running MariaDB sandbox plugin: " << code << "\n";
+
+  const int rc = call_mysqlsh_c({"--py", "--quiet-start=2", "-e", code});
+  if (rc != 0)
+    throw std::runtime_error(
+        shcore::str_format("MariaDB sandbox plugin operation '%s' on port %d "
+                           "failed (exit code %d)",
+                           operation.c_str(), port, rc));
+}
+
+// Shared deploy path for deploy_sandbox()/deploy_raw_sandbox(): builds the
+// plugin deploy options and tracks the local bookkeeping the rest of the
+// Testutils sandbox helpers rely on.
+void Testutils::deploy_sandbox_with_plugin(
+    int port, const std::string &rootpass,
+    const shcore::Dictionary_t &my_cnf_opts, const shcore::Dictionary_t &opts,
+    bool raw) {
+  _passwords[port] = rootpass;
+
+  if (_skip_server_interaction) return;
+
+  bool create_remote_root = true;
+  int timeout = -1;
+  if (opts) {
+    create_remote_root = opts->get_bool("createRemoteRoot", true);
+    timeout = opts->get_int("timeout", timeout);
+  }
+
+  auto options = sandbox_plugin_base_options(opts);
+  (*options)["password"] = shcore::Value(rootpass);
+  // An empty pattern tells the plugin to skip creating the remote root account.
+  (*options)["allowRootFrom"] = shcore::Value(create_remote_root ? "%" : "");
+  // A non-raw sandbox gets a unique server_id (matching the old AdminAPI
+  // behavior); a raw sandbox is left as a plain instance.
+  if (!raw) (*options)["serverId"] = shcore::Value(port);
+  if (timeout > 0) (*options)["timeout"] = shcore::Value(timeout);
+
+  // Forward any extra my.cnf options as 'option=value' strings.
+  if (my_cnf_opts && !my_cnf_opts->empty()) {
+    auto extra = shcore::make_array();
+    for (const auto &kv : *my_cnf_opts) {
+      const std::string value =
+          kv.second.get_type() == shcore::Value_type::String
+              ? kv.second.get_string()
+              : kv.second.descr();
+      extra->push_back(shcore::Value(kv.first + "=" + value));
+    }
+    (*options)["mariadbdOptions"] = shcore::Value(extra);
+  }
+
+  run_sandbox_plugin("deploy", port, options);
+
+  // Record the general_log_file path so read_general_log() keeps working.
+  try {
+    auto session = connect_to_sandbox(port);
+    _general_log_files[port] = session->query("select @@general_log_file")
+                                   ->fetch_one_or_throw()
+                                   ->get_string(0);
+    session->close();
+  } catch (const std::exception &e) {
+    log_warning("Could not determine general_log_file for sandbox %d: %s", port,
+                e.what());
+  }
+}
+#endif  // MARIADB_BUILD
+
 //!<  @name Sandbox Operations
 ///@{
 /**
@@ -1494,6 +1623,10 @@ None Testutils::deploy_sandbox(int port, str pwd, Dictionary options);
 void Testutils::deploy_sandbox(int port, const std::string &rootpass,
                                const shcore::Dictionary_t &my_cnf_options,
                                const shcore::Dictionary_t &opts) {
+#ifdef MARIADB_BUILD
+  deploy_sandbox_with_plugin(port, rootpass, my_cnf_options, opts, false);
+  return;
+#else
   bool create_remote_root{true};
   bool keyring_plugin{false};
   std::string mysqld_path;
@@ -1559,6 +1692,7 @@ void Testutils::deploy_sandbox(int port, const std::string &rootpass,
                                  ->get_string(0);
 
   install_hashing_component(session);
+#endif  // MARIADB_BUILD
 }
 
 //!<  @name Sandbox Operations
@@ -1581,6 +1715,10 @@ None Testutils::deploy_raw_sandbox(int port, str pwd, Dictionary options);
 void Testutils::deploy_raw_sandbox(int port, const std::string &rootpass,
                                    const shcore::Dictionary_t &my_cnf_opts,
                                    const shcore::Dictionary_t &opts) {
+#ifdef MARIADB_BUILD
+  deploy_sandbox_with_plugin(port, rootpass, my_cnf_opts, opts, true);
+  return;
+#else
   bool create_remote_root{true};
   std::string mysqld_path;
   int timeout = -1;
@@ -1631,6 +1769,7 @@ void Testutils::deploy_raw_sandbox(int port, const std::string &rootpass,
                                  ->get_string(0);
 
   install_hashing_component(session);
+#endif  // MARIADB_BUILD
 }
 
 //!<  @name Sandbox Operations
@@ -1673,11 +1812,15 @@ void Testutils::destroy_sandbox(int port, bool quiet_kill) {
   }
 #endif
   if (!_skip_server_interaction) {
+#ifdef MARIADB_BUILD
+    run_sandbox_plugin("delete", port, sandbox_plugin_base_options(nullptr));
+#else
     shcore::Value::Array_type_ref errors;
     _mp.delete_sandbox(port, _sandbox_dir, true, &errors);
     if (errors && !errors->empty())
       std::cerr << "During delete of " << port << ": "
                 << shcore::Value(errors).descr() << "\n";
+#endif
   } else {
     if (!_sandbox_dir.empty()) {
       std::string sandbox_path =
@@ -1724,6 +1867,11 @@ void Testutils::start_sandbox(int port, const shcore::Dictionary_t &opts) {
     try {
       wait_sandbox_dead(port);
 
+#ifdef MARIADB_BUILD
+      auto options = sandbox_plugin_base_options(nullptr);
+      (*options)["timeout"] = shcore::Value(timeout);
+      run_sandbox_plugin("start", port, options);
+#else
       shcore::Value::Array_type_ref errors;
       _mp.start_sandbox(port, _sandbox_dir, &errors, timeout);
       if (errors && !errors->empty()) {
@@ -1736,6 +1884,7 @@ void Testutils::start_sandbox(int port, const shcore::Dictionary_t &opts) {
           }
         }
       }
+#endif
     } catch (const std::runtime_error &) {
       // print the error log contents
       std::string error_log_path = get_sandbox_log_path(port);
@@ -1776,11 +1925,23 @@ void Testutils::stop_sandbox(int port, const shcore::Dictionary_t &opts) {
   mysqlshdk::db::replay::No_replay dont_record;
   if (!_skip_server_interaction) {
     try {
+#ifdef MARIADB_BUILD
+      auto options = sandbox_plugin_base_options(nullptr);
+      // The password is only needed on Windows, where the plugin shuts the
+      // server down through mariadb-admin.
+      const auto pass = _passwords.find(port);
+      if (pass != _passwords.end())
+        (*options)["password"] = shcore::Value(pass->second);
+      run_sandbox_plugin("stop", port, options);
+
+      if (wait) wait_sandbox_dead(port);
+#else
       auto session = connect_to_sandbox(port);
       session->execute("shutdown");
       session->close();
 
       if (wait) wait_sandbox_dead(port);
+#endif
     } catch (const std::runtime_error &) {
       // print the error log contents
       std::string error_log_path = get_sandbox_log_path(port);
@@ -1843,12 +2004,17 @@ None Testutils::kill_sandbox(int port);
 ///@}
 void Testutils::kill_sandbox(int port, bool quiet) {
   if (!_skip_server_interaction) {
+#ifdef MARIADB_BUILD
+    (void)quiet;
+    run_sandbox_plugin("kill", port, sandbox_plugin_base_options(nullptr));
+#else
     shcore::Value::Array_type_ref errors;
     _mp.kill_sandbox(port, _sandbox_dir, &errors);
     // Only output errors to stderr if quiet mode is disabled (default).
     if (!quiet && errors && !errors->empty())
       std::cerr << "During kill of " << port << ": "
                 << shcore::Value(errors).descr() << "\n";
+#endif
     wait_sandbox_dead(port);
   }
 }
@@ -2455,6 +2621,7 @@ void Testutils::change_sandbox_uuid(int port, const std::string &server_uuid) {
   }
 }
 
+#ifdef HAVE_ADMIN_API
 //!<  @name InnoDB Cluster Utilities
 ///@{
 /**
@@ -2895,6 +3062,7 @@ void Testutils::inject_gtid_set(int port, const std::string &gtid_set) {
 
   mysqlshdk::mysql::inject_gtid_set(instance, gtids);
 }
+#endif
 
 //!<  @name Misc Utilities
 ///@{
@@ -3579,8 +3747,12 @@ void Testutils::prepare_sandbox_boilerplate(int port,
       shcore::Value("innodb_data_file_path=ibdata1:10M:autoextend"));
   mycnf_options.as_array()->push_back(
       shcore::Value("require_secure_transport=OFF"));
+#ifndef HAVE_ADMIN_API
+  throw std::runtime_error(k_mariadb_no_sandbox);
+#else
   _mp.create_sandbox(port, port * 10, _sandbox_dir, k_boilerplate_root_password,
                      mycnf_options, true, true, 60, mysqld_path, &errors);
+#endif
   if (errors && !errors->empty()) {
     std::cerr << "Error deploying sandbox:\n";
     for (auto &v : *errors) std::cerr << v.descr() << "\n";
@@ -4092,6 +4264,8 @@ bool Testutils::version_check(const std::string &v1, const std::string &op,
                          ": Invalid operator: " + op);
 }
 
+#ifndef MARIADB_BUILD
+
 //!<  @name Testing Utilities
 ///@{
 /**
@@ -4184,6 +4358,8 @@ void Testutils::release_locks(const shcore::Value &classic_session,
 
   mysqlshdk::mysql::release_lock(instance, name_space);
 }
+
+#endif
 
 /**  @name Sandbox Operations
  *

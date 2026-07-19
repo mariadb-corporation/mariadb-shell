@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +41,7 @@ namespace {
 
 using Version = mysqlshdk::utils::Version;
 
+#ifndef MARIADB_BUILD
 void check_sql_syntax(
     std::string_view stmt,
     const Version &version = mysqlshdk::utils::k_shell_version) {
@@ -49,6 +51,7 @@ void check_sql_syntax(
     throw issues.front();
   }
 }
+#endif
 
 }  // namespace
 
@@ -1596,6 +1599,7 @@ TEST_F(Compatibility_test, indexes_recreation) {
 )   ENGINE=INNODB;)",
                    3, 0, 2);
 
+#ifdef HAVE_X_PROTOCOL
   check_recreation("jemp", R"(CREATE TABLE jemp (
     c JSON,
     g INT GENERATED ALWAYS AS (c->"$.id"),
@@ -1604,6 +1608,7 @@ TEST_F(Compatibility_test, indexes_recreation) {
     INDEX i (g)
     );)",
                    2, 0, 0);
+#endif
 
   check_recreation("part_tbl2", R"(CREATE TABLE part_tbl2 (
   pk INT PRIMARY KEY,
@@ -2898,6 +2903,7 @@ TEST_F(Compatibility_test, to_grant_statement) {
          "REVOKE LOCK TABLES ON `s`.* FROM u@h");
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Compatibility_test, lock_account) {
   EXPECT_THROW(lock_account("CREATE SCHEMA s"), std::runtime_error);
 
@@ -3266,6 +3272,7 @@ TEST_F(Compatibility_test, replace_empty_passwords) {
       R"(CREATE USER u@h IDENTIFIED WITH 'sha256_password' BY 'pass' PASSWORD EXPIRE INTERVAL 5 DAY)",
       R"(CREATE USER u@h IDENTIFIED WITH 'sha256_password' BY 'pass' PASSWORD EXPIRE INTERVAL 5 DAY)");
 }
+#endif
 
 TEST_F(Compatibility_test, list_data_masking_policies) {
   EXPECT_THROW(list_data_masking_policies("CREATE SCHEMA s"),

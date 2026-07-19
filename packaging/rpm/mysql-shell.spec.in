@@ -1,5 +1,6 @@
 
 # Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -212,6 +213,10 @@ cmake .. \
 %if 0%{?with_mysql_source:1}
     -DMYSQL_SOURCE_DIR="%{with_mysql_source}" \
     -DMYSQL_BUILD_DIR="%{with_mysql_source}/bld" \
+%endif
+%if 0%{?with_mariadb_source:1}
+    -DMARIADB_SOURCE_DIR="%{with_mariadb_source}" \
+    -DMARIADB_BUILD_DIR="%{with_mariadb_source}/bld" \
 %endif
 %if 0%{?bundled_openssl:1}
     -DBUNDLED_OPENSSL_DIR="%{bundled_openssl}" \

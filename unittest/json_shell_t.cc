@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -122,7 +123,9 @@ TEST(Json_shell, valid_commands) {
   auto options = std::make_shared<Shell_options>();
   options->set_gui_mode(true);
   mysqlsh::Json_shell shell(options);
+#ifdef HAVE_JS
   shell.process_line({"{\"execute\":\"\\\\js\"}"});
+#endif
 
   std::string capture;
   shcore::Interpreter_print_handler handler{&capture, print_capture,
@@ -130,6 +133,7 @@ TEST(Json_shell, valid_commands) {
   current_console()->add_print_handler(&handler);
 
   capture.clear();
+#ifdef HAVE_JS
   shell.process_line("{\"execute\":\"print('success!')\"}");
   EXPECT_THAT(capture, ::testing::HasSubstr("{\"info\":\"success!\"}"));
 
@@ -140,19 +144,22 @@ TEST(Json_shell, valid_commands) {
                            "\\\"checkInstanceConfiguration()\\\","));
 
   capture.clear();
+#endif
   shell.process_line("{\"execute\":\"\\\\py\"}");
   EXPECT_THAT(capture, ::testing::HasSubstr(
                            "{\"info\":\"Switching to Python mode...\\n\"}"));
 
   capture.clear();
+#ifdef HAVE_ADMIN_API
   shell.process_line("{\"complete\":{\"data\":\"dba.\"}}");
   EXPECT_THAT(capture, ::testing::HasSubstr(
                            "{\"info\":\"{\\\"offset\\\":4,\\\"options\\\":["
                            "\\\"check_instance_configuration()\\\","));
-
+#endif
   current_console()->remove_print_handler(&handler);
 }
 
+#ifdef HAVE_JS
 TEST(Json_shell, incomplete_javascript) {
   auto options = std::make_shared<Shell_options>();
   options->set_gui_mode(true);
@@ -204,6 +211,7 @@ TEST(Json_shell, incomplete_javascript) {
 
   current_console()->remove_print_handler(&handler);
 }
+#endif
 
 TEST(Json_shell, incomplete_python) {
   auto options = std::make_shared<Shell_options>();
@@ -271,20 +279,29 @@ TEST(Json_shell, incomplete_sql) {
                                             print_capture, print_capture};
   current_console()->add_print_handler(&handler);
 
+  std::string server_vendor = "MySQL";
+  if (shell.get_server_vendor() == mysqlshdk::db::ServerVendor::MariaDB) {
+    server_vendor = "MariaDB";
+  }
+
   std::vector<std::tuple<std::string, std::string>> invalid_inputs = {
       {R"*(select *
-from mysql
+from mysql.something
 where)*",
-       "{\"error\":{\"code\":1064,\"message\":\"You have an error in your SQL "
-       "syntax; check the manual that corresponds to your MySQL server version "
-       "for the right syntax to use near '' at line "
-       "3\",\"state\":\"42000\",\"type\":\"MySQL Error\"}}"},
+       shcore::str_format("{\"error\":{\"code\":1064,\"message\":\"You have an "
+                          "error in your SQL syntax; check the manual that "
+                          "corresponds to your %s server version for the right "
+                          "syntax to use near '' at line "
+                          "3\",\"state\":\"42000\",\"type\":\"MySQL Error\"}}",
+                          server_vendor.c_str())},
       {R"*(select * from mysql.user
 where user = 'weirdo)*",
-       "{\"error\":{\"code\":1064,\"message\":\"You have an error in your SQL "
-       "syntax; check the manual that corresponds to your MySQL server version "
-       "for the right syntax to use near ''weirdo' at line "
-       "2\",\"state\":\"42000\",\"type\":\"MySQL Error\"}}"}};
+       shcore::str_format("{\"error\":{\"code\":1064,\"message\":\"You have an "
+                          "error in your SQL syntax; check the manual that "
+                          "corresponds to your %s server version for the right "
+                          "syntax to use near ''weirdo' at line "
+                          "2\",\"state\":\"42000\",\"type\":\"MySQL Error\"}}",
+                          server_vendor.c_str())}};
 
   for (const auto &input : invalid_inputs) {
     shcore::JSON_dumper doc;
@@ -304,6 +321,7 @@ where user = 'weirdo)*",
   shell.process_line({"{\"execute\":\"\\\\disconnect\"}"});
 }
 
+#ifdef HAVE_JS
 TEST(Json_shell, js_completed_without_new_line) {
   auto options = std::make_shared<Shell_options>();
   options->set_gui_mode(true);
@@ -336,6 +354,7 @@ TEST(Json_shell, js_completed_without_new_line) {
   shell.process_line("{\"execute\":\"sample('Successful!!!')\"}");
   EXPECT_THAT(capture, ::testing::HasSubstr("{\"info\":\"Successful!!!\"}"));
 }
+#endif
 
 TEST(Json_shell, py_completed_without_new_line) {
   auto options = std::make_shared<Shell_options>();

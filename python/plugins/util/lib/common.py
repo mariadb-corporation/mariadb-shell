@@ -1,4 +1,5 @@
 # Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,11 +32,13 @@ def get_current_user(session):
 
 
 def collect_account_data(account: str):
-    if not account:
-        account = get_current_user(globals.shell.get_session())
+    current_account = get_current_user(globals.shell.get_session())
+    current_user =account is None or account == current_account
+    if account is None:
+        account = current_account
     account_data = split_account(account)
     account_data["account"] = account
-    return account_data, account
+    return account_data, account, current_user
 
 
 def get_credentials():

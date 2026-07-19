@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -77,6 +78,14 @@
 #define STDERR_FILENO 2
 #endif
 
+#endif
+
+#ifdef MARIADB_BUILD
+// MariaDB's my_global.h #undef's STDERR_FILENO (mysqld may freopen stderr). The
+// shell only uses it as a stream tag, so restore the conventional value.
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
 #endif
 
 extern char *mysh_get_tty_password(const char *opt_message);
@@ -1072,11 +1081,13 @@ std::string Command_line_shell::history_file(shcore::Shell_core::Mode mode) {
 }
 
 void Command_line_shell::pre_command_loop() {
+#ifdef HAVE_ADMIN_API
   display_info(m_default_cluster, "cluster", "cluster");
   display_info(m_default_clusterset, "clusterset", "clusterset");
 
   // information about replicaset name is displayed by the dba
   display_info(m_default_replicaset, "rs", "replicaset", false);
+#endif
 }
 
 void Command_line_shell::command_loop() {
@@ -1212,7 +1223,9 @@ void Command_line_shell::print_cmd_line_helper() {
   println("");
   println("Usage: mysqlsh [OPTIONS] [URI]");
   println("       mysqlsh [OPTIONS] [URI] -f <path> [<script-args>...]");
+  #ifdef HAVE_ADMIN_API
   println("       mysqlsh [OPTIONS] [URI] --cluster|--replicaset");
+  #endif
   println("       mysqlsh [OPTIONS] [URI] -- <object> <method> [<method-args>...]");
   println("");
   // clang-format on
@@ -1249,9 +1262,12 @@ void Command_line_shell::print_cmd_line_helper() {
   println("$ mysqlsh mysqlx://root@some.server:3307/world_x");
   println("$ mysqlsh --uri root@localhost --py -f sample.py sample param");
   println("$ mysqlsh root@targethost:33070 -s world_x -f sample.js");
+#ifdef HAVE_UPGRADE_CHECKER
+  // The Upgrade Checker is MySQL-server specific and is not built for MariaDB.
   println(
       "$ mysqlsh -- util check-for-server-upgrade root@localhost "
       "--output-format=JSON");
+#endif  // HAVE_UPGRADE_CHECKER
   println("");
 }
 

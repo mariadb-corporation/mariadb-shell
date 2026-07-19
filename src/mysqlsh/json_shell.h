@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +41,8 @@ class Json_shell : public Command_line_shell {
   explicit Json_shell(std::shared_ptr<Shell_options> options);
 
   ~Json_shell() override = default;
+
+  mysqlshdk::db::ServerVendor get_server_vendor();
 
   void process_line(const std::string &line) override;
 };

@@ -4,7 +4,7 @@ result = result = session.run_sql("select table_name, column_name, referenced_ta
 row = result.fetch_one()
 fields = dir(row)
 
-#@<> Column Mapping {VER(>=8.0.0)}
+#@<> Column Mapping {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
 EXPECT_TRUE("TABLE_NAME" in fields)
 EXPECT_TRUE("COLUMN_NAME" in fields)
 EXPECT_TRUE("REFERENCED_TABLE_NAME" in fields)

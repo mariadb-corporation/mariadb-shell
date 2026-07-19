@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +26,10 @@
 
 #include "mysqlshdk/include/shellcore/base_session.h"
 
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
+#include "modules/devapi/base_resultset.h"
 #include "modules/mod_mysql_session.h"
 #include "mysqlshdk/include/scripting/obj_date.h"
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
@@ -182,9 +186,11 @@ std::shared_ptr<ShellBaseSession> ShellBaseSession::wrap_session(
   if (auto classic =
           std::dynamic_pointer_cast<mysqlshdk::db::mysql::Session>(session)) {
     return std::make_shared<mysql::ClassicSession>(classic);
+#ifdef HAVE_X_PROTOCOL
   } else if (auto x = std::dynamic_pointer_cast<mysqlshdk::db::mysqlx::Session>(
                  session)) {
     return std::make_shared<mysqlsh::mysqlx::Session>(x);
+#endif
   }
 
   throw shcore::Exception::argument_error(
@@ -441,5 +447,16 @@ std::string ShellBaseSession::track_system_variable(
   auto new_value = get_core_session()->track_system_variable(variable);
   m_tracking_sql_mode =
       shcore::has_session_track_system_variable(new_value, "sql_mode");
+  if (get_core_session()->get_server_vendor() ==
+      mysqlshdk::db::ServerVendor::MariaDB) {
+    // MariaDB lists sql_mode in session_track_system_variables but does not
+    // actually emit sql_mode session-state changes in the OK packet (unlike
+    // MySQL), so the tracked value is never updated after `SET @@sql_mode =
+    // ...`. Treat sql_mode as not tracked here so callers fall back to an
+    // explicit `SELECT @@sql_mode` refresh (get_sql_mode()/refresh_sql_mode()),
+    // keeping the SQL splitter and auto-completion (e.g. ANSI_QUOTES) in sync
+    // after a change.
+    m_tracking_sql_mode = false;
+  }
   return new_value;
 }

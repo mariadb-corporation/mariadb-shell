@@ -1,4 +1,5 @@
 # Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -314,11 +315,18 @@ else()
         "${MYSQL_SOURCE_DIR}"
     )
 
+    IF(MYSQL_BUILD_DIR)
     target_link_libraries(mysql_deps PRIVATE
         "${MYSQL_BUILD_DIR}/archive_output_directory/libmysys.a"
         "${MYSQL_BUILD_DIR}/archive_output_directory/libmytime.a"
         "${MYSQL_BUILD_DIR}/archive_output_directory/libstrings.a"
     )
+    ELSEIF(MARIADB_BUILD_DIR)
+    target_link_libraries(mysql_deps PRIVATE
+        "${MARIADB_BUILD_DIR}/mysys/libmysys.a"
+        "${MARIADB_BUILD_DIR}/strings/libstrings.a"
+    )
+    ENDIF()
 
     # specify some exports, so that the static libraries are not stripped
     set(mysql_deps_EXPORTS

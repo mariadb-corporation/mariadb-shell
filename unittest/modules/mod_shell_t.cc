@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +24,10 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx_resultset.h"
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
 #include "modules/mod_mysql_resultset.h"
 #include "modules/mod_mysql_session.h"
 #include "modules/mod_shell.h"
@@ -360,8 +363,10 @@ TEST_F(mod_shell_test, disconnect) {
 TEST_F(mod_shell_test, dump_rows) {
   auto session =
       std::make_shared<mysqlsh::mysql::ClassicSession>(create_mysql_session());
+#ifdef HAVE_X_PROTOCOL
   auto xsession =
       std::make_shared<mysqlsh::mysqlx::Session>(create_mysqlx_session());
+#endif
 
   mysqlsh::ShellBaseSession *bsession = nullptr;
 
@@ -370,19 +375,28 @@ TEST_F(mod_shell_test, dump_rows) {
     std::shared_ptr<mysqlsh::ShellBaseResult> result;
     if (bsession->session_type() == mysqlsh::SessionType::Classic) {
       result = std::make_shared<mysqlsh::mysql::ClassicResult>(iresult);
-    } else {
+    }
+#ifdef HAVE_X_PROTOCOL
+    else {
       result = std::make_shared<mysqlsh::mysqlx::SqlResult>(iresult);
     }
+#endif
 
     return result;
   };
 
+  // X protocol is not available on MariaDB; only the classic session is tested.
+#ifndef HAVE_X_PROTOCOL
+  for (int i = 0; i < 1; i++) {
+    bsession = session.get();
+#else
   for (int i = 0; i < 2; i++) {
     if (i == 0) {
       bsession = session.get();
     } else {
       bsession = xsession.get();
     }
+#endif
 
     {
       auto result = query(

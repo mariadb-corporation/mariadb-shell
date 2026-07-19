@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +31,29 @@
 #define MYSQLSHDK_LIBS_DB_MYSQL_SESSION_H_
 
 #include <mysql.h>
+// MariaDB's mysql.h defines ER_SPATIAL_CANT_HAVE_NULL as a backward-compat
+// alias
+// (-> ER_INDEX_CANNOT_HAVE_NULL), while mysqld_error.h defines it as the
+// literal 1252. They expand to the same value but different tokens, which trips
+// the macro-redefinition diagnostic (fatal under -Werror). Drop mysql.h's alias
+// so the canonical mysqld_error.h definition is used.
+#ifdef MARIADB_BUILD
+#ifdef ER_SPATIAL_CANT_HAVE_NULL
+#undef ER_SPATIAL_CANT_HAVE_NULL
+#endif
+#ifdef ER_CANT_CHANGE_TX_CHARACTERISTICS
+#undef ER_CANT_CHANGE_TX_CHARACTERISTICS
+#endif
+#ifdef ER_VARIABLE_NOT_SETTABLE_IN_SF_OR_TRIGGER
+#undef ER_VARIABLE_NOT_SETTABLE_IN_SF_OR_TRIGGER
+#endif
+#ifdef ER_NO_INDEX_ON_TEMPORARY
+#undef ER_NO_INDEX_ON_TEMPORARY
+#endif
+#ifdef ER_INNODB_NO_FT_TEMP_TABLE
+#undef ER_INNODB_NO_FT_TEMP_TABLE
+#endif
+#endif
 #include <mysqld_error.h>
 
 #include <cstring>
@@ -152,6 +176,20 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
     if (_mysql) return mysql_get_server_info(_mysql);
     return nullptr;
   }
+
+  ServerVendor get_server_vendor() {
+    if (!m_server_vendor.has_value()) {
+      std::string info = get_server_info();
+      if (info.find("MariaDB") != std::string::npos) {
+        m_server_vendor = ServerVendor::MariaDB;
+      } else {
+        m_server_vendor = ServerVendor::MySQL;
+      }
+    }
+
+    return *m_server_vendor;
+  }
+
   const char *get_stats() {
     _prev_result.reset();
     if (_mysql) return mysql_stat(_mysql);
@@ -162,7 +200,13 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
     return nullptr;
   }
 
-  const char *get_mysql_info() const { return mysql_info(_mysql); }
+  const char *get_mysql_info() const {
+    // libmysqlclient tolerates a null handle here, but libmariadb dereferences
+    // it; guard _mysql like the other accessors above so a not-yet-connected
+    // session (e.g. a mock) returns null instead of crashing.
+    if (_mysql) return mysql_info(_mysql);
+    return nullptr;
+  }
 
   virtual mysqlshdk::utils::Version get_server_version() const {
     if (_mysql) {
@@ -246,6 +290,7 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
   uint64_t m_thread_id = 0;
   std::unique_ptr<Error> m_last_error;
   std::string m_option_tracker_feature_id;
+  std::optional<mysqlshdk::db::ServerVendor> m_server_vendor;
 
   struct Session_tracker_info {
     std::optional<std::string> statement_id;
@@ -277,6 +322,8 @@ class SHCORE_PUBLIC Session : public ISession,
       std::function<std::shared_ptr<Session>()> factory);
 
   static std::shared_ptr<Session> create();
+
+  ServerVendor get_server_vendor() override;
 
   const mysqlshdk::db::Connection_options &get_connection_options()
       const override {

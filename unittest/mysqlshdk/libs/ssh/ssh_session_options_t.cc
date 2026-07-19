@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +27,7 @@
 #include <iostream>
 #include "mysqlshdk/libs/ssh/ssh_session_options.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 #include "unittest/gtest_clean.h"
 #include "unittest/test_utils/shell_base_test.h"
 
@@ -42,6 +44,18 @@ class Ssh_session_options_t : public tests::Shell_base_test {
       shcore::remove_directory(m_ssh_files, true);
     }
     shcore::create_directory(m_ssh_files, true, 0700);
+
+    // Point HOME at an isolated, key-less directory for the duration of the
+    // test. When a host stanza has no IdentityFile, libssh reports its built-in
+    // default identity (e.g. %d/.ssh/id_ed25519), whose %d is expanded by
+    // Ssh_session_options using shcore::path::home(). If HOME resolved to the
+    // real user profile (as it can on Windows, where the test harness leaves it
+    // pointing at USERPROFILE), an existing default key there would be picked up
+    // and get_identity_file() would wrongly return it instead of "".
+    const char *orig_home = getenv("HOME");
+    m_had_home = orig_home != nullptr;
+    if (m_had_home) m_orig_home.assign(orig_home);
+    shcore::setenv("HOME", m_ssh_files);
 
     m_test_config = shcore::path::join_path(m_ssh_files, "test_config");
 
@@ -74,11 +88,23 @@ class Ssh_session_options_t : public tests::Shell_base_test {
     }
   }
 
+  void TearDown() override {
+    // Restore HOME to whatever it was before the test.
+    if (m_had_home) {
+      shcore::setenv("HOME", m_orig_home);
+    } else {
+      shcore::unsetenv("HOME");
+    }
+    tests::Shell_base_test::TearDown();
+  }
+
  protected:
   std::string m_ssh_files;
   std::string m_tmpdir;
   std::string m_test_config;
   std::string m_key_file;
+  std::string m_orig_home;
+  bool m_had_home = false;
 };
 
 TEST_F(Ssh_session_options_t, default_initialization) {

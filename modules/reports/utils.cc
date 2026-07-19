@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +31,9 @@
 
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
 #include "mysqlshdk/include/shellcore/shell_resultset_dumper.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/expr_parser.h"
+#endif
 #include "mysqlshdk/libs/utils/array_result.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 
@@ -210,6 +213,7 @@ shcore::Array_t create_report_from_json_object(
   return report;
 }
 
+#ifdef HAVE_X_PROTOCOL
 Sql_condition::Sql_condition(const Sql_condition::Validator &ident,
                              const Sql_condition::Validator &op)
     : m_identifier(ident), m_operator(op) {}
@@ -293,6 +297,7 @@ std::string Sql_condition::validate_expression(
                                   ::Mysqlx::Expr::Expr_Type_Name(expr.type()));
   }
 }
+#endif  // HAVE_X_PROTOCOL
 
 }  // namespace reports
 }  // namespace mysqlsh

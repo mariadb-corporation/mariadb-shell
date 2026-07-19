@@ -1,4 +1,5 @@
 # Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +30,49 @@ ENDIF()
 IF(MYSQL_BUILD_DIR)
   FILE(TO_CMAKE_PATH "${MYSQL_BUILD_DIR}" MYSQL_BUILD_DIR)
 ENDIF()
+
+IF(MARIADB_SOURCE_DIR)
+  FILE(TO_CMAKE_PATH "${MARIADB_SOURCE_DIR}" MARIADB_SOURCE_DIR)
+
+  SET(MARIADB_BUILD 1)
+  ADD_DEFINITIONS(-DMARIADB_BUILD)
+
+  IF(WITH_RAPIDJSON)
+    FILE(TO_CMAKE_PATH "${WITH_RAPIDJSON}" WITH_RAPIDJSON)
+  ENDIF()
+  # RapidJSON headers are resolved after project() (see RAPIDJSON_INCLUDE_DIR
+  # below); the system search needs project()'s search paths initialized.
+ENDIF()
+
+IF(MARIADB_BUILD_DIR)
+  FILE(TO_CMAKE_PATH "${MARIADB_BUILD_DIR}" MARIADB_BUILD_DIR)
+ENDIF()
+
+# The Upgrade Checker is MySQL-server specific and is incompatible with MariaDB
+# servers, so it is only built (and its code only compiled) for non-MariaDB
+# builds. Code gates on the HAVE_UPGRADE_CHECKER definition.
+#
+# The AdminAPI (InnoDB Cluster/ReplicaSet/ClusterSet) and the X protocol /
+# X DevAPI are likewise MySQL-server specific and unavailable for MariaDB
+# builds. Code gates on the HAVE_ADMIN_API and HAVE_X_PROTOCOL definitions
+# instead of testing MARIADB_BUILD directly.
+IF(NOT MARIADB_BUILD)
+  SET(HAVE_UPGRADE_CHECKER 1)
+  ADD_DEFINITIONS(-DHAVE_UPGRADE_CHECKER)
+
+  SET(HAVE_ADMIN_API 1)
+  ADD_DEFINITIONS(-DHAVE_ADMIN_API)
+
+  SET(HAVE_X_PROTOCOL 1)
+  ADD_DEFINITIONS(-DHAVE_X_PROTOCOL)
+
+  SET(HAVE_DUMP_AND_LOAD 1)
+  ADD_DEFINITIONS(-DHAVE_DUMP_AND_LOAD)
+
+  SET(HAVE_LOGIN_PATH 1)
+  ADD_DEFINITIONS(-DHAVE_LOGIN_PATH)
+ENDIF()
+
 
 IF(WIN32)
   # CMake 3.8.0 is needed for Visual Studio 2017 and x64 toolset.
@@ -385,6 +429,36 @@ ENDIF()
 
 project(mysqlsh)
 
+# Resolve RapidJSON headers for MariaDB builds. Done after project() so that,
+# when WITH_RAPIDJSON is not provided, FIND_PATH can search the system include
+# paths (CMAKE_SYSTEM_PREFIX_PATH), which are only initialized by project().
+IF(MARIADB_BUILD)
+  IF(WITH_RAPIDJSON)
+    # Explicit path to a RapidJSON source tree (headers under <path>/include).
+    SET(RAPIDJSON_INCLUDE_DIR "${WITH_RAPIDJSON}/include")
+    IF(NOT EXISTS "${RAPIDJSON_INCLUDE_DIR}/rapidjson/rapidjson.h")
+      MESSAGE(FATAL_ERROR "Could not find \"rapidjson/rapidjson.h\" under "
+        "\"${RAPIDJSON_INCLUDE_DIR}\". WITH_RAPIDJSON must point to the "
+        "RapidJSON source directory.")
+    ENDIF()
+  ELSE()
+    # WITH_RAPIDJSON not provided: look for RapidJSON headers on the system.
+    FIND_PATH(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/rapidjson.h)
+    IF(NOT RAPIDJSON_INCLUDE_DIR)
+      MESSAGE(FATAL_ERROR "RapidJSON is missing. Install the system RapidJSON "
+        "development headers, or use -DWITH_RAPIDJSON=<rapidjson-src-path>")
+    ENDIF()
+  ENDIF()
+
+  MESSAGE(STATUS "RAPIDJSON_INCLUDE_DIR ${RAPIDJSON_INCLUDE_DIR}")
+
+  # Treat RapidJSON as a system include so its headers (e.g. the memcpy on a
+  # non-trivially-copyable GenericValue in document.h) do not trip -Werror
+  # diagnostics such as GCC's -Wclass-memaccess. Matches how the other bundled
+  # third-party headers (lz4, zlib) are included.
+  INCLUDE_DIRECTORIES(SYSTEM ${RAPIDJSON_INCLUDE_DIR})
+ENDIF()
+
 IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   SET(MY_COMPILER_IS_CLANG 1)
 ELSEIF(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
@@ -706,7 +780,52 @@ if(HAVE_PYTHON)
 
   # On windows stores the path to the python libraries since they will be bundled
   IF(WIN32)
-    FIND_PACKAGE(PythonLibs "${USE_PYTHON_VERSION}" REQUIRED)
+    IF(MARIADB_BUILD)
+      # The deprecated FindPythonLibs locates Python via the registry key
+      # SOFTWARE\Python\PythonCore\<ver>, but python.org tags that key with the
+      # architecture per PEP 514 (e.g. <ver>-arm64), which FindPythonLibs does
+      # not search - so it cannot auto-detect an ARM64 Python. FindPython3
+      # understands the arch tags. Map its results onto the legacy PYTHON_*
+      # variables the rest of this file and the bundling logic expect.
+      #
+      # Prefer a python.org install over vcpkg's Python. vcpkg's Python has a
+      # split layout (headers under include/pythonX.Y, runtime under
+      # tools/python3, no self-contained root); the bundling logic below now
+      # handles that layout, but a python.org install remains the more predictable
+      # bundling source. The vcpkg toolchain injects its tree via BOTH
+      # CMAKE_PREFIX_PATH and CMAKE_FIND_ROOT_PATH, so the soft FindPython3 knobs
+      # (FIND_REGISTRY / FIND_STRATEGY) cannot reliably steer away from it.
+      # Exclude vcpkg's tree for just this find so the python.org install (located
+      # via the Windows registry, PEP 514) wins when both are present. To force
+      # vcpkg's Python instead, pass -DPython3_ROOT_DIR=<prefix>/tools/python3,
+      # which takes precedence and disables the exclusion.
+      #
+      # NOTE: FindPython3 caches Python3_EXECUTABLE; clear the CMake cache when
+      # changing which Python to use or a stale value is reused.
+      SET(Python3_FIND_REGISTRY FIRST)
+      IF(NOT Python3_ROOT_DIR)
+        SET(_saved_prefix_path "${CMAKE_PREFIX_PATH}")
+        SET(_saved_find_root_path "${CMAKE_FIND_ROOT_PATH}")
+        SET(CMAKE_PREFIX_PATH "")
+        SET(CMAKE_FIND_ROOT_PATH "")
+      ENDIF()
+      FIND_PACKAGE(Python3 "${USE_PYTHON_VERSION}" REQUIRED
+        COMPONENTS Interpreter Development.Embed)
+      IF(NOT Python3_ROOT_DIR)
+        SET(CMAKE_PREFIX_PATH "${_saved_prefix_path}")
+        SET(CMAKE_FIND_ROOT_PATH "${_saved_find_root_path}")
+      ENDIF()
+      SET(PYTHON_INCLUDE_DIRS "${Python3_INCLUDE_DIRS}")
+      SET(PYTHON_LIBRARIES "${Python3_LIBRARIES}")
+      SET(PYTHONLIBS_VERSION_STRING "${Python3_VERSION}")
+      SET(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+      # The block that emits the -DHAVE_PYTHON compile definition keys off
+      # PYTHONLIBS_FOUND (a FindPythonLibs variable); FindPython3 sets
+      # Python3_FOUND instead, so mirror it or the C++ sees no scripting mode.
+      SET(PYTHONLIBS_FOUND "${Python3_FOUND}")
+    ELSE()
+      FIND_PACKAGE(PythonLibs "${USE_PYTHON_VERSION}" REQUIRED)
+    ENDIF()
     # PYTHON_PATH and PYTHON_FOLDER are used to properly copy the python libraries where needed
     # By default they take the value of PB2WORKDIR and PYTHON_SOURCENAME env vars
     IF(NOT PYTHON_PATH AND NOT PYTHON_FOLDER)
@@ -714,18 +833,40 @@ if(HAVE_PYTHON)
       SET(PYTHON_FOLDER "$ENV{PYTHON_SOURCENAME}")
     ENDIF()
 
-    IF(NOT PYTHON_PATH AND NOT PYTHON_FOLDER)
+    IF(PYTHON_PATH AND PYTHON_FOLDER)
+      # Explicit PB2 layout (Oracle's official build): <PATH>/<FOLDER> is the root.
+      SET(PYTHON_ROOT "${PYTHON_PATH}/${PYTHON_FOLDER}")
+    ELSEIF(PYTHON_EXECUTABLE)
+      # Derive the runtime root from the interpreter that was found, NOT from the
+      # headers. python.exe always sits at the root of a Windows Python tree with
+      # Lib/ and DLLs/ as siblings, which holds for BOTH a python.org install
+      # (root == <prefix>) and a vcpkg install (root == <prefix>/tools/python3).
+      #
+      # vcpkg splits the tree: headers live under <prefix>/include/pythonX.Y while
+      # the runtime lives under <prefix>/tools/python3. Walking up from
+      # PYTHON_INCLUDE_DIRS therefore lands on <prefix>/include and tries to
+      # bundle empty/nonexistent Lib and DLLs directories. Anchoring on the
+      # executable handles both layouts without having to special-case vcpkg.
+      GET_FILENAME_COMPONENT(PYTHON_ROOT "${PYTHON_EXECUTABLE}" DIRECTORY)
+    ELSE()
+      # Legacy fallback (FindPythonLibs, python.org layout): the runtime root is
+      # the parent of the include directory.
       GET_FILENAME_COMPONENT(PYTHON_PATH ${PYTHON_INCLUDE_DIRS} DIRECTORY)
       GET_FILENAME_COMPONENT(PYTHON_FOLDER ${PYTHON_PATH} NAME)
       GET_FILENAME_COMPONENT(PYTHON_PATH ${PYTHON_PATH} DIRECTORY)
+      SET(PYTHON_ROOT "${PYTHON_PATH}/${PYTHON_FOLDER}")
     ENDIF()
 
-    IF(PYTHON_PATH AND PYTHON_FOLDER)
-      SET(PYTHON_ROOT "${PYTHON_PATH}/${PYTHON_FOLDER}")
+    IF(PYTHON_ROOT)
       FILE(TO_CMAKE_PATH "${PYTHON_ROOT}" PYTHON_ROOT)
       SET(PYTHON_LIBRARY_PATH "${PYTHON_ROOT}/Lib")
       SET(PYTHON_DLLS_PATH "${PYTHON_ROOT}/DLLs")
-      SET(PYTHON_EXECUTABLE "${PYTHON_ROOT}/python.exe")
+      # Only synthesize the interpreter path for the layouts where we derived the
+      # root ourselves. In the FindPython3 case PYTHON_EXECUTABLE already points at
+      # the real interpreter (and equals ${PYTHON_ROOT}/python.exe anyway).
+      IF(NOT PYTHON_EXECUTABLE)
+        SET(PYTHON_EXECUTABLE "${PYTHON_ROOT}/python.exe")
+      ENDIF()
     ENDIF()
   ELSEIF(BUNDLED_PYTHON_DIR)
     # If we're using a Python build for bundling, ensure we build against it too
@@ -908,15 +1049,25 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
     # OpenSSL 3.x Look for libcrypto-3-x64.dll or libcrypto-3.dll
     # OpenSSL 1.1 Look for libcrypto-1_1-x64.dll or libcrypto-1_1.dll
     # OpenSSL 1.0 Look for libeay32.dll
+    #
+    # The arch suffix is not always x64: on Windows/ARM64 (e.g. the
+    # arm64-windows vcpkg triplet) OpenSSL is named libcrypto-3-arm64.dll.
+    # Derive it from the target architecture rather than assuming x64.
+    IF(VCPKG_TARGET_TRIPLET MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "[Aa][Rr][Mm]64")
+      SET(SSL_MSVC_ARCH "-arm64")
+    ELSE()
+      SET(SSL_MSVC_ARCH "-x64")
+    ENDIF()
+
     SET(SSL_MSVC_VERSION_SUFFIX)
     SET(SSL_MSVC_ARCH_SUFFIX)
     IF(OPENSSL_VERSION_MINOR VERSION_EQUAL 1)
       SET(SSL_MSVC_VERSION_SUFFIX "-1_1")
-      SET(SSL_MSVC_ARCH_SUFFIX "-x64")
+      SET(SSL_MSVC_ARCH_SUFFIX "${SSL_MSVC_ARCH}")
     ENDIF()
     IF(OPENSSL_VERSION_MAJOR VERSION_EQUAL 3)
       SET(SSL_MSVC_VERSION_SUFFIX "-3")
-      SET(SSL_MSVC_ARCH_SUFFIX "-x64")
+      SET(SSL_MSVC_ARCH_SUFFIX "${SSL_MSVC_ARCH}")
     ENDIF()
 
     MESSAGE(STATUS "===> WITH_SSL_PATH: ${WITH_SSL_PATH}")
@@ -942,6 +1093,19 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
 
     MESSAGE(STATUS "HAVE_CRYPTO_DLL ${HAVE_CRYPTO_DLL}")
     MESSAGE(STATUS "HAVE_OPENSSL_DLL ${HAVE_OPENSSL_DLL}")
+
+    # Fail at configure time with a clear message instead of leaking the
+    # "-NOTFOUND" sentinel into the DLL-bundling copy rules (which otherwise
+    # surfaces as an opaque ninja error: "HAVE_CRYPTO_DLL-NOTFOUND missing").
+    IF(NOT HAVE_CRYPTO_DLL OR NOT HAVE_OPENSSL_DLL)
+      MESSAGE(FATAL_ERROR
+        "Could not find the OpenSSL crypto/ssl DLLs to bundle under "
+        "'${WITH_SSL_PATH}/bin' (looked for "
+        "${CRYPTO_NAME}${SSL_MSVC_VERSION_SUFFIX}${SSL_MSVC_ARCH_SUFFIX}.dll / "
+        "${OPENSSL_NAME}${SSL_MSVC_VERSION_SUFFIX}${SSL_MSVC_ARCH_SUFFIX}.dll). "
+        "Check WITH_SSL_PATH and the arch suffix (SSL_MSVC_ARCH_SUFFIX="
+        "${SSL_MSVC_ARCH_SUFFIX}).")
+    ENDIF()
   ELSE()
     EXECUTE_PROCESS(
       COMMAND readlink "${CRYPTO_LIBRARY}" OUTPUT_VARIABLE CRYPTO_VERSION
@@ -995,21 +1159,80 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
 ENDIF()
 
 if (NOT BUILD_SOURCE_PACKAGE)
-  IF(NOT MYSQL_SOURCE_DIR)
+  IF(NOT MYSQL_SOURCE_DIR AND NOT MARIADB_SOURCE_DIR)
     SET(MYSQL_SOURCE_DIR "../mysql" CACHE PATH "Path to MySQL source directory")
     MESSAGE(STATUS "MYSQL_SOURCE_DIR has been set to: ${MYSQL_SOURCE_DIR}")
   ENDIF()
 
-  IF(NOT MYSQL_BUILD_DIR)
+  IF(NOT MYSQL_BUILD_DIR AND NOT MARIADB_BUILD_DIR)
     SET(MYSQL_BUILD_DIR "${MYSQL_SOURCE_DIR}/bld" CACHE PATH "Path to MySQL build directory")
     MESSAGE(STATUS "MYSQL_BUILD_DIR has been set to: ${MYSQL_BUILD_DIR}")
   ENDIF()
 
-  # Needed for protobuf header paths, which are needed to use libmysqlxclient
-  INCLUDE(protobuf)
-  INCLUDE(FindMySQLx)
-  # Needed for X protocol error codes
-  CONFIGURE_FILE(${MYSQL_SOURCE_DIR}/plugin/x/src/xpl_error.h ${CMAKE_SOURCE_DIR}/mysqlshdk/libs/db/mysqlx/xpl_error.h COPYONLY)
+  IF (MARIADB_SOURCE_DIR)
+    SET(MYSQL_INCLUDE_DIRS
+      ${MARIADB_SOURCE_DIR}/libmariadb/include
+      ${MARIADB_SOURCE_DIR}/include
+      ${MARIADB_SOURCE_DIR}/sql
+      ${MARIADB_BUILD_DIR}
+      ${MARIADB_BUILD_DIR}/include
+      ${MARIADB_BUILD_DIR}/libmariadb/include
+    )
+    # On Windows the Connector/C header (ma_global.h) defines `my_socket` as a
+    # macro while the server header (my_global.h) defines it as a typedef; the
+    # two clash when both are pulled into one TU. Force-include a shim into
+    # every TU that reconciles them. See cmake/mariadb_win_compat.h.
+    IF(WIN32)
+      # Restrict to C/C++ so the flag is not passed to the resource (rc.exe) or
+      # message compiler, which do not understand /FI.
+      ADD_COMPILE_OPTIONS(
+        "$<$<COMPILE_LANGUAGE:C,CXX>:/FI${CMAKE_CURRENT_SOURCE_DIR}/cmake/mariadb_win_compat.h>")
+    ENDIF()
+    # Link against the bundled MariaDB Connector/C client library, plus the
+    # server's mysys/strings/dbug static libraries (the shell uses functions
+    # from them directly: get_charset, my_load_defaults, my_convert, DBUG, ...).
+    FIND_LIBRARY(MARIADB_CLIENT_LIBRARY
+      NAMES mariadbclient libmariadbclient
+      PATHS ${MARIADB_BUILD_DIR}/libmariadb/libmariadb
+      NO_DEFAULT_PATH)
+    IF(NOT MARIADB_CLIENT_LIBRARY)
+      MESSAGE(FATAL_ERROR "Could not find libmariadbclient in "
+        "${MARIADB_BUILD_DIR}/libmariadb/libmariadb")
+    ENDIF()
+    # Static-library naming differs by platform: libmysys.a on Unix,
+    # mysys.lib on Windows/MSVC. Use CMake's own prefix/suffix variables so
+    # the same paths resolve on all toolchains.
+    SET(_slp "${CMAKE_STATIC_LIBRARY_PREFIX}")
+    SET(_sls "${CMAKE_STATIC_LIBRARY_SUFFIX}")
+    # mysys/strings/dbug have circular references; list them so the linker can
+    # resolve across them (repeated as needed).
+    SET(MYSQL_LIBRARIES
+      ${MARIADB_CLIENT_LIBRARY}
+      ${MARIADB_BUILD_DIR}/mysys/${_slp}mysys${_sls}
+      ${MARIADB_BUILD_DIR}/mysys_ssl/${_slp}mysys_ssl${_sls}
+      ${MARIADB_BUILD_DIR}/strings/${_slp}strings${_sls}
+      ${MARIADB_BUILD_DIR}/dbug/${_slp}dbug${_sls}
+      ${MARIADB_BUILD_DIR}/mysys/${_slp}mysys${_sls}
+      ${MARIADB_BUILD_DIR}/strings/${_slp}strings${_sls})
+    IF(WIN32)
+      # The shell links mariadbclient.lib via a raw path (FIND_LIBRARY), so it
+      # does not inherit the connector's exported SYSTEM_LIBS. Supply the Windows
+      # system libs libmariadb needs statically: SSPI (secur32, for the Windows
+      # auth plugin sspi_client.c), plus crypt32/bcrypt/shlwapi/ws2_32/advapi32
+      # (TLS, path helpers, sockets). See libmariadb CMakeLists.txt (SYSTEM_LIBS).
+      # Exposed as a variable (inherited by subdirectories) so executables that
+      # link the connector but don't reliably inherit it transitively (e.g.
+      # run_unit_tests) can link it explicitly.
+      SET(MARIADB_WIN_SYSTEM_LIBS secur32 crypt32 bcrypt shlwapi ws2_32 advapi32)
+      LIST(APPEND MYSQL_LIBRARIES ${MARIADB_WIN_SYSTEM_LIBS})
+    ENDIF()
+  ELSE()
+    # Needed for protobuf header paths, which are needed to use libmysqlxclient
+    INCLUDE(protobuf)
+    INCLUDE(FindMySQLx)
+    # Needed for X protocol error codes
+    CONFIGURE_FILE(${MYSQL_SOURCE_DIR}/plugin/x/src/xpl_error.h ${CMAKE_SOURCE_DIR}/mysqlshdk/libs/db/mysqlx/xpl_error.h COPYONLY)
+  ENDIF()
   INCLUDE(lz4)
   # Add lz4 library (Dependency for the X Client Lib)
   MYSQL_CHECK_LZ4()
@@ -1030,25 +1253,33 @@ ELSE()
 ENDIF()
 
 SET(INSTALL_LIBDIR "lib/mysqlsh")
+SET(_plugin_ext "so")
+IF(WIN32)
+  SET(_plugin_ext "dll")
+ENDIF()
 
+SET(INSTALL_MYSQL_PLUGINS_DIR "lib/mysql/plugins")
 IF(MYSQL_BUILD_DIR)
-  SET(INSTALL_MYSQL_PLUGINS_DIR "lib/mysql/plugins")
   SET(_plugin_subdirs "${MYSQL_BUILD_DIR}/plugin_output_directory")
-  SET(_plugin_ext "so")
-
   IF(WIN32)
     STRING(APPEND _plugin_subdirs "/${CMAKE_BUILD_TYPE}")
-    SET(_plugin_ext "dll")
   ENDIF()
-
   FILE(GLOB AUTH_CLIENT_PLUGINS "${_plugin_subdirs}/authentication_*_client.${_plugin_ext}")
-
   IF(EXISTS "${_plugin_subdirs}/mysql_native_password.${_plugin_ext}")
     LIST(APPEND AUTH_CLIENT_PLUGINS "${_plugin_subdirs}/mysql_native_password.${_plugin_ext}")
   ENDIF()
+ELSEIF(MARIADB_BUILD)
+  SET(_plugin_subdirs "${MARIADB_BUILD_DIR}/libmariadb")
+  IF(WIN32)
+    STRING(APPEND _plugin_subdirs "/${CMAKE_BUILD_TYPE}")
+  ENDIF()
+  FILE(GLOB AUTH_CLIENT_PLUGINS "${_plugin_subdirs}/caching_sha2_password.${_plugin_ext}")
+ENDIF()
 
-  IF(AUTH_CLIENT_PLUGINS)
-    SET(AUTH_CLIENT_PLUGINS_COPY ${AUTH_CLIENT_PLUGINS})
+IF(AUTH_CLIENT_PLUGINS)
+  SET(AUTH_CLIENT_PLUGINS_COPY ${AUTH_CLIENT_PLUGINS})
+
+  IF(MYSQL_BUILD_DIR)
     SET(EXPECTED_AUTH_CLIENT_PLUGINS
       "authentication_kerberos_client"
       "authentication_ldap_sasl_client"
@@ -1056,50 +1287,54 @@ IF(MYSQL_BUILD_DIR)
       "authentication_openid_connect_client"
       "mysql_native_password"
     )
-
-    IF(${OPENSSL_MAJOR_MINOR_FIX_VERSION} VERSION_GREATER_EQUAL "1.1.1")
-      IF(${MYSQL_VERSION} VERSION_GREATER_EQUAL "8.2.0")
-        LIST(APPEND EXPECTED_AUTH_CLIENT_PLUGINS "authentication_webauthn_client")
-      ENDIF()
-    ENDIF()
-
-    FOREACH(_plugin ${AUTH_CLIENT_PLUGINS})
-      FOREACH(_expected_plugin ${EXPECTED_AUTH_CLIENT_PLUGINS})
-        IF(_plugin MATCHES ".+${_expected_plugin}\..+")
-          LIST(REMOVE_ITEM EXPECTED_AUTH_CLIENT_PLUGINS "${_expected_plugin}")
-          LIST(REMOVE_ITEM AUTH_CLIENT_PLUGINS_COPY "${_plugin}")
-
-          IF(_expected_plugin STREQUAL "authentication_webauthn_client")
-            SET(_library_subdirs "${MYSQL_BUILD_DIR}/library_output_directory")
-
-            IF(WIN32)
-              STRING(APPEND _library_subdirs "/${CMAKE_BUILD_TYPE}")
-              FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/fido2.dll")
-            ELSEIF(APPLE)
-              FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/libfido2*.dylib")
-            ELSE()
-              FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/libfido2.so*")
-            ENDIF()
-
-            IF(NOT AUTH_CLIENT_PLUGINS_DEPS)
-              MESSAGE(FATAL_ERROR "Couldn't find libfido2, a dependency of authentication_webauthn_client")
-            ENDIF()
-          ENDIF()
-          BREAK()
-        ENDIF()
-      ENDFOREACH()
-    ENDFOREACH()
-
-    IF(AUTH_CLIENT_PLUGINS_COPY AND MAINTAINER_MODE)
-      MESSAGE(FATAL_ERROR "Found unexpected client authentication plugins: ${AUTH_CLIENT_PLUGINS_COPY}")
-    ENDIF()
-
-    IF(EXPECTED_AUTH_CLIENT_PLUGINS AND MAINTAINER_MODE)
-      MESSAGE(FATAL_ERROR "Didn't find expected client authentication plugins: ${EXPECTED_AUTH_CLIENT_PLUGINS}")
-    ENDIF()
-
-    ADD_DEFINITIONS(-DDEFAULT_MYSQL_PLUGIN_DIR="${INSTALL_MYSQL_PLUGINS_DIR}")
+  ELSEIF(MARIADB_BUILD)
+    SET(EXPECTED_AUTH_CLIENT_PLUGINS
+      "caching_sha2_password"
+    )
   ENDIF()
+
+  IF(${OPENSSL_MAJOR_MINOR_FIX_VERSION} VERSION_GREATER_EQUAL "1.1.1")
+    IF(${MYSQL_VERSION} VERSION_GREATER_EQUAL "8.2.0" AND NOT MARIADB_BUILD)
+      LIST(APPEND EXPECTED_AUTH_CLIENT_PLUGINS "authentication_webauthn_client")
+    ENDIF()
+  ENDIF()
+
+  FOREACH(_plugin ${AUTH_CLIENT_PLUGINS})
+    FOREACH(_expected_plugin ${EXPECTED_AUTH_CLIENT_PLUGINS})
+      IF(_plugin MATCHES ".+${_expected_plugin}\..+")
+        LIST(REMOVE_ITEM EXPECTED_AUTH_CLIENT_PLUGINS "${_expected_plugin}")
+        LIST(REMOVE_ITEM AUTH_CLIENT_PLUGINS_COPY "${_plugin}")
+
+        IF(_expected_plugin STREQUAL "authentication_webauthn_client")
+          SET(_library_subdirs "${MYSQL_BUILD_DIR}/library_output_directory")
+
+          IF(WIN32)
+            STRING(APPEND _library_subdirs "/${CMAKE_BUILD_TYPE}")
+            FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/fido2.dll")
+          ELSEIF(APPLE)
+            FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/libfido2*.dylib")
+          ELSE()
+            FILE(GLOB AUTH_CLIENT_PLUGINS_DEPS "${_library_subdirs}/libfido2.so*")
+          ENDIF()
+
+          IF(NOT AUTH_CLIENT_PLUGINS_DEPS)
+            MESSAGE(FATAL_ERROR "Couldn't find libfido2, a dependency of authentication_webauthn_client")
+          ENDIF()
+        ENDIF()
+        BREAK()
+      ENDIF()
+    ENDFOREACH()
+  ENDFOREACH()
+
+  IF(AUTH_CLIENT_PLUGINS_COPY AND MAINTAINER_MODE)
+    MESSAGE(FATAL_ERROR "Found unexpected client authentication plugins: ${AUTH_CLIENT_PLUGINS_COPY}")
+  ENDIF()
+
+  IF(EXPECTED_AUTH_CLIENT_PLUGINS AND MAINTAINER_MODE)
+    MESSAGE(FATAL_ERROR "Didn't find expected client authentication plugins: ${EXPECTED_AUTH_CLIENT_PLUGINS}")
+  ENDIF()
+
+  ADD_DEFINITIONS(-DDEFAULT_MYSQL_PLUGIN_DIR="${INSTALL_MYSQL_PLUGINS_DIR}")
 ENDIF()
 
 SET(INSTALL_INCLUDEDIR "include/mysqlsh")
@@ -1110,7 +1345,14 @@ SET(INSTALL_MANDIR "share/man")
 ##
 ## Binary location
 ##
-IF(MSVC)
+# Multi-config generators (e.g. Visual Studio) place binaries in a per-config
+# subdir; single-config generators (Ninja, Makefiles - incl. Ninja+MSVC) do not.
+# Key this off the generator, not the compiler: IF(MSVC) is also true for
+# Ninja+cl, which wrongly adds a $<CONFIG> subdir so bundled files (e.g. the
+# Python stdlib) land where the runtime does not look for them (bin is at
+# <bld>/bin but bundles went to <bld>/<config>/lib). This matches how
+# msvc.cmake / RUNTIME_OUTPUT_DIRECTORY key off CMAKE_CONFIGURATION_TYPES.
+IF(CMAKE_CONFIGURATION_TYPES)
   SET(CONFIG_BINARY_DIR "${CMAKE_BINARY_DIR}/$<CONFIG>")
 ELSE()
   SET(CONFIG_BINARY_DIR "${CMAKE_BINARY_DIR}")
@@ -1167,6 +1409,37 @@ FOREACH(BUILD_TYPE RELEASE RELWITHDEBINFO MINSIZEREL)
   ENDFOREACH()
 ENDFOREACH()
 
+# MySQL abolished DBUG_OFF (Bug#32216281) in favour of NDEBUG, but MariaDB's
+# my_dbug.h still gates DBUG purely on the consumer's DBUG_OFF macro: without
+# it the shell's DBUG_LOG/DBUG_EXECUTE_IF expand to real _db_*() calls
+# (_db_keyword_, _db_set_, _db_set_init_, ...). Those symbols exist in libdbug
+# only when MariaDB itself was built with DBUG enabled, i.e. a Debug build;
+# every other build type (RelWithDebInfo, Release, MinSizeRel) strips dbug.c to
+# a stub. The determining factor is therefore the build type of the *linked
+# MariaDB*, NOT of the shell -- a Debug shell linked against a non-Debug MariaDB
+# still fails to resolve _db_*. Detect the MariaDB build type from its cache and
+# define DBUG_OFF (via the base language flags, so every configuration incl.
+# Debug sees it) unless that MariaDB provides the DBUG runtime.
+IF(MARIADB_BUILD)
+  SET(_mariadb_has_dbug FALSE)
+  IF(MARIADB_BUILD_DIR AND EXISTS "${MARIADB_BUILD_DIR}/CMakeCache.txt")
+    FILE(STRINGS "${MARIADB_BUILD_DIR}/CMakeCache.txt" _mariadb_build_type
+      REGEX "^CMAKE_BUILD_TYPE:")
+    IF(_mariadb_build_type MATCHES "[Dd]ebug")
+      SET(_mariadb_has_dbug TRUE)
+    ENDIF()
+  ENDIF()
+
+  IF(_mariadb_has_dbug)
+    MESSAGE(STATUS "Linked MariaDB is a Debug build; leaving DBUG enabled")
+  ELSE()
+    MESSAGE(STATUS "Linked MariaDB has no DBUG runtime; defining DBUG_OFF")
+    FOREACH(LANG C CXX)
+      SET(CMAKE_${LANG}_FLAGS "${CMAKE_${LANG}_FLAGS} -DDBUG_OFF ")
+    ENDFOREACH()
+  ENDIF()
+ENDIF()
+
 IF(NOT CMAKE_BUILD_TYPE
     AND NOT CMAKE_GENERATOR MATCHES "Visual Studio"
     AND NOT CMAKE_GENERATOR MATCHES "Xcode")
@@ -1220,7 +1493,7 @@ IF(PYTHON_DEPS)
   ADD_DEFINITIONS(-DPYTHON_DEPS)
 ENDIF()
 
-IF(NOT BUNDLED_MYSQLBINLOG)
+IF(NOT BUNDLED_MYSQLBINLOG AND MYSQL_BUILD_DIR)
   IF(WIN32)
     SET(BUNDLED_MYSQLBINLOG "${MYSQL_BUILD_DIR}/runtime_output_directory/${CMAKE_BUILD_TYPE}/mysqlbinlog.exe")
   ELSE()
@@ -1228,7 +1501,7 @@ IF(NOT BUNDLED_MYSQLBINLOG)
   ENDIF()
 ENDIF()
 
-IF(NOT BUILD_SOURCE_PACKAGE AND NOT EXISTS "${BUNDLED_MYSQLBINLOG}")
+IF(NOT BUILD_SOURCE_PACKAGE AND BUNDLED_MYSQLBINLOG AND NOT EXISTS "${BUNDLED_MYSQLBINLOG}")
   message(FATAL_ERROR "The bundled 'mysqlbinlog' binary was not found, please compile it using: cmake --build '${MYSQL_BUILD_DIR}' --target mysqlbinlog")
 ENDIF()
 

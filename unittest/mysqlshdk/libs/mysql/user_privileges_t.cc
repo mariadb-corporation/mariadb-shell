@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -687,7 +688,11 @@ TEST_F(User_privileges_test, validate_role_privileges_direct) {
   //  - write_role -> create_role
   session->execute("GRANT read_role TO test_user");
   session->execute("GRANT create_role TO test_user");
+#ifndef MARIADB_BUILD
   session->execute("SET DEFAULT ROLE create_role TO test_user");
+#else
+  session->execute("SET DEFAULT ROLE create_role FOR test_user");
+#endif
   session->execute("GRANT read_role TO write_role");
   session->execute("GRANT write_role TO create_role");
 

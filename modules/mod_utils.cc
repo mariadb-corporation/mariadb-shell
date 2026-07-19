@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +36,11 @@
 #include "mysqlshdk/include/shellcore/interrupt_handler.h"
 #include "mysqlshdk/include/shellcore/shell_options.h"
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef MARIADB_BUILD
+#include <errmsg.h>  // CR_* client error codes
+#elif defined(HAVE_X_PROTOCOL)
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/utils/atomic_flag.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -365,6 +370,7 @@ shcore::Value::Map_type_ref get_connection_map(
 
 namespace {
 
+#ifdef HAVE_X_PROTOCOL
 std::shared_ptr<mysqlshdk::db::mysqlx::Session> create_x_session() {
   auto xsession = mysqlshdk::db::mysqlx::Session::create();
 
@@ -373,6 +379,7 @@ std::shared_ptr<mysqlshdk::db::mysqlx::Session> create_x_session() {
 
   return xsession;
 }
+#endif
 
 std::shared_ptr<mysqlshdk::db::ISession> create_and_connect(
     const Connection_options &connection_options) {
@@ -394,6 +401,7 @@ std::shared_ptr<mysqlshdk::db::ISession> create_and_connect(
 
       return session;
     } catch (const mysqlshdk::db::Error &e) {
+#ifdef HAVE_X_PROTOCOL
       // Unknown message received from server indicates an attempt to create
       // a classic Protocol session through the MySQL protocol
       int code = e.code();
@@ -409,13 +417,19 @@ std::shared_ptr<mysqlshdk::db::ISession> create_and_connect(
       } else {
         throw;
       }
+#else
+      // No X protocol fallback in the MariaDB build.
+      throw;
+#endif
     }
   }
 
   switch (type) {
+#ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       session = create_x_session();
       break;
+#endif
     case mysqlsh::SessionType::Classic:
       session = mysqlshdk::db::mysql::Session::create();
       break;

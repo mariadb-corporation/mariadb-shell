@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -479,6 +480,10 @@ void Shell_core_test_wrapper::SetUp() {
     output_handler.set_log_level(shcore::Logger::LOG_DEBUG);
     enable_debug();
   }
+
+  execute_internal("sandbox.vendor()");
+  server_vendor =
+      shcore::str_strip(std::exchange(output_handler.internal_std_out, {}));
 }
 
 void Shell_core_test_wrapper::TearDown() {

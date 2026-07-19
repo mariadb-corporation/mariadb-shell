@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -493,6 +494,11 @@ TEST_F(Config_server_handler_test, apply) {
   // Verify if the GTID_MODE is the one expected to run the test else skip test.
   std::optional<std::string> init_gtid_mode =
       instance.get_sysvar_string("gtid_mode", Var_qualifier::SESSION);
+
+  if (!init_gtid_mode.has_value()) {
+    SKIP_TEST("Test server does not support GTID_MODE");
+  }
+
   if (*init_gtid_mode != "OFF") {
     SKIP_TEST("Test server must have GTID_MODE=OFF, current value: " +
               *init_gtid_mode);
@@ -720,8 +726,10 @@ TEST_F(Config_server_handler_test, undo_ignore) {
   // reset values
   instance.set_sysvar_default("auto_increment_increment",
                               Var_qualifier::GLOBAL);
+#ifdef HAVE_ADMIN_API
   instance.set_sysvar_default("enforce_gtid_consistency",
                               Var_qualifier::GLOBAL);
+#endif
   instance.set_sysvar_default("character_set_client", Var_qualifier::GLOBAL);
 }
 

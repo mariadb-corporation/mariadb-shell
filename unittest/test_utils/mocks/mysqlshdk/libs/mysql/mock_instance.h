@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -109,9 +110,10 @@ class Mock_instance : public mysqlshdk::mysql::IInstance {
   MOCK_CONST_METHOD2(user_exists, bool(std::string_view, std::string_view));
   MOCK_CONST_METHOD3(set_user_password, void(std::string_view, std::string_view,
                                              std::string_view));
-  //   MOCK_CONST_METHOD2(get_user_privileges,
-  //                      std::unique_ptr<mysqlshdk::mysql::User_privileges>(
-  //                          const std::string &, const std::string &));
+//   MOCK_CONST_METHOD2(get_user_privileges,
+//                      std::unique_ptr<mysqlshdk::mysql::User_privileges>(
+//                          const std::string &, const std::string &));
+#ifndef MARIADB_BUILD
   std::unique_ptr<mysqlshdk::mysql::User_privileges> get_user_privileges(
       const std::string & /* user */, const std::string & /* host */,
       bool /* allow_skip_grants_user */) const override {
@@ -126,6 +128,7 @@ class Mock_instance : public mysqlshdk::mysql::IInstance {
     // method for now
     return {};
   }
+#endif
   MOCK_CONST_METHOD0(is_set_persist_supported, std::optional<bool>());
   MOCK_CONST_METHOD1(get_persisted_value,
                      std::optional<std::string>(std::string_view));

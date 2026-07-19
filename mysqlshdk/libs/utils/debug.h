@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,12 +27,38 @@
 #ifndef MYSQLSHDK_LIBS_UTILS_DEBUG_H_
 #define MYSQLSHDK_LIBS_UTILS_DEBUG_H_
 
+#ifdef MARIADB_BUILD
+// MariaDB's my_dbug.h needs my_bool (mysql.h) and ATTRIBUTE_COLD (my_global.h)
+// included first. my_config.h (pulled by my_global.h) redefines autoconf
+// size/HAVE_* macros that Python's pyconfig.h also defines; the values are
+// identical, so silence the redefinition diagnostic for builds combining both
+// (HAVE_PYTHON). "-Wmacro-redefined" is a Clang diagnostic name; GCC does not
+// recognize it (and would error under -Werror=pragmas), while GCC stays silent
+// for identical redefinitions anyway, so the suppression is Clang-only.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+#endif
+#include <mysql.h>
+#include <my_global.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#endif
 #include <my_dbug.h>
+
+// debug.h must include the server my_global.h/my_config.h above (my_dbug.h
+// depends on them), but must not leak their unguarded Windows POSIX-compat
+// macros (sleep/setenv/strtok_r) to the many TUs that include debug.h and call
+// shcore::sleep / shcore::setenv. Undo them here at the gateway. Inert off
+// Windows/MySQL. (Direct includers of my_config.h still need their own cleanup.)
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
 #include <set>
+#include <sstream>
 #include <string>
 
 namespace shcore {
@@ -197,7 +224,12 @@ bool debug_object_dump_report(bool verbose);
 
 // Right now, this is in mysql-trunk only, remove once DBUG_TRACE hits
 // our target branch
-#if !defined(DBUG_PRETTY_FUNCTION) && !defined(NDEBUG)
+// DBUG_OFF is checked in addition to NDEBUG: the DBUG runtime (_db_enter_,
+// _db_stack_frame_, ...) exists only when the linked MariaDB was built with
+// DBUG, which the shell signals by *not* defining DBUG_OFF. A Debug shell
+// (NDEBUG unset) linked against a non-Debug MariaDB has DBUG_OFF defined, so
+// fall back to the no-op DBUG_TRACE below instead of referencing missing _db_*.
+#if !defined(DBUG_PRETTY_FUNCTION) && !defined(NDEBUG) && !defined(DBUG_OFF)
 
 #if defined(__GNUC__)
 // GCC, Clang, and compatible compilers.
@@ -241,7 +273,7 @@ class AutoDebugTrace {
     }
   }
 
-  ~AutoDebugTrace() { _db_return_(0, &m_stack_frame); }
+  ~AutoDebugTrace() { _db_return_(&m_stack_frame); }
 
  private:
   _db_stack_frame_ m_stack_frame;
@@ -261,12 +293,16 @@ class AutoDebugTrace {
 
 #endif
 
-#if !defined(NDEBUG)
+// See the note above: only override DBUG_LOG with the _db_*()-based
+// implementation when the DBUG runtime is actually present (DBUG not turned
+// off). Otherwise leave MariaDB's no-op DBUG_LOG from my_dbug.h in place.
+#if !defined(NDEBUG) && !defined(DBUG_OFF)
 
 // workaround for BUG30071277
 
 #undef DBUG_LOG
 
+#ifndef MARIADB_BUILD
 #define DBUG_LOG(keyword, v)                 \
   do {                                       \
     _db_pargs_(__LINE__, keyword);           \
@@ -276,7 +312,27 @@ class AutoDebugTrace {
       _db_doprnt_("%s", sout.str().c_str()); \
     }                                        \
   } while (0)
+#else
+#define DBUG_LOG(keyword, v)                 \
+  do {                                       \
+    _db_pargs_(__LINE__, keyword);           \
+    if (DBUG_IF(keyword)) {                  \
+      std::ostringstream sout;               \
+      sout << v;                             \
+      _db_doprnt_("%s", sout.str().c_str()); \
+    }                                        \
+  } while (0)
+#endif  // MARIADB_BUILD
 
 #endif  // !NDEBUG
+
+#ifdef MARIADB_BUILD
+// MariaDB's my_dbug.h provides DBUG_IF but not MySQL's DBUG_EVALUATE_IF.
+// In NDEBUG builds DBUG_IF is 0, so this yields the false value, matching
+// MySQL's non-debug behavior.
+#ifndef DBUG_EVALUATE_IF
+#define DBUG_EVALUATE_IF(keyword, a, b) (DBUG_IF(keyword) ? (a) : (b))
+#endif
+#endif  // MARIADB_BUILD
 
 #endif  // MYSQLSHDK_LIBS_UTILS_DEBUG_H_

@@ -5,7 +5,15 @@ from contextlib import ExitStack
 # constants
 current_helper = shell.options["credentialStore.helper"]
 has_login_path = "login-path" in shell.list_credential_helpers()
-used_helpers = ["plaintext", "login-path"]
+has_secret_service = "secret-service" in shell.list_credential_helpers()
+
+used_helpers = ["plaintext"]
+
+if has_login_path:
+    used_helpers.append("login-path")
+
+if has_secret_service:
+    used_helpers.append("secret-service")
 
 test_key = "my-key"
 test_secret = "my-secret"
@@ -189,11 +197,22 @@ with TEST("plaintext"):
     EXPECT_EQ(test_secret, actual_secret)
 
 #@<> WL16958-ET_1 - multiple helpers
+
+def get_alternative_helper():
+    if "windows" == __os_type:
+        return "windows-credential"
+    elif "macos" == __os_type:
+        return "keychain"
+    elif has_login_path:
+        return "login-path"
+    elif has_secret_service:
+        return "secret-service"
+
 with TEST("plaintext"):
     # store
     EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, test_secret))
     # switch to a different helper
-    alternative_helper = "windows-credential" if "windows" == __os_type else "login-path"
+    alternative_helper = get_alternative_helper()
     EXPECT_NO_THROWS(lambda: set_helper(alternative_helper))
     # read fails
     EXPECT_THROWS(lambda: shell.read_secret(test_key), "RuntimeError: Failed to read the secret: Could not find the secret")

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +25,9 @@
  */
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "unittest/mysqlshdk/libs/db/db_common.h"
 #include "unittest/test_utils.h"
@@ -33,10 +36,15 @@ namespace mysqlshdk {
 namespace db {
 
 std::shared_ptr<mysqlshdk::db::ISession> Db_tests::make_session() {
+#ifdef HAVE_X_PROTOCOL
   if (is_classic)
     return mysqlshdk::db::mysql::Session::create();
   else
     return mysqlshdk::db::mysqlx::Session::create();
+#else
+  // X protocol is not available on MariaDB; only classic sessions are tested.
+  return mysqlshdk::db::mysql::Session::create();
+#endif
 }
 
 void Db_tests::TearDownTestCase() { run_script_classic({"drop schema xtest"}); }
@@ -49,12 +57,14 @@ void Db_tests::SetUp() {
 }
 
 bool Db_tests::switch_proto() {
+#ifdef HAVE_X_PROTOCOL
   if (is_classic) {
     is_classic = false;
     std::cout << "Testing X proto\n";
     session = mysqlshdk::db::mysqlx::Session::create();
     return true;
   }
+#endif
   return false;
 }
 
@@ -149,9 +159,18 @@ TEST_F(Db_tests, query) {
 
     // Uses a stored procedure to test multi result behavior
     {
-      std::string procedure =
-          "create procedure test_query() begin select @@server_id; select "
-          "@@server_uuid; end";
+      std::string procedure;
+      if (session->get_server_vendor() == ServerVendor::MySQL) {
+        procedure =
+            "create procedure test_query() begin select @@server_id; select "
+            "@@server_uuid; end";
+
+      } else {
+        procedure =
+            "create procedure test_query() begin select @@server_id; select "
+            "@@server_uid; end";
+      }
+
       EXPECT_NO_THROW(session->execute(procedure));
       auto result = session->query("call test_query()");
       EXPECT_TRUE(result->next_resultset());
@@ -239,8 +258,21 @@ TEST_F(Db_tests, connect_read_timeout) {
 
   EXPECT_NO_THROW(session->execute("SELECT SLEEP(0)"));
 
+#if defined(MARIADB_BUILD)
+#if defined(_WIN32)
+  EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
+                    "Lost connection to server during query");
+#elif defined(__linux__)
+  EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
+                    "TLS/SSL error: Connection timed out (110)");
+#else
+  EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
+                    "Operation timed out");
+#endif
+#else
   EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
                     "Lost connection to MySQL server during query");
+#endif
 }
 
 TEST_F(Db_tests, connect_write_timeout) {
@@ -267,8 +299,13 @@ TEST_F(Db_tests, connect_max_allowed_packet) {
   session->execute("insert into big values (1, repeat('x', 10000))");
 
   auto result = session->query("select * from big");
+#ifndef MARIADB_BUILD
   EXPECT_THROW_LIKE(result->fetch_one(), mysqlshdk::db::Error,
                     "Got packet bigger than 'max_allowed_packet' bytes");
+#else
+  EXPECT_THROW_LIKE(result->fetch_one(), mysqlshdk::db::Error,
+                    "Lost connection to server during query");
+#endif
 }
 
 }  // namespace db

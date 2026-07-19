@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,9 +55,19 @@ struct Mysqld_ername {
 };
 
 #if !defined(DOXYGEN_JS) && !defined(DOXYGEN_PY)
+#ifdef MARIADB_BUILD
+// MariaDB's mysqld_ername.h provides fewer fields per entry than the struct
+// above (the trailing ones zero-initialize, which is fine for name<->code
+// lookup).
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
 static const Mysqld_ername k_error_names[] = {
 #include "mysqld_ername.h"  // NOLINT
 };
+#ifdef MARIADB_BUILD
+#pragma GCC diagnostic pop
+#endif
 #endif
 
 struct Mysqlclient_ername {
@@ -131,7 +142,9 @@ static const Mysqlclient_ername k_client_error_names[] = {
     {"CR_SHARED_MEMORY_CONNECT_SET_ERROR", CR_SHARED_MEMORY_CONNECT_SET_ERROR},
     {"CR_CONN_UNKNOW_PROTOCOL", CR_CONN_UNKNOW_PROTOCOL},
     {"CR_INVALID_CONN_HANDLE", CR_INVALID_CONN_HANDLE},
+#ifndef MARIADB_BUILD
     {"CR_UNUSED_1", CR_UNUSED_1},
+#endif
     {"CR_FETCH_CANCELED", CR_FETCH_CANCELED},
     {"CR_NO_DATA", CR_NO_DATA},
     {"CR_NO_STMT_METADATA", CR_NO_STMT_METADATA},
@@ -144,6 +157,7 @@ static const Mysqlclient_ername k_client_error_names[] = {
     {"CR_AUTH_PLUGIN_CANNOT_LOAD", CR_AUTH_PLUGIN_CANNOT_LOAD},
     {"CR_DUPLICATE_CONNECTION_ATTR", CR_DUPLICATE_CONNECTION_ATTR},
     {"CR_AUTH_PLUGIN_ERR", CR_AUTH_PLUGIN_ERR},
+#ifndef MARIADB_BUILD
     {"CR_INSECURE_API_ERR", CR_INSECURE_API_ERR},
     {"CR_FILE_NAME_TOO_LONG", CR_FILE_NAME_TOO_LONG},
     {"CR_SSL_FIPS_MODE_ERR", CR_SSL_FIPS_MODE_ERR},
@@ -160,6 +174,7 @@ static const Mysqlclient_ername k_client_error_names[] = {
     {"CR_CANT_GET_SESSION_DATA", CR_CANT_GET_SESSION_DATA},
     {"CR_INVALID_CLIENT_CHARSET", CR_INVALID_CLIENT_CHARSET},
     {"CR_TLS_SERVER_NOT_FOUND", CR_TLS_SERVER_NOT_FOUND},
+#endif
     {"CR_ERROR_LAST", CR_ERROR_LAST},
     {"CR_MAX_ERROR", CR_MAX_ERROR}};
 

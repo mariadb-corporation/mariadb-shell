@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -39,12 +40,21 @@ class Enum_set {
  public:
   constexpr Enum_set() noexcept : _value(0) {}
 
+  // GCC (14/15) issues a spurious -Wmaybe-uninitialized here for the variadic
+  // constructor with fold expression; the members are fully initialized.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
   template <typename... T>
   constexpr explicit Enum_set(Enum value, T &&...values) noexcept
       : _value(ord(value)) {
     if constexpr (sizeof...(values) > 0)
       _value = ((_value | ord(values)) | ...);
   }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
   constexpr static Enum_set any() { return all(); }
 

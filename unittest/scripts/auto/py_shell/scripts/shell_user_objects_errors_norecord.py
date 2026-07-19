@@ -415,24 +415,34 @@ shell.add_extension_object_member(obj, "function", f5,
                           })
 
 #@ Object parameter 'classes' must hold valid class names (singular)
+if __have_x_protocol:
+  classes = ["Session", "Table", "Weirdie"]
+else:
+  classes = ["ClassicSession", "Weirdie"]
+
 shell.add_extension_object_member(obj, "function", f5,
                           {
                             "parameters":[
                             {
                               "name": "sample",
                               "type": "object",
-                              "classes": ["Session", "Table", "Weirdie"]
+                              "classes": classes
                             }]
                           })
 
 #@ Object parameter 'classes' must hold valid class names (plural)
+if __have_x_protocol:
+  classes = ["Unexisting", "Table", "Weirdie"]
+else:
+  classes = ["Unexisting", "ClassicSession", "Weirdie"]
+
 shell.add_extension_object_member(obj, "function", f5,
                           {
                             "parameters":[
                             {
                               "name": "sample",
                               "type": "object",
-                              "classes": ["Unexisting", "Table", "Weirdie"]
+                              "classes": classes
                             }]
                           })
 
@@ -635,7 +645,14 @@ shell.register_global("goodName", obj)
 #@ Registering global using existing global names
 shell.connect(__mysql_uri + "/mysql")
 other = shell.create_extension_object()
-for name in ["shell", "dba", "util", "mysql", "mysqlx", "session", "db", "sys", "os", "goodName"]:
+global_names = ["shell", "util", "mysql", "session", "db", "sys", "os", "goodName"]
+if __have_admin_api:
+  global_names.append("dba")
+
+if __have_x_protocol:
+  global_names.append("mysqlx")
+
+for name in global_names:
   try:
     shell.register_global(name, other)
   except Exception as err:

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -252,7 +253,7 @@ class Shell_api_tester : public Helper_tester {
 
   void use_wrapper(Shell_test_wrapper *wrapper) override {
     m_wrapper = wrapper;
-    m_wrapper->execute("\\js");
+    m_wrapper->execute("\\py");
   }
 
   void select_helper(const std::string &name) override {
@@ -297,7 +298,9 @@ class Shell_api_tester : public Helper_tester {
       execute(shcore::str_format("print(shell.%s(%s));", m_config.get,
                                  shcore::quote_string(id, '\"').c_str()));
 
-      *secret = output_handler().std_out;
+      // print() appends a trailing newline; strip it so the captured value
+      // matches the stored secret exactly
+      *secret = shcore::str_strip(output_handler().std_out);
 
       return output_handler().std_err.empty();
     } else {
@@ -427,11 +430,11 @@ class Shell_credential_api_tester : public Shell_api_tester {
   Shell_credential_api_tester()
       : Shell_api_tester({
             Secret_type::PASSWORD,
-            "deleteAllCredentials",
-            "deleteCredential",
-            "listCredentials",
+            "delete_all_credentials",
+            "delete_credential",
+            "list_credentials",
             nullptr,
-            "storeCredential",
+            "store_credential",
         }) {}
 
  private:
@@ -457,11 +460,11 @@ class Shell_secret_api_tester : public Shell_api_tester {
   Shell_secret_api_tester()
       : Shell_api_tester({
             Secret_type::GENERIC,
-            "deleteAllSecrets",
-            "deleteSecret",
-            "listSecrets",
-            "readSecret",
-            "storeSecret",
+            "delete_all_secrets",
+            "delete_secret",
+            "list_secrets",
+            "read_secret",
+            "store_secret",
         }) {}
 
  private:
@@ -1215,7 +1218,9 @@ void verify_available_helpers(const std::set<std::string> &helpers) {
 #ifdef __APPLE__
   expected.emplace("keychain");
 #endif  // ! __APPLE__
+#ifdef HAVE_LOGIN_PATH
   expected.emplace("login-path");
+#endif
 #endif  // ! _WIN32
 
   std::set<std::string> missing;

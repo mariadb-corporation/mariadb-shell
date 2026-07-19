@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +30,9 @@
 
 #include "mysqlshdk/include/shellcore/shell_init.h"
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/db/row.h"
 #include "mysqlshdk/libs/utils/logger.h"
 
@@ -127,10 +130,11 @@ void kill_query(const std::weak_ptr<ISession> &weak_session) {
       std::shared_ptr<ISession> kill_session;
 
       switch (co.get_session_type()) {
+        #ifdef HAVE_X_PROTOCOL
         case mysqlsh::SessionType::X:
           kill_session = mysqlx::Session::create();
           break;
-
+        #endif
         case mysqlsh::SessionType::Classic:
           kill_session = mysql::Session::create();
           break;

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -210,6 +211,7 @@ std::string pick_prompt_theme() {
   return path;
 }
 
+#ifdef HAVE_ADMIN_API
 static std::string option_for(
     mysqlsh::Shell_options::Storage::Redirect_to target) {
   using Redirect_to = mysqlsh::Shell_options::Storage::Redirect_to;
@@ -227,7 +229,9 @@ static std::string option_for(
 
   throw std::logic_error("No option associated");
 }
+#endif
 
+#ifdef HAVE_ADMIN_API
 static void handle_redirect(
     const std::shared_ptr<mysqlsh::Command_line_shell> &shell,
     mysqlsh::Shell_options::Storage::Redirect_to target) {
@@ -248,6 +252,7 @@ static void handle_redirect(
     }
   }
 }
+#endif
 
 static std::string version_string(const char *argv0, bool extra) {
   std::string version_msg;
@@ -582,7 +587,7 @@ int main(int argc, char **argv) {
 
           const auto target = options.connection_options();
 
-          bool auto_protocol = !target.has_scheme();
+          [[maybe_unused]] bool auto_protocol = !target.has_scheme();
 
           if (shell_options->got_cmdline_password) {
             mysqlsh::current_console()->print_warning(
@@ -593,6 +598,10 @@ int main(int argc, char **argv) {
           std::function<void(std::shared_ptr<mysqlshdk::db::ISession>)>
               extra_init;
 
+#ifndef MARIADB_BUILD
+          // FIDO/WebAuthn device registration (--register-factor) relies on the
+          // MySQL fido auth plugin, which is not available in the MariaDB
+          // build.
           if (!options.register_factor.empty()) {
             extra_init =
                 [&options](std::shared_ptr<mysqlshdk::db::ISession> session) {
@@ -607,11 +616,13 @@ int main(int argc, char **argv) {
                   }
                 };
           }
+#endif
 
           // Connect to the requested instance
           shell->connect(target, true, std::move(extra_init),
                          !options.prompt_password);
 
+#ifdef HAVE_X_PROTOCOL
           // if protocol was auto-detected in 5.7 and turned out to be X
           // protocol, then recommend using --mysqlx. This is a problem in 5.7
           // because differences in the initial handshake causes clients to
@@ -628,9 +639,12 @@ int main(int argc, char **argv) {
                 "specified when using the X Protocol (--mysqlx or mysqlx://) "
                 "for faster connect times, specially in older MySQL versions.");
           }
+#endif
 
           // If redirect is requested, then reconnect to the right instance
+#ifdef HAVE_ADMIN_API
           handle_redirect(shell, options.redirect_session);
+#endif
         } catch (const mysqlshdk::db::Error &e) {
           std::string error = "MySQL Error ";
           error.append(std::to_string(e.code()));
@@ -652,7 +666,7 @@ int main(int argc, char **argv) {
         }
       } else {
         shell->restore_print();
-
+#ifdef HAVE_ADMIN_API
         if (mysqlsh::Shell_options::Storage::Redirect_to::None !=
             options.redirect_session) {
           mysqlsh::current_console()->print_error(
@@ -661,6 +675,7 @@ int main(int argc, char **argv) {
               "ReplicaSet.");
           return 1;
         }
+#endif
       }
 
       try {

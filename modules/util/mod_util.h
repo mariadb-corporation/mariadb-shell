@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +33,7 @@
 #include <vector>
 
 #include "modules/mod_extensible_object.h"
+#ifdef HAVE_DUMP_AND_LOAD
 #include "modules/util/binlog/dump_binlogs_options.h"
 #include "modules/util/binlog/load_binlogs_options.h"
 #include "modules/util/copy/copy_instance_options.h"
@@ -43,8 +45,12 @@
 #include "modules/util/dump/export_table_options.h"
 #include "modules/util/import_table/import_table_options.h"
 #include "modules/util/load/load_dump_options.h"
+#endif
+#ifdef HAVE_UPGRADE_CHECKER
 #include "modules/util/upgrade_check.h"
+#endif
 #include "mysqlshdk/libs/db/connection_options.h"
+#include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/utils/document_parser.h"
 
 namespace shcore {
@@ -74,6 +80,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
 
   std::string class_name() const override { return "Util"; };
 
+#ifdef HAVE_UPGRADE_CHECKER
 #if DOXYGEN_JS
   Undefined checkForServerUpgrade(ConnectionData connectionData,
                                   Dictionary options);
@@ -86,7 +93,10 @@ class SHCORE_PUBLIC Util : public Extensible_object {
       const std::optional<mysqlshdk::db::Connection_options>
           &connection_options = {},
       const upgrade_checker::Upgrade_check_options &options = {});
+#endif  // HAVE_UPGRADE_CHECKER
 
+#ifdef HAVE_DUMP_AND_LOAD
+#ifdef HAVE_X_PROTOCOL
 #if DOXYGEN_JS
   Undefined importJson(String file, Dictionary options);
 #elif DOXYGEN_PY
@@ -94,7 +104,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
 #endif
   void import_json(const std::string &file,
                    const Import_json_options &options = {});
-
+#endif
 #if DOXYGEN_JS
   Undefined importTable(List urls, Dictionary options);
 #elif DOXYGEN_PY
@@ -181,7 +191,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
                    copy::Copy_tables_options &&options = {});
 
 #if DOXYGEN_JS
-  Undefined dumpBinlogs(String outputUrl, Dictionary options);
+  Undefined copyTables(String outputUrl, Dictionary options);
 #elif DOXYGEN_PY
   None dump_binlogs(str outputUrl, dict options);
 #endif
@@ -195,6 +205,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
 #endif
   void load_binlogs(const std::string &url,
                     binlog::Load_binlogs_options &&options);
+#endif
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> global_session() const;

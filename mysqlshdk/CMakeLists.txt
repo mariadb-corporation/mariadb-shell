@@ -1,4 +1,5 @@
 # Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -78,14 +79,36 @@ merge_convenience_libraries(mysqlshdk-static
     yparser
     SKIP_INSTALL)
 
-target_link_libraries(mysqlshdk-static PUBLIC
-          ${PYTHON_LIBRARIES}
-          ${MYSQL_LIBRARIES}
-          ${MYSQLX_LIBRARIES}
-          ${PROTOBUF_LIBRARIES}
-          ${LZ4_LIBRARY}
-          ${SSL_LIBRARIES}
-          ${ANTLR4_LIBRARIES})
+IF(NOT HAVE_X_PROTOCOL)
+  # X protocol (libmysqlxclient), protobuf and lz4 are not used by the MariaDB
+  # build. zstd (storage compression) and zlib (gz compression + libmariadb)
+  # are still required.
+  # zlib: MYSQL_CHECK_ZLIB() only sets ZLIB_LIBRARY when MYSQL_SOURCE/BUILD_DIR
+  # are set (bundled path), which is not the case for MariaDB. On non-Windows the
+  # system zlib links as 'z'; on Windows there is no 'z.lib', so use the
+  # CMake/vcpkg ZLIB::ZLIB target instead.
+  IF(WIN32)
+    find_package(ZLIB REQUIRED)
+    SET(_mariadb_zlib ZLIB::ZLIB)
+  ELSE()
+    SET(_mariadb_zlib z)
+  ENDIF()
+  target_link_libraries(mysqlshdk-static PUBLIC
+            ${PYTHON_LIBRARIES}
+            ${MYSQL_LIBRARIES}
+            ${_mariadb_zlib}
+            ${SSL_LIBRARIES}
+            ${ANTLR4_LIBRARIES})
+ELSE()
+  target_link_libraries(mysqlshdk-static PUBLIC
+            ${PYTHON_LIBRARIES}
+            ${MYSQL_LIBRARIES}
+            ${MYSQLX_LIBRARIES}
+            ${PROTOBUF_LIBRARIES}
+            ${LZ4_LIBRARY}
+            ${SSL_LIBRARIES}
+            ${ANTLR4_LIBRARIES})
+ENDIF()
 
 IF(HAVE_JIT_EXECUTOR)
     target_link_libraries(mysqlshdk-static PUBLIC ${JIT_EXECUTOR_LIBRARY})

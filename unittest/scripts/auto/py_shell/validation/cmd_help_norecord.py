@@ -12,16 +12,20 @@ use the following wildcards:
 
 The following are the main help categories:
 
+?{__have_admin_api}
  - AdminAPI       The AdminAPI is an API that enables configuring and managing
                   InnoDB Clusters, ReplicaSets, ClusterSets, among other
                   things.
+?{}
  - Shell Commands Provides details about the available built-in shell commands.
  - ShellAPI       Contains information about the shell and util global objects
                   as well as the mysql module that enables executing SQL on
                   MySQL Servers.
  - SQL Syntax     Entry point to retrieve syntax help on SQL statements.
+?{__have_x_protocol}
  - X DevAPI       Details the mysqlx module as well as the capabilities of the
                   X DevAPI which enable working with MySQL as a Document Store
+?{}
 
 The available topics include:
 
@@ -50,7 +54,9 @@ The following shell commands are available:
  - \exit               Exits the MySQL Shell, same as \quit.
  - \help       (\?,\h) Prints help information about a specific topic.
  - \history            View and edit command line history.
+?{__have_js}
  - \js                 Switches to JavaScript processing mode.
+?{}
  - \nopager            Disables the current pager.
  - \nowarnings (\w)    Don't show warnings after every statement.
  - \option             Allows working with the available shell options.
@@ -75,6 +81,7 @@ GLOBAL OBJECTS
 
 The following modules and objects are ready for use when the shell starts:
 
+?{__have_admin_api and __have_x_protocol}
  - dba    Used for InnoDB Cluster, ReplicaSet, and ClusterSet administration.
  - mysql  Support for connecting to MySQL servers using the classic MySQL
           protocol.
@@ -82,19 +89,31 @@ The following modules and objects are ready for use when the shell starts:
  - shell  Gives access to general purpose functions and properties.
  - util   Global object that groups miscellaneous tools like upgrade checker
           and JSON import.
+?{}
+?{not __have_admin_api and not __have_x_protocol}
+ - mysql Support for connecting to MySQL servers using the classic MySQL
+         protocol.
+ - shell Gives access to general purpose functions and properties.
+ - util  Global object that groups miscellaneous tools like upgrade checker and
+         JSON import.
+?{}
 
 For additional information on these global objects use: <object>.help()
 
 EXAMPLES
+?{__have_admin_api}
 \? AdminAPI
       Displays information about the AdminAPI.
 
+?{}
 \? \connect
       Displays usage details for the \connect command.
 
+?{__have_admin_api}
 \? check_instance_configuration
       Displays usage details for the dba.check_instance_configuration function.
 
+?{}
 \? sql syntax
       Displays the main SQL help categories.
 
@@ -121,16 +140,20 @@ use the following wildcards:
 
 The following are the main help categories:
 
- - AdminAPI       The AdminAPI is an API that enables configuring and managing
+?{__have_admin_api}
+- AdminAPI       The AdminAPI is an API that enables configuring and managing
                   InnoDB Clusters, ReplicaSets, ClusterSets, among other
                   things.
+?{}
  - Shell Commands Provides details about the available built-in shell commands.
  - ShellAPI       Contains information about the shell and util global objects
                   as well as the mysql module that enables executing SQL on
                   MySQL Servers.
  - SQL Syntax     Entry point to retrieve syntax help on SQL statements.
+?{__have_x_protocol}
  - X DevAPI       Details the mysqlx module as well as the capabilities of the
                   X DevAPI which enable working with MySQL as a Document Store
+?{}
 
 Use \? \help for additional details.
 
@@ -178,7 +201,9 @@ The following shell commands are available:
  - \g                        Send command to mysql server.
  - \help             (\?,\h) Prints help information about a specific topic.
  - \history                  View and edit command line history.
+?{__have_js}
  - \js                       Switches to JavaScript processing mode.
+?{}
  - \nopager                  Disables the current pager.
  - \nowarnings       (\w)    Don't show warnings after every statement.
  - \option                   Allows working with the available shell options.
@@ -211,9 +236,14 @@ EXAMPLES
 
 ADDITIONAL FEATURES
 
+?{__have_js}
 Scripting capabilities as well as other utilities are available in JavaScript
 (\js) and Python (\py) modes, switch to them and type \? for additional
 information.
+?{not __have_js}
+Scripting capabilities as well as other utilities are available in Python (\py)
+mode, switch to it and type \? for additional information.
+?{}
 
 #@<OUT> Help Contents in SQL mode
 The Shell Help is organized in categories and topics. To get help for a
@@ -338,7 +368,9 @@ The following shell commands are available:
  - \exit               Exits the MySQL Shell, same as \quit.
  - \help       (\?,\h) Prints help information about a specific topic.
  - \history            View and edit command line history.
+?{__have_js}
  - \js                 Switches to JavaScript processing mode.
+?{}
  - \nopager            Disables the current pager.
  - \nowarnings (\w)    Don't show warnings after every statement.
  - \option             Allows working with the available shell options.
@@ -407,7 +439,7 @@ mysqlx.get_session
 #@<OUT> Help on unknown topic
 No help items found matching 'unknown'
 
-#@<OUT> Help on topic with several matches
+#@<OUT> Help on topic with several matches {__have_x_protocol}
 Found several entries matching session
 
 The following topics were found at the AdminAPI category:
@@ -426,7 +458,25 @@ For help on a specific topic use: \? <topic>
 
 e.g.: \? dba.session
 
-#@<OUT> Help for sandbox operations
+#@<OUT> Help on topic with several matches {__mariadb_build}
+Found several entries matching delete*
+
+The following topics were found at the ShellAPI category:
+
+- shell.delete_all_credentials
+- shell.delete_all_secrets
+- shell.delete_credential
+- shell.delete_secret
+
+The following topics were found at the sandbox category:
+
+- sandbox.delete
+
+For help on a specific topic use: \? <topic>
+
+e.g.: \? shell.delete_all_credentials
+
+#@<OUT> Help for sandbox operations {__have_admin_api}
 Found several entries matching *sandbox*
 
 The following topics were found at the AdminAPI category:
@@ -441,7 +491,26 @@ For help on a specific topic use: \? <topic>
 
 e.g.: \? dba.delete_sandbox_instance
 
-#@<OUT> Help for SQL, with classic session, multiple matches
+#@<OUT> Help for sandbox operations {__mariadb_build}
+Found several entries matching *sandbox*
+
+The following topics were found at the sandbox category:
+
+- sandbox
+- sandbox.delete
+- sandbox.deploy
+- sandbox.help
+- sandbox.kill
+- sandbox.start
+- sandbox.stop
+- sandbox.vendor
+- sandbox.version
+
+For help on a specific topic use: \? <topic>
+
+e.g.: \? sandbox
+
+#@<OUT> Help for SQL, with classic session, multiple matches {not __mariadb_build}
 SELECT can also be used to retrieve rows computed without reference to
 any table.
 
@@ -460,10 +529,27 @@ For help on a specific topic use: \? <topic>
 
 e.g.: \? mysqlx.Table.select
 
-#@ Switching to SQL mode, same test gives results
+#@<OUT> Help for SQL, with classic session, multiple matches {__mariadb_build}
+DELETE [LOW_PRIORITY] [QUICK] [IGNORE] 
+${*}
+Additional entries were found matching delete
+
+The following topics were found at the sandbox category:
+
+- sandbox.delete
+
+For help on a specific topic use: \? <topic>
+
+e.g.: \? sandbox.delete
+
+#@ Switching to SQL mode, same test gives results mysql {sandbox.vendor() == "MySQL"}
 |Syntax:|
 |SELECT is used to retrieve rows selected from one or more tables|
 |The most commonly used clauses of SELECT statements are these:|
+
+
+#@ Switching to SQL mode, same test gives results mariadb {sandbox.vendor() == "MariaDB"}
+|DELETE [LOW_PRIORITY] [QUICK] [IGNORE]|
 
 #@ Switching back to Python, help for SQL Syntax
 |The following topics were found at the SQL Syntax category:|
@@ -504,16 +590,24 @@ DETAILS:
 
 The following objects can be called using this format:
 
+?{__have_admin_api}
 - dba - dba global object.
 - cluster - cluster returned by calling dba.getCluster().
+?{}
 - shell - shell global object.
 - shell.options - shell.options object.
 - util - util global object
 
 The operation name can be given in the following naming styles:
 
+?{not __mariadb_build}
 - Camel case: (e.g. createCluster, checkForServerUpgrade)
 - Kebab case: (e.g. create-cluster, check-for-server-upgrade)
+?{}
+?{__mariadb_build}
+- Camel case: (e.g. listCredentialHelpers)
+- Kebab case: (e.g. list-credential-helpers)
+?{}
 
 The arguments syntax allows mixing positional and named arguments (similar to
 args and *kwargs in Python):
@@ -553,7 +647,13 @@ option with a default value of TRUE.
 Following are some examples of command line calls as well as how they are
 mapped to the API method call.
 
+?{not __mariadb_build}
 EXAMPLES
+?{}
+?{__mariadb_build}
+EXAMPLE
+?{}
+?{__have_admin_api}
 $ mysqlsh -- dba deploy-sandbox-instance 1234 --password=secret
       mysql-js> dba.deploySandboxInstance(1234, {password: secret})
 
@@ -562,10 +662,10 @@ $ mysqlsh root@localhost:1234 -- dba create-cluster mycluster
 
 $ mysqlsh root@localhost:1234 -- cluster status
       mysql-js> cluster.status()
-
+?{}
 $ mysqlsh -- shell.options set-persist history.autoSave true
       mysql-js> shell.options.setPersist("history.autoSave", true)
-
+?{__have_upgrade_checker}
 $ mysqlsh -- util checkForServerUpgrade root@localhost --outputFormat=JSON
       mysql-js> util.checkForServerUpgrade("root@localhost",{outputFormat:
       "JSON"})
@@ -574,4 +674,4 @@ $ mysqlsh -- util check-for-server-upgrade --user=root --host=localhost
 --password=
       mysql-js> util.checkForServerUpgrade({user:"root", host:"localhost"},
       {password:""})
-
+?{}

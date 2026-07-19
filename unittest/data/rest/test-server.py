@@ -42,8 +42,6 @@ import sys
 import time
 import traceback
 
-from oci._vendor.jwt.utils import base64url_encode
-
 try:
     from urllib.parse import parse_qsl, urlparse
 except:

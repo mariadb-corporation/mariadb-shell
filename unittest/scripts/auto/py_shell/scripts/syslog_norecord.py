@@ -370,7 +370,7 @@ CLEANUP_SYSLOG()
 
 EXPECT_SYSLOG([ "SELECT 'ET_1 - 2'" ])
 
-#@<> WL14358-ET_1 - 3 - X connection, syslog is off
+#@<> WL14358-ET_1 - 3 - X connection, syslog is off {__have_x_protocol}
 PREPARE_SYSLOG(False, xuri)
 
 \sql SELECT 'ET_1 - 3'
@@ -379,7 +379,7 @@ CLEANUP_SYSLOG()
 
 EXPECT_NO_SYSLOG()
 
-#@<> WL14358-ET_1 - 4 - X connection, syslog is on
+#@<> WL14358-ET_1 - 4 - X connection, syslog is on {__have_x_protocol}
 PREPARE_SYSLOG(True, xuri)
 
 \sql SELECT 'ET_1 - 4'

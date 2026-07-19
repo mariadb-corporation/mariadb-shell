@@ -1,4 +1,5 @@
 /* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +72,7 @@ class Command_line_test : public Shell_base_test {
  protected:
   std::string _mysqlsh_path;
   const char *_mysqlsh;
+  mysqlshdk::db::ServerVendor _server_vendor;
   shcore::Process_launcher *_process = nullptr;
   std::mutex _process_mutex;
 

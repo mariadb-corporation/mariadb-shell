@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -728,9 +729,20 @@ class Provider_sql::Cache final {
   void fetch_system_variables(
       const std::shared_ptr<mysqlshdk::db::ISession> &session) {
     try {
-      fetch(session,
-            "SELECT VARIABLE_NAME FROM performance_schema.session_variables",
-            &m_instance.system_variables);
+      if (session->get_server_vendor() ==
+          mysqlshdk::db::ServerVendor::MariaDB) {
+        // MariaDB has no performance_schema.session_variables; system variables
+        // are exposed via information_schema (uppercase names). Lower-case them
+        // to match the canonical lowercase form completion emits elsewhere.
+        fetch(session,
+              "SELECT LOWER(VARIABLE_NAME) FROM "
+              "information_schema.SESSION_VARIABLES",
+              &m_instance.system_variables);
+      } else {
+        fetch(session,
+              "SELECT VARIABLE_NAME FROM performance_schema.session_variables",
+              &m_instance.system_variables);
+      }
     } catch (const mysqlshdk::db::Error &e) {
       // this table does not exist in 5.6
       log_warning(
@@ -790,11 +802,20 @@ class Provider_sql::Cache final {
       std::string query =
           "SELECT VARIABLE_NAME FROM "
           "performance_schema.user_variables_by_thread WHERE THREAD_ID=";
-
-      if (session->get_server_version() >= Version(8, 0, 16)) {
-        query += "PS_CURRENT_THREAD_ID()";
+      if (session->get_server_vendor() ==
+          mysqlshdk::db::ServerVendor::MariaDB) {
+        // MariaDB has neither PS_CURRENT_THREAD_ID() (MySQL 8.0.16+) nor a
+        // working sys.ps_thread_id() (returns NULL), so map the current
+        // connection to its performance_schema thread id directly.
+        query +=
+            "(SELECT THREAD_ID FROM performance_schema.threads "
+            "WHERE PROCESSLIST_ID=CONNECTION_ID())";
       } else {
-        query += "sys.ps_thread_id(NULL)";
+        if (session->get_server_version() >= Version(8, 0, 16)) {
+          query += "PS_CURRENT_THREAD_ID()";
+        } else {
+          query += "sys.ps_thread_id(NULL)";
+        }
       }
 
       fetch(session, query, &m_instance.user_variables);

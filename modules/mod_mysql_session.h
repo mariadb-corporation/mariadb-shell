@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -82,6 +83,7 @@ class SHCORE_PUBLIC ClassicSession
   String getSshUri();
   String getSqlMode();
   Integer getConnectionId();
+  String getServerVendor();
   ClassicResult runSql(String query, Array args = []);
   Undefined close();
   ClassicResult startTransaction();
@@ -104,6 +106,7 @@ class SHCORE_PUBLIC ClassicSession
   str get_ssh_uri();
   str get_sql_mode();
   str get_connection_id();
+  str get_server_vendor();
   ClassicResult run_sql(str query, list args = []);
   None close();
   ClassicResult start_transaction();

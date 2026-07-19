@@ -72,19 +72,27 @@ CREATE TABLE myisam_tbl2 (
 
 -- TABLESPACE
 
-CREATE TABLESPACE compat_ts1 ADD DATAFILE 'compat_ts1.ibd' ENGINE=INNODB;
+-- !MySQL Engine reads this block and ignores the MariaDB one:
+/*!50706 
+CREATE TABLESPACE compat_ts1 ADD DATAFILE 'compat_ts1.ibd' ENGINE=INNODB; 
+*/
+
+-- !MariaDB Engine reads this block and ignores the MySQL one:
+/*I! 
+CREATE TABLESPACE compat_ts1 ENGINE=INNODB; 
+*/
 
 CREATE TABLE ts1_tbl1 (
   pk INT PRIMARY KEY,
   val VARCHAR(40)
-) TABLESPACE = compat_ts1 CHARSET=utf8mb4;
+) TABLESPACE compat_ts1 CHARSET=utf8mb4;
 
 -- allowed tablespaces starting with innodb_
 
 CREATE TABLE ts1_tbl2 (
   pk INT PRIMARY KEY,
   val VARCHAR(40)
-) TABLESPACE = innodb_system CHARSET=utf8mb4;
+) TABLESPACE innodb_system CHARSET=utf8mb4;
 
 /*CREATE TABLE ts1_tbl3 (
   pk INT PRIMARY KEY,

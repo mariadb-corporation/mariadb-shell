@@ -280,12 +280,12 @@ call_mysqlsh([__mysqluripwd, "-i", "--tabbed", "--sql",
              "-e", "/* prefix comment */ list /* middle comment */ databases"])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: /* prefix comment */ list /* middle comment */ databases""")
 WIPE_OUTPUT()
-call_mysqlsh([__mysqluripwd, "-i", "--tabbed", "--js",
-             "-e", "session.runSql('/* prefix comment */ list /* middle comment */ databases')"])
+call_mysqlsh([__mysqluripwd, "-i", "--tabbed", "--py",
+             "-e", "session.run_sql('/* prefix comment */ list /* middle comment */ databases')"])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: /* prefix comment */ list /* middle comment */ databases""")
 WIPE_OUTPUT()
-call_mysqlsh([__uripwd, "-i", "--tabbed", "--js",
-             "-e", "session.runSql('/* prefix comment */ list /* middle comment */ databases')"])
+call_mysqlsh([__mysqluripwd, "-i", "--tabbed", "--py",
+             "-e", "session.run_sql('/* prefix comment */ list /* middle comment */ databases')"])
 EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: /* prefix comment */ list /* middle comment */ databases""")
 WIPE_OUTPUT()
 script_path = os.path.join(user_path, "test.sql")

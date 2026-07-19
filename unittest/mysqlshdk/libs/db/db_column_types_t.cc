@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -127,7 +128,14 @@ TEST_F(Db_tests, metadata_columns_alltypes) {
       ASSERT_EQ(5, columns.size());
       CHECK(0, Type::Date, 10, false, false, true);
       CHECK(1, Type::Time, 10, false, false, true);
-      CHECK(2, Type::DateTime, 19, false, false, true);
+
+      // In MySQL it is signed to support fracional seconds and TIMEDIFF()
+      bool unsigned_date_time = false;
+      if (session->get_server_vendor() == ServerVendor::MariaDB) {
+        // In MariaDB it is positive since no negative values can be used
+        unsigned_date_time = true;
+      }
+      CHECK(2, Type::DateTime, 19, unsigned_date_time, false, true);
       CHECK(3, Type::DateTime, 19, false, false, true);
       if (is_classic) {
         CHECK(4, Type::UInteger, 4, true, true, false);
@@ -199,6 +207,8 @@ TEST_F(Db_tests, metadata_columns_alltypes) {
       CHECK(1, Type::Set, 0, false, false, false);
     }
 
+#ifndef MARIADB_BUILD
+    // PORT-TODO: Verify Vector data type handling
     if (_target_server_version >= mysqlshdk::utils::Version(9, 0, 0)) {
       TABLE("t_vector");
       ASSERT_EQ(1, columns.size());
@@ -209,6 +219,7 @@ TEST_F(Db_tests, metadata_columns_alltypes) {
         CHECK(0, Type::Bytes, 32, false, false, true);
       }
     }
+#endif
   } while (switch_proto());
 #undef CHECK
 #undef TABLE

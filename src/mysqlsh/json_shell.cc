@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,11 +31,16 @@
 #include <utility>
 #include <vector>
 
+#include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
 
 namespace mysqlsh {
 Json_shell::Json_shell(std::shared_ptr<Shell_options> options)
     : Command_line_shell(options) {}
+
+mysqlshdk::db::ServerVendor Json_shell::get_server_vendor() {
+  return _shell->get_dev_session()->get_core_session()->get_server_vendor();
+}
 
 void Json_shell::process_line(const std::string &line) {
   rapidjson::Document doc;

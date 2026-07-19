@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +31,7 @@
 #include <utility>
 #include <vector>
 #include "modules/mod_utils.h"
+#ifdef HAVE_DUMP_AND_LOAD
 #include "modules/mysqlxtest_utils.h"
 #include "modules/util/binlog/binlog_dumper.h"
 #include "modules/util/binlog/binlog_loader.h"
@@ -44,9 +46,12 @@
 #include "modules/util/dump/export_table_options.h"
 #include "modules/util/import_table/import_table.h"
 #include "modules/util/import_table/import_table_options.h"
-#include "modules/util/json_importer.h"
+#ifdef HAVE_X_PROTOCOL
+#include "modules/util/json_importer.h"  // X protocol only
+#endif
 #include "modules/util/load/dump_loader.h"
 #include "modules/util/load/load_dump_options.h"
+#endif
 #include "mysqlshdk/include/scripting/shexcept.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/include/shellcore/console.h"
@@ -60,6 +65,7 @@
 #include "mysqlshdk/libs/utils/log_sql.h"
 #include "mysqlshdk/libs/utils/option_tracker.h"
 #include "mysqlshdk/libs/utils/profiling.h"
+#include "mysqlshdk/libs/utils/strformat.h"  // format_bytes (was via json_importer.h)
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
@@ -76,9 +82,12 @@ REGISTER_HELP(UTIL_BRIEF,
 
 Util::Util(shcore::IShell_core *owner)
     : Extensible_object("util", "util", true), _shell_core(*owner) {
+#ifdef HAVE_UPGRADE_CHECKER
   expose("checkForServerUpgrade", &Util::check_for_server_upgrade,
          "?connectionData", "?options")
       ->cli();
+#endif  // HAVE_UPGRADE_CHECKER
+#ifdef HAVE_DUMP_AND_LOAD
   expose("importJson", &Util::import_json, "path", "?options")->cli();
   expose("importTable", &Util::import_table_file, "path", "?options")
       ->cli(false);
@@ -103,8 +112,10 @@ Util::Util(shcore::IShell_core *owner)
 
   expose("dumpBinlogs", &Util::dump_binlogs, "outputUrl", "?options")->cli();
   expose("loadBinlogs", &Util::load_binlogs, "urls", "?options")->cli();
+#endif
 }
 
+#ifdef HAVE_UPGRADE_CHECKER
 REGISTER_HELP_FUNCTION(checkForServerUpgrade, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_CHECKFORSERVERUPGRADE, R"*(
 Performs series of tests on specified MySQL server to check if the upgrade
@@ -193,7 +204,9 @@ the RELOAD grant.
 @li The <b>schemaInconsistency</b> check ignores schemas/tables that contain
 unicode characters outside ASCII range.
 )*");
+#endif  // HAVE_UPGRADE_CHECKER
 
+#ifndef MARIADB_BUILD
 REGISTER_HELP_TOPIC(mysql_native_password, TOPIC, TOPIC_MYSQL_NATIVE_PASSWORD,
                     Contents, ALL);
 REGISTER_HELP_TOPIC_TEXT(TOPIC_MYSQL_NATIVE_PASSWORD, R"*(
@@ -226,7 +239,9 @@ util.upgradeAuthMethod({account:"account@localhost"})
 Please note, that upgrading authentication method of an account requires at
 least CREATE USER privileges.
 )*");
+#endif
 
+#ifdef HAVE_UPGRADE_CHECKER
 /**
  * \ingroup util
  * $(UTIL_CHECKFORSERVERUPGRADE_BRIEF)
@@ -303,6 +318,10 @@ void Util::check_for_server_upgrade(
 
   check_for_upgrade(config);
 }
+#endif  // HAVE_UPGRADE_CHECKER
+
+#ifdef HAVE_DUMP_AND_LOAD
+#ifdef HAVE_X_PROTOCOL
 
 REGISTER_HELP_FUNCTION(importJson, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_IMPORTJSON, R"*(
@@ -378,8 +397,8 @@ disabled. When <b>ignoreRegexOptions</b> is disabled, the regular expression
 will be converted to the form: /@<regex@>/@<options@>.
 )*");
 
-const shcore::Option_pack_def<Import_json_options>
-    &Import_json_options::options() {
+const shcore::Option_pack_def<Import_json_options> &
+Import_json_options::options() {
   static const auto opts =
       shcore::Option_pack_def<Import_json_options>()
           .optional("schema", &Import_json_options::schema)
@@ -480,6 +499,7 @@ void Util::import_json(const std::string &file,
   }
   importer.print_stats();
 }
+#endif
 
 REGISTER_HELP_TOPIC(Remote Storage, TOPIC, TOPIC_REMOTE_STORAGE, Contents,
                     SCRIPTING);
@@ -1814,7 +1834,30 @@ the data dump files, one of: "none", "gzip", "zstd". Compression level may be
 specified as "gzip;level=8" or "zstd;level=8".
 )*");
 
-REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS, R"*(
+// The Upgrade Checker is MySQL-server specific and is not built for MariaDB, so
+// the skipUpgradeChecks dump option (and its help) is only present when the
+// Upgrade Checker is available.
+#ifdef HAVE_UPGRADE_CHECKER
+// NOTE: This help text uses adjacent string literals rather than a multi-line
+// raw string on purpose. This macro lives in a conditional block that is
+// skipped for MariaDB builds (HAVE_UPGRADE_CHECKER unset), and GCC's
+// preprocessor does not recognize a multi-line raw string while skipping an
+// inactive #ifdef block, reporting a spurious "unterminated raw string" error
+// (Clang handles it, which is why macOS builds did not hit this).
+#define UTIL_DUMP_SKIP_UPGRADE_CHECKS_HELP                                     \
+  "@li <b>skipUpgradeChecks</b>: bool (default: false) - Do not execute the\n" \
+  "upgrade check utility. Compatibility issues related to MySQL version "      \
+  "upgrades\n"                                                                 \
+  "will not be checked. Use this option only when executing the Upgrade "      \
+  "Checker\n"                                                                  \
+  "separately.\n"
+#else
+#define UTIL_DUMP_SKIP_UPGRADE_CHECKS_HELP ""
+#endif  // HAVE_UPGRADE_CHECKER
+
+REGISTER_HELP_DETAIL_TEXT(
+    TOPIC_UTIL_DUMP_MDS_COMMON_OPTIONS,
+    R"*(
 @li <b>ocimds</b>: bool (default: false) - Enable checks for compatibility with
 MySQL HeatWave Service.
 @li <b>compatibility</b>: list of strings (default: empty) - Apply MySQL
@@ -1826,12 +1869,11 @@ values: "create_invisible_pks", "force_innodb", "force_non_standard_fks",
 "target_has_mysql_native_password", "unescape_wildcard_grants".
 @li <b>targetVersion</b>: string (default: current version of %Shell) -
 Specifies version of the destination MySQL server.
-@li <b>skipUpgradeChecks</b>: bool (default: false) - Do not execute the
-upgrade check utility. Compatibility issues related to MySQL version upgrades
-will not be checked. Use this option only when executing the Upgrade Checker
-separately.
-@li <b>lakehouseTarget</b>: dictionary (default: not set) - Specifies where the
+)*" UTIL_DUMP_SKIP_UPGRADE_CHECKS_HELP
+    R"*(@li <b>lakehouseTarget</b>: dictionary (default: not set) - Specifies where the
 data of InnoDB based vector store tables will be written.)*");
+
+#undef UTIL_DUMP_SKIP_UPGRADE_CHECKS_HELP
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_SCHEMAS_COMMON_OPTIONS, R"*(
 @li <b>excludeTables</b>: list of strings (default: empty) - List of tables or
@@ -2853,5 +2895,6 @@ void Util::load_binlogs(const std::string &url,
 
   loader.run();
 }
+#endif
 
 }  // namespace mysqlsh

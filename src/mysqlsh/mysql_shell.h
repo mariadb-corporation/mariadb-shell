@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -60,8 +61,10 @@ class Mysql_shell : public mysqlsh::Base_shell {
           nullptr,
       bool enable_stored_passwords = true);
 
+#ifdef HAVE_ADMIN_API
   bool redirect_session_if_needed(
       bool secondary, const Connection_options &opts = Connection_options());
+#endif
 
   bool cmd_print_shell_help(const std::vector<std::string> &args);
   bool cmd_start_multiline(const std::vector<std::string> &args);
@@ -136,25 +139,31 @@ class Mysql_shell : public mysqlsh::Base_shell {
   Scoped_console m_console_handler;
   std::shared_ptr<mysqlsh::Shell> _global_shell;
   std::shared_ptr<mysqlsh::Sys> _global_js_sys;
+#ifdef HAVE_ADMIN_API
   std::shared_ptr<mysqlsh::dba::Dba> _global_dba;
+#endif
   std::shared_ptr<mysqlsh::Util> _global_util;
   std::shared_ptr<mysqlsh::Os> m_global_js_os;
 
+#ifdef HAVE_ADMIN_API
   std::shared_ptr<mysqlsh::dba::Cluster> m_default_cluster;
   std::shared_ptr<mysqlsh::dba::ClusterSet> m_default_clusterset;
   std::shared_ptr<mysqlsh::dba::ReplicaSet> m_default_replicaset;
+#endif
   std::shared_ptr<mysqlshdk::ssh::Ssh_manager> m_ssh_manager;
 
   /// Last schema set by the user via \use command.
   std::string _last_active_schema;
 
  private:
+#ifdef HAVE_ADMIN_API
   std::shared_ptr<mysqlsh::dba::Cluster> create_default_cluster_object(
       bool for_help = false);
   std::shared_ptr<mysqlsh::dba::ClusterSet> create_default_clusterset_object(
       bool for_help = false);
   std::shared_ptr<mysqlsh::dba::ReplicaSet> create_default_replicaset_object(
       bool for_help = false);
+#endif
 
   virtual void toggle_print() {}
 

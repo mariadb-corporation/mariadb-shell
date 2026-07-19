@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,9 +30,9 @@
 #ifndef MYSQLSHDK_LIBS_DB_ROW_H_
 #define MYSQLSHDK_LIBS_DB_ROW_H_
 
-#include <mysqlxclient/xdatetime.h>
 #include <cstdint>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>

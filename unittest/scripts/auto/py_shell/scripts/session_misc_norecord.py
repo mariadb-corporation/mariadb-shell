@@ -16,7 +16,7 @@ EXPECT_EQ(real_sql_mode, session2.get_sql_mode())
 session.run_sql("set sql_mode='ansi_quotes'")
 EXPECT_EQ("ANSI_QUOTES", session.get_sql_mode())
 
-#@<> sql_mode tracking in a new session {VER(>=8.0)}
+#@<> sql_mode tracking in a new session {VER(>=8.0) and sandbox.vendor() == "MySQL"}
 EXPECT_EQ(real_sql_mode, session2.get_sql_mode())
 
 # session tracking disabled by default in non-global sessions - in that case, it should always query sql_mode

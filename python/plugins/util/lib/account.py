@@ -1,4 +1,5 @@
 # Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -51,15 +52,22 @@ def discard_dual_password(account_data: dict):
     return True
 
 
-def change_password(session, account_data: dict, random: bool, dual: bool, new_password: str):
+def change_password(session, account_data: dict, random: bool, dual: bool, new_password: str, current_user: bool = False):
     account = make_account(account_data["user"], account_data["host"])
 
     args = []
-    sql_str = f"ALTER USER {account} IDENTIFIED BY"
-    if random:
-        sql_str += " RANDOM PASSWORD"
-    else:
-        sql_str += " ?"
+    # MariaDB considers ALTER USER an administrative statement, so not everybody can execute it, 
+    # it is also the only way to set a random password
+    if session.server_vendor == "MySQL" or not current_user or random:
+        sql_str = f"ALTER USER {account} IDENTIFIED BY"
+        if random:
+            sql_str += " RANDOM PASSWORD"
+        else:
+            sql_str += " ?"
+            args.append(new_password)
+    elif session.server_vendor == "MariaDB":
+        # This statement only works for the current user with a given password
+        sql_str = "SET PASSWORD = PASSWORD(?)"
         args.append(new_password)
 
     if dual:

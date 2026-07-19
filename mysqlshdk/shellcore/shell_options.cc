@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +26,25 @@
 
 #include "mysqlshdk/include/shellcore/shell_options.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
+#include <unordered_set>
+#include <vector>
 
+#ifdef MARIADB_BUILD
+// MariaDB's my_global.h pulls in my_dbug.h before my_bool is defined; include
+// mysql.h first (it provides `typedef char my_bool;`).
+#include <mysql.h>
+#endif
 #include <my_alloc.h>
+
+#ifdef MARIADB_BUILD
+#include <my_global.h>
+#endif
+
 #include <my_default.h>
 
 #include "modules/mod_utils.h"
@@ -121,12 +137,16 @@ namespace {
 mysqlsh::SessionType session_type_for_option(const std::string &option) {
   if (shcore::str_beginswith(option, "mysql://")) {
     return mysqlsh::SessionType::Classic;
+#ifdef HAVE_X_PROTOCOL
   } else if (shcore::str_beginswith(option, "mysqlx://")) {
     return mysqlsh::SessionType::X;
+#endif
   } else if (option == "--mc" || option == "--mysql" || option == "--sqlc") {
     return mysqlsh::SessionType::Classic;
+#ifdef HAVE_X_PROTOCOL
   } else if (option == "--mx" || option == "--mysqlx" || option == "--sqlx") {
     return mysqlsh::SessionType::X;
+#endif
   } else {
     return mysqlsh::SessionType::Auto;
   }
@@ -166,9 +186,11 @@ mysqlsh::SessionType Shell_options::Storage::check_option_session_type_conflict(
     case mysqlsh::SessionType::Classic:
       m_session_type_options.push_back(option);
       break;
+#ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       m_session_type_options.push_back(option);
       break;
+#endif
     case mysqlsh::SessionType::Auto:
       break;
   }
@@ -200,9 +222,143 @@ using std::placeholders::_2;
 
 void Shell_options::handle_mycnf_options(int *argc, char ***argv,
                                          MEM_ROOT *argv_alloc) {
-  constexpr const char *defaults_args_separator = "----args-separator----";
-
   const char *load_default_groups[] = {"mysqlsh", "client", nullptr};
+
+  // Process the default (config-file) options my_load_defaults() has placed at
+  // argv[1 .. defaults_end-1], then collapse argv down to
+  // [prog, <original command-line args starting at first_arg> ...]:
+  //   defaults_end - one past the last config-file option. The slot at
+  //                  defaults_end is expendable (a separator on MySQL, the
+  //                  first real arg on MariaDB, or the argv terminator) and is
+  //                  temporarily nulled so it terminates the defaults sub-list.
+  //   first_arg    - index of the first original command-line argument.
+  // my.cnf-style option names have '_' normalized to '-' (e.g. --ssl_ca).
+  const auto process_defaults_and_collapse = [&](int defaults_end,
+                                                 int first_arg) {
+    for (int j = 1; j < defaults_end; ++j) {
+      for (int i = 0; (*argv)[j][i] != '\0' && (*argv)[j][i] != '='; ++i) {
+        if ((*argv)[j][i] == '_') (*argv)[j][i] = '-';
+      }
+    }
+
+    char *const saved = (*argv)[defaults_end];
+    (*argv)[defaults_end] = nullptr;
+    try {
+      handle_cmdline_options(
+          defaults_end, *argv, false,
+          std::bind(&Shell_options::custom_cmdline_handler, this, _1));
+    } catch (const std::exception &e) {
+      throw std::runtime_error(
+          std::string("While processing defaults options:\n") + e.what());
+    }
+    (*argv)[defaults_end] = saved;
+
+    // Move the program name in front of the first real argument and drop the
+    // consumed default-option slots, yielding [prog, cmdline args...].
+    (*argv)[first_arg - 1] = (*argv)[0];
+    *argv = *argv + (first_arg - 1);
+    *argc = *argc - (first_arg - 1);
+  };
+
+#ifdef MARIADB_BUILD
+  // MariaDB's my_load_defaults() takes no MEM_ROOT and has no MySQL-style
+  // "----args-separator----" mechanism (no my_getopt_use_args_separator). It
+  // prepends the config-file options between argv[0] and the surviving
+  // command-line args (see mysys/my_default.c), reusing the original arg
+  // pointers verbatim for the args it keeps.
+  (void)argv_alloc;
+
+  // Handle --print-defaults ourselves. MariaDB's my_load_defaults() would print
+  // the resolved options on its own, but in clear text (exposing passwords) and
+  // followed by a bogus "Could not read my.cnf files" error, because it returns
+  // 4 for --print-defaults which the generic check below treats as a failure.
+  // MySQL's mysys instead masks any --password* value and exit(0)s (see
+  // mysys/my_default.cc). To match MySQL we strip --print-defaults from the
+  // argv handed to my_load_defaults() (so it does not print the unmasked list),
+  // build the option list normally, and print it here with the password masked.
+  bool want_print_defaults = false;
+  std::vector<char *> pd_args;
+  pd_args.reserve(*argc + 1);
+  for (int i = 0; i < *argc; ++i) {
+    if (i > 0 && !want_print_defaults &&
+        std::strcmp((*argv)[i], "--print-defaults") == 0) {
+      want_print_defaults = true;  // drop it from the list below
+      continue;
+    }
+    pd_args.push_back((*argv)[i]);
+  }
+
+  if (want_print_defaults) {
+    pd_args.push_back(nullptr);
+    char **pd_argv = pd_args.data();
+    int pd_argc = static_cast<int>(pd_args.size()) - 1;
+    if (my_load_defaults("my", load_default_groups, &pd_argc, &pd_argv,
+                         nullptr)) {
+      throw std::runtime_error("Could not read my.cnf files");
+    }
+    std::printf("%s would have been started with the following arguments:\n",
+                pd_argv[0]);
+    for (int i = 1; i < pd_argc; ++i) {
+      // Mask like MySQL's mysys: any option whose name starts with --password.
+      if (std::strncmp(pd_argv[i], "--password", 10) == 0)
+        std::printf("%s ", "--password=*****");
+      else
+        std::printf("%s ", pd_argv[i]);
+    }
+    std::puts("");
+    free_defaults(pd_argv);
+    std::exit(0);  // mirrors MySQL's mysys --print-defaults behavior
+  }
+
+  // Snapshot the original command-line arg pointers. my_load_defaults() also
+  // *consumes* leading defaults-control options (--no-defaults,
+  // --defaults-file,
+  // --defaults-extra-file, --defaults-group-suffix) off the command line, so
+  // the growth of argc is (#config opts inserted - #cmdline opts consumed) and
+  // can NOT be used to locate the config/cmdline boundary. Instead we find it
+  // by identity: my_load_defaults() reuses the original pointers for the args
+  // it keeps (see the memcpy in mysys/my_default.c), while injected config-file
+  // options are freshly allocated, so the first surviving original pointer
+  // marks the start of the command-line args.
+  std::unordered_set<char *> original_cmdline_args;
+  original_cmdline_args.reserve(*argc);
+  for (int i = 1; i < *argc; ++i) original_cmdline_args.insert((*argv)[i]);
+
+  const int load_rc =
+      my_load_defaults("my", load_default_groups, argc, argv, nullptr);
+
+  // my_load_defaults() replaces *argv with a freshly allocated buffer only when
+  // it succeeds (returns 0) or when --print-defaults was given (returns 4). On
+  // its error returns (1 = an explicit --defaults-file was missing, 2 = fatal)
+  // *argv is left pointing at the caller's original argv and must NOT be handed
+  // to free_defaults(). Record the base for the two allocating cases FIRST --
+  // before the throw below -- so the constructor's free_defaults() always
+  // reclaims it. Otherwise the --print-defaults path (rc == 4), which also
+  // takes the throw, would leak the buffer: mysys' safemalloc then reports the
+  // bytes as lost and aborts at exit (SIGSEGV). MySQL builds don't hit this
+  // because the buffer is owned by the caller-supplied MEM_ROOT instead.
+  if (load_rc == 0 || load_rc == 4) m_mariadb_defaults_argv = *argv;
+
+  if (load_rc != 0) {
+    throw std::runtime_error("Could not read my.cnf files");
+  }
+
+  // Locate the first surviving command-line argument by pointer identity. If
+  // none survived (everything was a config/defaults option) the boundary is the
+  // argv terminator at index *argc.
+  int first_arg = *argc;
+  for (int i = 1; i < *argc; ++i) {
+    if (original_cmdline_args.count((*argv)[i])) {
+      first_arg = i;
+      break;
+    }
+  }
+
+  // MariaDB has no separator slot, so the config options end exactly where the
+  // first command-line arg begins.
+  process_defaults_and_collapse(first_arg, first_arg);
+#else
+  constexpr const char *defaults_args_separator = "----args-separator----";
 
   my_getopt_use_args_separator = 1;
   if (my_load_defaults("my", load_default_groups, argc, argv, argv_alloc,
@@ -212,28 +368,12 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
 
   // find the separator between default options and explicit options
   int sep = 1;
-  while ((*argv)[sep] && strcmp((*argv)[sep], defaults_args_separator) != 0) {
-    // convert my.cnf style options to ours (e.g. --ssl_ca to --ssl-ca)
-    for (int i = 0; (*argv)[sep][i] != '\0' && (*argv)[sep][i] != '='; ++i) {
-      if ((*argv)[sep][i] == '_') (*argv)[sep][i] = '-';
-    }
-
+  while ((*argv)[sep] && strcmp((*argv)[sep], defaults_args_separator) != 0)
     ++sep;
-  }
 
-  (*argv)[sep] = nullptr;
-  // process the default options
-  try {
-    handle_cmdline_options(
-        sep, *argv, false,
-        std::bind(&Shell_options::custom_cmdline_handler, this, _1));
-  } catch (const std::exception &e) {
-    throw std::runtime_error(
-        std::string("While processing defaults options:\n") + e.what());
-  }
-  (*argv)[sep] = (*argv)[0];
-  *argv = *argv + sep;
-  *argc = *argc - sep;
+  // The separator occupies argv[sep]; the first real command-line arg follows.
+  process_defaults_and_collapse(sep, sep + 1);
+#endif
 }
 
 namespace {
@@ -339,6 +479,7 @@ Shell_options::Shell_options(
       });
 #endif
 
+#ifndef MARIADB_BUILD
   add_startup_options()
     (cmdline("--oci-config-file=<file>"),
       "Allows defining the OCI configuration file for OCI authentication.",
@@ -367,6 +508,7 @@ Shell_options::Shell_options(
         storage.connection_data.set(mysqlshdk::db::kAuthMethod, mysqlshdk::db::kAuthMethodOpenIdConnect);
         storage.connection_data.set(mysqlshdk::db::kOpenIdConnectAuthenticationClientTokenFile, value);
       });
+#endif
 
   add_startup_options(true)
     (cmdline("--uri=<value>"), "Connect to Uniform Resource Identifier. "
@@ -415,12 +557,14 @@ Shell_options::Shell_options(
     (cmdline("--password=[<pass>]"), "Password to use when connecting to server. "
       "If password is empty, connection will be made without using a password.")
     (cmdline("-p", "--password"), "Request password prompt to set the password")
+#ifndef MARIADB_BUILD
     (cmdline("--password1[=<pass>]"),
       "Password for first factor authentication plugin.")
     (cmdline("--password2[=<pass>]"),
       "Password for second factor authentication plugin.")
     (cmdline("--password3[=<pass>]"),
       "Password for third factor authentication plugin.")
+#endif
     (cmdline("-C", "--compress[=<value>]"),
         "Use compression in client/server protocol. Valid values: 'REQUIRED', "
         "'PREFFERED', 'DISABLED', 'True', 'False', '1', and '0'. Boolean values"
@@ -431,6 +575,7 @@ Shell_options::Shell_options(
           storage.connection_data.set_compression(
               value == nullptr ? "REQUIRED" : value);
         })
+#ifndef MARIADB_BUILD
     (cmdline("--compression-algorithms=<list>"),
         "Use compression algorithm in server/client protocol. Expects comma "
         "separated list of algorithms. Supported algorithms include "
@@ -454,7 +599,9 @@ Shell_options::Shell_options(
             throw std::invalid_argument(
                 "The value of 'compression-level' must be an integer.");
           }
-        });
+        })
+#endif
+        ;
 
   add_startup_bool_options(true)
     ("--local-infile",
@@ -472,6 +619,7 @@ Shell_options::Shell_options(
       [this](const std::string&, const char* value) {
           storage.connection_data.set_schema(value);
         })
+#ifndef MARIADB_BUILD
     (&storage.register_factor, "",
         cmdline("--register-factor=<name>"),
         "Specifies authentication factor, for which registration needs to be "
@@ -486,19 +634,24 @@ Shell_options::Shell_options(
             storage.webauthn_client_preserve_privacy = shcore::opts::convert<bool>(value,
               shcore::opts::Source::Command_line);
           }
-        });
+        })
+#endif
+        ;
 
   add_startup_options(true)
+#ifdef HAVE_X_PROTOCOL
     (cmdline("--mx", "--mysqlx"),
         "Uses connection data to create an X protocol session.",
         std::bind(
             &Shell_options::override_session_type, this, _1, _2))
+#endif
     (cmdline("--mc", "--mysql"),
         "Uses connection data to create a classic session.",
         std::bind(
             &Shell_options::override_session_type, this, _1, _2));
 
   add_startup_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
+#ifdef HAVE_ADMIN_API
     (cmdline("--redirect-primary"), "Ensure that the target server is part of "
         "an InnoDB cluster or ReplicaSet and if it is not a primary, find the "
         "primary and connect to it.",
@@ -521,6 +674,7 @@ Shell_options::Shell_options(
 
         "InnoDB ReplicaSet and if so, set the 'rs' global variable.",
         assign_value(&storage.default_replicaset_set, true))
+#endif
     (cmdline("--sql"), "Start in SQL mode, auto-detecting the protocol to use "
         "if it is not specified as part of the connection information.",
         assign_value(
@@ -528,21 +682,19 @@ Shell_options::Shell_options(
     (cmdline("--sqlc"), "Start in SQL mode using a classic session.",
         std::bind(
             &Shell_options::override_session_type, this, _1, _2))
+#ifdef HAVE_X_PROTOCOL
     (cmdline("--sqlx"),
         "Start in SQL mode using an X protocol session.",
         std::bind(
             &Shell_options::override_session_type, this, _1, _2))
-    (cmdline("--js", "--javascript"), "Start in JavaScript mode.",
+#endif
 #ifdef HAVE_JS
+    (cmdline("--js", "--javascript"), "Start in JavaScript mode.",
         [this](const std::string&, const char*) {
           storage.initial_mode = shcore::IShell_core::Mode::JavaScript;
         }
-#else
-        [](const std::string&, const char*) {
-          throw std::invalid_argument("JavaScript is not supported.");
-        }
-#endif
     )
+#endif
 #ifdef HAVE_PYTHON
     (cmdline("--py", "--python"), "Start in Python mode.",
         [this](const std::string&, const char*) {
@@ -874,6 +1026,7 @@ Shell_options::Shell_options(
           }
           storage.connection_data.set(mysqlshdk::db::kAuthMethod, value);
         })
+#ifdef HAVE_JS
     (cmdline("--js-debug-port=<value>"), "Starts a debug server to debug a "
     "JavaScript file on the indicated port.",
     [this](const std::string&option, const char* value) {
@@ -888,6 +1041,7 @@ Shell_options::Shell_options(
     (cmdline("--js-debug-wait-attached"), "Waits for a debug client to get "
     "attached to a JavaScript debug server.",
     assign_value(&storage.js_options.wait_attached, true))
+#endif
     (cmdline("--disable-plugins"), "Disable loading user plugins.",
     assign_value(&storage.disable_user_plugins, true))
     (cmdline("--disable-builtin-plugins"), "Disable loading built-in plugins.",
@@ -998,6 +1152,16 @@ Shell_options::Shell_options(
     m_on_error(e.what());
     storage.exit_code = 1;
   }
+
+#ifdef MARIADB_BUILD
+  // argv is no longer needed past option parsing; release the buffer allocated
+  // by my_load_defaults() (otherwise mysys' debug safemalloc reports it as a
+  // leak at exit).
+  if (m_mariadb_defaults_argv) {
+    free_defaults(m_mariadb_defaults_argv);
+    m_mariadb_defaults_argv = nullptr;
+  }
+#endif
 }
 
 static inline std::string value_to_string(const shcore::Value &value) {
@@ -1259,9 +1423,11 @@ void Shell_options::override_session_type(const std::string &option,
     case mysqlsh::SessionType::Classic:
       storage.connection_data.set_scheme("mysql");
       break;
+#ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       storage.connection_data.set_scheme("mysqlx");
       break;
+#endif
     case mysqlsh::SessionType::Auto:
       break;
   }

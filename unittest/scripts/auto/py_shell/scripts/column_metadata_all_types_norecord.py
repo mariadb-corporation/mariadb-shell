@@ -395,6 +395,9 @@ expected = {
     }
 }
 
+if sandbox.vendor() == "MariaDB":
+    expected["t_date"]["c3"]["FLAGS"]["CLASSIC"].insert(0, "UNSIGNED")
+
 
 
 def check_flags(session, protocol):
@@ -420,9 +423,11 @@ shell.connect(__sandbox_uri1)
 check_flags(session, "CLASSIC")
 session.close()
 
-shell.connect(__sandbox_uri1.replace("mysql", "mysqlx")+"0")
-check_flags(session, "X")
-session.close()
+#@<> Check Flags in X Protocol
+if __have_x_protocol:
+    shell.connect(__sandbox_uri1.replace("mysql", "mysqlx")+"0")
+    check_flags(session, "X")
+    session.close()
 
 #@<> Cleanup
 testutil.destroy_sandbox(port=__mysql_sandbox_port1)

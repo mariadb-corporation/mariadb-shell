@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -202,13 +203,17 @@ void Base_shell::init_scripts(shcore::Shell_core::Mode mode) {
 void Base_shell::load_default_modules(shcore::Shell_core::Mode mode) {
   std::string tmp;
   if (mode == shcore::Shell_core::Mode::JavaScript) {
+#ifdef HAVE_X_PROTOCOL
     tmp = "var mysqlx = require('mysqlx');";
     _shell->handle_input(tmp, _input_mode);
+#endif
     tmp = "var mysql = require('mysql');";
     _shell->handle_input(tmp, _input_mode);
   } else if (mode == shcore::Shell_core::Mode::Python) {
+#ifdef HAVE_X_PROTOCOL
     tmp = "from mysqlsh import mysqlx";
     _shell->handle_input(tmp, _input_mode);
+#endif
     tmp = "from mysqlsh import mysql";
     _shell->handle_input(tmp, _input_mode);
   }

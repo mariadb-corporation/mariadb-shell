@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +36,12 @@
 #include "shellcore/interrupt_handler.h"
 #include "utils/utils_general.h"
 #include "utils/utils_string.h"
+
+// MariaDB does not define MYSQL_TYPE_VECTOR, so we define it for compatibility
+// with the MySQL Server
+#if defined(MARIADB_BUILD)
+#define __MYSQL_TYPE_VECTOR 242
+#endif
 
 namespace mysqlshdk {
 namespace db {
@@ -113,9 +120,16 @@ static const char *fieldtype2str(enum enum_field_types type) {
       return "VAR_STRING";
     case MYSQL_TYPE_YEAR:
       return "YEAR";
+#ifndef MARIADB_BUILD
     case MYSQL_TYPE_VECTOR:
       return "VECTOR";
+#endif
     default:
+#ifdef MARIADB_BUILD
+      if (type == __MYSQL_TYPE_VECTOR) {
+        return "VECTOR";
+      }
+#endif
       return "?-unknown-?";
   }
 }
@@ -471,9 +485,19 @@ Type Result::map_data_type(int raw_type, int flags, int collation_id) {
       return Type::Enum;
     case MYSQL_TYPE_SET:
       return Type::Set;
+#ifndef MARIADB_BUILD
     case MYSQL_TYPE_VECTOR:
       return Type::Vector;
+#endif
   }
+
+#ifdef MARIADB_BUILD
+  // Vector type is supported in MySQL
+  if (raw_type == __MYSQL_TYPE_VECTOR) {
+    return Type::Vector;
+  }
+#endif
+
   throw std::logic_error("Invalid type");
 }
 }  // namespace mysql

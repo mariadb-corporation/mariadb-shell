@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +27,10 @@
 #include "mysqlshdk/libs/db/mysql/session.h"
 
 #include <mysql_version.h>
+#ifdef MARIADB_BUILD
+// CR_* client error codes live in errmsg.h in libmariadb.
+#include <errmsg.h>
+#endif
 
 #include <mutex>
 #include <regex>
@@ -38,6 +43,7 @@
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
 #include "mysqlshdk/libs/utils/log_sql.h"
+#include "mysqlshdk/libs/utils/logger.h"
 #include "mysqlshdk/libs/utils/option_tracker.h"
 #include "mysqlshdk/libs/utils/profiling.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -51,8 +57,10 @@ namespace db {
 namespace mysql {
 
 namespace {
+#ifndef MARIADB_BUILD
 std::once_flag trace_register_flag;
-constexpr size_t K_MAX_QUERY_ATTRIBUTES = 32;
+#endif
+[[maybe_unused]] constexpr size_t K_MAX_QUERY_ATTRIBUTES = 32;
 }  // namespace
 
 FI_DEFINE(mysql, [](const mysqlshdk::utils::FI::Args &args) {
@@ -66,6 +74,24 @@ FI_DEFINE(mysql, [](const mysqlshdk::utils::FI::Args &args) {
                              args.get_int("code"),
                              args.get_string("state", {""}).c_str());
 });
+
+#ifndef HAVE_X_PROTOCOL
+// The X-protocol session normally defines the "mysqlx" fault-injection point,
+// but it is not built for MariaDB. Shared code paths still reference
+// FI_SUPPRESS(mysqlx), so provide a stub handler here (always linked with the
+// classic session) to give the suppression a valid target.
+FI_DEFINE(mysqlx, [](const mysqlshdk::utils::FI::Args &args) {
+  if (args.get_int("abort", 0)) {
+    abort();
+  }
+  if (args.get_int("code", -1) < 0) {
+    throw std::logic_error(args.get_string("msg"));
+  }
+  throw mysqlshdk::db::Error(args.get_string("msg").c_str(),
+                             args.get_int("code"),
+                             args.get_string("state", {""}).c_str());
+});
+#endif
 //-------------------------- Query Attribute Implementation --------------------
 Classic_query_attribute::Classic_query_attribute() noexcept = default;
 
@@ -216,17 +242,23 @@ void Session_impl::connect(
   // is created in order to properly support pluggable authentication as it is
   // the tracer who can identify the authentication plugin is being used so
   // plugin options can be defined.
+#ifndef MARIADB_BUILD
   std::call_once(trace_register_flag, register_tracer_plugin, _mysql);
+#endif
 
   _connection_options = connection_options;
   _connection_options.set_default_data();
 
+#ifndef MARIADB_BUILD
+  // Pluggable-authentication plugins (kerberos/oci/webauthn/openid/fido) and
+  // the tracer plugin are not built for MariaDB.
   auth::register_connection_options_for_mysql(_mysql, _connection_options);
   auth::register_session_for_mysql(_mysql, this);
   shcore::on_leave_scope unregister_conn_options([this]() {
     auth::unregister_connection_options_for_mysql(_mysql);
     auth::unregister_session_for_mysql(_mysql);
   });
+#endif
 
   auto used_ssl_mode = setup_ssl(_connection_options.get_ssl_options());
   if (_connection_options.has_transport_type()) {
@@ -272,7 +304,11 @@ void Session_impl::connect(
 
   if (bool get_pub_key =
           connection_options.is_enabled(mysqlshdk::db::kGetServerPublicKey)) {
+#ifdef MARIADB_BUILD
+    (void)get_pub_key;
+#else
     mysql_options(_mysql, MYSQL_OPT_GET_SERVER_PUBLIC_KEY, &get_pub_key);
+#endif
   }
 
   if (connection_options.has(mysqlshdk::db::kServerPublicKeyPath)) {
@@ -338,9 +374,11 @@ void Session_impl::connect(
       mysql_options(_mysql, MYSQL_OPT_COMPRESS, nullptr);
   }
 
-  if (_connection_options.has_compression_algorithms())
+#ifndef MARIADB_BUILD
+  if (_connection_options.has_compression_algorithms()) {
     mysql_options(_mysql, MYSQL_OPT_COMPRESSION_ALGORITHMS,
                   _connection_options.get_compression_algorithms().c_str());
+  }
 
   if (_connection_options.has_compression_level()) {
     uint zcl = static_cast<uint>(_connection_options.get_compression_level());
@@ -350,6 +388,7 @@ void Session_impl::connect(
           "1-22.");
     mysql_options(_mysql, MYSQL_OPT_ZSTD_COMPRESSION_LEVEL, &zcl);
   }
+#endif
 
   if (connection_options.has(mysqlshdk::db::kLocalInfile)) {
     const int local_infile =
@@ -402,6 +441,18 @@ void Session_impl::connect(
 
   DBUG_LOG("sqlall", "CONNECT: " << _connection_options.uri_endpoint());
 
+#ifdef MARIADB_BUILD
+  // libmariadb has no multi-factor authentication. The primary password
+  // (factor 1 == the regular password) is passed to mysql_real_connect()
+  // directly below; warn if extra factors were supplied.
+  if (_connection_options.has_mfa_password(1) ||
+      _connection_options.has_mfa_password(2)) {
+    log_warning(
+        "Multi-factor authentication (2nd/3rd factor passwords) is not "
+        "supported by the MariaDB client library; only the first password "
+        "will be used.");
+  }
+#else
   // If this fails Mfa_passwords definition has to be changed
   static_assert(MAX_AUTH_FACTORS == 3);
   for (int factor = 1; factor <= 3; factor++) {
@@ -410,6 +461,7 @@ void Session_impl::connect(
                      _connection_options.get_mfa_password(factor - 1).c_str());
     }
   }
+#endif
 
   const char *host = _connection_options.has_host() &&
                              !_connection_options.get_ssh_options().has_data()
@@ -420,7 +472,15 @@ void Session_impl::connect(
                           _connection_options.has_user()
                               ? _connection_options.get_user().c_str()
                               : NULL,
+#ifdef MARIADB_BUILD
+                          // libmariadb takes the primary password here rather
+                          // than via MYSQL_OPT_USER_PASSWORD (factor 1).
+                          _connection_options.has_password()
+                              ? _connection_options.get_password().c_str()
+                              : NULL,
+#else
                           NULL,
+#endif
                           _connection_options.has_schema()
                               ? _connection_options.get_schema().c_str()
                               : NULL,
@@ -507,9 +567,11 @@ std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(
       mysql_options(_mysql, MYSQL_OPT_TLS_VERSION,
                     (ssl_options.get_tls_version().c_str()));
 
+#ifndef MARIADB_BUILD
     if (ssl_options.has_tls_ciphersuites())
       mysql_options(_mysql, MYSQL_OPT_TLS_CIPHERSUITES,
                     (ssl_options.get_tls_ciphersuites().c_str()));
+#endif
 
     if (ssl_options.has_cert())
       mysql_options(_mysql, MYSQL_OPT_SSL_CERT,
@@ -518,9 +580,46 @@ std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(
     if (ssl_options.has_key())
       mysql_options(_mysql, MYSQL_OPT_SSL_KEY, (ssl_options.get_key().c_str()));
 
+#ifndef MARIADB_BUILD
     value = static_cast<int>(*ssl_mode);
     mysql_options(_mysql, MYSQL_OPT_SSL_MODE, &value);
+#endif
   }
+
+#ifdef MARIADB_BUILD
+  // libmariadb does not expose MYSQL_OPT_SSL_MODE, so the shell's ssl-mode is
+  // mapped onto the two levers the connector does provide:
+  //   * MYSQL_OPT_SSL_ENFORCE          -- forces TLS (sets options.use_ssl);
+  //                                       without it the connector never even
+  //                                       attempts TLS, so it stays plaintext.
+  //   * MYSQL_OPT_SSL_VERIFY_SERVER_CERT -- validates the server certificate.
+  // Mapping:
+  //   DISABLED               -> TLS off
+  //   PREFERRED / REQUIRED   -> TLS enforced, certificate NOT verified
+  //   VERIFY_CA / _IDENTITY  -> TLS enforced, certificate verified
+  // PREFERRED enforces TLS rather than the MySQL "use TLS only if offered"
+  // behavior: the connector has no opportunistic mode, and MariaDB servers ship
+  // with TLS enabled by default (self-signed certs are auto-generated). This is
+  // what lets the shell connect to servers configured with
+  // require_secure_transport=ON. Verification stays off for PREFERRED/REQUIRED
+  // because Connector/C 3.4+ verifies by default, which would otherwise reject
+  // those self-signed server certificates (e.g. when connecting with an empty
+  // password, where the connector cannot validate the cert via the account
+  // password). The default ssl-mode (no SSL options given) is PREFERRED.
+  (void)value;
+  {
+    const auto effective_mode =
+        ssl_mode.value_or(mysqlshdk::db::Ssl_mode::Preferred);
+    my_bool enforce =
+        (effective_mode == mysqlshdk::db::Ssl_mode::Disabled) ? 0 : 1;
+    my_bool verify = (effective_mode == mysqlshdk::db::Ssl_mode::VerifyCa ||
+                      effective_mode == mysqlshdk::db::Ssl_mode::VerifyIdentity)
+                         ? 1
+                         : 0;
+    mysql_options(_mysql, MYSQL_OPT_SSL_ENFORCE, &enforce);
+    mysql_options(_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
+  }
+#endif
 
   return ssl_mode;
 }
@@ -640,6 +739,16 @@ std::shared_ptr<IResult> Session_impl::run_sql(
     return err;
   };
 
+#ifdef MARIADB_BUILD
+  // libmariadb does not implement query attributes (no mysql_bind_param). Drop
+  // any attributes and the option-usage tracking attribute.
+  if (!query_attributes.empty()) {
+    log_warning(
+        "Query attributes are not supported by the MariaDB client library and "
+        "will be ignored.");
+  }
+  m_option_tracker_feature_id.clear();
+#else
   // Attribute references need to be alive while the query is executed
   const char *attribute_names[K_MAX_QUERY_ATTRIBUTES];
   MYSQL_BIND attribute_values[K_MAX_QUERY_ATTRIBUTES];
@@ -683,6 +792,7 @@ std::shared_ptr<IResult> Session_impl::run_sql(
     mysql_bind_param(_mysql, attribute_count, attribute_values,
                      attribute_names);
   }
+#endif  // MARIADB_BUILD
 
   if (mysql_real_query(_mysql, sql, len) != 0) {
     throw process_error({sql, len});
@@ -847,8 +957,16 @@ const std::optional<std::string> &Session_impl::get_last_sql_mode() const {
 std::string Session::escape_string(std::string_view s) const {
   std::string res;
   res.resize(s.size() * 2 + 1);
+#ifdef MARIADB_BUILD
+  // libmariadb has no mysql_real_escape_string_quote();
+  // mysql_real_escape_string escapes for the '\'' context and already honors
+  // the server's NO_BACKSLASH_ESCAPES SQL mode.
+  size_t l =
+      mysql_real_escape_string(_impl->_mysql, &res[0], s.data(), s.size());
+#else
   size_t l = mysql_real_escape_string_quote(_impl->_mysql, &res[0], s.data(),
                                             s.size(), '\'');
+#endif
   res.resize(l);
   return res;
 }
@@ -894,6 +1012,8 @@ std::shared_ptr<Session> Session::create() {
   if (g_session_factory) return g_session_factory();
   return std::shared_ptr<Session>(new Session());
 }
+
+ServerVendor Session::get_server_vendor() { return _impl->get_server_vendor(); }
 
 std::string Session::track_system_variable(const std::string &variable) {
   if (get_server_version() < mysqlshdk::utils::Version(5, 7, 0))

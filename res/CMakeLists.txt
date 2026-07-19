@@ -1,4 +1,5 @@
 # Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,14 +23,18 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 
-file(GLOB UPGRADE_CHECKER_RESOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/upgrade_checker/upgrade_checker.msg
-    ${CMAKE_CURRENT_SOURCE_DIR}/upgrade_checker/sysvars.json)
+# The Upgrade Checker is MySQL-server specific; its resources are not bundled
+# for MariaDB builds (HAVE_UPGRADE_CHECKER is unset there).
+if(HAVE_UPGRADE_CHECKER)
+  file(GLOB UPGRADE_CHECKER_RESOURCES
+      ${CMAKE_CURRENT_SOURCE_DIR}/upgrade_checker/upgrade_checker.msg
+      ${CMAKE_CURRENT_SOURCE_DIR}/upgrade_checker/sysvars.json)
 
-add_custom_target(upgrade_checker_resources ALL)
-install_bundled_files(
-    DESCRIPTION "upgrade checker resource"
-    FILES ${UPGRADE_CHECKER_RESOURCES}
-    DESTINATION "${INSTALL_SHAREDIR}"
-    TARGET upgrade_checker_resources
-)
+  add_custom_target(upgrade_checker_resources ALL)
+  install_bundled_files(
+      DESCRIPTION "upgrade checker resource"
+      FILES ${UPGRADE_CHECKER_RESOURCES}
+      DESTINATION "${INSTALL_SHAREDIR}"
+      TARGET upgrade_checker_resources
+  )
+endif()

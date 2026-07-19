@@ -1,4 +1,5 @@
 /* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +26,13 @@
 
 #include <random>
 
+#ifdef HAVE_ADMIN_API
 #include "modules/adminapi/common/preconditions.h"
+#endif
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/db/uri_encoder.h"
 #include "mysqlshdk/libs/textui/textui.h"
@@ -79,8 +84,11 @@ void Shell_test_env::setup_env() {
   // configurations
   _host = "localhost";
   _user = "root";
-  _pwd = "";
-  _uri = "root:@localhost";
+  const char *password = getenv("MYSQL_PWD");
+  if (password) {
+    _pwd.assign(password);
+  }
+  _uri = "root:" + _pwd + "@localhost";
   _mysql_uri = _uri;
 
   const char *xport = getenv("MYSQLX_PORT");
@@ -109,7 +117,16 @@ void Shell_test_env::setup_env() {
   s_hostname = getenv("MYSQL_HOSTNAME");
   s_real_hostname = getenv("MYSQL_REAL_HOSTNAME");
   s_real_host_is_loopback = mysqlshdk::utils::Net::is_loopback(s_real_hostname);
-  s_hostname_ip = mysqlshdk::utils::Net::resolve_hostname_ipv4(s_hostname);
+  try {
+    s_hostname_ip = mysqlshdk::utils::Net::resolve_hostname_ipv4(s_hostname);
+  } catch (const std::exception &e) {
+    // @@hostname may be an unresolvable name (e.g. a macOS mDNS '.local' FQDN
+    // this process cannot resolve to IPv4); don't let it crash the whole run.
+    s_hostname_ip = "127.0.0.1";
+    std::cerr << "Warning: could not resolve hostname '" << s_hostname
+              << "': " << e.what() << "; falling back to " << s_hostname_ip
+              << "\n";
+  }
   assert(!s_real_hostname.empty());
 
   _mysql_uri_nopasswd = shcore::strip_password(_mysql_uri);
@@ -543,6 +560,15 @@ std::string Shell_test_env::query_replace_hook(std::string_view sql) {
 }
 
 bool Shell_test_env::check_min_version_skip_test(bool skip_test) {
+#ifndef HAVE_ADMIN_API
+  // AdminAPI is not available on MariaDB, so the AdminAPI minimum-version gate
+  // is moot. The AdminAPI tests that depend on it are excluded from the build;
+  // the remaining callers use this as a generic "server new enough" gate, and
+  // every supported MariaDB server clears it, so let those tests run (return
+  // true) rather than silently skipping them.
+  (void)skip_test;
+  return true;
+#else
   auto server_version = tests::Shell_test_env::get_target_server_version();
   auto adminapi_min_version =
       mysqlsh::dba::Precondition_checker::k_min_adminapi_server_version;
@@ -557,6 +583,7 @@ bool Shell_test_env::check_min_version_skip_test(bool skip_test) {
         adminapi_min_version.get_base().c_str()));
 
   return false;
+#endif
 }
 
 bool Shell_test_env::check_max_version_skip_test(
@@ -669,6 +696,7 @@ Shell_test_env::create_mysql_session(const std::string &uri) {
   return session;
 }
 
+#ifdef HAVE_X_PROTOCOL
 std::shared_ptr<mysqlshdk::db::mysqlx::Session>
 Shell_test_env::create_mysqlx_session(const std::string &uri) {
   mysqlshdk::db::Connection_options cnx_opt;
@@ -684,6 +712,7 @@ Shell_test_env::create_mysqlx_session(const std::string &uri) {
   session->connect(cnx_opt);
   return session;
 }
+#endif
 
 }  // namespace tests
 

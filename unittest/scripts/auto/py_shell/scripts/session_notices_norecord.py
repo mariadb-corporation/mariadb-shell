@@ -1,4 +1,4 @@
-#@{__version_num > 80000}
+#@{__version_num > 80000 and __have_admin_api}
 # Tests:
 # _get_socket_fd()
 # _enable_notices()

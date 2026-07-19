@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,6 +85,7 @@ void ClassicSession::init() {
   add_property("uri", "getUri");
   add_property("sshUri", "getSshUri");
   add_property("connectionId", "getConnectionId");
+  add_property("serverVendor", "getServerVendor");
 
   expose("close", &ClassicSession::close);
   expose("runSql", &ClassicSession::run_sql, "query", "?args");
@@ -390,6 +392,24 @@ Integer ClassicSession::getConnectionId() {}
 int ClassicSession::get_connection_id() {}
 #endif
 
+REGISTER_HELP_PROPERTY(serverVendor, ClassicSession);
+REGISTER_HELP_FUNCTION(getServerVendor, ClassicSession);
+REGISTER_HELP(CLASSICSESSION_SERVERVENDOR_BRIEF,
+              "${CLASSICSESSION_GETSERVERVENDOR_BRIEF}");
+REGISTER_HELP_FUNCTION_TEXT(CLASSICSESSION_GETSERVERVENDOR, R"*(
+Retrieves the server vendor for the current connection, either MySQL or MariaDB
+)*");
+/**
+ * $(CLASSICSESSION_GETSERVERVENDOR_BRIEF)
+ *
+ * $(CLASSICSESSION_GETSERVERVENDOR)
+ */
+#if DOXYGEN_JS
+Integer ClassicSession::getServerVendor() {}
+#elif DOXYGEN_PY
+int ClassicSession::get_server_vendor() {}
+#endif
+
 Value ClassicSession::get_member(const std::string &prop) const {
   // Retrieves the member first from the parent
   Value ret_val;
@@ -406,6 +426,12 @@ Value ClassicSession::get_member(const std::string &prop) const {
     ret_val = shcore::Value(ssh_uri());
   } else if (prop == "connectionId") {
     ret_val = shcore::Value(_session->get_connection_id());
+  } else if (prop == "serverVendor") {
+    if (_session->get_server_vendor() == mysqlshdk::db::ServerVendor::MySQL) {
+      ret_val = shcore::Value("MySQL");
+    } else {
+      ret_val = shcore::Value("MariaDB");
+    }
   } else {
     ret_val = ShellBaseSession::get_member(prop);
   }

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +55,12 @@
 #include "mysqlshdk/libs/ssh/ssh_connection_options.h"
 #include "mysqlshdk/libs/utils/logger.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
+
+// Undo unguarded POSIX-compat macros (sleep/setenv/strtok_r) leaked by the
+// MariaDB server headers pulled in transitively above; they collide with the
+// shcore::sleep / shcore::setenv declarations below. The header self-gates on
+// _WIN32 && MARIADB_BUILD, so this is inert for MySQL and non-Windows builds.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace shcore {
 

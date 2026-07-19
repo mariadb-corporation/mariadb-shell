@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -83,6 +84,7 @@ TEST_F(Shell_error_printing, python_stack) {
       "BaseException\n",
       output_handler.std_err);
 
+#ifdef HAVE_ADMIN_API
   wipe_all();
   execute("dba.deploy_sandbox_instance(-1, {'password':''})");
   EXPECT_EQ(
@@ -92,6 +94,7 @@ TEST_F(Shell_error_printing, python_stack) {
       "Invalid value for 'port': Please use a valid TCP port number >= 1024 "
       "and <= 65535\n\n",
       output_handler.std_err);
+#endif
 }
 
 #ifdef HAVE_JS
@@ -126,16 +129,22 @@ TEST_F(Shell_error_printing, js_stack) {
 
 TEST_F(Shell_error_printing, sql_error) {
   execute("\\sql");
-  execute("\\connect " + _uri);
+  execute("\\connect " + _mysql_uri);
   wipe_all();
 
+  std::string error = shcore::str_format(
+      "You have an error in your SQL syntax; check the manual "
+      "that corresponds to your %s server version for the right syntax to use "
+      "near 'garbage' at line 1\n",
+      server_vendor.c_str());
+
   execute("garbage;");
-  EXPECT_EQ(
-      "ERROR: 1064: You have an error in your SQL syntax; check the manual "
-      "that corresponds to your MySQL server version for the right syntax to "
-      "use near 'garbage' at line 1\n",
-      output_handler.std_err);
+  MY_EXPECT_OUTPUT_CONTAINS(error.c_str(), output_handler.std_err);
+#if HAVE_JS
   execute("\\js");
+#else
+  execute("\\py");
+#endif
   execute("session.close();");
 }
 

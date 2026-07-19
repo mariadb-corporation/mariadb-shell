@@ -1,4 +1,5 @@
 /* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -125,6 +126,7 @@ class Shell_script_tester : public Crud_test_wrapper {
   void reset_shell() override;
   virtual void set_scripting_context();
   void def_var(std::string_view var, std::string_view value);
+  virtual void def_bool_var(std::string_view var, bool value) = 0;
   void def_string_var_from_env(const std::string &var,
                                const std::string &env_var = "");
   void def_numeric_var_from_env(const std::string &var,
@@ -220,6 +222,8 @@ class Shell_js_script_tester : public Shell_script_tester {
   // You can define per-test set-up and tear-down logic as usual.
   void set_defaults() override;
 
+  void def_bool_var(std::string_view var, bool value) override;
+
   std::string_view get_comment_token() const noexcept override { return "//"; }
   std::string_view get_chunk_token() const noexcept override { return "//@"; }
   std::string_view get_chunk_by_line_token() const noexcept override {
@@ -251,6 +255,8 @@ class Shell_py_script_tester : public Shell_script_tester {
  protected:
   // You can define per-test set-up and tear-down logic as usual.
   void set_defaults() override;
+
+  void def_bool_var(std::string_view var, bool value) override;
 
   std::string_view get_comment_token() const noexcept override { return "#"; };
   std::string_view get_chunk_token() const noexcept override { return "#@"; }

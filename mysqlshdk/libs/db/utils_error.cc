@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +34,15 @@ namespace db {
 bool is_server_connection_error(int code) {
   return code == CR_SERVER_GONE_ERROR || code == CR_SERVER_LOST ||
          code == CR_UNKNOWN_ERROR ||
+#ifdef MARIADB_BUILD
+         // A TLS connection that the server tears down without a close_notify
+         // alert surfaces as CR_SSL_CONNECTION_ERROR ("unexpected eof while
+         // reading") under OpenSSL 3.x + libmariadb, before the next query
+         // reports CR_SERVER_GONE_ERROR. Treat it as a lost connection so the
+         // reconnect path fires on the first failed query, matching the
+         // CR_SERVER_LOST behavior seen with libmysqlclient.
+         code == CR_SSL_CONNECTION_ERROR ||
+#endif
          code == 5166;  // there is no error with code 5166 in xpl_error.h,
                         // was it removed?
 }

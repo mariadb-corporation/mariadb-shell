@@ -1,4 +1,5 @@
 # Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +29,8 @@ install_bundled_directory(
     CONTENTS "${CMAKE_CURRENT_SOURCE_DIR}/packages"
     DESTINATION "${INSTALL_LIBDIR}/python-packages"
     TARGET python_extensions
+    # depend on every (nested) file so editing any package source re-copies it
+    DEPS_ON_ALL
 )
 
 install_bundled_plugins(

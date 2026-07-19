@@ -290,7 +290,12 @@ DESCRIPTION
 
       Detailed description for object parameter.
 
+?{__have_x_protocol}
       The session parameter must be a Session object.
+?{}
+?{not __have_x_protocol}
+      The session parameter must be a ClassicSession object.
+?{}
 
 #@ Usage, function(Session)
 ||TypeError: Argument #1 is expected to be a 'Session' object
@@ -343,11 +348,19 @@ DESCRIPTION
 
       Detailed description for object parameter.
 
+?{__have_x_protocol}
       The session parameter must be any of Session, ClassicSession.
+?{}
+?{not __have_x_protocol}
+      The session parameter must be a ClassicSession object.
+?{}
 
-#@ Usage, function(Session and ClassicSession)
+#@ Usage, function(Session and ClassicSession) {__have_x_protocol}
 |Active Session: <ClassicSession:<<<__mysql_uri>>>>|
 |Active Session: <Session:<<<__uri>>>>|
+
+#@ Usage, function(Session and ClassicSession) {not __have_x_protocol}
+|Active Session: <ClassicSession:<<<__mysql_uri>>>>|
 
 
 #@ Registration errors, function definition

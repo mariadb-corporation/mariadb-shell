@@ -41,11 +41,19 @@ Thread ID: <<<__test_ids['tid']>>>, Connection ID: <<<__test_ids['cid']>>>, User
 
 #@<OUT> WL11651-TSFR16_2 - --client
 CLIENT
+?{__mariadb_build}
+_client_name:             libmariadb
+?{}
+?{not __mariadb_build}
 _client_name:             libmysql
+?{}
 _client_version:          [[*]]
 _os:                      [[*]]
 _pid:                     [[*]]
 _platform:                [[*]]
+?{__mariadb_build}
+_server_host:             localhost
+?{}
 ?{__os_type=='windows'}
 _thread:                  [[*]]
 ?{}
@@ -64,11 +72,19 @@ SSL version:              <<<ssl_version>>>
 
 #@<OUT> WL11651-TSFR16_3 - --client
 CLIENT
+?{__mariadb_build}
+_client_name:             libmariadb
+?{}
+?{not __mariadb_build}
 _client_name:             libmysql
+?{}
 _client_version:          [[*]]
 _os:                      [[*]]
 _pid:                     [[*]]
 _platform:                [[*]]
+?{__mariadb_build}
+_server_host:             localhost
+?{}
 ?{__os_type=='windows'}
 _thread:                  [[*]]
 ?{}
@@ -198,6 +214,9 @@ Select_range:             [[*]]
 Select_range_check:       [[*]]
 Select_scan:              [[*]]
 Sort_merge_passes:        [[*]]
+?{sandbox.vendor() == "MariaDB"}
+Sort_priority_queue_sorts:[[*]]
+?{}
 Sort_range:               [[*]]
 Sort_rows:                [[*]]
 Sort_scan:                [[*]]
@@ -286,8 +305,11 @@ N/A
 #@ WL11651-TSFR24_2 - Run the thread report with the --all (-A) option, validate that the info displayed list the information as if all the options were given, skipping the output of blank options.
 ||
 
-#@ WL11651-TSFR26_1 - If there is any error in the queries executed by the thread report, validate that an exception is thrown.
+#@ WL11651-TSFR26_1 - If there is any error in the queries executed by the thread report, validate that an exception is thrown. {sandbox.vendor() == "MySQL"}
 ||SELECT command denied to user 'thread_test'@'<<<__host>>>' for table 'threads'
+
+#@ WL11651-TSFR26_1 - If there is any error in the queries executed by the thread report, validate that an exception is thrown. {sandbox.vendor() == "MariaDB"}
+||SELECT command denied to user 'thread_test'@'<<<__host>>>' for table `performance_schema`.`threads`
 
 #@ cleanup - delete the database
 ||

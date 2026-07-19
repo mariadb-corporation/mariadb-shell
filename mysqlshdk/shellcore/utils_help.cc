@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1351,7 +1352,8 @@ std::vector<std::string> Help_manager::resolve_help_text(
   return help_text;
 }
 
-std::vector<std::string> Help_manager::get_help_text(const std::string &token) {
+std::vector<std::string> Help_manager::get_help_text(const std::string &token,
+                                                     bool split_lines) {
   int index = 0;
 
   std::string text = m_registry->get_token(token);
@@ -1362,6 +1364,10 @@ std::vector<std::string> Help_manager::get_help_text(const std::string &token) {
     if (shcore::str_beginswith(text.c_str(), "${") &&
         shcore::str_endswith(text.c_str(), "}")) {
       auto tmp = get_help_text(text.substr(2, text.size() - 3));
+      lines.insert(lines.end(), tmp.begin(), tmp.end());
+    } else if (shcore::str_beginswith(text.c_str(), "!{") &&
+               shcore::str_endswith(text.c_str(), "}")) {
+      auto tmp = get_help_text(text.substr(2, text.size() - 3), true);
       lines.insert(lines.end(), tmp.begin(), tmp.end());
     } else if (shcore::str_beginswith(text.c_str(), "%{") &&
                shcore::str_endswith(text.c_str(), "}")) {
@@ -1377,7 +1383,12 @@ std::vector<std::string> Help_manager::get_help_text(const std::string &token) {
       lines.push_back(HELP_NO_FORMAT +
                       get_help(target, Topic_mask::any(), options));
     } else {
-      lines.push_back(text);
+      if (split_lines) {
+        auto tmp = shcore::str_split(text, "\n");
+        lines.insert(lines.end(), tmp.begin(), tmp.end());
+      } else {
+        lines.push_back(text);
+      }
     }
 
     text = m_registry->get_token(token + std::to_string(++index));

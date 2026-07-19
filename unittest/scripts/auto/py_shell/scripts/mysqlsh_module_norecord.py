@@ -1,4 +1,4 @@
-#@ {VER(>=8.0.0)}
+#@ {VER(>=8.0.0) and __have_admin_api}
 
 #@<> Setup
 testutil.deploy_sandbox(__mysql_sandbox_port1, "root")

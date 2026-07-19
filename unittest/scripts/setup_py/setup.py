@@ -1101,7 +1101,7 @@ def disable_option_tracker(sess):
         pass
 
 def supports_option_tracker(sess):
-    if __version_num < 90500:
+    if __version_num < 90500 or sandbox.vendor() == "MariaDB":
         return False
 
     # check if component is already installed

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +36,9 @@
 #include <vector>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 #include "mysqlshdk/libs/db/replay/trace.h"
 #include "mysqlshdk/libs/db/session.h"
 
@@ -117,7 +120,7 @@ class Result_mysql : public db::mysql::Result {
 };
 
 // ---
-
+#ifdef HAVE_X_PROTOCOL
 class Replayer_mysqlx : public mysqlx::Session {
  public:
   using super = mysqlx::Session;
@@ -203,6 +206,8 @@ class Result_mysqlx : public db::mysqlx::Result {
   bool _has_resultset = false;
   bool _fetched_warnings = false;
 };
+
+#endif
 
 }  // namespace replay
 }  // namespace db

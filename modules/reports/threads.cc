@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -485,6 +486,12 @@ class Threads_report : public Native_report {
 
     std::string having;
 
+#ifndef HAVE_X_PROTOCOL
+    // Sql_condition relies on the X protocol expression parser/protobuf, which
+    // is not available in the MariaDB build.
+    throw shcore::Exception::argument_error(
+        "The 'where' parameter is not supported in this build.");
+#else
     try {
       having = Sql_condition{[this](const std::string &ident) {
                  return "th->>'$.\"" + add_column(ident) + "\"'";
@@ -493,6 +500,7 @@ class Threads_report : public Native_report {
       throw shcore::Exception::argument_error(
           "Failed to parse 'where' parameter: " + std::string(e.what()));
     }
+#endif
 
     // ORDER BY part of the query
     std::string order_by;

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,11 +35,18 @@
 #include <thread>
 #include <vector>
 
+#ifdef HAVE_ADMIN_API
 #include "modules/adminapi/common/provisioning_interface.h"
+#endif
 #include "modules/mod_extensible_object.h"
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/utils/process_launcher.h"
 #include "src/mysqlsh/cmdline_shell.h"
+
+// The Testutils class below declares a `setenv` member, which collides with the
+// unguarded `setenv` macro leaked by the MariaDB server headers on Windows.
+// Undo it (and friends) first. Inert for MySQL and non-Windows builds.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace tests {
 
@@ -76,6 +84,7 @@ class Testutils : public mysqlsh::Extensible_object {
   Undefined dumpData(String uri, String path, Array schemaList);
   Undefined importData(String uri, String path, String defaultSchema,
                        String importCharset);
+#ifdef HAVE_ADMIN_API
   String waitMemberState(Integer port, String[] states);
   String waitReadReplicaState(Integer port, String[] states);
   Boolean waitMemberTransactions(Integer destPort, Integer sourcePort = 0);
@@ -86,6 +95,7 @@ class Testutils : public mysqlsh::Extensible_object {
   Undefined Testutils::waitReplicationChannelState(Integer port,
                                                    String channelName,
                                                    String[] states);
+#endif
   Undefined expectPrompt(String prompt, String answer, Dictionary options);
   Undefined expectPassword(String prompt, String password, Dictionary options);
   Undefined assertNoPrompts();
@@ -114,8 +124,10 @@ class Testutils : public mysqlsh::Extensible_object {
   None clearTraps(String type);
   None resetTraps(String type);
   Undefined wipeAllOutput();
+#ifdef HAVE_ADMIN_API
   String getCurrentMetadataVersion();
   String getInstalledMetadataVersion();
+#endif
   // Undefined slowify(Integer port, Boolean start);
   Undefined traceSyslog(String file);
   Undefined stopTracingSyslog();
@@ -145,6 +157,7 @@ class Testutils : public mysqlsh::Extensible_object {
 #endif
   None dump_data(str uri, str path, list schemaList);
   None import_data(str uri, str path, str defaultSchema, str defaultCharset);
+#ifdef HAVE_ADMIN_API
   str wait_member_state(int port, str[] states);
   str wait_read_replica_state(int port, str[] states);
   bool wait_member_transactions(int destPort, int sourcePort = 0);
@@ -153,6 +166,7 @@ class Testutils : public mysqlsh::Extensible_object {
       int port, str channel = "group_replication_recovery");
   None Testutils::wait_replication_channel_state(int port, str channel_name,
                                                  str[] states);
+#endif
   None expect_prompt(str prompt, str answer, dict options);
   None expect_password(str prompt, str password, dict options);
   None assert_no_prompts();
@@ -182,8 +196,10 @@ class Testutils : public mysqlsh::Extensible_object {
   None clear_traps(str type);
   None reset_traps(str type);
   None wipe_all_output();
+#ifdef HAVE_ADMIN_API
   str get_current_metadata_version();
   str get_installed_metadata_version();
+#endif
   None trace_syslog(str file);
   None stop_tracing_syslog();
   str yaml(any value);
@@ -281,14 +297,16 @@ class Testutils : public mysqlsh::Extensible_object {
 
   bool is_tcp_port_listening(const std::string &host, int port);
 
+#ifdef HAVE_ADMIN_API
   std::string get_current_metadata_version_string();
   std::string get_installed_metadata_version_string();
-
+#endif
   shcore::Array_t read_general_log(int port,
                                    const std::string &starting_timestamp = "");
 
  public:
-  // InnoDB cluster routines
+// InnoDB cluster routines
+#ifdef HAVE_ADMIN_API
   void wait_for_delayed_gr_start(int port, const std::string &root_pass,
                                  int timeout = 100);
 
@@ -307,6 +325,7 @@ class Testutils : public mysqlsh::Extensible_object {
   bool wait_member_transactions(int dest_port, int source_port);
 
   void inject_gtid_set(int dest_port, const std::string &gtid_set);
+#endif
 
  public:
   // Misc utility stuff
@@ -351,6 +370,7 @@ class Testutils : public mysqlsh::Extensible_object {
                               const std::string &caname,
                               const std::string &subj, int sbport);
 
+#ifndef MARIADB_BUILD
   void get_exclusive_lock(const shcore::Value &classic_session,
                           const std::string name_space, const std::string name,
                           unsigned int timeout = 0);
@@ -359,6 +379,7 @@ class Testutils : public mysqlsh::Extensible_object {
                        unsigned int timeout = 0);
   void release_locks(const shcore::Value &classic_session,
                      const std::string name_space);
+#endif
 
  public:
   // These should produce test failure output similar to that of gtest,
@@ -458,7 +479,10 @@ class Testutils : public mysqlsh::Extensible_object {
 
   std::weak_ptr<mysqlsh::Command_line_shell> _shell;
   std::string _mysqlsh_path;
+#ifdef HAVE_ADMIN_API
+  // Sandbox provisioning relies on AdminAPI, which is not built for MariaDB.
   mysqlsh::dba::ProvisioningInterface _mp;
+#endif
   std::map<int, std::string> _passwords;
   std::map<int, std::string> _general_log_files;
   std::map<int, std::unique_ptr<Slower_thread>> _slower_threads;
@@ -496,6 +520,19 @@ class Testutils : public mysqlsh::Extensible_object {
                                        const shcore::Dictionary_t &opts,
                                        bool raw, const std::string &mysqld_path,
                                        int timeout = -1);
+#ifdef MARIADB_BUILD
+  // Sandbox provisioning relies on AdminAPI for MySQL, which is not built for
+  // MariaDB. Instead, these operations are delegated to the bundled
+  // 'sandbox' Python shell plugin (exposed as the global 'sandbox'
+  // object), which is driven through a child shell in Python mode.
+  void run_sandbox_plugin(const std::string &operation, int port,
+                          const shcore::Dictionary_t &options);
+  shcore::Dictionary_t sandbox_plugin_base_options(
+      const shcore::Dictionary_t &opts);
+  void deploy_sandbox_with_plugin(int port, const std::string &rootpass,
+                                  const shcore::Dictionary_t &my_cnf_opts,
+                                  const shcore::Dictionary_t &opts, bool raw);
+#endif
   void change_sandbox_uuid(int port, const std::string &server_uuid);
   std::string get_sandbox_datadir(int port);
   void try_rename(const std::string &source, const std::string &target);

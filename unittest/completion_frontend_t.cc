@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -36,8 +37,10 @@
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/gmock_clean.h"
 
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx_schema.h"
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
 
 namespace mysqlsh {
 
@@ -169,17 +172,26 @@ class Completer_frontend : public Shell_core_test_wrapper {
   }
 
   void SetUpOnce() override {
-    run_script_classic(
-        {"create schema if not exists zzz;",
-         "create schema if not exists zombie;",
-         "create schema if not exists zoo;", "drop schema if exists actest;",
-         "create schema actest;", "use actest;",
-         "create table productTable (id int, name varchar(20));",
-         "create table creature (a int);", "create table croissant (a int);",
-         "create table tab_le(col_umn int);",
-         "create view vi_ew as select * from tab_le;"});
+    run_script_classic({
+        "create schema if not exists zzz;",
+        "create schema if not exists zombie;",
+        "create schema if not exists zoo;",
+        "drop schema if exists actest;",
+        "create schema actest;",
+        "use actest;",
+        "create table productTable (id int, name varchar(20));",
+        "create table creature (a int);",
+        "create table croissant (a int);",
+        "create table tab_le(col_umn int);",
+        "create view vi_ew as select * from tab_le;",
+#ifndef HAVE_X_PROTOCOL
+        "create table people(col_umn int);",
+        "create table person(col_umn int);",
+#endif
+    });
 
     // Explicit create collections for 5.7
+#ifdef HAVE_X_PROTOCOL
     {
       auto x = mysqlsh::mysqlx::Session();
       x.connect(mysqlshdk::db::Connection_options(shell_test_server_uri('x')));
@@ -192,6 +204,7 @@ class Completer_frontend : public Shell_core_test_wrapper {
       options->set("name", shcore::Value("person"));
       x.execute_mysqlx_stmt("create_collection", options);
     }
+#endif
   }
 
   static void TearDownTestCase() {
@@ -513,6 +526,7 @@ TEST_F(Completer_frontend, builtin_use_c) {
 }
 
 // TS_FR6_X01, TS_FR6.1_X01
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Completer_frontend, builtin_use_x) {
   connect_x();
   // TS_FR7_X01
@@ -528,6 +542,7 @@ TEST_F(Completer_frontend, builtin_use_x) {
 
   EXPECT_AFTER_TAB("\\use bla", "\\use bla");
 }
+#endif
 
 TEST_F(Completer_frontend, builtin_connect) {
   EXPECT_AFTER_TAB("\\co", "\\connect");
@@ -1268,53 +1283,61 @@ TEST_F(Completer_frontend, py_shell) {
 
   EXPECT_AFTER_TAB("sh", "shell");
   EXPECT_AFTER_TAB("shell.rec", "shell.reconnect()");
-  EXPECT_AFTER_TAB_TAB("shell.", strv({"add_extension_object_member()",
-                                       "auto_complete_sql()",
-                                       "connect()",
-                                       "connect_to_primary()",
-                                       "create_context()",
-                                       "create_extension_object()",
-                                       "create_result()",
-                                       "delete_all_credentials()",
-                                       "delete_all_secrets()",
-                                       "delete_credential()",
-                                       "delete_secret()",
-                                       "disable_pager()",
-                                       "disconnect()",
-                                       "dump_rows()",
-                                       "enable_pager()",
-                                       "get_session()",
-                                       "help()",
-                                       "list_credential_helpers()",
-                                       "list_credentials()",
-                                       "list_secrets()",
-                                       "list_sql_handlers()",
-                                       "list_ssh_connections()",
-                                       "log()",
-                                       "open_session()",
-                                       "options",
-                                       "parse_uri()",
-                                       "print()",
-                                       "prompt()",
-                                       "read_secret()",
-                                       "reconnect()",
-                                       "register_global()",
-                                       "register_report()",
-                                       "register_sql_handler()",
-                                       "reports",
-                                       "set_current_schema()",
-                                       "set_session()",
-                                       "status()",
-                                       "store_credential()",
-                                       "store_secret()",
-                                       "unparse_uri()",
-                                       "version"}));
+  auto shell_members = strv({"add_extension_object_member()",
+                             "auto_complete_sql()",
+                             "connect()",
+                             "create_context()",
+                             "create_extension_object()",
+                             "create_result()",
+                             "delete_all_credentials()",
+                             "delete_all_secrets()",
+                             "delete_credential()",
+                             "delete_secret()",
+                             "disable_pager()",
+                             "disconnect()",
+                             "dump_rows()",
+                             "enable_pager()",
+                             "get_session()",
+                             "help()",
+                             "list_credential_helpers()",
+                             "list_credentials()",
+                             "list_secrets()",
+                             "list_sql_handlers()",
+                             "list_ssh_connections()",
+                             "log()",
+                             "open_session()",
+                             "options",
+                             "parse_uri()",
+                             "print()",
+                             "prompt()",
+                             "read_secret()",
+                             "reconnect()",
+                             "register_global()",
+                             "register_report()",
+                             "register_sql_handler()",
+                             "reports",
+                             "set_current_schema()",
+                             "set_session()",
+                             "status()",
+                             "store_credential()",
+                             "store_secret()",
+                             "unparse_uri()",
+                             "version"});
+
+#ifdef HAVE_ADMIN_API
+  shell_members.insert(shell_members.begin() + 3, "connect_to_primary()");
+#endif
+  EXPECT_AFTER_TAB_TAB("shell.", shell_members);
 
   EXPECT_TAB_DOES_NOTHING("shell.conect()");
 
+#ifdef HAVE_X_PROTOCOL
   EXPECT_AFTER_TAB_TAB("mysql", strv({"mysql", "mysqlx"}));
+#endif
   EXPECT_AFTER_TAB("mysql.get_c", "mysql.get_classic_session()");
+#ifdef HAVE_X_PROTOCOL
   EXPECT_AFTER_TAB("mysqlx.get", "mysqlx.get_session()");
+#endif
 
   // a dynamically created global var
   execute("testobj = {'key_one':1, 'another_key': 2}");
@@ -1341,6 +1364,7 @@ TEST_F(Completer_frontend, py_shell) {
   CHECK_OBJECT_COMPLETIONS("shell.options");
 }
 
+#ifdef HAVE_ADMIN_API
 TEST_F(Completer_frontend, py_adminapi) {
   execute("\\py");
 
@@ -1618,6 +1642,7 @@ TEST_F(Completer_frontend, py_devapi_table) {
 
   execute("session.rollback()");
 }
+#endif
 
 TEST_F(Completer_frontend, py_classic) {
   connect_classic();
@@ -1638,9 +1663,13 @@ TEST_F(Completer_frontend, py_classic) {
 TEST_F(Completer_frontend, help_py) {
   execute("\\py");
 
+#ifdef HAVE_ADMIN_API
   EXPECT_AFTER_TAB("\\help dba.cr", "\\help dba.create_");
   EXPECT_AFTER_TAB("\\help dba.create_c", "\\help dba.create_cluster");
+#endif
+#ifdef HAVE_UPGRADE_CHECKER
   EXPECT_AFTER_TAB("\\h util.che", "\\h util.check_for_server_upgrade");
+#endif
   EXPECT_AFTER_TAB("\\? she", "\\? shell");
   EXPECT_AFTER_TAB("\\? shell.co", "\\? shell.connect");
 }
@@ -1765,6 +1794,7 @@ TEST_F(Completer_frontend, WL13397_TSFR_1_1_2_1) {
   EXPECT_AFTER_TAB("CREATE ro", "CREATE ROLE");
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Completer_frontend, WL13397_TSFR_1_2_1) {
   connect_classic();
 
@@ -1782,6 +1812,7 @@ TEST_F(Completer_frontend, WL13397_TSFR_1_2_1) {
 
   execute("SET @@global.sql_mode = @saved_sql_mode;");
 }
+#endif
 
 TEST_F(Completer_frontend, WL13397_TSFR_1_2_2) {
   connect_classic();
@@ -2140,6 +2171,7 @@ TEST_F(Completer_frontend, quote_engine) {
                    "CREATE TABLE t(id INT) ENGINE=\"InnoDB\"");
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Completer_frontend, quote_udf) {
   if (this->_target_server_version < mysqlshdk::utils::Version(8, 0, 0)) {
     SKIP_TEST("This test requires 8.0+ server");
@@ -2159,6 +2191,7 @@ TEST_F(Completer_frontend, quote_udf) {
   EXPECT_AFTER_TAB("SELECT `mysqlx_e", "SELECT `mysqlx_error`()");
   EXPECT_AFTER_TAB("SELECT \"mysqlx_e", "SELECT \"mysqlx_error\"()");
 }
+#endif
 
 TEST_F(Completer_frontend, quote_runtime_function) {
   connect_classic();
@@ -2268,6 +2301,11 @@ TEST_F(Completer_frontend, quote_sys_var) {
   }
 }
 
+// MariaDB does not support MySQL-style general tablespaces: `CREATE TABLESPACE
+// ... ADD DATAFILE` is a syntax error and INFORMATION_SCHEMA.FILES is an empty
+// stub, so there is nothing for the completer to complete. The feature does not
+// exist on MariaDB, so this test does not apply.
+#ifndef MARIADB_BUILD
 TEST_F(Completer_frontend, quote_tablespace) {
   connect_classic();
   execute("\\sql");
@@ -2288,6 +2326,7 @@ TEST_F(Completer_frontend, quote_tablespace) {
 
   execute("DROP TABLESPACE table_space;");
 }
+#endif  // MARIADB_BUILD
 
 TEST_F(Completer_frontend, quote_user) {
   // BUG#34360367
@@ -2372,7 +2411,8 @@ TEST_F(Completer_frontend, quote_collation) {
 
 TEST_F(Completer_frontend, quote_plugin) {
   const bool native_password =
-      _target_server_version < mysqlshdk::utils::Version(9, 0, 0);
+      _target_server_version < mysqlshdk::utils::Version(9, 0, 0) ||
+      server_vendor == "MariaDB";
   const std::string to_complete = native_password ? "mysql_n" : "caching_s";
   const std::string completed =
       native_password ? "mysql_native_password" : "caching_sha2_password";
@@ -2450,6 +2490,7 @@ TEST_F(Completer_frontend, bug_34372040) {
   }
 }
 
+#ifdef MARIADB_BUILD
 TEST_F(Completer_frontend, bug_34370621) {
   if (this->_target_server_version < mysqlshdk::utils::Version(8, 0, 0)) {
     SKIP_TEST("This test requires 8.0+ server");
@@ -2462,6 +2503,7 @@ TEST_F(Completer_frontend, bug_34370621) {
   EXPECT_AFTER_TAB("RESET PERSIST IF EXISTS sql_log_b",
                    "RESET PERSIST IF EXISTS sql_log_bin");
 }
+#endif
 
 TEST_F(Completer_frontend, bug_34343279) {
   if (this->_target_server_version < mysqlshdk::utils::Version(8, 0, 0)) {

@@ -1,4 +1,4 @@
-#@ {VER(>=8.0.27)}
+#@ {VER(>=8.0.27) and __have_dump_and_load}
 #@<> Initialization
 import os
 import json

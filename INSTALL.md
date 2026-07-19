@@ -116,8 +116,8 @@ cd ~/mysql-src/mysql-shell/bld
 2. Configure the project:
 ```bash
 cmake .. \
-    -DMYSQL_SOURCE_DIR=`pwd`/../../mysql-server \
-    -DMYSQL_BUILD_DIR=`pwd`/../../mysql-server/bld \
+    -DMARIADB_SOURCE_DIR=`pwd`/../../mariadb-server \
+    -DMARIADB_BUILD_DIR=`pwd`/../../mariadb-server/bld \
     -DBUNDLED_ANTLR_DIR=~/mysql-src/usr/local\
     -DHAVE_PYTHON=1
 ```
@@ -181,3 +181,4 @@ mysqlsh --pym pip install certifi PyYAML
 
 
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB Corporation.

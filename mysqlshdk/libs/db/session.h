@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -116,6 +117,7 @@ class Error : public shcore::Error {
   std::string sqlstate_;
 };
 
+enum class ServerVendor { MySQL, MariaDB };
 class SHCORE_PUBLIC ISession {
  public:
   // Connection
@@ -124,6 +126,8 @@ class SHCORE_PUBLIC ISession {
   }
 
   void connect(const mysqlshdk::db::Connection_options &data);
+
+  virtual ServerVendor get_server_vendor() { return ServerVendor::MySQL; };
 
   // thread safe
   virtual uint64_t get_connection_id() const = 0;

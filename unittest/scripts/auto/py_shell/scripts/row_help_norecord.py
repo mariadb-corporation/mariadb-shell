@@ -1,3 +1,4 @@
+#@{__have_x_protocol}
 shell.connect(__uripwd)
 row = session.sql('select 1').execute().fetch_one()
 session.close()

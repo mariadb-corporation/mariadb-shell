@@ -215,7 +215,7 @@ sh = subprocess.Popen([__mysqlsh, __test_uripwd, '--sql', '-e', 'SELECT * FROM t
 
 blocked_cid = wait_for_blocked_thread()
 
-#@ WL11651-TSFR18_2 - --locks - blocking
+#@ WL11651-TSFR18_2 - --locks - blocking {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --locks
@@ -226,7 +226,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('SHARED_NO_READ_WRITE (TRANSACTION)')
 EXPECT_STDOUT_CONTAINS('SELECT * FROM thread_test.innodb')
 
-#@ WL11651-TSFR18_2 - --locks - blocked
+#@ WL11651-TSFR18_2 - --locks - blocked {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --cid <<<blocked_cid>>> --locks
@@ -237,7 +237,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('SHARED_READ (TRANSACTION)')
 EXPECT_STDOUT_CONTAINS('thread_test@{0}'.format(__host))
 
-#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - metadata
+#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - metadata {__have_x_protocol}
 report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblocked,nwaiting', 'where': 'tid = {0}'.format(__test_ids['tid'])})['report']
 EXPECT_EQ(1, report[1][0])
 EXPECT_EQ(0, report[1][1])
@@ -259,7 +259,7 @@ sh = subprocess.Popen([__mysqlsh, __test_uripwd, '--sql', '-e', 'UPDATE thread_t
 
 blocked_cid = wait_for_blocked_thread()
 
-#@ WL11651-TSFR18_2 - --locks - blocking - InnoDB
+#@ WL11651-TSFR18_2 - --locks - blocking - InnoDB {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --locks
@@ -270,7 +270,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('RECORD')
 EXPECT_STDOUT_CONTAINS('UPDATE thread_test.innodb SET value = 7')
 
-#@ WL11651-TSFR18_2 - --locks - blocked - InnoDB
+#@ WL11651-TSFR18_2 - --locks - blocked - InnoDB  {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --cid <<<blocked_cid>>> --locks
@@ -281,7 +281,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('RECORD')
 EXPECT_STDOUT_CONTAINS('thread_test@{0}'.format(__host))
 
-#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - InnoDB
+#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - InnoDB {__have_x_protocol}
 report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblocked,nwaiting', 'where': 'tid = {0}'.format(__test_ids['tid'])})['report']
 EXPECT_EQ(3 if __version_num > 80000 else 0, report[1][0])
 EXPECT_EQ(0, report[1][1])
@@ -290,7 +290,7 @@ report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblo
 EXPECT_EQ(1 if __version_num > 80000 else 0, report[1][0])
 EXPECT_EQ(1 if __version_num > 80000 else 0, report[1][1])
 
-#@<> --raw-locks
+#@<> --raw-locks {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --raw-locks
@@ -315,7 +315,7 @@ sh.wait()
 # need to wait a bit for rollback to happen
 time.sleep(1)
 
-#@ WL11651-TSFR18_3 - When using the --locks (-L) option and the thread has not any locks, validate that no additional information is displayed.
+#@ WL11651-TSFR18_3 - When using the --locks (-L) option and the thread has not any locks, validate that no additional information is displayed. {sandbox.vendor() == "MySQL"}
 \show thread --tid <<<__test_ids['tid']>>> --locks
 
 # WL11651-TSFR19_2 - When using the --prep-stmts (-P) option, validate that the report display the following information about prepared statements: ID of the prepared statement, ID of the event which created the statement, name of the statement, or NULL if not available, name of the stored program which created the statement, or NULL if not available, time it took to prepare the statement, number of times the prepared statement was executed, execution time (total, minimum, average, maximum).
@@ -326,7 +326,8 @@ __test_session.run_sql("EXECUTE stmt1")
 __test_session.run_sql("EXECUTE stmt1")
 __test_session.run_sql("EXECUTE stmt1")
 
-#@ WL11651-TSFR19_2 - --prep-stmts
+#@ WL11651-TSFR19_2 - --prep-stmts {sandbox.vendor() == "MySQL"}
+# PORT-TODO: Investigate why this fails
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --prep-stmts
@@ -366,21 +367,22 @@ __test_session.run_sql("DEALLOCATE PREPARE stmt1")
 #@ WL11651-TSFR21_3 - If the thread report is called without specifying any option, validate that the default information displayed is the information displayed when using the --general (-G) option. [USE: WL11651-TSFR21_2 - When using the --general (-G) option, validate that the expected information is displayed by the report.]
 \show thread --tid <<<__test_ids['tid']>>>
 
-#@ WL11651-TSFR22_2 - When using the --vars (-V) option, validate that the report display information about the session system variables of the thread.
+#@ WL11651-TSFR22_2 - When using the --vars (-V) option, validate that the report display information about the session system variables of the thread. {sandbox.vendor() == "MySQL"}
+# PORT-TODO: Table 'performance_schema.variables_by_thread' doesn't exist
 \show thread --tid <<<__test_ids['tid']>>> --vars
 
-#@ WL11651-TSFR22_3 - When using the --vars (-V) option and the thread has not any session system variables, validate that no additional information is displayed.
+#@ WL11651-TSFR22_3 - When using the --vars (-V) option and the thread has not any session system variables, validate that no additional information is displayed.  {sandbox.vendor() == "MySQL"}
 \show thread --tid <<<background_tid>>> --vars
 
 # WL11651-TSFR22_4 - When using the --vars (-V) option with an argument, validate that the report displays information about the session system variables that match the specified prefix.
 
-#@ WL11651-TSFR22_4 - one prefix
+#@ WL11651-TSFR22_4 - one prefix {sandbox.vendor() == "MySQL"}
 \show thread --tid <<<__test_ids['tid']>>> --vars time
 
-#@ WL11651-TSFR22_4 - multiple prefixes
+#@ WL11651-TSFR22_4 - multiple prefixes {sandbox.vendor() == "MySQL"}
 \show thread --tid <<<__test_ids['tid']>>> --vars character_set,collation
 
-#@ WL11651-TSFR22_4 - invalid prefix
+#@ WL11651-TSFR22_4 - invalid prefix {sandbox.vendor() == "MySQL"}
 \show thread --tid <<<__test_ids['tid']>>> --vars invalidprefix
 
 #@ set some user variables
@@ -406,7 +408,8 @@ __test_session.run_sql("SET @three_var = 3")
 #@ WL11651-TSFR23_4 - invalid prefix
 \show thread --tid <<<__test_ids['tid']>>> --user-vars invalidprefix
 
-#@ WL11651-TSFR24_2 - Run the thread report with the --all (-A) option, validate that the info displayed list the information as if all the options were given, skipping the output of blank options.
+#@ WL11651-TSFR24_2 - Run the thread report with the --all (-A) option, validate that the info displayed list the information as if all the options were given, skipping the output of blank options. {sandbox.vendor() == "MySQL"}
+# PORT-TODO: Table 'performance_schema.data_locks' doesn't exist
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --all

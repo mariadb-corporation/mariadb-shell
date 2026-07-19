@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +67,9 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   String unparseUri(Dictionary options);
   String prompt(String message, Dictionary options);
   Session connect(ConnectionData connectionData, String password);
+#ifdef HAVE_ADMIN_API
   Session connectToPrimary(ConnectionData connectionData, String password);
+#endif
   Session openSession(ConnectionData connectionData, String password);
   Session getSession();
   Undefined setSession(Session session);
@@ -112,7 +115,9 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   str unparse_uri(dict options);
   str prompt(str message, dict options);
   Session connect(ConnectionData connectionData, str password);
+#ifdef HAVE_ADMIN_API
   Session connect_to_primary(ConnectionData connectionData, str password);
+#endif
   Session open_session(ConnectionData connectionData, str password);
   Session get_session();
   None set_session(Session session);
@@ -169,10 +174,12 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   std::shared_ptr<ShellBaseSession> connect(
       const mysqlshdk::db::Connection_options &connection_options,
       const char *password = {});
+#ifdef HAVE_ADMIN_API
   std::shared_ptr<ShellBaseSession> connect_to_primary(
       const mysqlshdk::db::Connection_options &connection_options =
           mysqlshdk::db::Connection_options{},
       const char *password = {});
+#endif
   std::shared_ptr<ShellBaseSession> open_session(
       const mysqlshdk::db::Connection_options &connection_options,
       const char *password = {});

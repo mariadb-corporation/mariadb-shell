@@ -22,10 +22,11 @@ FUNCTIONS
       connect(connectionData[, password])
             Establishes the shell global session.
 
+?{__have_admin_api}
       connect_to_primary([connectionData][, password])
             Establishes the shell global session, connecting to a primary of an
             InnoDB cluster or ReplicaSet.
-
+?{}
       create_context(options)
             Create a shell context wrapper used in multiuser environments. The
             returned object should be explicitly deleted when no longer needed.
@@ -230,8 +231,12 @@ DESCRIPTION
       through the different APIs. For details use:
 
       - \? mysql
+?{__have_x_protocol}
       - \? mysqlx
+?{}
+?{__have_admin_api}
       - \? adminapi
+?{}
       - \? shellapi
 
       To get the class name for a global object or a registered extension call
@@ -1516,11 +1521,13 @@ The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
 - mysql: for connections using the MySQL protocol.
+?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 
 If no protocol is specified in the connection data, the shell will first
 attempt connecting using the X protocol, if the connection fails it will then
 try to connect using the MySQL protocol.
+?{}
 
 In general, the Shell connects to the server using TCP connections, unless the
 connection data contains the options required to create any of the connections
@@ -1800,11 +1807,13 @@ The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
 - mysql: for connections using the MySQL protocol.
+?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 
 If no protocol is specified in the connection data, the shell will first
 attempt connecting using the X protocol, if the connection fails it will then
 try to connect using the MySQL protocol.
+?{}
 
 In general, the Shell connects to the server using TCP connections, unless the
 connection data contains the options required to create any of the connections
@@ -1984,6 +1993,7 @@ characters.
 If host is a literal IPv6 address with zone ID, the '%' character separating
 address from the zone ID needs to be URL encoded.
 
+?{sandbox.vendor() == "MySQL"}
 SEE ALSO
 
 Additional entries were found matching connection
@@ -1992,16 +2002,19 @@ The following topics were found at the SQL Syntax category:
 
 - ALTER TABLE
 - CREATE TABLE
-?{(VER(>=5.7.27) and VER(<8.0.0)) or VER(>=8.0.17)}
+?{}
+?{(VER(>=5.7.27) and VER(<8.0.0)) or VER(>=8.0.17) and sandbox.vendor() == "MySQL"}
 - DESC
 - DESCRIBE
 ?{}
+?{sandbox.vendor() == "MySQL"}
 - EXPLAIN
 - KILL
 
 For help on a specific topic use: \? <topic>
 
 e.g.: \? ALTER TABLE
+?{}
 
 #@<OUT> Help on connection attributes
 Connection Attributes
@@ -2163,11 +2176,13 @@ The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
 - mysql: for connections using the MySQL protocol.
+?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 
 If no protocol is specified in the connection data, the shell will first
 attempt connecting using the X protocol, if the connection fails it will then
 try to connect using the MySQL protocol.
+?{}
 
 In general, the Shell connects to the server using TCP connections, unless the
 connection data contains the options required to create any of the connections

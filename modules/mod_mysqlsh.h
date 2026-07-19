@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -51,8 +52,10 @@ DECLARE_MODULE(Mysqlsh, mysqlsh);
 #if !defined(DOXYGEN_JS) && !defined(DOXYGEN_PY)
 shcore::Value get_member(const std::string &prop) const;
 
+#ifdef HAVE_ADMIN_API
 std::shared_ptr<dba::Dba> connect_dba(
     const mysqlshdk::db::Connection_options &connection_options);
+#endif
 
 void thread_init();
 void thread_end();

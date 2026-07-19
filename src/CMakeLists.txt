@@ -1,4 +1,5 @@
 # Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -161,6 +162,34 @@ if(BUNDLED_OPENSSL)
         USE_LIBDIR
         TARGET mysqlsh
     )
+  ENDIF()
+
+  # The MariaDB sandbox plugin shells out to the openssl CLI to generate the
+  # sandbox SSL certificates (MariaDB, unlike MySQL, does not auto-generate them
+  # at datadir init). On Windows there is no system openssl, and vcpkg keeps the
+  # tool under <prefix>/tools/openssl (which z-applocal does not deploy), so
+  # bundle it next to the OpenSSL DLLs (INSTALL_LIBDIR -> bin/ on Windows) for an
+  # out-of-the-box experience. Windows + MariaDB only: the MySQL build uses the
+  # AdminAPI sandbox (server-side cert generation) and does not need the CLI.
+  IF(WIN32 AND MARIADB_BUILD)
+    FIND_PROGRAM(OPENSSL_CLI_EXECUTABLE
+      NAMES openssl
+      HINTS "${WITH_SSL_PATH}/tools/openssl" "${WITH_SSL_PATH}/bin"
+            "${OPENSSL_ROOT_DIR}/tools/openssl" "${OPENSSL_ROOT_DIR}/bin"
+      NO_DEFAULT_PATH)
+    IF(OPENSSL_CLI_EXECUTABLE)
+      install_bundled_binaries(
+          DESCRIPTION "OpenSSL CLI (MariaDB sandbox cert generation)"
+          BINARIES "${OPENSSL_CLI_EXECUTABLE}"
+          DESTINATION "${INSTALL_LIBDIR}"
+          TARGET mysqlsh
+      )
+    ELSE()
+      MESSAGE(WARNING "openssl CLI not found near the resolved OpenSSL "
+        "(WITH_SSL_PATH='${WITH_SSL_PATH}', OPENSSL_ROOT_DIR='${OPENSSL_ROOT_DIR}'); "
+        "the MariaDB sandbox plugin will require openssl on PATH or the "
+        "'opensslPath' option.")
+    ENDIF()
   ENDIF()
 endif()
 
@@ -337,6 +366,83 @@ IF(BUNDLED_SSH_DIR)
       DESTINATION "${INSTALL_LIBDIR}"
       TARGET mysqlsh
   )
+ENDIF()
+
+# Runtime DLLs for dependencies resolved through find_package (the vcpkg case).
+#
+# On Windows only the shell's own bundling options run install() for a
+# dependency's DLL: WITH_CURL_PATH installs libcurl.dll/zlib (curl.cmake), and
+# BUNDLED_SSH_DIR installs libssh (above). When the dependencies instead come
+# from find_package (as with a vcpkg toolchain), those DLLs are only copied next
+# to the build output by `vcpkg z-applocal` at build time - they never make it
+# into the install/CPack tree, so the produced package is missing libcurl.dll,
+# ssh.dll, antlr4-runtime.dll and zlib (z.dll). Install them here from where they
+# were resolved. Guarded so it never double-handles the option-based paths, and a
+# no-op on builds where the DLLs aren't found (e.g. statically linked deps).
+IF(WIN32)
+  SET(_vcpkg_runtime_dlls "")
+
+  # libssh: the 'ssh' imported target points straight at its own DLL. Only when
+  # the BUNDLED_SSH_DIR block above did not already bundle it.
+  IF(NOT BUNDLED_SSH_DIR AND TARGET ssh)
+    LIST(APPEND _vcpkg_runtime_dlls "$<TARGET_FILE:ssh>")
+  ENDIF()
+
+  # curl/zlib/antlr4 are referenced only by import-library path, so find the
+  # matching runtime DLLs in the per-triplet bin dir (vcpkg keeps <triplet>/bin
+  # as a sibling of <triplet>/lib; for a debug build the import lib resolves
+  # under debug/lib and this lands on debug/bin, which is also correct). Derive
+  # that dir from any resolved import library (unquoted expansion skips the
+  # debug/optimized keyword tokens some *_LIBRARY vars carry).
+  SET(_dep_bin_dir "")
+  FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY})
+    IF(EXISTS "${_dep_lib}")
+      GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
+      GET_FILENAME_COMPONENT(_dep_bin_dir "${_dep_lib_dir}/../bin" ABSOLUTE)
+      BREAK()
+    ENDIF()
+  ENDFOREACH()
+
+  IF(_dep_bin_dir AND IS_DIRECTORY "${_dep_bin_dir}")
+    # curl and its zlib dependency, unless WITH_CURL_PATH already installed them.
+    IF(NOT WITH_CURL_PATH)
+      FIND_FILE(VCPKG_CURL_DLL NAMES libcurl.dll
+                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
+      IF(VCPKG_CURL_DLL)
+        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_CURL_DLL}")
+      ENDIF()
+      FIND_FILE(VCPKG_ZLIB_DLL NAMES z.dll zlib1.dll zlib.dll
+                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
+      IF(VCPKG_ZLIB_DLL)
+        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ZLIB_DLL}")
+      ENDIF()
+    ENDIF()
+
+    FIND_FILE(VCPKG_ANTLR4_DLL NAMES antlr4-runtime.dll
+              HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
+    IF(VCPKG_ANTLR4_DLL)
+      LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ANTLR4_DLL}")
+    ENDIF()
+
+    # OpenSSL (libcrypto/libssl) is provided by vcpkg in the same bin dir and is
+    # missing from the package for the same reason, unless the BUNDLED_OPENSSL
+    # path already installs it. The DLL name is triplet-specific
+    # (e.g. libcrypto-3-arm64.dll), so match by pattern.
+    IF(NOT BUNDLED_OPENSSL)
+      FILE(GLOB _vcpkg_ssl_dlls "${_dep_bin_dir}/libcrypto*.dll"
+                                "${_dep_bin_dir}/libssl*.dll")
+      IF(_vcpkg_ssl_dlls)
+        LIST(APPEND _vcpkg_runtime_dlls ${_vcpkg_ssl_dlls})
+      ENDIF()
+    ENDIF()
+  ENDIF()
+
+  IF(_vcpkg_runtime_dlls)
+    MESSAGE(STATUS "Bundling find_package/vcpkg runtime DLLs: "
+                   "${_vcpkg_runtime_dlls}")
+    INSTALL(PROGRAMS ${_vcpkg_runtime_dlls}
+            DESTINATION "${INSTALL_BINDIR}" COMPONENT main)
+  ENDIF()
 ENDIF()
 
 # krb5 is an indirect dependency for libssh, platforms that bundle libssh should may optionally

@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +35,10 @@
 
 #include "./test_utils.h"
 
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx_resultset.h"
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
 #include "modules/mod_mysql_resultset.h"
 #include "modules/mod_mysql_session.h"
 #include "shellcore/base_session.h"
@@ -169,28 +172,36 @@ class Interrupt_mysql : public Shell_core_test_wrapper {
     run_script_classic(
         {"drop schema if exists itst;", "create schema if not exists itst;",
          "create table itst.data "
-         "   (a int primary key auto_increment, b varchar(10))",
+         "   (a int primary key auto_increment, b varchar(10));",
+#ifdef HAVE_X_PROTOCOL
          "create table itst.cdata "
          "   (_id varchar(32) "
          "       generated always as (doc->>'$._id') stored primary key,"
          "    doc json"
          "   );",
+#endif
          "create procedure itst.populate()\n"
          "begin\n"
          "   declare nrows int;\n"
          "   set nrows = 100;\n"
          "   insert into itst.data values (default, 'first');"
+#ifdef HAVE_X_PROTOCOL
          "   insert into itst.cdata (doc) values ('{\"_id\":\"0\", "
          "                   \"b\":\"first\"}');"
+#endif
          "   while nrows > 0 do "
          "       insert into itst.data values (default, '');"
+#ifdef HAVE_X_PROTOCOL
          "       insert into itst.cdata (doc) values (json_object("
          "             \"_id\", concat(nrows, ''), \"b\", 'test'));"
+#endif
          "       set nrows = nrows - 1;"
          "   end while;\n"
          "   insert into itst.data values (default, 'last');\n"
+#ifdef HAVE_X_PROTOCOL
          "   insert into itst.cdata (doc) values ('{\"_id\":\"l1\", "
          "                   \"b\":\"last\"}');"
+#endif
          "end",
          "call itst.populate()"});
   }
@@ -206,6 +217,7 @@ class Interrupt_mysql : public Shell_core_test_wrapper {
     return session;
   }
 
+#ifdef HAVE_X_PROTOCOL
   std::shared_ptr<mysqlsh::ShellBaseSession> connect_node(
       const std::string & /* uri */, const std::string & /* password */) {
     std::shared_ptr<mysqlsh::ShellBaseSession> session(
@@ -215,6 +227,7 @@ class Interrupt_mysql : public Shell_core_test_wrapper {
     session->connect(connection_options);
     return session;
   }
+#endif
 
   void output_wait(const char *str, int timeout) {
     timeout *= 1000;
@@ -260,6 +273,7 @@ class Interrupt_mysql : public Shell_core_test_wrapper {
   Interpreter_print_handler m_handler;
 };
 
+#ifdef HAVE_X_PROTOCOL
 class Interrupt_mysqlx : public Interrupt_mysql {
  public:
   void SetUp() override {
@@ -270,6 +284,7 @@ class Interrupt_mysqlx : public Interrupt_mysql {
     wipe_all();
   }
 };
+#endif
 
 TEST_F(Interrupt_mysql, sql_classic) {
   // Test case for FR2
@@ -294,15 +309,21 @@ TEST_F(Interrupt_mysql, sql_classic) {
           kill_sent = true;
           current_interrupt()->interrupt();
         });
+    // Join the worker thread on every exit path. A fatal assertion (FAIL/
+    // ASSERT) returns from TestBody and a thrown exception unwinds the stack;
+    // either one would otherwise destroy a still-joinable std::thread and
+    // call std::terminate() (SIGABRT) instead of failing cleanly.
+    shcore::on_leave_scope join_thd([&thd]() {
+      if (thd.joinable()) thd.join();
+    });
     try {
       auto result = session->execute_sql("select sleep(5) as test1");
       auto row = result->fetch_one();
       EXPECT_TRUE(kill_sent);
       EXPECT_EQ("1", row->get_as_string(0));
     } catch (const std::exception &e) {
-      FAIL() << e.what();
+      EXPECT_STREQ("Query execution was interrupted", e.what());
     }
-    thd.join();
   }
 }
 #ifdef HAVE_JS
@@ -373,6 +394,7 @@ TEST_F(Interrupt_mysql, sql_classic_py) {
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interrupt_mysqlx, sql_x) {
   // Test case for FR2
   std::shared_ptr<mysqlsh::ShellBaseSession> session;
@@ -1008,6 +1030,7 @@ TEST_F(Interrupt_mysqlx, db_python_drop) {
   auto row = result->fetch_one();
   EXPECT_EQ(2, row->get_int(0));
 }
+#endif
 
 // Test that native JavaScript code gets interrupted
 #ifdef HAVE_JS
@@ -1095,6 +1118,7 @@ TEST_F(Interrupt_mysql, sql_classic_resultset_vertical) {
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interrupt_mysqlx, sql_x_sql_resultset) {
   // Test case for FR3
   execute("\\sql");
@@ -1158,6 +1182,7 @@ TEST_F(Interrupt_mysqlx, js_x_crud_resultset) {
   MY_EXPECT_STDOUT_NOT_CONTAINS(
       "Result printing interrupted, rows may be missing from the output.");
 }
+#endif
 #endif
 
 }  // namespace shcore

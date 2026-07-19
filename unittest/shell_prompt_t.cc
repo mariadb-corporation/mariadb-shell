@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -991,6 +992,18 @@ class Shell_prompt_exe : public tests::Command_line_test {
     shcore::copy_dir(
         shcore::path::join_path(shcore::get_share_folder(), "prompt"),
         s_prompt_dir);
+
+#if defined(MARIADB_BUILD) && defined(_WIN32)
+    s_ssl_prompt = "";
+    s_ssl_prompt_x = "";
+    s_ssl_mysql_prompt = "";
+    s_ssl_enabled = "";
+#else
+    s_ssl_prompt = " ssl";
+    s_ssl_prompt_x = " \xEE\x82\xA2";
+    s_ssl_mysql_prompt = " ssl/mysql";
+    s_ssl_enabled = "SSL";
+#endif
   }
 
   static void TearDownTestCase() {
@@ -1003,9 +1016,17 @@ class Shell_prompt_exe : public tests::Command_line_test {
 
  protected:
   static std::string s_prompt_dir;
+  static std::string s_ssl_prompt;
+  static std::string s_ssl_prompt_x;
+  static std::string s_ssl_mysql_prompt;
+  static std::string s_ssl_enabled;
 };
 
 std::string Shell_prompt_exe::s_prompt_dir;
+std::string Shell_prompt_exe::s_ssl_prompt;
+std::string Shell_prompt_exe::s_ssl_prompt_x;
+std::string Shell_prompt_exe::s_ssl_mysql_prompt;
+std::string Shell_prompt_exe::s_ssl_enabled;
 
 TEST_F(Shell_prompt_exe, environment) {
   const auto expect_prompt = "mysql-sql>";
@@ -1022,8 +1043,10 @@ TEST_F(Shell_prompt_exe, environment) {
   // TS_CP#1 set MYSQLSH_PROMPT_THEME environment variable to a file name , it
   // configures prompt correctly accordingly to file
   shcore::setenv("MYSQLSH_PROMPT_THEME", "altprompt.json");
+#ifdef HAVE_JS
   execute({_mysqlsh, "--interactive=full", "--js", "-e", "1", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("ALT_PROMPT> 1\n1\nALT_PROMPT> ");
+#endif  // HAVE_JS
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");
 
   // TS_CP#6 On startup, if an error is found in the prompt file, an error
@@ -1054,6 +1077,7 @@ TEST_F(Shell_prompt_exe, environment) {
   shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
 }
 
+#ifdef HAVE_JS
 TEST_F(Shell_prompt_exe, histignore) {
   // TS_CLO#1  (combined with other tests in Cmdline_shell)
   // TS_CLO#2
@@ -1061,6 +1085,7 @@ TEST_F(Shell_prompt_exe, histignore) {
            "print(shell.options['history.sql.ignorePattern']);", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("foobar");
 }
+#endif  // HAVE_JS
 
 // the last line output is the prompt we will check
 #define EXPECT_PROMPT(prompt)                            \
@@ -1127,12 +1152,13 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   EXPECT_PROMPT(
       "host=" + _host + "  port=" + _mysql_port + "  mode=sql" +
       "  Mode=SQL  uri=" + uri + ":" + _mysql_port +
-      "  user=root  schema=  ssl=SSL  date=" + fmttime("%F") +
+      "  user=root  schema=  ssl=" + s_ssl_enabled + "  date=" + fmttime("%F") +
       "  env:MYSQLSH_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
       "Sessvar:autocommit=OFF  "
       "sessstatus:Mysqlx_ssl_active= END> ");
 
   wipe_out();
+#ifndef MARIADB_BUILD
   rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                 "--ssl-mode=DISABLED", "--sql", "-e", "set autocommit=0;",
                 nullptr});
@@ -1144,7 +1170,9 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
       "  env:MYSQLSH_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
       "Sessvar:autocommit=OFF  "
       "sessstatus:Mysqlx_ssl_active= END> ");
+#endif
 
+#ifdef HAVE_X_PROTOCOL
   // This test only works if the test server is listening on default socket path
   if (0) {
     wipe_out();
@@ -1187,6 +1215,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
                   "sysvar:autocommit=ON  Sessvar:autocommit=OFF  "
                   "sessstatus:Mysqlx_ssl_active=ON END> ");
   }
+#endif
   shcore::delete_file("allvars.json");
 
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");
@@ -1197,13 +1226,14 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_nocolor) {
   shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
   shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
 
-  int rc =
-      execute({_mysqlsh, "--interactive=full", _uri.c_str(), "--schema=mysql",
-               "--ssl-mode=REQUIRED", "-e", "\\history", nullptr});
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MySQL [" + _host + ":" + _port + "+ ssl/mysql] SQL> ");
+  EXPECT_PROMPT("MySQL [" + _host + ":" + _mysql_port + s_ssl_prompt +
+                "/mysql] SQL> ");
 
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");
   shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
@@ -1213,13 +1243,14 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_16) {
   shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_16.json");
   shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "16");
 
-  int rc =
-      execute({_mysqlsh, "--interactive=full", _uri.c_str(), "--schema=mysql",
-               "--ssl-mode=REQUIRED", "-e", "\\history", nullptr});
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MySQL \x1B[1m[" + _host + "+ ssl/mysql] \x1B[0mSQL> ");
+  EXPECT_PROMPT("MySQL \x1B[1m[" + _host + s_ssl_prompt +
+                "/mysql] \x1B[0mSQL> ");
 
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");
   shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
@@ -1229,17 +1260,17 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256) {
   shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_256.json");
   shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
 
-  int rc =
-      execute({_mysqlsh, "--interactive=full", _uri.c_str(), "--schema=mysql",
-               "--ssl-mode=REQUIRED", "-e", "\\history", nullptr});
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
   EXPECT_PROMPT(
       "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
       "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
-      _host + ":" + _port +
-      "+ ssl \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
+      _host + ":" + _mysql_port + s_ssl_prompt +
+      " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\x1B[48;5;0m> \x1B[0m");
 
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");
@@ -1250,17 +1281,17 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_dbl_256) {
   shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_dbl_256.json");
   shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
 
-  int rc =
-      execute({_mysqlsh, "--interactive=full", _uri.c_str(), "--schema=mysql",
-               "--ssl-mode=REQUIRED", "-e", "\\history", nullptr});
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
   EXPECT_DBL_PROMPT(
       "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
       "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
-      _host + ":" + _port +
-      "+ ssl \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
+      _host + ":" + _mysql_port + s_ssl_prompt +
+      " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\n\x1B[48;5;0m  > "
       "\x1B[0m");
 
@@ -1272,9 +1303,9 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
   shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_256pl.json");
   shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
 
-  int rc =
-      execute({_mysqlsh, "--interactive=full", _uri.c_str(), "--schema=mysql",
-               "--ssl-mode=REQUIRED", "-e", "\\history", nullptr});
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
@@ -1282,9 +1313,8 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
       "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
       "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m\x1B[48;5;237m\x1B[38;5;"
       "15m " +
-      _host + ":" + _port +
-      "+ \xEE\x82\xA2 "
-      "\x1B[48;5;242m\x1B[38;5;237m\xEE\x82\xB0\x1B[0m\x1B[48;5;242m\x1B[38;5;"
+      _host + ":" + _mysql_port + s_ssl_prompt_x +
+      " \x1B[48;5;242m\x1B[38;5;237m\xEE\x82\xB0\x1B[0m\x1B[48;5;242m\x1B[38;5;"
       "15m mysql "
       "\x1B[48;5;166m\x1B[38;5;242m\xEE\x82\xB0\x1B[0m\x1B[48;5;166m\x1B[38;5;"
       "15m SQL \x1B[0m\x1B[48;5;0m\x1B[38;5;166m\xEE\x82\xB0 \x1B[0m");
@@ -1333,22 +1363,24 @@ TEST_F(Shell_prompt_exe, bug28314383_py) {
   shcore::create_file(k_file,
                       "session.close();\n"
                       "\\connect " +
-                          _uri +
+                          _mysql_uri +
                           "?ssl-mode=REQUIRED\n"
                           "session.close();\n");
 
-  int rc = execute({_mysqlsh, "--interactive=full", _uri.c_str(),
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "--py", nullptr},
                    nullptr, k_file);
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _port +
-                                "+ ssl/mysql] Py> session.close();\n"
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _mysql_port +
+                                s_ssl_prompt +
+                                "/mysql] Py> session.close();\n"
                                 "MySQL Py> \\connect " +
-                                _uri + "?ssl-mode=REQUIRED\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _port +
-                                "+ ssl] Py> session.close();\n"
+                                _mysql_uri + "?ssl-mode=REQUIRED\n");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _mysql_port +
+                                s_ssl_prompt +
+                                "] Py> session.close();\n"
                                 "MySQL Py> Bye!");
 
   shcore::unsetenv("MYSQLSH_PROMPT_THEME");

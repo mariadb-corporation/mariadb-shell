@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,15 +35,27 @@
 #include <signal.h>
 #endif
 
+#ifndef MARIADB_BUILD
 #include <my_alloc.h>
 #include <my_default.h>
 #include <mysql.h>
+#else
+// On MariaDB, detect_mysql_environment() probes the server through the shell's
+// own classic-session db layer instead of the raw client API: the server's
+// <mysql.h> applies the server_* capi rename in this TU's include order, and
+// the my_alloc/my_default headers are unused here.
+#include "mysqlshdk/libs/db/connection_options.h"
+#include "mysqlshdk/libs/db/mysql/session.h"
+#include "mysqlshdk/libs/db/result.h"
+#include "mysqlshdk/libs/db/row.h"
+#endif
 #include <stdlib.h>
 #include <clocale>
 #include <fstream>
 #include <iostream>
 #include <set>
 
+#include "mysqlshdk/include/shellcore/shell_options.h"
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
@@ -128,6 +141,7 @@ void detect_mysql_environment(int port, const char *pwd) {
   int server_id = 0;
   bool have_ssl = false;
   bool have_openssl = false;
+#ifndef MARIADB_BUILD
   MYSQL *mysql;
   mysql = mysql_init(nullptr);
   unsigned int tcp = MYSQL_PROTOCOL_TCP;
@@ -270,11 +284,120 @@ void detect_mysql_environment(int port, const char *pwd) {
     exit(1);
   }
   mysql_close(mysql);
+#else   // MARIADB_BUILD: probe through the shell's classic-session db layer.
+  auto session = mysqlshdk::db::mysql::Session::create();
+  {
+    mysqlshdk::db::Connection_options opts;
+    opts.set_user("root");
+    opts.set_password(pwd ? pwd : "");
+    opts.set_host("127.0.0.1");
+    opts.set_port(port);
+    try {
+      session->connect(opts);
+    } catch (const std::exception &e) {
+      std::cerr << "Cannot connect to MySQL server at " << port << ": "
+                << e.what() << "\n";
+      exit(1);
+    }
+  }
 
+  // Some variables do not exist on every server (e.g. mysqlx_port on MariaDB);
+  // ignore individual query failures, mirroring the original best-effort probe.
+  auto try_query =
+      [&session](const char *q) -> std::shared_ptr<mysqlshdk::db::IResult> {
+    try {
+      return session->query(q);
+    } catch (const std::exception &) {
+      return nullptr;
+    }
+  };
+
+  if (auto res = try_query("show variables like '%socket'")) {
+    while (auto row = res->fetch_one()) {
+      const auto name = row->get_as_string(0);
+      if (name == "socket" && !row->is_null(1)) socket = row->get_as_string(1);
+      if (name == "mysqlx_socket" && !row->is_null(1))
+        xsocket = row->get_as_string(1);
+    }
+  }
+
+  if (auto res = try_query("show variables like 'datadir'")) {
+    if (auto row = res->fetch_one()) datadir = row->get_as_string(1);
+  }
+
+  if (auto res = try_query("select @@hostname, @@report_host")) {
+    if (auto row = res->fetch_one()) {
+      hostname = row->get_as_string(0);
+      report_host = row->is_null(1) ? "" : row->get_as_string(1);
+    }
+  }
+
+  if (auto res = try_query("select @@version, @@server_id")) {
+    if (auto row = res->fetch_one()) {
+      g_target_server_version =
+          mysqlshdk::utils::Version(row->get_as_string(0));
+      if (!row->is_null(1)) server_id = static_cast<int>(row->get_int(1));
+    }
+  }
+
+  if (g_target_server_version < mysqlshdk::utils::Version(8, 0, 24)) {
+    if (auto res =
+            try_query("select @@have_ssl = 'YES', @@have_openssl = 'YES'")) {
+      if (auto row = res->fetch_one()) {
+        if (!row->is_null(0) && row->get_as_string(0) == "1") have_ssl = true;
+        if (!row->is_null(1) && row->get_as_string(1) == "1")
+          have_openssl = true;
+      }
+    }
+  } else {
+    have_ssl = true;
+    have_openssl = true;
+  }
+
+  if (auto res = try_query("select @@mysqlx_port")) {
+    if (auto row = res->fetch_one()) {
+      if (!row->is_null(0)) xport = static_cast<int>(row->get_int(0));
+    }
+  }
+
+  // highest server tls version
+  if (auto res = try_query("SELECT @@tls_version")) {
+    if (auto row = res->fetch_one()) {
+      if (!row->is_null(0)) {
+        auto tls_versions = shcore::str_split(row->get_as_string(0), ",");
+        for (auto i = tls_versions.crbegin(); i != tls_versions.crend(); i++) {
+          if (shcore::str_beginswith(tls_versions.back(), "TLSv")) {
+            std::string ver((*i).begin() + 4, (*i).end());
+            g_highest_server_tls_version = g_highest_tls_version =
+                mysqlshdk::utils::Version(ver);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // highest client (negotiated) tls version; updates the common version
+  if (auto res = try_query("show status like 'Ssl_version'")) {
+    if (auto row = res->fetch_one()) {
+      const std::string tls_version =
+          row->is_null(1) ? "" : row->get_as_string(1);
+      if (shcore::str_beginswith(tls_version, "TLSv")) {
+        std::string ver(tls_version.begin() + 4, tls_version.end());
+        auto client_tls_version = mysqlshdk::utils::Version(ver);
+        g_highest_tls_version =
+            std::min(client_tls_version, g_highest_server_tls_version);
+      }
+    }
+  }
+#endif  // MARIADB_BUILD
+
+#ifdef HAVE_X_PROTOCOL
   if (!xport && g_target_server_version >= mysqlshdk::utils::Version(5, 7, 0)) {
     std::cerr << "Could not query mysqlx_port. X plugin not installed?\n";
     exit(1);
   }
+#endif
 
   const std::string socket_absolute =
       make_socket_absolute_path(datadir, socket);
@@ -285,9 +408,15 @@ void detect_mysql_environment(int port, const char *pwd) {
   try {
     hostname_ip = mysqlshdk::utils::Net::resolve_hostname_ipv4(hostname);
   } catch (std::exception &e) {
-    std::cerr << "Error resolving hostname of target server: " << e.what()
-              << "\n";
-    exit(1);
+    // The target server reports @@hostname, which on some setups is an
+    // unresolvable name (e.g. a macOS mDNS '.local' FQDN that this process
+    // cannot resolve to IPv4). The resolved IP is only used for informational
+    // output and a few host-matching tests, so a failure here should not abort
+    // the whole test run: warn and fall back to the loopback address.
+    hostname_ip = "127.0.0.1";
+    std::cerr << "Warning: could not resolve hostname of target server: "
+              << e.what() << "\n";
+    std::cerr << "Falling back to " << hostname_ip << " for the server IP.\n";
   }
 
   std::cout << "Target MySQL server:\n";
@@ -481,6 +610,7 @@ std::string verify_target_servers(const std::string &target,
 }
 
 bool delete_sandbox(int port) {
+#ifndef MARIADB_BUILD
   MYSQL *mysql;
   mysql = mysql_init(nullptr);
 
@@ -513,6 +643,11 @@ bool delete_sandbox(int port) {
   }
 
   mysql_close(mysql);
+#else
+  // Sandbox provisioning is not supported on MariaDB (see mod_testutils.cc), so
+  // there is no running sandbox server to shut down; just clean up any files.
+  (void)port;
+#endif
 
   const char *tmpdir = getenv("TMPDIR");
   if (tmpdir == nullptr || strlen(tmpdir) == 0) {
@@ -955,6 +1090,9 @@ int main(int argc, char **argv) {
   // ENABLE_VIRTUAL_TERMINAL_PROCESSING;
   SetConsoleMode(handle, mode | 0x004);
 #endif
+
+  auto shell_options = std::make_shared<mysqlsh::Shell_options>();
+  mysqlsh::Scoped_shell_options scoped_shell_options(shell_options);
 
   mysqlsh::global_init();
 

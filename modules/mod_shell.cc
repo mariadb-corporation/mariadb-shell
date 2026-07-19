@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +30,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx_schema.h"
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
 #include "modules/mod_mysql_session.h"
 #include "modules/mod_shell_result.h"
 #include "modules/mod_utils.h"
@@ -71,7 +74,7 @@ unsupported.
  *
  * $(SHELLAPI_DIR)
  */
-Array dir(Object object){};
+Array dir(Object object) {};
 #endif
 
 REGISTER_HELP_FUNCTION_MODE(require, shellapi, JAVASCRIPT);
@@ -206,9 +209,11 @@ void Shell::init() {
   expose("connect", &Shell::connect, "connectionData", "?password")->cli(false);
   expose("disconnect", &Shell::disconnect)->cli(false);
   expose("reconnect", &Shell::reconnect)->cli(false);
+#ifdef HAVE_ADMIN_API
   expose("connectToPrimary", &Shell::connect_to_primary, "?connectionData",
          "?password")
       ->cli(false);
+#endif
   expose("openSession", &Shell::open_session, "?connectionData", "?password")
       ->cli(false);
   if (mysqlshdk::utils::in_main_thread())
@@ -640,6 +645,21 @@ REGISTER_HELP(TOPIC_CONNECTION_DATA_ADDITIONAL6, "${TOPIC_URI_ENCODED_VALUE}");
 REGISTER_HELP(TOPIC_CONNECTION_DATA_ADDITIONAL7,
               "${TOPIC_URI_ENCODED_ATTRIBUTE}");
 
+#ifndef MARIADB_BUILD
+REGISTER_HELP(TOPIC_CONNECTION_SCHEMES,
+              R"*(@li mysql: for connections using the MySQL protocol.
+@li mysqlx: for connections using the X protocol.)*");
+REGISTER_HELP_TOPIC_TEXT(
+    TOPIC_CONNECTION_AUTO_SCHEMES,
+    R"*(If no protocol is specified in the connection data, the shell will first
+attempt connecting using the X protocol, if the connection fails it will then
+try to connect using the MySQL protocol.
+)*");
+#else
+REGISTER_HELP(TOPIC_CONNECTION_SCHEMES,
+              R"*(@li mysql: for connections using the MySQL protocol.)*");
+#endif
+
 REGISTER_HELP_TOPIC(Connection Types, TOPIC, TOPIC_CONNECTION_TYPES, Contents,
                     ALL);
 REGISTER_HELP_TOPIC_TEXT(TOPIC_CONNECTION_TYPES, R"*(
@@ -649,12 +669,8 @@ to be used.
 The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
-@li mysql: for connections using the MySQL protocol.
-@li mysqlx: for connections using the X protocol.
-
-If no protocol is specified in the connection data, the shell will first
-attempt connecting using the X protocol, if the connection fails it will then
-try to connect using the MySQL protocol.
+!{TOPIC_CONNECTION_SCHEMES}
+${TOPIC_CONNECTION_AUTO_SCHEMES}
 
 In general, the Shell connects to the server using TCP connections, unless the
 connection data contains the options required to create any of the connections
@@ -878,6 +894,7 @@ std::shared_ptr<ShellBaseSession> Shell::connect(
   mysqlsh::set_password_from_string(&connection_options, password);
   return _shell->connect(connection_options);
 }
+#ifdef HAVE_ADMIN_API
 
 REGISTER_HELP_FUNCTION(connectToPrimary, shell);
 REGISTER_HELP_FUNCTION_TEXT(SHELL_CONNECTTOPRIMARY, R"*(
@@ -933,6 +950,7 @@ std::shared_ptr<ShellBaseSession> Shell::connect_to_primary(
 
   return get_dev_session();
 }
+#endif
 
 REGISTER_HELP_FUNCTION(openSession, shell);
 REGISTER_HELP_FUNCTION_TEXT(SHELL_OPENSESSION, R"*(
@@ -1016,9 +1034,11 @@ void Shell::set_current_schema(const std::string &name) {
   if (!name.empty()) {
     session->set_current_schema(name);
 
+#ifdef HAVE_X_PROTOCOL
     auto x_session =
         std::dynamic_pointer_cast<mysqlsh::mysqlx::Session>(session);
     if (x_session) new_schema = shcore::Value(x_session->get_schema(name));
+#endif
   }
 
   _shell_core->set_global("db", new_schema,
@@ -1042,10 +1062,12 @@ std::shared_ptr<mysqlsh::ShellBaseSession> Shell::set_session_global(
     std::string currentSchema = session->get_default_schema();
     shcore::Value schema = shcore::Value::Null();
 
+#ifdef HAVE_X_PROTOCOL
     auto x_session =
         std::dynamic_pointer_cast<mysqlsh::mysqlx::Session>(session);
     if (x_session && !currentSchema.empty())
       schema = shcore::Value(x_session->get_schema(currentSchema));
+#endif
 
     _shell_core->set_global("db", schema);
   } else {
@@ -1927,6 +1949,16 @@ std::shared_ptr<Extensible_object> Shell::create_extension_object() {
   return std::make_shared<Extensible_object>("", "");
 }
 
+#if defined(HAVE_ADMIN_API) && defined(HAVE_X_PROTOCOL)
+REGISTER_HELP(API_SAMPLES, R"*(@li \? mysql
+@li \? mysqlx
+@li \? adminapi
+@li \? shellapi)*");
+#else
+REGISTER_HELP(API_SAMPLES, R"*(@li \? mysql
+@li \? shellapi)*");
+#endif
+
 REGISTER_HELP_FUNCTION(addExtensionObjectMember, shell);
 REGISTER_HELP_FUNCTION_TEXT(SHELL_ADDEXTENSIONOBJECTMEMBER, R"*(
 Adds a member to an extension object.
@@ -2010,10 +2042,7 @@ parameter values.
 The values for the class(es) properties must be a valid class exposed through
 the different APIs. For details use:
 
-@li \? mysql
-@li \? mysqlx
-@li \? adminapi
-@li \? shellapi
+!{API_SAMPLES}
 
 To get the class name for a global object or a registered extension call the
 print function passing as parameter the object, i.e. "Shell" is the class name
@@ -2044,7 +2073,8 @@ dictionaries do not have this restriction.
 #if DOXYGEN_JS
 Undefined Shell::addExtensionObjectMember(Object object, String name,
                                           Value member, Dictionary definition);
-{}
+{
+}
 #elif DOXYGEN_PY
 None Shell::add_extension_object_member(Object object, str name, Value member,
                                         dict definition) {}

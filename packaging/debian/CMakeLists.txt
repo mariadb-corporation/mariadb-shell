@@ -1,4 +1,5 @@
 # Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -161,14 +162,16 @@ if(NOT MYSQL_DIR AND NOT MYSQL_INCLUDE_DIR AND NOT MYSQL_LIB_DIR AND
   list(APPEND DEB_BUILD_DEPS "libmysqlclient-dev")
 endif()
 
-if(WITH_PROTOBUF)
-  list(APPEND EXTRA_CMAKE_OPTS "-DWITH_PROTOBUF=${WITH_PROTOBUF}")
-else()
-  if (NOT MYSQL_SOURCE_DIR)
-    list(APPEND DEB_BUILD_DEPS "libprotobuf-dev")
-    list(APPEND DEB_BUILD_DEPS "protobuf-compiler")
+IF (NOT MARIADB_SOURCE_DIR)
+  if(WITH_PROTOBUF)
+    list(APPEND EXTRA_CMAKE_OPTS "-DWITH_PROTOBUF=${WITH_PROTOBUF}")
+  else()
+    if (NOT MYSQL_SOURCE_DIR)
+      list(APPEND DEB_BUILD_DEPS "libprotobuf-dev")
+      list(APPEND DEB_BUILD_DEPS "protobuf-compiler")
+    endif()
   endif()
-endif()
+ENDIF()
 
 if(JIT_EXECUTOR_LIB)
   list(APPEND EXTRA_CMAKE_OPTS "-DJIT_EXECUTOR_LIB=${JIT_EXECUTOR_LIB}")
@@ -185,6 +188,10 @@ endif()
 
 if(MYSQL_SOURCE_DIR)
   list(APPEND EXTRA_CMAKE_OPTS "-DMYSQL_SOURCE_DIR=${MYSQL_SOURCE_DIR} -DMYSQL_BUILD_DIR=${MYSQL_SOURCE_DIR}/bld")
+endif()
+
+if(MARIADB_SOURCE_DIR)
+  list(APPEND EXTRA_CMAKE_OPTS "-DMARIADB_SOURCE_DIR=${MARIADB_SOURCE_DIR} -DMARIADB_BUILD_DIR=${MARIADB_SOURCE_DIR}/bld")
 endif()
 
 if(WITH_GMOCK OR WITH_TESTS)

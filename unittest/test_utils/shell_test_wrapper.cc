@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -75,7 +76,16 @@ Shell_test_wrapper::Shell_test_wrapper(bool disable_dummy_sandboxes) {
   }
 
   _hostname = getenv("MYSQL_HOSTNAME");
-  _hostname_ip = mysqlshdk::utils::Net::resolve_hostname_ipv4(_hostname);
+  try {
+    _hostname_ip = mysqlshdk::utils::Net::resolve_hostname_ipv4(_hostname);
+  } catch (const std::exception &e) {
+    // @@hostname may be an unresolvable name (e.g. a macOS mDNS '.local' FQDN
+    // this process cannot resolve to IPv4); don't let it crash the whole run.
+    _hostname_ip = "127.0.0.1";
+    std::cerr << "Warning: could not resolve hostname '" << _hostname
+              << "': " << e.what() << "; falling back to " << _hostname_ip
+              << "\n";
+  }
 
   reset();
 }

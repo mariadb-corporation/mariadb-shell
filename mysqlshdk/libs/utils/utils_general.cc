@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -74,6 +75,11 @@ errno_t memset_s(void *__s, rsize_t __smax, int __c, rsize_t __n);
 #include "shellcore/utils_help.h"
 
 #include <mysql_version.h>
+
+// This .cc pulls the MariaDB server my_config.h (above), which re-defines the
+// setenv/sleep/strtok_r macros after utils_general.h already undid them; undo
+// them again before the shcore::setenv / shcore::sleep definitions below.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace shcore {
 
@@ -898,9 +904,18 @@ std::optional<std::string> unescape_glob(const std::string_view pattern) {
 }
 
 const char *get_long_version() {
+#ifdef MARIADB_BUILD
+  // libmariadb's LIBMYSQL_VERSION expands to MARIADB_CLIENT_VERSION_STR, which
+  // is not reachable through the server's <mysql_version.h>; MYSQL_SERVER_VERSION
+  // (e.g. "X.Y.Z-MariaDB") is, and is a proper string literal.
+  return "Ver " MYSH_VERSION EXTRA_NAME_SUFFIX " for " SYSTEM_TYPE
+         " on " MACHINE_TYPE " - for MariaDB " MYSQL_SERVER_VERSION
+         " (" MYSQL_COMPILATION_COMMENT ")";
+#else
   return "Ver " MYSH_VERSION EXTRA_NAME_SUFFIX " for " SYSTEM_TYPE
          " on " MACHINE_TYPE " - for MySQL " LIBMYSQL_VERSION
          " (" MYSQL_COMPILATION_COMMENT ")";
+#endif
 }
 
 #ifdef _WIN32

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,8 +33,10 @@
 #include <string_view>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
 #include "mysqlshdk/libs/db/replay/mysqlx.h"
+#endif
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/utils/utils_stacktrace.h"
@@ -157,7 +160,7 @@ void Recorder_mysql::do_close() {
 }
 
 // ---
-
+#ifdef HAVE_X_PROTOCOL
 Recorder_mysqlx::Recorder_mysqlx() {}
 
 void Recorder_mysqlx::do_connect(
@@ -248,6 +251,7 @@ void Recorder_mysqlx::do_close() {
     throw;
   }
 }
+#endif
 
 }  // namespace replay
 }  // namespace db

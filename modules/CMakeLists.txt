@@ -1,4 +1,5 @@
 # Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,23 +34,55 @@ INCLUDE_DIRECTORIES(BEFORE
     ${MYSQL_INCLUDE_DIRS})
 
 file(GLOB api_module_SOURCES
-      "devapi/*.cc"
       "dynamic_*.cc"
+      "util/common/common_options.cc"
+      "util/common/data_masking.cc"
+      "util/common/storage_options.cc"
+      "util/common/utils.cc"
+
+      "util/import_table/chunk_file.cc"
+      "util/import_table/load_data.cc"
+      "util/import_table/dialect.cc"
+      "util/import_table/import_table_options.cc"
+      "util/import_table/import_table.cc"
+      "util/import_table/scanner.cc"
+      "util/mod_util.cc"
+      "mod_mysql.cc"
+      "mod_mysql_*.cc"
+      "mod_mysqlsh.cc"
+      "mod_shell.cc"
+      "mod_extensible_object.cc"
+      "mod_os.cc"
+      "mod_path.cc"
+      "mod_shell.cc"
+      "mod_shell_context.cc"
+      "mod_shell_options.cc"
+      "mod_shell_reports.cc"
+      "mod_shell_result.cc"
+      "mod_sys.cc"
+      "mod_utils.cc"
+      "mod_mysql_constants.cc"
+      "reports/native_report.cc"
+      "reports/query.cc"
+      "reports/thread.cc"
+      "reports/threads.cc"
+      "reports/utils.cc"
+)
+
+# The Upgrade Checker is MySQL-server specific; it is excluded from MariaDB
+# builds (HAVE_UPGRADE_CHECKER is unset there).
+IF(HAVE_DUMP_AND_LOAD)
+  list(APPEND api_module_SOURCES
       "util/binlog/binlog_dump_info.cc"
       "util/binlog/binlog_dumper.cc"
       "util/binlog/binlog_loader.cc"
       "util/binlog/dump_binlogs_options.cc"
       "util/binlog/load_binlogs_options.cc"
       "util/binlog/utils.cc"
-      "util/common/common_options.cc"
-      "util/common/data_masking.cc"
-      "util/common/storage_options.cc"
-      "util/common/utils.cc"
       "util/common/dump/basenames.cc"
       "util/common/dump/checksums.cc"
       "util/common/dump/dump_info.cc"
       "util/common/dump/dump_version.cc"
-      "util/common/dump/filtering_options.cc"
       "util/common/dump/resource_principals_info.cc"
       "util/common/dump/server_info.cc"
       "util/common/dump/utils.cc"
@@ -86,36 +119,14 @@ file(GLOB api_module_SOURCES
       "util/load/dump_reader.cc"
       "util/load/heatwave_load.cc"
       "util/load/lakehouse_source_option.cc"
-      "util/load/load_dump_options.cc"
-      "util/import_table/chunk_file.cc"
-      "util/import_table/load_data.cc"
-      "util/import_table/dialect.cc"
-      "util/import_table/import_table_options.cc"
-      "util/import_table/import_table.cc"
-      "util/import_table/scanner.cc"
-      "util/json_importer.cc"
-      "util/mod_util.cc"
+      "util/load/load_dump_options.cc")
+ENDIF()
+
+# The Upgrade Checker is MySQL-server specific; it is excluded from MariaDB
+# builds (HAVE_UPGRADE_CHECKER is unset there).
+IF(HAVE_UPGRADE_CHECKER)
+  list(APPEND api_module_SOURCES
       "util/upgrade_check.cc"
-      "mod_mysql.cc"
-      "mod_mysql_*.cc"
-      "mod_mysqlsh.cc"
-      "mod_shell.cc"
-      "mod_extensible_object.cc"
-      "mod_os.cc"
-      "mod_path.cc"
-      "mod_shell.cc"
-      "mod_shell_context.cc"
-      "mod_shell_options.cc"
-      "mod_shell_reports.cc"
-      "mod_shell_result.cc"
-      "mod_sys.cc"
-      "mod_utils.cc"
-      "mod_mysql_constants.cc"
-      "reports/native_report.cc"
-      "reports/query.cc"
-      "reports/thread.cc"
-      "reports/threads.cc"
-      "reports/utils.cc"
       "util/upgrade_checker/common.cc"
       "util/upgrade_checker/custom_check.cc"
       "util/upgrade_checker/sql_upgrade_check.cc"
@@ -128,7 +139,24 @@ file(GLOB api_module_SOURCES
       "util/upgrade_checker/upgrade_check_creators.cc"
       "util/upgrade_checker/upgrade_check_condition.cc"
       "util/upgrade_checker/sysvar_check.cc"
-)
+  )
+ENDIF()
+
+IF(NOT HAVE_X_PROTOCOL)
+  # X DevAPI (collections/CRUD/X session) and the X-only JSON importer are not
+  # built for MariaDB. Only the shared DevAPI base classes (used by the classic
+  # resultset/object model) are compiled.
+  # base_database_object (DatabaseObject) is X-only; the classic path only needs
+  # the result/constants/dynamic-object base classes.
+  list(APPEND api_module_SOURCES
+      "devapi/base_constants.cc"
+      "devapi/base_resultset.cc"
+      "devapi/dynamic_object.cc"
+  )
+ELSE()
+  file(GLOB devapi_SOURCES "devapi/*.cc")
+  list(APPEND api_module_SOURCES ${devapi_SOURCES} "util/json_importer.cc")
+ENDIF()
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
     SET_SOURCE_FILES_PROPERTIES(
@@ -136,6 +164,8 @@ IF(CMAKE_COMPILER_IS_GNUCXX)
         PROPERTIES COMPILE_FLAGS "-fno-var-tracking-assignments"
     )
 ENDIF()
+
+IF(MYSQL_SOURCE_DIR AND MYSQL_BUILD_DIR)
 
 static_mysql_lib(NAME "mysql_binlog_event_standalone" PATH MYSQL_BINLOG_EVENT_LIB)
 
@@ -152,10 +182,19 @@ foreach(__lib "mysql_serialization")
     list(APPEND MYSQL_BINLOG_LIBS "${__path}")
 endforeach()
 
-add_convenience_library(api_modules ${api_module_SOURCES} INCLUDE_DIRECTORIES "${MYSQL_SOURCE_DIR}/libs" COMPILE_DEFINITIONS STANDALONE_BINLOG)
-target_link_libraries(api_modules utils adminapi_modules ${MYSQL_BINLOG_LIBS})
+ENDIF()
 
-ADD_SUBDIRECTORY(adminapi)
+add_convenience_library(api_modules ${api_module_SOURCES} INCLUDE_DIRECTORIES "${MYSQL_SOURCE_DIR}/libs" COMPILE_DEFINITIONS STANDALONE_BINLOG)
+IF(NOT HAVE_ADMIN_API)
+  # AdminAPI is not built for MariaDB.
+  target_link_libraries(api_modules utils)
+ELSE()
+  target_link_libraries(api_modules utils adminapi_modules ${MYSQL_BINLOG_LIBS})
+ENDIF()
+
+IF(MYSQL_SOURCE_DIR AND MYSQL_BUILD_DIR)
+    ADD_SUBDIRECTORY(adminapi)
+ENDIF()
 
 ADD_STAN_TARGET(api_modules ${api_module_SOURCES})
 

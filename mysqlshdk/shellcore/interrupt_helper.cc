@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -115,6 +116,26 @@ void install_signal_handler() {
   // by default, signal which triggered the handler is blocked while handler is
   // being invoked
   sa.sa_flags = 0;
+#ifdef MARIADB_BUILD
+  // MariaDB's Connector/C does not retry an SSL_read that is interrupted by a
+  // signal (EINTR -> SSL_ERROR_SYSCALL): it reports a fatal "TLS/SSL error" and
+  // the connection is dropped, so a ^C during a query over a TLS connection
+  // disconnects the session instead of leaving it usable. (The plaintext path
+  // and libmysqlclient retry internally, which is why upstream can omit
+  // SA_RESTART.) The mariadb client avoids this by installing its SIGINT
+  // handler via signal(), which carries SA_RESTART, so the interrupted read is
+  // restarted by the kernel and then receives the KILL QUERY result (error
+  // 1317) cleanly. We match that here: keeping the session connected is more
+  // important than aborting a blocking shell.prompt() read on ^C.
+  //
+  // Trade-off: with SA_RESTART a blocking read in shell.prompt() (linenoise/
+  // fgets) is restarted instead of returning on ^C, so interactive prompt
+  // cancellation no longer works (the Interrupt_mysqlsh.prompt / *_password
+  // tests rely on that and will hang). That is an accepted trade-off for this
+  // build; the query itself is still aborted promptly by the kill_query()
+  // handler running on a side connection.
+  sa.sa_flags = SA_RESTART;
+#endif  // MARIADB_BUILD
   sigaction(SIGINT, &sa, nullptr);
 
   // Ignore broken pipe signal

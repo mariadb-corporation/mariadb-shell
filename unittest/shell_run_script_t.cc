@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -116,7 +117,7 @@ class ShellRunScript : public Shell_core_test_wrapper {
     _options->force = force;
 
     reset_shell();
-    execute("\\connect " + _uri);
+    execute("\\connect " + _mysql_uri);
     execute(mode);
     wipe_all();
   }
@@ -361,7 +362,8 @@ TEST_F(ShellRunScript, sql_file) {
 TEST_F(ShellExeRunScript, sql_file) {
   int rc;
   wipe_out();
-  rc = execute({_mysqlsh, _uri.c_str(), "--sql", "-f", "good.sql", nullptr});
+  rc = execute(
+      {_mysqlsh, _mysql_uri.c_str(), "--sql", "-f", "good.sql", nullptr});
   EXPECT_EQ(0, rc);
   static const char *result1 = R"(1
 1
@@ -375,11 +377,18 @@ end.)";
   MY_EXPECT_CMD_OUTPUT_CONTAINS(shcore::str_replace(result1, "\\t", "\t"));
 
   wipe_out();
-  rc = execute({_mysqlsh, _uri.c_str(), "--sql", "-f", "bad.sql", nullptr});
+  rc = execute(
+      {_mysqlsh, _mysql_uri.c_str(), "--sql", "-f", "bad.sql", nullptr});
   EXPECT_EQ(1, rc);
+#ifndef MARIADB_BUILD
   static const char *result2 = R"(1
 1
 ERROR: 1008 at line 2: Can't drop database 'bogusdb'; database doesn't exist)";
+#else
+  static const char *result2 = R"(1
+1
+ERROR: 1008 (HY000) at line 2: Can't drop database 'bogusdb'; database doesn't exist)";
+#endif
   MY_EXPECT_CMD_OUTPUT_CONTAINS(result2);
 }
 
@@ -563,7 +572,8 @@ TEST_F(ShellRunScript, py_file) {
 TEST_F(ShellExeRunScript, py_file) {
   int rc;
   wipe_out();
-  rc = execute({_mysqlsh, _uri.c_str(), "--py", "-f", "good.py", nullptr});
+  rc =
+      execute({_mysqlsh, _mysql_uri.c_str(), "--py", "-f", "good.py", nullptr});
   // no error, exit code 0
   EXPECT_EQ(0, rc);
   static const char *result1 = R"(1
@@ -576,7 +586,7 @@ end)";
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Switching");
 
   wipe_out();
-  rc = execute({_mysqlsh, _uri.c_str(), "--py", "-f", "bad.py", nullptr});
+  rc = execute({_mysqlsh, _mysql_uri.c_str(), "--py", "-f", "bad.py", nullptr});
   // error, exit code not-0
   EXPECT_EQ(1, rc);
   static const char *result2 = R"(1
@@ -587,7 +597,8 @@ Exception)";
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("end.");
 
   wipe_out();
-  rc = execute({_mysqlsh, _uri.c_str(), "--py", "-f", "badsyn.py", nullptr});
+  rc = execute(
+      {_mysqlsh, _mysql_uri.c_str(), "--py", "-f", "badsyn.py", nullptr});
   // error, exit code not-0
   EXPECT_EQ(1, rc);
   static const char *result3a = R"(File "<string>", line 1
@@ -648,14 +659,15 @@ end)";
 
   {
     wipe_out();
-    int rc = execute({_mysqlsh, _uri.c_str(), mode.c_str(), nullptr}, nullptr,
-                     file.c_str());
+    int rc = execute({_mysqlsh, _mysql_uri.c_str(), mode.c_str(), nullptr},
+                     nullptr, file.c_str());
     // no error, exit code 0
     EXPECT_EQ(0, rc);
     MY_EXPECT_CMD_OUTPUT_CONTAINS(good_js_output);
   }
 }
 
+#ifdef HAVE_JS
 TEST_F(ShellExeRunScript, file_and_file_from_stdin) {
   static const char *good_js_output = R"(1
 2
@@ -675,6 +687,7 @@ end)";
     shcore::delete_file("test_file.js");
   }
 }
+#endif
 
 #ifndef _WIN32
 // writing the password to terminal is not reliable on Windows, if someone
@@ -688,7 +701,7 @@ end)";
 
   {
     wipe_out();
-    int rc = execute({_mysqlsh, _uri_nopasswd.c_str(), mode.c_str(), "-f",
+    int rc = execute({_mysqlsh, _mysql_uri_nopasswd.c_str(), mode.c_str(), "-f",
                       file.c_str(), nullptr},
                      _pwd.c_str());
     // no error, exit code 0
@@ -699,7 +712,7 @@ end)";
   {
     wipe_out();
     std::string password_followed_by_whitespace = _pwd + " ";
-    int rc = execute({_mysqlsh, _uri_nopasswd.c_str(), mode.c_str(), "-f",
+    int rc = execute({_mysqlsh, _mysql_uri_nopasswd.c_str(), mode.c_str(), "-f",
                       file.c_str(), nullptr},
                      password_followed_by_whitespace.c_str());
     // wrong password, exit code 1
@@ -715,7 +728,7 @@ end)";
   {
     wipe_out();
     std::string wrong_password = _pwd + "zaq12WSX";
-    int rc = execute({_mysqlsh, _uri_nopasswd.c_str(), mode.c_str(), "-f",
+    int rc = execute({_mysqlsh, _mysql_uri_nopasswd.c_str(), mode.c_str(), "-f",
                       file.c_str(), nullptr},
                      wrong_password.c_str());
     // wrong password, exit code 1
@@ -748,8 +761,9 @@ end)";
 
   {
     wipe_out();
-    int rc = execute({_mysqlsh, _uri_nopasswd.c_str(), mode.c_str(), nullptr},
-                     _pwd.c_str(), file.c_str());
+    int rc =
+        execute({_mysqlsh, _mysql_uri_nopasswd.c_str(), mode.c_str(), nullptr},
+                _pwd.c_str(), file.c_str());
     // no error, exit code 0
     EXPECT_EQ(0, rc);
     MY_EXPECT_CMD_OUTPUT_CONTAINS(good_js_output);
@@ -769,11 +783,23 @@ mysql-js []> session.runSql('select 1');
 | 1 |
 +---+
 1 row in set)";
+#ifndef MARIADB_BUILD
   static constexpr auto second_execution =
       R"(mysql-js []> session.runSql('select 1');
 Lost connection to MySQL server during query (MySQL Error 2013)
 The global session got disconnected..
 Attempting to reconnect to 'mysql://)";
+#else
+  // Killing a TLS connection makes libmariadb/OpenSSL 3.x report an abrupt
+  // TLS EOF (CR_SSL_CONNECTION_ERROR) on the first failed query rather than
+  // CR_SERVER_LOST; the reconnect path now fires on it (see
+  // is_server_connection_error).
+  static constexpr auto second_execution =
+      R"(mysql-js []> session.runSql('select 1');
+TLS/SSL error: unexpected eof while reading (MySQL Error 2026)
+The global session got disconnected..
+Attempting to reconnect to 'mysql://)";
+#endif
   static constexpr auto third_execution =
       R"(The global session was successfully reconnected.
 mysql-js []> session.runSql('select 1');
@@ -841,10 +867,29 @@ mysql-py []> session.run_sql('select 1');
 | 1 |
 +---+
 1 row in set)";
+#if !defined(MARIADB_BUILD)
   static constexpr auto second_execution =
       R"(MySQL Error (2013): Lost connection to MySQL server during query
 The global session got disconnected..
 Attempting to reconnect to 'mysql://)";
+#elif defined(_WIN32)
+  // libmariadb reports CR_SERVER_LOST with a message that omits the word
+  // "MySQL" ("Lost connection to server" vs libmysqlclient's "Lost connection
+  // to MySQL server").
+  static constexpr auto second_execution =
+      R"(MySQL Error (2013): Lost connection to server during query
+The global session got disconnected..
+Attempting to reconnect to 'mysql://)";
+#else
+  // Killing a TLS connection makes libmariadb/OpenSSL 3.x report an abrupt
+  // TLS EOF (CR_SSL_CONNECTION_ERROR) on the first failed query rather than
+  // CR_SERVER_LOST; the reconnect path now fires on it (see
+  // is_server_connection_error).
+  static constexpr auto second_execution =
+      R"(MySQL Error (2026): TLS/SSL error: unexpected eof while reading
+The global session got disconnected..
+Attempting to reconnect to 'mysql://)";
+#endif
   static constexpr auto third_execution =
       R"(The global session was successfully reconnected.
 mysql-py []> session.run_sql('select 1');
@@ -866,6 +911,7 @@ mysql-py []> session.run_sql('select 1');
   MY_EXPECT_CMD_OUTPUT_CONTAINS(third_execution);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(ShellExeRunScript, reconnect_mysqlx_session_py) {
   static constexpr auto first_execution =
       R"(NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
@@ -899,6 +945,7 @@ mysql-py []> session.sql('select 1').execute();
   MY_EXPECT_CMD_OUTPUT_CONTAINS(second_execution);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(third_execution);
 }
+#endif
 
 TEST_F(ShellExeRunScript, table_output_noninteractive_mode) {
   static constexpr auto expected_output = R"(+---+
@@ -908,23 +955,33 @@ TEST_F(ShellExeRunScript, table_output_noninteractive_mode) {
 +---+)";
 
   wipe_out();
-  int rc = execute({_mysqlsh, _uri.c_str(), "--sql", "--table", "--execute",
-                    "SELECT 1", nullptr});
+  int rc = execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--table",
+                    "--execute", "SELECT 1", nullptr});
   // no error, exit code 0
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output);
 }
 
 TEST_F(ShellExeRunScript, script_error_line) {
-  static constexpr auto expected_output = R"*(hello
+  std::string expected_output;
+  if (_server_vendor == mysqlshdk::db::ServerVendor::MySQL) {
+    expected_output = R"*(hello
 world
 hello\nworld
 3
 3
-ERROR: 1054 at line 6: Unknown column 'error' in 'field list')*";
+ERROR: 1054 (42S22) at line 6: Unknown column 'error' in 'field list')*";
+  } else {
+    expected_output = R"*(hello
+world
+hello\nworld
+3
+3
+ERROR: 1054 (42S22) at line 6: Unknown column 'error' in 'SELECT')*";
+  }
 
   wipe_out();
-  execute({_mysqlsh, _uri.c_str(), "--sql", nullptr}, nullptr,
+  execute({_mysqlsh, _mysql_uri.c_str(), "--sql", nullptr}, nullptr,
           "error_test.sql");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output);
 }

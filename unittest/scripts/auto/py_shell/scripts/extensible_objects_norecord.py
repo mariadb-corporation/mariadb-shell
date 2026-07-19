@@ -127,6 +127,10 @@ testutil.sample_module_p_y.free_dict_function({"myOption": "test"})
 def f3(data):
   print("Active Session:", data)
 
+session_class = "ClassicSession"
+if __have_x_protocol:
+  session_class = "Session"
+
 shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction1", f3,
                           {
                             "brief":"Brief definition for objectFunction.",
@@ -138,7 +142,7 @@ shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction1",
                                 "type": "object",
                                 "brief": "Short description for object parameter.",
                                 "details": ["Detailed description for object parameter."],
-                                "class": "Session"
+                                "class": session_class
                               }
                             ]
                           });
@@ -149,7 +153,7 @@ shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction1",
 #@ Help, function(Session)
 \? sample_module_p_y.object_function1
 
-#@ Usage, function(Session)
+#@ Usage, function(Session) {__have_x_protocol}
 shell.connect(__mysqluripwd)
 testutil.sample_module_p_y.object_function1(session)
 session.close()
@@ -162,6 +166,11 @@ session.close()
 def f4(data):
   print("Active Session:", data)
 
+session_classes = ["ClassicSession"]
+if __have_x_protocol:
+  session_classes.append("Session")
+
+
 shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction2", f4,
                           {
                             "brief":"Brief definition for objectFunction.",
@@ -173,7 +182,7 @@ shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction2",
                                 "type": "object",
                                 "brief": "Short description for object parameter.",
                                 "details": ["Detailed description for object parameter."],
-                                "classes": ["Session", "ClassicSession"]
+                                "classes": session_classes
                               }
                             ]
                           });
@@ -189,9 +198,10 @@ shell.connect(__mysqluripwd)
 testutil.sample_module_p_y.object_function2(session)
 session.close()
 
-shell.connect(__uripwd)
-testutil.sample_module_p_y.object_function2(session)
-session.close()
+if __have_x_protocol:
+  shell.connect(__uripwd)
+  testutil.sample_module_p_y.object_function2(session)
+  session.close()
 
 #@ Registration errors, function definition
 def f5(whatever):

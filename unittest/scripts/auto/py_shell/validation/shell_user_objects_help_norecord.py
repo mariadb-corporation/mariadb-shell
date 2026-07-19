@@ -211,7 +211,7 @@ DESCRIPTION
 
       This parameter must be an array.
 
-      The two parameter must be a Session object.
+      The two parameter must be a <<<session_class>>> object.
 
       The data parameter accepts the following options:
 

@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -62,11 +63,15 @@ class ShellGlobals(object):
         del self.__dict__[name]
 
     def __getattr__(self, name):
-        # backwards compatibility
-        if name == "mysql":
-            return mysql
-        elif name == "mysqlx":
-            return mysqlx
+        # backwards compatibility. The `mysql`/`mysqlx` modules are injected
+        # into this package's namespace by the shell at startup; `mysqlx` is
+        # absent in builds without X protocol support (e.g. MariaDB), so look
+        # them up defensively instead of referencing a possibly-undefined name.
+        if name in ("mysql", "mysqlx"):
+            try:
+                return globals()[name]
+            except KeyError:
+                raise AttributeError(name)
         return self.__dict__[name]
 
 

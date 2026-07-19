@@ -1,6 +1,11 @@
 #@<> Initialization
 import os
 
+user_path = testutil.get_user_config_path()
+plugins_path = os.path.join(user_path, "plugins")
+sample_folder_path = os.path.join(plugins_path, "sample")
+sample_path =  os.path.join(sample_folder_path, "init.py")
+
 plugin_code = '''
 from mysqlsh.plugin_manager import plugin, plugin_function
 
@@ -184,8 +189,6 @@ def test_exception():
     throw_something("My Exception Message")
 '''
 
-user_path = testutil.get_user_config_path()
-plugins_path = os.path.join(user_path, "plugins")
 plugin_folder_path = os.path.join(plugins_path, "cli_tester")
 plugin_path =  os.path.join(plugin_folder_path, "init.py")
 testutil.mkdir(plugin_folder_path, True)
@@ -208,52 +211,52 @@ def call_mysqlsh_cli(*cmdline_args):
 
 # Using the Plugin In JavaScript
 # ==============================
-#@<> Lists help of plugin (js)
+#@<> Lists help of plugin (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator")
 
-#@<> Lists help of plugin child object (js)
+#@<> Lists help of plugin child object (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator.inner")
 
-#@<> Lists help of plugin function for simple type parameters (js)
+#@<> Lists help of plugin function for simple type parameters (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator.testSimpleTypes")
 
-#@<> Lists help of plugin function with optional parameters (js)
+#@<> Lists help of plugin function with optional parameters (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator.testOptionalParameters")
 
-#@<> Lists help of plugin function with required dictionary parameters (js)
+#@<> Lists help of plugin function with required dictionary parameters (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator.testRequiredDictParams")
 
-#@<> Lists help of plugin function with options (js)
+#@<> Lists help of plugin function with options (js) {__have_js}$
 rc = call_mysqlsh_e("\\? decorator.inner.testOptions")
 
-#@<> Test calling simple types function (js)
+#@<> Test calling simple types function (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testSimpleTypes('one', 2, false, {whateverOption:'whateverValue'}, [1,2,3], 'Some Value')")
 
-#@<> Test calling function with optionals 1 (js)
+#@<> Test calling function with optionals 1 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testOptionalParameters('two', 1, true, {whateverOption:'whateverValue'})")
 
-#@<> Test calling function with optionals 2 (js)
+#@<> Test calling function with optionals 2 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testOptionalParameters('two', 1, true, {whateverOption:'whateverValue'}, [4,5,6])")
 
-#@<> Test calling function with optionals 3 (js)
+#@<> Test calling function with optionals 3 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testOptionalParameters('two', 1, true, {whateverOption:'whateverValue'}, [4,5,6], {anykey:'anyValue'})")
 
-#@<> Test calling function with required dictionary parameters 1 (js)
+#@<> Test calling function with required dictionary parameters 1 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testRequiredDictParams('one')")
 
-#@<> Test calling function with required dictionary parameters 2 (js)
+#@<> Test calling function with required dictionary parameters 2 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testRequiredDictParams('one', {'param1': 'value1'})")
 
-#@<> Test calling function with required dictionary parameters 3 (js)
+#@<> Test calling function with required dictionary parameters 3 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testRequiredDictParams('one', {'param1': 'value1', 'param2': 'value2'})")
 
-#@<> Test calling function with options 1 (js)
+#@<> Test calling function with options 1 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.inner.testOptions('Passing No Options')")
 
-#@<> Test calling function with options 2 (js)
+#@<> Test calling function with options 2 (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.inner.testOptions('Passing Options', {strOption:'String Option Value', intOption: 45, anyTypeOption:[1,'one',true]})")
 
-#@<> Function Call Errors (js)
+#@<> Function Call Errors (js) {__have_js}$
 rc = call_mysqlsh_e("decorator.testSimpleTypes(1, 2, false, {whateverOption:'whateverValue'}, [1,2,3], 'Some Value')")
 rc = call_mysqlsh_e("decorator.testSimpleTypes('one', 'two', false, {whateverOption:'whateverValue'}, [1,2,3], 'Some Value')")
 rc = call_mysqlsh_e("decorator.testSimpleTypes('one', 2, 'error', {whateverOption:'whateverValue'}, [1,2,3], 'Some Value')")
@@ -410,28 +413,28 @@ testutil.create_file(aaa_path, aaa_plugin_code)
 testutil.create_file(bbb_path, bbb_plugin_code)
 
 
-#@<OUT> Help for aaa
+#@<OUT> Help for aaa {__have_js}
 rc = call_mysqlsh_e("\\? aaa")
 
-#@<OUT> aaa.help()
+#@<OUT> aaa.help() {__have_js}
 rc = call_mysqlsh_e("aaa.help()")
 
-#@<OUT> Help for nested aaa
+#@<OUT> Help for nested aaa {__have_js}
 rc = call_mysqlsh_e("\\? bbb.aaa")
 
-#@<OUT> bbb.aaa.help()
+#@<OUT> bbb.aaa.help() {__have_js}
 rc = call_mysqlsh_e("bbb.aaa.help()")
 
-#@<OUT> Help for bbb
+#@<OUT> Help for bbb {__have_js}
 rc = call_mysqlsh_e("\\? bbb")
 
-#@<OUT> bbb.help()
+#@<OUT> bbb.help() {__have_js}
 rc = call_mysqlsh_e("bbb.help()")
 
-#@<OUT> Help for nested bbb
+#@<OUT> Help for nested bbb {__have_js}
 rc = call_mysqlsh_e("\\? aaa.bbb")
 
-#@<OUT> aaa.bbb.help()
+#@<OUT> aaa.bbb.help() {__have_js}
 rc = call_mysqlsh_e("aaa.bbb.help()")
 
 #@<OUT> Help from thread
@@ -450,7 +453,7 @@ testutil.create_file("thread_test.py", test_thread_code)
 rc = __call_mysqlsh(["--py", "-f", "thread_test.py"])
 testutil.rmfile("thread_test.py")
 
-#@<> Bug#33462107 - plugin_function: unable to attach function to existing object
+#@<> Bug#33462107 - plugin_function: unable to attach function to existing object {__have_js}
 sample_plugin_code = '''
 from mysqlsh.plugin_manager import plugin, plugin_function
 
@@ -470,8 +473,6 @@ def test():
     print("My test function")
 '''
 
-sample_folder_path = os.path.join(plugins_path, "sample")
-sample_path =  os.path.join(sample_folder_path, "init.py")
 testutil.mkdir(sample_folder_path, True)
 testutil.create_file(sample_path, sample_plugin_code)
 
@@ -504,7 +505,6 @@ class sample():
 def test():
     print("My test function")
 '''
-testutil.rmfile(sample_path)
 testutil.create_file(sample_path, plugin_code)
 
 testutil.call_mysqlsh(["-e", "shell.version"], "", shell_env)

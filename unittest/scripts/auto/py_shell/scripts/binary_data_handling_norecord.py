@@ -5,9 +5,13 @@ custom_values={
     # binary_value, expected_binary_value, expected_str_shell, expected_str_python
     "BINARY(20)": (b'some\x00value', b'some\x00value\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00', "0x736F6D650076616C756500000000000000000000", "b'some\\x00value\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00'"),
     "GEOMETRY": (b'\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xF0\x3F\x00\x00\x00\x00\x00\x00\xF0\x3F', b'\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xF0\x3F\x00\x00\x00\x00\x00\x00\xF0\x3F', '0x000000000101000000000000000000F03F000000000000F03F', repr(b'\x00\x00\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xF0\x3F\x00\x00\x00\x00\x00\x00\xF0\x3F')),
-    "VECTOR": (b'\x00\x00\x80\x3F\x00\x00\x00\x40\x00\x00\x40\x40', b'\x00\x00\x80\x3F\x00\x00\x00\x40\x00\x00\x40\x40', '0x0000803F0000004000004040', repr(b'\x00\x00\x80?\x00\x00\x00@\x00\x00@@'))
 }
-if __version_num >= 90000:
+
+# PORT-TODO: Review the handling of Vector data
+if sandbox.vendor() == "MySQL":
+    custom_values["VECTOR"] = (b'\x00\x00\x80\x3F\x00\x00\x00\x40\x00\x00\x40\x40', b'\x00\x00\x80\x3F\x00\x00\x00\x40\x00\x00\x40\x40', '0x0000803F0000004000004040', repr(b'\x00\x00\x80?\x00\x00\x00@\x00\x00@@'))
+
+if sandbox.vendor() == "MySQL":
     binary_types.append("VECTOR")
 
 session.run_sql("drop schema if exists py_binary_data")
@@ -67,10 +71,12 @@ for binary_type in binary_types:
     # data is stored, a different binary value is returned
     if binary_type in custom_values:
        binary_value, expected_binary_value, expected_str_shell, expected_str_python = custom_values[binary_type]
-    session.run_sql(f"create table py_binary_data.sample(data {binary_type})")
+    statement = f"create table py_binary_data.sample(data {binary_type})"
+    print(f"Executed Statement: {statement}")
+    session.run_sql(statement)
     # Test data insertion and retrieval using ClassicSession.run_sql
     test_classic(binary_type, binary_value, expected_binary_value, expected_str_shell, expected_str_python)
-    if binary_type != "VECTOR": # NOTE: doesn't work atm
+    if __have_x_protocol and binary_type != "VECTOR": # NOTE: doesn't work atm
         test_x(binary_type, binary_value, expected_binary_value, expected_str_shell, expected_str_python)
     session.run_sql("drop table py_binary_data.sample")
 

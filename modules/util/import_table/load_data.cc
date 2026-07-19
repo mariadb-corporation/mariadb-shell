@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +41,9 @@ using off64_t = off_t;
 #endif
 
 #include <mysql.h>
+#ifdef MARIADB_BUILD
+#include <errmsg.h>  // CR_* client error codes
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -80,7 +84,12 @@ void local_infile_end_nop(void * /* userdata */) noexcept {}
 
 int local_infile_error_nop(void * /* userdata */, char * /* error_msg */,
                            unsigned int /* error_msg_len */) noexcept {
+#ifdef MARIADB_BUILD
+  // CR_LOAD_DATA_LOCAL_INFILE_REJECTED is MySQL-only; any nonzero code aborts.
+  return CR_UNKNOWN_ERROR;
+#else
   return CR_LOAD_DATA_LOCAL_INFILE_REJECTED;
+#endif
 }
 
 }  // namespace

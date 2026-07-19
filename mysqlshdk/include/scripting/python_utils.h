@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,19 +27,39 @@
 #ifndef _PYTHON_UTILS_H_
 #define _PYTHON_UTILS_H_
 
-#include <type_traits>
-#include <utility>
-
 // Include and avoid warnings from v8
 #if defined __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#ifdef MARIADB_BUILD
+// MariaDB's my_config.h and Python's pyconfig.h both define autoconf
+// size/HAVE_* macros with identical values; silence the redefinition warning
+// regardless of which header is included first. "-Wmacro-redefined" is a Clang
+// diagnostic name (Clang also defines __GNUC__); GCC does not recognize it and
+// would error under -Werror=pragmas, while staying silent for identical
+// redefinitions anyway, so the suppression is Clang-only.
+#if defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmacro-redefined"
+#endif
+#endif
 #endif
 
 #if defined(__clang__) && \
     ((__clang_major__ == 3 && __clang_minor__ >= 8) || __clang_major__ > 3)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-register"
+#endif
+
+// Python.h should ideally be included before any standard header, but that
+// can't be guaranteed across all translation units. Standard headers (e.g.
+// glibc <features.h> on newer toolchains) may have already defined these to
+// values different from Python's pyconfig.h, which triggers a redefinition
+// error under -Werror. Undefine them so Python.h can set its own values.
+#ifdef _POSIX_C_SOURCE
+#undef _POSIX_C_SOURCE
+#endif
+#ifdef _XOPEN_SOURCE
+#undef _XOPEN_SOURCE
 #endif
 
 #include <Python.h>
@@ -51,6 +72,9 @@
 #ifdef __GNUC__
 #pragma GCC diagnostic pop
 #endif
+
+#include <type_traits>
+#include <utility>
 
 #define PyString_FromString PyUnicode_FromString
 #define PyInt_Check PyLong_Check

@@ -13,6 +13,10 @@ PROPERTIES
       connection_id
             Retrieves the connection id for the current session.
 
+      server_vendor
+            Retrieves the server vendor for the current connection, either
+            MySQL or MariaDB
+
       ssh_uri
             Retrieves the SSH URI for the current session.
 
@@ -33,6 +37,10 @@ FUNCTIONS
 
       get_connection_id()
             Retrieves the connection id for the current session.
+
+      get_server_vendor()
+            Retrieves the server vendor for the current connection, either
+            MySQL or MariaDB
 
       get_sql_mode()
             Retrieves the SQL_MODE for the current session.

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +103,7 @@ class Mock_session : public mysqlshdk::db::ISession,
                      public Mock_session_common {
  public:
   Mock_session();
+  MOCK_METHOD0(get_server_vendor, mysqlshdk::db::ServerVendor());
   MOCK_METHOD1(
       do_connect,
       void(const mysqlshdk::db::Connection_options &connection_options));

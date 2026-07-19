@@ -1,3 +1,4 @@
+#@{not __mariadb_build}
 import zipfile
 import yaml
 import os

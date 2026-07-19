@@ -1,4 +1,5 @@
 /* Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -424,6 +425,7 @@ class Shell_core_test_wrapper : public tests::Shell_base_test {
   std::shared_ptr<mysqlsh::Command_line_shell> _interactive_shell;
   std::shared_ptr<mysqlsh::Shell_options> _opts;
   mysqlsh::Shell_options::Storage *_options;
+  std::string server_vendor;
 
   virtual void debug_print(const std::string &s) {
     output_handler.debug_print(s);
@@ -433,6 +435,7 @@ class Shell_core_test_wrapper : public tests::Shell_base_test {
   void wipe_err() { output_handler.wipe_err(); }
   void wipe_log() { output_handler.wipe_log(); }
   void wipe_all() { output_handler.wipe_all(); }
+  std::string get_server_vendor();
 
   std::shared_ptr<tests::Testutils> testutil;
 

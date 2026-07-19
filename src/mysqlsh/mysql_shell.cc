@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,11 +35,15 @@
 #include <vector>
 
 #include "commands/command_help.h"
+#ifdef HAVE_ADMIN_API
 #include "modules/adminapi/common/dba_errors.h"
 #include "modules/adminapi/dba_utils.h"
+#endif
+#ifdef HAVE_X_PROTOCOL
 #include "modules/devapi/mod_mysqlx.h"
 #include "modules/devapi/mod_mysqlx_schema.h"
 #include "modules/devapi/mod_mysqlx_session.h"
+#endif
 #include "modules/mod_mysql.h"
 #include "modules/mod_mysqlsh.h"
 #include "modules/mod_os.h"
@@ -98,11 +103,17 @@ REGISTER_HELP(HELP_AVAILABLE_TOPICS_SQL, "${HELP_AVAILABLE_TOPICS_TITLE}");
 REGISTER_HELP(HELP_AVAILABLE_TOPICS_SQL1, "${HELP_AVAILABLE_TOPICS_ALL}");
 
 REGISTER_HELP(HELP_SQL_MODE_ADDITIONAL_FEATURES, "ADDITIONAL FEATURES");
+#ifdef HAVE_JS
 REGISTER_HELP(HELP_SQL_MODE_ADDITIONAL_FEATURES1,
               "Scripting capabilities as well as other utilities are available "
               "in JavaScript (\\js) and Python (\\py) modes, switch to them "
               "and type \\? for additional information.");
-
+#else
+REGISTER_HELP(HELP_SQL_MODE_ADDITIONAL_FEATURES1,
+              "Scripting capabilities as well as other utilities are available "
+              "in Python (\\py) mode, switch to it and type \\? for additional "
+              "information.");
+#endif
 REGISTER_HELP(HELP_PATTERN,
               "The pattern is a filter to identify topics for which help is "
               "required, it can use the following wildcards:");
@@ -124,6 +135,7 @@ REGISTER_HELP(GLOBALS_DESC,
 REGISTER_HELP(GLOBALS_CLOSING_DESC,
               "For additional information on these global objects use: "
               "<object>.<b>help()</b>");
+#ifdef HAVE_ADMIN_API
 REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING, "<b>\\?</b> AdminAPI");
 REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING_DESC,
               "Displays information about the AdminAPI.");
@@ -138,7 +150,14 @@ REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING2_DESC,
 REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING3, "<b>\\?</b> sql syntax");
 REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING3_DESC,
               "Displays the main SQL help categories.");
-
+#else
+REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING, "<b>\\?</b> \\connect");
+REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING_DESC,
+              "Displays usage details for the <b>\\connect</b> command.");
+REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING1, "<b>\\?</b> sql syntax");
+REGISTER_HELP(GLOBALS_EXAMPLE_SCRIPTING1_DESC,
+              "Displays the main SQL help categories.");
+#endif
 REGISTER_HELP(GLOBALS_EXAMPLE_SQL, "<b>\\?</b> sql syntax");
 REGISTER_HELP(GLOBALS_EXAMPLE_SQL_DESC,
               "Displays the main SQL help categories.");
@@ -311,9 +330,11 @@ REGISTER_HELP(
     CMD_CONNECT_DETAIL1,
     "@li <b>--mc</b>, <b>--mysql</b>: create a classic MySQL protocol session "
     "(default port 3306)");
+#ifdef HAVE_X_PROTOCOL
 REGISTER_HELP(CMD_CONNECT_DETAIL2,
               "@li <b>--mx</b>, <b>--mysqlx</b>: create an X protocol session "
               "(default port 33060)");
+#endif
 REGISTER_HELP(CMD_CONNECT_DETAIL3,
               "@li <b>--ssh <SSHURI></b>: create an SSH tunnel to use as a "
               "gateway for db connection. This requires that db port is "
@@ -608,14 +629,16 @@ Mysql_shell::Mysql_shell(const std::shared_ptr<Shell_options> &cmdline_options,
   // Registers the interactive objects if required
   _global_shell = std::make_shared<mysqlsh::Shell>(this);
   _global_js_sys = std::make_shared<mysqlsh::Sys>(_shell.get());
-  _global_dba = std::make_shared<mysqlsh::dba::Dba>(_shell.get());
   _global_util = std::make_shared<mysqlsh::Util>(_shell.get());
   m_global_js_os = std::make_shared<mysqlsh::Os>();
 
   set_global_object("shell", _global_shell,
                     shcore::IShell_core::all_scripting_modes());
+#ifdef HAVE_ADMIN_API
+  _global_dba = std::make_shared<mysqlsh::dba::Dba>(_shell.get());
   set_global_object("dba", _global_dba,
                     shcore::IShell_core::all_scripting_modes());
+#endif
 
   set_global_object(
       "os", m_global_js_os,
@@ -631,7 +654,9 @@ Mysql_shell::Mysql_shell(const std::shared_ptr<Shell_options> &cmdline_options,
 
   INIT_MODULE(mysqlsh::Mysqlsh);
   INIT_MODULE(mysqlsh::mysql::Mysql);
+#ifdef HAVE_X_PROTOCOL
   INIT_MODULE(mysqlsh::mysqlx::Mysqlx);
+#endif
 
   set_sql_safe_for_logging(get_options()->get(SHCORE_HISTIGNORE).descr());
   // completion provider for shell \commands (must be the 1st)
@@ -765,6 +790,7 @@ void Mysql_shell::finish_init() {
     if (shell_cli_operation) {
       auto providers = shell_cli_operation->get_provider();
 
+#ifdef HAVE_ADMIN_API
       providers->register_provider("dba", _global_dba);
       providers->register_provider("cluster", [this](bool for_help) {
         return create_default_cluster_object(for_help);
@@ -775,6 +801,7 @@ void Mysql_shell::finish_init() {
       providers->register_provider("clusterset", [this](bool for_help) {
         return create_default_clusterset_object(for_help);
       });
+#endif
 
       auto shell_provider =
           providers->register_provider("shell", _global_shell);
@@ -1028,9 +1055,11 @@ void Mysql_shell::print_connection_message(
   std::string stype;
 
   switch (type) {
+#ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       stype = "an X protocol";
       break;
+#endif
     case mysqlsh::SessionType::Classic:
       stype = "a Classic";
       break;
@@ -1157,16 +1186,21 @@ std::shared_ptr<mysqlsh::ShellBaseSession> Mysql_shell::connect(
     // This will cause two things to happen
     // 1) Validation that the default schema is real
     // 2) Triggers the auto loading of the schema cache
+#ifdef HAVE_X_PROTOCOL
     shcore::Object_bridge_ref default_schema;
     auto x_session =
         std::dynamic_pointer_cast<mysqlsh::mysqlx::Session>(new_session);
+#endif
 
     if (!default_schema_name.empty()) {
+#ifdef HAVE_X_PROTOCOL
       if (x_session && interactive_mode() != shcore::IShell_core::Mode::SQL) {
         default_schema = x_session->get_schema(default_schema_name);
         message += "Default schema `" + default_schema_name +
                    "` accessible through db.";
-      } else {
+      } else
+#endif
+      {
         message += "Default schema set to `" + default_schema_name + "`.";
       }
     } else {
@@ -1207,6 +1241,7 @@ void Mysql_shell::set_active_session(
   }
 }
 
+#ifdef HAVE_ADMIN_API
 bool Mysql_shell::redirect_session_if_needed(bool secondary,
                                              const Connection_options &opts) {
   const auto target = secondary ? "SECONDARY" : "PRIMARY";
@@ -1332,10 +1367,12 @@ bool Mysql_shell::redirect_session_if_needed(bool secondary,
 
   return new_connection;
 }
+#endif  // HAVE_ADMIN_API
 
 void Mysql_shell::init_extra_globals() {
   bool switch_mode = false;
 
+#ifdef HAVE_ADMIN_API
   if (options().default_cluster_set) {
     try {
       auto cluster = create_default_cluster_object();
@@ -1363,6 +1400,7 @@ void Mysql_shell::init_extra_globals() {
       throw;
     }
   }
+#endif  // HAVE_ADMIN_API
 
   // When globals are initialized Shell should start in scripting mode
   if (switch_mode &&
@@ -1375,6 +1413,7 @@ void Mysql_shell::init_extra_globals() {
   }
 }
 
+#ifdef HAVE_ADMIN_API
 std::shared_ptr<mysqlsh::dba::Cluster>
 Mysql_shell::create_default_cluster_object(bool for_help) {
   if (!m_default_cluster) {
@@ -1428,6 +1467,7 @@ Mysql_shell::create_default_replicaset_object(bool for_help) {
 
   return m_default_replicaset;
 }
+#endif  // HAVE_ADMIN_API
 
 bool Mysql_shell::cmd_print_shell_help(const std::vector<std::string> &args) {
   const auto pager = current_console()->enable_pager();
@@ -1479,8 +1519,12 @@ bool Mysql_shell::cmd_connect(const std::vector<std::string> &args) {
       print_diag(std::string(e.what()) + "\n");
     }
   } else {
+#ifdef HAVE_X_PROTOCOL
+    print_diag("\\connect [--mc|--mysql] [--ssh <sshuri>] <URI>\n");
+#else
     print_diag(
         "\\connect [--mx|--mysqlx|--mc|--mysql] [--ssh <sshuri>] <URI>\n");
+#endif
   }
 
   return true;
@@ -1762,6 +1806,7 @@ bool Mysql_shell::cmd_rehash(const std::vector<std::string> & /* args */) {
   if (_shell->get_dev_session()) {
     refresh_completion(true);
 
+#ifdef HAVE_X_PROTOCOL
     shcore::Value vdb(_shell->get_global("db"));
     if (vdb) {
       auto db(vdb.as_object<mysqlsh::mysqlx::Schema>());
@@ -1769,6 +1814,7 @@ bool Mysql_shell::cmd_rehash(const std::vector<std::string> & /* args */) {
         db->update_cache();
       }
     }
+#endif
 
     request_prompt_variables_update(true);
   } else {

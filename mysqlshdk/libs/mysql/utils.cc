@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +26,12 @@
 
 #include "mysqlshdk/libs/mysql/utils.h"
 
+#ifdef MARIADB_BUILD
+// my_dbug.h needs my_bool (mysql.h) and ATTRIBUTE_COLD (my_global.h) first.
+#include <mysql.h>
+
+#include <my_global.h>
+#endif
 #include <my_dbug.h>
 #include <mysqld_error.h>
 #include <rapidjson/document.h>
@@ -214,6 +221,7 @@ std::string replace_grantee(const std::string &grant,
 }
 }  // namespace detail
 
+#ifndef MARIADB_BUILD
 void drop_view_or_table(const IInstance &instance, const std::string &schema,
                         const std::string &name, bool if_exists) {
   try {
@@ -243,6 +251,7 @@ void drop_table_or_view(const IInstance &instance, const std::string &schema,
     }
   }
 }
+#endif
 
 void clone_user(const IInstance &source_instance,
                 const IInstance &dest_instance, const std::string &user,
@@ -814,6 +823,7 @@ std::set<std::string> get_views(const mysql::IInstance &instance,
 
 }  // namespace schema
 
+#ifndef MARIADB_BUILD
 void copy_schema(const mysql::IInstance &instance, const std::string &name,
                  const std::string &target, bool use_existing_schema,
                  bool move_tables) {
@@ -946,6 +956,7 @@ void copy_schema(const mysql::IInstance &instance, const std::string &name,
     throw;
   }
 }
+#endif
 
 void copy_data(const mysql::IInstance &instance, const std::string &name,
                const std::string &target) {
@@ -984,6 +995,7 @@ void copy_data(const mysql::IInstance &instance, const std::string &name,
   }
 }
 
+#ifdef HAVE_ADMIN_API
 /**
  * Creates an indicator/marker at the target instance with the given name.
  *
@@ -1031,7 +1043,13 @@ void drop_indicator_tag(const mysql::IInstance &instance,
     instance.executef("RESET " + replica_term + " ALL FOR CHANNEL ?", name);
   } catch (const shcore::Error &e) {
 #ifndef ER_REPLICA_CHANNEL_DOES_NOT_EXIST
+#ifdef MARIADB_BUILD
+// MariaDB uses named connections rather than channels; STOP/RESET SLAVE of an
+// unknown connection raises ER_MASTER_INFO. (Verify against a live server.)
+#define ER_REPLICA_CHANNEL_DOES_NOT_EXIST ER_MASTER_INFO
+#else
 #define ER_REPLICA_CHANNEL_DOES_NOT_EXIST ER_SLAVE_CHANNEL_DOES_NOT_EXIST
+#endif
 #endif
     if (e.code() != ER_REPLICA_CHANNEL_DOES_NOT_EXIST) throw;
   }
@@ -1052,6 +1070,7 @@ bool check_indicator_tag(const mysql::IInstance &instance,
                                   "configuration WHERE channel_name = ?",
                                   name) > 0);
 }
+#endif
 
 /**
  * @brief Reads server's SSL configurations to be used when it acts as a client

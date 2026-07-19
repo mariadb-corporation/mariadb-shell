@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +42,28 @@ const std::regex k_api_general_error(
     "^([a-z|A-Z|_][a-z|A-Z|0-9|_]*)\\.([a-z|A-Z|_][a-z|A-Z|0-9|_]*):\\s("
     "Argument #(\\d+):\\s)?(.+)$$");
 
+#ifndef MARIADB_BUILD
+REGISTER_HELP(CLI_OBJECTS, R"*(@li dba - dba global object.
+@li cluster - cluster returned by calling dba.getCluster().
+@li shell - shell global object.
+@li shell.options - shell.options object.
+@li util - util global object)*");
+#else
+REGISTER_HELP(CLI_OBJECTS, R"*(@li shell - shell global object.
+@li shell.options - shell.options object.
+@li util - util global object)*");
+#endif
+
+#ifndef MARIADB_BUILD
+REGISTER_HELP(CLI_CASE_SAMPLES,
+              R"*(@li Camel case: (e.g. createCluster, dumpInstance)
+@li Kebab case: (e.g. create-cluster, dump-instance))*");
+#else
+REGISTER_HELP(CLI_CASE_SAMPLES,
+              R"*(@li Camel case: (e.g. listCredentialHelpers)
+@li Kebab case: (e.g. list-credential-helpers))*");
+#endif
+
 REGISTER_HELP_TOPIC(Command Line, TOPIC, cmdline, Contents, ALL);
 REGISTER_HELP_TOPIC_TEXT(cmdline, R"*(
 The MySQL Shell functionality is generally available as API calls, this is
@@ -65,16 +88,11 @@ command line, by following a specific syntax.
 
 The following objects can be called using this format:
 
-@li dba - dba global object.
-@li cluster - cluster returned by calling dba.getCluster().
-@li shell - shell global object.
-@li shell.options - shell.options object.
-@li util - util global object
+!{CLI_OBJECTS}
 
 The operation name can be given in the following naming styles:
 
-@li Camel case: (e.g. createCluster, checkForServerUpgrade)
-@li Kebab case: (e.g. create-cluster, check-for-server-upgrade)
+!{CLI_CASE_SAMPLES}
 
 The arguments syntax allows mixing positional and named arguments (similar to
 args and *kwargs in Python):
@@ -117,6 +135,7 @@ Following are some examples of command line calls as well as how they are mapped
 to the API method call.
 )*");
 
+#ifndef MARIADB_BUILD
 REGISTER_HELP(
     cmdline_EXAMPLE,
     "$ mysqlsh -- dba deploy-sandbox-instance 1234 --password=secret");
@@ -147,6 +166,13 @@ REGISTER_HELP(cmdline_EXAMPLE5_DESC,
               "mysql-js> util.checkForServerUpgrade({user:\"root\", "
               "host:\"localhost\"}, "
               "{password:\"\"})");
+#else
+REGISTER_HELP(cmdline_EXAMPLE,
+              "$ mysqlsh -- shell.options set-persist history.autoSave true");
+REGISTER_HELP(cmdline_EXAMPLE_DESC,
+              "mysql-js> shell.options.setPersist(\"history.autoSave\", true)");
+
+#endif
 
 void Shell_cli_operation::add_cmdline_argument(const std::string &cmdline_arg) {
   m_cli_mapper.add_cmdline_argument(cmdline_arg);

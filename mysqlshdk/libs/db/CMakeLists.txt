@@ -1,4 +1,5 @@
 # Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,14 +49,22 @@ set(db_SOURCE
     mysql/session.cc
     mysql/result.cc
     mysql/row.cc
+    replay/setup.cc
+    replay/recorder.cc
+    replay/replayer.cc
+    replay/trace.cc
+)
+
+IF(HAVE_DUMP_AND_LOAD)
+  list(APPEND db_SOURCE
     mysql/binary_log.cc
-    mysql/auth_plugins/mysql_event_handler_plugin.cc
-    mysql/auth_plugins/common.cc
-    mysql/auth_plugins/fido.cc
-    mysql/auth_plugins/oci.cc
-    mysql/auth_plugins/kerberos.cc
-    mysql/auth_plugins/webauthn.cc
-    mysql/auth_plugins/openid_connect.cc
+  )
+ENDIF()
+
+IF(HAVE_X_PROTOCOL)
+  list(APPEND db_SOURCE
+    mysql/binary_log.cc
+    replay/mysqlx.cc
     mysqlx/xsession.cc
     mysqlx/xresult.cc
     mysqlx/xrow.cc
@@ -63,12 +72,20 @@ set(db_SOURCE
     mysqlx/tokenizer.cc
     mysqlx/expr_parser.cc
     mysqlx/proj_parser.cc
-    replay/mysqlx.cc
-    replay/setup.cc
-    replay/recorder.cc
-    replay/replayer.cc
-    replay/trace.cc
-)
+  )
+ENDIF()
+
+IF(MYSQL_SOURCE_DIR)
+  list(APPEND db_SOURCE
+      mysql/auth_plugins/mysql_event_handler_plugin.cc
+      mysql/auth_plugins/common.cc
+      mysql/auth_plugins/fido.cc
+      mysql/auth_plugins/oci.cc
+      mysql/auth_plugins/kerberos.cc
+      mysql/auth_plugins/webauthn.cc
+      mysql/auth_plugins/openid_connect.cc
+  )
+ENDIF()
 
 IF(CMAKE_BUILD_TYPE MATCHES Debug)
   SET(mysqlsh_tests_SRC

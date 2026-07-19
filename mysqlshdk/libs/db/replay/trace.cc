@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -676,6 +677,7 @@ void Trace::unserialize_result_rows(
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 void Trace::unserialize_result_rows(
     rapidjson::Value *rlist, std::shared_ptr<Result_mysqlx> result,
     std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept) {
@@ -690,6 +692,7 @@ void Trace::unserialize_result_rows(
     }
   }
 }
+#endif  // HAVE_X_PROTOCOL
 
 std::shared_ptr<Result_mysql> Trace::expected_result(
     std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept) {
@@ -731,6 +734,7 @@ std::shared_ptr<Result_mysql> Trace::expected_result(
   return {};
 }
 
+#ifdef HAVE_X_PROTOCOL
 std::shared_ptr<Result_mysqlx> Trace::expected_result_x(
     std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept) {
   rapidjson::Value obj;
@@ -766,6 +770,7 @@ std::shared_ptr<Result_mysqlx> Trace::expected_result_x(
   }
   return {};
 }
+#endif  // HAVE_X_PROTOCOL
 
 //--------------
 

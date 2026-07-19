@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +36,8 @@ namespace {
 
 class Oci_regions_test : public Shell_core_test_wrapper {};
 
+#ifndef MARIADB_BUILD
+// PORT-TODO: The port is not including the OCI SDK
 TEST_F(Oci_regions_test, short_region_names) {
   execute("\\py");
   execute("import oci");
@@ -54,6 +57,7 @@ TEST_F(Oci_regions_test, short_region_names) {
     EXPECT_EQ(full_name, regions::from_short_name(s.first));
   }
 }
+#endif
 
 }  // namespace
 }  // namespace oci

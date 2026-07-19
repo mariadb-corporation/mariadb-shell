@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +35,8 @@ extern mysqlshdk::utils::Version g_target_server_version;
 namespace tests {
 
 TEST_F(Command_line_test, bug24912358) {
-  // Tests with X Protocol Session
+// Tests with X Protocol Session
+#ifdef HAVE_X_PROTOCOL
   {
     std::string uri = "--uri=" + _uri;
     execute({_mysqlsh, uri.c_str(), "--sql", "-e", "select -127 << 1.1", NULL});
@@ -50,6 +52,7 @@ TEST_F(Command_line_test, bug24912358) {
     MY_EXPECT_MULTILINE_OUTPUT("select -127 << 1.1",
                                multiline({"-127 << -1.1", "0"}), _output);
   }
+#endif
 
   // Tests with Classic Session
   {
@@ -89,6 +92,7 @@ TEST_F(Command_line_test, bug24905066) {
 #endif  // !_WIN32
   }
 
+#ifdef HAVE_X_PROTOCOL
 #ifndef _WIN32
   // Tests URI formatting using X protocol
   {
@@ -100,6 +104,7 @@ TEST_F(Command_line_test, bug24905066) {
         "'root@/path%2Fto%2Fwhatever%2Fsocket.sock'");
   }
 #endif  // !_WIN32
+#endif  // HAVE_X_PROTOCOL
 
   // Tests the connection fails if invalid schema is provided on classic session
   {
@@ -112,6 +117,7 @@ TEST_F(Command_line_test, bug24905066) {
         "'some_unexisting_schema'");
   }
 
+#ifdef HAVE_X_PROTOCOL
   // Tests the connection fails if invalid schema is provided on x session
   {
     std::string uri = _uri + "/some_unexisting_schema";
@@ -121,6 +127,7 @@ TEST_F(Command_line_test, bug24905066) {
 
     MY_EXPECT_CMD_OUTPUT_CONTAINS("Unknown database 'some_unexisting_schema'");
   }
+#endif  // HAVE_X_PROTOCOL
 }
 
 TEST_F(Command_line_test, bug24967838) {
@@ -139,7 +146,7 @@ TEST_F(Command_line_test, bug24967838) {
                   "echo \"no error\" | %s --uri=%s --sql --database=mysql "
                   "2> /dev/null",
 #endif
-                  _mysqlsh, _uri.c_str());
+                  _mysqlsh, _mysql_uri.c_str());
 
     EXPECT_NE(system(cmd), 0);
   }
@@ -154,7 +161,7 @@ TEST_F(Command_line_test, bug24967838) {
                   "echo \"DROP TABLE IF EXISTS test;\" | %s --uri=%s "
 #endif
                   "--sql --database=mysql",
-                  _mysqlsh, _uri.c_str());
+                  _mysqlsh, _mysql_uri.c_str());
 
     EXPECT_EQ(system(cmd), 0);
   }
@@ -169,6 +176,7 @@ TEST_F(Command_line_test, Bug25974014) {
   std::string out;
   FILE *fp;
 
+#ifdef HAVE_X_PROTOCOL
   // X session
   std::snprintf(cmd, MAX_PATH,
 #ifdef _WIN32
@@ -190,18 +198,23 @@ TEST_F(Command_line_test, Bug25974014) {
     out.append(buf);
   }
   EXPECT_NE(std::string::npos, out.find("Attempting to reconnect"));
+#endif  // HAVE_X_PROTOCOL
 
   // Classic session
   out.clear();
-  std::snprintf(cmd, MAX_PATH,
+  std::snprintf(
+      cmd, MAX_PATH,
+// The statement is sent twice because with MariaDB would raise an unexpected
+// error on the first one without even attempting the execution.
 #ifdef _WIN32
-                "echo kill CONNECTION_ID(); use mysql; | %s --uri=%s --sql "
-                "--interactive 2> nul",
+      "echo kill CONNECTION_ID(); use mysql; use mysql; | %s --uri=%s --sql "
+      "--interactive 2> nul",
 #else
-                "echo \"kill CONNECTION_ID(); use mysql;\" | %s --uri=%s "
-                "--sql --interactive 2> /dev/null",
+      "echo \"kill CONNECTION_ID(); use mysql; use mysql;\" | %s "
+      "--uri=%s "
+      "--sql --interactive 2> /dev/null",
 #endif
-                _mysqlsh, _mysql_uri.c_str());
+      _mysqlsh, _mysql_uri.c_str());
 
 #ifdef _WIN32
   fp = _popen(cmd, "r");
@@ -215,6 +228,7 @@ TEST_F(Command_line_test, Bug25974014) {
   EXPECT_NE(std::string::npos, out.find("Attempting to reconnect"));
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Command_line_test, Bug25105307) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "-e",
            "kill CONNECTION_ID(); use mysql;", NULL});
@@ -222,22 +236,27 @@ TEST_F(Command_line_test, Bug25105307) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("interrupted");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Attempting to reconnect");
 }
+#endif  // HAVE_X_PROTOCOL
 
 TEST_F(Command_line_test, retain_schema_after_reconnect) {
   // Check if processor is available
   ASSERT_NE(system(NULL), 0);
 
   char cmd[MAX_PATH];
-  std::snprintf(
-      cmd, MAX_PATH,
+  std::snprintf(cmd, MAX_PATH,
+
+// The statement is sent twice because with MariaDB would raise an unexpected
+// error on the first one without even attempting the execution.
 #ifdef _WIN32
-      "echo kill CONNECTION_ID(); show tables; | %s --uri=%s/mysql --sql "
-      "--interactive 2> nul",
+                "echo kill CONNECTION_ID(); show tables; show tables;| %s "
+                "--uri=%s/mysql --sql "
+                "--interactive 2> nul",
 #else
-      "echo \"use mysql;\nkill CONNECTION_ID(); show tables;\" | %s --uri=%s "
-      "--sql --interactive 2> /dev/null",
+                "echo \"use mysql;\nkill CONNECTION_ID(); show tables; show "
+                "tables;\" | %s --uri=%s "
+                "--sql --interactive 2> /dev/null",
 #endif
-      _mysqlsh, _uri.c_str());
+                _mysqlsh, _mysql_uri.c_str());
 
 #ifdef _WIN32
   FILE *fp = _popen(cmd, "r");
@@ -265,14 +284,16 @@ TEST_F(Command_line_test, duplicate_not_connected_error) {
 
 TEST_F(Command_line_test, bug25653170) {
   // Executing scripts with incomplete SQL silently fails
-  int rc =
-      execute({_mysqlsh, _uri.c_str(), "--sql", "-e", "select 1 /*", NULL});
+  int rc = execute(
+      {_mysqlsh, _mysql_uri.c_str(), "--sql", "-e", "select 1 /*", NULL});
   EXPECT_EQ(1, rc);
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: 1064 at line 1: You have an error in your SQL syntax; check the "
-      "manual "
-      "that corresponds to your MySQL server version for the right syntax to "
-      "use near '/*' at line 1");
+  auto error = shcore::str_format(
+      "You have an error in your SQL syntax; check the "
+      "manual that corresponds to your %s server version for the right syntax "
+      "to use near '/*' at line 1",
+      _server_vendor == mysqlshdk::db::ServerVendor::MySQL ? "MySQL"
+                                                           : "MariaDB");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(error.c_str());
 }
 
 #ifdef HAVE_JS
@@ -293,9 +314,13 @@ TEST_F(Command_line_test, bug28814112_py) {
   // SESSION
   int rc = execute({_mysqlsh, "-e", "shell.set_current_schema('mysql')", NULL});
   EXPECT_EQ(1, rc);
+#ifndef MARIADB_BUILD
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "An open session is required to perform this "
       "operation.");
+#else
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("Not connected.");
+#endif
 }
 #endif
 
@@ -311,7 +336,7 @@ TEST_F(Command_line_test, batch_ansi_quotes) {
       R"(echo "set sql_mode = 'ANSI_QUOTES'; select \"\\\"\";select version();#\"")"
 #endif
       " | %s --uri=%s --sql 2>&1",
-      _mysqlsh, _uri.c_str());
+      _mysqlsh, _mysql_uri.c_str());
 
 #ifdef _WIN32
   FILE *fp = _popen(cmd, "r");
@@ -420,6 +445,7 @@ TEST_F(Command_line_test, user_before_uri) {
   session->execute("drop user testuser2@'%'");
 }
 
+#ifdef HAVE_JS
 TEST_F(Command_line_test, socket_and_port) {
   // Bug#35023480	shell cannot connect if both port and socket file/named
   // path specified
@@ -633,6 +659,7 @@ TEST_F(Command_line_test, default_is_xproto_via_tcp) {
 #endif
   session->execute("drop user if exists testuser1@'%'");
 }
+#endif  // HAVE_JS
 
 TEST_F(Command_line_test, bug35751281_tcp_override_socket) {
   // socket, then TCP host => TCP
@@ -689,12 +716,13 @@ TEST_F(Command_line_test, bug35751281_tcp_override_socket) {
 TEST_F(Command_line_test, bug35751281_tcp_override_socket_uri) {
 #ifdef _WIN32
 #define SOCKET_HOST "."
-#define SOCKET_MSG "Named pipe: "
+#define SOCKET_MSG "amed pipe"
 #else
 #define SOCKET_HOST "localhost"
 #define SOCKET_MSG "Localhost via UNIX socket"
 #endif
 
+#ifdef HAVE_X_PROTOCOL
   // only run if server listening for mysqlx connections on default port
   // (can't override with an environment var)
   if (_port == "33060") {
@@ -710,6 +738,7 @@ TEST_F(Command_line_test, bug35751281_tcp_override_socket_uri) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS("X protocol");
     MY_EXPECT_CMD_OUTPUT_CONTAINS("127.0.0.1 via TCP/IP");
   }
+#endif
 
   // root@localhost:3306 -> TCP
   execute({_mysqlsh, ("root@localhost:" + _mysql_port).c_str(), "--interactive",

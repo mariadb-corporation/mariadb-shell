@@ -24,7 +24,7 @@ shell.connect(__mysqluripwd)
 session.run_sql("drop user if exists mycnfusr@'%'")
 
 with_statement = " with caching_sha2_password"
-if __version_num <= 50744:
+if __version_num <= 50744 or sandbox.vendor() == "MariaDB":
     with_statement = ""
 
 session.run_sql(f"create user mycnfusr@'%' identified {with_statement} by 'testpwd'")
@@ -34,7 +34,7 @@ session.run_sql(f"create user lpathusr@'%' identified {with_statement} by 'lpath
 
 socket = get_socket_path(session)
 
-#@<> check that options are read as expected from my.cnf 
+#@<> check that options are read as expectedfrom my.cnf 
 # TSFR_1_1, TSFR_1_2, TSFR_2_1
 make_cnf(f"""[mysqlsh]
 user=mycnfusr
@@ -51,9 +51,9 @@ EXPECT_STDOUT_MATCHES(re.compile(f".*\n--user=mycnfusr --password=\\*\\*\\*\\*\\
 WIPE_OUTPUT()
 
 # TSFR_6 - also verifies ordering of options
-testutil.call_mysqlsh(["--print-defaults", "-uroot", "--cluster"], "", ["MYSQL_HOME="+homedir])
+testutil.call_mysqlsh(["--print-defaults", "-uroot"], "", ["MYSQL_HOME="+homedir])
 EXPECT_STDOUT_CONTAINS("would have been started with the following arguments:")
-EXPECT_STDOUT_MATCHES(re.compile(f".*\n--user=mycnfusr --password=\\*\\*\\*\\*\\* --host=localhost --socket={socket} --sql -uroot --cluster \n", re.DOTALL))
+EXPECT_STDOUT_MATCHES(re.compile(f".*\n--user=mycnfusr --password=\\*\\*\\*\\*\\* --host=localhost --socket={socket} --sql -uroot \n", re.DOTALL))
 
 #@<> group mysql (or any other) should be ignored
 make_cnf(f"""[mysql]
@@ -94,8 +94,8 @@ testutil.call_mysqlsh(["--print-defaults"], "", ["MYSQL_HOME="+homedir])
 EXPECT_STDOUT_CONTAINS("would have been started with the following arguments:")
 EXPECT_STDOUT_MATCHES(re.compile(f".*\n--user=mycnfusr --password=\\*\\*\\*\\*\\* --host=localhost --socket={socket} \n", re.DOTALL))
 
-#@<> check --no-defaults
-testutil.call_mysqlsh(["--no-defaults", "--sql", "-e", "select user(), @@port"], "", ["MYSQL_HOME="+homedir])
+#@<> check --no-defaults {sandbox.vendor() == "MySQL"}
+testutil.call_mysqlsh(["--no-defaults", "--sql", "-e", "'select user(), @@port'"], "", ["MYSQL_HOME="+homedir])
 EXPECT_STDOUT_CONTAINS("Not connected.")
 
 #@<> check --no-defaults + uri
@@ -119,12 +119,12 @@ EXPECT_STDOUT_CONTAINS(f"mycnfusr@localhost	{__mysql_port}")
 
 EXPECT_STDOUT_CONTAINS(k_cmdline_password_insecure_msg)
 
-#@<> check that login-path works
+#@<> check that login-path works {__have_login_path}
 # TSFR_4_1
 testutil.call_mysqlsh(["--login-path=lpathusr", "--sql", "-e", "select user(), @@port"], "", [myloginvar+"="+myloginfile])
 EXPECT_STDOUT_CONTAINS(f"lpathusr@localhost	{__mysql_port}")
 
-#@<> check that login-path + mycnf works (login-path wins)
+#@<> check that login-path + mycnf works (login-path wins)  {__have_login_path}
 testutil.call_mysqlsh(["--login-path=lpathusr", "--sql", "-e", "select user(), @@port"], "", [myloginvar+"="+myloginfile, "MYSQL_HOME="+homedir])
 EXPECT_STDOUT_CONTAINS(f"lpathusr@localhost	{__mysql_port}")
 

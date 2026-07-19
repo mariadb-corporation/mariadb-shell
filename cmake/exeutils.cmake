@@ -1,4 +1,5 @@
 # Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -69,6 +70,21 @@ function(add_shell_executable)
     endif()
 
     set_property(TARGET "${ARGV0}" PROPERTY BUILD_WITH_INSTALL_RPATH TRUE)
+
+    # When Python is embedded through a static libpython (e.g. a bundled Python
+    # built with --disable-shared, which only ships libpython3.x.a), the Python
+    # C symbols are linked into this executable. The stdlib C extension modules
+    # in lib-dynload (_hashlib, _md5, _ssl, ...) are separate .so files that get
+    # dlopen()ed at import time and must resolve those symbols from the running
+    # executable. Unless the executable exports its dynamic symbol table, every
+    # such import fails silently -- e.g. `import hashlib` finds no backend and
+    # raises "unsupported hash type md5". This mirrors what the standalone
+    # python launcher does (it is linked with --export-dynamic) and what macOS
+    # gives implicitly via two-level-namespace dynamic_lookup. Only needed for a
+    # static libpython; a shared one already exports its own symbols.
+    if(NOT APPLE AND HAVE_PYTHON AND NOT BUNDLED_SHARED_PYTHON)
+      set_property(TARGET "${ARGV0}" APPEND PROPERTY LINK_OPTIONS "-Wl,--export-dynamic")
+    endif()
   endif()
 
   if(HAVE_JS)
@@ -207,14 +223,12 @@ function(install_bundled_binaries)
         get_filename_component(_ext "${SOURCE_BINARY_NAME}" LAST_EXT)
 
         if(_ext STREQUAL ".so" OR _ext STREQUAL ".dylib")
-          # if this is a shared library, modify the source and prepend @rpath, this will simplify linking
-          execute_process(
-              COMMAND install_name_tool -id "@rpath/${SOURCE_BINARY_NAME}" "${SOURCE_BINARY}"
-              RESULT_VARIABLE COMMAND_RESULT)
-
-          if(NOT "${COMMAND_RESULT}" STREQUAL "0")
-            message(FATAL_ERROR "Failed to change ID of ${SOURCE_BINARY} to ${SOURCE_BINARY_NAME}.")
-          endif()
+          # Prepend @rpath to the copy's install id so the bundled library is
+          # relocatable. This must be done to the copy, not the source: the
+          # source may be a shared system library (e.g. a keg-only Homebrew
+          # OpenSSL used by other software), and rewriting its id in place would
+          # corrupt it and invalidate its code signature.
+          list(APPEND COPY_COMMAND COMMAND install_name_tool -id "@rpath/${SOURCE_BINARY_NAME}" "${COPIED_BINARY}")
         else()
           list(APPEND COPY_COMMAND COMMAND install_name_tool -id "${SOURCE_BINARY_NAME}" "${COPIED_BINARY}")
         endif()
@@ -270,17 +284,22 @@ function(install_bundled_directory)
     string(APPEND DESTINATION_BINARY_DIR "/${SRC_DIR_NAME}")
   endif()
 
+  # CONFIGURE_DEPENDS makes CMake re-check these globs on every build and
+  # re-run configuration when the set of files changes, so newly added or
+  # removed sources are picked up without a manual re-configure. Every listed
+  # file also becomes a dependency of the copy command below, so editing any
+  # of them triggers a re-copy on the next build.
   if(ARG_DEPS_ON_ALL)
     # use all files in directories as dependencies
-    file(GLOB_RECURSE COPY_DEPS LIST_DIRECTORIES false RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
+    file(GLOB_RECURSE COPY_DEPS LIST_DIRECTORIES false CONFIGURE_DEPENDS RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
   else()
     # use top level files as dependencies
-    file(GLOB COPY_DEPS LIST_DIRECTORIES false RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
+    file(GLOB COPY_DEPS LIST_DIRECTORIES false CONFIGURE_DEPENDS RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
   endif()
 
   if(NOT COPY_DEPS)
     # no top level files, use the first one found recursively
-    file(GLOB_RECURSE COPY_DEPS LIST_DIRECTORIES false RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
+    file(GLOB_RECURSE COPY_DEPS LIST_DIRECTORIES false CONFIGURE_DEPENDS RELATIVE "${ARG_DIRECTORY}" "${ARG_DIRECTORY}/*")
 
     if(NOT COPY_DEPS)
       message(FATAL_ERROR "Trying to bundle an empty directory: ${ARG_DIRECTORY}")

@@ -24,14 +24,17 @@ with open(file_name, "wb") as f:
     f.write(bytes("2\tasdfg\n", "utf-8"))
     f.write(bytes("3\tZxCvB\n", "utf-8"))
 
-#@<> X session does not support local-infile
+#@<> X session does not support local-infile {__have_x_protocol}
 for value in ["0", "false", "1", "true"]:
     EXPECT_THROWS(lambda: shell.connect(__uripwd + "?local-infile=" + value), "RuntimeError: X Protocol: LOAD DATA LOCAL INFILE is not supported.")
 
 #@<> classic session with local-infile disabled
+error = "DBError: MySQL Error (3948): Loading local data is disabled; this must be enabled on both the client and server sides"
+if sandbox.vendor() == "MariaDB":
+    error = "DBError: MySQL Error (4166): The used command is not allowed because the MariaDB server or client has disabled the local infile capability"
 for value in ["0", "false"]:
     EXPECT_NO_THROWS(lambda: shell.connect(__mysqluripwd + "?local-infile=" + value), "Classic session should be established.")
-    EXPECT_THROWS(lambda: session.run_sql("LOAD DATA LOCAL INFILE ? INTO TABLE !.!", [file_name, schema_name, table_name]), "DBError: MySQL Error (2068): LOAD DATA LOCAL INFILE file request rejected due to restrictions on access.")
+    EXPECT_THROWS(lambda: session.run_sql("LOAD DATA LOCAL INFILE ? INTO TABLE !.!", [file_name, schema_name, table_name]), error)
     EXPECT_NO_THROWS(lambda: shell.disconnect(), "Classic session should be closed.")
 
 #@<> classic session with local-infile enabled

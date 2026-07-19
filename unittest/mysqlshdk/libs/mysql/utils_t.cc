@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -175,6 +176,7 @@ TEST_F(Mysql_utils, clone_user_replace_grantee) {
           "'foo'@'bar'"));
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Mysql_utils, drop_table_or_view) {
   auto session = create_mysql_session();
   mysqlshdk::mysql::Instance instance(session);
@@ -228,6 +230,7 @@ TEST_F(Mysql_utils, drop_view_or_table) {
 
   instance.execute("DROP SCHEMA drop_view_or_table");
 }
+#endif
 
 TEST_F(Mysql_utils_mocked,
        create_user_with_random_password_uses_server_random) {
@@ -496,6 +499,7 @@ void verify_schema_structure(const mysqlshdk::mysql::Instance &instance,
   }
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Mysql_utils, copy_schema) {
   auto session = create_mysql_session();
   mysqlshdk::mysql::Instance instance(session);
@@ -559,6 +563,7 @@ TEST_F(Mysql_utils, copy_schema) {
   instance.execute("DROP SCHEMA copy_schema_demo3");
   instance.execute("DROP SCHEMA copy_schema_demo4");
 }
+#endif
 
 }  // namespace mysql
 }  // namespace mysqlshdk

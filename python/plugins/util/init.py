@@ -1,4 +1,5 @@
 # Copyright (c) 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -126,7 +127,7 @@ def internal_change_password(
 
     session = globals.shell.get_session()
 
-    account_data, account = common.collect_account_data(account)
+    account_data, account, current_user = common.collect_account_data(account)
 
     if not discard_dual_if_present(discardOld, account_data):
         return None
@@ -142,7 +143,7 @@ def internal_change_password(
                 newPassword, True, description)
         try:
             result = accountlib.change_password(
-                session, account_data, random, dual, newPassword)
+                session, account_data, random, dual, newPassword, current_user)
 
             if random:
                 globals.shell.print(
@@ -185,7 +186,7 @@ def internal_upgrade_auth_method(
         raise Error("Unsupported server version. "
                     "To upgrade authentication method to caching_sha2_password, please upgrade the server to version at least 8.0.")
 
-    account_data, _ = common.collect_account_data(account)
+    account_data, _, _ = common.collect_account_data(account)
 
     if not check_mysql_native_method(session, account_data):
         return

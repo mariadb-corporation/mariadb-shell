@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -120,6 +121,7 @@ TEST_F(Completion_cache_refresh, startup) {
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
 
+#ifdef HAVE_X_PROTOCOL
   // X proto
   // Connection without default schema, refresh schemas only
 #ifdef HAVE_JS
@@ -160,6 +162,7 @@ TEST_F(Completion_cache_refresh, startup) {
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
+#endif
 }
 
 // FR10
@@ -199,6 +202,7 @@ TEST_F(Completion_cache_refresh, connect_interactive) {
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching schema names for auto-completion");
   wipe_out();
+#ifdef HAVE_X_PROTOCOL
   execute("\\connect " + _uri);
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching schema names for auto-completion");
@@ -210,6 +214,7 @@ TEST_F(Completion_cache_refresh, connect_interactive) {
   execute("shell.connect('" + _uri + "/sys')");
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching schema names for auto-completion");
+#endif
 
   reset_shell("", shcore::IShell_core::Mode::SQL);
   MY_EXPECT_STDOUT_NOT_CONTAINS("Creating a session to");
@@ -219,6 +224,7 @@ TEST_F(Completion_cache_refresh, connect_interactive) {
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching global names for auto-completion");
   wipe_out();
+#ifdef HAVE_X_PROTOCOL
   execute("\\connect " + _uri);
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching global names for auto-completion");
@@ -227,6 +233,7 @@ TEST_F(Completion_cache_refresh, connect_interactive) {
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
+#endif
 }
 
 // FR10
@@ -263,6 +270,7 @@ TEST_F(Completion_cache_refresh, switch_to_sql) {
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
 
+#ifdef HAVE_X_PROTOCOL
   reset_shell(_uri, scripting_mode);
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to");
   MY_EXPECT_STDOUT_CONTAINS("Fetching schema names for auto-completion");
@@ -277,6 +285,7 @@ TEST_F(Completion_cache_refresh, switch_to_sql) {
   execute("\\sql");
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
+#endif
 }
 
 // FR10
@@ -350,13 +359,13 @@ TEST_F(Completion_cache_refresh, rehash) {
   MY_EXPECT_STDOUT_NOT_CONTAINS("for auto-completion");
   MY_EXPECT_STDOUT_CONTAINS("Not connected.");
 
-  reset_shell(_uri, shcore::IShell_core::Mode::SQL);
+  reset_shell(_mysql_uri, shcore::IShell_core::Mode::SQL);
   MY_EXPECT_STDOUT_CONTAINS("Fetching global names for auto-completion");
   wipe_all();
   execute("\\rehash");
   MY_EXPECT_STDOUT_CONTAINS("Fetching global names for auto-completion");
 
-  reset_shell(_uri + "/mysql", shcore::IShell_core::Mode::SQL);
+  reset_shell(_mysql_uri + "/mysql", shcore::IShell_core::Mode::SQL);
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
   wipe_all();
@@ -370,6 +379,7 @@ TEST_F(Completion_cache_refresh, rehash) {
 }
 
 // FR11
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Completion_cache_refresh, rehash_db) {
   _options->db_name_cache = true;
   _options->devapi_schema_object_handles = true;
@@ -538,5 +548,6 @@ TEST_F(Completion_cache_refresh, options_db_name_cache) {
   MY_EXPECT_STDOUT_CONTAINS(
       "Fetching global names, object names from `mysql` for auto-completion");
 }
+#endif
 
 }  // namespace mysqlsh

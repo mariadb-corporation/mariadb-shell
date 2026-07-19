@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +24,9 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifdef HAVE_UPGRADE_CHECKER
 #include "modules/util/upgrade_checker/upgrade_check_registry.h"
+#endif  // HAVE_UPGRADE_CHECKER
 #include "mysqlsh/cmdline_shell.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/libs/db/replay/setup.h"

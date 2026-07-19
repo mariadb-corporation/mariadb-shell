@@ -1,4 +1,5 @@
 /* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -56,18 +57,20 @@ class Interactive_shell_test : public Shell_core_test_wrapper {
 // This test verifies the shell starts in the requested mode
 TEST_F(Interactive_shell_test, startup_modes) {
   testutil->call_mysqlsh_c(
-      {_uri, "--sql", "--vertical", "-e", "show databases"});
+      {_mysql_uri, "--sql", "--vertical", "-e", "show databases"});
   MY_EXPECT_STDOUT_CONTAINS("Database: mysql");
   wipe_all();
 
+#ifdef HAVE_JS
   testutil->call_mysqlsh_c(
-      {_uri, "--js", "-e",
+      {_mysql_uri, "--js", "-e",
        "shell.dumpRows(session.runSql('show databases'), 'vertical')"});
   MY_EXPECT_STDOUT_CONTAINS("Database: mysql");
   wipe_all();
+#endif  // HAVE_JS
 
   testutil->call_mysqlsh_c(
-      {_uri, "--py", "-e",
+      {_mysql_uri, "--py", "-e",
        "shell.dump_rows(session.run_sql('show databases'), 'vertical')"});
   MY_EXPECT_STDOUT_CONTAINS("Database: mysql");
   wipe_all();
@@ -101,6 +104,7 @@ TEST_F(Interactive_shell_test, test_quit_command) {
 }
 
 TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
+#ifdef HAVE_JS
   testutil->call_mysqlsh_c(
       {"--js", "-ifull"}, "\\sql\n",
       {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
@@ -112,6 +116,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
                  "mysql-sql> Bye!"}),
       output_handler.std_out);
   wipe_all();
+#endif  // HAVE_JS
 
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\py\n",
@@ -124,6 +129,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
       output_handler.std_out);
   wipe_all();
 
+#ifdef HAVE_JS
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\js\n",
       {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
@@ -134,6 +140,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
                  "mysql-js> Bye!"}),
       output_handler.std_out);
   wipe_all();
+#endif  // HAVE_JS
 }
 
 TEST_F(Interactive_shell_test, test_use_system_user) {
@@ -150,6 +157,7 @@ TEST_F(Interactive_shell_test, shell_get_session_BUG27809310) {
   EXPECT_NO_THROW(execute("shell.getSession()"));
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, shell_command_connect_node) {
   execute("\\connect --mx " + _uri);
   MY_EXPECT_STDOUT_CONTAINS("Creating an X protocol session to '" +
@@ -210,6 +218,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_node) {
   }
   output_handler.wipe_all();
 }
+#endif
 
 TEST_F(Interactive_shell_test, shell_command_connect_classic) {
   execute("\\connect --mc " + _mysql_uri);
@@ -285,6 +294,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_classic) {
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, shell_command_connect_x) {
   // FR_EXTRA_SUCCEED_11 : \connect --mx mysqlx://user@host:33060/db
   {
@@ -318,8 +328,10 @@ TEST_F(Interactive_shell_test, shell_command_connect_x) {
     execute("session.close()");
   }
 }
+#endif
 
 TEST_F(Interactive_shell_test, shell_command_connect_auto) {
+#ifdef HAVE_X_PROTOCOL
   // Session type determined from connection success
   execute("\\connect " + _uri);
   MY_EXPECT_STDOUT_CONTAINS("Creating a session to '" + _uri_nopasswd + "'");
@@ -333,6 +345,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
   output_handler.wipe_all();
 
   execute("session.close()");
+#endif
 
   // Session type determined from connection success
   {
@@ -401,6 +414,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
   }
 
   // FR_EXTRA_SUCCEED_9 : \connect mysqlx://user@host:33060/db
+#ifdef HAVE_X_PROTOCOL
   {
     execute("\\connect mysqlx://" + _uri + "/mysql");
     MY_EXPECT_STDOUT_CONTAINS("Creating an X protocol session to '" +
@@ -576,8 +590,10 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
     }
   }
 #endif  // !_WIN32
+#endif
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, shell_function_connect_node) {
   execute("shell.connect('mysqlx://" + _uri + "');");
   MY_EXPECT_STDOUT_CONTAINS("Creating an X protocol session to '" +
@@ -613,6 +629,7 @@ TEST_F(Interactive_shell_test, shell_function_connect_node) {
 
   execute("session.close()");
 }
+#endif
 
 TEST_F(Interactive_shell_test, shell_function_connect_classic) {
   execute("shell.connect('mysql://" + _mysql_uri + "');");
@@ -650,6 +667,7 @@ TEST_F(Interactive_shell_test, shell_function_connect_classic) {
 }
 
 TEST_F(Interactive_shell_test, shell_function_connect_auto) {
+#ifdef HAVE_X_PROTOCOL
   // Session type determined from connection success
   {
     execute("shell.connect('" + _uri + "');");
@@ -664,6 +682,7 @@ TEST_F(Interactive_shell_test, shell_function_connect_auto) {
 
     execute("session.close()");
   }
+#endif
 
   // Session type determined from connection success
   {
@@ -729,6 +748,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_conflicts) {
 }
 
 TEST_F(Interactive_shell_test, shell_command_use) {
+#ifdef HAVE_X_PROTOCOL
   execute("\\use mysql");
   MY_EXPECT_STDERR_CONTAINS("Not connected.");
   output_handler.wipe_all();
@@ -778,6 +798,7 @@ TEST_F(Interactive_shell_test, shell_command_use) {
   output_handler.wipe_all();
 
   execute("session.close()");
+#endif
 
   execute("\\connect --mc " + _mysql_uri);
   MY_EXPECT_STDOUT_CONTAINS(
@@ -844,10 +865,12 @@ TEST_F(Interactive_shell_test, shell_command_use) {
   output_handler.wipe_all();
 
   execute("create schema \"double\"\"quote\";");
-  MY_EXPECT_STDERR_CONTAINS(
+  auto error = shcore::str_format(
       "You have an error in your SQL syntax; check the manual "
-      "that corresponds to your MySQL server version for the right syntax to "
-      "use near '\"double\"\"quote\"' at line 1");
+      "that corresponds to your %s server version for the right syntax to "
+      "use near '\"double\"\"quote\"' at line 1",
+      server_vendor.c_str());
+  MY_EXPECT_STDERR_CONTAINS(error.c_str());
   output_handler.wipe_all();
 
   execute("SET SESSION SQL_MODE=\"ANSI_QUOTES\";");
@@ -903,6 +926,7 @@ TEST_F(Interactive_shell_test, shell_command_sql_use) {
   MY_EXPECT_STDERR_CONTAINS("Not connected.");
   output_handler.wipe_all();
 
+#ifdef HAVE_X_PROTOCOL
   execute("\\connect " + _uri);
   MY_EXPECT_STDOUT_CONTAINS(
       "No default schema selected; type \\use <schema> to set one.");
@@ -946,6 +970,7 @@ TEST_F(Interactive_shell_test, shell_command_sql_use) {
   execute("use mysql");
   MY_EXPECT_STDOUT_CONTAINS("Default schema set to `mysql`");
   output_handler.wipe_all();
+#endif
 
   execute("\\connect --mc " + _mysql_uri);
   MY_EXPECT_STDOUT_CONTAINS(
@@ -1036,18 +1061,24 @@ TEST_F(Interactive_shell_test, shell_command_source_invalid_path_py) {
 
 TEST_F(Interactive_shell_test, shell_command_source_incomplete_files) {
   std::vector<std::tuple<std::string, std::string, std::string>> data = {
+#ifdef HAVE_JS
       {"\\js", R"*(function sample(data) {
   print(data);
   )*",
        "Expected } but found eof"},
+#endif
       {"\\py", R"*(def sample(data):
                    print(data)*",
        "SyntaxError: "},
       {"\\sql", R"*(select *
                    from)*",
-       "ERROR: 1064: You have an error in your SQL syntax;"}};
+       "You have an error in your SQL syntax;"}};
 
+#ifdef HAVE_X_PROTOCOL
   execute("\\connect --mx " + _uri);
+#else
+  execute("\\connect --mc " + _mysql_uri);
+#endif
 
   for (const auto &item : data) {
     const auto &mode = std::get<0>(item);
@@ -1103,7 +1134,7 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
 
   out.open(bin_path, std::ios_base::app);
   if (!out.fail()) {
-    out << "from mysqlsh import mysqlx" << std::endl;
+    out << "from mysqlsh import mysql" << std::endl;
     out << "the_variable = 'Global Value'" << std::endl;
     out.close();
   }
@@ -1113,8 +1144,13 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
   reset_shell();
   output_handler.wipe_all();
 
+#ifdef HAVE_X_PROTOCOL
   execute("mysqlx");
   MY_EXPECT_STDOUT_CONTAINS("<module 'mysqlsh.mysqlx' (built-in)>");
+#else
+  execute("mysql");
+  MY_EXPECT_STDOUT_CONTAINS("<module 'mysqlsh.mysql' (built-in)>");
+#endif
   output_handler.wipe_all();
 
   execute("the_variable");
@@ -1263,21 +1299,34 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
       // Attempt to SQL in non interactive mode
       {"mysql://expired:sample@localhost:" + _mysql_port, "--sql", "-e",
        "select host from mysql.user where user = 'expired';"},
+#ifdef HAVE_ADMIN_API
       // Attempt to use AAPI (even in interactive mode)
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",
        "cluster", "status"},
+#endif
+#ifdef HAVE_DUMP_AND_LOAD
       // Attempt to dump an instance (even in interactive mode)
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",
        "util", "dump-instance", "sample"},
+#endif
+#ifdef HAVE_UPGRADE_CHECKER
       // Attempt to use UC (even in interactive mode)
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",
-       "util", "check-for-server-upgrade"}};
+       "util", "check-for-server-upgrade"}
+#endif
+  };
 
   for (const auto &params : cases) {
     testutil->call_mysqlsh_c(params);
-    MY_EXPECT_STDOUT_CONTAINS(
-        "Your password has expired. To log in you must change it using a "
-        "client that supports expired passwords.");
+
+    if (server_vendor == "MySQL") {
+      MY_EXPECT_STDOUT_CONTAINS(
+          "Your password has expired. To log in you must change it using a "
+          "client that supports expired passwords.");
+    } else {
+      MY_EXPECT_STDOUT_CONTAINS(
+          "You must SET PASSWORD before executing this statement");
+    }
     wipe_all();
   }
 
@@ -1291,13 +1340,25 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
 
   // Tests unable to execute any statement with an expired account
   execute("select host from mysql.user where user = 'expired';");
-  MY_EXPECT_STDERR_CONTAINS(
-      "ERROR: 1820 (HY000): You must reset your password using ALTER USER "
-      "statement before executing this statement.");
+  if (server_vendor == "MySQL") {
+    MY_EXPECT_STDERR_CONTAINS(
+        "ERROR: 1820 (HY000): You must reset your password using ALTER USER "
+        "statement before executing this statement.");
+  } else {
+    MY_EXPECT_STDERR_CONTAINS(
+        "ERROR: 1820 (HY000): You must SET PASSWORD before executing this "
+        "statement");
+  }
   output_handler.wipe_all();
 
   // Tests allow reseting the password on an expired account
-  execute("ALTER USER expired@'%' IDENTIFIED BY 'updated';");
+  if (server_vendor == "MySQL") {
+    execute("ALTER USER expired@'%' IDENTIFIED BY 'updated';");
+  } else {
+    // In MariaDB, ALTER USER is not supported, so we use SET PASSWORD instead
+    execute("SET PASSWORD = PASSWORD('updated');");
+  }
+
   MY_EXPECT_STDOUT_CONTAINS("Query OK, 0 rows affected");
   output_handler.wipe_all();
 
@@ -1316,6 +1377,7 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
   MY_EXPECT_STDOUT_CONTAINS("");
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, expired_account_support_node) {
   // Test secure call passing uri with no password (will be prompted)
   _options->set_uri(_uri);
@@ -1375,6 +1437,7 @@ TEST_F(Interactive_shell_test, expired_account_support_node) {
   execute("session.close()");
   MY_EXPECT_STDOUT_CONTAINS("");
 }
+#endif
 
 TEST_F(Interactive_shell_test, classic_sql_result) {
   execute("\\connect " + _mysql_uri);
@@ -1525,6 +1588,7 @@ TEST_F(Interactive_shell_test, classic_sql_result) {
   execute("drop schema itst;");
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, x_sql_result) {
   execute("\\connect " + _uri);
   execute("\\sql");
@@ -1669,8 +1733,10 @@ TEST_F(Interactive_shell_test, x_sql_result) {
 
   execute("drop schema itst;");
 }
+#endif
 
 TEST_F(Interactive_shell_test, ssl_status) {
+#ifdef HAVE_X_PROTOCOL
   if (g_target_server_version == mysqlshdk::utils::Version(8, 0, 4)) {
     PENDING_BUG_TEST("Caching_sha2 with xproto and no ssl is broken");
   } else {
@@ -1686,21 +1752,33 @@ TEST_F(Interactive_shell_test, ssl_status) {
   MY_EXPECT_STDOUT_CONTAINS("Cipher in use: ");
   MY_EXPECT_STDOUT_CONTAINS("TLSv");
   EXPECT_EQ("SSL", _interactive_shell->prompt_variables()->at("ssl"));
-
   wipe_all();
+#endif
+
+#ifndef MARIADB_BUILD
+  // ssl-mode=DISABLED is not an option when built with MariaDB
+
   execute("\\connect " + _mysql_uri + "?ssl-Mode=DISABLED");
   execute("\\status");
   MY_EXPECT_STDOUT_CONTAINS("Not in use.");
   EXPECT_EQ("", _interactive_shell->prompt_variables()->at("ssl"));
-
   wipe_all();
+#endif
+
   execute("\\connect " + _mysql_uri + "?ssl-Mode=REQUIRED");
   execute("\\status");
+
+#if defined(MARIADB_BUILD) && defined(_WIN32)
+  // No SSL ssupport on windws sandboxes
+  EXPECT_EQ("", _interactive_shell->prompt_variables()->at("ssl"));
+#else
   MY_EXPECT_STDOUT_CONTAINS("Cipher in use: ");
   MY_EXPECT_STDOUT_CONTAINS("TLSv");
   EXPECT_EQ("SSL", _interactive_shell->prompt_variables()->at("ssl"));
+#endif
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, status_x) {
   if (g_target_server_version == mysqlshdk::utils::Version(8, 0, 4)) {
     PENDING_BUG_TEST("Caching_sha2 with xproto and no ssl is broken");
@@ -1780,9 +1858,10 @@ TEST_F(Interactive_shell_test, status_x) {
   EXPECT_NE(std::string::npos, line.find("Uptime"));
   EXPECT_NE(std::string::npos, line.find("sec"));
 }
+#endif
 
 TEST_F(Interactive_shell_test, status_classic) {
-  execute("\\connect " + _mysql_uri + "?ssl-Mode=DISABLED&compression=1");
+  execute("\\connect " + _mysql_uri + "?compression=1");
   wipe_all();
   execute("\\status");
 
@@ -1852,12 +1931,13 @@ TEST_F(Interactive_shell_test, status_classic) {
 }
 
 TEST_F(Interactive_shell_test, status_ansi_quotes) {
-  execute("\\connect " + _uri);
-  wipe_all();
-
   execute("\\sql");
   MY_EXPECT_STDOUT_CONTAINS("Switching to SQL mode... Commands end with ;");
   ASSERT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+#ifdef HAVE_X_PROTOCOL
+  execute("\\connect " + _uri);
   wipe_all();
 
   execute("set SESSION SQL_MODE=\"\";");
@@ -1881,6 +1961,7 @@ TEST_F(Interactive_shell_test, status_ansi_quotes) {
   MY_EXPECT_STDOUT_CONTAINS("TCP port:");
   ASSERT_TRUE(output_handler.std_err.empty());
   wipe_all();
+#endif
 
   execute("\\connect " + _mysql_uri);
   ASSERT_TRUE(output_handler.std_err.empty());
@@ -1928,7 +2009,11 @@ TEST_F(Interactive_shell_test, reconnect_command) {
 
   execute("\\sql");
   execute("kill CONNECTION_ID();");
-  MY_EXPECT_STDERR_CONTAINS("interrupted");
+  if (server_vendor == "MySQL") {
+    MY_EXPECT_STDERR_CONTAINS("interrupted");
+  } else {
+    MY_EXPECT_STDERR_CONTAINS("Connection was killed");
+  }
   wipe_all();
 
   execute("\\reconnect");
@@ -2586,14 +2671,19 @@ SYNTAX
 
 TEST_F(Interactive_shell_test, inline_commands) {
   execute("\\sql");
-  execute("\\connect " + _uri);
+  execute("\\connect " + _mysql_uri);
   wipe_all();
 
   // ensure behaviour of inline \commands match old cli
   execute(";;");
   EXPECT_EQ("", output_handler.std_out);
+#ifndef MARIADB_BUILD
   EXPECT_EQ("ERROR: 1065: Query was empty\nERROR: 1065: Query was empty\n",
             output_handler.std_err);
+#else
+  EXPECT_EQ("ERROR: No query specified.\nERROR: No query specified.\n",
+            output_handler.std_err);
+#endif
 
   wipe_all();
   execute("select 1\\w");
@@ -2724,6 +2814,7 @@ TEST_F(Interactive_shell_test, not_empty_tables_py) {
   execute("session.close()");
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interactive_shell_test, not_empty_collections_py) {
   execute("\\connect " + _uri);
   wipe_all();
@@ -2736,7 +2827,9 @@ TEST_F(Interactive_shell_test, not_empty_collections_py) {
   execute("session.close()");
 }
 #endif
+#endif
 
+#ifndef MARIADB_BUILD
 TEST_F(Interactive_shell_test, compression) {
   ASSERT_FALSE(_options->default_compress);
   const auto check_compression = [this](const char *status,
@@ -2888,6 +2981,7 @@ TEST_F(Interactive_shell_test, compression) {
     check_compression("ON");
   }
 }
+#endif
 
 TEST_F(Interactive_shell_test, sql_command) {
 #ifdef HAVE_JS
@@ -2899,7 +2993,7 @@ TEST_F(Interactive_shell_test, sql_command) {
   MY_EXPECT_STDERR_CONTAINS("ERROR: Not connected.");
   wipe_all();
 
-  execute("\\connect " + _uri);
+  execute("\\connect " + _mysql_uri);
 
   execute("\\sql create database if not exists sqlcommandtest");
   MY_EXPECT_STDOUT_CONTAINS("Query OK, 1 row affected");
@@ -2926,7 +3020,13 @@ TEST_F(Interactive_shell_test, sql_command) {
   wipe_all();
 
   execute("\\sql select d from t1;");
-  MY_EXPECT_STDERR_CONTAINS("Unknown column 'd' in 'field list'");
+
+  if (server_vendor == "MySQL") {
+    MY_EXPECT_STDERR_CONTAINS("Unknown column 'd' in 'field list'");
+  } else {
+    MY_EXPECT_STDERR_CONTAINS("Unknown column 'd' in 'SELECT'");
+  }
+
   wipe_all();
 
   execute("    \\sql show tables");
@@ -2952,7 +3052,7 @@ TEST_F(Interactive_shell_test, sql_command) {
 
 TEST_F(Interactive_shell_test, ansi_quotes) {
   execute("\\sql");
-  execute("\\connect " + _uri);
+  execute("\\connect " + _mysql_uri);
   execute("set @old_mode=@@sql_mode;");
   execute(R"(select "\"";select version();#";)");
   ASSERT_TRUE(output_handler.std_err.empty());
@@ -2986,7 +3086,7 @@ TEST_F(Interactive_shell_test, sql_source_cmd) {
   }
 
   execute("\\sql");
-  execute("\\connect " + _uri);
+  execute("\\connect " + _mysql_uri);
 
   const auto times_in_output = [&](const char *str) {
     int i = 0;
@@ -3060,7 +3160,7 @@ TEST_F(Interactive_shell_test, sql_source_cmd) {
     f.close();
   }
 
-  testutil->call_mysqlsh_c({_uri, "--sql", "-f", file_source});
+  testutil->call_mysqlsh_c({_mysql_uri, "--sql", "-f", file_source});
   EXPECT_EQ(4, times_in_output("2"));
   MY_EXPECT_STDOUT_CONTAINS("sabra");
   MY_EXPECT_STDOUT_CONTAINS("cadabra");
@@ -3080,6 +3180,7 @@ TEST_F(Interactive_shell_test, sql_source_cmd) {
 }
 
 TEST_F(Interactive_shell_test, tls_ciphersuites) {
+#ifdef HAVE_X_PROTOCOL
   // Feature not yet supported on X protocol
   execute("shell.connect(\"" + _uri +
           "?tls-ciphersuites=[TLS_DHE_PSK_WITH_AES_128_GCM_SHA256,"
@@ -3093,6 +3194,7 @@ TEST_F(Interactive_shell_test, tls_ciphersuites) {
   MY_EXPECT_STDOUT_CONTAINS("tls-ciphersuites option is not yet supported");
   EXPECT_TRUE(output_handler.std_err.empty());
   wipe_all();
+#endif
 
   // needed to force classic protocol to use TCP and SSL instead of unix sockets
   std::string classic_uri =
@@ -3357,7 +3459,9 @@ TEST_F(Interactive_shell_test, show_warnings) {
   };
 
   // X protocol
+#ifdef HAVE_X_PROTOCOL
   test_warnings(_uri);
+#endif
 
   // Classic
   test_warnings(_mysql_uri);
@@ -3452,6 +3556,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_stoi) {
     wipe_all();
   }
 
+#ifdef HAVE_X_PROTOCOL
   {
     execute("\\connect --mx " + _mysql_uri + "?connect-timeout=");
     MY_EXPECT_STDERR_NOT_CONTAINS("stoi");
@@ -3468,6 +3573,7 @@ TEST_F(Interactive_shell_test, shell_command_connect_stoi) {
         "timeout value must be a positive integer (including 0).");
     wipe_all();
   }
+#endif
 }
 
 }  // namespace mysqlsh

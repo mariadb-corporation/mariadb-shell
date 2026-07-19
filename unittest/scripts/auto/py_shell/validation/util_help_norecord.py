@@ -16,10 +16,12 @@ FUNCTIONS
       change_password([options])
             Changes password for an account.
 
+?{__have_upgrade_checker}
       check_for_server_upgrade([connectionData][, options])
             Performs series of tests on specified MySQL server to check if the
             upgrade process will succeed.
-
+?{}
+?{__have_dump_and_load}
       copy_instance(connectionData[, options])
             Copies a source instance to the target instance. Requires an open
             global Shell session to the source instance, if there is none, an
@@ -51,14 +53,16 @@ FUNCTIONS
 
       export_table(table, outputUrl[, options])
             Exports the specified table to the data dump file.
-
+?{}
       help([member])
             Provides help about this object and it's members
 
+?{__have_x_protocol}
       import_json(file[, options])
             Import JSON documents from file to collection or table in MySQL
             Server using X Protocol session.
-
+${}
+?{__have_dump_and_load}
       import_table(urls[, options])
             Import table dump stored in files to target table using LOAD DATA
             LOCAL INFILE calls in parallel connections.
@@ -69,7 +73,7 @@ FUNCTIONS
 
       load_dump(url[, options])
             Loads database dumps created by MySQL Shell.
-
+?{}
       upgrade_auth_method([options])
             Upgrades authentication plugin of an account.
 

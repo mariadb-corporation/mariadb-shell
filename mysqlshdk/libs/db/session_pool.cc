@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +32,9 @@
 #include <utility>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/session.h"
+#endif
 
 namespace mysqlshdk {
 namespace db {
@@ -42,9 +45,11 @@ std::shared_ptr<ISession> create_session(const Connection_options &options) {
   std::shared_ptr<ISession> session;
 
   switch (options.get_session_type()) {
+    #ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       session = mysqlx::Session::create();
       break;
+    #endif
     case mysqlsh::SessionType::Classic:
       session = mysql::Session::create();
       break;

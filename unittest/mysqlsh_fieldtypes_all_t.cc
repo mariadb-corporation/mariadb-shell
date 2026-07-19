@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -62,12 +63,12 @@ class Mysqlsh_fieldtypes_all : public Command_line_test {
   void SetUp() {
     Command_line_test::SetUp();
     if (!_cleanup_cmd) {
-      if (prepare_data(_mysqlsh_path, _uri) != 0) {
+      if (prepare_data(_mysqlsh_path, _mysql_uri) != 0) {
         std::cerr << "Error while preparing test environment\n";
         FAIL();
       } else {
         std::stringstream cmd;
-        cmd << _mysqlsh_path << " " << _uri << " --sql -e \""
+        cmd << _mysqlsh_path << " " << _mysql_uri << " --sql -e \""
             << "drop schema if exists xtest;\"";
         _cleanup_cmd = strdup(cmd.str().c_str());
       }
@@ -79,6 +80,7 @@ class Mysqlsh_fieldtypes_all : public Command_line_test {
 
 char *Mysqlsh_fieldtypes_all::_cleanup_cmd = nullptr;
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Integer_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_tinyint;", NULL});
@@ -120,6 +122,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Integer_types_X) {
                  "9223372036854775807\t18446744073709551615"}),
       _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Integer_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -163,6 +166,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Integer_types_classic) {
       _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Fixed_point_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_decimal1;", NULL});
@@ -208,6 +212,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Fixed_point_types_X) {
                                         "0.000000000000000000000000000000"}),
                              _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Fixed_point_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -255,6 +260,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Fixed_point_types_classic) {
                              _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Floating_point_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_real;", NULL});
@@ -279,6 +285,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Floating_point_types_X) {
                  "1235212322.6123123\t11235212312322.672"}),
       _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Floating_point_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -305,6 +312,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Floating_point_types_classic) {
       _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Date_types_X) {
   if (_target_server_version < Version("8.0")) {
     PENDING_BUG_TEST("BUG#27169735 DATETIME libmysqlxclient regression");
@@ -324,6 +332,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Date_types_X) {
         _output);
   }
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Date_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -352,6 +361,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Date_types_classic) {
         _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Binary_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_lob;", NULL});
@@ -371,6 +381,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Binary_types_X) {
                  "longtext-binary \\nnext line"}),
       _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Binary_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -392,6 +403,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Binary_types_classic) {
       _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Other_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_bit;", NULL});
@@ -412,6 +424,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Other_types_X) {
   MY_EXPECT_MULTILINE_OUTPUT("SELECT * FROM t_set;",
                              multiline({"c1\tc2", "v1,v2\t", "\t"}), _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Other_types_classic) {
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
@@ -434,6 +447,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Other_types_classic) {
                              multiline({"c1\tc2", "v1,v2\t", "\t"}), _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Geom_types_X) {
   execute({_mysqlsh, _uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_geom;", NULL});
@@ -494,8 +508,25 @@ TEST_F(Mysqlsh_fieldtypes_all, Geom_types_X) {
            "000000840"}),
       _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Geom_types_classic) {
+  // MariaDB does not support nested GEOMETRYCOLLECTION, so the fixture stores a
+  // non-nested collection on MariaDB (see fieldtypes_all.sql), which has a
+  // different WKB encoding than MySQL's nested one.
+  std::string T_GEOM_ALL_GC;
+  if (_server_vendor == mysqlshdk::db::ServerVendor::MySQL) {
+    T_GEOM_ALL_GC =
+        "0x00000000010700000002000000010700000001000000010200000002000000000000"
+        "00000000000000000000000000000000000000F03F000000000000F03F010200000002"
+        "000000000000000000004000000000000000400000000000000840000000000000084"
+        "0";
+  } else {
+    T_GEOM_ALL_GC =
+        "0x00000000010700000002000000010200000002000000000000000000000000000000"
+        "00000000000000000000F03F000000000000F03F010200000002000000000000000000"
+        "0040000000000000004000000000000008400000000000000840";
+  }
   execute({_mysqlsh, _mysql_uri.c_str(), "--sql", "--database=xtest", "-e",
            "SELECT * FROM t_geom;", NULL});
   MY_EXPECT_MULTILINE_OUTPUT(
@@ -520,42 +551,60 @@ TEST_F(Mysqlsh_fieldtypes_all, Geom_types_classic) {
            "SELECT * FROM t_geom_all;", NULL});
   MY_EXPECT_MULTILINE_OUTPUT(
       "SELECT * FROM t_geom_all;",
-      multiline(
-          {"g\tp\tl\tpl\tmp\tml\tmpl\tgc",
-           "0x00000000010100000000804C060AE5404200722B808C1BAC42\t"
-           "0x00000000010100000090A0F831E6F67AC09180D1E50D2E8440\t"
-           "0x000000000102000000040000000000000000DEB44000000080A7A655416ABC749"
-           "3D84AA2408B6CE7FBC98CBD40FD87F4DB774AA2C01230BABCC120BD404ED1915C7E"
-           "4893400D6C9560912AB6C0\t"
-           "0x0000000001030000000200000006000000E92631083C72B440D26F5F07B287EF4"
-           "04ED1915C7E3C96407FD93D7958C9B840547424971F1BB040547424971F1BB04022"
-           "FDF6752001AB40273108ACAC2AB640713D0A92CCF588413D0AD7A332660041E9263"
-           "1083C72B440D26F5F07B287EF400600000052D4997B5802B640330C494EEEE98A41"
-           "FE43FAED3B1BB040158C4AEA74D7B140EEEB40AA962D9041CDCCCC9AAB5D7641ED9"
-           "E3C27605E7641EBE236E21BA25841E92631083CABB1407B14AE492776804152D499"
-           "7B5802B640330C494EEEE98A41\t"
-           "0x00000000010400000003000000010100000026264290DBEAF04166F58104DDDD8"
-           "A410101000000A253E091A27989414059E0911DE98A4101010000009A999913409D"
-           "84C11D5AC4A40976C0C1\t"
-           "0x000000000105000000020000000102000000040000000000000000DEB44000000"
-           "080A7A655416ABC7493D84AA2408B6CE7FBC98CBD40FD87F4DB774AA2C01230BABC"
-           "C120BD404ED1915C7E4893400D6C9560912AB6C0010200000004000000000000000"
-           "0DEB44000000080A7A655416ABC7493D84AA2408B6CE7FBC98CBD40FD87F4DB774A"
-           "A2C01230BABCC120BD404ED1915C7E4893400D6C9560912AB6C0\t"
-           "0x0000000001060000000100000001030000000200000005000000E92631083C72B"
-           "440D26F5F07B287EF404ED1915C7E3C96407FD93D7958C9B840547424971F1BB040"
-           "547424971F1BB04022FDF6752001AB40273108ACAC2AB640E92631083C72B440D26"
-           "F5F07B287EF400600000052D4997B5802B640330C494EEEE98A41FE43FAED3B1BB0"
-           "40158C4AEA74D7B140EEEB40AA962D9041CDCCCC9AAB5D7641ED9E3C27605E76411"
-           "B317F0E2ECB6242E92631083CABB1407B14AE492776804152D4997B5802B640330C"
-           "494EEEE98A41\t"
-           "0x00000000010700000002000000010700000001000000010200000002000000000"
-           "00000000000000000000000000000000000000000F03F000000000000F03F010200"
-           "0000020000000000000000000040000000000000004000000000000008400000000"
-           "000000840"}),
+      multiline({"g\tp\tl\tpl\tmp\tml\tmpl\tgc",
+                 shcore::str_format(
+                     "0x00000000010100000000804C060AE5404200722B808C1BAC42\t"
+                     "0x00000000010100000090A0F831E6F67AC09180D1E50D2E8440\t"
+                     "0x000000000102000000040000000000000000DEB44000000080A7A65"
+                     "5416ABC749"
+                     "3D84AA2408B6CE7FBC98CBD40FD87F4DB774AA2C01230BABCC120BD40"
+                     "4ED1915C7E"
+                     "4893400D6C9560912AB6C0\t"
+                     "0x0000000001030000000200000006000000E92631083C72B440D26F5"
+                     "F07B287EF4"
+                     "04ED1915C7E3C96407FD93D7958C9B840547424971F1BB04054742497"
+                     "1F1BB04022"
+                     "FDF6752001AB40273108ACAC2AB640713D0A92CCF588413D0AD7A3326"
+                     "60041E9263"
+                     "1083C72B440D26F5F07B287EF400600000052D4997B5802B640330C49"
+                     "4EEEE98A41"
+                     "FE43FAED3B1BB040158C4AEA74D7B140EEEB40AA962D9041CDCCCC9AA"
+                     "B5D7641ED9"
+                     "E3C27605E7641EBE236E21BA25841E92631083CABB1407B14AE492776"
+                     "804152D499"
+                     "7B5802B640330C494EEEE98A41\t"
+                     "0x00000000010400000003000000010100000026264290DBEAF04166F"
+                     "58104DDDD8"
+                     "A410101000000A253E091A27989414059E0911DE98A4101010000009A"
+                     "999913409D"
+                     "84C11D5AC4A40976C0C1\t"
+                     "0x000000000105000000020000000102000000040000000000000000D"
+                     "EB44000000"
+                     "080A7A655416ABC7493D84AA2408B6CE7FBC98CBD40FD87F4DB774AA2"
+                     "C01230BABC"
+                     "C120BD404ED1915C7E4893400D6C9560912AB6C001020000000400000"
+                     "0000000000"
+                     "0DEB44000000080A7A655416ABC7493D84AA2408B6CE7FBC98CBD40FD"
+                     "87F4DB774A"
+                     "A2C01230BABCC120BD404ED1915C7E4893400D6C9560912AB6C0\t"
+                     "0x0000000001060000000100000001030000000200000005000000E92"
+                     "631083C72B"
+                     "440D26F5F07B287EF404ED1915C7E3C96407FD93D7958C9B840547424"
+                     "971F1BB040"
+                     "547424971F1BB04022FDF6752001AB40273108ACAC2AB640E92631083"
+                     "C72B440D26"
+                     "F5F07B287EF400600000052D4997B5802B640330C494EEEE98A41FE43"
+                     "FAED3B1BB0"
+                     "40158C4AEA74D7B140EEEB40AA962D9041CDCCCC9AAB5D7641ED9E3C2"
+                     "7605E76411"
+                     "B317F0E2ECB6242E92631083CABB1407B14AE492776804152D4997B58"
+                     "02B640330C"
+                     "494EEEE98A41\t%s",
+                     T_GEOM_ALL_GC.c_str())}),
       _output);
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Mysqlsh_fieldtypes_all, Vector_type_X) {
   if (_target_server_version < mysqlshdk::utils::Version(9, 0, 0))
     SKIP_TEST("vector type for 9.0.0+");
@@ -568,6 +617,7 @@ TEST_F(Mysqlsh_fieldtypes_all, Vector_type_X) {
                  "0xB8D58C3D"}),
       _output);
 }
+#endif
 
 TEST_F(Mysqlsh_fieldtypes_all, Vector_type_classic) {
   if (_target_server_version < mysqlshdk::utils::Version(9, 0, 0))

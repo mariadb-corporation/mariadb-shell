@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -127,6 +128,7 @@ std::optional<std::string> create_user_with_random_password(
     const std::vector<std::string> &hosts,
     const IInstance::Create_user_options &options);
 
+#ifndef MARIADB_BUILD  // not used at all!
 void drop_view_or_table(const IInstance &instance, const std::string &schema,
                         const std::string &name, bool if_exists);
 
@@ -136,16 +138,19 @@ void drop_table_or_view(const IInstance &instance, const std::string &schema,
 void copy_schema(const mysql::IInstance &instance, const std::string &name,
                  const std::string &target, bool use_existing_schema,
                  bool move_tables);
+#endif
 
 void copy_data(const mysql::IInstance &instance, const std::string &name,
                const std::string &target);
 
+#ifdef HAVE_ADMIN_API
 void create_indicator_tag(const mysql::IInstance &instance,
                           std::string_view name);
 void drop_indicator_tag(const mysql::IInstance &instance,
                         std::string_view name);
 bool check_indicator_tag(const mysql::IInstance &instance,
                          std::string_view name);
+#endif
 
 mysqlshdk::db::Ssl_options read_ssl_client_options(
     const mysqlshdk::mysql::IInstance &instance, bool set_cert, bool set_ca);
@@ -194,7 +199,9 @@ inline void assert_transaction_is_open(
     assert(false);
   } catch ([[maybe_unused]] const mysqlshdk::db::Error &e) {
     // make sure correct error is reported
+#ifndef MARIADB_BUILD
     assert(e.code() == ER_CANT_CHANGE_TX_CHARACTERISTICS);
+#endif
   } catch (...) {
     // any other exception means that something else went wrong (or debug
     // exception)

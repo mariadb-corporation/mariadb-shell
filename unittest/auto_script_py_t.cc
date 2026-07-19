@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -312,15 +313,27 @@ std::vector<std::string> find_py_tests(const std::string &subdir,
   std::vector<std::string> filtered;
 
   for (const auto &s : tests) {
+#ifndef HAVE_DUMP_AND_LOAD
+    if (subdir == "py_shell" && (shcore::str_beginswith(s, "util_dump") ||
+                                 shcore::str_beginswith(s, "util_load") ||
+                                 shcore::str_beginswith(s, "util_import") ||
+                                 shcore::str_beginswith(s, "util_export") ||
+                                 shcore::str_beginswith(s, "util_copy"))) {
+      continue;
+    }
+#endif
     // We let files starting with underscore as modules
-    if (shcore::str_endswith(s, ext) && s[0] != '_')
+    if (shcore::str_endswith(s, ext) && s[0] != '_' &&
+        !shcore::str_beginswith(s, "upgrade_check")) {
       filtered.emplace_back(subdir + "/" + s);
+    }
   }
 
   return filtered;
 }
 
 // General test cases
+#ifdef HAVE_ADMIN_API
 INSTANTIATE_TEST_SUITE_P(Admin_api, Auto_script_py,
                          testing::ValuesIn(find_py_tests("py_adminapi", ".py")),
                          fmt_param);
@@ -334,6 +347,7 @@ INSTANTIATE_TEST_SUITE_P(
     Admin_api_clusterset, Auto_script_py,
     testing::ValuesIn(find_py_tests("py_adminapi_clusterset", ".py")),
     fmt_param);
+#endif
 
 INSTANTIATE_TEST_SUITE_P(Shell_scripted, Auto_script_py,
                          testing::ValuesIn(find_py_tests("py_shell", ".py")),
@@ -347,14 +361,17 @@ INSTANTIATE_TEST_SUITE_P(Aws_scripted, Auto_script_py,
                          testing::ValuesIn(find_py_tests("py_aws", ".py")),
                          fmt_param);
 
+#ifdef HAVE_X_PROTOCOL
 INSTANTIATE_TEST_SUITE_P(Dev_api_scripted, Auto_script_py,
                          testing::ValuesIn(find_py_tests("py_devapi", ".py")),
                          fmt_param);
-
+#endif
+#ifdef HAVE_ADMIN_API
 INSTANTIATE_TEST_SUITE_P(Mixed_versions, Auto_script_py,
                          testing::ValuesIn(find_py_tests("py_mixed_versions",
                                                          ".py")),
                          fmt_param);
+#endif
 
 class Azure_tests_py : public Auto_script_py {
  public:

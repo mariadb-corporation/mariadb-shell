@@ -19,7 +19,7 @@ EXPECT_STDOUT_CONTAINS('{"Field 1":{"Name":"`id`"')
 EXPECT_STDOUT_CONTAINS(',"Field 2":{"Name":"`data`"')
 EXPECT_STDOUT_CONTAINS('{"hasData":true,"rows":[{"id":1,"data":"john doe"},{"id":2,"data":"jane doe"}]')
 
-#@<> Validating result from SQL execution through the session object JS
+#@<> Validating result from SQL execution through the session object JS {__have_js}
 mysqlsh(["--js", "-e", '{"execute":"session.runSql(\'SELECT * FROM json_shell.sample\');"}', __mysqluripwd])
 EXPECT_STDOUT_CONTAINS('{"Field 1":{"Name":"`id`"')
 EXPECT_STDOUT_CONTAINS(',"Field 2":{"Name":"`data`"')
@@ -31,14 +31,14 @@ EXPECT_STDOUT_CONTAINS('{"Field 1":{"Name":"`id`"')
 EXPECT_STDOUT_CONTAINS(',"Field 2":{"Name":"`data`"')
 EXPECT_STDOUT_CONTAINS('{"hasData":true,"rows":[{"id":1,"data":"john doe"},{"id":2,"data":"jane doe"}]')
 
-#@<> Validating result from shell dumpRows
+#@<> Validating result from shell dumpRowsm {__have_js}
 mysqlsh(["--js", "-e", '{"execute":"let res = session.runSql(\'SELECT * FROM json_shell.sample\'); shell.dumpRows(res);"}', __mysqluripwd])
 EXPECT_STDOUT_CONTAINS('{"Field 1":{"Name":"`id`"')
 EXPECT_STDOUT_CONTAINS(',"Field 2":{"Name":"`data`"')
 EXPECT_STDOUT_CONTAINS('{"hasData":true,"rows":[{"id":1,"data":"john doe"},{"id":2,"data":"jane doe"}]')
 
 
-#@<> Validating result from \show report
+#@<> Validating result from \show report {__have_js}
 mysqlsh(["--js", "-e", '{"execute":"\\\\show threads"}', __mysqluripwd])
 EXPECT_STDOUT_CONTAINS('{"Field 1":{"Name":"`tid`"')
 EXPECT_STDOUT_CONTAINS(',"Field 2":{"Name":"`cid`"')

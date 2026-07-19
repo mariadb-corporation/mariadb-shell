@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -70,4 +71,8 @@ target_link_libraries(storage
   shellcore
   utils
   ${ZLIB_LIBRARY}
+  # zstd_file.cc needs the zstd library. ZSTD_LIBRARY is set by
+  # MYSQL_CHECK_ZSTD() above and is only in scope here (not in the parent
+  # mysqlshdk/CMakeLists.txt), so link it where it is actually used.
+  ${ZSTD_LIBRARY}
 )

@@ -1,4 +1,5 @@
 /* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +39,14 @@ void Command_line_test::SetUp() {
   _process = nullptr;
 
   Shell_base_test::SetUp();
+
+  _output.clear();
+  execute({_mysqlsh, "--quiet-start=2", "--", "sandbox", "vendor", nullptr});
+
+  _server_vendor = shcore::str_endswith(shcore::str_strip(_output), "MySQL")
+                       ? mysqlshdk::db::ServerVendor::MySQL
+                       : mysqlshdk::db::ServerVendor::MariaDB;
+  _output.clear();
 }
 
 /**

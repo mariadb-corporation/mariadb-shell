@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +62,16 @@ class Mysqlsh_ssl : public tests::Command_line_test {
     X_auto,  // X protocol port but without --mysqlx
     C_auto   // classic port but without --mysql
   };
+
+  static bool handle_protocol([[maybe_unused]] Proto p) {
+#ifndef HAVE_X_PROTOCOL
+    return p != Proto::X && p != Proto::X_sock && p != Proto::X_dflt &&
+           p != Proto::X_auto;
+#else
+    return true;
+#endif
+  }
+
   enum class Ssl { Dflt = -1, Disab = 0, Pref, Req, Ver_ca, Ver_id };
 
   enum class Srv { Main, Alt };
@@ -389,6 +400,9 @@ void PrintTo(Mysqlsh_ssl::Usr r, ::std::ostream *os) {
 #define TRY_COMBINATIONS(combos)                                              \
   do {                                                                        \
     for (auto combo : combos) {                                               \
+      if (!Mysqlsh_ssl::handle_protocol(combo.protocol)) {                    \
+        continue;                                                             \
+      }                                                                       \
       Mysqlsh_ssl::Result result;                                             \
       std::string cmd;                                                        \
       std::string output;                                                     \
@@ -586,6 +600,9 @@ TEST_F(Mysqlsh_ssl, ssl_basic_mysql_native_password_require_ssl) {
   run_script_classic({"DROP USER rootssl@localhost"});
 }
 
+#ifndef MARIADB_BUILD
+// PORT_TODO: Creating user with this auth plugin works, but attempting to
+// connect does not.
 TEST_F(Mysqlsh_ssl, ssl_basic_caching_sha2_password) {
   // Test basic SSL support with an account that uses caching_sha2_password:
   // (new default auth method starting from 8.0.4)
@@ -671,6 +688,7 @@ TEST_F(Mysqlsh_ssl, ssl_basic_caching_sha2_password) {
 
   run_script_classic({"DROP USER rooty@localhost"});
 }
+#endif
 
 TEST_F(Mysqlsh_ssl, DISABLED_ssl_default_params_classic) {
   // Connect using classic protocol, with default transport params

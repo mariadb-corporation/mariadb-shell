@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -274,6 +275,11 @@ void User_privileges::parse_grant(const std::string &statement) {
     // revokes apply at the schema level only (column_list or object_type) does
     // not appear in the statement
     grant = false;
+#ifdef MARIADB_BUILD
+    // The case of the default grant statement, which is stored as a grant
+  } else if (shcore::str_caseeq(type, "SET")) {
+    return;
+#endif
   } else {
     throw std::logic_error("Unsupported grant statement: " + std::string{type});
   }

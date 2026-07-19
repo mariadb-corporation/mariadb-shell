@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +36,11 @@
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
+
+// This TU includes the server my_config.h and calls shcore::setenv/sleep_ms;
+// undo the setenv/sleep/strtok_r macros after all includes. Inert off
+// Windows/MySQL.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 extern bool g_test_parallel_execution;
 
@@ -76,8 +82,16 @@ class Mysqlsh_extension_test : public Command_line_test {
   void run(const std::vector<std::string> &extra = {}) {
     shcore::create_file(k_file, shcore::str_join(m_test_input, "\n"));
 
-    std::vector<const char *> args = {_mysqlsh, _uri.c_str(), "--interactive",
-                                      "--js"};
+    // The fixture starts the shell in the default scripting mode. When
+    // JavaScript is not built, fall back to Python so the non-JS assertions
+    // (add_py_test) still run; the add_js_test inputs are compiled out anyway.
+#ifdef HAVE_JS
+    const char *startup_mode = "--js";
+#else
+    const char *startup_mode = "--py";
+#endif  // HAVE_JS
+    std::vector<const char *> args = {_mysqlsh, _mysql_uri.c_str(),
+                                      "--interactive", startup_mode};
 
     for (const auto &e : extra) {
       args.emplace_back(e.c_str());
@@ -389,6 +403,7 @@ TEST_F(Mysqlsh_reports_test, WL11263_TSF8_3) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_reports_test, WL11263_TSF8_4) {
   // WL11263_TSF8_4 - Validate that the plugin files doesn't influence the
   // global scripting context. Try to create global functions and variables,
@@ -445,6 +460,7 @@ NameError: name 'global_py_variable' is not defined)");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
   wipe_out();
 }
+#endif
 
 TEST_F(Mysqlsh_reports_test, WL11263_TSF8_5) {
   // WL11263_TSF8_5 - Register a plugin file setting an undefined method, call
@@ -488,6 +504,7 @@ shell.register_report('undefined_py_report', 'print', undefined_py_report);
   validate_log();
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_reports_test, relative_require) {
   // write a simple report
   write_plugin("report.js", R"(
@@ -531,6 +548,7 @@ NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
 Bye!
 )");
 }
+#endif
 
 class Mysqlsh_plugin_test : public Mysqlsh_extension_test {
  public:
@@ -586,6 +604,7 @@ TEST_F(Mysqlsh_plugin_test, WL13051_OK_shell_plugins) {
     SKIP_TEST("Skipping tests for parallel execution.");
   }
 
+#ifdef HAVE_JS
   // create first-js plugin, which defines a custom report
   write_plugin("first-js", R"(function report(s) {
   println('first JS report');
@@ -595,6 +614,7 @@ TEST_F(Mysqlsh_plugin_test, WL13051_OK_shell_plugins) {
 shell.registerReport('first_js', 'print', report);
 )",
                ".js");
+#endif
 
   // create third-py plugin, which defines a custom report
   write_plugin("third-py", R"(def report(s):
@@ -605,14 +625,24 @@ shell.register_report('third_py', 'print', report);
 )",
                ".py");
 
-  // check if first_js report is available
+// check if first_js report is available
+#ifdef HAVE_JS
   add_js_test("\\show first_js", "first JS report");
+#endif
+#ifdef HAVE_PYTHON
+#ifdef HAVE_JS
   add_py_test("\\py", "Switching to Python mode...");
+#else
+  add_py_test("\\py", "");
+#endif
+#endif
   add_py_test("\\show third_py", "third PY report");
 
+#ifdef HAVE_JS
   add_expected_js_log(
       "The 'first_js' report of type 'print' has been registered.");
-  add_expected_js_log(
+#endif
+  add_expected_py_log(
       "The 'third_py' report of type 'print' has been registered.");
   run({"--log-level=debug3"});
   // check the output
@@ -620,11 +650,14 @@ shell.register_report('third_py', 'print', report);
   validate_log();
   wipe_out();
 
+#ifdef HAVE_JS
   delete_plugin("first-js");
+#endif
   delete_plugin("third-py");
 }
 
 TEST_F(Mysqlsh_plugin_test, WL13051_OK_user_plugins) {
+#ifdef HAVE_JS
   // create second-js plugin - which defines a new global object
   write_user_plugin("second-js", R"(function sample() {
   println('first object defined in JS');
@@ -634,6 +667,7 @@ shell.addExtensionObjectMember(obj, "testFunction", sample);
 shell.registerGlobal('jsObject', obj);
 )",
                     ".js");
+#endif
 
   // create fourth-py plugin - which defines a new global object
   write_user_plugin("fourth-py", R"(def describe():
@@ -664,9 +698,13 @@ shell.register_global('pyObject', obj);
 
   // check if jsObject.testFunction was properly registered in JS
   add_js_test("jsObject.testFunction()", "first object defined in JS");
-  // check if jsObject.test_function was properly registered in PY
+// check if jsObject.test_function was properly registered in PY
+#ifdef HAVE_JS
   add_py_test("\\py", "Switching to Python mode...");
   add_py_test("jsObject.test_function()", "first object defined in JS");
+#else
+  add_py_test("\\py", "");
+#endif
   // check if pyObject.self_describe was properly registered in PY
   add_py_test("pyObject.self_describe()", "first object defined in PY");
   // check if pyObject.selfDescribe was properly registered in JS
@@ -681,7 +719,9 @@ shell.register_global('pyObject', obj);
 
   validate_log();
 
+#ifdef HAVE_JS
   delete_user_plugin("second-js");
+#endif
   delete_user_plugin("fourth-py");
   delete_user_plugin(".git");
 }
@@ -752,6 +792,7 @@ TEST_F(Mysqlsh_plugin_test, WL13051_no_init_files) {
   delete_user_plugin(".git");
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_plugin_test, WL13051_errors_in_js_plugin) {
   // create first JS plugin file
   write_user_plugin("error-two", R"(function report(s) {
@@ -777,6 +818,7 @@ shell.registerReport('first_js', 'print', report);
 
   delete_user_plugin("error-two");
 }
+#endif
 
 TEST_F(Mysqlsh_plugin_test, WL13051_errors_in_py_plugin) {
   // create first JS plugin file
@@ -1108,14 +1150,17 @@ shell.register_global('errtest', obj)
       "Shell Error (99999): py another "
       "error got thrown");
 
+#ifdef HAVE_JS
   MY_EXPECT_CMD_OUTPUT_CONTAINS("js error got thrown");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("js another error got thrown");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("");
+#endif
 
   wipe_out();
   delete_user_plugin("error-reporting");
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_plugin_test, relative_require) {
   // write a simple plugin
   write_user_plugin("plugin", R"(
@@ -1160,6 +1205,7 @@ Bye!
   // cleanup
   delete_user_plugin("plugin");
 }
+#endif
 
 TEST_F(Mysqlsh_plugin_test, py_plugin_use_with_named_args) {
   // create fourth-py plugin - which defines a new global object
@@ -1329,6 +1375,7 @@ shell.register_global('kwtest', obj)
   delete_user_plugin("kwargs-py-py-correct");
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_plugin_test, py_kwargs_from_javascript_correct_registration) {
   write_user_plugin("kwargs-py-js-correct",
                     R"(obj = shell.create_extension_object()
@@ -1387,6 +1434,7 @@ shell.register_global('kwtest', obj)
   }
   delete_user_plugin("kwargs-py-js-correct");
 }
+#endif
 
 TEST_F(Mysqlsh_plugin_test, py_kwargs_from_python_mismatched_registration) {
   write_user_plugin("kwargs-py-py-mistmatched",
@@ -1590,6 +1638,7 @@ shell.register_global('kwtest', obj)
   delete_user_plugin("kwargs-py-py-correct");
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_plugin_test, py_no_kwargs_from_javascript_correct_registration) {
   write_user_plugin("kwargs-py-js-correct",
                     R"(obj = shell.create_extension_object()
@@ -1648,6 +1697,7 @@ shell.register_global('kwtest', obj)
   }
   delete_user_plugin("kwargs-py-js-correct");
 }
+#endif
 
 TEST_F(Mysqlsh_plugin_test, py_kwargs_additional_tests) {
   write_user_plugin("kwargs-py-py-correct",
@@ -1867,6 +1917,7 @@ shell.register_global('pyObject', obj);
   delete_user_plugin("lot-params");
 }
 
+#ifdef HAVE_JS
 TEST_F(Mysqlsh_plugin_test, bug31693096) {
   // JS registers a global object with a method which takes one optional param
   write_user_plugin("bug31693096", R"(var gl = shell.createExtensionObject();
@@ -1889,10 +1940,12 @@ shell.registerGlobal('gl', gl);
 
   delete_user_plugin("bug31693096");
 }
+#endif
 
 TEST_F(Mysqlsh_plugin_test, bug37105233) {
   const std::string utf8_name = "zażółć gęślą jaźń";
 
+#ifdef HAVE_JS
   write_user_plugin(utf8_name + "-js", R"(function sample() {
   println('Object defined in JS');
 }
@@ -1901,6 +1954,7 @@ shell.addExtensionObjectMember(obj, "testFunction", sample);
 shell.registerGlobal('jsObject', obj);
 )",
                     ".js");
+#endif
 
   write_user_plugin(utf8_name + "-py", R"(def describe():
   print('Object defined in PY')
@@ -1911,7 +1965,11 @@ shell.register_global('pyObject', obj);
 )",
                     ".py");
 
+#ifdef HAVE_JS
   add_py_test("\\py", "Switching to Python mode...");
+#else
+  add_py_test("\\py", "");
+#endif
   add_py_test("pyObject.self_describe()", "Object defined in PY");
 
   add_js_test("\\js", "Switching to JavaScript mode...");
@@ -1923,7 +1981,9 @@ shell.register_global('pyObject', obj);
   // check the output
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
 
+#ifdef HAVE_JS
   delete_user_plugin(utf8_name + "-js");
+#endif
   delete_user_plugin(utf8_name + "-py");
 }
 

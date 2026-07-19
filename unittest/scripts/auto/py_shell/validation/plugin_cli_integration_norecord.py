@@ -4,6 +4,7 @@ The following objects provide command line operations:
    cli_tester
       CLI Integration Testing Plugin
 
+?{__have_admin_api}
    cluster
       Represents an InnoDB Cluster.
 
@@ -15,7 +16,7 @@ The following objects provide command line operations:
 
    rs
       Represents an InnoDB ReplicaSet.
-
+?{}
    shell
       Gives access to general purpose functions and properties.
 
@@ -60,10 +61,10 @@ ERROR: Invalid operation for cli_tester object: test-interactive
 
 #@<OUT> Interactive plugin function help
 NAME
-      testInteractive - Testing interactive function.
+      test_interactive - Testing interactive function.
 
 SYNTAX
-      cli_tester.testInteractive()
+      cli_tester.test_interactive()
 
 #@<OUT> CLI plugin nested child --help
 The following object provides command line operations at 'cli_tester emptyChild':

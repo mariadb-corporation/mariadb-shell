@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -97,8 +98,12 @@ std::string get_default_helper_name() {
 #else  // ! _WIN32
 #ifdef __APPLE__
       "keychain";
-#else   // ! __APPLE__
+#else  // ! __APPLE__
+#ifdef MARIADB_BUILD
+      "secret-service";
+#else
       "login-path";
+#endif
 #endif  // ! __APPLE__
 #endif  // ! _WIN32
   return default_helper;

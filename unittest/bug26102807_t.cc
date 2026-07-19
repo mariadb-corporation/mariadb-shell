@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +35,8 @@ TEST_F(Command_line_test, bug26102807) {
       "create table bug26102807.test(a varchar (32));\n";
 
   create_file("bug26102807.sql", sql);
-  // Testing with a Node Session
+// Testing with a Node Session
+#ifdef HAVE_X_PROTOCOL
   {
     std::string uri = "--uri=" + _uri;
     execute({_mysqlsh, uri.c_str(), "--sqlx", "--interactive=full", "-f",
@@ -62,6 +64,7 @@ TEST_F(Command_line_test, bug26102807) {
     MY_EXPECT_CMD_OUTPUT_CONTAINS("<Column>");
     MY_EXPECT_CMD_OUTPUT_CONTAINS("]");
   }
+#endif
 
   // Testing with a Classic Session
   {
@@ -84,6 +87,8 @@ TEST_F(Command_line_test, bug26102807) {
              "session.run_sql('select * from bug26102807.test');", NULL});
 #endif
     MY_EXPECT_CMD_OUTPUT_CONTAINS("Empty set");
+
+    execute({_mysqlsh, uri.c_str(), "-e", "drop database bug26102807", NULL});
   }
 
   shcore::delete_file("bug26102807.sql");

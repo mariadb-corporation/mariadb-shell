@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -786,7 +787,9 @@ mysqlsh::SessionType Connection_options::get_session_type() const {
   if (!has_scheme()) return mysqlsh::SessionType::Auto;
 
   const auto &scheme = get_scheme();
+  #ifdef HAVE_X_PROTOCOL
   if (scheme == "mysqlx") return mysqlsh::SessionType::X;
+  #endif
   if (scheme == "mysql") return mysqlsh::SessionType::Classic;
 
   throw std::invalid_argument("Unknown MySQL URI type " + scheme);
@@ -814,7 +817,15 @@ void Connection_options::set_default_data() {
 #ifdef _WIN32
   if (mysqlshdk::db::Transport_type::Pipe == m_transport_type) {
     if (!has_pipe()) {
+#ifdef MARIADB_BUILD
+      // MariaDB's Connector/C only initializes the mysql_unix_port global
+      // during connect (it is NULL beforehand), and that global is not linked
+      // into every target that pulls db.lib (e.g. the secret-store link test),
+      // causing an unresolved external. Use the compile-time default pipe name.
+      set_pipe(MARIADB_NAMEDPIPE);
+#else
       set_pipe(mysql_unix_port);
+#endif
     }
 
     if (!has_scheme()) {

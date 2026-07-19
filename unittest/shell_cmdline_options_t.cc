@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -51,9 +52,11 @@ std::string session_type_name(mysqlsh::SessionType type) {
     case mysqlsh::SessionType::Classic:
       ret_val = "mysql";
       break;
+#ifdef HAVE_X_PROTOCOL
     case mysqlsh::SessionType::X:
       ret_val = "mysqlx";
       break;
+#endif
   }
 
   return ret_val;
@@ -874,8 +877,10 @@ TEST_F(Shell_cmdline_options, app) {
 
   test_option_with_no_value("--mysql", "session-type",
                             session_type_name(mysqlsh::SessionType::Classic));
+#ifdef HAVE_X_PROTOCOL
   test_option_with_no_value("--mysqlx", "session-type",
                             session_type_name(mysqlsh::SessionType::X));
+#endif
 
   test_option_with_no_value("--sql", "session-type",
                             session_type_name(mysqlsh::SessionType::Auto));
@@ -887,10 +892,12 @@ TEST_F(Shell_cmdline_options, app) {
   test_option_with_no_value("--sqlc", "initial-mode",
                             shell_mode_name(IShell_core::Mode::SQL));
 
+#ifdef HAVE_X_PROTOCOL
   test_option_with_no_value("--sqlx", "session-type",
                             session_type_name(mysqlsh::SessionType::X));
   test_option_with_no_value("--sqlx", "initial-mode",
                             shell_mode_name(IShell_core::Mode::SQL));
+#endif
 
 #ifdef HAVE_JS
   test_option_with_no_value("--javascript", "initial-mode",
@@ -972,6 +979,8 @@ TEST_F(Shell_cmdline_options, app) {
 TEST_F(Shell_cmdline_options, test_session_type_conflicts) {
   test_session_type_conflicts("--sqlc", "--sqlc", 0);
   test_session_type_conflicts("--sqlc", "--mysql", 0);
+
+#ifdef HAVE_X_PROTOCOL
   test_session_type_conflicts("--sqlc", "--mysqlx", 1);
   test_session_type_conflicts("--sqlc", "--sqlx", 1);
 
@@ -985,23 +994,28 @@ TEST_F(Shell_cmdline_options, test_session_type_conflicts) {
   test_session_type_conflicts("--mx", "--mysql", 0);
   test_session_type_conflicts("--mysqlx", "--sqlc", 1);
   test_session_type_conflicts("--mysqlx", "--mysql", 0);
+#endif
 
   test_session_type_conflicts("--mc", "--mysql", 0);
   test_session_type_conflicts("--mysql", "--sqlc", 0);
+#ifdef HAVE_X_PROTOCOL
   test_session_type_conflicts("--mc", "--mysqlx", 0);
   test_session_type_conflicts("--mysql", "--sqlx", 1);
   test_session_type_conflicts("--mysql", "--mysqlx", 0);
+#endif
 
   test_session_type_conflicts("mysql://root@localhost", "--sqlc", 0);
   test_session_type_conflicts("mysql://root@localhost", "--mysql", 0);
 
+#ifdef HAVE_X_PROTOCOL
   test_session_type_conflicts("mysqlx://root@localhost", "--sqlx", 0);
   test_session_type_conflicts("mysqlx://root@localhost", "--mysqlx", 0);
 
   test_session_type_conflicts("mysql://root@localhost", "--sqlx", 1);
   test_session_type_conflicts("mysqlx://root@localhost", "--sqlc", 1);
-
   test_session_type_conflicts("mysql://root@localhost", "--mysqlx", 0);
+#endif
+
   test_session_type_conflicts("mysqlx://root@localhost", "--mysql", 0);
 }
 
@@ -1289,6 +1303,7 @@ TEST_F(Shell_cmdline_options, override_port_and_socket) {
                           "/some/socket/path");
 }
 
+#ifndef MARIADB_BUILD
 TEST_F(Shell_cmdline_options, conflicts_compression) {
   char uri[] = {"--uri=mysqlx://root:password@localhost"};
   char *argv0[] = {const_cast<char *>("ut"), const_cast<char *>("--compress"),
@@ -1299,6 +1314,7 @@ TEST_F(Shell_cmdline_options, conflicts_compression) {
       "Conflicting connection options: compression=REQUIRED, "
       "compression-algorithms=uncompressed.\n");
 }
+#endif
 
 TEST_F(Shell_cmdline_options, test_uri_with_password) {
   // Redirect cerr.
@@ -1519,6 +1535,7 @@ TEST_F(Shell_cmdline_options, test_file_and_execute) {
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Shell_cmdline_options, mfa_tests) {
   {
     // Password in --password1 differs from password in URI
@@ -1561,12 +1578,13 @@ TEST_F(Shell_cmdline_options, mfa_tests) {
     }
   }
 }
+#endif
 
 TEST_F(Shell_cmdline_options, mycnf) {
   make_mycnf(R"*([mysqlsh]
 user=rooot
 host=localhost
-mysqlx
+mysql
 )*");
 
   {
@@ -1578,13 +1596,13 @@ mysqlx
     EXPECT_NO_THROW(so.get().connection_options());
 
     EXPECT_EQ("rooot", so.get().connection_options().get_user());
-    EXPECT_EQ("mysqlx", so.get().connection_options().get_scheme());
+    EXPECT_EQ("mysql", so.get().connection_options().get_scheme());
   }
 
   make_mycnf(R"*([client]
 user=rooot
 host=localhost
-mysqlx
+mysql
 )*");
 
   {
@@ -1596,10 +1614,11 @@ mysqlx
     EXPECT_NO_THROW(so.get().connection_options());
 
     EXPECT_EQ("rooot", so.get().connection_options().get_user());
-    EXPECT_EQ("mysqlx", so.get().connection_options().get_scheme());
+    EXPECT_EQ("mysql", so.get().connection_options().get_scheme());
   }
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Shell_cmdline_options, mycnf_default_session_type) {
   // check that we'll default to mysql:// if there's any connection option
   // in my.cnf
@@ -1633,6 +1652,7 @@ host=localhost
     EXPECT_EQ("mysqlx", so.get().connection_options().get_scheme());
   }
 }
+#endif
 
 TEST_F(Shell_cmdline_options, mycnf_option_override) {
   // override socket with port

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -432,15 +433,22 @@ bool Instance::is_ssl_enabled() const {
  */
 
 bool Instance::has_variable_compiled_value(std::string_view name) const {
-  if (!is_performance_schema_enabled())
-    throw std::runtime_error(shcore::str_format(
-        "Unable to check if variable '%.*s' has the default (compiled) value "
-        "since performance_schema is not enabled.",
-        static_cast<int>(name.size()), name.data()));
+  shcore::sqlstring stmt;
+  if (get_session()->get_server_vendor() == db::ServerVendor::MariaDB) {
+    stmt =
+        "SELECT (GLOBAL_VALUE_ORIGIN = 'COMPILE-TIME') FROM "
+        "information_schema.system_variables WHERE variable_name = ?"_sql;
+  } else {
+    if (!is_performance_schema_enabled())
+      throw std::runtime_error(shcore::str_format(
+          "Unable to check if variable '%.*s' has the default (compiled) value "
+          "since performance_schema is not enabled.",
+          static_cast<int>(name.size()), name.data()));
 
-  auto stmt =
-      "SELECT (variable_source = 'COMPILED') FROM "
-      "performance_schema.variables_info WHERE variable_name = ?"_sql;
+    stmt =
+        "SELECT (variable_source = 'COMPILED') FROM "
+        "performance_schema.variables_info WHERE variable_name = ?"_sql;
+  }
   stmt << name;
   stmt.done();
 
@@ -567,6 +575,7 @@ void Instance::drop_user(std::string_view user, std::string_view host,
   execute(stmt);
 }
 
+#ifndef MARIADB_BUILD
 /**
  * Get all privileges of the given user.
  *
@@ -591,6 +600,7 @@ std::unique_ptr<User_privileges> Instance::get_current_user_privileges(
 
   return get_user_privileges(user, host, allow_skip_grants_user);
 }
+#endif
 
 bool Instance::is_read_only(bool super) const {
   // Check if the member is not read_only

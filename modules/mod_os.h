@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +31,11 @@
 #include <string>
 
 #include "scripting/types/cpp.h"
+
+// The Os class below declares a `sleep` member, which collides with the
+// unguarded `sleep` macro leaked by the MariaDB server headers on Windows.
+// Undo it (and friends) first. Inert for MySQL and non-Windows builds.
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace mysqlsh {
 

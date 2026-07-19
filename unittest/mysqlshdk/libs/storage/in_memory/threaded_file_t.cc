@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -200,7 +201,7 @@ TEST(Threaded_file, read_long) {
   test_file->remove();
 }
 
-TEST(Threaded_file, read_compressed) {
+TEST(Slow_Threaded_file, read_compressed) {
   const std::string filename{"threaded-file-read.zst"};
   constexpr std::size_t length = 23;
   const std::string contents =

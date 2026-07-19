@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -152,7 +153,9 @@ using Result_row_hook = std::function<std::unique_ptr<db::IRow>(
     std::unique_ptr<db::IRow>)>;
 
 class Result_mysql;
+#ifdef HAVE_X_PROTOCOL
 class Result_mysqlx;
+#endif
 
 class Trace {
  public:
@@ -172,8 +175,10 @@ class Trace {
   void expected_status();
   std::shared_ptr<Result_mysql> expected_result(
       std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept);
+#ifdef HAVE_X_PROTOCOL
   std::shared_ptr<Result_mysqlx> expected_result_x(
       std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept);
+#endif
 
   const std::string &trace_path() const { return _trace_path; }
 
@@ -188,9 +193,11 @@ class Trace {
   void unserialize_result_rows(
       rapidjson::Value *rlist, std::shared_ptr<Result_mysql> result,
       std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept);
+#ifdef HAVE_X_PROTOCOL
   void unserialize_result_rows(
       rapidjson::Value *rlist, std::shared_ptr<Result_mysqlx> result,
       std::function<std::unique_ptr<IRow>(std::unique_ptr<IRow>)> intercept);
+#endif
   void expect_request(rapidjson::Value *doc, const char *subtype,
                       const char *detail = nullptr);
   rapidjson::Document _doc;

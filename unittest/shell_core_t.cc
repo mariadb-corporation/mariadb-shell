@@ -1,4 +1,5 @@
 /* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -267,6 +268,7 @@ TEST_F(Shell_core_test, process_sql_no_delim_from_stream) {
   _interactive_shell->process_line("session.close();");
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Shell_core_test, autocache_use_command_node) {
   execute("\\connect " + _uri);
   process("sql/simple_schema.sql");
@@ -325,5 +327,6 @@ TEST_F(Shell_core_test, autocache_shell_connect_node) {
   execute("\\sql drop schema simple_schema");
   execute("session.close();");
 }
+#endif
 }  // namespace shell_core_tests
 }  // namespace shcore

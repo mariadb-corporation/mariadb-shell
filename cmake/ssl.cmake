@@ -1,4 +1,5 @@
 # Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -284,7 +285,19 @@ MACRO (MYSQL_CHECK_SSL)
         SET(OPENSSL_MSVC_STATIC_RT ON)
       ENDIF()
       IF(APPLE AND NOT OPENSSL_ROOT_DIR)
-        SET(OPENSSL_ROOT_DIR "${HOMEBREW_HOME}/openssl@1.1")
+        # macOS ships no system OpenSSL with development headers, so locate one
+        # provided by a package manager. Homebrew keeps openssl keg-only (not on
+        # the default search path), so ask brew for its prefix. If brew is not
+        # installed, leave OPENSSL_ROOT_DIR unset and let FIND_PACKAGE(OpenSSL)
+        # search its default locations (e.g. MacPorts under /opt/local).
+        FIND_PROGRAM(HOMEBREW_EXECUTABLE brew)
+        IF(HOMEBREW_EXECUTABLE)
+          EXECUTE_PROCESS(
+            COMMAND ${HOMEBREW_EXECUTABLE} --prefix openssl
+            OUTPUT_VARIABLE OPENSSL_ROOT_DIR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        ENDIF()
       ENDIF()
       # Treat "system" the same way as -DWITH_SSL=</path/to/custom/openssl>
       IF(WIN32 AND NOT OPENSSL_ROOT_DIR)

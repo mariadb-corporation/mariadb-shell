@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +57,7 @@ enum class Process_type {
   FOREGROUND,
 };
 
+#ifndef MARIADB_BUILD
 Process_type current_process_type() {
 #ifdef _WIN32
   return Process_type::FOREGROUND;
@@ -78,6 +80,7 @@ Process_type current_process_type() {
   return result;
 #endif  // !_WIN32
 }
+#endif
 
 }  // namespace
 
@@ -89,28 +92,36 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
         "drop schema if exists itst;",
         "create schema if not exists itst;",
         "create table itst.data "
-        "   (a int primary key auto_increment, b varchar(10))",
+        "   (a int primary key auto_increment, b varchar(10));",
+#ifdef HAVE_X_PROTOCOL
         "create table itst.cdata "
         "   (_id varchar(32) "
         "       generated always as (doc->>'$._id') stored primary key,"
         "    doc json"
         "   );",
+#endif
         "create procedure itst.populate()\n"
         "begin\n"
         "   declare nrows int;\n"
         "   set nrows = 50;\n"
         "   insert into itst.data values (default, 'first');"
+#ifdef HAVE_X_PROTOCOL
         "   insert into itst.cdata (doc) values ('{\"_id\":\"0\", "
         "                   \"b\":\"first\"}');"
+#endif
         "   while nrows > 0 do "
         "       insert into itst.data values (default, '');"
+#ifdef HAVE_X_PROTOCOL
         "       insert into itst.cdata (doc) values (json_object("
         "             \"_id\", concat(nrows, ''), \"b\", 'test'));"
+#endif
         "       set nrows = nrows - 1;"
         "   end while;\n"
         "   insert into itst.data values (default, 'last');\n"
+#ifdef HAVE_X_PROTOCOL
         "   insert into itst.cdata (doc) values ('{\"_id\":\"l1\", "
         "                   \"b\":\"last\"}');"
+#endif
         "end",
         "call itst.populate()",
         "create table itst.t (a int PRIMARY KEY)",
@@ -124,7 +135,6 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
         "  insert into itst.t values (0);\n"
         "end\n",
     });
-
     {
       std::ofstream f("test_while.py");
       f << "import time\n"
@@ -135,6 +145,7 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
         << "        if x == 0:\n"
         << "            x = 1\n"
         << "            print('ready')\n"
+        << "        time.sleep(0.01)\n"
         << "except BaseException as e:\n"
         << "    print(repr(e))\n"
         << "    sys.exit(2)\n\n"
@@ -178,7 +189,7 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
         << "print('failed')\n";
       f.close();
     }
-
+#ifdef HAVE_X_PROTOCOL
     {
       std::ofstream f("test_while.js");
       f << "x=0\n"
@@ -232,6 +243,7 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
       }
       docfile.close();
     }
+#endif
     {
       std::ofstream f("test_query.sql");
       f << "select 'ready';\n"
@@ -267,6 +279,7 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
     shcore::delete_file("test_queryx.py");
     shcore::delete_file("test_queryc.py");
 
+#ifdef HAVE_X_PROTOCOL
     shcore::delete_file("test_while.js");
     shcore::delete_file("test_sleep.js");
     shcore::delete_file("test_queryx.js");
@@ -274,6 +287,7 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
     shcore::delete_file("test_jsonimport.js");
     shcore::delete_file("test_jsonimport.py");
     shcore::delete_file("test_jsonimport_big.json");
+#endif
 
     shcore::delete_file("test_query.sql");
     shcore::delete_file("test_procedure.sql");
@@ -402,6 +416,7 @@ TEST_F(Interrupt_mysqlsh, crud_js_x_cli) {
 }
 #endif
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interrupt_mysqlsh, crud_py_x_cli) {
   // FR8-b-9 FR9-b-9
   kill_on_ready();
@@ -414,6 +429,7 @@ TEST_F(Interrupt_mysqlsh, crud_py_x_cli) {
 
   MY_EXPECT_CMD_OUTPUT_CONTAINS("nterrupted");
 }
+#endif
 
 TEST_F(Interrupt_mysqlsh, py_cli) {
   // FR8-b-9 FR9-b-9
@@ -485,10 +501,13 @@ TEST_F(Interrupt_mysqlsh, py_file_interactive) {
   TEST_INTERRUPT_SCRIPT_I("--py", "--py", "test_sleep.py");
   TEST_INTERRUPT_SCRIPT_I(_mysql_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SCRIPT_I(_mysql_uri.c_str(), "--py", "test_sleep.py");
+
+#ifdef HAVE_X_PROTOCOL
   TEST_INTERRUPT_SCRIPT_I(_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SCRIPT_I(_uri.c_str(), "--py", "test_sleep.py");
 
   TEST_INTERRUPT_SCRIPT_I(_uri.c_str(), "--py", "test_queryx.py");
+#endif
   TEST_INTERRUPT_SCRIPT_I(_mysql_uri.c_str(), "--py", "test_queryc.py");
 }
 
@@ -501,10 +520,12 @@ TEST_F(Interrupt_mysqlsh, py_source_interactive) {
   TEST_INTERRUPT_SOURCE_I("--py", "--py", "test_sleep.py");
   TEST_INTERRUPT_SOURCE_I(_mysql_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SOURCE_I(_mysql_uri.c_str(), "--py", "test_sleep.py");
+#ifdef HAVE_X_PROTOCOL
   TEST_INTERRUPT_SOURCE_I(_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SOURCE_I(_uri.c_str(), "--py", "test_sleep.py");
 
   TEST_INTERRUPT_SOURCE_I(_uri.c_str(), "--py", "test_queryx.py");
+#endif
   TEST_INTERRUPT_SOURCE_I(_mysql_uri.c_str(), "--py", "test_queryc.py");
 }
 
@@ -516,10 +537,12 @@ TEST_F(Interrupt_mysqlsh, py_file_batch) {
   TEST_INTERRUPT_SCRIPT_B("--py", "--py", "test_sleep.py");
   TEST_INTERRUPT_SCRIPT_B(_mysql_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SCRIPT_B(_mysql_uri.c_str(), "--py", "test_sleep.py");
+#ifdef HAVE_X_PROTOCOL
   TEST_INTERRUPT_SCRIPT_B(_uri.c_str(), "--py", "test_while.py");
   TEST_INTERRUPT_SCRIPT_B(_uri.c_str(), "--py", "test_sleep.py");
 
   TEST_INTERRUPT_SCRIPT_B(_uri.c_str(), "--py", "test_queryx.py");
+#endif
   TEST_INTERRUPT_SCRIPT_B(_mysql_uri.c_str(), "--py", "test_queryc.py");
 }
 
@@ -615,6 +638,7 @@ TEST_F(Interrupt_mysqlsh, sql_cli) {
   EXPECT_EQ("52", row->get_as_string(0));
 }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interrupt_mysqlsh, sqlx_cli) {
   // FR8-b-7 FR9-b-7
   kill_on_ready();
@@ -630,6 +654,7 @@ TEST_F(Interrupt_mysqlsh, sqlx_cli) {
   auto row = result->fetch_one();
   EXPECT_EQ("52", row->get_as_string(0));
 }
+#endif
 
 TEST_F(Interrupt_mysqlsh, sql_file_batch) {
   kill_on_ready();
@@ -670,6 +695,7 @@ TEST_F(Interrupt_mysqlsh, sql_file_interactive) {
 
 TEST_F(Interrupt_mysqlsh, sql_procedure) { test_sql_procedure(_mysql_uri); }
 
+#ifdef HAVE_X_PROTOCOL
 TEST_F(Interrupt_mysqlsh, sqlx_file_batch) {
   kill_on_ready();
 
@@ -721,16 +747,27 @@ TEST_F(Interrupt_mysqlsh, json_import) {
                                  "Importing from file ");
 #endif
 }
+#endif
 
 TEST_F(Interrupt_mysqlsh, command_show_watch) {
-  static constexpr auto expected = R"*(+-----------+
+  std::string expected;
+
+  if (_server_vendor == mysqlshdk::db::ServerVendor::MySQL) {
+    expected = R"*(+-----------+
 | SLEEP(10) |
 +-----------+
 | 1         |
 +-----------+)*";
+  } else {
+    expected = "Query execution was interrupted";
+  }
 
   for (const auto &command : {"test_show.py", "test_watch.py"}) {
+#ifdef HAVE_X_PROTOCOL
     for (const auto &uri : {_mysql_uri, _uri}) {
+#else
+    for (const auto &uri : {_mysql_uri}) {
+#endif
       SCOPED_TRACE(
           shcore::str_format("Executing '%s' via '%s'", command, uri.c_str()));
       mysqlshdk::utils::Profile_timer timer;
@@ -741,7 +778,7 @@ TEST_F(Interrupt_mysqlsh, command_show_watch) {
               nullptr, command);
       timer.stage_end();
 
-      MY_EXPECT_CMD_OUTPUT_CONTAINS(expected);
+      MY_EXPECT_CMD_OUTPUT_CONTAINS(expected.c_str());
       EXPECT_LT(timer.total_seconds_elapsed(), 5.0);
 
       kill_thread.join();
@@ -749,6 +786,8 @@ TEST_F(Interrupt_mysqlsh, command_show_watch) {
   }
 }
 
+#ifndef MARIADB_BUILD
+// PORT-TODO: SEE comment in interrupt_helper.cc, line 118
 TEST_F(Interrupt_mysqlsh, prompt) { test_prompt(false, false, false); }
 
 TEST_F(Interrupt_mysqlsh, prompt_password) {
@@ -783,6 +822,7 @@ TEST_F(Interrupt_mysqlsh, js_prompt_password_from_stdin) {
   test_prompt(true, true, true);
 }
 #endif  // HAVE_JS
+#endif  // MARIADB_BUILD
 
 }  // namespace mysqlsh
 
