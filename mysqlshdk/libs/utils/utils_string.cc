@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -413,6 +414,51 @@ std::string wide_to_utf8(const wchar_t *wide, const size_t wide_length) {
   }
 
   return result;
+}
+
+#endif
+
+#ifdef _WIN32
+
+namespace {
+std::string win_case_map(std::string_view s, DWORD flags) {
+  if (s.empty()) return {};
+
+  const auto wide = utf8_to_wide(s.data(), s.length());
+  if (wide.empty()) return {};
+
+  // LCMapStringEx with the invariant locale performs simple, locale independent
+  // Unicode case mapping (LINGUISTIC_CASING is intentionally omitted to avoid
+  // locale specific rules such as the Turkish dotless i).
+  const auto needed = LCMapStringEx(
+      LOCALE_NAME_INVARIANT, flags, wide.c_str(),
+      static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr, 0);
+  if (needed <= 0) return wide_to_utf8(wide);
+
+  std::wstring mapped(needed, L'\0');
+  LCMapStringEx(LOCALE_NAME_INVARIANT, flags, wide.c_str(),
+                static_cast<int>(wide.size()), mapped.data(), needed, nullptr,
+                nullptr, 0);
+  return wide_to_utf8(mapped);
+}
+}  // namespace
+
+std::string utf8_upper(std::string_view s) {
+  return win_case_map(s, LCMAP_UPPERCASE);
+}
+
+std::string utf8_lower(std::string_view s) {
+  return win_case_map(s, LCMAP_LOWERCASE);
+}
+
+#else
+
+std::string utf8_upper(std::string_view s) {
+  return wide_to_utf8(str_upper(utf8_to_wide(s.data(), s.length())));
+}
+
+std::string utf8_lower(std::string_view s) {
+  return wide_to_utf8(str_lower(utf8_to_wide(s.data(), s.length())));
 }
 
 #endif

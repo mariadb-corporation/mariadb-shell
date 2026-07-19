@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -750,13 +751,16 @@ using heterogeneous_map =
 template <typename Key>
 using heterogeneous_set = std::unordered_set<Key, string_hash, std::equal_to<>>;
 
-inline std::string utf8_upper(std::string_view s) {
-  return wide_to_utf8(str_upper(utf8_to_wide(s.data(), s.length())));
-}
-
-inline std::string utf8_lower(std::string_view s) {
-  return wide_to_utf8(str_lower(utf8_to_wide(s.data(), s.length())));
-}
+/**
+ * Converts a UTF-8 string to upper/lower case using Unicode-aware case mapping.
+ *
+ * These are locale independent: on Windows they use the Win32 case-mapping API
+ * (the CRT's towupper/towlower only fold non-ASCII when a UTF-8 C locale is
+ * active, which is not guaranteed there), on other platforms the process runs
+ * under an UTF-8 locale so the wide-char CRT mapping covers the BMP.
+ */
+std::string utf8_upper(std::string_view s);
+std::string utf8_lower(std::string_view s);
 
 /**
  * Checks whether a , separated list in a string contains the given item.
