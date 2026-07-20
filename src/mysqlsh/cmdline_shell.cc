@@ -1196,14 +1196,13 @@ void Command_line_shell::command_loop() {
 }
 
 void Command_line_shell::print_banner() {
-  std::string welcome_msg("MySQL Shell ");
+  std::string welcome_msg("Welcome to the MariaDB Shell ");
   welcome_msg += mysqlshdk::utils::k_shell_version.get_full();
-  welcome_msg += "\n\n";
-  welcome_msg += "Copyright (c) 2016, " PACKAGE_YEAR
-                 ", Oracle and/or its affiliates.\n"
-                 "Oracle is a registered trademark of Oracle Corporation "
-                 "and/or its affiliates.\n"
-                 "Other names may be trademarks of their respective owners.";
+  welcome_msg += ".\n\n";
+  welcome_msg += "Copyright (c) " PACKAGE_YEAR
+                 ", MariaDB Corporation Ab and others.\n"
+                 "Portions Copyright (c) 2016, " PACKAGE_YEAR
+                 ", Oracle and/or its affiliates.";
   println(welcome_msg);
   println();
   println("Type '\\help' or '\\?' for help; '\\quit' to exit.");

@@ -196,13 +196,12 @@ TEST(Cmdline_shell, help) {
   capture.clear();
   shell.print_banner();
   std::string expected =
-      "MySQL Shell " + mysqlshdk::utils::k_shell_version.get_full() +
-      "\n\n"
-      "Copyright (c) 2016, " PACKAGE_YEAR
-      ", Oracle and/or its affiliates.\n"
-      "Oracle is a registered trademark of Oracle Corporation and/or its "
-      "affiliates.\n"
-      "Other names may be trademarks of their respective owners.\n\n\n\n"
+      "Welcome to the MariaDB Shell " +
+      mysqlshdk::utils::k_shell_version.get_full() +
+      ".\n\n"
+      "Copyright (c) " PACKAGE_YEAR
+      ", MariaDB Corporation Ab and others.\n"
+      "Portions Copyright (c) 2016, 2026, Oracle and/or its affiliates.\n\n\n\n"
       "Type '\\help' or '\\?' for help; '\\quit' to exit.\n\n";
   EXPECT_EQ(expected, capture);
 
