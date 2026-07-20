@@ -22,6 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+import sys
 from typing import Union
 
 
@@ -69,12 +70,20 @@ class ShellGlobals(object):
         # them up defensively instead of referencing a possibly-undefined name.
         if name in ("mysql", "mysqlx"):
             try:
-                return globals()[name]
+                return sys.modules[__name__].__dict__[name]
             except KeyError:
                 raise AttributeError(name)
-        return self.__dict__[name]
+        try:
+            return self.__dict__[name]
+        except KeyError:
+            raise AttributeError(name)
 
 
 globals = ShellGlobals()
+
+# Register the globals holder as a real submodule so shell globals set on it by
+# the shell (see Python_context::set_global) can be imported, e.g.
+#   from mysqlsh.globals import sandbox
+sys.modules[__name__ + ".globals"] = globals
 
 del ShellGlobals
