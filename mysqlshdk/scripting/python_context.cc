@@ -1548,11 +1548,42 @@ py::Release Python_context::create_time_object(int hour, int minute, int second,
   return py::Release{PyObject_Call(_time.get(), args.get(), nullptr)};
 }
 
+namespace {
+// Our custom shell_stdout/stderr/stdin objects are plain modules, not layered
+// text streams, so they lack the `buffer` attribute that a real CPython
+// sys.stdout (an io.TextIOWrapper) exposes. Consumers that re-wrap the raw
+// binary stream -- e.g. the MCP stdio transport does
+// TextIOWrapper(sys.stdout.buffer, encoding="utf-8") -- fail with
+// AttributeError without it. Borrow the binary `buffer` from the genuine
+// stream, which is still installed under sys.<name> at registration time
+// (the redirect to our modules happens afterwards). This routes raw byte I/O
+// straight to the process fd, bypassing the shell console -- exactly what a
+// line-delimited stdio protocol needs.
+void add_real_buffer_attr(PyObject *module, const char *sys_name) {
+  PyObject *real = PySys_GetObject(const_cast<char *>(sys_name));
+  if (!real) return;
+
+  PyObject *buffer = PyObject_GetAttrString(real, "buffer");
+  if (!buffer) {
+    PyErr_Clear();
+    return;
+  }
+
+  // PyModule_AddObject steals the reference only on success.
+  if (PyModule_AddObject(module, "buffer", buffer) != 0) {
+    Py_DECREF(buffer);
+    PyErr_Clear();
+  }
+}
+}  // namespace
+
 void Python_context::register_shell_stderr_module() {
   auto module = py_register_module("mysqlsh.shell_stderr", ShellStdErrMethods);
   if (!module)
     throw std::runtime_error(
         "Error initializing SHELL module in Python support");
+
+  add_real_buffer_attr(module.get(), "stderr");
 
   _shell_stderr_module = std::move(module);
 }
@@ -1563,6 +1594,8 @@ void Python_context::register_shell_stdout_module() {
     throw std::runtime_error(
         "Error initializing SHELL module in Python support");
 
+  add_real_buffer_attr(module.get(), "stdout");
+
   _shell_stdout_module = std::move(module);
 }
 
@@ -1571,6 +1604,8 @@ void Python_context::register_shell_stdin_module() {
   if (!module)
     throw std::runtime_error(
         "Error initializing SHELL module in Python support");
+
+  add_real_buffer_attr(module.get(), "stdin");
 
   _shell_stdin_module = std::move(module);
 }
