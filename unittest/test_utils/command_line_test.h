@@ -82,6 +82,7 @@ class Command_line_test : public Shell_base_test {
   int execute(const std::vector<const char *> &args,
               const char *password = NULL, const char *input_file = nullptr,
               const std::vector<std::string> &env = {});
+  std::string format_vendor(std::string_view str);
 
   void send_ctrlc();
 };

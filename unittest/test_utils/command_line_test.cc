@@ -150,6 +150,30 @@ bool Command_line_test::grep_stdout(const std::string &s) {
   return _output.find(s) != std::string::npos;
 }
 
+std::string Command_line_test::format_vendor(std::string_view str) {
+  std::string result;
+  result.reserve(str.size());
+
+  const std::string_view vendor =
+      _server_vendor == mysqlshdk::db::ServerVendor::MySQL ? "MySQL"
+                                                           : "MariaDB";
+
+  std::size_t pos = 0;
+  while (pos < str.size()) {
+    const std::size_t token_pos = str.find("%vendor%", pos);
+    if (token_pos == std::string_view::npos) {
+      result.append(str.substr(pos));
+      break;
+    }
+
+    result.append(str.substr(pos, token_pos - pos));
+    result.append(vendor);
+    pos = token_pos + 8;
+  }
+
+  return result;
+}
+
 /**
  * Sends the interruption signal to the mysqlsh process.
  */

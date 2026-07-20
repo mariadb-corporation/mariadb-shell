@@ -17,7 +17,7 @@ syslog_trace_file = os.path.abspath("syslog_trace.log")
 uri = "mysql://" + __mysqluripwd
 xuri = "mysqlx://" + __uripwd
 
-connection_id_regex = re.compile(r"^Your MySQL connection id is ([0-9]+)", re.MULTILINE)
+connection_id_regex = re.compile(r"^Your " + sandbox.vendor() + r" connection id is ([0-9]+)", re.MULTILINE)
 
 sql_script_filename = "script.sql"
 sql_script = os.path.abspath(sql_script_filename)

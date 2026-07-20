@@ -303,7 +303,7 @@ testutil.expect_prompt("Save password for 'ssh://{}'? ".format(SSH_URI_NOPASS), 
 shell.connect({"uri": f"{MYSQL_OVER_SSH_URI}?compression=True",
                "ssh": SSH_URI_NOPASS, "ssh-password" : SSH_PASS,
                "ssh-config-file": config_file})
-EXPECT_STDOUT_CONTAINS("Your MySQL connection id is")
+EXPECT_STDOUT_CONTAINS(f"Your {session.server_vendor} connection id is")
 EXPECT_EQ("ON", session.run_sql("SHOW session status LIKE 'compression'").fetch_one()[1])
 session.close()
 testutil.assert_no_prompts()

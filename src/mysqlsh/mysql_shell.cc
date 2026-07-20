@@ -1155,10 +1155,17 @@ std::shared_ptr<mysqlsh::ShellBaseSession> Mysql_shell::connect(
 
   if (interactive) {
     std::string session_type = new_session->class_name();
-    std::string message;
+    std::string message = "Your ";
 
-    message = "Your MySQL connection id is " +
-              std::to_string(new_session->get_connection_id());
+    if (new_session->get_core_session()->get_server_vendor() ==
+        mysqlshdk::db::ServerVendor::MariaDB) {
+      message += "MariaDB ";
+    } else {
+      message += "MySQL ";
+    }
+
+    message +=
+        "connection id is " + std::to_string(new_session->get_connection_id());
     if (session_type == "Session") message += " (X protocol)";
     try {
       message += "\nServer version: " +
