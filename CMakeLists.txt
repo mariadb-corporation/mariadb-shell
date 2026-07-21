@@ -716,6 +716,28 @@ include(fuzzer)
 INCLUDE(CheckIncludeFiles)
 INCLUDE(CheckFunctionExists)
 
+# --- vcpkg dependency bundling -------------------------------------------
+# When configured with the vcpkg toolchain
+# (-DCMAKE_TOOLCHAIN_FILE=<vcpkg-root>/scripts/buildsystems/vcpkg.cmake
+# -DVCPKG_TARGET_TRIPLET=<triplet>), the third-party dependencies (OpenSSL,
+# libssh, antlr4, curl, zlib, zstd, ...) are resolved from vcpkg's per-triplet
+# tree instead of the system. On Windows and macOS there is no system package
+# manager to satisfy those at runtime, so - exactly like the explicit
+# BUNDLED_*_DIR options - a vcpkg build must ship the full dependency closure
+# inside the package. USING_VCPKG drives that automatic bundling (consumed in
+# src/CMakeLists.txt).
+IF(NOT DEFINED USING_VCPKG)
+  IF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
+    SET(USING_VCPKG TRUE)
+  ELSE()
+    SET(USING_VCPKG FALSE)
+  ENDIF()
+ENDIF()
+IF(USING_VCPKG)
+  MESSAGE(STATUS "vcpkg toolchain detected (triplet '${VCPKG_TARGET_TRIPLET}'); "
+                 "runtime dependencies will be bundled into the package")
+ENDIF()
+
 include(curl)
 MYSQL_CHECK_CURL()
 

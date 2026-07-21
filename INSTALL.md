@@ -1,165 +1,106 @@
-# Build Instructions for MySQL Shell
+# Build Instructions for MariaDB Shell
+
 
 ## 1. Prerequisites
 
-### Required tools and libraries
-- cmake 3.5.1 (downgrade if a newer release causes issues)
-- gcc 14, Visual Studio 2019, or clang 10
-- zip
-- python 3.10+
-- libssh 0.9.2
-- openssl 3.x
-- antlr4-runtime (C++ runtime ≥ 4.10)
-- git (if you checkout from github instead of using source packages)
+The following sections describe the required tooling and dependencies required to build the MariaDB Shell on each platform.
 
-#### Suggested packages for EL9-like distributions
-```bash
-sudo yum install cmake gcc-toolset-14 openssl-devel ncurses-devel rpcgen python3-devel libssh-devel libcurl-devel patchelf
-```
+### Debian
 
-Please adjust the specific package name for python3 to ensure version 3.10 or newer is installed.
+$ sudo apt install sudo apt install build-essential git cmake libssh-dev python3-dev libssl-dev libantlr4-runtime-dev rapidjson-dev googletest libgtest-dev libgmock-dev libcurl4-openssl-dev libzstd-dev patchelf
 
-You might also need to enable the developer EPEL repo for patchelf:
+### Fedora
 
-```bash
-sudo dnf config-manager --enable ol9_developer_EPEL
-```
+$ sudo dnf install gcc-c++ git cmake libssh-devel python3-devel openssl-devel antlr4-cpp-runtime-devel rapidjson-devel gtest-devel gmock-devel libcurl-devel libzstd-devel patchelf
 
-#### Suggested packages for Ubuntu 24.04 LTS
-```bash
-sudo apt update
-sudo apt install build-essential cmake ninja-build \
-    python3-dev python3-venv python3-pip \
-    libssl-dev libssh-dev libcurl4-openssl-dev \
-    libprotobuf-dev protobuf-compiler \
-    liblz4-dev zlib1g-dev pkg-config patchelf \
-    libantlr4-runtime-dev
-```
+### MacOS
 
-#### Build and install the ANTLR4 runtime
-Many Linux distributions do not currently ship a new enough ANTLR4 C++ runtime, so
-if yours doesn't, build it from source before configuring CMake.
-
-```bash
-mkdir -p ~/mysql-src
-cd ~/mysql-src
-git clone --depth 1 --branch 4.13.1 --sparse \
-  https://github.com/antlr/antlr4.git antlr4-runtime
-cd antlr4-runtime
-git sparse-checkout set runtime/Cpp
-mkdir -p build
-cd build
-scl enable gcc-toolset-14 -- cmake ../runtime/Cpp \
-  -DCMAKE_BUILD_TYPE=Release -DANTLR_BUILD_CPP_TESTS=OFF
-scl enable gcc-toolset-14 -- cmake --build . --parallel $(nproc --all)
-make install DESTDIR=~/mysql-src
-```
-
-### Optional
-- GraalVM 23.0.1 (for JavaScript support)
-
-## 2. Check Out the Sources
-
-Place the MySQL Server and MySQL Shell repositories under the same parent
-directory so the relative paths used below remain valid.
-
-```bash
-mkdir -p ~/mysql-src
-cd ~/mysql-src
-git clone --depth 1 --branch mysql-9.7.0 https://github.com/mysql/mysql-server.git mysql-server
-git clone --depth 1 --branch 9.7.0 https://github.com/mysql/mysql-shell.git mysql-shell
-```
-
-You may also use source archives for a specific version from
-https://dev.mysql.com/downloads/mysql/ and https://dev.mysql.com/downloads/shell/.
-
-## 3. Prepare the MySQL Server Build
-
-The MySQL Shell relies on the MySQL client libraries. Build them once before
-configuring the shell.
-
-1. Create a dedicated build directory:
-```bash
-mkdir ~/mysql-src/mysql-server/bld
-cd ~/mysql-src/mysql-server/bld
-```
-2. Configure the server:
-```bash
-cmake .. -DWITH_AUTHENTICATION_CLIENT_PLUGINS=YES -DWITH_TIRPC=bundled
-```
-3. Compile:
-```bash
-cmake --build . --parallel $(nproc --all)
-```
-or if you'd like to build only what's needed by MySQL Shell:
-```bash
-cmake --build . --parallel $(nproc --all) --target mysqlclient
-cmake --build . --parallel $(nproc --all) --target mysqlxclient
-cmake --build . --parallel $(nproc --all) --target mysqlxclient_lite
-cmake --build . --parallel $(nproc --all) --target libprotobuf-lite
-cmake --build . --parallel $(nproc --all) --target mysql_config_editor
-cmake --build . --parallel $(nproc --all) --target mysql_binlog_event_standalone
-cmake --build . --parallel $(nproc --all) --target mysqlbinlog
-cmake --build . --parallel $(nproc --all) --target routing_guidelines-objects
-cmake --build . --parallel $(nproc --all) --target mysql_native_password # optional
-```
-
-## 4. Build MySQL Shell
-
-### Linux and macOS
-
-1. Create the build directory:
-```bash
-mkdir ~/mysql-src/mysql-shell/bld
-cd ~/mysql-src/mysql-shell/bld
-```
-2. Configure the project:
-```bash
-cmake .. \
-    -DMARIADB_SOURCE_DIR=`pwd`/../../mariadb-server \
-    -DMARIADB_BUILD_DIR=`pwd`/../../mariadb-server/bld \
-    -DBUNDLED_ANTLR_DIR=~/mysql-src/usr/local\
-    -DHAVE_PYTHON=1
-```
-3. Build and install the shell:
-```bash
-cmake --build . --parallel $(nproc --all)
-sudo make install
-```
+$ xcode-select --install
+$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+$ brew install cmake bison libssh openssl@3 python@3.14 antlr4-cpp-runtime rapidjson googletest curl zstd
+$ echo 'export PATH="/opt/homebrew/opt/bison/bin:$PATH"' >> ~/.zshrc
+$ source ~/.zshrc
 
 ### Windows
 
-1. Create the build directory:
+- Install Visual Studio, at least the Community Edition, specifically Desktop development with C++
+- Install python 3.14 from python.org
+
+Using a Developer Command Prompt:
+
+> winget install -e --id WinFlexBison.win_flex_bison
+> git clone https://github.com/microsoft/vcpkg.git
+> cd vcpkg
+> bootstrap-vcpkg.bat
+> .\vcpkg install openssl[tools] zlib libssh openssl zlib antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
+
+
+Where in <triplet> we usually pick any of:
+- x64-windows (64-bit Windows, dynamic/DLL linking - default on 64-bit Windows)
+- arm64-windows (64-bit ARM Windows, dynamic linking)
+
+### 2. Check Out the Sources
+
 ```bash
-mkdir bld
-cd bld
-```
-2. Configure with Visual Studio:
-```bash
-cmake .. -G "Visual Studio 16" \
-    -DMYSQL_SOURCE_DIR=../../mysql-server \
-    -DMYSQL_BUILD_DIR=../../mysql-server/bld \
-    -DBUNDLED_ANTLR_DIR=../../antlr4-runtime/build \
-    -DHAVE_PYTHON=1 \
-    -DPYTHON_LIBRARY=<path_to_python_library> \
-    -DPYTHON_INCLUDE_DIR=<python_src>/include
-```
-3. Open `mysh.sln` in Visual Studio 2019 and build the desired configuration.
-
-All Windows dependencies must be compiled with matching settings (Release vs.
-Debug and /MD vs. /MT).
-
-## 5. Optional Features
-
-### JavaScript support
-
-1. Build the native Polyglot API library by following `ext/polyglot/README.txt`.
-2. Provide the compiled library and include paths to CMake:
-```bash
--DJIT_EXECUTOR_LIB=<path_to_polyglot_api>
+git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
 ```
 
-Note: GraalVM 23.0.1 is required; newer releases may not be compatible.
+### 3. Configure the project
+
+The shell has some dependencies with the MariaDB server, at this point the MariaDB server will be cloned
+from github at and the required artifacts for the shell will be built, then the shell project will be
+configured.
+
+## Linux
+
+$ cd mariadb-shell && mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+## MacOS
+
+$ cd mariadb-shell && mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix curl)"
+
+
+## Windows
+
+> cd mariadb-shell && mkdir bld && cd bld
+> cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
+
+Where:
+  <vcpkg-root-folder>: is the path where you cloned vcpkg in step 1
+  <triplet>: is the triplet used to install the build dependencies with vcpkg in step 1
+
+When the vcpkg toolchain file and target triplet are supplied, the build detects
+it and automatically bundles the full runtime dependency closure (OpenSSL,
+libssh, antlr4, curl, zlib, zstd and anything they depend on) into the generated
+package, so it is self-contained without any system package manager. This is the
+Windows/macOS equivalent of the `-DBUNDLED_*_DIR` options and of the DEB/RPM
+dependency metadata used on Linux.
+
+### 4. Build the project
+
+## Linux/MacOS
+
+$ cmake --build . -j$(nproc)
+
+# Windows
+
+> cmake --build . --parallel
+
+
+## 5. Optional Configuration
+
+## Pre-built MariaDB Server
+
+The process of cloning and building the MariaDB Server dependencies may be skipped by providing a
+a custom source and build directories using:
+
+-DMARIADB_SOURCE_DIR=<path-to-server-source>
+-DMARIADB_BUILD_DIR=<path-to-server-build>
+
+
+
 
 ### Unit tests
 

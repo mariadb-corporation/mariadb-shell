@@ -368,80 +368,90 @@ IF(BUNDLED_SSH_DIR)
   )
 ENDIF()
 
-# Runtime DLLs for dependencies resolved through find_package (the vcpkg case).
+# Bundle the full runtime dependency closure for vcpkg builds.
 #
-# On Windows only the shell's own bundling options run install() for a
-# dependency's DLL: WITH_CURL_PATH installs libcurl.dll/zlib (curl.cmake), and
-# BUNDLED_SSH_DIR installs libssh (above). When the dependencies instead come
-# from find_package (as with a vcpkg toolchain), those DLLs are only copied next
-# to the build output by `vcpkg z-applocal` at build time - they never make it
-# into the install/CPack tree, so the produced package is missing libcurl.dll,
-# ssh.dll, antlr4-runtime.dll and zlib (z.dll). Install them here from where they
-# were resolved. Guarded so it never double-handles the option-based paths, and a
-# no-op on builds where the DLLs aren't found (e.g. statically linked deps).
-IF(WIN32)
-  SET(_vcpkg_runtime_dlls "")
-
-  # libssh: the 'ssh' imported target points straight at its own DLL. Only when
-  # the BUNDLED_SSH_DIR block above did not already bundle it.
-  IF(NOT BUNDLED_SSH_DIR AND TARGET ssh)
-    LIST(APPEND _vcpkg_runtime_dlls "$<TARGET_FILE:ssh>")
-  ENDIF()
-
-  # curl/zlib/antlr4 are referenced only by import-library path, so find the
-  # matching runtime DLLs in the per-triplet bin dir (vcpkg keeps <triplet>/bin
-  # as a sibling of <triplet>/lib; for a debug build the import lib resolves
-  # under debug/lib and this lands on debug/bin, which is also correct). Derive
-  # that dir from any resolved import library (unquoted expansion skips the
-  # debug/optimized keyword tokens some *_LIBRARY vars carry).
-  SET(_dep_bin_dir "")
-  FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY})
+# With a vcpkg toolchain the dependencies (curl, zlib, libssh, antlr4, zstd and
+# anything they pull in transitively) are resolved through find_package and only
+# copied next to the build output by `vcpkg z-applocal` at build time - they
+# never make it into the install/CPack tree, so the produced package would be
+# missing them. This is the Windows equivalent of the BUNDLED_*_DIR options and
+# the DEB/RPM dependency metadata used on Linux: it makes the package
+# self-contained.
+#
+# vcpkg keeps every DLL it built for the active triplet in a single per-triplet
+# bin directory (a sibling of the import-library 'lib' dir; 'debug/bin' for a
+# debug build). That directory *is* the dependency closure, so rather than
+# enumerating individual DLL names (which silently misses new/transitive deps),
+# install all of it and drop only the pieces another bundling path already
+# handles: OpenSSL (BUNDLED_OPENSSL), curl+zlib (WITH_CURL_PATH), libssh
+# (BUNDLED_SSH_DIR) and Python (its own runtime layout above).
+IF(WIN32 AND USING_VCPKG)
+  # Derive the triplet bin dir from any resolved vcpkg import library. Unquoted
+  # expansion skips the debug/optimized keyword tokens some *_LIBRARY vars carry;
+  # a debug import lib resolves under debug/lib -> debug/bin, which is correct.
+  SET(_vcpkg_bin_dir "")
+  FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY} ${CRYPTO_LIBRARY}
+                   ${OPENSSL_LIBRARY} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY})
     IF(EXISTS "${_dep_lib}")
       GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
-      GET_FILENAME_COMPONENT(_dep_bin_dir "${_dep_lib_dir}/../bin" ABSOLUTE)
+      GET_FILENAME_COMPONENT(_vcpkg_bin_dir "${_dep_lib_dir}/../bin" ABSOLUTE)
       BREAK()
     ENDIF()
   ENDFOREACH()
 
-  IF(_dep_bin_dir AND IS_DIRECTORY "${_dep_bin_dir}")
-    # curl and its zlib dependency, unless WITH_CURL_PATH already installed them.
-    IF(NOT WITH_CURL_PATH)
-      FIND_FILE(VCPKG_CURL_DLL NAMES libcurl.dll
-                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-      IF(VCPKG_CURL_DLL)
-        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_CURL_DLL}")
-      ENDIF()
-      FIND_FILE(VCPKG_ZLIB_DLL NAMES z.dll zlib1.dll zlib.dll
-                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-      IF(VCPKG_ZLIB_DLL)
-        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ZLIB_DLL}")
-      ENDIF()
-    ENDIF()
-
-    FIND_FILE(VCPKG_ANTLR4_DLL NAMES antlr4-runtime.dll
-              HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-    IF(VCPKG_ANTLR4_DLL)
-      LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ANTLR4_DLL}")
-    ENDIF()
-
-    # OpenSSL (libcrypto/libssl) is provided by vcpkg in the same bin dir and is
-    # missing from the package for the same reason, unless the BUNDLED_OPENSSL
-    # path already installs it. The DLL name is triplet-specific
-    # (e.g. libcrypto-3-arm64.dll), so match by pattern.
-    IF(NOT BUNDLED_OPENSSL)
-      FILE(GLOB _vcpkg_ssl_dlls "${_dep_bin_dir}/libcrypto*.dll"
-                                "${_dep_bin_dir}/libssl*.dll")
-      IF(_vcpkg_ssl_dlls)
-        LIST(APPEND _vcpkg_runtime_dlls ${_vcpkg_ssl_dlls})
-      ENDIF()
+  # Fallback: the 'ssh' imported target points straight at its own DLL, so its
+  # directory is the triplet bin dir when no import-library path resolved above.
+  IF(NOT _vcpkg_bin_dir AND TARGET ssh)
+    GET_TARGET_PROPERTY(_ssh_dll ssh LOCATION)
+    IF(_ssh_dll AND EXISTS "${_ssh_dll}")
+      GET_FILENAME_COMPONENT(_vcpkg_bin_dir "${_ssh_dll}" DIRECTORY)
     ENDIF()
   ENDIF()
 
-  IF(_vcpkg_runtime_dlls)
-    MESSAGE(STATUS "Bundling find_package/vcpkg runtime DLLs: "
-                   "${_vcpkg_runtime_dlls}")
-    INSTALL(PROGRAMS ${_vcpkg_runtime_dlls}
-            DESTINATION "${INSTALL_BINDIR}" COMPONENT main)
+  IF(_vcpkg_bin_dir AND IS_DIRECTORY "${_vcpkg_bin_dir}")
+    FILE(GLOB _vcpkg_all_dlls "${_vcpkg_bin_dir}/*.dll")
+
+    # DLL name patterns (regex, anchored) bundled through another code path.
+    # Python always has its own block regardless of where it was found.
+    SET(_vcpkg_exclude_patterns "python.*\\.dll")
+    IF(BUNDLED_OPENSSL)
+      LIST(APPEND _vcpkg_exclude_patterns "libcrypto.*\\.dll" "libssl.*\\.dll")
+    ENDIF()
+    IF(BUNDLED_SSH_DIR)
+      LIST(APPEND _vcpkg_exclude_patterns "ssh.*\\.dll")
+    ENDIF()
+    IF(WITH_CURL_PATH)
+      LIST(APPEND _vcpkg_exclude_patterns "libcurl.*\\.dll" "curl.*\\.dll"
+                                          "zlib.*\\.dll" "zlib1\\.dll" "z\\.dll")
+    ENDIF()
+
+    SET(_vcpkg_bundle_dlls "")
+    FOREACH(_dll ${_vcpkg_all_dlls})
+      GET_FILENAME_COMPONENT(_dll_name "${_dll}" NAME)
+      SET(_skip FALSE)
+      FOREACH(_pat ${_vcpkg_exclude_patterns})
+        IF(_dll_name MATCHES "^${_pat}$")
+          SET(_skip TRUE)
+          BREAK()
+        ENDIF()
+      ENDFOREACH()
+      IF(NOT _skip)
+        LIST(APPEND _vcpkg_bundle_dlls "${_dll}")
+      ENDIF()
+    ENDFOREACH()
+
+    IF(_vcpkg_bundle_dlls)
+      MESSAGE(STATUS "Bundling vcpkg runtime DLLs from '${_vcpkg_bin_dir}': "
+                     "${_vcpkg_bundle_dlls}")
+      INSTALL(PROGRAMS ${_vcpkg_bundle_dlls}
+              DESTINATION "${INSTALL_BINDIR}" COMPONENT main)
+    ELSE()
+      MESSAGE(STATUS "No vcpkg runtime DLLs to bundle from '${_vcpkg_bin_dir}' "
+                     "(all handled by other bundling paths)")
+    ENDIF()
+  ELSE()
+    MESSAGE(STATUS "vcpkg build: could not resolve a per-triplet bin dir; "
+                   "assuming statically linked dependencies")
   ENDIF()
 ENDIF()
 
