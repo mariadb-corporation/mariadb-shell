@@ -172,6 +172,18 @@ IF(OPENSSL_ROOT_DIR)
   LIST(APPEND _mdb_configure_args "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
 ENDIF()
 
+# On Windows the shell is configured through vcpkg; the server tree must use the
+# same toolchain file and target triplet or its dependencies (OpenSSL, etc.) will
+# not resolve and the ABI can mismatch the shell. Propagate what the caller chose.
+IF(WIN32)
+  IF(CMAKE_TOOLCHAIN_FILE)
+    LIST(APPEND _mdb_configure_args "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
+  ENDIF()
+  IF(VCPKG_TARGET_TRIPLET)
+    LIST(APPEND _mdb_configure_args "-DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
+  ENDIF()
+ENDIF()
+
 # Match the shell's generator so nested "cmake --build" uses the same toolchain.
 IF(CMAKE_GENERATOR)
   LIST(APPEND _mdb_configure_args "-G" "${CMAKE_GENERATOR}")
