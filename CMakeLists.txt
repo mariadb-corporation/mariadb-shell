@@ -23,6 +23,15 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 
+# The shell links directly against a MariaDB (or MySQL) server source + build
+# tree. When neither is provided, and this is a real shell build (not a source
+# package), fetch the MariaDB server sources and build just the pieces the shell
+# consumes, then set MARIADB_SOURCE_DIR / MARIADB_BUILD_DIR so the logic below
+# proceeds unchanged. See cmake/bootstrap_mariadb.cmake.
+IF(NOT MYSQL_SOURCE_DIR AND NOT MARIADB_SOURCE_DIR AND NOT BUILD_SOURCE_PACKAGE)
+  INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_mariadb.cmake)
+ENDIF()
+
 IF(MYSQL_SOURCE_DIR)
   FILE(TO_CMAKE_PATH "${MYSQL_SOURCE_DIR}" MYSQL_SOURCE_DIR)
 ENDIF()
@@ -516,6 +525,13 @@ IF(NOT PACKAGE_YEAR)
 ENDIF()
 add_definitions(-DPACKAGE_YEAR="${PACKAGE_YEAR}")
 
+# Build the test suite by default. WITH_TESTS gates test compilation and
+# ENABLE_TESTING below; when the caller did not set it either way, turn it on.
+# Pass -DWITH_TESTS=0 to build without tests.
+IF(NOT DEFINED WITH_TESTS)
+  SET(WITH_TESTS 1)
+ENDIF()
+
 IF(WITH_TESTS)
   ENABLE_TESTING()
 ENDIF()
@@ -705,6 +721,13 @@ MYSQL_CHECK_CURL()
 
 include(zlib)
 MYSQL_CHECK_ZLIB()
+
+# Build with Python scripting support by default. HAVE_PYTHON gates the whole
+# Python-detection block below; when the caller did not set it either way, turn
+# it on. Pass -DHAVE_PYTHON=0 to build without Python.
+IF(NOT DEFINED HAVE_PYTHON)
+  SET(HAVE_PYTHON 1)
+ENDIF()
 
 IF (PYTHON_DEPS AND NOT HAVE_PYTHON)
   MESSAGE(FATAL_ERROR "PYTHON_DEPS should not be used when python is not available.")
@@ -1159,16 +1182,6 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
 ENDIF()
 
 if (NOT BUILD_SOURCE_PACKAGE)
-  IF(NOT MYSQL_SOURCE_DIR AND NOT MARIADB_SOURCE_DIR)
-    SET(MYSQL_SOURCE_DIR "../mysql" CACHE PATH "Path to MySQL source directory")
-    MESSAGE(STATUS "MYSQL_SOURCE_DIR has been set to: ${MYSQL_SOURCE_DIR}")
-  ENDIF()
-
-  IF(NOT MYSQL_BUILD_DIR AND NOT MARIADB_BUILD_DIR)
-    SET(MYSQL_BUILD_DIR "${MYSQL_SOURCE_DIR}/bld" CACHE PATH "Path to MySQL build directory")
-    MESSAGE(STATUS "MYSQL_BUILD_DIR has been set to: ${MYSQL_BUILD_DIR}")
-  ENDIF()
-
   IF (MARIADB_SOURCE_DIR)
     SET(MYSQL_INCLUDE_DIRS
       ${MARIADB_SOURCE_DIR}/libmariadb/include
