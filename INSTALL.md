@@ -15,6 +15,26 @@ $ sudo dnf install gcc-c++ git cmake libssh-devel python3-devel openssl-devel an
 
 ### MacOS
 
+Two dependency sources are supported:
+
+- **Homebrew** - the recommended setup for local development. The shell links
+  against the libraries in your Homebrew prefix and runs against them in place;
+  this build is **not** meant to be redistributed (its dependencies live in the
+  Homebrew kegs on your machine, and bundling third-party Homebrew bottles into
+  an official package is not something we do).
+- **vcpkg** - use this to produce a **self-contained, redistributable** package.
+  Like the Windows build, the dependencies are built by vcpkg and automatically
+  bundled into the package (see step 3). Install them with:
+
+  ```
+  $ git clone https://github.com/microsoft/vcpkg.git && ./vcpkg/bootstrap-vcpkg.sh
+  $ ./vcpkg/vcpkg install openssl[tools] zlib libssh antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
+  ```
+
+  Where <triplet> is one of `arm64-osx` (Apple Silicon) or `x64-osx` (Intel).
+
+For a Homebrew-based build:
+
 $ xcode-select --install
 $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 $ brew install cmake bison libssh openssl@3 python@3.14 antlr4-cpp-runtime rapidjson googletest curl zstd
@@ -56,10 +76,15 @@ configured.
 $ cd mariadb-shell && mkdir bld && cd bld
 $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
-## MacOS
+## MacOS (Homebrew, local development)
 
 $ cd mariadb-shell && mkdir bld && cd bld
 $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix curl)"
+
+## MacOS (vcpkg, redistributable)
+
+$ cd mariadb-shell && mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
 
 
 ## Windows
@@ -71,12 +96,14 @@ Where:
   <vcpkg-root-folder>: is the path where you cloned vcpkg in step 1
   <triplet>: is the triplet used to install the build dependencies with vcpkg in step 1
 
-When the vcpkg toolchain file and target triplet are supplied, the build detects
-it and automatically bundles the full runtime dependency closure (OpenSSL,
-libssh, antlr4, curl, zlib, zstd and anything they depend on) into the generated
-package, so it is self-contained without any system package manager. This is the
-Windows/macOS equivalent of the `-DBUNDLED_*_DIR` options and of the DEB/RPM
-dependency metadata used on Linux.
+On both Windows and macOS, when the vcpkg toolchain file and target triplet are
+supplied the build detects it and automatically bundles the full runtime
+dependency closure (OpenSSL, libssh, antlr4, curl, zlib, zstd and anything they
+depend on) into the generated package, so it is self-contained without any
+system package manager. This is the Windows/macOS equivalent of the
+`-DBUNDLED_*_DIR` options and of the DEB/RPM dependency metadata used on Linux.
+(A Homebrew-based macOS build does not bundle: it is intended to run locally
+against the Homebrew libraries.)
 
 ### 4. Build the project
 

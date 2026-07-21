@@ -284,12 +284,16 @@ MACRO (MYSQL_CHECK_SSL)
       IF(LINK_STATIC_RUNTIME_LIBRARIES)
         SET(OPENSSL_MSVC_STATIC_RT ON)
       ENDIF()
-      IF(APPLE AND NOT OPENSSL_ROOT_DIR)
+      IF(APPLE AND NOT OPENSSL_ROOT_DIR AND NOT USING_VCPKG)
         # macOS ships no system OpenSSL with development headers, so locate one
         # provided by a package manager. Homebrew keeps openssl keg-only (not on
         # the default search path), so ask brew for its prefix. If brew is not
         # installed, leave OPENSSL_ROOT_DIR unset and let FIND_PACKAGE(OpenSSL)
         # search its default locations (e.g. MacPorts under /opt/local).
+        #
+        # Skipped under a vcpkg toolchain: OpenSSL must then come from vcpkg's
+        # tree (injected via CMAKE_PREFIX_PATH), and hard-setting OPENSSL_ROOT_DIR
+        # to a Homebrew prefix would hijack the find and link the wrong OpenSSL.
         FIND_PROGRAM(HOMEBREW_EXECUTABLE brew)
         IF(HOMEBREW_EXECUTABLE)
           EXECUTE_PROCESS(
