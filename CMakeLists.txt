@@ -23,6 +23,14 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 
+# When the caller asks for vcpkg-managed dependencies via -DWITH_VCPKG_TRIPLET,
+# fetch and bootstrap vcpkg and derive CMAKE_TOOLCHAIN_FILE / VCPKG_TARGET_TRIPLET
+# (and VCPKG_ROOT). This must run before the first project() call (CMake reads
+# CMAKE_TOOLCHAIN_FILE there) and before bootstrap_mariadb.cmake, which
+# propagates the toolchain + triplet to the server tree. See
+# cmake/bootstrap_vcpkg.cmake.
+INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_vcpkg.cmake)
+
 # The shell links directly against a MariaDB (or MySQL) server source + build
 # tree. When neither is provided, and this is a real shell build (not a source
 # package), fetch the MariaDB server sources and build just the pieces the shell

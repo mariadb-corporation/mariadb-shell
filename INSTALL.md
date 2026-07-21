@@ -13,6 +13,24 @@ $ sudo apt install sudo apt install build-essential git cmake libssh-dev python3
 
 $ sudo dnf install gcc-c++ git cmake libssh-devel python3-devel openssl-devel antlr4-cpp-runtime-devel rapidjson-devel gtest-devel gmock-devel libcurl-devel libzstd-devel patchelf
 
+### Linux with vcpkg (portable build)
+
+The system-package setup above is the recommended path for distribution packages:
+the resulting DEB/RPM declare their dependencies and the system package manager
+keeps them (OpenSSL, curl, ...) patched. To instead produce a **portable** build
+that does not rely on matching system libraries, use vcpkg:
+
+```
+$ git clone https://github.com/microsoft/vcpkg.git && ./vcpkg/bootstrap-vcpkg.sh
+$ ./vcpkg/vcpkg install openssl[tools] zlib libssh antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
+```
+
+Where <triplet> is `x64-linux` / `arm64-linux` (static - vcpkg's default on Linux;
+dependencies are linked into `mysqlsh`, nothing to bundle) or the `*-dynamic`
+variant (shared libraries that are bundled into the package, as on Windows/macOS).
+Either way the build is self-contained; with vcpkg you then own shipping security
+updates for those dependencies. `patchelf` is still required for the dynamic case.
+
 ### MacOS
 
 Two dependency sources are supported:
@@ -71,10 +89,15 @@ The shell has some dependencies with the MariaDB server, at this point the Maria
 from github at and the required artifacts for the shell will be built, then the shell project will be
 configured.
 
-## Linux
+## Linux (system packages)
 
 $ cd mariadb-shell && mkdir bld && cd bld
 $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+## Linux (vcpkg, portable)
+
+$ cd mariadb-shell && mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
 
 ## MacOS (Homebrew, local development)
 
@@ -96,14 +119,30 @@ Where:
   <vcpkg-root-folder>: is the path where you cloned vcpkg in step 1
   <triplet>: is the triplet used to install the build dependencies with vcpkg in step 1
 
-On both Windows and macOS, when the vcpkg toolchain file and target triplet are
-supplied the build detects it and automatically bundles the full runtime
-dependency closure (OpenSSL, libssh, antlr4, curl, zlib, zstd and anything they
-depend on) into the generated package, so it is self-contained without any
-system package manager. This is the Windows/macOS equivalent of the
-`-DBUNDLED_*_DIR` options and of the DEB/RPM dependency metadata used on Linux.
-(A Homebrew-based macOS build does not bundle: it is intended to run locally
-against the Homebrew libraries.)
+## Any platform (vcpkg, auto-bootstrapped)
+
+If you don't want to clone and bootstrap vcpkg yourself (step 1), pass only the
+triplet and the build will fetch vcpkg from github, run its bootstrap script,
+and derive the toolchain file and triplet for you:
+
+$ cd mariadb-shell && mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
+
+vcpkg is cloned to `../vcpkg` (next to the shell source) by default; set
+`-DVCPKG_ROOT=<path>` to clone/reuse it elsewhere (an existing checkout, or the
+`VCPKG_ROOT` environment variable, is reused instead of re-cloning). This runs
+once and is cached. Passing `-DCMAKE_TOOLCHAIN_FILE`/`-DVCPKG_TARGET_TRIPLET`
+explicitly still works and takes precedence over `-DWITH_VCPKG_TRIPLET`.
+
+When the vcpkg toolchain file and target triplet are supplied, on any platform,
+the build detects it and makes the package self-contained: a dynamic triplet
+automatically bundles the full runtime dependency closure (OpenSSL, libssh,
+antlr4, curl, zlib, zstd and anything they depend on), and a static triplet
+(vcpkg's default on Linux) links them into `mysqlsh` directly so there is
+nothing to bundle. This is the equivalent of the `-DBUNDLED_*_DIR` options and,
+on Linux, an alternative to the DEB/RPM dependency metadata used by the
+system-package build. (A Homebrew-based macOS build does not bundle: it is
+intended to run locally against the Homebrew libraries.)
 
 ### 4. Build the project
 

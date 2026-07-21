@@ -167,7 +167,12 @@ SET(_mdb_configure_args
   "-DWITHOUT_SERVER=1")
 
 # Propagate the OpenSSL location the caller chose for the shell, so the server
-# and the shell agree on OpenSSL (see MARIADB_PORT.md).
+# and the shell agree on OpenSSL (see MARIADB_PORT.md). When the shell is built
+# through vcpkg and the caller did not pin OpenSSL explicitly, default to the
+# vcpkg install prefix so the server links the same OpenSSL vcpkg just installed.
+IF(NOT OPENSSL_ROOT_DIR AND VCPKG_INSTALLED_DIR)
+  SET(OPENSSL_ROOT_DIR "${VCPKG_INSTALLED_DIR}")
+ENDIF()
 IF(OPENSSL_ROOT_DIR)
   LIST(APPEND _mdb_configure_args "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
 ENDIF()
@@ -181,6 +186,12 @@ ENDIF()
 IF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   LIST(APPEND _mdb_configure_args "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}")
   LIST(APPEND _mdb_configure_args "-DVCPKG_TARGET_TRIPLET=${VCPKG_TARGET_TRIPLET}")
+  # Point the server's dependency search at the prefix vcpkg already populated
+  # for the shell (see bootstrap_vcpkg.cmake), so it reuses that closure --
+  # zlib, zstd, OpenSSL -- rather than re-resolving from the system.
+  IF(VCPKG_INSTALLED_DIR)
+    LIST(APPEND _mdb_configure_args "-DCMAKE_PREFIX_PATH=${VCPKG_INSTALLED_DIR}")
+  ENDIF()
 ENDIF()
 
 # Match the shell's generator so nested "cmake --build" uses the same toolchain.

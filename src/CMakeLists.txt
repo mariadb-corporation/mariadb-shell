@@ -379,36 +379,49 @@ ENDIF()
 #
 # vcpkg keeps every runtime artifact it built for the active triplet in one
 # per-triplet directory (Windows: <triplet>/bin holds the DLLs, a sibling of the
-# import-library <triplet>/lib; macOS: <triplet>/lib holds the dylibs, which are
-# the link libraries themselves; 'debug/...' for a debug build). That directory
-# *is* the dependency closure, so rather than enumerating individual names
-# (which silently misses new/transitive deps) we install all of it and drop only
-# the pieces another bundling path already handles: OpenSSL (BUNDLED_OPENSSL),
+# import-library <triplet>/lib; macOS/Linux: <triplet>/lib holds the dylibs/.so,
+# which are the link libraries themselves; 'debug/...' for a debug build). That
+# directory *is* the dependency closure, so rather than enumerating individual
+# names (which silently misses new/transitive deps) we install all of it and drop
+# only the pieces another bundling path already handles: OpenSSL (BUNDLED_OPENSSL),
 # curl+zlib (WITH_CURL_PATH), libssh (BUNDLED_SSH_DIR) and Python (its own
 # runtime layout above). Globbing only vcpkg's own tree also means we never pick
-# up macOS system libraries/frameworks (/usr/lib, /System/...), which must stay
-# unbundled.
+# up system libraries (glibc on Linux, /usr/lib and /System frameworks on macOS),
+# which must stay unbundled.
 #
-# macOS relies on vcpkg building its dylibs with @rpath install names (its
-# default for dynamic osx triplets): mysqlsh then records '@rpath/libX.dylib'
-# load commands and already carries an '@executable_path/../<libdir>' rpath (see
-# add_shell_executable), so dropping the dylibs into INSTALL_LIBDIR resolves them.
-IF(USING_VCPKG AND (WIN32 OR APPLE))
+# This covers dynamic triplets on all three platforms. A static triplet (vcpkg's
+# default on Linux, x64-linux) links the dependencies into mysqlsh directly, so
+# the per-triplet lib dir has only .a files, the glob below finds nothing, and
+# this is correctly a no-op - the binary is already self-contained.
+#
+# Shared-library resolution relies on the loader finding the bundled copies next
+# to (Windows) or via the executable's rpath (macOS '@executable_path/..',
+# Linux '$ORIGIN/..' - both set in add_shell_executable). vcpkg builds its
+# dylibs/.so with @rpath / SONAME install names, and install_bundled_binaries
+# rewrites each copy's id/rpath ($ORIGIN via patchelf on Linux, @rpath via
+# install_name_tool on macOS) so the closure resolves within INSTALL_LIBDIR.
+IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
   IF(WIN32)
     SET(_vcpkg_lib_glob "*.dll")
     SET(_vcpkg_dest "${INSTALL_BINDIR}")   # DLLs sit next to mysqlsh.exe
-    SET(_vcpkg_ext "dll")
-  ELSE() # APPLE
+    SET(_vcpkg_ext_re "\\.dll")
+  ELSEIF(APPLE)
     SET(_vcpkg_lib_glob "*.dylib")
     SET(_vcpkg_dest "${INSTALL_LIBDIR}")   # dylibs resolve via the exe's rpath
-    SET(_vcpkg_ext "dylib")
+    SET(_vcpkg_ext_re "\\.dylib")
+  ELSE() # LINUX
+    SET(_vcpkg_lib_glob "*.so*")
+    SET(_vcpkg_dest "${INSTALL_LIBDIR}")   # .so resolve via the exe's $ORIGIN rpath
+    # Match unversioned and versioned SONAMEs: libfoo.so, libfoo.so.1, libfoo.so.1.2
+    SET(_vcpkg_ext_re "\\.so(\\..*)?")
   ENDIF()
 
   # Derive the triplet runtime dir from any resolved vcpkg library. Unquoted
   # expansion skips the debug/optimized keyword tokens some *_LIBRARY vars carry.
   # On Windows the resolved path is the import lib under <triplet>/lib, so the
   # DLLs are the sibling <triplet>/bin (debug/lib -> debug/bin also holds); on
-  # macOS the resolved path is the dylib itself, so its own directory is the one.
+  # macOS/Linux the resolved path is the dylib/.so itself, so its own directory is
+  # the one.
   SET(_vcpkg_runtime_dir "")
   FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY} ${CRYPTO_LIBRARY}
                    ${OPENSSL_LIBRARY} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY})
@@ -435,25 +448,26 @@ IF(USING_VCPKG AND (WIN32 OR APPLE))
   IF(_vcpkg_runtime_dir AND IS_DIRECTORY "${_vcpkg_runtime_dir}")
     FILE(GLOB _vcpkg_all_libs "${_vcpkg_runtime_dir}/${_vcpkg_lib_glob}")
 
-    # Name patterns (regex, anchored) bundled through another code path. Python
-    # always has its own block regardless of where it was found.
-    SET(_vcpkg_exclude_patterns "python.*\\.${_vcpkg_ext}"
-                                "libpython.*\\.${_vcpkg_ext}")
+    # Name patterns (regex, anchored on the full file name) bundled through
+    # another code path. Python always has its own block regardless of where it
+    # was found. ${_vcpkg_ext_re} matches the platform's library suffix,
+    # including versioned Linux SONAMEs (e.g. .so.3).
+    SET(_vcpkg_exclude_patterns "python.*${_vcpkg_ext_re}"
+                                "libpython.*${_vcpkg_ext_re}")
     IF(BUNDLED_OPENSSL)
-      LIST(APPEND _vcpkg_exclude_patterns "libcrypto.*\\.${_vcpkg_ext}"
-                                          "libssl.*\\.${_vcpkg_ext}")
+      LIST(APPEND _vcpkg_exclude_patterns "libcrypto.*${_vcpkg_ext_re}"
+                                          "libssl.*${_vcpkg_ext_re}")
     ENDIF()
     IF(BUNDLED_SSH_DIR)
-      LIST(APPEND _vcpkg_exclude_patterns "libssh.*\\.${_vcpkg_ext}"
-                                          "ssh.*\\.${_vcpkg_ext}")
+      LIST(APPEND _vcpkg_exclude_patterns "libssh.*${_vcpkg_ext_re}"
+                                          "ssh.*${_vcpkg_ext_re}")
     ENDIF()
     IF(WITH_CURL_PATH)
-      LIST(APPEND _vcpkg_exclude_patterns "libcurl.*\\.${_vcpkg_ext}"
-                                          "curl.*\\.${_vcpkg_ext}"
-                                          "zlib.*\\.${_vcpkg_ext}"
-                                          "zlib1\\.${_vcpkg_ext}"
-                                          "libz\\..*\\.${_vcpkg_ext}"
-                                          "z\\.${_vcpkg_ext}")
+      LIST(APPEND _vcpkg_exclude_patterns "libcurl.*${_vcpkg_ext_re}"
+                                          "curl.*${_vcpkg_ext_re}"
+                                          "libz.*${_vcpkg_ext_re}"
+                                          "zlib.*${_vcpkg_ext_re}"
+                                          "z${_vcpkg_ext_re}")
     ENDIF()
 
     SET(_vcpkg_bundle_libs "")
@@ -479,9 +493,10 @@ IF(USING_VCPKG AND (WIN32 OR APPLE))
         INSTALL(PROGRAMS ${_vcpkg_bundle_libs}
                 DESTINATION "${_vcpkg_dest}" COMPONENT main)
       ELSE()
-        # Route dylibs through the shared bundler so each copy gets a predictable
-        # '@rpath/<name>' id (and, when OpenSSL is bundled, its cross-references
-        # rewritten to @rpath) - matching every other BUNDLED_* path on macOS.
+        # Route dylibs/.so through the shared bundler so each copy is made
+        # relocatable (macOS: '@rpath/<name>' id via install_name_tool; Linux:
+        # '$ORIGIN/..' rpath via patchelf) and its cross-references rewritten -
+        # matching every other BUNDLED_* path on macOS and Linux.
         install_bundled_binaries(
             DESCRIPTION "vcpkg runtime libraries"
             BINARIES ${_vcpkg_bundle_libs}
