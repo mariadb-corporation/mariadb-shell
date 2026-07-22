@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -129,8 +130,25 @@ void Secret_service_helper::store(const common::Secret &secret) {
   }
 
   const auto attributes = get_attributes(secret.id);
+  const auto label = get_label(secret.id);
+  static constexpr std::array k_retry_times = {200, 400};
 
-  m_invoker.store(get_label(secret.id), attributes, secret.secret);
+  auto sleep_time = k_retry_times.begin();
+
+  while (true) {
+    try {
+      m_invoker.store(label, attributes, secret.secret);
+      break;
+    } catch (const Helper_exception &) {
+      if (k_retry_times.end() == sleep_time) {
+        throw;
+      }
+
+      // retry in case of an error, DBUS sometimes is slow to process messages
+      std::this_thread::sleep_for(std::chrono::milliseconds{*sleep_time});
+      ++sleep_time;
+    }
+  }
 
   // wait till DBUS propagates the message, but don't report any errors, secret
   // was successfully stored

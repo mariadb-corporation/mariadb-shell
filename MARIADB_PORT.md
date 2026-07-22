@@ -700,3 +700,42 @@ cached install (`$PYTHON_INSTALL_ROOT/Python-<ver>`, default alongside the shell
 source) so the next configure re-runs vcpkg + the Python bootstrap. Verify with
 `lib/mysqlsh/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
 Cross-platform: the same manifest entry gives macOS/Windows builds `_sqlite3` too.
+
+### 12.5 GCC 15 `-Werror=array-bounds` false positive (linenoise-ng)
+
+GCC 15 (e.g. Fedora 44) raises a false-positive `array-bounds` in the vendored
+`ext/linenoise-ng/src/ConvertUTF.cpp` — `offsetsFromUTF8[extraBytesToRead]`, where
+`extraBytesToRead` is bounded to 0..5 (array size 6) but GCC's range analysis
+assumes a possible subscript 6 — which `-Werror` turns into a hard failure. Same
+treatment as §12.3: `cmake/compiler.cmake` adds `-Wno-error=array-bounds` for GCC
+(alongside `-Wno-error=type-limits` / `-Wno-error=free-nonheap-object`) rather than
+patching third-party code. Not MariaDB-specific — any GCC-15 build hits it.
+
+### 12.6 Fedora build prerequisites — Perl modules for the vcpkg OpenSSL build
+
+On a fresh Fedora host (44) the vcpkg OpenSSL port builds from source and runs
+OpenSSL's Perl `Configure`, which needs several standard Perl modules that Fedora's
+minimal Perl does not ship: the build aborts with `Can't locate IPC/Cmd.pm`
+(and `FindBin`, `File::Compare`, `File::Copy`, `Pod::Html` are missing next).
+Install the full standard set with `sudo dnf install -y perl-core` (Ubuntu's
+`perl-modules-*` already covers this). The "openssl requires Linux kernel headers"
+message is a non-fatal notice as long as `/usr/include/linux` is present
+(`kernel-headers`, installed by default).
+
+### 12.7 Secret Service store retry (gnome-keyring transient encryption error)
+
+The `secret-service` helper shells out to `secret-tool`, which talks to the D-Bus
+Secret Service (gnome-keyring). Newer gnome-keyring (seen with **50.0 / libsecret
+0.21.7 / libgcrypt 1.12.2** on Fedora 44) intermittently fails an otherwise valid
+store — roughly 0.5% of requests — with `secret-tool: Couldn't create item: The
+secret was transferred or encrypted in an invalid way.` (libsecret
+`SECRET_ERROR_PROTOCOL`): the per-request D-Bus session's DH-encrypted secret
+transfer occasionally fails server-side. It is **not** input-specific (any id can
+hit it) and **not** FIPS/crypto-policy related; the older gnome-keyring on the
+Ubuntu VM does not exhibit it, so `mysql_secret_store_t`'s `valid_id_characters`
+(which does ~360 store/get/erase ops) failed only on Fedora. A fresh invocation
+negotiates a new session and succeeds, so `Secret_service_helper::store` now retries
+the store on a `Helper_exception` with the same bounded backoff (`{200, 400}` ms) as
+`get()`. The store is idempotent (`secret-tool` overwrites the item with matching
+attributes), and it still throws after the retries are exhausted. Verified: 780
+store ops across the full id range with 0 helper-visible failures after the change.
