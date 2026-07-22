@@ -739,3 +739,17 @@ the store on a `Helper_exception` with the same bounded backoff (`{200, 400}` ms
 `get()`. The store is idempotent (`secret-tool` overwrites the item with matching
 attributes), and it still throws after the retries are exhausted. Verified: 780
 store ops across the full id range with 0 helper-visible failures after the change.
+
+Related crash uncovered while testing the above: `parse_list` (the parser for
+`secret-tool search --all` output) split each line on `=` and unconditionally read
+the second field. A secret id containing a newline — which `store()` accepts, since
+it is valid UTF-8, and which `valid_id_characters` exercises — makes secret-tool wrap
+the value onto a following line with no `=`, so the parser indexed a missing field
+(**out-of-bounds → SIGSEGV**). The helper died with no output, surfacing to the shell
+as an empty `RuntimeError: Failed to list secrets:` and failing
+`Shell_secret_api_test.store_and_check`. It only bites when such an item lingers in
+the store (e.g. a transient erase failure on Fedora's flaky keyring leaves one), but
+it is a self-inconsistency: the helper can create items it then cannot list. Fix:
+`parse_list` now skips continuation lines (`option.size() < 2`) instead of indexing
+them. Verified: listing with a newline-id item present returns cleanly and still
+reports the other credentials.

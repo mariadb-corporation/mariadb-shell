@@ -85,6 +85,17 @@ void parse_list(const std::string &list,
         needs_type = needs_url = true;
       } else {
         auto option = shcore::str_split(line, "=", 1, true);
+
+        // A value that itself contains a newline (e.g. a secret id with an
+        // embedded '\n', which store() accepts as valid UTF-8) makes secret-tool
+        // wrap it onto a following line that has no '=' separator. Skip such
+        // continuation lines instead of indexing a missing field -- the latter is
+        // out-of-bounds and crashed the helper (SIGSEGV), surfacing to the shell
+        // as an empty "Failed to list secrets:" error.
+        if (option.size() < 2) {
+          continue;
+        }
+
         auto key = shcore::str_strip(option[0]);
         auto value = shcore::str_strip(option[1]);
 
