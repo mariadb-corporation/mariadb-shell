@@ -42,6 +42,7 @@ secret-store login-path). See §10 for the full inventory.
 | MariaDB build dir | must contain the built static libs: `libmariadb/libmariadb/libmariadbclient.a`, `mysys/libmysys.a`, `mysys_ssl/libmysys_ssl.a`, `strings/libstrings.a`, `dbug/libdbug.a`, and `client/mariadb-binlog` |
 | OpenSSL | the shell links OpenSSL; **the Connector/C must be built with the same OpenSSL** (see §1.3) |
 | RapidJSON, ANTLR4, libssh, zstd, googletest | same as the MySQL build |
+| SQLite3 | needed by the bundled Python's `_sqlite3` stdlib module; supplied via the vcpkg manifest (`vcpkg.json`), not the system. See §12.4 |
 
 ### 1.2 Configure & build the shell
 
@@ -677,3 +678,25 @@ GCC 15 raises a false-positive `free-nonheap-object` inside libstdc++
 (`-Wno-error=free-nonheap-object`, understood by all supported GCC versions),
 alongside the existing `-Wno-error=type-limits`. Not MariaDB-specific — any
 GCC-15 build hits it.
+
+### 12.4 Bundled Python needs SQLite3 from the vcpkg closure (`_sqlite3`)
+
+CPython builds its `_sqlite3` stdlib module only if `configure` finds `sqlite3.h`
++ `-lsqlite3` at build time. `bootstrap_python.cmake` intentionally points the
+Python build **only** at the vcpkg dependency closure (`CPPFLAGS=-I<vcpkg>/include`,
+`LDFLAGS=-L<vcpkg>/lib -Wl,-rpath,<vcpkg>/lib`) so extension modules link the same
+libraries as the shell rather than the host's. SQLite was originally absent from
+that closure, so the interpreter came up without `_sqlite3` and `import sqlite3`
+failed with **`ModuleNotFoundError: No module named '_sqlite3'`** (surfaced by
+`unittest/scripts/auto/py_shell/scripts/sqlite_support_norecord.py`).
+
+Fix: add `sqlite3` to `vcpkg.json` (pinned to the baseline's `3.53.3#1` per §11.9).
+It then lands in `<vcpkg>/include` + `<vcpkg>/lib`, CPython's configure detects it
+(via the header/`-lsqlite3` fallback — `PKG_CONFIG_PATH` is not set), and builds
+`_sqlite3` with the vcpkg lib dir baked into its RUNPATH like `_ssl`/`zlib`/`_zstd`.
+NOTE: the bundled Python is **cached** (`bootstrap_python.cmake` reuses an existing
+`Python-<ver>` install), so adding the dep alone won't rebuild it — delete the
+cached install (`$PYTHON_INSTALL_ROOT/Python-<ver>`, default alongside the shell
+source) so the next configure re-runs vcpkg + the Python bootstrap. Verify with
+`lib/mysqlsh/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
+Cross-platform: the same manifest entry gives macOS/Windows builds `_sqlite3` too.
