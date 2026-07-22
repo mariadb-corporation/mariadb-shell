@@ -246,6 +246,20 @@ ELSEIF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   SET(_vcpkg_prefix "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
 ENDIF()
 
+# --enable-shared links the interpreter against libpython<ver>.{so,dylib} in
+# <prefix>/lib. That dir is not on the system loader path, and some distros ship
+# their OWN system libpython of the same version in the default path (e.g.
+# Ubuntu: /usr/lib/<arch>/libpython3.14.so.1.0). Without an explicit RUNPATH the
+# loader then resolves the SYSTEM libpython instead of ours -> a Frankenstein
+# interpreter (our executable + our stdlib on sys.path, but the system libpython
+# driving site/sysconfig) whose package machinery is broken: ensurepip installs
+# pip into <prefix>/lib/pythonX.Y/site-packages while the system libpython's
+# (Debian-patched) site.py searches dist-packages, so "import pip" fails with
+# "No module named pip". DT_RUNPATH is searched before the ldconfig cache, so
+# baking our own lib dir in makes our libpython win. Always needed, even without
+# vcpkg; keep it first so it also takes precedence for anything else we ship.
+SET(_rpath_dirs "${_py_install}/lib")
+
 SET(_cppflags "")
 SET(_ldflags "")
 SET(_configure_extra "")
@@ -256,16 +270,20 @@ IF(_vcpkg_prefix AND EXISTS "${_vcpkg_prefix}")
   # runtime search path baked in via -Wl,-rpath, or dyld cannot resolve them at
   # import time and CPython's build silently removes _ssl/_hashlib/_zstd/zlib
   # ("built successfully but removed because they could not be imported").
-  SET(_ldflags  "-L${_vcpkg_prefix}/lib -Wl,-rpath,${_vcpkg_prefix}/lib")
+  SET(_ldflags  "-L${_vcpkg_prefix}/lib")
+  SET(_rpath_dirs "${_rpath_dirs}:${_vcpkg_prefix}/lib")
   # Let the _ssl/_hashlib modules find OpenSSL in the vcpkg tree explicitly, and
   # bake the vcpkg lib dir into their rpath too (belt-and-suspenders with the
-  # LDFLAGS rpath above; --with-openssl-rpath only covers the OpenSSL modules).
+  # LDFLAGS rpath below; --with-openssl-rpath only covers the OpenSSL modules).
   SET(_configure_extra "--with-openssl=${_vcpkg_prefix}"
                        "--with-openssl-rpath=${_vcpkg_prefix}/lib")
   MESSAGE(STATUS "  vcpkg prefix for Python build: ${_vcpkg_prefix}")
 ELSE()
   MESSAGE(STATUS "  no vcpkg prefix found; Python will build against system libs")
 ENDIF()
+
+# -Wl,-rpath accepts a ':'-separated list; our own lib dir first, then vcpkg.
+SET(_ldflags "${_ldflags} -Wl,-rpath,${_rpath_dirs}")
 
 ##############################################################################
 # 6. Translate CMAKE_BUILD_TYPE into Python build flags. The ABI flags (and thus
