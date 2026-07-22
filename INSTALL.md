@@ -1,9 +1,5 @@
 # Build Instructions for MariaDB Shell
 
-
-
-# Build Instructions for MariaDB Shell
-
 This file describes the build instructions for the MariaDB Shell project on the
 different platforms.
 
@@ -21,60 +17,57 @@ on each platform:
 
 The following build tooling is required on each platform.
 
-*** Debian ***
-
-```
-$ sudo apt install build-essential git cmake curl
-```
-
-*** Fedora ***
-
-```
-$ sudo dnf install gcc-c++ git cmake
+**Debian**
+```bash
+sudo apt install build-essential git cmake curl
 ```
 
-*** MacOS ***
-
+**Fedora**
+```bash
+sudo dnf install gcc-c++ git cmake perl-core
 ```
+
+**MacOS**
+```bash
 # Install the build system
-$ xcode-select --install
+xcode-select --install
 
 # Install brew
-$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install cmake and bison
-$ brew install cmake bison pkg-config
+brew install cmake bison pkg-config
 
 # Update PATH
 echo 'export PATH="$(brew --prefix bison)/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-*** Windows ***
+**Windows**
 
 Install Visual Studio, at least the Community Edition, specifically Desktop
 development with C++.
 
-Perform a standard install of Python 3.14 from python.org. or optionally
-download the embeddable package and and use it on step 2.1.
+Install Python 3.14 using the MSI installer from www.python.org
 
 
-## 2. Building Portable Packages
+## 2 Clone the MariaDB Shell Repository
+
+This process is exactly the same in any platform, just make sure that in windows
+all the build steps are executed in a Developer Command Prompt.
+
+```bash
+git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
+```
+
+
+## 3. Building Portable Packages
 
 This is the simplest build but the slowest, it includes automatic download and
 building of the required dependencies, for this reason, network access is
 assumed.
 
-### 2.1 Clone the MariaDB Shell Repository
-
-This process is exactly the same in any platform, just make sure that in windows
-all the build steps are executed in a Developer Command Prompt.
-
-```
-$ git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
-```
-
-### 2.1 Configure the project
+### 3.1 Configure the project
 
 This is the crucial step to get the dev environment set, as it will automatically:
 
@@ -96,164 +89,155 @@ the platform where the MariaDB Shell is being built:
 * arm64-linux-dynamic
 
 
-*** Linux/Macos ***
-```
-$ mkdir bld && cd bld
-$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
-```
-
-*** Windows ***
-
-If you installed the standard python package, use the following:
-```
-> mkdir bld && cd bld
-> cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
+**Linux/Macos**
+```bash
+mkdir bld && cd bld
+cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
 ```
 
-If you went for the embeddable package, unpack it and also add the following cmake
-parameter:
+**Windows**
 
-`-DBUNDLED_PYTHON_DIR=<path-to-embeddable-root`
+```bash
+rem Unset VCPKG_ROOT to avoid messing up with the standard vcpkg path on the
+rem installed Visual Studio
+set VCPKG_ROOT=
 
-### 2.3 Build the MariaDB Shell
+mkdir bld && cd bld
+
+rem Using Ninja is on  purpose, avoid conflicts resulting from the
+rem build paths resulting from the multi-configuration nature of MsBuild
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
+```
+
+### 3.2 Build the MariaDB Shell
 
 After the previous step completes, we are ready to build MariaDB Shell:
 
-*** Linux/MacOS ***
-```
+**Linux/MacOS**
+```bash
 cmake --build . -j$(nproc)
 ```
 
-*** Windows ***
-```
+**Windows**
+```bash
 cmake --build . --parallel
-
-
-
-==== REST IS WIP ====
-
-
-
-
-## 1. Prerequisites
-
-The following sections describe the required tooling and dependencies required to build the MariaDB Shell on each platform.
-
-### Debian
-
-$ sudo apt install sudo apt install build-essential git cmake libssh-dev python3-dev libssl-dev libantlr4-runtime-dev rapidjson-dev googletest libgtest-dev libgmock-dev libcurl4-openssl-dev libzstd-dev patchelf
-
-### Fedora
-
-$ sudo dnf install gcc-c++ git cmake libssh-devel python3-devel openssl-devel antlr4-cpp-runtime-devel rapidjson-devel gtest-devel gmock-devel libcurl-devel libzstd-devel patchelf
-
-### Linux with vcpkg (portable build)
-
-The system-package setup above is the recommended path for distribution packages:
-the resulting DEB/RPM declare their dependencies and the system package manager
-keeps them (OpenSSL, curl, ...) patched. To instead produce a **portable** build
-that does not rely on matching system libraries, use vcpkg:
-
-```
-$ git clone https://github.com/microsoft/vcpkg.git && ./vcpkg/bootstrap-vcpkg.sh
-$ ./vcpkg/vcpkg install openssl[tools] zlib libssh antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
 ```
 
-Where <triplet> is `x64-linux` / `arm64-linux` (static - vcpkg's default on Linux;
-dependencies are linked into `mysqlsh`, nothing to bundle) or the `*-dynamic`
-variant (shared libraries that are bundled into the package, as on Windows/macOS).
-Either way the build is self-contained; with vcpkg you then own shipping security
-updates for those dependencies. `patchelf` is still required for the dynamic case.
+### 3.3 Create the Portable Package
 
-### MacOS
-
-Two dependency sources are supported:
-
-- **Homebrew** - the recommended setup for local development. The shell links
-  against the libraries in your Homebrew prefix and runs against them in place;
-  this build is **not** meant to be redistributed (its dependencies live in the
-  Homebrew kegs on your machine, and bundling third-party Homebrew bottles into
-  an official package is not something we do).
-- **vcpkg** - use this to produce a **self-contained, redistributable** package.
-  Like the Windows build, the dependencies are built by vcpkg and automatically
-  bundled into the package (see step 3). Install them with:
-
-  ```
-  $ git clone https://github.com/microsoft/vcpkg.git && ./vcpkg/bootstrap-vcpkg.sh
-  $ ./vcpkg/vcpkg install openssl[tools] zlib libssh antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
-  ```
-
-  Where <triplet> is one of `arm64-osx` (Apple Silicon) or `x64-osx` (Intel).
-
-For a Homebrew-based build:
-
-$ xcode-select --install
-$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-$ brew install cmake bison libssh openssl@3 python@3.14 antlr4-cpp-runtime rapidjson googletest curl zstd
-$ echo 'export PATH="/opt/homebrew/opt/bison/bin:$PATH"' >> ~/.zshrc
-$ source ~/.zshrc
-
-### Windows
-
-- Install Visual Studio, at least the Community Edition, specifically Desktop development with C++
-- Install python 3.14 from python.org
-
-Using a Developer Command Prompt:
-
-> winget install -e --id WinFlexBison.win_flex_bison
-> git clone https://github.com/microsoft/vcpkg.git
-> cd vcpkg
-> bootstrap-vcpkg.bat
-> .\vcpkg install openssl[tools] zlib libssh openssl zlib antlr4 rapidjson gtest curl[ssh,openssl] zstd --triplet=<triplet>
-
-
-Where in <triplet> we usually pick any of:
-- x64-windows (64-bit Windows, dynamic/DLL linking - default on 64-bit Windows)
-- arm64-windows (64-bit ARM Windows, dynamic linking)
-
-### 2. Check Out the Sources
+Execute the following command on the bld directory to create a portable tar.gz
+package.
 
 ```bash
-git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
+cpack -gTGZ
 ```
 
-### 3. Configure the project
+
+## 4. Building Development Packages
+
+The development packages are meant to work using dependencies available on the
+system used to build the MariaDB shell, these builds are not meant to be
+portable, but only to be used in a development environment
+
+### 4.1 Additional Build Dependencies
+
+**Debian**
+
+```bash
+$ sudo apt install build-essential git cmake libssh-dev python3-dev libssl-dev libantlr4-runtime-dev rapidjson-dev googletest libgtest-dev libgmock-dev libcurl4-openssl-dev libzstd-dev patchelf
+```
+
+**Fedora**
+
+```bash
+$ sudo dnf install gcc-c++ git cmake libssh-devel python3-devel openssl-devel antlr4-cpp-runtime-devel rapidjson-devel gtest-devel gmock-devel libcurl-devel libzstd-devel patchelf
+```
+
+**MacOS**
+
+```bash
+$ brew install libssh openssl@3 python@3.14 antlr4-cpp-runtime rapidjson googletest curl zstd
+```
+
+**Windows**
+
+In windows, this package is identical to the portable one.
+
+
+### 4.2. Configure the project
 
 The shell has some dependencies with the MariaDB server, at this point the MariaDB server will be cloned
 from github at and the required artifacts for the shell will be built, then the shell project will be
 configured.
 
-## Linux (system packages)
+**Linux**
 
+```bash
 $ cd mariadb-shell && mkdir bld && cd bld
 $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+```
 
-## Linux (vcpkg, portable)
+**MacOS**
 
-$ cd mariadb-shell && mkdir bld && cd bld
-$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
-
-## MacOS (Homebrew, local development)
-
+```bash
 $ cd mariadb-shell && mkdir bld && cd bld
 $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH="$(brew --prefix openssl@3);$(brew --prefix curl)"
+```
 
-## MacOS (vcpkg, redistributable)
+### 4.3. Build the project
 
-$ cd mariadb-shell && mkdir bld && cd bld
-$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
+**Linux/MacOS**
 
+```bash
+$ cmake --build . -j$(nproc)
+```
 
-## Windows
+**Windows**
 
-> cd mariadb-shell && mkdir bld && cd bld
-> cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE="<vcpkg-root-folder>/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=<triplet>
+```bash
+> cmake --build . --parallel
+```
 
-Where:
-  <vcpkg-root-folder>: is the path where you cloned vcpkg in step 1
-  <triplet>: is the triplet used to install the build dependencies with vcpkg in step 1
+## 5. Optional Configuration
 
-## Any platform (vcpkg, auto-bootstrapped)
+There are several options to change what is built and the way it is built, the
+following are some examples:
+
+### 5.1 Disabling Test Build
+
+By default, the MariaDB Shell builds the test suite, but that can be disabled by
+passing the `-DWITH_TESTS=0` to the cmake configure call.
+
+### 5.2 Using Custom Builds for Dependencies
+
+It is possible to use custom builds of different dependencies as described below:
+
+**Using a custom build of the MariaDB Server
+
+Clone the specific version of the MariaDB server, configure and build the
+required dependencies and pass the source and build paths to the configure
+cmake call
+
+```bash
+my-mariadb-src/bld $ cmake --build . --target mariadbclient mysys mysys_ssl caching_sha2_password GenError
+my-shell-src/bld $ cmake .. -DMARIADB_SOURCE_DIR=my-mariadb-src -DMARIADB_BUILD_DIR=my-mariadb-src/bld ....
+```
+
+**Using a custom build of openssl, python, antlr4
+
+Just as above, get the package of the dependency to be used, and unpack it,
+handle it to the cmake configure call as follows:
+
+```bash
+my-shell-src/bld $ cmake .. -DBUNDLED_PYTHON_DIR=<path-to-python> \
+                            -DBUNDLED_OPENSSL_DIR=<path-to-openssl> \
+                            -BUNDLED_SSH_DIR=<path-to-openssl> \
+                            ...
+```
+
+## 6. Configuration Details
+
+## 6.1 Any platform (vcpkg, auto-bootstrapped)
 
 If you don't want to clone and bootstrap vcpkg yourself (step 1), pass only the
 triplet and the build will fetch vcpkg from github, run its bootstrap script,
@@ -278,41 +262,11 @@ on Linux, an alternative to the DEB/RPM dependency metadata used by the
 system-package build. (A Homebrew-based macOS build does not bundle: it is
 intended to run locally against the Homebrew libraries.)
 
-### 4. Build the project
 
-## Linux/MacOS
+## 6.2. Bundled Python from source (Unix/macOS)
 
-$ cmake --build . -j$(nproc)
-
-# Windows
-
-> cmake --build . --parallel
-
-
-## 5. Optional Configuration
-
-## Pre-built MariaDB Server
-
-The process of cloning and building the MariaDB Server dependencies may be skipped by providing a
-a custom source and build directories using:
-
--DMARIADB_SOURCE_DIR=<path-to-server-source>
--DMARIADB_BUILD_DIR=<path-to-server-build>
-
-
-
-
-### Unit tests
-
-Enable unit test targets by adding the following option during configuration:
-```bash
--DWITH_TESTS=1
-```
-
-## Bundled Python from source (Unix/macOS)
-
-To ship a self-contained interpreter instead of relying on the system Python,
-point the build at a Python to build and it will configure, build and install it
+To build and ship a self-contained interpreter of a specific version tell the
+build at what Python to build and it will configure, build and install it
 for you, then bundle it:
 
 ```bash
@@ -341,13 +295,13 @@ explicitly still works and takes precedence over `-DWITH_PYTHON_SOURCE`. This is
 Unix/macOS only; on Windows use a python.org install (auto-detected) or a
 pre-built `-DBUNDLED_PYTHON_DIR`.
 
-#### Third-party Python packages in the bundle
+## 6.3. Third-party Python packages in the bundle
 
 To ship extra Python packages inside the bundle, have the bundled interpreter
 install them itself (so any C extensions match its exact ABI and OpenSSL):
 
 ```bash
--DPYTHON_DEPS_PACKAGES="certifi;PyYAML==6.0"
+-DPYTHON_DEPS_PACKAGES="certifi;PyYAML;"
 ```
 
 At configure time the bundled interpreter runs `pip install` into a staging
@@ -364,21 +318,21 @@ list changes.
 use `-DPYTHON_DEPS=<dir>` (a pre-populated folder that is copied in).
 
 When a bundled Python is in use and you don't set `PYTHON_DEPS_PACKAGES`, it
-**defaults to `certifi;pyyaml;antlr4-python3-runtime;mcp`** — the packages the bundled shell plugins need.
-Override with your own list, or pass `-DPYTHON_DEPS_PACKAGES=` (empty) to install
-none.
+**defaults to `certifi;pyyaml;antlr4-python3-runtime;mcp`** — the packages the
+bundled shell plugins need. Override with your own list, or pass
+`-DPYTHON_DEPS_PACKAGES=` (empty) to install none.
 
-### Additional Python modules
+## 6.4. Additional Python modules
 
 Note that if you'd like to install additional Python modules, you must install
 them in the Python runtime directories that MySQL Shell was compiled with.
-To make sure that's the case, execute `pip` from mysqlsh itself. 
+To make sure that's the case, execute `pip` from mysqlsh itself.
 
 Example:
-```bash
-mysqlsh --pym pip install certifi PyYAML
-```
 
+```bash
+mysqlsh --pym pip install debugpy
+```
 
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB Corporation.
