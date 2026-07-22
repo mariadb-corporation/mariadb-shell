@@ -62,6 +62,22 @@ IF(MARIADB_SOURCE_DIR)
   SET(MARIADB_BUILD 1)
   ADD_DEFINITIONS(-DMARIADB_BUILD)
 
+  # The MariaDB server's include/mariadb_capi_rename.h rewrites the client C API
+  # symbols (mysql_get_ssl_cipher -> server_mysql_get_ssl_cipher, mysql_init,
+  # mysql_real_connect, ...) with a `server_` prefix for the server's OWN
+  # internal use (see the header's comment). The shell is a standalone client
+  # that links the MariaDB Connector/C (libmariadbclient), which exports the
+  # UNPREFIXED symbols -- but server headers on our include path transitively
+  # pull that rename in (include/mysql.h includes it), so any TU that includes a
+  # server header and then calls a renamed C API function links against the
+  # missing server_* symbol (e.g. undefined reference to
+  # `server_mysql_get_ssl_cipher` from Session_impl::get_ssl_cipher, which is the
+  # only renamed function called inline in session.h). Pre-defining the header's
+  # include guard makes it a no-op for every shell TU, so all C API calls resolve
+  # to the connector's unprefixed symbols. Harmless where the rename never
+  # activated (macOS/Windows); the shell always links the connector.
+  ADD_DEFINITIONS(-DMARIADB_CAPI_RENAME_INCLUDED)
+
   IF(WITH_RAPIDJSON)
     FILE(TO_CMAKE_PATH "${WITH_RAPIDJSON}" WITH_RAPIDJSON)
   ENDIF()
