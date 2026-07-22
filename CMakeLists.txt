@@ -1606,6 +1606,34 @@ IF(PYTHON_DEPS_PACKAGES)
 
   IF(NOT _py_dep_stamped STREQUAL "${_py_pkg_list}" OR NOT EXISTS "${_py_deps_staging}")
     MESSAGE(STATUS "Installing bundled Python packages via pip: ${_py_pkg_list}")
+
+    # The bundled interpreter must have pip. A from-source CPython built with
+    # --enable-shared frequently ends up WITHOUT it: its "make install" runs
+    # ensurepip as a non-fatal step ("Ignoring ensurepip failure...") that is
+    # often skipped, so the prefix has no pip. Bootstrap it here before use --
+    # ensurepip installs from a wheel bundled in the stdlib, so this needs no
+    # network and is a near no-op when pip is already present. Doing it at the
+    # point of use (rather than in bootstrap_python.cmake) also repairs an
+    # already-built interpreter, which the Python bootstrap fast-path would
+    # otherwise reuse as-is.
+    EXECUTE_PROCESS(
+      COMMAND "${PYTHON_EXECUTABLE}" -c "import pip"
+      RESULT_VARIABLE _py_has_pip
+      OUTPUT_QUIET ERROR_QUIET)
+    IF(NOT _py_has_pip EQUAL 0)
+      MESSAGE(STATUS "  bundled interpreter has no pip; bootstrapping via ensurepip")
+      EXECUTE_PROCESS(
+        COMMAND "${PYTHON_EXECUTABLE}" -m ensurepip --upgrade
+        RESULT_VARIABLE _py_ensurepip_rc)
+      IF(NOT _py_ensurepip_rc EQUAL 0)
+        MESSAGE(FATAL_ERROR
+          "The bundled Python interpreter has neither pip nor a working "
+          "ensurepip module, so ${_py_pkg_list} cannot be installed. Rebuild "
+          "the interpreter with ensurepip enabled, or supply the packages "
+          "directly via -DPYTHON_DEPS=<dir>.")
+      ENDIF()
+    ENDIF()
+
     # Install into a clean target so pip does not object to pre-existing content.
     FILE(REMOVE_RECURSE "${_py_deps_staging}")
     FILE(MAKE_DIRECTORY "${_py_deps_staging}")
@@ -1617,8 +1645,7 @@ IF(PYTHON_DEPS_PACKAGES)
     IF(NOT _py_pip_rc EQUAL 0)
       MESSAGE(FATAL_ERROR
         "Failed to install bundled Python packages (see output above). Ensure "
-        "the bundled interpreter has pip (built-in for WITH_PYTHON_SOURCE) and "
-        "that PyPI is reachable.")
+        "the bundled interpreter has pip and that PyPI is reachable.")
     ENDIF()
     FILE(WRITE "${_py_dep_stamp}" "${_py_pkg_list}")
   ELSE()
