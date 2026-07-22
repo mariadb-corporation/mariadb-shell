@@ -2,6 +2,139 @@
 
 
 
+# Build Instructions for MariaDB Shell
+
+This file describes the build instructions for the MariaDB Shell project on the
+different platforms.
+
+The requirements depend on the kind of package to be built, the sections below
+contain the instructions for the different packages based on complexity,
+including:
+
+- Portable Package
+- Developer Package
+
+Independently of the build method, the following build dependencies are required
+on each platform:
+
+## 1. Build Tooling
+
+The following build tooling is required on each platform.
+
+*** Debian ***
+
+```
+$ sudo apt install build-essential git cmake curl
+```
+
+*** Fedora ***
+
+```
+$ sudo dnf install gcc-c++ git cmake
+```
+
+*** MacOS ***
+
+```
+# Install the build system
+$ xcode-select --install
+
+# Install brew
+$ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install cmake and bison
+$ brew install cmake bison pkg-config
+
+# Update PATH
+echo 'export PATH="$(brew --prefix bison)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+*** Windows ***
+
+Install Visual Studio, at least the Community Edition, specifically Desktop
+development with C++.
+
+Perform a standard install of Python 3.14 from python.org. or optionally
+download the embeddable package and and use it on step 2.1.
+
+
+## 2. Building Portable Packages
+
+This is the simplest build but the slowest, it includes automatic download and
+building of the required dependencies, for this reason, network access is
+assumed.
+
+### 2.1 Clone the MariaDB Shell Repository
+
+This process is exactly the same in any platform, just make sure that in windows
+all the build steps are executed in a Developer Command Prompt.
+
+```
+$ git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
+```
+
+### 2.1 Configure the project
+
+This is the crucial step to get the dev environment set, as it will automatically:
+
+- Download and bootstrap the vcpkg package manager.
+- Download the source code, build and install the required libraries to build
+  the MariaDB Shell.
+- Download the source code and build the Python package to be bundled in the
+  final Packages
+- Download the MariaDB Server source code and build the build dependencies.
+
+On the following cmake call, the value of triplet to value that corresponds to
+the platform where the MariaDB Shell is being built:
+
+* x64-windows
+* arm64-windows
+* x64-osx-dynamic
+* arm64-osx-dynamic
+* x64-linux-dynamic
+* arm64-linux-dynamic
+
+
+*** Linux/Macos ***
+```
+$ mkdir bld && cd bld
+$ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
+```
+
+*** Windows ***
+
+If you installed the standard python package, use the following:
+```
+> mkdir bld && cd bld
+> cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
+```
+
+If you went for the embeddable package, unpack it and also add the following cmake
+parameter:
+
+`-DBUNDLED_PYTHON_DIR=<path-to-embeddable-root`
+
+### 2.3 Build the MariaDB Shell
+
+After the previous step completes, we are ready to build MariaDB Shell:
+
+*** Linux/MacOS ***
+```
+cmake --build . -j$(nproc)
+```
+
+*** Windows ***
+```
+cmake --build . --parallel
+
+
+
+==== REST IS WIP ====
+
+
+
+
 ## 1. Prerequisites
 
 The following sections describe the required tooling and dependencies required to build the MariaDB Shell on each platform.
