@@ -348,7 +348,7 @@ Python3_EXECUTABLE`), not the headers, so both layouts work; deriving from the
 headers lands on `<prefix>/include` and bundles empty `Lib`/`DLLs`. A python.org
 install is still preferred (it also ships `pip`/`ensurepip`, which vcpkg's does
 not — bootstrap those with `mysqlsh --pym ensurepip` / `get-pip.py`, or pre-stage
-`certifi`/`pyyaml` via `-DPYTHON_DEPS=<dir>`).
+`certifi`/`pyyaml`/`antlr4-python3-runtime`/`mcp` via `-DPYTHON_DEPS=<dir>`).
 
 ### 11.2 `run_unit_tests` link — keep `PYTHON_LIBRARIES` unquoted
 
@@ -608,3 +608,72 @@ nested build fails at, e.g., `GenError`. `bootstrap_mariadb.cmake` prepends that
 bin dir (`<prefix>/bin` for release, `<prefix>/debug/bin` for Debug) to `PATH`
 for the nested build via `cmake -E env --modify PATH=path_list_prepend:` (needs
 CMake ≥ 3.25).
+
+## 12. Linux platform notes
+
+Verified working: a full `arm64-linux-dynamic` (vcpkg) build with a from-source
+bundled Python (`-DWITH_PYTHON_SOURCE=3.14.6`) on Ubuntu (GCC 15, aarch64).
+`mysqlsh`, `mysqlshrec`, and `run_unit_tests` all link; `mysqlsh --version`
+reports the MariaDB build and the embedded interpreter imports the bundled
+`certifi`/`pyyaml`/`antlr4`/`antlr4-python3-runtime`/`mcp` packages.
+
+### 12.1 From-source `--enable-shared` Python must RUNPATH its own lib dir
+
+`bootstrap_python.cmake` builds CPython `--enable-shared`, so the interpreter
+loads `libpython<ver>.so` from `<prefix>/lib`. That dir is not on the system
+loader path, and distros that ship their own system Python of the same version
+(Ubuntu: `/usr/lib/<arch>/libpython3.14.so.1.0`) will win the `ld.so` lookup
+unless we say otherwise. The result is a **Frankenstein interpreter**: our
+executable + our stdlib on `sys.path`, but the *system* (Debian-patched)
+`libpython` driving `site`/`sysconfig`. Its `getsitepackages()` returns the
+Debian `dist-packages` scheme while `ensurepip`/pip install into the vanilla
+`site-packages`, so the two never meet and `import pip` fails with
+**`No module named pip`** even though pip was "successfully installed". `ldd`
+on the interpreter is the tell — `libpython3.14.so.1.0 => /usr/lib/...` instead
+of `<prefix>/lib`.
+
+Fix: bake `<prefix>/lib` into the interpreter's `RUNPATH` (via
+`-Wl,-rpath,<prefix>/lib`, ours first then the vcpkg lib dir). `DT_RUNPATH` is
+searched before the ldconfig cache, so it loads its own `libpython`. NOTE: the
+`RUNPATH` is set at *link* time — after changing it you must force a **relink**
+(delete the install *and* build trees; `make` alone won't relink cached binaries
+just because `LDFLAGS` changed). Verify with `ldd <prefix>/bin/python<ver> | grep
+python` (must point into `<prefix>/lib`) and `python -m pip --version`. The
+bundled shell inherits this correctly: `ldd bin/mysqlsh` resolves libpython to
+`lib/mysqlsh/libpython3.14.so.1.0`.
+
+(The `ensurepip` self-heal in the top-level CMakeLists — `import pip`, else
+`python -m ensurepip --upgrade` before the bundled-package install — remains as
+a belt-and-suspenders for interpreters that simply lack pip; it needs no network
+since ensurepip installs from a stdlib-bundled wheel.)
+
+### 12.2 Neutralize the MariaDB server C-API rename (link)
+
+MariaDB's `include/mariadb_capi_rename.h` (pulled in by `include/mysql.h`)
+rewrites the client C API with a `server_` prefix (`mysql_get_ssl_cipher` →
+`server_mysql_get_ssl_cipher`, plus `mysql_init`/`_real_connect`/`_options`/…)
+for the server's *own* internal use. The shell links the Connector/C, which
+exports the **unprefixed** symbols, but any shell TU that transitively includes
+a server header gets the rename — so a call to a renamed function links against
+the missing `server_*` symbol. On Linux this surfaced as `undefined reference to
+server_mysql_get_ssl_cipher` from `Session_impl::get_ssl_cipher` (the only
+renamed C-API function called *inline* in `session.h`; the rest are out-of-line
+in `session.cc`, a TU that pulls the connector header instead). The rename block
+is guarded by `#if !defined(EMBEDDED_LIBRARY) && !defined(MYSQL_DYNAMIC_PLUGIN)`,
+but neither is appropriate for the shell. Fix (CMakeLists.txt, `MARIADB_BUILD`
+branch): pre-define the header's own include guard,
+`ADD_DEFINITIONS(-DMARIADB_CAPI_RENAME_INCLUDED)`, so the rename is a no-op for
+every shell TU and all C-API calls resolve to the connector's unprefixed
+symbols. Cross-platform safe — the shell always links the connector, which is
+why macOS/Windows (where that TU happened to get the connector header) never
+tripped it.
+
+### 12.3 GCC 15 `-Werror=free-nonheap-object` false positive
+
+GCC 15 raises a false-positive `free-nonheap-object` inside libstdc++
+(`new_allocator.h`) when it inlines a `std::vector<std::tuple<...>>` destructor
+(seen in `unittest/json_shell_t.cc`), which `-Werror` turns into a hard failure.
+`cmake/compiler.cmake` downgrades it to a warning for GCC
+(`-Wno-error=free-nonheap-object`, understood by all supported GCC versions),
+alongside the existing `-Wno-error=type-limits`. Not MariaDB-specific — any
+GCC-15 build hits it.

@@ -231,7 +231,7 @@ list changes.
 use `-DPYTHON_DEPS=<dir>` (a pre-populated folder that is copied in).
 
 When a bundled Python is in use and you don't set `PYTHON_DEPS_PACKAGES`, it
-**defaults to `certifi;pyyaml`** — the packages the bundled shell plugins need.
+**defaults to `certifi;pyyaml;antlr4-python3-runtime;mcp`** — the packages the bundled shell plugins need.
 Override with your own list, or pass `-DPYTHON_DEPS_PACKAGES=` (empty) to install
 none.
 
