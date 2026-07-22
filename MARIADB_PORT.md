@@ -571,3 +571,40 @@ to build, check `versions/<x>-/<port>.json` in the cloned vcpkg tree for a highe
 port-version — it usually already carries the fix, and pinning to it is cheaper
 and more maintainable than a local overlay port. This applies to all triplets;
 arm64-windows is just the canary.
+
+Related trap: Visual Studio 2022's developer environment sets `VCPKG_ROOT` to its
+own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` honours
+`$ENV{VCPKG_ROOT}`, then tries to `git clone` into it and fails
+(`destination path already exists and is not an empty directory`). Pass
+`-DVCPKG_ROOT=<sibling path>` (matching the macOS default of `../vcpkg`) or clear
+the env var (`set VCPKG_ROOT=`) for the configure shell.
+
+### 11.10 Use the Ninja generator on Windows (single-config)
+
+Configure the shell (and therefore the auto-bootstrapped server) with
+**`-G Ninja`** on Windows. The shell links the server's static libraries by
+**explicit path at configure time** (`FIND_LIBRARY` +
+`${MARIADB_BUILD_DIR}/mysys/mysys.lib`, … — see CMakeLists.txt ~L1247/L1262), and
+the `bootstrap_mariadb.cmake` fast-path probes the same paths. A **multi-config**
+generator (the Windows default, Visual Studio / MSBuild) writes every library
+into a per-config subdirectory (`…/libmariadb/libmariadb/RelWithDebInfo/mariadbclient.lib`),
+which those lookups don't search — configure dies with `Could not find
+libmariadbclient in …/libmariadb/libmariadb`. `CMAKE_BUILD_TYPE` is also empty for
+multi-config generators, so the subdir can't be derived. Ninja is single-config:
+libraries land directly in the target dir where everything expects them (this is
+also why the runtime `CONFIG_BINARY_DIR` handling keys off `CMAKE_CONFIGURATION_TYPES`).
+Run from an **arm64 native** VS developer prompt (`vcvarsall.bat arm64`) so `cl`
+and `ninja` resolve and target arm64; the generator can't be changed in an
+existing build dir, so delete `bld/` when switching.
+
+Configure-time DLL trap on the nested server build: with a **dynamic** vcpkg
+triplet (arm64-windows), the server runs freshly-built **host tools** during its
+own build — `comp_err` generates `mysqld_error.h`, charset generators run, etc. —
+and those tools link vcpkg DLLs (zlib → `zlib1.dll`, OpenSSL → `libcrypto-3-arm64.dll`).
+Those DLLs live in the vcpkg per-triplet `bin` dir, which is neither beside the
+tool exes nor on `PATH`, so the loader aborts the tool with
+`STATUS_DLL_NOT_FOUND` (exit `-1073741515` / `0xC0000135`) before it runs — the
+nested build fails at, e.g., `GenError`. `bootstrap_mariadb.cmake` prepends that
+bin dir (`<prefix>/bin` for release, `<prefix>/debug/bin` for Debug) to `PATH`
+for the nested build via `cmake -E env --modify PATH=path_list_prepend:` (needs
+CMake ≥ 3.25).
