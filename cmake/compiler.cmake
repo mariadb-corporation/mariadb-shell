@@ -1,4 +1,5 @@
 # Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +72,13 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall -Wextra -Wpedantic -Wunused -Wshadow -Wdouble-promotion -Wformat-security -Wformat-y2k")
 
   if(CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wlogical-op -Wno-error=type-limits")
+    # -Wno-error=free-nonheap-object: GCC 15 raises a false-positive
+    # free-nonheap-object inside libstdc++ (new_allocator.h) when it inlines a
+    # std::vector<std::tuple<...>> destructor (seen in unittest/json_shell_t.cc),
+    # promoted to a hard error by -Werror. Downgrade it to a warning so the build
+    # is not held hostage to an over-eager diagnostic; the option is understood by
+    # all supported GCC versions.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wlogical-op -Wno-error=type-limits -Wno-error=free-nonheap-object")
   else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-nullability-extension")
   endif()
