@@ -545,3 +545,29 @@ keeps that on Linux/macOS (where it's the primary local endpoint) but drops it o
 Windows rather than writing a meaningless Unix-style path. `_socket_path` is
 therefore POSIX/macOS-only now (`_build_option_file`, `_open_root_session`, and
 the `delete_sandbox` socket cleanup all guard with `os.name != "nt"`).
+
+### 11.9 vcpkg manifest — pin the *port-version*, not just the version
+
+When building via vcpkg (`-DWITH_VCPKG_TRIPLET=…`, `vcpkg.json`), a version
+override like `{ "name": "antlr4", "version": "4.13.2" }` resolves to
+**port-version 0** — the version-string alone does *not* pick up later
+port-versions that carry vcpkg's own patches. antlr4 `4.13.2#0` misses the
+`add-include-chrono.patch` that upstream added in `4.13.2#1`: its
+`runtime/Cpp/.../atn/ProfilingATNSimulator.cpp` does `using namespace
+std::chrono;` and calls `high_resolution_clock::now()` without ever
+`#include <chrono>`. This is a latent bug on every platform, but it only *fails
+to compile* on **arm64-windows** — the arm64 MSVC STL doesn't pull `<chrono>` in
+transitively the way x64 MSVC / libc++ / libstdc++ do, so the names are
+undefined only there (`error C2653: 'high_resolution_clock' is not a class or
+namespace name`). Fix: pin the port-version in the override —
+
+```json
+{ "name": "antlr4", "version": "4.13.2", "port-version": 1 }
+```
+
+Changing the port-version alters the port's ABI hash, so a plain reconfigure
+rebuilds just that port (no cache wipe). General rule: when a vcpkg port fails
+to build, check `versions/<x>-/<port>.json` in the cloned vcpkg tree for a higher
+port-version — it usually already carries the fix, and pinning to it is cheaper
+and more maintainable than a local overlay port. This applies to all triplets;
+arm64-windows is just the canary.

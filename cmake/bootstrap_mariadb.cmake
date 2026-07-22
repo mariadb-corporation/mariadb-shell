@@ -223,11 +223,42 @@ IF(NOT CMAKE_VERSION VERSION_LESS "3.12")
   SET(_mdb_build_parallel "--parallel")
 ENDIF()
 
+# On Windows with a dynamic vcpkg triplet (e.g. arm64-windows), the server runs
+# freshly-built HOST TOOLS during its own build -- comp_err generates
+# mysqld_error.h, the charset/uca generators run, etc. Those tools link vcpkg
+# DLLs (zlib -> zlib1.dll, OpenSSL -> libcrypto-3-*.dll, ...) that live in the
+# vcpkg per-triplet bin dir, which is neither beside the tool exes nor on PATH.
+# The loader then aborts the tool with STATUS_DLL_NOT_FOUND (exit -1073741515 /
+# 0xC0000135) before it runs, failing the nested build (e.g. GenError). Prepend
+# that bin dir to PATH for the build via "cmake -E env --modify" so the tools
+# launch. RelWithDebInfo/Release tools link the release DLLs (<prefix>/bin); a
+# Debug server links the debug ones (<prefix>/debug/bin) -- pick by build type
+# since same-named DLLs (OpenSSL) exist in both. Only meaningful on Windows;
+# WIN32 is not defined this early (before project()), so key off CMAKE_HOST_WIN32.
+SET(_mdb_env_launcher "")
+IF(CMAKE_HOST_WIN32 AND VCPKG_INSTALLED_DIR)
+  IF(_mdb_build_type STREQUAL "Debug")
+    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_DIR}/debug/bin")
+  ELSE()
+    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_DIR}/bin")
+  ENDIF()
+  IF(CMAKE_VERSION VERSION_LESS "3.25")
+    # --modify PATH=path_list_prepend was added in 3.25; older CMake can't do
+    # this cleanly (assembling PATH by hand trips over ';' list-splitting).
+    MESSAGE(WARNING "CMake < 3.25: cannot prepend the vcpkg DLL dir to PATH for "
+      "the nested server build. If a host tool fails with exit -1073741515 "
+      "(missing DLL), prepend '${_vcpkg_dll_dir}' to PATH and reconfigure.")
+  ELSE()
+    SET(_mdb_env_launcher "${CMAKE_COMMAND}" -E env
+        "--modify" "PATH=path_list_prepend:${_vcpkg_dll_dir}" "--")
+  ENDIF()
+ENDIF()
+
 SET(_mdb_core_targets mariadbclient mysys mysys_ssl caching_sha2_password GenError)
 FOREACH(_tgt ${_mdb_core_targets})
   MESSAGE(STATUS "Building MariaDB core lib: ${_tgt}")
   EXECUTE_PROCESS(
-    COMMAND "${CMAKE_COMMAND}" --build "${_mdb_bld}"
+    COMMAND ${_mdb_env_launcher} "${CMAKE_COMMAND}" --build "${_mdb_bld}"
             --config "${_mdb_build_type}"
             --target "${_tgt}" ${_mdb_build_parallel}
     RESULT_VARIABLE _rc)
