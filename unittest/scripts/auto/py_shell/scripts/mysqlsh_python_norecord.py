@@ -44,14 +44,15 @@ else:
 
 #@<> BUG#36200851 make sure if it's possible to execute sys.executable
 # ensure that sys.executable, sys.prefix and sys.exec_prefix point to the same place
+
 r = subprocess.run(
-    [sys.executable, "-c", "import sys;print(sys.executable, sys.prefix, sys.exec_prefix)"],
+    [sys.executable, "-c", "import sys, os.path as p;print(sys.executable, p.normpath(sys.prefix), p.normpath(sys.exec_prefix))"],
     text=True,
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT
 )
 
-EXPECT_EQ(" ".join([sys.executable, sys.prefix, sys.exec_prefix]), r.stdout.strip())
+EXPECT_EQ(" ".join([sys.executable, os.path.normpath(sys.prefix), os.path.normpath(sys.exec_prefix)]), r.stdout.strip())
 
 #@<> BUG#36200851 make sure that sys.executable is able to load the ssl module
 r = subprocess.run(
