@@ -31,6 +31,14 @@ MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 # cmake/bootstrap_vcpkg.cmake.
 INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_vcpkg.cmake)
 
+# When the caller passes -DWITH_PYTHON_SOURCE=<cpython-src>, configure, build and
+# install that Python into a cached "Python-<version>" prefix and derive
+# BUNDLED_PYTHON_DIR from it (consumed further down and in src/CMakeLists.txt).
+# This is included AFTER bootstrap_vcpkg.cmake on purpose: the vcpkg dependency
+# closure must already be installed so Python links _ssl/zlib/... against it (via
+# CPPFLAGS/LDFLAGS and --with-openssl). See cmake/bootstrap_python.cmake.
+INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_python.cmake)
+
 # The shell links directly against a MariaDB (or MySQL) server source + build
 # tree. When neither is provided, and this is a real shell build (not a source
 # package), fetch the MariaDB server sources and build just the pieces the shell
@@ -1523,6 +1531,105 @@ endif()
 ## Prepares the python dependencies
 ###
 
+# PYTHON_DEPS_PACKAGES: third-party Python packages to ship inside the bundle.
+# The BUNDLED interpreter installs them itself via pip, so any C extensions are
+# built/resolved for exactly its ABI (and its OpenSSL). It installs at configure
+# time into a staging directory -- the source Python is never mutated -- and that
+# staging directory is then handed to PYTHON_DEPS below: a folder of installed
+# packages is exactly what PYTHON_DEPS already bundles (into the interpreter's
+# site-packages) on every platform, so there is a single bundling path.
+# Semicolon- or space-separated list of pip requirement specs, e.g.
+#   -DPYTHON_DEPS_PACKAGES="certifi;PyYAML==6.0".
+#
+# Works for every bundled build: Windows (the located python.org install) and
+# Linux/macOS (BUNDLED_PYTHON_DIR / WITH_PYTHON_SOURCE). A system-Python
+# (non-bundled) unix build has nothing to bundle into, so it uses PYTHON_DEPS
+# directly instead.
+#
+# When a bundle is being produced and the caller did not specify the list, it
+# defaults to the packages the bundled shell plugins require: certifi (CA bundle),
+# PyYAML, and the ANTLR4 Python runtime (antlr4-python3-runtime). Pass
+# -DPYTHON_DEPS_PACKAGES="..." to override, or an empty string
+# (-DPYTHON_DEPS_PACKAGES=) to install none.
+
+# "Are we producing a bundle that embeds a Python?" Windows always bundles the
+# located python.org install; unix bundles when BUNDLED_PYTHON_DIR is set.
+SET(_py_bundling FALSE)
+IF(HAVE_PYTHON AND (WIN32 OR BUNDLED_PYTHON_DIR))
+  SET(_py_bundling TRUE)
+ENDIF()
+
+IF(_py_bundling AND NOT DEFINED PYTHON_DEPS_PACKAGES)
+  SET(PYTHON_DEPS_PACKAGES "certifi;pyyaml;antlr4-python3-runtime")
+ENDIF()
+
+# Tracks that PYTHON_DEPS below was produced by PYTHON_DEPS_PACKAGES (rather than
+# supplied directly by the caller); used to gate the historical -DPYTHON_DEPS
+# contract further down.
+SET(_py_deps_from_packages FALSE)
+
+IF(PYTHON_DEPS_PACKAGES)
+  IF(NOT HAVE_PYTHON)
+    MESSAGE(FATAL_ERROR "PYTHON_DEPS_PACKAGES set but Python support is disabled.")
+  ENDIF()
+  IF(NOT _py_bundling)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS_PACKAGES requires a bundled Python. On Windows a python.org "
+      "install is bundled automatically; on Linux/macOS set BUNDLED_PYTHON_DIR "
+      "(or WITH_PYTHON_SOURCE to build one). For a system Python, use "
+      "PYTHON_DEPS=<dir> instead.")
+  ENDIF()
+  IF(PYTHON_DEPS)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS and PYTHON_DEPS_PACKAGES are alternatives (both bundle into "
+      "site-packages). Put everything in the PYTHON_DEPS folder, or list "
+      "everything in PYTHON_DEPS_PACKAGES -- not both.")
+  ENDIF()
+  IF(NOT PYTHON_EXECUTABLE)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS_PACKAGES set but the bundled Python interpreter was not found.")
+  ENDIF()
+
+  # Accept both ';'- and space-separated lists.
+  STRING(REPLACE " " ";" _py_pkg_list "${PYTHON_DEPS_PACKAGES}")
+
+  # Install the packages into a staging directory. Treat it as a cache keyed on
+  # the requested set: only (re)install when the list changes, so reconfigures do
+  # not keep hitting PyPI. The stamp lives outside the staging dir so it is not
+  # itself bundled.
+  SET(_py_deps_staging "${CMAKE_BINARY_DIR}/bundled-python-deps")
+  SET(_py_dep_stamp "${CMAKE_BINARY_DIR}/bundled-python-deps.stamp")
+  SET(_py_dep_stamped "")
+  IF(EXISTS "${_py_dep_stamp}")
+    FILE(READ "${_py_dep_stamp}" _py_dep_stamped)
+  ENDIF()
+
+  IF(NOT _py_dep_stamped STREQUAL "${_py_pkg_list}" OR NOT EXISTS "${_py_deps_staging}")
+    MESSAGE(STATUS "Installing bundled Python packages via pip: ${_py_pkg_list}")
+    # Install into a clean target so pip does not object to pre-existing content.
+    FILE(REMOVE_RECURSE "${_py_deps_staging}")
+    FILE(MAKE_DIRECTORY "${_py_deps_staging}")
+    EXECUTE_PROCESS(
+      COMMAND "${PYTHON_EXECUTABLE}" -m pip install
+              --disable-pip-version-check
+              --target "${_py_deps_staging}" ${_py_pkg_list}
+      RESULT_VARIABLE _py_pip_rc)
+    IF(NOT _py_pip_rc EQUAL 0)
+      MESSAGE(FATAL_ERROR
+        "Failed to install bundled Python packages (see output above). Ensure "
+        "the bundled interpreter has pip (built-in for WITH_PYTHON_SOURCE) and "
+        "that PyPI is reachable.")
+    ENDIF()
+    FILE(WRITE "${_py_dep_stamp}" "${_py_pkg_list}")
+  ELSE()
+    MESSAGE(STATUS "Bundled Python packages already installed: ${_py_pkg_list}")
+  ENDIF()
+
+  # Feed the staged packages into the standard PYTHON_DEPS bundling path below.
+  SET(PYTHON_DEPS "${_py_deps_staging}")
+  SET(_py_deps_from_packages TRUE)
+ENDIF()
+
 IF(PYTHON_DEPS)
 
   IF (NOT WIN32 AND NOT BUNDLED_PYTHON_DIR)
@@ -1533,7 +1640,12 @@ IF(PYTHON_DEPS)
     ADD_DEFINITIONS(-DPYTHON_DEPS_PATH="lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages")
   ENDIF()
 
-  ADD_DEFINITIONS(-DPYTHON_DEPS)
+  # -DPYTHON_DEPS advertises a curated dependency set (e.g. the oci plugin test
+  # keys off it). That reflects a caller-provided PYTHON_DEPS folder, not the
+  # auto-installed PYTHON_DEPS_PACKAGES default, so only define it for the former.
+  IF(NOT _py_deps_from_packages)
+    ADD_DEFINITIONS(-DPYTHON_DEPS)
+  ENDIF()
 ENDIF()
 
 IF(NOT BUNDLED_MYSQLBINLOG AND MYSQL_BUILD_DIR)

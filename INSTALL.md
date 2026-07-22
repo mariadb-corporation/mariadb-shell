@@ -1,6 +1,7 @@
 # Build Instructions for MariaDB Shell
 
 
+
 ## 1. Prerequisites
 
 The following sections describe the required tooling and dependencies required to build the MariaDB Shell on each platform.
@@ -174,6 +175,65 @@ Enable unit test targets by adding the following option during configuration:
 ```bash
 -DWITH_TESTS=1
 ```
+
+## Bundled Python from source (Unix/macOS)
+
+To ship a self-contained interpreter instead of relying on the system Python,
+point the build at a Python to build and it will configure, build and install it
+for you, then bundle it:
+
+```bash
+-DWITH_PYTHON_SOURCE=<path-or-version>
+```
+
+`WITH_PYTHON_SOURCE` accepts either:
+
+- a **path** to an existing CPython source tree, or
+- a **version**: `X.Y.Z` fetches the release tag `v<X.Y.Z>`, and `X.Y` fetches the
+  maintenance branch (latest patch of that series), from
+  `github.com/python/cpython`.
+
+The build installs Python into `Python-<version>` (e.g. `Python-3.12.4`) next to
+the shell source and sets `-DBUNDLED_PYTHON_DIR` to that folder automatically.
+The install prefix (and, for the version form, the cloned source) is treated as a
+cache: it is built once and reused on later configures — delete it (or set
+`-DPYTHON_INSTALL_ROOT=<dir>` to relocate it) to force a rebuild.
+
+When combined with a vcpkg build (`-DWITH_VCPKG_TRIPLET` or an explicit vcpkg
+toolchain), Python is configured *after* the vcpkg dependencies are installed
+and links its extension modules (`_ssl`, `zlib`, …) against the vcpkg closure
+rather than the system libraries. The build type (`-DCMAKE_BUILD_TYPE`) is honoured
+for the interpreter's optimization/debug-info flags. Passing `-DBUNDLED_PYTHON_DIR`
+explicitly still works and takes precedence over `-DWITH_PYTHON_SOURCE`. This is
+Unix/macOS only; on Windows use a python.org install (auto-detected) or a
+pre-built `-DBUNDLED_PYTHON_DIR`.
+
+#### Third-party Python packages in the bundle
+
+To ship extra Python packages inside the bundle, have the bundled interpreter
+install them itself (so any C extensions match its exact ABI and OpenSSL):
+
+```bash
+-DPYTHON_DEPS_PACKAGES="certifi;PyYAML==6.0"
+```
+
+At configure time the bundled interpreter runs `pip install` into a staging
+directory (the source Python is never mutated), and that directory is then
+bundled into the packaged interpreter's `site-packages` via the same path as
+`PYTHON_DEPS` — so it is picked up automatically at startup. This works for every
+bundled build: **Windows** (the auto-detected python.org install) and
+**Linux/macOS** (`BUNDLED_PYTHON_DIR` / `WITH_PYTHON_SOURCE`). It needs network
+access to PyPI, and the set is cached — packages are (re)installed only when the
+list changes.
+
+`PYTHON_DEPS_PACKAGES` and `PYTHON_DEPS` are alternatives (both target
+`site-packages`); set at most one. For a **system** (non-bundled) Python build,
+use `-DPYTHON_DEPS=<dir>` (a pre-populated folder that is copied in).
+
+When a bundled Python is in use and you don't set `PYTHON_DEPS_PACKAGES`, it
+**defaults to `certifi;pyyaml`** — the packages the bundled shell plugins need.
+Override with your own list, or pass `-DPYTHON_DEPS_PACKAGES=` (empty) to install
+none.
 
 ### Additional Python modules
 

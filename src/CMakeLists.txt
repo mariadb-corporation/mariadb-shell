@@ -166,23 +166,44 @@ if(BUNDLED_OPENSSL)
 
   # The MariaDB sandbox plugin shells out to the openssl CLI to generate the
   # sandbox SSL certificates (MariaDB, unlike MySQL, does not auto-generate them
-  # at datadir init). On Windows there is no system openssl, and vcpkg keeps the
-  # tool under <prefix>/tools/openssl (which z-applocal does not deploy), so
-  # bundle it next to the OpenSSL DLLs (INSTALL_LIBDIR -> bin/ on Windows) for an
-  # out-of-the-box experience. Windows + MariaDB only: the MySQL build uses the
-  # AdminAPI sandbox (server-side cert generation) and does not need the CLI.
-  IF(WIN32 AND MARIADB_BUILD)
+  # at datadir init). The system openssl cannot be relied on: Windows has none,
+  # and macOS ships LibreSSL, whose 'req' command is incompatible with our
+  # cert-generation config (empty distinguished_name + -subj aborts with "no
+  # objects specified in config file"). vcpkg keeps the tool under
+  # <prefix>/tools/openssl, which the normal library-deploy step does not copy,
+  # so bundle it next to the bundled OpenSSL libraries (INSTALL_LIBDIR, which
+  # maps to bin/ on Windows) for an out-of-the-box experience. MariaDB only: the
+  # MySQL build uses the AdminAPI sandbox (server-side cert generation) and does
+  # not need the CLI. Runtime discovery is in python/plugins/sandbox (see
+  # _shell_bundled_openssl), which looks beside the shell's OpenSSL libraries.
+  IF(MARIADB_BUILD)
     FIND_PROGRAM(OPENSSL_CLI_EXECUTABLE
       NAMES openssl
       HINTS "${WITH_SSL_PATH}/tools/openssl" "${WITH_SSL_PATH}/bin"
             "${OPENSSL_ROOT_DIR}/tools/openssl" "${OPENSSL_ROOT_DIR}/bin"
       NO_DEFAULT_PATH)
     IF(OPENSSL_CLI_EXECUTABLE)
+      SET(_OPENSSL_CLI_EXTRA_COMMANDS "")
+      IF(APPLE)
+        # install_bundled_binaries rewrites the copy's LC_LOAD_DYLIB references
+        # (-change) but never its LC_RPATH. The vcpkg CLI links its libs as
+        # @rpath/lib<x>.dylib and ships an rpath (@loader_path/../../lib) aimed at
+        # the vcpkg tools layout, not INSTALL_LIBDIR. Strip that stale rpath and
+        # add @loader_path so it resolves the OpenSSL dylibs bundled right beside
+        # it in INSTALL_LIBDIR.
+        get_fix_bundled_rpath_command(
+          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/openssl"
+          STRIP_PREFIX "@loader_path/../../lib"
+          ADD_RPATH "@loader_path"
+          OUT_COMMAND _FIX_OPENSSL_CLI_RPATH)
+        SET(_OPENSSL_CLI_EXTRA_COMMANDS COMMAND ${_FIX_OPENSSL_CLI_RPATH})
+      ENDIF()
       install_bundled_binaries(
           DESCRIPTION "OpenSSL CLI (MariaDB sandbox cert generation)"
           BINARIES "${OPENSSL_CLI_EXECUTABLE}"
           DESTINATION "${INSTALL_LIBDIR}"
           TARGET mysqlsh
+          EXTRA_COPY_COMMANDS ${_OPENSSL_CLI_EXTRA_COMMANDS}
       )
     ELSE()
       MESSAGE(WARNING "openssl CLI not found near the resolved OpenSSL "
@@ -256,6 +277,24 @@ IF(HAVE_PYTHON)
     set(WRITE_RPATH TRUE)
     set(EXTRA_COPY_COMMANDS "")
 
+    # A dynamic vcpkg triplet gives its dylibs the id "@rpath/lib<x>.dylib", so
+    # bootstrap_python.cmake links the interpreter/libpython/extension modules
+    # with -Wl,-rpath,<abs vcpkg build dir> to resolve them at build time. That
+    # absolute build-tree path must NOT ship in the package (it points at a dir
+    # absent on the target). install_name_tool -change only rewrites dependency
+    # references, never LC_RPATH entries, so scrub it explicitly from the bundled
+    # copies and add a relative @loader_path rpath instead. Derive the same vcpkg
+    # prefix bootstrap_python.cmake used (cached VCPKG_INSTALLED_DIR, or the
+    # conventional per-triplet dir when only the toolchain was given).
+    set(_PY_VCPKG_RPATH_STRIP "")
+    if(APPLE AND USING_VCPKG)
+      if(VCPKG_INSTALLED_DIR)
+        set(_PY_VCPKG_RPATH_STRIP "${VCPKG_INSTALLED_DIR}/lib")
+      elseif(VCPKG_TARGET_TRIPLET)
+        set(_PY_VCPKG_RPATH_STRIP "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib")
+      endif()
+    endif()
+
     if(BUNDLED_SHARED_PYTHON)
       if(APPLE)
         set(_PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}")
@@ -263,6 +302,25 @@ IF(HAVE_PYTHON)
         # add rpath to allow python executable to import dylibs
         set(WRITE_RPATH FALSE)
         set(EXTRA_COPY_COMMANDS COMMAND install_name_tool -add_rpath "@executable_path/.." "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
+        # Drop the absolute vcpkg build-tree rpath baked in at build time; the
+        # @executable_path/.. rpath above already reaches the bundled dylibs.
+        if(_PY_VCPKG_RPATH_STRIP)
+          get_fix_bundled_rpath_command(
+            BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            OUT_COMMAND _FIX_RPATH_CMD)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+
+          # libpython lands directly in INSTALL_LIBDIR next to the bundled vcpkg
+          # dylibs, so @loader_path resolves them once the build-tree rpath is gone.
+          get_filename_component(_PY_SHARED_LIB_NAME "${_PYTHON_SHARED_LIB}" NAME)
+          get_fix_bundled_rpath_command(
+            BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/${_PY_SHARED_LIB_NAME}"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            ADD_RPATH "@loader_path"
+            OUT_COMMAND _FIX_RPATH_CMD)
+          set(LIB_EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+        endif()
       else()
         file(GLOB _PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}.*")
 
@@ -301,6 +359,21 @@ IF(HAVE_PYTHON)
     if(APPLE)
       get_use_bundled_openssl_command(PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/_[sh]*.so" OUT_COMMAND EXTRA_COPY_COMMANDS)
       list(INSERT EXTRA_COPY_COMMANDS 0 COMMAND)
+
+      # The OpenSSL rewrite above only touches _ssl/_hashlib. Every lib-dynload
+      # extension linked against a vcpkg dylib (_zstd, zlib, binascii, ...) also
+      # carries the absolute build-tree rpath; strip it and add a relative rpath
+      # from lib-dynload (INSTALL_LIBDIR/lib/pythonX.Y/lib-dynload) up to
+      # INSTALL_LIBDIR, where the bundled dylibs live, so imports resolve on the
+      # target regardless of which executable dlopen()s them.
+      if(_PY_VCPKG_RPATH_STRIP)
+        get_fix_bundled_rpath_command(
+          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/*.so"
+          STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+          ADD_RPATH "@loader_path/../../.."
+          OUT_COMMAND _FIX_RPATH_CMD)
+        list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+      endif()
     endif()
 
     install_bundled_directory(
@@ -319,6 +392,21 @@ IF(HAVE_PYTHON)
       if(APPLE)
         get_use_bundled_openssl_command(PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so" OUT_COMMAND EXTRA_COPY_COMMANDS)
         list(INSERT EXTRA_COPY_COMMANDS 0 COMMAND)
+
+        # Any site-package extension linked against a vcpkg dylib carries the
+        # same absolute build-tree rpath; strip it. The relative rpath assumes a
+        # top-level module (site-packages/foo.so -> up 3 to INSTALL_LIBDIR),
+        # matching the glob above; a nested module still resolves via the host
+        # executable's own @executable_path/.. rpath, so the strip is the part
+        # that matters (it removes the build-tree leak).
+        if(_PY_VCPKG_RPATH_STRIP)
+          get_fix_bundled_rpath_command(
+            PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            ADD_RPATH "@loader_path/../../.."
+            OUT_COMMAND _FIX_RPATH_CMD)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+        endif()
      endif()
 
       # no need to install this, this is a subdirectory of the Python library directory

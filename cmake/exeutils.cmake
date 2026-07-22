@@ -102,13 +102,51 @@ if(APPLE)
     set(multiValueArgs)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    # Pass each -D value UNQUOTED. These commands are spliced into
+    # add_custom_command and run without a shell, so a literal -Dfoo="bar" keeps
+    # the double quotes in the value -- which made the pattern below never match
+    # any file (file(GLOB) on a quoted path), silently disabling this rewrite on
+    # macOS. Each argument is already one list element (the quotes here are CMake
+    # string quoting), so values with spaces survive without embedded quotes.
     set("${ARG_OUT_COMMAND}"
         ${CMAKE_COMMAND}
-        -DCRYPTO_VERSION="${CRYPTO_VERSION}"
-        -DOPENSSL_VERSION="${OPENSSL_VERSION}"
-        -DINSTALL_LIBDIR="${INSTALL_LIBDIR}"
-        -Dpattern="${ARG_PATTERN}"
+        "-DCRYPTO_VERSION=${CRYPTO_VERSION}"
+        "-DOPENSSL_VERSION=${OPENSSL_VERSION}"
+        "-DINSTALL_LIBDIR=${INSTALL_LIBDIR}"
+        "-Dpattern=${ARG_PATTERN}"
         -P "${CMAKE_SOURCE_DIR}/cmake/apple_use_bundled_openssl.cmake"
+        PARENT_SCOPE
+    )
+  endfunction()
+
+  # Emit a `cmake -P` command that scrubs absolute build-tree LC_RPATH entries
+  # (e.g. the vcpkg per-triplet lib dir baked into the bundled Python by
+  # bootstrap_python.cmake's LDFLAGS) from the matched binaries and, optionally,
+  # adds a relative @loader_path rpath so they resolve their bundled deps within
+  # INSTALL_LIBDIR on the target. See cmake/apple_fix_bundled_rpath.cmake.
+  function(get_fix_bundled_rpath_command)
+    set(options)
+    set(oneValueArgs PATTERN BINARIES STRIP_PREFIX ADD_RPATH OUT_COMMAND)
+    set(multiValueArgs)
+    cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # NOTE: pass each -D value UNQUOTED. These commands are spliced into
+    # add_custom_command and executed without a shell, so a literal
+    # -Dfoo="bar" would keep the quotes in the value. Each argument is already a
+    # single list element (the surrounding quotes here are CMake string quoting),
+    # so values with spaces survive intact without embedded quotes.
+    if(ARG_PATTERN)
+      set(_selector "-Dpattern=${ARG_PATTERN}")
+    else()
+      set(_selector "-Dbinaries=${ARG_BINARIES}")
+    endif()
+
+    set("${ARG_OUT_COMMAND}"
+        ${CMAKE_COMMAND}
+        "-Dstrip_prefix=${ARG_STRIP_PREFIX}"
+        "-Dadd_rpath=${ARG_ADD_RPATH}"
+        ${_selector}
+        -P "${CMAKE_SOURCE_DIR}/cmake/apple_fix_bundled_rpath.cmake"
         PARENT_SCOPE
     )
   endfunction()
