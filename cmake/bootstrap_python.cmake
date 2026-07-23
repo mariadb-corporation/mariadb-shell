@@ -285,7 +285,7 @@ IF(_vcpkg_prefix AND EXISTS "${_vcpkg_prefix}")
   # import time and CPython's build silently removes _ssl/_hashlib/_zstd/zlib
   # ("built successfully but removed because they could not be imported").
   SET(_ldflags  "-L${_vcpkg_prefix}/lib")
-  SET(_rpath_dirs "${_rpath_dirs}:${_vcpkg_prefix}/lib")
+  LIST(APPEND _rpath_dirs "${_vcpkg_prefix}/lib")
   # Let the _ssl/_hashlib modules find OpenSSL in the vcpkg tree explicitly, and
   # bake the vcpkg lib dir into their rpath too (belt-and-suspenders with the
   # LDFLAGS rpath below; --with-openssl-rpath only covers the OpenSSL modules).
@@ -296,8 +296,16 @@ ELSE()
   MESSAGE(STATUS "  no vcpkg prefix found; Python will build against system libs")
 ENDIF()
 
-# -Wl,-rpath accepts a ':'-separated list; our own lib dir first, then vcpkg.
-SET(_ldflags "${_ldflags} -Wl,-rpath,${_rpath_dirs}")
+# Bake the runtime search path in. macOS's linker accepts only ONE directory per
+# -Wl,-rpath: a ':'-joined list (the GNU-ld / DT_RUNPATH convention, valid on
+# Linux) collapses into a single bogus LC_RPATH on macOS, so dyld never finds the
+# vcpkg dylibs and CPython's build-time import check silently drops every module
+# that links them (zlib, binascii, _zstd, _sqlite3, ...). Emit one -Wl,-rpath
+# flag per directory instead -- correct on macOS, and GNU ld accumulates them too.
+# Our own lib dir comes first, then vcpkg.
+FOREACH(_d ${_rpath_dirs})
+  SET(_ldflags "${_ldflags} -Wl,-rpath,${_d}")
+ENDFOREACH()
 
 ##############################################################################
 # 6. Translate CMAKE_BUILD_TYPE into Python build flags. The ABI flags (and thus

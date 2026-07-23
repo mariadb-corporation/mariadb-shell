@@ -19,12 +19,12 @@ The following build tooling is required on each platform.
 
 **Debian**
 ```bash
-sudo apt install build-essential git cmake curl
+sudo apt install build-essential git cmake curl bison zip unzip tar pkg-config libncurses-dev patchelf
 ```
 
 **Fedora**
 ```bash
-sudo dnf install gcc-c++ git cmake perl-core
+sudo dnf install gcc-c++ git cmake perl-core bison zip unzip tar pkg-config ncurses-devel patchelf
 ```
 
 **MacOS**
@@ -36,7 +36,7 @@ xcode-select --install
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install cmake and bison
-brew install cmake bison pkg-config
+brew install cmake bison pkg-config ncurses
 
 # Update PATH
 echo 'export PATH="$(brew --prefix bison)/bin:$PATH"' >> ~/.zshrc
