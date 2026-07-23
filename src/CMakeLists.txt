@@ -298,10 +298,46 @@ IF(HAVE_PYTHON)
     if(BUNDLED_SHARED_PYTHON)
       if(APPLE)
         set(_PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}")
+        get_filename_component(_PY_SHARED_LIB_NAME "${_PYTHON_SHARED_LIB}" NAME)
+
+        # A CPython built with --enable-shared stamps libpython<ver>.dylib with an
+        # ABSOLUTE install id (its build-tree <prefix>/lib path). Everything linked
+        # against it -- the shell executables (via mysqlshdk-static) and CPython's
+        # own python<ver> launcher -- copies that absolute path in as its
+        # LC_LOAD_DYLIB. The bundled *copy* is made relocatable below (id -> @rpath,
+        # rpath fixed), but the *references* to it are not, so a relocated package
+        # still asks dyld for the vanished build-tree path ("Library not loaded:
+        # .../libpython<ver>.dylib"). Read libpython's real id and rewrite each
+        # consumer's reference to @rpath/<name>, resolved via that binary's own
+        # rpath (INSTALL_LIBDIR, where libpython is bundled). otool -D prints the
+        # file name on line 1 and the id on line 2. -change is a no-op if the id is
+        # already @rpath, so this stays correct on non-CPython layouts.
+        execute_process(COMMAND otool -D "${_PYTHON_SHARED_LIB}"
+                        OUTPUT_VARIABLE _py_otool_id OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX REPLACE "^[^\n]*\n" "" _PY_LIBPYTHON_ID "${_py_otool_id}")
+        string(STRIP "${_PY_LIBPYTHON_ID}" _PY_LIBPYTHON_ID)
 
         # add rpath to allow python executable to import dylibs
         set(WRITE_RPATH FALSE)
         set(EXTRA_COPY_COMMANDS COMMAND install_name_tool -add_rpath "@executable_path/.." "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
+        # The bundled python<ver> launcher carries the same absolute libpython
+        # reference; point it at the bundled copy via @rpath (reached by the
+        # @executable_path/.. rpath added just above).
+        if(_PY_LIBPYTHON_ID)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
+
+          # Same rewrite for the shell executables that embed libpython. Only
+          # mysqlsh is shipped; mysqlshrec (if built) is fixed too so a relocated
+          # test tree works. run_unit_tests runs from the build tree, where the
+          # absolute path still resolves, so it needs no fix.
+          foreach(_py_consumer mysqlsh mysqlshrec)
+            if(TARGET ${_py_consumer})
+              add_custom_command(TARGET ${_py_consumer} POST_BUILD
+                COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "$<TARGET_FILE:${_py_consumer}>"
+                COMMENT "Rewriting ${_py_consumer} libpython reference to @rpath (relocatable)")
+            endif()
+          endforeach()
+        endif()
         # Drop the absolute vcpkg build-tree rpath baked in at build time; the
         # @executable_path/.. rpath above already reaches the bundled dylibs.
         if(_PY_VCPKG_RPATH_STRIP)
@@ -313,7 +349,6 @@ IF(HAVE_PYTHON)
 
           # libpython lands directly in INSTALL_LIBDIR next to the bundled vcpkg
           # dylibs, so @loader_path resolves them once the build-tree rpath is gone.
-          get_filename_component(_PY_SHARED_LIB_NAME "${_PYTHON_SHARED_LIB}" NAME)
           get_fix_bundled_rpath_command(
             BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/${_PY_SHARED_LIB_NAME}"
             STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"

@@ -19,12 +19,12 @@ The following build tooling is required on each platform.
 
 **Debian**
 ```bash
-sudo apt install build-essential git cmake curl bison zip unzip tar pkg-config libncurses-dev patchelf
+sudo apt install build-essential git cmake ninja-build curl bison zip unzip tar pkg-config libncurses-dev patchelf
 ```
 
 **Fedora**
 ```bash
-sudo dnf install gcc-c++ git cmake perl-core bison zip unzip tar pkg-config ncurses-devel patchelf
+sudo dnf install gcc-c++ git cmake ninja-build perl-core bison zip unzip tar pkg-config ncurses-devel patchelf
 ```
 
 **MacOS**
@@ -36,7 +36,7 @@ xcode-select --install
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install cmake and bison
-brew install cmake bison pkg-config ncurses
+brew install cmake ninja bison pkg-config ncurses
 
 # Update PATH
 echo 'export PATH="$(brew --prefix bison)/bin:$PATH"' >> ~/.zshrc
@@ -92,7 +92,7 @@ the platform where the MariaDB Shell is being built:
 **Linux/Macos**
 ```bash
 mkdir bld && cd bld
-cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
 ```
 
 **Windows**
@@ -107,7 +107,7 @@ set VCPKG_ROOT=
 mkdir bld && cd bld
 
 rem Using Ninja is on  purpose, avoid conflicts resulting from the
-rem build paths resulting from the multi-configuration nature of MsBuild
+rem build paths resulting from the multi-configuration nature of MSBuild
 cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
 ```
 
@@ -115,12 +115,7 @@ cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triple
 
 After the previous step completes, we are ready to build MariaDB Shell:
 
-**Linux/MacOS**
-```bash
-cmake --build . -j$(nproc)
-```
-
-**Windows**
+**all platforms**
 ```bash
 cmake --build . --parallel
 ```
@@ -130,8 +125,9 @@ cmake --build . --parallel
 Execute the following command on the bld directory to create a portable tar.gz
 package.
 
+**all platforms**
 ```bash
-cpack -gTGZ
+cpack -G TGZ -C RelWithDebInfo
 ```
 
 
