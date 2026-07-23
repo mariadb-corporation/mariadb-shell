@@ -97,6 +97,8 @@ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VC
 
 **Windows**
 
+Using a *Developer Command Prompt* for VS execute the following:
+
 ```bash
 rem Unset VCPKG_ROOT to avoid messing up with the standard vcpkg path on the
 rem installed Visual Studio
