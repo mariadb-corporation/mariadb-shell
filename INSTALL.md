@@ -332,5 +332,43 @@ Example:
 mysqlsh --pym pip install debugpy
 ```
 
+# 7 Unit Testing
+
+If the project was built using WITH_TESTS=1 (the default configuration) the following
+binaries should have been built as well:
+
+- `run_unit_tests`
+- `mysqlshrec`
+
+The firs one, is the test suite itself, while te second one is a shell binary with
+additional test helper functionality.
+
+The test suite is a google test application, for this reason it supports the standard
+command line arguments:
+
+- `--gtest_filter` to define a regular expression to select the tests to be
+  included/excluded in the execution
+- `--gtest_list_tests` to list the tests included on the suite
+
+## 7.1 Executing the Test Suite
+
+The test suite requires the following environment:
+
+- A running MariaDB Server with a root user
+- The MariaDB Server binary in PATH
+
+The following environment variables:
+
+- `MYSQL_PORT`: the port where the MariaDB server is listening
+- `MYSQL_PWD`: the root user password (if not empty)
+
+With the above environment in place, simply execute
+
+```bash
+$ ./run_unit_tests
+```
+
+
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB Corporation.
+

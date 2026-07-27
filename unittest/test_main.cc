@@ -76,7 +76,7 @@
 
 // Default execution mode for replayable tests
 mysqlshdk::db::replay::Mode g_test_recording_mode =
-    mysqlshdk::db::replay::Mode::Replay;
+    mysqlshdk::db::replay::Mode::Direct;
 
 bool g_generate_validation_file = false;
 bool g_test_parallel_execution = false;
