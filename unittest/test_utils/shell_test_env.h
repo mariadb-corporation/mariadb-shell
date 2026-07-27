@@ -285,7 +285,9 @@ class Shell_test_env : public ::testing::Test {
 }  // namespace tests
 
 // proto = [a]uto, [c]lassic, [x]
-std::string shell_test_server_uri(int proto = 'a');
+std::string shell_test_server_uri(int proto = 'a',
+                                  const mysqlshdk::db::uri::Tokens_mask &mask =
+                                      mysqlshdk::db::uri::formats::full());
 
 std::string random_string(std::string::size_type length);
 

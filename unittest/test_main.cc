@@ -942,7 +942,7 @@ void setup_test_environment() {
     }
   }
 
-  detect_mysql_environment(atoi(getenv("MYSQL_PORT")), "");
+  detect_mysql_environment(atoi(getenv("MYSQL_PORT")), getenv("MYSQL_PWD"));
 
   if (!getenv("MYSQL_REMOTE_HOST")) {
     char hostname[1024] = {0};

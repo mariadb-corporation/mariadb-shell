@@ -158,6 +158,16 @@ SET(_mdb_configure_args
   # Build the Connector/C against OpenSSL. On macOS/Linux it otherwise defaults
   # to GnuTLS, which clashes with the shell's OpenSSL at link time.
   "-DCONC_WITH_SSL=OPENSSL"
+  # We consume the server as a dependency, we do not develop it, so its
+  # maintainer warning set must not gate our build. This is not cosmetic: the
+  # default (AUTO) turns warnings into errors for Debug builds, and the set
+  # includes -Wcast-function-type-strict, which OpenSSL 3.x's own headers
+  # violate -- SKM_DEFINE_STACK_OF_INTERNAL in safestack.h and
+  # OSSL_CORE_MAKE_FUNC in core_dispatch.h both cast function pointers. So a
+  # Debug build of the Connector/C fails to compile openssl.c on any toolchain
+  # whose compiler implements that warning (Clang >= 16, so current Apple
+  # Clang). NO makes cmake/maintainer.cmake return before adding any of it.
+  "-DMYSQL_MAINTAINER_MODE=NO"
   # Trim configure/build cost: we never build the server binary or engines.
   "-DPLUGIN_TOKUDB=NO"
   "-DPLUGIN_ROCKSDB=NO"
@@ -170,8 +180,8 @@ SET(_mdb_configure_args
 # and the shell agree on OpenSSL (see MARIADB_PORT.md). When the shell is built
 # through vcpkg and the caller did not pin OpenSSL explicitly, default to the
 # vcpkg install prefix so the server links the same OpenSSL vcpkg just installed.
-IF(NOT OPENSSL_ROOT_DIR AND VCPKG_INSTALLED_DIR)
-  SET(OPENSSL_ROOT_DIR "${VCPKG_INSTALLED_DIR}")
+IF(NOT OPENSSL_ROOT_DIR AND VCPKG_INSTALLED_PREFIX)
+  SET(OPENSSL_ROOT_DIR "${VCPKG_INSTALLED_PREFIX}")
 ENDIF()
 IF(OPENSSL_ROOT_DIR)
   LIST(APPEND _mdb_configure_args "-DOPENSSL_ROOT_DIR=${OPENSSL_ROOT_DIR}")
@@ -189,8 +199,8 @@ IF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   # Point the server's dependency search at the prefix vcpkg already populated
   # for the shell (see bootstrap_vcpkg.cmake), so it reuses that closure --
   # zlib, zstd, OpenSSL -- rather than re-resolving from the system.
-  IF(VCPKG_INSTALLED_DIR)
-    LIST(APPEND _mdb_configure_args "-DCMAKE_PREFIX_PATH=${VCPKG_INSTALLED_DIR}")
+  IF(VCPKG_INSTALLED_PREFIX)
+    LIST(APPEND _mdb_configure_args "-DCMAKE_PREFIX_PATH=${VCPKG_INSTALLED_PREFIX}")
   ENDIF()
 ENDIF()
 
@@ -236,11 +246,11 @@ ENDIF()
 # since same-named DLLs (OpenSSL) exist in both. Only meaningful on Windows;
 # WIN32 is not defined this early (before project()), so key off CMAKE_HOST_WIN32.
 SET(_mdb_env_launcher "")
-IF(CMAKE_HOST_WIN32 AND VCPKG_INSTALLED_DIR)
+IF(CMAKE_HOST_WIN32 AND VCPKG_INSTALLED_PREFIX)
   IF(_mdb_build_type STREQUAL "Debug")
-    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_DIR}/debug/bin")
+    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_PREFIX}/debug/bin")
   ELSE()
-    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_DIR}/bin")
+    SET(_vcpkg_dll_dir "${VCPKG_INSTALLED_PREFIX}/bin")
   ENDIF()
   IF(CMAKE_VERSION VERSION_LESS "3.25")
     # --modify PATH=path_list_prepend was added in 3.25; older CMake can't do

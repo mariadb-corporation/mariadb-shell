@@ -50,6 +50,34 @@ IF(NOT VCPKG_TARGET_TRIPLET)
     CACHE STRING "vcpkg target triplet" FORCE)
 ENDIF()
 
+##############################################################################
+# Where the dependency closure lives. Derived purely from the build dir and the
+# triplet, so it is settled here -- ABOVE the early return below, which also
+# fires on a re-configure once CMAKE_TOOLCHAIN_FILE has been cached.
+#
+# Two related but DIFFERENT paths, kept in separate variables on purpose.
+#
+# VCPKG_INSTALLED_DIR is owned by the vcpkg toolchain, which reads it as the
+# install ROOT holding one subdirectory per triplet: it appends the triplet
+# itself and passes the result as --x-install-root. Setting it to the
+# per-triplet prefix therefore makes the toolchain resolve
+# <root>/<triplet>/<triplet> and run a SECOND full manifest install there --
+# a duplicate closure, with the shell resolving one copy while the server
+# bootstrap points at the other. So it must stay the root. We set it anyway (to
+# the value the toolchain would pick by default) so the explicit install in
+# step 3 and the toolchain-driven one at project() cannot disagree.
+SET(VCPKG_INSTALLED_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed"
+  CACHE PATH "vcpkg install root (holds one subdir per triplet)" FORCE)
+
+# VCPKG_INSTALLED_PREFIX is ours: the per-triplet prefix, with headers under
+# include/, libs under lib/ and tools under tools/. Consumers that run at
+# configure time before project() -- the Python and MariaDB server bootstraps
+# -- point their dependency search here to reuse the closure just installed
+# instead of the system. Do NOT fold this back into VCPKG_INSTALLED_DIR.
+SET(VCPKG_INSTALLED_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}"
+  CACHE PATH "Per-triplet vcpkg install prefix for this build" FORCE)
+##############################################################################
+
 # If the caller already supplied a vcpkg toolchain file, respect it and only
 # make sure the triplet is set -- do not clone a second copy.
 IF(CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
@@ -161,67 +189,42 @@ ELSE()
 ENDIF()
 
 ##############################################################################
-# 2.5 Restrict which configuration(s) vcpkg builds, keyed off CMAKE_BUILD_TYPE.
+# 2.5 Configuration(s) built for each port: whatever the triplet says.
 #
-#     By default vcpkg builds BOTH debug and release for every port, which
-#     roughly doubles build time. vcpkg has no command-line flag for this; the
-#     supported knob is VCPKG_BUILD_TYPE (release|debug) set inside a triplet.
-#     So when a single-config CMAKE_BUILD_TYPE is requested we generate an
-#     overlay triplet that include()s the stock triplet and appends the setting:
+#     We deliberately do NOT restrict this. vcpkg's only knob here is
+#     VCPKG_BUILD_TYPE (release|debug) set inside a triplet, and an earlier
+#     revision generated an overlay triplet that derived it from
+#     CMAKE_BUILD_TYPE to halve dependency build time. That does not work:
 #
-#       Debug                          -> debug   (debug only)
-#       Release/RelWithDebInfo/MinSizeRel -> release (release only)
-#       <empty> / multi-config         -> build both (no override)
+#       - VCPKG_BUILD_TYPE=debug is not a usable standalone mode. vcpkg runs
+#         only the debug install, so everything lands under <prefix>/debug and
+#         no top-level include/, tools/ or share/ is ever created. Portfiles
+#         assume the release prefix exists, so they fail outright -- openssl
+#         (renames bin/c_rehash), zlib (patches include/zconf.h) and zstd all
+#         break -- and nothing relocates debug/include to include/, so even a
+#         port that built would put headers where find_package cannot see them.
 #
-#     The overlay dir is also exported as VCPKG_OVERLAY_TRIPLETS so the later
-#     toolchain-driven install at project() uses the same restricted triplet.
+#       - Exempting the broken ports one by one is a losing race against
+#         upstream portfile changes.
+#
+#     Release-only would work (release IS the canonical prefix), but on Windows
+#     it links a /MDd shell against /MD dependencies -- separate CRT heaps,
+#     which MSVC does not support. So we simply let vcpkg do its default thing
+#     and build both configurations. Slower to bootstrap, correct everywhere.
+#
+#     Clean up the overlay a previous configure of this build dir may have
+#     generated, so existing build trees recover without a fresh start.
 ##############################################################################
-STRING(TOLOWER "${CMAKE_BUILD_TYPE}" _bt_lower)
-SET(_vcpkg_build_type "")
-IF(_bt_lower STREQUAL "debug")
-  SET(_vcpkg_build_type "debug")
-ELSEIF(_bt_lower STREQUAL "release" OR _bt_lower STREQUAL "relwithdebinfo"
-       OR _bt_lower STREQUAL "minsizerel")
-  # vcpkg has no RelWithDebInfo/MinSizeRel notion; its "release" config is the
-  # right (and only) non-debug closure for all of these.
-  SET(_vcpkg_build_type "release")
+SET(_stale_overlay_dir "${CMAKE_BINARY_DIR}/vcpkg-overlay-triplets")
+IF(VCPKG_OVERLAY_TRIPLETS STREQUAL "${_stale_overlay_dir}")
+  UNSET(VCPKG_OVERLAY_TRIPLETS CACHE)
+ENDIF()
+IF(EXISTS "${_stale_overlay_dir}")
+  FILE(REMOVE_RECURSE "${_stale_overlay_dir}")
 ENDIF()
 
-SET(_vcpkg_overlay_arg "")
-IF(_vcpkg_build_type)
-  # The stock triplet lives either directly under triplets/ or in
-  # triplets/community/. We must include() it so the overlay inherits
-  # VCPKG_TARGET_ARCHITECTURE, VCPKG_CRT_LINKAGE, etc.
-  SET(_base_triplet "")
-  FOREACH(_dir "${_vcpkg_root}/triplets" "${_vcpkg_root}/triplets/community")
-    IF(EXISTS "${_dir}/${VCPKG_TARGET_TRIPLET}.cmake")
-      SET(_base_triplet "${_dir}/${VCPKG_TARGET_TRIPLET}.cmake")
-      BREAK()
-    ENDIF()
-  ENDFOREACH()
-
-  IF(_base_triplet)
-    SET(_overlay_dir "${CMAKE_BINARY_DIR}/vcpkg-overlay-triplets")
-    FILE(MAKE_DIRECTORY "${_overlay_dir}")
-    FILE(WRITE "${_overlay_dir}/${VCPKG_TARGET_TRIPLET}.cmake"
-      "# Generated by bootstrap_vcpkg.cmake from CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'.\n"
-      "include(\"${_base_triplet}\")\n"
-      "set(VCPKG_BUILD_TYPE ${_vcpkg_build_type})\n")
-    SET(_vcpkg_overlay_arg "--overlay-triplets=${_overlay_dir}")
-    # Propagate to the toolchain-driven install at project() so it agrees.
-    SET(VCPKG_OVERLAY_TRIPLETS "${_overlay_dir}"
-      CACHE PATH "vcpkg overlay triplets (restricts VCPKG_BUILD_TYPE)" FORCE)
-    MESSAGE(STATUS "vcpkg: building '${_vcpkg_build_type}' only "
-                   "(CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}')")
-  ELSE()
-    MESSAGE(WARNING "vcpkg: triplet '${VCPKG_TARGET_TRIPLET}' not found under "
-                    "${_vcpkg_root}/triplets[/community]; cannot restrict to "
-                    "'${_vcpkg_build_type}', building both debug and release.")
-  ENDIF()
-ELSE()
-  MESSAGE(STATUS "vcpkg: CMAKE_BUILD_TYPE unset/multi-config -- building both "
-                 "debug and release.")
-ENDIF()
+MESSAGE(STATUS "vcpkg: building both debug and release for every port "
+               "(triplet default).")
 
 ##############################################################################
 # 3. Install the manifest dependencies NOW, before any consumer that runs at
@@ -231,18 +234,17 @@ ENDIF()
 #    the first project() call reading the toolchain file -- which happens AFTER
 #    the MariaDB bootstrap is included. Doing the install explicitly here closes
 #    that gap: the deps (OpenSSL, zlib, ...) are on disk before the server is
-#    configured. We install into the SAME location the toolchain uses by default
-#    (<build>/vcpkg_installed), so the later toolchain-driven install at
-#    project() finds everything up to date and is a near no-op.
+#    configured. We install into VCPKG_INSTALLED_DIR, the same root the
+#    toolchain resolves, so the later toolchain-driven install at project()
+#    finds everything up to date and is a near no-op. Passing anything else
+#    here would populate one tree and leave the toolchain to build another.
 ##############################################################################
-SET(_vcpkg_installed_root "${CMAKE_BINARY_DIR}/vcpkg_installed")
 MESSAGE(STATUS "Installing vcpkg manifest dependencies (triplet '${VCPKG_TARGET_TRIPLET}')...")
 EXECUTE_PROCESS(
   COMMAND "${_vcpkg_exe}" install
           --triplet "${VCPKG_TARGET_TRIPLET}"
           --x-manifest-root "${CMAKE_CURRENT_SOURCE_DIR}"
-          --x-install-root "${_vcpkg_installed_root}"
-          ${_vcpkg_overlay_arg}
+          --x-install-root "${VCPKG_INSTALLED_DIR}"
   RESULT_VARIABLE _rc)
 IF(NOT _rc EQUAL 0)
   MESSAGE(FATAL_ERROR "vcpkg manifest install failed (see output above)")
@@ -263,15 +265,9 @@ IF(NOT EXISTS "${CMAKE_TOOLCHAIN_FILE}")
   MESSAGE(FATAL_ERROR "vcpkg toolchain file missing: ${CMAKE_TOOLCHAIN_FILE}")
 ENDIF()
 
-# The per-triplet install prefix (headers under include/, libs under lib/,
-# tools under tools/). Consumers that run at configure time before project()
-# -- e.g. the MariaDB server bootstrap -- point their own dependency search at
-# this so they reuse the closure just installed instead of the system.
-SET(VCPKG_INSTALLED_DIR "${_vcpkg_installed_root}/${VCPKG_TARGET_TRIPLET}"
-  CACHE PATH "Per-triplet vcpkg install prefix for this build" FORCE)
-
 MESSAGE(STATUS "vcpkg bootstrap complete:")
-MESSAGE(STATUS "  VCPKG_ROOT           = ${VCPKG_ROOT}")
-MESSAGE(STATUS "  CMAKE_TOOLCHAIN_FILE = ${CMAKE_TOOLCHAIN_FILE}")
-MESSAGE(STATUS "  VCPKG_TARGET_TRIPLET = ${VCPKG_TARGET_TRIPLET}")
-MESSAGE(STATUS "  VCPKG_INSTALLED_DIR  = ${VCPKG_INSTALLED_DIR}")
+MESSAGE(STATUS "  VCPKG_ROOT             = ${VCPKG_ROOT}")
+MESSAGE(STATUS "  CMAKE_TOOLCHAIN_FILE   = ${CMAKE_TOOLCHAIN_FILE}")
+MESSAGE(STATUS "  VCPKG_TARGET_TRIPLET   = ${VCPKG_TARGET_TRIPLET}")
+MESSAGE(STATUS "  VCPKG_INSTALLED_DIR    = ${VCPKG_INSTALLED_DIR}")
+MESSAGE(STATUS "  VCPKG_INSTALLED_PREFIX = ${VCPKG_INSTALLED_PREFIX}")

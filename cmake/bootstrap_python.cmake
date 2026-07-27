@@ -235,29 +235,16 @@ MESSAGE(STATUS "==========================================================")
 ##############################################################################
 # 5. Point the Python build at the vcpkg dependency closure that bootstrap_vcpkg
 #    just installed, so _ssl / zlib / ... link the same libraries as the shell.
-#    VCPKG_INSTALLED_DIR is exported by bootstrap_vcpkg.cmake; when the caller
+#    VCPKG_INSTALLED_PREFIX is the per-triplet prefix exported by
+#    bootstrap_vcpkg.cmake (headers directly under include/); when the caller
 #    supplied the vcpkg toolchain directly (not via WITH_VCPKG_TRIPLET) it is not
 #    set, so derive the conventional per-triplet prefix instead.
 ##############################################################################
 SET(_vcpkg_prefix "")
-IF(VCPKG_INSTALLED_DIR)
-  SET(_vcpkg_prefix "${VCPKG_INSTALLED_DIR}")
+IF(VCPKG_INSTALLED_PREFIX)
+  SET(_vcpkg_prefix "${VCPKG_INSTALLED_PREFIX}")
 ELSEIF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   SET(_vcpkg_prefix "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}")
-ENDIF()
-
-# The vcpkg toolchain installs packages under <root>/<triplet>. Depending on how
-# VCPKG_INSTALLED_DIR was derived (bootstrap_vcpkg.cmake sets it to <root>/<triplet>,
-# but the toolchain then installs one level deeper still) _vcpkg_prefix may point
-# either AT the per-triplet dir (headers directly under include/) or one level
-# above it (headers under a <triplet>/include/ subdir). Prefer the triplet-nested
-# layout when it exists so we point at where the packages actually landed -- the
-# same tree find_package() resolves for the shell. Without this, a stale sibling
-# tree that happens to carry the older deps (openssl, zlib) is used and newly
-# added ports (e.g. sqlite3 -> the _sqlite3 stdlib module) are silently missed.
-IF(_vcpkg_prefix AND VCPKG_TARGET_TRIPLET
-   AND EXISTS "${_vcpkg_prefix}/${VCPKG_TARGET_TRIPLET}/include")
-  SET(_vcpkg_prefix "${_vcpkg_prefix}/${VCPKG_TARGET_TRIPLET}")
 ENDIF()
 
 # --enable-shared links the interpreter against libpython<ver>.{so,dylib} in

@@ -284,12 +284,12 @@ IF(HAVE_PYTHON)
     # absent on the target). install_name_tool -change only rewrites dependency
     # references, never LC_RPATH entries, so scrub it explicitly from the bundled
     # copies and add a relative @loader_path rpath instead. Derive the same vcpkg
-    # prefix bootstrap_python.cmake used (cached VCPKG_INSTALLED_DIR, or the
+    # prefix bootstrap_python.cmake used (cached VCPKG_INSTALLED_PREFIX, or the
     # conventional per-triplet dir when only the toolchain was given).
     set(_PY_VCPKG_RPATH_STRIP "")
     if(APPLE AND USING_VCPKG)
-      if(VCPKG_INSTALLED_DIR)
-        set(_PY_VCPKG_RPATH_STRIP "${VCPKG_INSTALLED_DIR}/lib")
+      if(VCPKG_INSTALLED_PREFIX)
+        set(_PY_VCPKG_RPATH_STRIP "${VCPKG_INSTALLED_PREFIX}/lib")
       elseif(VCPKG_TARGET_TRIPLET)
         set(_PY_VCPKG_RPATH_STRIP "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib")
       endif()
@@ -539,32 +539,65 @@ IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
     SET(_vcpkg_ext_re "\\.so(\\..*)?")
   ENDIF()
 
-  # Derive the triplet runtime dir from any resolved vcpkg library. Unquoted
-  # expansion skips the debug/optimized keyword tokens some *_LIBRARY vars carry.
-  # On Windows the resolved path is the import lib under <triplet>/lib, so the
-  # DLLs are the sibling <triplet>/bin (debug/lib -> debug/bin also holds); on
-  # macOS/Linux the resolved path is the dylib/.so itself, so its own directory is
-  # the one.
-  SET(_vcpkg_runtime_dir "")
-  FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY} ${CRYPTO_LIBRARY}
-                   ${OPENSSL_LIBRARY} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY})
-    IF(EXISTS "${_dep_lib}")
-      GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
-      IF(WIN32)
-        GET_FILENAME_COMPONENT(_vcpkg_runtime_dir "${_dep_lib_dir}/../bin" ABSOLUTE)
-      ELSE()
-        SET(_vcpkg_runtime_dir "${_dep_lib_dir}")
-      ENDIF()
-      BREAK()
-    ENDIF()
-  ENDFOREACH()
+  # vcpkg installs two closures per triplet: release under <triplet>/lib
+  # (<triplet>/bin on Windows) and debug under <triplet>/debug/lib
+  # (<triplet>/debug/bin). A Debug build links the debug one, so that is the one
+  # to bundle - the configuration must not be picked from whichever tree a given
+  # find module happened to resolve. Most ports keep the same file name in both
+  # trees, so bundling the release closure into a Debug build appears to work
+  # while silently loading release copies; curl does not (vcpkg names its debug
+  # library libcurl-d / curl-d), so the loader aborts the binary before main with
+  # "Library not loaded: @rpath/libcurl-d.4.dylib". Multi-config generators leave
+  # CMAKE_BUILD_TYPE empty and get the release closure: FILE(GLOB) below runs at
+  # configure time, so there is no per-config choice left to make here.
+  IF(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    SET(_vcpkg_config_subdir "debug/")
+  ELSE()
+    SET(_vcpkg_config_subdir "")
+  ENDIF()
 
-  # Fallback: the 'ssh' imported target points straight at its own runtime
-  # library (DLL on Windows, dylib on macOS), whose directory is the triplet dir.
-  IF(NOT _vcpkg_runtime_dir AND TARGET ssh)
-    GET_TARGET_PROPERTY(_ssh_loc ssh LOCATION)
-    IF(_ssh_loc AND EXISTS "${_ssh_loc}")
-      GET_FILENAME_COMPONENT(_vcpkg_runtime_dir "${_ssh_loc}" DIRECTORY)
+  # Locate the per-triplet prefix. bootstrap_vcpkg.cmake exports it; a build
+  # given the vcpkg toolchain directly may not have it, so fall back to deriving
+  # it from any resolved vcpkg library by stripping the '[debug/]lib' tail.
+  # Unquoted expansion skips the debug/optimized keyword tokens some *_LIBRARY
+  # vars carry. The 'ssh' imported target is included because it points straight
+  # at its own runtime library when the *_LIBRARY vars are empty.
+  SET(_vcpkg_runtime_dir "")
+  SET(_vcpkg_prefix "${VCPKG_INSTALLED_PREFIX}")
+  IF(NOT _vcpkg_prefix)
+    SET(_vcpkg_dep_libs ${CURL_LIBRARY} ${ANTLR4_LIBRARY} ${CRYPTO_LIBRARY}
+                        ${OPENSSL_LIBRARY} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY})
+    IF(TARGET ssh)
+      GET_TARGET_PROPERTY(_ssh_loc ssh LOCATION)
+      IF(_ssh_loc)
+        LIST(APPEND _vcpkg_dep_libs "${_ssh_loc}")
+      ENDIF()
+    ENDIF()
+
+    FOREACH(_dep_lib ${_vcpkg_dep_libs})
+      IF(EXISTS "${_dep_lib}")
+        GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
+        IF(_dep_lib_dir MATCHES "^(.+)/debug/(lib|bin)$")
+          SET(_vcpkg_prefix "${CMAKE_MATCH_1}")
+        ELSEIF(_dep_lib_dir MATCHES "^(.+)/(lib|bin)$")
+          SET(_vcpkg_prefix "${CMAKE_MATCH_1}")
+        ELSE()
+          # unrecognized layout - use the directory as found
+          SET(_vcpkg_runtime_dir "${_dep_lib_dir}")
+        ENDIF()
+        BREAK()
+      ENDIF()
+    ENDFOREACH()
+  ENDIF()
+
+  IF(_vcpkg_prefix)
+    # On Windows the link libraries are the import libs under <triplet>/lib and
+    # the DLLs are the sibling bin dir; elsewhere lib/ holds the dylibs/.so
+    # themselves, which are also the link libraries.
+    IF(WIN32)
+      SET(_vcpkg_runtime_dir "${_vcpkg_prefix}/${_vcpkg_config_subdir}bin")
+    ELSE()
+      SET(_vcpkg_runtime_dir "${_vcpkg_prefix}/${_vcpkg_config_subdir}lib")
     ENDIF()
   ENDIF()
 
