@@ -19,7 +19,6 @@
     {
       "name": "curl",
       "features": [
-        "ssh",
         "openssl"
       ]
     },

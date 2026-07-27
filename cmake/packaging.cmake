@@ -1,4 +1,5 @@
 # Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +34,71 @@ if(NOT EXTRA_NAME_SUFFIX)
 endif()
 if(NOT EXTRA_NAME_SUFFIX2)
   set(EXTRA_NAME_SUFFIX2 "")
+endif()
+
+# A "portable" build ships its whole dependency closure (vcpkg toolchain or an
+# explicit BUNDLED_*_DIR), so it is distributed as a generic tarball/zip rather
+# than a distro-native package. System-dependency Linux builds instead produce a
+# native .deb/.rpm named after the distro. USING_VCPKG / BUNDLED_OPENSSL_DIR are
+# set much earlier in the top-level CMakeLists.txt.
+if(USING_VCPKG OR BUNDLED_OPENSSL_DIR OR WIN32 OR APPLE)
+  set(_shell_portable_build TRUE)
+else()
+  set(_shell_portable_build FALSE)
+endif()
+
+# MySQL-style CPU suffix used in the tarball/zip base name (MYSH_PLATFORM).
+# CMAKE_SYSTEM_PROCESSOR spelling varies by OS (arm64, aarch64, ARM64), so match
+# case-insensitively.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "[Aa][Rr][Mm]|[Aa][Aa][Rr][Cc][Hh]")
+  set(_pkg_arch "arm-64bit")
+elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  set(_pkg_arch "x86-32bit")
+else()
+  set(_pkg_arch "x86-64bit")
+endif()
+
+# Auto-detect the packaging platform string when it was not supplied explicitly
+# on the configure line. Official builds pass -DMYSH_PLATFORM=... ; this keeps a
+# plain `cpack` naming the tarball/zip correctly:
+#   macOS   -> macos<major>-<arch>          (e.g. macos26-x86-64bit)
+#   Windows -> windows-<arch>               (e.g. windows-x86-64bit)
+#   Linux   -> linux-glibc<ver>-<arch>      (portable/vcpkg builds only)
+# System-dependency Linux builds leave MYSH_PLATFORM empty; their native
+# .deb/.rpm name is derived in the generator section below.
+#
+# Whether MYSH_PLATFORM was supplied explicitly (a real Oracle-style release
+# build) or auto-detected here decides if component-based packaging is turned on
+# further down. Auto-detected builds stay monolithic so the tarball keeps ALL
+# installed content (bundled Python, deps, and any untagged install rules),
+# matching the original package layout.
+if(MYSH_PLATFORM)
+  set(_mysh_platform_explicit TRUE)
+else()
+  set(_mysh_platform_explicit FALSE)
+endif()
+
+if(NOT MYSH_PLATFORM)
+  if(APPLE)
+    execute_process(COMMAND sw_vers -productVersion
+                    OUTPUT_VARIABLE _macos_ver
+                    OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCH "^[0-9]+" _macos_major "${_macos_ver}")
+    set(MYSH_PLATFORM "macos${_macos_major}-${_pkg_arch}")
+  elseif(WIN32)
+    set(MYSH_PLATFORM "windows-${_pkg_arch}")
+  elseif(CMAKE_SYSTEM_NAME MATCHES "Linux" AND _shell_portable_build)
+    execute_process(COMMAND getconf GNU_LIBC_VERSION
+                    OUTPUT_VARIABLE _glibc_raw
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    string(REGEX MATCH "[0-9]+\\.[0-9]+" _glibc_ver "${_glibc_raw}")
+    if(_glibc_ver)
+      set(MYSH_PLATFORM "linux-glibc${_glibc_ver}-${_pkg_arch}")
+    else()
+      set(MYSH_PLATFORM "linux-${_pkg_arch}")
+    endif()
+  endif()
 endif()
 
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "MySQL Shell ${MYSH_VERSION}, a command line shell and scripting environment for MySQL")
@@ -101,15 +167,81 @@ if(WIN32)
   set(CPACK_WIX_MYSQLSH_CUSTOM_ACTION_DLL "${CMAKE_BINARY_DIR}/packaging/wix4/custom_action/${CMAKE_BUILD_TYPE}/mysqlsh.ca.dll")
 else()
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "MySQL RE")
-  FIND_PROGRAM(RPMBUILD_EXECUTABLE rpmbuild)
 
-  if(NOT RPMBUILD_EXECUTABLE)
-    set(CPACK_SET_DESTDIR               "on")
-    set(CPACK_GENERATOR                 "TGZ;DEB")
+  if(APPLE OR _shell_portable_build)
+    # macOS, and portable (vcpkg/bundled) Linux builds: generic tarball only.
+    # The clean name comes from CPACK_PACKAGE_FILE_NAME / MYSH_PLATFORM above.
+    set(CPACK_GENERATOR                 "TGZ")
   else()
-    set(CPACK_GENERATOR                 "TGZ;RPM")
-    set(CPACK_RPM_PACKAGE_LICENSE       "GPL")
-  endif(NOT RPMBUILD_EXECUTABLE)
+    # System-dependency Linux build: emit a distro-native .deb/.rpm whose name
+    # follows the distro convention, e.g.
+    #   mysql-shell_9.7.1-1ubuntu22.04_amd64.deb
+    #   mysql-shell-9.7.1-1.fc43.x86_64.rpm
+    set(_distro_id "")
+    set(_distro_ver "")
+    if(EXISTS "/etc/os-release")
+      file(STRINGS "/etc/os-release" _osrel)
+      foreach(_line ${_osrel})
+        if(_line MATCHES "^ID=")
+          string(REGEX REPLACE "^ID=\"?([^\"]*)\"?$" "\\1" _distro_id "${_line}")
+        elseif(_line MATCHES "^VERSION_ID=")
+          string(REGEX REPLACE "^VERSION_ID=\"?([^\"]*)\"?$" "\\1" _distro_ver "${_line}")
+        endif()
+      endforeach()
+    endif()
+    string(REGEX MATCH "^[0-9]+" _distro_major "${_distro_ver}")
+
+    # Architecture as spelled by each packaging system.
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "[Aa][Rr][Mm]|[Aa][Aa][Rr][Cc][Hh]")
+      set(_deb_arch "arm64")
+      set(_rpm_arch "aarch64")
+    else()
+      set(_deb_arch "amd64")
+      set(_rpm_arch "x86_64")
+    endif()
+
+    if(_distro_id STREQUAL "ubuntu")
+      set(_distro_family "deb")
+      set(_distro_tag "ubuntu${_distro_ver}")      # e.g. 1ubuntu22.04
+    elseif(_distro_id STREQUAL "debian")
+      set(_distro_family "deb")
+      set(_distro_tag "debian${_distro_major}")    # e.g. 1debian12
+    elseif(_distro_id STREQUAL "fedora")
+      set(_distro_family "rpm")
+      set(_distro_tag "fc${_distro_major}")        # e.g. 1.fc43
+    elseif(_distro_id MATCHES "sles|sled|opensuse")
+      set(_distro_family "rpm")
+      set(_distro_tag "sl${_distro_major}")        # e.g. 1.sl15
+    elseif(_distro_id MATCHES "rhel|centos|rocky|almalinux|^ol$")
+      set(_distro_family "rpm")
+      set(_distro_tag "el${_distro_major}")        # e.g. 1.el9
+    else()
+      set(_distro_family "")
+    endif()
+
+    if(_distro_family STREQUAL "deb")
+      set(CPACK_GENERATOR                   "DEB")
+      set(CPACK_DEBIAN_FILE_NAME            "DEB-DEFAULT")
+      set(CPACK_DEBIAN_PACKAGE_RELEASE      "1${_distro_tag}")
+      set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${_deb_arch}")
+    elseif(_distro_family STREQUAL "rpm")
+      set(CPACK_GENERATOR                   "RPM")
+      set(CPACK_RPM_FILE_NAME               "RPM-DEFAULT")
+      set(CPACK_RPM_PACKAGE_LICENSE         "GPL")
+      set(CPACK_RPM_PACKAGE_RELEASE         "1.${_distro_tag}")
+      set(CPACK_RPM_PACKAGE_ARCHITECTURE    "${_rpm_arch}")
+    else()
+      # Unknown distro: fall back to the historical rpmbuild-probe behavior.
+      FIND_PROGRAM(RPMBUILD_EXECUTABLE rpmbuild)
+      if(NOT RPMBUILD_EXECUTABLE)
+        set(CPACK_SET_DESTDIR             "on")
+        set(CPACK_GENERATOR               "TGZ;DEB")
+      else()
+        set(CPACK_GENERATOR               "TGZ;RPM")
+        set(CPACK_RPM_PACKAGE_LICENSE     "GPL")
+      endif()
+    endif()
+  endif()
 endif()
 
 set(CPACK_SOURCE_IGNORE_FILES
@@ -175,8 +307,12 @@ else()
 
 endif()
 
-# Variable defined when the packages are generated (i.e. not in source builds)
-IF(MYSH_PLATFORM)
+# Component-based packaging is only enabled for explicit Oracle-style release
+# builds (-DMYSH_PLATFORM=... passed in). Auto-detected builds stay monolithic:
+# CPack then packages the whole install tree - every component plus untagged
+# rules - so the tarball is complete (bundled Python, deps, ...) and unpacks to
+# a single "<file-name>/{bin,lib,share}" tree with no per-component filtering.
+IF(_mysh_platform_explicit)
   IF(WITH_DEV)
       SET(CPACK_COMPONENTS_ALL main dev)
   ELSE()
