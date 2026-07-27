@@ -42,6 +42,7 @@ secret-store login-path). See §10 for the full inventory.
 | MariaDB build dir | must contain the built static libs: `libmariadb/libmariadb/libmariadbclient.a`, `mysys/libmysys.a`, `mysys_ssl/libmysys_ssl.a`, `strings/libstrings.a`, `dbug/libdbug.a`, and `client/mariadb-binlog` |
 | OpenSSL | the shell links OpenSSL; **the Connector/C must be built with the same OpenSSL** (see §1.3) |
 | RapidJSON, ANTLR4, libssh, zstd, googletest | same as the MySQL build |
+| SQLite3 | needed by the bundled Python's `_sqlite3` stdlib module; supplied via the vcpkg manifest (`vcpkg.json`), not the system. See §12.4 |
 
 ### 1.2 Configure & build the shell
 
@@ -348,7 +349,7 @@ Python3_EXECUTABLE`), not the headers, so both layouts work; deriving from the
 headers lands on `<prefix>/include` and bundles empty `Lib`/`DLLs`. A python.org
 install is still preferred (it also ships `pip`/`ensurepip`, which vcpkg's does
 not — bootstrap those with `mysqlsh --pym ensurepip` / `get-pip.py`, or pre-stage
-`certifi`/`pyyaml` via `-DPYTHON_DEPS=<dir>`).
+`certifi`/`pyyaml`/`antlr4-python3-runtime`/`mcp` via `-DPYTHON_DEPS=<dir>`).
 
 ### 11.2 `run_unit_tests` link — keep `PYTHON_LIBRARIES` unquoted
 
@@ -545,3 +546,210 @@ keeps that on Linux/macOS (where it's the primary local endpoint) but drops it o
 Windows rather than writing a meaningless Unix-style path. `_socket_path` is
 therefore POSIX/macOS-only now (`_build_option_file`, `_open_root_session`, and
 the `delete_sandbox` socket cleanup all guard with `os.name != "nt"`).
+
+### 11.9 vcpkg manifest — pin the *port-version*, not just the version
+
+When building via vcpkg (`-DWITH_VCPKG_TRIPLET=…`, `vcpkg.json`), a version
+override like `{ "name": "antlr4", "version": "4.13.2" }` resolves to
+**port-version 0** — the version-string alone does *not* pick up later
+port-versions that carry vcpkg's own patches. antlr4 `4.13.2#0` misses the
+`add-include-chrono.patch` that upstream added in `4.13.2#1`: its
+`runtime/Cpp/.../atn/ProfilingATNSimulator.cpp` does `using namespace
+std::chrono;` and calls `high_resolution_clock::now()` without ever
+`#include <chrono>`. This is a latent bug on every platform, but it only *fails
+to compile* on **arm64-windows** — the arm64 MSVC STL doesn't pull `<chrono>` in
+transitively the way x64 MSVC / libc++ / libstdc++ do, so the names are
+undefined only there (`error C2653: 'high_resolution_clock' is not a class or
+namespace name`). Fix: pin the port-version in the override —
+
+```json
+{ "name": "antlr4", "version": "4.13.2", "port-version": 1 }
+```
+
+Changing the port-version alters the port's ABI hash, so a plain reconfigure
+rebuilds just that port (no cache wipe). General rule: when a vcpkg port fails
+to build, check `versions/<x>-/<port>.json` in the cloned vcpkg tree for a higher
+port-version — it usually already carries the fix, and pinning to it is cheaper
+and more maintainable than a local overlay port. This applies to all triplets;
+arm64-windows is just the canary.
+
+Related trap: Visual Studio 2022's developer environment sets `VCPKG_ROOT` to its
+own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` honours
+`$ENV{VCPKG_ROOT}`, then tries to `git clone` into it and fails
+(`destination path already exists and is not an empty directory`). Pass
+`-DVCPKG_ROOT=<sibling path>` (matching the macOS default of `../vcpkg`) or clear
+the env var (`set VCPKG_ROOT=`) for the configure shell.
+
+### 11.10 Use the Ninja generator on Windows (single-config)
+
+Configure the shell (and therefore the auto-bootstrapped server) with
+**`-G Ninja`** on Windows. The shell links the server's static libraries by
+**explicit path at configure time** (`FIND_LIBRARY` +
+`${MARIADB_BUILD_DIR}/mysys/mysys.lib`, … — see CMakeLists.txt ~L1247/L1262), and
+the `bootstrap_mariadb.cmake` fast-path probes the same paths. A **multi-config**
+generator (the Windows default, Visual Studio / MSBuild) writes every library
+into a per-config subdirectory (`…/libmariadb/libmariadb/RelWithDebInfo/mariadbclient.lib`),
+which those lookups don't search — configure dies with `Could not find
+libmariadbclient in …/libmariadb/libmariadb`. `CMAKE_BUILD_TYPE` is also empty for
+multi-config generators, so the subdir can't be derived. Ninja is single-config:
+libraries land directly in the target dir where everything expects them (this is
+also why the runtime `CONFIG_BINARY_DIR` handling keys off `CMAKE_CONFIGURATION_TYPES`).
+Run from an **arm64 native** VS developer prompt (`vcvarsall.bat arm64`) so `cl`
+and `ninja` resolve and target arm64; the generator can't be changed in an
+existing build dir, so delete `bld/` when switching.
+
+Configure-time DLL trap on the nested server build: with a **dynamic** vcpkg
+triplet (arm64-windows), the server runs freshly-built **host tools** during its
+own build — `comp_err` generates `mysqld_error.h`, charset generators run, etc. —
+and those tools link vcpkg DLLs (zlib → `zlib1.dll`, OpenSSL → `libcrypto-3-arm64.dll`).
+Those DLLs live in the vcpkg per-triplet `bin` dir, which is neither beside the
+tool exes nor on `PATH`, so the loader aborts the tool with
+`STATUS_DLL_NOT_FOUND` (exit `-1073741515` / `0xC0000135`) before it runs — the
+nested build fails at, e.g., `GenError`. `bootstrap_mariadb.cmake` prepends that
+bin dir (`<prefix>/bin` for release, `<prefix>/debug/bin` for Debug) to `PATH`
+for the nested build via `cmake -E env --modify PATH=path_list_prepend:` (needs
+CMake ≥ 3.25).
+
+## 12. Linux platform notes
+
+Verified working: a full `arm64-linux-dynamic` (vcpkg) build with a from-source
+bundled Python (`-DWITH_PYTHON_SOURCE=3.14.6`) on Ubuntu (GCC 15, aarch64).
+`mysqlsh`, `mysqlshrec`, and `run_unit_tests` all link; `mysqlsh --version`
+reports the MariaDB build and the embedded interpreter imports the bundled
+`certifi`/`pyyaml`/`antlr4`/`antlr4-python3-runtime`/`mcp` packages.
+
+### 12.1 From-source `--enable-shared` Python must RUNPATH its own lib dir
+
+`bootstrap_python.cmake` builds CPython `--enable-shared`, so the interpreter
+loads `libpython<ver>.so` from `<prefix>/lib`. That dir is not on the system
+loader path, and distros that ship their own system Python of the same version
+(Ubuntu: `/usr/lib/<arch>/libpython3.14.so.1.0`) will win the `ld.so` lookup
+unless we say otherwise. The result is a **Frankenstein interpreter**: our
+executable + our stdlib on `sys.path`, but the *system* (Debian-patched)
+`libpython` driving `site`/`sysconfig`. Its `getsitepackages()` returns the
+Debian `dist-packages` scheme while `ensurepip`/pip install into the vanilla
+`site-packages`, so the two never meet and `import pip` fails with
+**`No module named pip`** even though pip was "successfully installed". `ldd`
+on the interpreter is the tell — `libpython3.14.so.1.0 => /usr/lib/...` instead
+of `<prefix>/lib`.
+
+Fix: bake `<prefix>/lib` into the interpreter's `RUNPATH` (via
+`-Wl,-rpath,<prefix>/lib`, ours first then the vcpkg lib dir). `DT_RUNPATH` is
+searched before the ldconfig cache, so it loads its own `libpython`. NOTE: the
+`RUNPATH` is set at *link* time — after changing it you must force a **relink**
+(delete the install *and* build trees; `make` alone won't relink cached binaries
+just because `LDFLAGS` changed). Verify with `ldd <prefix>/bin/python<ver> | grep
+python` (must point into `<prefix>/lib`) and `python -m pip --version`. The
+bundled shell inherits this correctly: `ldd bin/mysqlsh` resolves libpython to
+`lib/mysqlsh/libpython3.14.so.1.0`.
+
+(The `ensurepip` self-heal in the top-level CMakeLists — `import pip`, else
+`python -m ensurepip --upgrade` before the bundled-package install — remains as
+a belt-and-suspenders for interpreters that simply lack pip; it needs no network
+since ensurepip installs from a stdlib-bundled wheel.)
+
+### 12.2 Neutralize the MariaDB server C-API rename (link)
+
+MariaDB's `include/mariadb_capi_rename.h` (pulled in by `include/mysql.h`)
+rewrites the client C API with a `server_` prefix (`mysql_get_ssl_cipher` →
+`server_mysql_get_ssl_cipher`, plus `mysql_init`/`_real_connect`/`_options`/…)
+for the server's *own* internal use. The shell links the Connector/C, which
+exports the **unprefixed** symbols, but any shell TU that transitively includes
+a server header gets the rename — so a call to a renamed function links against
+the missing `server_*` symbol. On Linux this surfaced as `undefined reference to
+server_mysql_get_ssl_cipher` from `Session_impl::get_ssl_cipher` (the only
+renamed C-API function called *inline* in `session.h`; the rest are out-of-line
+in `session.cc`, a TU that pulls the connector header instead). The rename block
+is guarded by `#if !defined(EMBEDDED_LIBRARY) && !defined(MYSQL_DYNAMIC_PLUGIN)`,
+but neither is appropriate for the shell. Fix (CMakeLists.txt, `MARIADB_BUILD`
+branch): pre-define the header's own include guard,
+`ADD_DEFINITIONS(-DMARIADB_CAPI_RENAME_INCLUDED)`, so the rename is a no-op for
+every shell TU and all C-API calls resolve to the connector's unprefixed
+symbols. Cross-platform safe — the shell always links the connector, which is
+why macOS/Windows (where that TU happened to get the connector header) never
+tripped it.
+
+### 12.3 GCC 15 `-Werror=free-nonheap-object` false positive
+
+GCC 15 raises a false-positive `free-nonheap-object` inside libstdc++
+(`new_allocator.h`) when it inlines a `std::vector<std::tuple<...>>` destructor
+(seen in `unittest/json_shell_t.cc`), which `-Werror` turns into a hard failure.
+`cmake/compiler.cmake` downgrades it to a warning for GCC
+(`-Wno-error=free-nonheap-object`, understood by all supported GCC versions),
+alongside the existing `-Wno-error=type-limits`. Not MariaDB-specific — any
+GCC-15 build hits it.
+
+### 12.4 Bundled Python needs SQLite3 from the vcpkg closure (`_sqlite3`)
+
+CPython builds its `_sqlite3` stdlib module only if `configure` finds `sqlite3.h`
++ `-lsqlite3` at build time. `bootstrap_python.cmake` intentionally points the
+Python build **only** at the vcpkg dependency closure (`CPPFLAGS=-I<vcpkg>/include`,
+`LDFLAGS=-L<vcpkg>/lib -Wl,-rpath,<vcpkg>/lib`) so extension modules link the same
+libraries as the shell rather than the host's. SQLite was originally absent from
+that closure, so the interpreter came up without `_sqlite3` and `import sqlite3`
+failed with **`ModuleNotFoundError: No module named '_sqlite3'`** (surfaced by
+`unittest/scripts/auto/py_shell/scripts/sqlite_support_norecord.py`).
+
+Fix: add `sqlite3` to `vcpkg.json` (pinned to the baseline's `3.53.3#1` per §11.9).
+It then lands in `<vcpkg>/include` + `<vcpkg>/lib`, CPython's configure detects it
+(via the header/`-lsqlite3` fallback — `PKG_CONFIG_PATH` is not set), and builds
+`_sqlite3` with the vcpkg lib dir baked into its RUNPATH like `_ssl`/`zlib`/`_zstd`.
+NOTE: the bundled Python is **cached** (`bootstrap_python.cmake` reuses an existing
+`Python-<ver>` install), so adding the dep alone won't rebuild it — delete the
+cached install (`$PYTHON_INSTALL_ROOT/Python-<ver>`, default alongside the shell
+source) so the next configure re-runs vcpkg + the Python bootstrap. Verify with
+`lib/mysqlsh/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
+Cross-platform: the same manifest entry gives macOS/Windows builds `_sqlite3` too.
+
+### 12.5 GCC 15 `-Werror=array-bounds` false positive (linenoise-ng)
+
+GCC 15 (e.g. Fedora 44) raises a false-positive `array-bounds` in the vendored
+`ext/linenoise-ng/src/ConvertUTF.cpp` — `offsetsFromUTF8[extraBytesToRead]`, where
+`extraBytesToRead` is bounded to 0..5 (array size 6) but GCC's range analysis
+assumes a possible subscript 6 — which `-Werror` turns into a hard failure. Same
+treatment as §12.3: `cmake/compiler.cmake` adds `-Wno-error=array-bounds` for GCC
+(alongside `-Wno-error=type-limits` / `-Wno-error=free-nonheap-object`) rather than
+patching third-party code. Not MariaDB-specific — any GCC-15 build hits it.
+
+### 12.6 Fedora build prerequisites — Perl modules for the vcpkg OpenSSL build
+
+On a fresh Fedora host (44) the vcpkg OpenSSL port builds from source and runs
+OpenSSL's Perl `Configure`, which needs several standard Perl modules that Fedora's
+minimal Perl does not ship: the build aborts with `Can't locate IPC/Cmd.pm`
+(and `FindBin`, `File::Compare`, `File::Copy`, `Pod::Html` are missing next).
+Install the full standard set with `sudo dnf install -y perl-core` (Ubuntu's
+`perl-modules-*` already covers this). The "openssl requires Linux kernel headers"
+message is a non-fatal notice as long as `/usr/include/linux` is present
+(`kernel-headers`, installed by default).
+
+### 12.7 Secret Service store retry (gnome-keyring transient encryption error)
+
+The `secret-service` helper shells out to `secret-tool`, which talks to the D-Bus
+Secret Service (gnome-keyring). Newer gnome-keyring (seen with **50.0 / libsecret
+0.21.7 / libgcrypt 1.12.2** on Fedora 44) intermittently fails an otherwise valid
+store — roughly 0.5% of requests — with `secret-tool: Couldn't create item: The
+secret was transferred or encrypted in an invalid way.` (libsecret
+`SECRET_ERROR_PROTOCOL`): the per-request D-Bus session's DH-encrypted secret
+transfer occasionally fails server-side. It is **not** input-specific (any id can
+hit it) and **not** FIPS/crypto-policy related; the older gnome-keyring on the
+Ubuntu VM does not exhibit it, so `mysql_secret_store_t`'s `valid_id_characters`
+(which does ~360 store/get/erase ops) failed only on Fedora. A fresh invocation
+negotiates a new session and succeeds, so `Secret_service_helper::store` now retries
+the store on a `Helper_exception` with the same bounded backoff (`{200, 400}` ms) as
+`get()`. The store is idempotent (`secret-tool` overwrites the item with matching
+attributes), and it still throws after the retries are exhausted. Verified: 780
+store ops across the full id range with 0 helper-visible failures after the change.
+
+Related crash uncovered while testing the above: `parse_list` (the parser for
+`secret-tool search --all` output) split each line on `=` and unconditionally read
+the second field. A secret id containing a newline — which `store()` accepts, since
+it is valid UTF-8, and which `valid_id_characters` exercises — makes secret-tool wrap
+the value onto a following line with no `=`, so the parser indexed a missing field
+(**out-of-bounds → SIGSEGV**). The helper died with no output, surfacing to the shell
+as an empty `RuntimeError: Failed to list secrets:` and failing
+`Shell_secret_api_test.store_and_check`. It only bites when such an item lingers in
+the store (e.g. a transient erase failure on Fedora's flaky keyring leaves one), but
+it is a self-inconsistency: the helper can create items it then cannot list. Fix:
+`parse_list` now skips continuation lines (`option.size() < 2`) instead of indexing
+them. Verified: listing with a newline-id item present returns cleanly and still
+reports the other credentials.

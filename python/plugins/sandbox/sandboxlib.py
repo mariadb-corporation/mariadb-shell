@@ -401,19 +401,29 @@ def _resolve_admin(basedir):
 def _shell_bundled_openssl():
     """Find the openssl CLI the shell bundles next to its own binary.
 
-    On Windows the MariaDB build bundles openssl into the shell's bin directory
-    (see src/CMakeLists.txt) so sandbox SSL works out of the box without a system
-    openssl. Locate the shell home via MYSQLSH_HOME, else derive it from the
-    embedded interpreter prefix (which is ``<mysqlsh_home>/lib/Python<X.Y>`` on
-    Windows). Returns the openssl path or None.
+    A MariaDB build bundles the openssl CLI so sandbox SSL works out of the box
+    without a (usable) system openssl (see src/CMakeLists.txt). This matters
+    beyond Windows: macOS ships LibreSSL as its system openssl, whose 'req'
+    command is incompatible with our cert-generation config, so the bundled
+    OpenSSL must be preferred there too.
+
+    The CLI is bundled next to the shell's bundled OpenSSL libraries, i.e. in the
+    embedded interpreter's prefix directory (``INSTALL_LIBDIR`` -> ``bin`` on
+    Windows, ``lib/mysqlsh`` on macOS/Linux). Locate the shell home via
+    MYSQLSH_HOME, the interpreter prefix, and (on Windows, where the interpreter
+    lives under ``<home>/lib/Python<X.Y>``) the grandparent of that prefix.
+    Returns the openssl path or None.
     """
     homes = []
     env_home = os.environ.get("MYSQLSH_HOME")
     if env_home:
         homes.append(env_home)
-    if sys.platform == "win32" and sys.prefix:
-        # sys.prefix == <mysqlsh_home>/lib/Python<X.Y>
-        homes.append(os.path.dirname(os.path.dirname(sys.prefix)))
+    if sys.prefix:
+        # On macOS/Linux sys.prefix is the bundle dir itself (lib/mysqlsh), which
+        # holds the bundled openssl. On Windows it is <mysqlsh_home>/lib/Python<X.Y>.
+        homes.append(sys.prefix)
+        if sys.platform == "win32":
+            homes.append(os.path.dirname(os.path.dirname(sys.prefix)))
     for home in homes:
         found = _find_in_dirs(_OPENSSL_NAMES, home)
         if found:

@@ -685,7 +685,11 @@ Shell_test_env::create_mysql_session(const std::string &uri) {
   mysqlshdk::db::Connection_options cnx_opt;
   if (uri.empty()) {
     cnx_opt.set_user("root");
-    cnx_opt.set_password("");
+    const char *password = getenv("MYSQL_PWD");
+    if (password) {
+      cnx_opt.set_password(password);
+    }
+
     cnx_opt.set_host("127.0.0.1");
     cnx_opt.set_port(std::stoi(_mysql_port));
   } else {
@@ -761,17 +765,22 @@ void run_script_classic(const std::vector<std::string> &sql) {
  *
  * If MYSQL_URI is not defined, it will use 'root@localhost'.
  */
-std::string shell_test_server_uri(int proto) {
+std::string shell_test_server_uri(int proto,
+                                  const mysqlshdk::db::uri::Tokens_mask &mask) {
   const char *uri = "root@localhost";
 
   // Creates connection data and recreates URI, fixes URI if no pwd defined
   // So the UT don't prompt for password ever
   auto data = mysqlshdk::db::Connection_options(uri);
+  const char *password = getenv("MYSQL_PWD");
+
   data.set_password("");
+  if (password) {
+    data.set_password(password);
+  }
 
   std::string _uri;
-  _uri = mysqlshdk::db::uri::Uri_encoder().encode_uri(
-      data, mysqlshdk::db::uri::formats::full());
+  _uri = mysqlshdk::db::uri::Uri_encoder().encode_uri(data, mask);
 
   if (proto == 'x') {
     const char *xport = getenv("MYSQLX_PORT");

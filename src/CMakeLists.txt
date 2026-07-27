@@ -166,23 +166,44 @@ if(BUNDLED_OPENSSL)
 
   # The MariaDB sandbox plugin shells out to the openssl CLI to generate the
   # sandbox SSL certificates (MariaDB, unlike MySQL, does not auto-generate them
-  # at datadir init). On Windows there is no system openssl, and vcpkg keeps the
-  # tool under <prefix>/tools/openssl (which z-applocal does not deploy), so
-  # bundle it next to the OpenSSL DLLs (INSTALL_LIBDIR -> bin/ on Windows) for an
-  # out-of-the-box experience. Windows + MariaDB only: the MySQL build uses the
-  # AdminAPI sandbox (server-side cert generation) and does not need the CLI.
-  IF(WIN32 AND MARIADB_BUILD)
+  # at datadir init). The system openssl cannot be relied on: Windows has none,
+  # and macOS ships LibreSSL, whose 'req' command is incompatible with our
+  # cert-generation config (empty distinguished_name + -subj aborts with "no
+  # objects specified in config file"). vcpkg keeps the tool under
+  # <prefix>/tools/openssl, which the normal library-deploy step does not copy,
+  # so bundle it next to the bundled OpenSSL libraries (INSTALL_LIBDIR, which
+  # maps to bin/ on Windows) for an out-of-the-box experience. MariaDB only: the
+  # MySQL build uses the AdminAPI sandbox (server-side cert generation) and does
+  # not need the CLI. Runtime discovery is in python/plugins/sandbox (see
+  # _shell_bundled_openssl), which looks beside the shell's OpenSSL libraries.
+  IF(MARIADB_BUILD)
     FIND_PROGRAM(OPENSSL_CLI_EXECUTABLE
       NAMES openssl
       HINTS "${WITH_SSL_PATH}/tools/openssl" "${WITH_SSL_PATH}/bin"
             "${OPENSSL_ROOT_DIR}/tools/openssl" "${OPENSSL_ROOT_DIR}/bin"
       NO_DEFAULT_PATH)
     IF(OPENSSL_CLI_EXECUTABLE)
+      SET(_OPENSSL_CLI_EXTRA_COMMANDS "")
+      IF(APPLE)
+        # install_bundled_binaries rewrites the copy's LC_LOAD_DYLIB references
+        # (-change) but never its LC_RPATH. The vcpkg CLI links its libs as
+        # @rpath/lib<x>.dylib and ships an rpath (@loader_path/../../lib) aimed at
+        # the vcpkg tools layout, not INSTALL_LIBDIR. Strip that stale rpath and
+        # add @loader_path so it resolves the OpenSSL dylibs bundled right beside
+        # it in INSTALL_LIBDIR.
+        get_fix_bundled_rpath_command(
+          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/openssl"
+          STRIP_PREFIX "@loader_path/../../lib"
+          ADD_RPATH "@loader_path"
+          OUT_COMMAND _FIX_OPENSSL_CLI_RPATH)
+        SET(_OPENSSL_CLI_EXTRA_COMMANDS COMMAND ${_FIX_OPENSSL_CLI_RPATH})
+      ENDIF()
       install_bundled_binaries(
           DESCRIPTION "OpenSSL CLI (MariaDB sandbox cert generation)"
           BINARIES "${OPENSSL_CLI_EXECUTABLE}"
           DESTINATION "${INSTALL_LIBDIR}"
           TARGET mysqlsh
+          EXTRA_COPY_COMMANDS ${_OPENSSL_CLI_EXTRA_COMMANDS}
       )
     ELSE()
       MESSAGE(WARNING "openssl CLI not found near the resolved OpenSSL "
@@ -256,13 +277,85 @@ IF(HAVE_PYTHON)
     set(WRITE_RPATH TRUE)
     set(EXTRA_COPY_COMMANDS "")
 
+    # A dynamic vcpkg triplet gives its dylibs the id "@rpath/lib<x>.dylib", so
+    # bootstrap_python.cmake links the interpreter/libpython/extension modules
+    # with -Wl,-rpath,<abs vcpkg build dir> to resolve them at build time. That
+    # absolute build-tree path must NOT ship in the package (it points at a dir
+    # absent on the target). install_name_tool -change only rewrites dependency
+    # references, never LC_RPATH entries, so scrub it explicitly from the bundled
+    # copies and add a relative @loader_path rpath instead. Derive the same vcpkg
+    # prefix bootstrap_python.cmake used (cached VCPKG_INSTALLED_PREFIX, or the
+    # conventional per-triplet dir when only the toolchain was given).
+    set(_PY_VCPKG_RPATH_STRIP "")
+    if(APPLE AND USING_VCPKG)
+      if(VCPKG_INSTALLED_PREFIX)
+        set(_PY_VCPKG_RPATH_STRIP "${VCPKG_INSTALLED_PREFIX}/lib")
+      elseif(VCPKG_TARGET_TRIPLET)
+        set(_PY_VCPKG_RPATH_STRIP "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib")
+      endif()
+    endif()
+
     if(BUNDLED_SHARED_PYTHON)
       if(APPLE)
         set(_PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}")
+        get_filename_component(_PY_SHARED_LIB_NAME "${_PYTHON_SHARED_LIB}" NAME)
+
+        # A CPython built with --enable-shared stamps libpython<ver>.dylib with an
+        # ABSOLUTE install id (its build-tree <prefix>/lib path). Everything linked
+        # against it -- the shell executables (via mysqlshdk-static) and CPython's
+        # own python<ver> launcher -- copies that absolute path in as its
+        # LC_LOAD_DYLIB. The bundled *copy* is made relocatable below (id -> @rpath,
+        # rpath fixed), but the *references* to it are not, so a relocated package
+        # still asks dyld for the vanished build-tree path ("Library not loaded:
+        # .../libpython<ver>.dylib"). Read libpython's real id and rewrite each
+        # consumer's reference to @rpath/<name>, resolved via that binary's own
+        # rpath (INSTALL_LIBDIR, where libpython is bundled). otool -D prints the
+        # file name on line 1 and the id on line 2. -change is a no-op if the id is
+        # already @rpath, so this stays correct on non-CPython layouts.
+        execute_process(COMMAND otool -D "${_PYTHON_SHARED_LIB}"
+                        OUTPUT_VARIABLE _py_otool_id OUTPUT_STRIP_TRAILING_WHITESPACE)
+        string(REGEX REPLACE "^[^\n]*\n" "" _PY_LIBPYTHON_ID "${_py_otool_id}")
+        string(STRIP "${_PY_LIBPYTHON_ID}" _PY_LIBPYTHON_ID)
 
         # add rpath to allow python executable to import dylibs
         set(WRITE_RPATH FALSE)
         set(EXTRA_COPY_COMMANDS COMMAND install_name_tool -add_rpath "@executable_path/.." "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
+        # The bundled python<ver> launcher carries the same absolute libpython
+        # reference; point it at the bundled copy via @rpath (reached by the
+        # @executable_path/.. rpath added just above).
+        if(_PY_LIBPYTHON_ID)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
+
+          # Same rewrite for the shell executables that embed libpython. Only
+          # mysqlsh is shipped; mysqlshrec (if built) is fixed too so a relocated
+          # test tree works. run_unit_tests runs from the build tree, where the
+          # absolute path still resolves, so it needs no fix.
+          foreach(_py_consumer mysqlsh mysqlshrec)
+            if(TARGET ${_py_consumer})
+              add_custom_command(TARGET ${_py_consumer} POST_BUILD
+                COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "$<TARGET_FILE:${_py_consumer}>"
+                COMMENT "Rewriting ${_py_consumer} libpython reference to @rpath (relocatable)")
+            endif()
+          endforeach()
+        endif()
+        # Drop the absolute vcpkg build-tree rpath baked in at build time; the
+        # @executable_path/.. rpath above already reaches the bundled dylibs.
+        if(_PY_VCPKG_RPATH_STRIP)
+          get_fix_bundled_rpath_command(
+            BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            OUT_COMMAND _FIX_RPATH_CMD)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+
+          # libpython lands directly in INSTALL_LIBDIR next to the bundled vcpkg
+          # dylibs, so @loader_path resolves them once the build-tree rpath is gone.
+          get_fix_bundled_rpath_command(
+            BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/${_PY_SHARED_LIB_NAME}"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            ADD_RPATH "@loader_path"
+            OUT_COMMAND _FIX_RPATH_CMD)
+          set(LIB_EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+        endif()
       else()
         file(GLOB _PYTHON_SHARED_LIB "${PYTHON_LIBRARIES}.*")
 
@@ -301,6 +394,21 @@ IF(HAVE_PYTHON)
     if(APPLE)
       get_use_bundled_openssl_command(PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/_[sh]*.so" OUT_COMMAND EXTRA_COPY_COMMANDS)
       list(INSERT EXTRA_COPY_COMMANDS 0 COMMAND)
+
+      # The OpenSSL rewrite above only touches _ssl/_hashlib. Every lib-dynload
+      # extension linked against a vcpkg dylib (_zstd, zlib, binascii, ...) also
+      # carries the absolute build-tree rpath; strip it and add a relative rpath
+      # from lib-dynload (INSTALL_LIBDIR/lib/pythonX.Y/lib-dynload) up to
+      # INSTALL_LIBDIR, where the bundled dylibs live, so imports resolve on the
+      # target regardless of which executable dlopen()s them.
+      if(_PY_VCPKG_RPATH_STRIP)
+        get_fix_bundled_rpath_command(
+          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/*.so"
+          STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+          ADD_RPATH "@loader_path/../../.."
+          OUT_COMMAND _FIX_RPATH_CMD)
+        list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+      endif()
     endif()
 
     install_bundled_directory(
@@ -319,6 +427,21 @@ IF(HAVE_PYTHON)
       if(APPLE)
         get_use_bundled_openssl_command(PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so" OUT_COMMAND EXTRA_COPY_COMMANDS)
         list(INSERT EXTRA_COPY_COMMANDS 0 COMMAND)
+
+        # Any site-package extension linked against a vcpkg dylib carries the
+        # same absolute build-tree rpath; strip it. The relative rpath assumes a
+        # top-level module (site-packages/foo.so -> up 3 to INSTALL_LIBDIR),
+        # matching the glob above; a nested module still resolves via the host
+        # executable's own @executable_path/.. rpath, so the strip is the part
+        # that matters (it removes the build-tree leak).
+        if(_PY_VCPKG_RPATH_STRIP)
+          get_fix_bundled_rpath_command(
+            PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so"
+            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            ADD_RPATH "@loader_path/../../.."
+            OUT_COMMAND _FIX_RPATH_CMD)
+          list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
+        endif()
      endif()
 
       # no need to install this, this is a subdirectory of the Python library directory
@@ -368,80 +491,182 @@ IF(BUNDLED_SSH_DIR)
   )
 ENDIF()
 
-# Runtime DLLs for dependencies resolved through find_package (the vcpkg case).
+# Bundle the full runtime dependency closure for vcpkg builds.
 #
-# On Windows only the shell's own bundling options run install() for a
-# dependency's DLL: WITH_CURL_PATH installs libcurl.dll/zlib (curl.cmake), and
-# BUNDLED_SSH_DIR installs libssh (above). When the dependencies instead come
-# from find_package (as with a vcpkg toolchain), those DLLs are only copied next
-# to the build output by `vcpkg z-applocal` at build time - they never make it
-# into the install/CPack tree, so the produced package is missing libcurl.dll,
-# ssh.dll, antlr4-runtime.dll and zlib (z.dll). Install them here from where they
-# were resolved. Guarded so it never double-handles the option-based paths, and a
-# no-op on builds where the DLLs aren't found (e.g. statically linked deps).
-IF(WIN32)
-  SET(_vcpkg_runtime_dlls "")
-
-  # libssh: the 'ssh' imported target points straight at its own DLL. Only when
-  # the BUNDLED_SSH_DIR block above did not already bundle it.
-  IF(NOT BUNDLED_SSH_DIR AND TARGET ssh)
-    LIST(APPEND _vcpkg_runtime_dlls "$<TARGET_FILE:ssh>")
+# With a vcpkg toolchain the dependencies (curl, zlib, libssh, antlr4, zstd and
+# anything they pull in transitively) are resolved through find_package and only
+# staged next to the build output at build time - they never make it into the
+# install/CPack tree, so the produced package would be missing them. This is the
+# Windows/macOS equivalent of the BUNDLED_*_DIR options and of the DEB/RPM
+# dependency metadata used on Linux: it makes the package self-contained.
+#
+# vcpkg keeps every runtime artifact it built for the active triplet in one
+# per-triplet directory (Windows: <triplet>/bin holds the DLLs, a sibling of the
+# import-library <triplet>/lib; macOS/Linux: <triplet>/lib holds the dylibs/.so,
+# which are the link libraries themselves; 'debug/...' for a debug build). That
+# directory *is* the dependency closure, so rather than enumerating individual
+# names (which silently misses new/transitive deps) we install all of it and drop
+# only the pieces another bundling path already handles: OpenSSL (BUNDLED_OPENSSL),
+# curl+zlib (WITH_CURL_PATH), libssh (BUNDLED_SSH_DIR) and Python (its own
+# runtime layout above). Globbing only vcpkg's own tree also means we never pick
+# up system libraries (glibc on Linux, /usr/lib and /System frameworks on macOS),
+# which must stay unbundled.
+#
+# This covers dynamic triplets on all three platforms. A static triplet (vcpkg's
+# default on Linux, x64-linux) links the dependencies into mysqlsh directly, so
+# the per-triplet lib dir has only .a files, the glob below finds nothing, and
+# this is correctly a no-op - the binary is already self-contained.
+#
+# Shared-library resolution relies on the loader finding the bundled copies next
+# to (Windows) or via the executable's rpath (macOS '@executable_path/..',
+# Linux '$ORIGIN/..' - both set in add_shell_executable). vcpkg builds its
+# dylibs/.so with @rpath / SONAME install names, and install_bundled_binaries
+# rewrites each copy's id/rpath ($ORIGIN via patchelf on Linux, @rpath via
+# install_name_tool on macOS) so the closure resolves within INSTALL_LIBDIR.
+IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
+  IF(WIN32)
+    SET(_vcpkg_lib_glob "*.dll")
+    SET(_vcpkg_dest "${INSTALL_BINDIR}")   # DLLs sit next to mysqlsh.exe
+    SET(_vcpkg_ext_re "\\.dll")
+  ELSEIF(APPLE)
+    SET(_vcpkg_lib_glob "*.dylib")
+    SET(_vcpkg_dest "${INSTALL_LIBDIR}")   # dylibs resolve via the exe's rpath
+    SET(_vcpkg_ext_re "\\.dylib")
+  ELSE() # LINUX
+    SET(_vcpkg_lib_glob "*.so*")
+    SET(_vcpkg_dest "${INSTALL_LIBDIR}")   # .so resolve via the exe's $ORIGIN rpath
+    # Match unversioned and versioned SONAMEs: libfoo.so, libfoo.so.1, libfoo.so.1.2
+    SET(_vcpkg_ext_re "\\.so(\\..*)?")
   ENDIF()
 
-  # curl/zlib/antlr4 are referenced only by import-library path, so find the
-  # matching runtime DLLs in the per-triplet bin dir (vcpkg keeps <triplet>/bin
-  # as a sibling of <triplet>/lib; for a debug build the import lib resolves
-  # under debug/lib and this lands on debug/bin, which is also correct). Derive
-  # that dir from any resolved import library (unquoted expansion skips the
-  # debug/optimized keyword tokens some *_LIBRARY vars carry).
-  SET(_dep_bin_dir "")
-  FOREACH(_dep_lib ${CURL_LIBRARY} ${ANTLR4_LIBRARY})
-    IF(EXISTS "${_dep_lib}")
-      GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
-      GET_FILENAME_COMPONENT(_dep_bin_dir "${_dep_lib_dir}/../bin" ABSOLUTE)
-      BREAK()
-    ENDIF()
-  ENDFOREACH()
+  # vcpkg installs two closures per triplet: release under <triplet>/lib
+  # (<triplet>/bin on Windows) and debug under <triplet>/debug/lib
+  # (<triplet>/debug/bin). A Debug build links the debug one, so that is the one
+  # to bundle - the configuration must not be picked from whichever tree a given
+  # find module happened to resolve. Most ports keep the same file name in both
+  # trees, so bundling the release closure into a Debug build appears to work
+  # while silently loading release copies; curl does not (vcpkg names its debug
+  # library libcurl-d / curl-d), so the loader aborts the binary before main with
+  # "Library not loaded: @rpath/libcurl-d.4.dylib". Multi-config generators leave
+  # CMAKE_BUILD_TYPE empty and get the release closure: FILE(GLOB) below runs at
+  # configure time, so there is no per-config choice left to make here.
+  IF(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    SET(_vcpkg_config_subdir "debug/")
+  ELSE()
+    SET(_vcpkg_config_subdir "")
+  ENDIF()
 
-  IF(_dep_bin_dir AND IS_DIRECTORY "${_dep_bin_dir}")
-    # curl and its zlib dependency, unless WITH_CURL_PATH already installed them.
-    IF(NOT WITH_CURL_PATH)
-      FIND_FILE(VCPKG_CURL_DLL NAMES libcurl.dll
-                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-      IF(VCPKG_CURL_DLL)
-        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_CURL_DLL}")
-      ENDIF()
-      FIND_FILE(VCPKG_ZLIB_DLL NAMES z.dll zlib1.dll zlib.dll
-                HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-      IF(VCPKG_ZLIB_DLL)
-        LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ZLIB_DLL}")
+  # Locate the per-triplet prefix. bootstrap_vcpkg.cmake exports it; a build
+  # given the vcpkg toolchain directly may not have it, so fall back to deriving
+  # it from any resolved vcpkg library by stripping the '[debug/]lib' tail.
+  # Unquoted expansion skips the debug/optimized keyword tokens some *_LIBRARY
+  # vars carry. The 'ssh' imported target is included because it points straight
+  # at its own runtime library when the *_LIBRARY vars are empty.
+  SET(_vcpkg_runtime_dir "")
+  SET(_vcpkg_prefix "${VCPKG_INSTALLED_PREFIX}")
+  IF(NOT _vcpkg_prefix)
+    SET(_vcpkg_dep_libs ${CURL_LIBRARY} ${ANTLR4_LIBRARY} ${CRYPTO_LIBRARY}
+                        ${OPENSSL_LIBRARY} ${ZLIB_LIBRARY} ${ZSTD_LIBRARY})
+    IF(TARGET ssh)
+      GET_TARGET_PROPERTY(_ssh_loc ssh LOCATION)
+      IF(_ssh_loc)
+        LIST(APPEND _vcpkg_dep_libs "${_ssh_loc}")
       ENDIF()
     ENDIF()
 
-    FIND_FILE(VCPKG_ANTLR4_DLL NAMES antlr4-runtime.dll
-              HINTS "${_dep_bin_dir}" NO_DEFAULT_PATH)
-    IF(VCPKG_ANTLR4_DLL)
-      LIST(APPEND _vcpkg_runtime_dlls "${VCPKG_ANTLR4_DLL}")
-    ENDIF()
-
-    # OpenSSL (libcrypto/libssl) is provided by vcpkg in the same bin dir and is
-    # missing from the package for the same reason, unless the BUNDLED_OPENSSL
-    # path already installs it. The DLL name is triplet-specific
-    # (e.g. libcrypto-3-arm64.dll), so match by pattern.
-    IF(NOT BUNDLED_OPENSSL)
-      FILE(GLOB _vcpkg_ssl_dlls "${_dep_bin_dir}/libcrypto*.dll"
-                                "${_dep_bin_dir}/libssl*.dll")
-      IF(_vcpkg_ssl_dlls)
-        LIST(APPEND _vcpkg_runtime_dlls ${_vcpkg_ssl_dlls})
+    FOREACH(_dep_lib ${_vcpkg_dep_libs})
+      IF(EXISTS "${_dep_lib}")
+        GET_FILENAME_COMPONENT(_dep_lib_dir "${_dep_lib}" DIRECTORY)
+        IF(_dep_lib_dir MATCHES "^(.+)/debug/(lib|bin)$")
+          SET(_vcpkg_prefix "${CMAKE_MATCH_1}")
+        ELSEIF(_dep_lib_dir MATCHES "^(.+)/(lib|bin)$")
+          SET(_vcpkg_prefix "${CMAKE_MATCH_1}")
+        ELSE()
+          # unrecognized layout - use the directory as found
+          SET(_vcpkg_runtime_dir "${_dep_lib_dir}")
+        ENDIF()
+        BREAK()
       ENDIF()
+    ENDFOREACH()
+  ENDIF()
+
+  IF(_vcpkg_prefix)
+    # On Windows the link libraries are the import libs under <triplet>/lib and
+    # the DLLs are the sibling bin dir; elsewhere lib/ holds the dylibs/.so
+    # themselves, which are also the link libraries.
+    IF(WIN32)
+      SET(_vcpkg_runtime_dir "${_vcpkg_prefix}/${_vcpkg_config_subdir}bin")
+    ELSE()
+      SET(_vcpkg_runtime_dir "${_vcpkg_prefix}/${_vcpkg_config_subdir}lib")
     ENDIF()
   ENDIF()
 
-  IF(_vcpkg_runtime_dlls)
-    MESSAGE(STATUS "Bundling find_package/vcpkg runtime DLLs: "
-                   "${_vcpkg_runtime_dlls}")
-    INSTALL(PROGRAMS ${_vcpkg_runtime_dlls}
-            DESTINATION "${INSTALL_BINDIR}" COMPONENT main)
+  IF(_vcpkg_runtime_dir AND IS_DIRECTORY "${_vcpkg_runtime_dir}")
+    FILE(GLOB _vcpkg_all_libs "${_vcpkg_runtime_dir}/${_vcpkg_lib_glob}")
+
+    # Name patterns (regex, anchored on the full file name) bundled through
+    # another code path. Python always has its own block regardless of where it
+    # was found. ${_vcpkg_ext_re} matches the platform's library suffix,
+    # including versioned Linux SONAMEs (e.g. .so.3).
+    SET(_vcpkg_exclude_patterns "python.*${_vcpkg_ext_re}"
+                                "libpython.*${_vcpkg_ext_re}")
+    IF(BUNDLED_OPENSSL)
+      LIST(APPEND _vcpkg_exclude_patterns "libcrypto.*${_vcpkg_ext_re}"
+                                          "libssl.*${_vcpkg_ext_re}")
+    ENDIF()
+    IF(BUNDLED_SSH_DIR)
+      LIST(APPEND _vcpkg_exclude_patterns "libssh.*${_vcpkg_ext_re}"
+                                          "ssh.*${_vcpkg_ext_re}")
+    ENDIF()
+    IF(WITH_CURL_PATH)
+      LIST(APPEND _vcpkg_exclude_patterns "libcurl.*${_vcpkg_ext_re}"
+                                          "curl.*${_vcpkg_ext_re}"
+                                          "libz.*${_vcpkg_ext_re}"
+                                          "zlib.*${_vcpkg_ext_re}"
+                                          "z${_vcpkg_ext_re}")
+    ENDIF()
+
+    SET(_vcpkg_bundle_libs "")
+    FOREACH(_lib ${_vcpkg_all_libs})
+      GET_FILENAME_COMPONENT(_lib_name "${_lib}" NAME)
+      SET(_skip FALSE)
+      FOREACH(_pat ${_vcpkg_exclude_patterns})
+        IF(_lib_name MATCHES "^${_pat}$")
+          SET(_skip TRUE)
+          BREAK()
+        ENDIF()
+      ENDFOREACH()
+      IF(NOT _skip)
+        LIST(APPEND _vcpkg_bundle_libs "${_lib}")
+      ENDIF()
+    ENDFOREACH()
+
+    IF(_vcpkg_bundle_libs)
+      MESSAGE(STATUS "Bundling vcpkg runtime libraries from "
+                     "'${_vcpkg_runtime_dir}': ${_vcpkg_bundle_libs}")
+      IF(WIN32)
+        # DLLs need no id/rpath rewriting; a plain install is enough.
+        INSTALL(PROGRAMS ${_vcpkg_bundle_libs}
+                DESTINATION "${_vcpkg_dest}" COMPONENT main)
+      ELSE()
+        # Route dylibs/.so through the shared bundler so each copy is made
+        # relocatable (macOS: '@rpath/<name>' id via install_name_tool; Linux:
+        # '$ORIGIN/..' rpath via patchelf) and its cross-references rewritten -
+        # matching every other BUNDLED_* path on macOS and Linux.
+        install_bundled_binaries(
+            DESCRIPTION "vcpkg runtime libraries"
+            BINARIES ${_vcpkg_bundle_libs}
+            DESTINATION "${_vcpkg_dest}"
+            TARGET mysqlsh
+        )
+      ENDIF()
+    ELSE()
+      MESSAGE(STATUS "No vcpkg runtime libraries to bundle from "
+                     "'${_vcpkg_runtime_dir}' (all handled by other paths)")
+    ENDIF()
+  ELSE()
+    MESSAGE(STATUS "vcpkg build: could not resolve a per-triplet runtime dir; "
+                   "assuming statically linked dependencies")
   ENDIF()
 ENDIF()
 

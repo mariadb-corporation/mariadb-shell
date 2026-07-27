@@ -23,6 +23,31 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 
+# When the caller asks for vcpkg-managed dependencies via -DWITH_VCPKG_TRIPLET,
+# fetch and bootstrap vcpkg and derive CMAKE_TOOLCHAIN_FILE / VCPKG_TARGET_TRIPLET
+# (and VCPKG_ROOT). This must run before the first project() call (CMake reads
+# CMAKE_TOOLCHAIN_FILE there) and before bootstrap_mariadb.cmake, which
+# propagates the toolchain + triplet to the server tree. See
+# cmake/bootstrap_vcpkg.cmake.
+INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_vcpkg.cmake)
+
+# When the caller passes -DWITH_PYTHON_SOURCE=<cpython-src>, configure, build and
+# install that Python into a cached "Python-<version>" prefix and derive
+# BUNDLED_PYTHON_DIR from it (consumed further down and in src/CMakeLists.txt).
+# This is included AFTER bootstrap_vcpkg.cmake on purpose: the vcpkg dependency
+# closure must already be installed so Python links _ssl/zlib/... against it (via
+# CPPFLAGS/LDFLAGS and --with-openssl). See cmake/bootstrap_python.cmake.
+INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_python.cmake)
+
+# The shell links directly against a MariaDB (or MySQL) server source + build
+# tree. When neither is provided, and this is a real shell build (not a source
+# package), fetch the MariaDB server sources and build just the pieces the shell
+# consumes, then set MARIADB_SOURCE_DIR / MARIADB_BUILD_DIR so the logic below
+# proceeds unchanged. See cmake/bootstrap_mariadb.cmake.
+IF(NOT MYSQL_SOURCE_DIR AND NOT MARIADB_SOURCE_DIR AND NOT BUILD_SOURCE_PACKAGE)
+  INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bootstrap_mariadb.cmake)
+ENDIF()
+
 IF(MYSQL_SOURCE_DIR)
   FILE(TO_CMAKE_PATH "${MYSQL_SOURCE_DIR}" MYSQL_SOURCE_DIR)
 ENDIF()
@@ -36,6 +61,22 @@ IF(MARIADB_SOURCE_DIR)
 
   SET(MARIADB_BUILD 1)
   ADD_DEFINITIONS(-DMARIADB_BUILD)
+
+  # The MariaDB server's include/mariadb_capi_rename.h rewrites the client C API
+  # symbols (mysql_get_ssl_cipher -> server_mysql_get_ssl_cipher, mysql_init,
+  # mysql_real_connect, ...) with a `server_` prefix for the server's OWN
+  # internal use (see the header's comment). The shell is a standalone client
+  # that links the MariaDB Connector/C (libmariadbclient), which exports the
+  # UNPREFIXED symbols -- but server headers on our include path transitively
+  # pull that rename in (include/mysql.h includes it), so any TU that includes a
+  # server header and then calls a renamed C API function links against the
+  # missing server_* symbol (e.g. undefined reference to
+  # `server_mysql_get_ssl_cipher` from Session_impl::get_ssl_cipher, which is the
+  # only renamed function called inline in session.h). Pre-defining the header's
+  # include guard makes it a no-op for every shell TU, so all C API calls resolve
+  # to the connector's unprefixed symbols. Harmless where the rename never
+  # activated (macOS/Windows); the shell always links the connector.
+  ADD_DEFINITIONS(-DMARIADB_CAPI_RENAME_INCLUDED)
 
   IF(WITH_RAPIDJSON)
     FILE(TO_CMAKE_PATH "${WITH_RAPIDJSON}" WITH_RAPIDJSON)
@@ -516,6 +557,13 @@ IF(NOT PACKAGE_YEAR)
 ENDIF()
 add_definitions(-DPACKAGE_YEAR="${PACKAGE_YEAR}")
 
+# Build the test suite by default. WITH_TESTS gates test compilation and
+# ENABLE_TESTING below; when the caller did not set it either way, turn it on.
+# Pass -DWITH_TESTS=0 to build without tests.
+IF(NOT DEFINED WITH_TESTS)
+  SET(WITH_TESTS 1)
+ENDIF()
+
 IF(WITH_TESTS)
   ENABLE_TESTING()
 ENDIF()
@@ -700,11 +748,40 @@ include(fuzzer)
 INCLUDE(CheckIncludeFiles)
 INCLUDE(CheckFunctionExists)
 
+# --- vcpkg dependency bundling -------------------------------------------
+# When configured with the vcpkg toolchain
+# (-DCMAKE_TOOLCHAIN_FILE=<vcpkg-root>/scripts/buildsystems/vcpkg.cmake
+# -DVCPKG_TARGET_TRIPLET=<triplet>), the third-party dependencies (OpenSSL,
+# libssh, antlr4, curl, zlib, zstd, ...) are resolved from vcpkg's per-triplet
+# tree instead of the system. On Windows and macOS there is no system package
+# manager to satisfy those at runtime, so - exactly like the explicit
+# BUNDLED_*_DIR options - a vcpkg build must ship the full dependency closure
+# inside the package. USING_VCPKG drives that automatic bundling (consumed in
+# src/CMakeLists.txt).
+IF(NOT DEFINED USING_VCPKG)
+  IF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
+    SET(USING_VCPKG TRUE)
+  ELSE()
+    SET(USING_VCPKG FALSE)
+  ENDIF()
+ENDIF()
+IF(USING_VCPKG)
+  MESSAGE(STATUS "vcpkg toolchain detected (triplet '${VCPKG_TARGET_TRIPLET}'); "
+                 "runtime dependencies will be bundled into the package")
+ENDIF()
+
 include(curl)
 MYSQL_CHECK_CURL()
 
 include(zlib)
 MYSQL_CHECK_ZLIB()
+
+# Build with Python scripting support by default. HAVE_PYTHON gates the whole
+# Python-detection block below; when the caller did not set it either way, turn
+# it on. Pass -DHAVE_PYTHON=0 to build without Python.
+IF(NOT DEFINED HAVE_PYTHON)
+  SET(HAVE_PYTHON 1)
+ENDIF()
 
 IF (PYTHON_DEPS AND NOT HAVE_PYTHON)
   MESSAGE(FATAL_ERROR "PYTHON_DEPS should not be used when python is not available.")
@@ -1159,16 +1236,6 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
 ENDIF()
 
 if (NOT BUILD_SOURCE_PACKAGE)
-  IF(NOT MYSQL_SOURCE_DIR AND NOT MARIADB_SOURCE_DIR)
-    SET(MYSQL_SOURCE_DIR "../mysql" CACHE PATH "Path to MySQL source directory")
-    MESSAGE(STATUS "MYSQL_SOURCE_DIR has been set to: ${MYSQL_SOURCE_DIR}")
-  ENDIF()
-
-  IF(NOT MYSQL_BUILD_DIR AND NOT MARIADB_BUILD_DIR)
-    SET(MYSQL_BUILD_DIR "${MYSQL_SOURCE_DIR}/bld" CACHE PATH "Path to MySQL build directory")
-    MESSAGE(STATUS "MYSQL_BUILD_DIR has been set to: ${MYSQL_BUILD_DIR}")
-  ENDIF()
-
   IF (MARIADB_SOURCE_DIR)
     SET(MYSQL_INCLUDE_DIRS
       ${MARIADB_SOURCE_DIR}/libmariadb/include
@@ -1480,6 +1547,132 @@ endif()
 ## Prepares the python dependencies
 ###
 
+# PYTHON_DEPS_PACKAGES: third-party Python packages to ship inside the bundle.
+# The BUNDLED interpreter installs them itself via pip, so any C extensions are
+# built/resolved for exactly its ABI (and its OpenSSL). It installs at configure
+# time into a staging directory -- the source Python is never mutated -- and that
+# staging directory is then handed to PYTHON_DEPS below: a folder of installed
+# packages is exactly what PYTHON_DEPS already bundles (into the interpreter's
+# site-packages) on every platform, so there is a single bundling path.
+# Semicolon- or space-separated list of pip requirement specs, e.g.
+#   -DPYTHON_DEPS_PACKAGES="certifi;PyYAML==6.0".
+#
+# Works for every bundled build: Windows (the located python.org install) and
+# Linux/macOS (BUNDLED_PYTHON_DIR / WITH_PYTHON_SOURCE). A system-Python
+# (non-bundled) unix build has nothing to bundle into, so it uses PYTHON_DEPS
+# directly instead.
+#
+# When a bundle is being produced and the caller did not specify the list, it
+# defaults to the packages the bundled shell plugins require: certifi (CA bundle),
+# PyYAML, and the ANTLR4 Python runtime (antlr4-python3-runtime). Pass
+# -DPYTHON_DEPS_PACKAGES="..." to override, or an empty string
+# (-DPYTHON_DEPS_PACKAGES=) to install none.
+
+# "Are we producing a bundle that embeds a Python?" Windows always bundles the
+# located python.org install; unix bundles when BUNDLED_PYTHON_DIR is set.
+SET(_py_bundling FALSE)
+IF(HAVE_PYTHON AND (WIN32 OR BUNDLED_PYTHON_DIR))
+  SET(_py_bundling TRUE)
+ENDIF()
+
+IF(_py_bundling AND NOT DEFINED PYTHON_DEPS_PACKAGES)
+  SET(PYTHON_DEPS_PACKAGES "certifi;pyyaml;antlr4-python3-runtime;mcp")
+ENDIF()
+
+# Tracks that PYTHON_DEPS below was produced by PYTHON_DEPS_PACKAGES (rather than
+# supplied directly by the caller); used to gate the historical -DPYTHON_DEPS
+# contract further down.
+SET(_py_deps_from_packages FALSE)
+
+IF(PYTHON_DEPS_PACKAGES)
+  IF(NOT HAVE_PYTHON)
+    MESSAGE(FATAL_ERROR "PYTHON_DEPS_PACKAGES set but Python support is disabled.")
+  ENDIF()
+  IF(NOT _py_bundling)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS_PACKAGES requires a bundled Python. On Windows a python.org "
+      "install is bundled automatically; on Linux/macOS set BUNDLED_PYTHON_DIR "
+      "(or WITH_PYTHON_SOURCE to build one). For a system Python, use "
+      "PYTHON_DEPS=<dir> instead.")
+  ENDIF()
+  IF(PYTHON_DEPS)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS and PYTHON_DEPS_PACKAGES are alternatives (both bundle into "
+      "site-packages). Put everything in the PYTHON_DEPS folder, or list "
+      "everything in PYTHON_DEPS_PACKAGES -- not both.")
+  ENDIF()
+  IF(NOT PYTHON_EXECUTABLE)
+    MESSAGE(FATAL_ERROR
+      "PYTHON_DEPS_PACKAGES set but the bundled Python interpreter was not found.")
+  ENDIF()
+
+  # Accept both ';'- and space-separated lists.
+  STRING(REPLACE " " ";" _py_pkg_list "${PYTHON_DEPS_PACKAGES}")
+
+  # Install the packages into a staging directory. Treat it as a cache keyed on
+  # the requested set: only (re)install when the list changes, so reconfigures do
+  # not keep hitting PyPI. The stamp lives outside the staging dir so it is not
+  # itself bundled.
+  SET(_py_deps_staging "${CMAKE_BINARY_DIR}/bundled-python-deps")
+  SET(_py_dep_stamp "${CMAKE_BINARY_DIR}/bundled-python-deps.stamp")
+  SET(_py_dep_stamped "")
+  IF(EXISTS "${_py_dep_stamp}")
+    FILE(READ "${_py_dep_stamp}" _py_dep_stamped)
+  ENDIF()
+
+  IF(NOT _py_dep_stamped STREQUAL "${_py_pkg_list}" OR NOT EXISTS "${_py_deps_staging}")
+    MESSAGE(STATUS "Installing bundled Python packages via pip: ${_py_pkg_list}")
+
+    # The bundled interpreter must have pip. A from-source CPython built with
+    # --enable-shared frequently ends up WITHOUT it: its "make install" runs
+    # ensurepip as a non-fatal step ("Ignoring ensurepip failure...") that is
+    # often skipped, so the prefix has no pip. Bootstrap it here before use --
+    # ensurepip installs from a wheel bundled in the stdlib, so this needs no
+    # network and is a near no-op when pip is already present. Doing it at the
+    # point of use (rather than in bootstrap_python.cmake) also repairs an
+    # already-built interpreter, which the Python bootstrap fast-path would
+    # otherwise reuse as-is.
+    EXECUTE_PROCESS(
+      COMMAND "${PYTHON_EXECUTABLE}" -c "import pip"
+      RESULT_VARIABLE _py_has_pip
+      OUTPUT_QUIET ERROR_QUIET)
+    IF(NOT _py_has_pip EQUAL 0)
+      MESSAGE(STATUS "  bundled interpreter has no pip; bootstrapping via ensurepip")
+      EXECUTE_PROCESS(
+        COMMAND "${PYTHON_EXECUTABLE}" -m ensurepip --upgrade
+        RESULT_VARIABLE _py_ensurepip_rc)
+      IF(NOT _py_ensurepip_rc EQUAL 0)
+        MESSAGE(FATAL_ERROR
+          "The bundled Python interpreter has neither pip nor a working "
+          "ensurepip module, so ${_py_pkg_list} cannot be installed. Rebuild "
+          "the interpreter with ensurepip enabled, or supply the packages "
+          "directly via -DPYTHON_DEPS=<dir>.")
+      ENDIF()
+    ENDIF()
+
+    # Install into a clean target so pip does not object to pre-existing content.
+    FILE(REMOVE_RECURSE "${_py_deps_staging}")
+    FILE(MAKE_DIRECTORY "${_py_deps_staging}")
+    EXECUTE_PROCESS(
+      COMMAND "${PYTHON_EXECUTABLE}" -m pip install
+              --disable-pip-version-check
+              --target "${_py_deps_staging}" ${_py_pkg_list}
+      RESULT_VARIABLE _py_pip_rc)
+    IF(NOT _py_pip_rc EQUAL 0)
+      MESSAGE(FATAL_ERROR
+        "Failed to install bundled Python packages (see output above). Ensure "
+        "the bundled interpreter has pip and that PyPI is reachable.")
+    ENDIF()
+    FILE(WRITE "${_py_dep_stamp}" "${_py_pkg_list}")
+  ELSE()
+    MESSAGE(STATUS "Bundled Python packages already installed: ${_py_pkg_list}")
+  ENDIF()
+
+  # Feed the staged packages into the standard PYTHON_DEPS bundling path below.
+  SET(PYTHON_DEPS "${_py_deps_staging}")
+  SET(_py_deps_from_packages TRUE)
+ENDIF()
+
 IF(PYTHON_DEPS)
 
   IF (NOT WIN32 AND NOT BUNDLED_PYTHON_DIR)
@@ -1490,7 +1683,12 @@ IF(PYTHON_DEPS)
     ADD_DEFINITIONS(-DPYTHON_DEPS_PATH="lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages")
   ENDIF()
 
-  ADD_DEFINITIONS(-DPYTHON_DEPS)
+  # -DPYTHON_DEPS advertises a curated dependency set (e.g. the oci plugin test
+  # keys off it). That reflects a caller-provided PYTHON_DEPS folder, not the
+  # auto-installed PYTHON_DEPS_PACKAGES default, so only define it for the former.
+  IF(NOT _py_deps_from_packages)
+    ADD_DEFINITIONS(-DPYTHON_DEPS)
+  ENDIF()
 ENDIF()
 
 IF(NOT BUNDLED_MYSQLBINLOG AND MYSQL_BUILD_DIR)
