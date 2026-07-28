@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -602,16 +603,16 @@ TEST(Upgrade_check_cache, cache_tables) {
     Checker_cache cache(options.filters);
 
     msession
-        ->expect_query({"SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM "
-                        "information_schema.tables WHERE "
-                        "(STRCMP(TABLE_SCHEMA COLLATE "
-                        "utf8_bin,'mysql')&STRCMP(TABLE_SCHEMA COLLATE "
-                        "utf8_bin,'sys')&STRCMP(TABLE_SCHEMA COLLATE "
-                        "utf8_bin,'performance_schema')&STRCMP(TABLE_SCHEMA "
-                        "COLLATE utf8_bin,'information_schema'))<>0",
-                        [](const std::string &query) {
-                          return remove_quoted_strings(query, k_sys_schemas);
-                        }})
+        ->expect_query(
+            {"SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM "
+             "information_schema.tables WHERE (STRCMP(CAST(TABLE_SCHEMA AS "
+             "BINARY),'mysql')&STRCMP(CAST(TABLE_SCHEMA AS "
+             "BINARY),'sys')&STRCMP(CAST(TABLE_SCHEMA AS "
+             "BINARY),'performance_schema')&STRCMP(CAST(TABLE_SCHEMA AS "
+             "BINARY),'information_schema'))<>0",
+             [](const std::string &query) {
+               return remove_quoted_strings(query, k_sys_schemas);
+             }})
         .then({"TABLE_SCHEMA", "TABLE_NAME", "ENGINE"});
 
     cache.cache_tables(msession.get());
@@ -633,9 +634,9 @@ TEST(Upgrade_check_cache, cache_tables) {
     msession
         ->expect_query(
             "SELECT TABLE_SCHEMA, TABLE_NAME, ENGINE FROM "
-            "information_schema.tables WHERE "
-            "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
-            "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,'exclude'))<>0")
+            "information_schema.tables WHERE (STRCMP(CAST(TABLE_SCHEMA AS "
+            "BINARY),'sakila'))=0 AND (STRCMP(CAST(TABLE_SCHEMA AS "
+            "BINARY),'exclude'))<>0")
         .then({"TABLE_SCHEMA", "TABLE_NAME", "ENGINE"});
 
     cache.cache_tables(msession.get());
@@ -657,9 +658,9 @@ TEST(Upgrade_check_cache, get_schema_filter) {
 
     // No filter uses the default filter (as below)
     EXPECT_STREQ(
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA "
-        "COLLATE utf8_bin,))<>0",
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS BINARY),))<>0",
         filter.c_str());
   }
 
@@ -672,9 +673,9 @@ TEST(Upgrade_check_cache, get_schema_filter) {
     filter = remove_quoted_strings(filter, k_sys_schemas);
 
     EXPECT_STREQ(
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA "
-        "COLLATE utf8_bin,))<>0",
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS BINARY),))<>0",
         filter.c_str());
   }
 
@@ -688,11 +689,10 @@ TEST(Upgrade_check_cache, get_schema_filter) {
     filter = remove_quoted_strings(filter, schemas1);
 
     EXPECT_STREQ(
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA "
-        "COLLATE utf8_bin,))=0 AND (STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,'sakila'))<>0",
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS BINARY),))=0 AND "
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),'sakila'))<>0",
         filter.c_str());
   }
 
@@ -706,11 +706,10 @@ TEST(Upgrade_check_cache, get_schema_filter) {
     filter = remove_quoted_strings(filter, schemas1);
 
     EXPECT_STREQ(
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA "
-        "COLLATE utf8_bin,))<>0",
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),'sakila'))=0 AND "
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS BINARY),))<>0",
         filter.c_str());
   }
 
@@ -725,11 +724,11 @@ TEST(Upgrade_check_cache, get_schema_filter) {
     filter = remove_quoted_strings(filter, schemas2);
 
     EXPECT_STREQ(
-        "(STRCMP(TABLE_SCHEMA COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,))=0 AND (STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE "
-        "utf8_bin,)&STRCMP(TABLE_SCHEMA "
-        "COLLATE utf8_bin,)&STRCMP(TABLE_SCHEMA COLLATE utf8_bin,))<>0",
+        "(STRCMP(CAST(TABLE_SCHEMA AS BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),))=0 AND (STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS "
+        "BINARY),)&STRCMP(CAST(TABLE_SCHEMA AS BINARY),))<>0",
         filter.c_str());
   }
 }
@@ -4638,11 +4637,11 @@ TEST_F(MySQL_upgrade_check_test, column_definition_check) {
       ->expect_query(
           {"SELECT table_schema,table_name,column_name,concat('##', "
            "column_type, 'AutoIncrement') as tag FROM "
-           "information_schema.columns WHERE (STRCMP(TABLE_SCHEMA COLLATE "
-           "utf8_bin,'mysql')&STRCMP(TABLE_SCHEMA COLLATE "
-           "utf8_bin,'sys')&STRCMP(TABLE_SCHEMA COLLATE "
-           "utf8_bin,'performance_schema')&STRCMP(TABLE_SCHEMA COLLATE "
-           "utf8_bin,'information_schema'))<>0 AND column_type IN ('float', "
+           "information_schema.columns WHERE (STRCMP(CAST(TABLE_SCHEMA AS "
+           "BINARY),'mysql')&STRCMP(CAST(TABLE_SCHEMA AS "
+           "BINARY),'sys')&STRCMP(CAST(TABLE_SCHEMA AS "
+           "BINARY),'performance_schema')&STRCMP(CAST(TABLE_SCHEMA AS "
+           "BINARY),'information_schema'))<>0 AND column_type IN ('float', "
            "'double') and extra = 'auto_increment'",
            [](const std::string &query) {
              return remove_quoted_strings(query, k_sys_schemas);
@@ -4798,11 +4797,11 @@ TEST_F(MySQL_upgrade_check_test, partitions_with_prefix_keys) {
            "p.table_schema AND s.table_name = p.table_name WHERE s.sub_part IS "
            "NOT NULL AND p.partition_method='KEY' AND "
            "(INSTR(p.partition_expression,CONCAT('`',s.column_name,'`'))>0 OR "
-           "p.partition_expression IS NULL) AND (STRCMP(s.TABLE_SCHEMA COLLATE "
-           "utf8_bin,'mysql')&STRCMP(s.TABLE_SCHEMA COLLATE "
-           "utf8_bin,'sys')&STRCMP(s.TABLE_SCHEMA COLLATE "
-           "utf8_bin,'performance_schema')&STRCMP(s.TABLE_SCHEMA COLLATE "
-           "utf8_bin,'information_schema'))<>0 GROUP BY s.table_schema, "
+           "p.partition_expression IS NULL) AND (STRCMP(CAST(s.TABLE_SCHEMA AS "
+           "BINARY),'mysql')&STRCMP(CAST(s.TABLE_SCHEMA AS "
+           "BINARY),'sys')&STRCMP(CAST(s.TABLE_SCHEMA AS "
+           "BINARY),'performance_schema')&STRCMP(CAST(s.TABLE_SCHEMA AS "
+           "BINARY),'information_schema'))<>0 GROUP BY s.table_schema, "
            "s.table_name",
            [](const std::string &query) {
              return remove_quoted_strings(query, k_sys_schemas);

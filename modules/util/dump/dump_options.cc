@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -160,8 +161,13 @@ std::set<std::string> Dump_options::find_missing_impl(
                                 (v == *objects.begin() ? " AS name" : "");
                        });
 
+  // o.name is an information_schema name column (utf8mb3), n.name comes from
+  // string literals (the connection charset, utf8mb4): compare the binary
+  // representation rather than forcing a collation, see
+  // Query_helper::case_sensitive_compare() for why 'COLLATE utf8_bin' is not
+  // portable across servers.
   query += ") AS n LEFT JOIN (" + subquery +
-           ") AS o ON STRCMP(o.name COLLATE utf8_bin, n.name)=0 "
+           ") AS o ON STRCMP(CAST(o.name AS BINARY), n.name)=0 "
            "WHERE o.name IS NULL";
 
   const auto result = session()->query(query);

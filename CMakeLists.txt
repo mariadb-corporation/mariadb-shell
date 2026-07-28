@@ -1567,6 +1567,11 @@ endif()
 # PyYAML, and the ANTLR4 Python runtime (antlr4-python3-runtime). Pass
 # -DPYTHON_DEPS_PACKAGES="..." to override, or an empty string
 # (-DPYTHON_DEPS_PACKAGES=) to install none.
+#
+# This is not specific to MariaDB builds: certifi is imported by the plugin
+# manager itself (python/packages/mysqlsh/plugin_manager/general.py), so a bundle
+# without it fails to load EVERY decorator-based plugin - including the bundled
+# sandbox plugin, which then surfaces as "name 'sandbox' is not defined".
 
 # "Are we producing a bundle that embeds a Python?" Windows always bundles the
 # located python.org install; unix bundles when BUNDLED_PYTHON_DIR is set.

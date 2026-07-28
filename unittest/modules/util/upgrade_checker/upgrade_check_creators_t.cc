@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -50,41 +51,42 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
     Checker_cache cache(options.filters);
 
     msession
-        ->expect_query({"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, "
-                        "ROUTINE_TYPE FROM information_schema.routines WHERE "
-                        "(STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'mysql')&STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'sys')&STRCMP(ROUTINE_SCHEMA COLLATE "
-                        "utf8_bin,'performance_schema')&STRCMP(ROUTINE_SCHEMA "
-                        "COLLATE utf8_bin,'information_schema'))<>0",
-                        [](const std::string &query) {
-                          return remove_quoted_strings(query, k_sys_schemas);
-                        }})
+        ->expect_query(
+            {"SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE FROM "
+             "information_schema.routines WHERE (STRCMP(CAST(ROUTINE_SCHEMA AS "
+             "BINARY),'mysql')&STRCMP(CAST(ROUTINE_SCHEMA AS "
+             "BINARY),'sys')&STRCMP(CAST(ROUTINE_SCHEMA AS "
+             "BINARY),'performance_schema')&STRCMP(CAST(ROUTINE_SCHEMA AS "
+             "BINARY),'information_schema'))<>0",
+             [](const std::string &query) {
+               return remove_quoted_strings(query, k_sys_schemas);
+             }})
         .then({"ROUTINE_SCHEMA", "ROUTINE_NAME"});
 
     msession
         ->expect_query({"SELECT TRIGGER_SCHEMA, TRIGGER_NAME, SQL_MODE, "
                         "EVENT_OBJECT_TABLE FROM information_schema.triggers "
-                        "WHERE (STRCMP(TRIGGER_SCHEMA COLLATE "
-                        "utf8_bin,'mysql')&STRCMP(TRIGGER_SCHEMA COLLATE "
-                        "utf8_bin,'sys')&STRCMP(TRIGGER_SCHEMA COLLATE "
-                        "utf8_bin,'performance_schema')&STRCMP(TRIGGER_SCHEMA "
-                        "COLLATE utf8_bin,'information_schema'))<>0",
+                        "WHERE (STRCMP(CAST(TRIGGER_SCHEMA AS "
+                        "BINARY),'mysql')&STRCMP(CAST(TRIGGER_SCHEMA AS "
+                        "BINARY),'sys')&STRCMP(CAST(TRIGGER_SCHEMA AS "
+                        "BINARY),'performance_schema')&STRCMP(CAST(TRIGGER_"
+                        "SCHEMA AS BINARY),'information_schema'))<>0",
                         [](const std::string &query) {
                           return remove_quoted_strings(query, k_sys_schemas);
                         }})
         .then({"TRIGGER_SCHEMA", "TRIGGER_NAME"});
 
     msession
-        ->expect_query({"SELECT EVENT_SCHEMA, EVENT_NAME, SQL_MODE FROM "
-                        "information_schema.events WHERE (STRCMP(EVENT_SCHEMA "
-                        "COLLATE utf8_bin,'mysql')&STRCMP(EVENT_SCHEMA COLLATE "
-                        "utf8_bin,'sys')&STRCMP(EVENT_SCHEMA COLLATE "
-                        "utf8_bin,'performance_schema')&STRCMP(EVENT_SCHEMA "
-                        "COLLATE utf8_bin,'information_schema'))<>0",
-                        [](const std::string &query) {
-                          return remove_quoted_strings(query, k_sys_schemas);
-                        }})
+        ->expect_query(
+            {"SELECT EVENT_SCHEMA, EVENT_NAME, SQL_MODE FROM "
+             "information_schema.events WHERE (STRCMP(CAST(EVENT_SCHEMA AS "
+             "BINARY),'mysql')&STRCMP(CAST(EVENT_SCHEMA AS "
+             "BINARY),'sys')&STRCMP(CAST(EVENT_SCHEMA AS "
+             "BINARY),'performance_schema')&STRCMP(CAST(EVENT_SCHEMA AS "
+             "BINARY),'information_schema'))<>0",
+             [](const std::string &query) {
+               return remove_quoted_strings(query, k_sys_schemas);
+             }})
         .then({"EVENT_SCHEMA", "EVENT_NAME"});
 
     mock_pool->setup_repeated_session(msession);
@@ -112,39 +114,37 @@ TEST(Upgrade_check_creators, get_syntax_check_test) {
     msession
         ->expect_query(
             "SELECT ROUTINE_SCHEMA, ROUTINE_NAME, SQL_MODE, ROUTINE_TYPE FROM "
-            "information_schema.routines WHERE "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'exclude'))<>0 AND "
-            "((STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
-            "(ROUTINE_NAME IN('includedRoutine')))) AND NOT "
-            "(STRCMP(ROUTINE_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
+            "information_schema.routines WHERE (STRCMP(CAST(ROUTINE_SCHEMA AS "
+            "BINARY),'sakila'))=0 AND (STRCMP(CAST(ROUTINE_SCHEMA AS "
+            "BINARY),'exclude'))<>0 AND ((STRCMP(CAST(ROUTINE_SCHEMA AS "
+            "BINARY),'sakila')=0 AND (ROUTINE_NAME IN('includedRoutine')))) "
+            "AND NOT (STRCMP(CAST(ROUTINE_SCHEMA AS BINARY),'sakila')=0 AND "
             "(ROUTINE_NAME IN('excludedRoutine')))")
         .then({"ROUTINE_SCHEMA", "ROUTINE_NAME"});
 
     msession
         ->expect_query(
             "SELECT TRIGGER_SCHEMA, TRIGGER_NAME, SQL_MODE, EVENT_OBJECT_TABLE "
-            "FROM information_schema.triggers WHERE (STRCMP(TRIGGER_SCHEMA "
-            "COLLATE utf8_bin,'sakila'))=0 AND (STRCMP(TRIGGER_SCHEMA COLLATE "
-            "utf8_bin,'exclude'))<>0 AND ((STRCMP(TRIGGER_SCHEMA COLLATE "
-            "utf8_bin,'sakila')=0 AND STRCMP(EVENT_OBJECT_TABLE COLLATE "
-            "utf8_bin,'trigger_table')=0 AND(STRCMP(TRIGGER_NAME COLLATE "
-            "utf8_bin,'includedTrigger'))=0)) AND NOT((STRCMP(TRIGGER_SCHEMA "
-            "COLLATE utf8_bin,'sakila')=0 AND STRCMP(EVENT_OBJECT_TABLE "
-            "COLLATE utf8_bin,'trigger_table')=0 AND(STRCMP(TRIGGER_NAME "
-            "COLLATE utf8_bin,'excludedTrigger'))=0))")
+            "FROM information_schema.triggers WHERE "
+            "(STRCMP(CAST(TRIGGER_SCHEMA AS BINARY),'sakila'))=0 AND "
+            "(STRCMP(CAST(TRIGGER_SCHEMA AS BINARY),'exclude'))<>0 AND "
+            "((STRCMP(CAST(TRIGGER_SCHEMA AS BINARY),'sakila')=0 AND "
+            "STRCMP(CAST(EVENT_OBJECT_TABLE AS BINARY),'trigger_table')=0 "
+            "AND(STRCMP(CAST(TRIGGER_NAME AS BINARY),'includedTrigger'))=0)) "
+            "AND NOT((STRCMP(CAST(TRIGGER_SCHEMA AS BINARY),'sakila')=0 AND "
+            "STRCMP(CAST(EVENT_OBJECT_TABLE AS BINARY),'trigger_table')=0 "
+            "AND(STRCMP(CAST(TRIGGER_NAME AS BINARY),'excludedTrigger'))=0))")
         .then({"TRIGGER_SCHEMA", "TRIGGER_NAME"});
 
     msession
         ->expect_query(
             "SELECT EVENT_SCHEMA, EVENT_NAME, SQL_MODE FROM "
-            "information_schema.events "
-            "WHERE (STRCMP(EVENT_SCHEMA COLLATE utf8_bin,'sakila'))=0 AND "
-            "(STRCMP(EVENT_SCHEMA COLLATE utf8_bin,'exclude'))<>0 AND "
-            "((STRCMP(EVENT_SCHEMA COLLATE utf8_bin,'sakila')=0 AND "
-            "(EVENT_NAME IN('includedEvent')))) AND NOT (STRCMP(EVENT_SCHEMA "
-            "COLLATE utf8_bin,'sakila')=0 AND (EVENT_NAME "
-            "IN('excludedEvent')))")
+            "information_schema.events WHERE (STRCMP(CAST(EVENT_SCHEMA AS "
+            "BINARY),'sakila'))=0 AND (STRCMP(CAST(EVENT_SCHEMA AS "
+            "BINARY),'exclude'))<>0 AND ((STRCMP(CAST(EVENT_SCHEMA AS "
+            "BINARY),'sakila')=0 AND (EVENT_NAME IN('includedEvent')))) AND "
+            "NOT (STRCMP(CAST(EVENT_SCHEMA AS BINARY),'sakila')=0 AND "
+            "(EVENT_NAME IN('excludedEvent')))")
         .then({"EVENT_SCHEMA", "EVENT_NAME"});
 
     mock_pool->setup_repeated_session(msession);

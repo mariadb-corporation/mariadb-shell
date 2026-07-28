@@ -804,3 +804,53 @@ rebuild from a clean tree, as CI does) to force the re-copy. Verify with
 `readelf -d lib/mysqlsh/lib/python<ver>/lib-dynload/_ssl*.so | grep -i rpath`
 (expect `RPATH` — not `RUNPATH` — with `$ORIGIN/../../..`) and the
 `LD_LIBRARY_PATH=/lib/x86_64-linux-gnu` import above, which must now succeed.
+
+---
+
+## 13. MariaDB server behaviour differences
+
+### 13.1 `COLLATE utf8_bin` breaks once `utf8` means utf8mb4
+
+`Query_helper::case_sensitive_compare()` forced a binary collation on
+information_schema name columns with `COLLATE utf8_bin`, to compare identifiers
+case-sensitively regardless of `lower_case_table_names`. That construct is not
+portable: I_S name columns are **utf8mb3**, while the character set `utf8` — and
+therefore the collation `utf8_bin` — is an alias for **utf8mb4** unless `old_mode`
+contains `UTF8_IS_UTF8MB3`. Where it is absent, every such query fails with
+
+```
+ERROR 1253: COLLATION 'utf8mb4_bin' is not valid for CHARACTER SET 'utf8mb3'
+```
+
+which failed `Db_tests.query_helper_bug37207914` (8 assertions) on the CI runner.
+This is a **server**, not a platform, difference — the shell sends the same SQL
+everywhere — and it is not decided by the version string: `UTF8_IS_UTF8MB3` is
+"deprecated since 13.1" (`sql/sys_vars.cc`) and `OLD_MODE_DEFAULT_VALUE` is now `0`
+(`sql/sql_class.h`), but the flip landed *within* the 13.1 alpha series, so two
+builds both reporting `13.1.0` can differ. Probe the build, not the version:
+
+```bash
+mariadbd --no-defaults --verbose --help | grep '^old-mode'   # empty => utf8 is utf8mb4
+```
+
+Observed: `12.3.2` and one macOS `13.1.0` tarball default to `UTF8_IS_UTF8MB3`
+(queries work), a newer Linux `13.1.0` build defaults to empty (queries fail).
+A server-side `old_mode=UTF8_IS_UTF8MB3` unblocks it, but the flag is deprecated,
+so it only defers the problem.
+
+Fix: compare the binary representation instead of naming a collation —
+`STRCMP(CAST(<column> AS BINARY),?)` (`query_helper.cc`, and the same construct in
+`dump/dump_options.cc`). It is charset-agnostic, so it works on either
+`old_mode` setting and on MySQL; it keeps the comparison byte-exact (case- and
+accent-sensitive); and unlike an explicit `utf8mb3_bin` it does not fail with
+`1267 Illegal mix of collations` when a *filter value* holds a 4-byte character.
+The `NO PAD` semantics of a binary comparison are irrelevant here because
+identifiers cannot contain trailing spaces (`1102`). Verified passing against both
+a `UTF8_IS_UTF8MB3` server (12.3.2) and an empty-`old_mode` server (13.1.0).
+
+Scope note: `Query_helper`'s only product consumers are dump/load and the Upgrade
+Checker, both excluded from MariaDB builds (`HAVE_DUMP_AND_LOAD`,
+`HAVE_UPGRADE_CHECKER`), so today the code is exercised only by its own unit test —
+but the defect is in shared library code and would resurface the moment either
+feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
+Upgrade-Checker tests were updated to match the generated SQL.

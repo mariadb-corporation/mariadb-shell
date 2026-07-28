@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +58,21 @@ std::string Query_helper::case_sensitive_compare(const std::string &column,
   // we're forcing case-sensitive collation on all platforms (effectively
   // ignoring lower_case_table_names system variable)
   // STRCMP is used to overcome problems with comparison in 5.7
-  return shcore::sqlstring("STRCMP(" + column + " COLLATE utf8_bin,?)", 0)
+  //
+  // The binary representation is compared instead of applying an explicit
+  // '<charset>_bin' collation, because no collation name works on every server:
+  // information_schema name columns are utf8mb3, while the character set 'utf8'
+  // - and hence the collation 'utf8_bin' - is an alias for utf8mb4 unless
+  // old_mode contains UTF8_IS_UTF8MB3, which MariaDB dropped from the default
+  // old_mode in 13.1. 'COLLATE utf8_bin' is therefore rejected there with
+  // "COLLATION 'utf8mb4_bin' is not valid for CHARACTER SET 'utf8mb3'" (error
+  // 1253). CAST(... AS BINARY) is charset-agnostic, keeps the comparison
+  // byte-exact (case- and accent-sensitive) on every supported server, and -
+  // unlike an explicit utf8mb3 collation - does not fail with "illegal mix of
+  // collations" (error 1267) when the value being compared holds a 4-byte
+  // character. Identifiers cannot contain trailing spaces, so the NO PAD
+  // semantics of a binary comparison make no difference here.
+  return shcore::sqlstring("STRCMP(CAST(" + column + " AS BINARY),?)", 0)
          << value;
 }
 
