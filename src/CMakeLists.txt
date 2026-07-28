@@ -409,6 +409,29 @@ IF(HAVE_PYTHON)
           OUT_COMMAND _FIX_RPATH_CMD)
         list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
       endif()
+    elseif(LINUX)
+      # Same problem as the macOS branch above, and it needs the same fix: the
+      # lib-dynload extension modules are copied as part of a directory, so they
+      # keep the absolute build-tree search path bootstrap_python.cmake linked
+      # them with (the vcpkg per-triplet lib dir) and never look inside
+      # INSTALL_LIBDIR, where the very same libraries are bundled. That path is
+      # gone in a packaged/relocated tree, and - because it is a DT_RUNPATH, which
+      # ld.so searches only *after* LD_LIBRARY_PATH - it also loses to any
+      # LD_LIBRARY_PATH pointing at a system lib dir even in the build tree. Both
+      # cases drop the module onto the system library of the same SONAME: for
+      # _ssl/_hashlib that is the distro's libcrypto.so.3, which lacks the symbol
+      # versions of the newer bundled OpenSSL, so `import ssl` dies with
+      # "version `OPENSSL_3.3.0' not found" (seen in CI, on the
+      # py_shell/mysqlsh_python_norecord.py sys.executable check). Replace it with
+      # a relative DT_RPATH into INSTALL_LIBDIR, which is searched before
+      # LD_LIBRARY_PATH and is valid in the build tree and the package alike. This
+      # covers every lib-dynload module, not just the OpenSSL ones - _sqlite3,
+      # _zstd, zlib and binascii link bundled vcpkg libraries too.
+      get_force_rpath_command(
+        PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/*.so"
+        ORIGIN_RELATIVE "../../.."
+        OUT_COMMAND _FORCE_RPATH_CMD)
+      set(EXTRA_COPY_COMMANDS COMMAND ${_FORCE_RPATH_CMD})
     endif()
 
     install_bundled_directory(
@@ -442,7 +465,18 @@ IF(HAVE_PYTHON)
             OUT_COMMAND _FIX_RPATH_CMD)
           list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
         endif()
-     endif()
+      elseif(LINUX)
+        # Same treatment as lib-dynload above, for the same reasons; the relative
+        # path assumes a top-level module (site-packages/foo.so -> up 3 to
+        # INSTALL_LIBDIR), matching the glob. A nested module keeps whatever it was
+        # linked with - only top-level extensions are rewritten here, and none of
+        # the bundled packages ship a nested one that links a bundled library.
+        get_force_rpath_command(
+          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so"
+          ORIGIN_RELATIVE "../../.."
+          OUT_COMMAND _FORCE_RPATH_CMD)
+        set(EXTRA_COPY_COMMANDS COMMAND ${_FORCE_RPATH_CMD})
+      endif()
 
       # no need to install this, this is a subdirectory of the Python library directory
       install_bundled_directory(

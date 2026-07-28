@@ -178,8 +178,63 @@ elseif(NOT WIN32)
       string(PREPEND RELATIVE_PATH_TO_LIBDIR "/")
     endif()
 
-    get_patchelf_command(ARGS --set-rpath "\\$$ORIGIN${RELATIVE_PATH_TO_LIBDIR}" "${ARG_BINARY}" OUT_COMMAND COMMAND)
+    # --force-rpath writes the legacy DT_RPATH tag instead of DT_RUNPATH. Only
+    # DT_RPATH is searched *before* LD_LIBRARY_PATH, so this is what keeps a
+    # bundled library winning over a system one of the same SONAME - the same
+    # reason add_shell_executable() links the executables with
+    # -Wl,--disable-new-dtags. With DT_RUNPATH, any LD_LIBRARY_PATH naming a
+    # system lib dir silently substitutes the system copy, which breaks outright
+    # when ours is newer (e.g. bundled OpenSSL 3.x vs the distro's libcrypto.so.3:
+    # "version `OPENSSL_3.3.0' not found").
+    get_patchelf_command(ARGS --force-rpath --set-rpath "\\$$ORIGIN${RELATIVE_PATH_TO_LIBDIR}" "${ARG_BINARY}" OUT_COMMAND COMMAND)
     set("${ARG_OUT_COMMAND}" ${COMMAND} PARENT_SCOPE)
+  endfunction()
+
+  # Emit a `cmake -P` command that rewrites the RPATH of bundled ELF binaries
+  # which were copied as part of a *directory* (so install_bundled_binaries' own
+  # per-file rpath handling never saw them) - the bundled Python's lib-dynload
+  # extension modules and site-packages, whose link-time RUNPATH points at the
+  # absolute vcpkg build-tree lib dir. PATTERN is globbed at build time (after
+  # the copy), so newly added modules are covered without re-configuring.
+  # ORIGIN_RELATIVE is the path from the matched files up to INSTALL_LIBDIR.
+  # See cmake/linux_fix_bundled_rpath.cmake.
+  function(get_force_rpath_command)
+    set(options)
+    set(oneValueArgs PATTERN BINARIES ORIGIN_RELATIVE OUT_COMMAND)
+    set(multiValueArgs)
+    cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    if(NOT PATCHELF_EXECUTABLE)
+      message(FATAL_ERROR "Please install the patchelf(1) utility.")
+    endif()
+
+    if(ARG_PATTERN)
+      set(_selector "-Dpattern=${ARG_PATTERN}")
+    else()
+      set(_selector "-Dbinaries=${ARG_BINARIES}")
+    endif()
+
+    # Pass the page size as a scalar: PATCHELF_PAGE_SIZE_ARGS is a two-element
+    # list ('--page-size;<size>') and its ';' would be expanded as an argument
+    # separator when this command is spliced into add_custom_command, splitting
+    # one -D into two arguments. The script re-assembles the flag.
+    set(_page_size "")
+    if(PATCHELF_PAGE_SIZE_ARGS)
+      list(GET PATCHELF_PAGE_SIZE_ARGS 1 _page_size)
+    endif()
+
+    # NOTE: pass each -D value UNQUOTED - these commands are spliced into
+    # add_custom_command and executed without a shell, so a literal -Dfoo="bar"
+    # would keep the quotes in the value.
+    set("${ARG_OUT_COMMAND}"
+        ${CMAKE_COMMAND}
+        "-Dpatchelf=${PATCHELF_EXECUTABLE}"
+        "-Dpatchelf_page_size=${_page_size}"
+        "-Dorigin_relative=${ARG_ORIGIN_RELATIVE}"
+        ${_selector}
+        -P "${CMAKE_SOURCE_DIR}/cmake/linux_fix_bundled_rpath.cmake"
+        PARENT_SCOPE
+    )
   endfunction()
 endif()
 

@@ -1,0 +1,83 @@
+name: MariaDB-Shell-CI
+
+on:
+  pull_request:
+      branches: [ "main" ]
+  push:
+    branches: [ "workflow-test" ]
+
+jobs:
+  build:
+
+    runs-on: self-linux-x64
+    
+    env:
+      MARIADB_SHELL_BUILD_DIR: bld
+      MYSQL_PORT: 3312
+
+    steps:
+      # ========================================
+      # 0. CHECKOUT MAIN PROJECT (MUST BE FIRST)
+      # ========================================
+      - name: Checkout Main Project
+        uses: actions/checkout@v4
+
+      # ============
+      # 1. CONFIGURE
+      # ============
+      - name: Configure MariaDB Shell
+        run: |
+          # Resolve the wildcard path to an absolute path
+          MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
+          
+          # Add to GitHub Actions global PATH for all subsequent steps
+          echo "$MARIADB_BIN" >> $GITHUB_PATH
+
+          mkdir -p ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          
+          cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=x64-linux-dynamic
+
+      # ============
+      # 1. BUILD
+      # ============
+      - name: Build MariaDB Shell
+        run: |
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cmake --build . --parallel
+
+
+      # ============
+      # 2. SETUP TEST ENVIRONMENT
+      # ============
+      - name: Setup Test Environment
+        id: setup
+        run: |
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cd bin
+          ./mysqlsh -- sandbox deploy $MYSQL_PORT --password=
+
+          # Mark that deployment succeeded so cleanup knows to run
+          echo "deployed=true" >> $GITHUB_OUTPUT          
+
+      # ============
+      # 3. EXECUTE TESTS
+      # ============
+      - name: Execute Unit Tests
+        run: |
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cd bin
+          ./run_unit_tests --gtest_filter="-*Slow_*"
+
+      # ============
+      # 4. CLEANUP
+      # ============
+      - name: Teardown Test Environment
+        # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
+        if: always() && steps.setup.outputs.deployed == 'true'
+        run: |
+          echo "Tearing down server..."
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cd bin
+          ./mysqlsh -- sandbox stop $MYSQL_PORT
+          ./mysqlsh -- sandbox delete $MYSQL_PORT

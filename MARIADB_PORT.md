@@ -753,3 +753,54 @@ it is a self-inconsistency: the helper can create items it then cannot list. Fix
 `parse_list` now skips continuation lines (`option.size() < 2`) instead of indexing
 them. Verified: listing with a newline-id item present returns cleanly and still
 reports the other credentials.
+
+### 12.8 Bundled Python extension modules need a relative `DT_RPATH` (not `RUNPATH`)
+
+`bootstrap_python.cmake` links the bundled interpreter and its extension modules
+with `-Wl,-rpath,<abs vcpkg lib dir>` so they load the same OpenSSL/zlib/zstd/
+sqlite3 as the shell (§12.4). Modern linkers emit that as **`DT_RUNPATH`**, which
+`ld.so` searches *after* `LD_LIBRARY_PATH`, and the path is absolute into the
+*build* tree. Both properties bite:
+
+* any `LD_LIBRARY_PATH` naming a system lib dir wins over it, and
+* it resolves nothing once the build tree is cleaned, moved, or packaged.
+
+Either way the module falls through to the ldconfig cache and loads the *system*
+library of the same SONAME. For `_ssl`/`_hashlib` that is the distro's
+`libcrypto.so.3`, which does not carry the symbol versions of the newer vcpkg
+OpenSSL they were built against, so `import ssl` fails with **`ImportError:
+/lib/x86_64-linux-gnu/libcrypto.so.3: version `OPENSSL_3.3.0' not found (required
+by .../lib-dynload/_ssl.cpython-314-x86_64-linux-gnu.so)`**. This failed
+`Shell_scripted/Auto_script_py.run_and_check/mysqlsh_python_norecord` on the
+self-hosted Ubuntu CI runner, at the `sys.executable`/`import ssl` check
+(`unittest/scripts/auto/py_shell/scripts/mysqlsh_python_norecord.py`) — a
+*subprocess* of the bundled interpreter, so only that module's own search path
+applies. Reproduce/confirm the mechanism with
+`LD_LIBRARY_PATH=/lib/x86_64-linux-gnu lib/mysqlsh/bin/python<ver> -c "import ssl"`
+(fails) versus the same command without it (silent).
+
+macOS already handled this (strip the build-tree `LC_RPATH`, add
+`@loader_path/../../..`); the Linux side did not, and only worked as long as the
+build tree stayed intact *and* `LD_LIBRARY_PATH` was unset. Fix:
+
+* `cmake/linux_fix_bundled_rpath.cmake` + `get_force_rpath_command()`
+  (`cmake/exeutils.cmake`) run `patchelf --force-rpath --set-rpath
+  '$ORIGIN/../../..'` over the copied `lib-dynload/*.so` (and top-level
+  `site-packages/*.so`), pointing them at `INSTALL_LIBDIR`, where the same
+  libraries are bundled. The relative form is valid in the build tree *and* in the
+  package.
+* `get_rpath_command()` (used for every individually bundled binary — `libpython`,
+  the `python<ver>` launcher, the vcpkg/libssh/krb5 libraries) now also passes
+  `--force-rpath`.
+
+`--force-rpath` writes the legacy `DT_RPATH` tag, the only one searched *before*
+`LD_LIBRARY_PATH` — the same reason `add_shell_executable()` links the shell's own
+executables with `-Wl,--disable-new-dtags`. Bundled copies now beat a system
+library of the same SONAME regardless of the environment.
+
+NOTE: the copy is a `make` target keyed on timestamps, so an incremental build will
+not re-patch existing copies — delete `<build>/lib/mysqlsh/lib/python<ver>` (or
+rebuild from a clean tree, as CI does) to force the re-copy. Verify with
+`readelf -d lib/mysqlsh/lib/python<ver>/lib-dynload/_ssl*.so | grep -i rpath`
+(expect `RPATH` — not `RUNPATH` — with `$ORIGIN/../../..`) and the
+`LD_LIBRARY_PATH=/lib/x86_64-linux-gnu` import above, which must now succeed.
