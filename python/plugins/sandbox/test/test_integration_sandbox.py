@@ -212,10 +212,23 @@ def test_ssl_enabled_by_default(driver):
     assert "successfully deployed" in driver.deploy(port)
 
     sbx = os.path.join(driver.sandbox_dir, str(port))
-    # The certificate authority plus server and client certificates exist.
-    for name in ("ca-cert.pem", "ca-key.pem", "server-cert.pem",
+    # The certificate authority plus server and client certificates exist. Where
+    # they live and how the CA is named depends on who produced them: MariaDB gets
+    # them generated with openssl into the sandbox directory, while MySQL
+    # auto-generates its own set into the data directory as it is initialized.
+    with open(os.path.join(sbx, "vendor")) as f:
+        vendor = f.read().strip()
+
+    if vendor == "mysql":
+        cert_dir = os.path.join(sbx, "sandboxdata")
+        ca_name = "ca.pem"
+    else:
+        cert_dir = sbx
+        ca_name = "ca-cert.pem"
+
+    for name in (ca_name, "ca-key.pem", "server-cert.pem",
                  "server-key.pem", "client-cert.pem", "client-key.pem"):
-        assert os.path.isfile(os.path.join(sbx, name)), name
+        assert os.path.isfile(os.path.join(cert_dir, name)), name
 
     # The server option file points the instance at the server certificates.
     with open(os.path.join(sbx, "my.cnf")) as f:
@@ -224,12 +237,15 @@ def test_ssl_enabled_by_default(driver):
     assert "ssl_cert = " in contents
     assert "ssl_key = " in contents
 
-    # The running server reports TLS support enabled.
+    # The connection to the running server is actually encrypted. Checked via the
+    # session's Ssl_cipher status variable (non-empty only for a TLS connection)
+    # rather than the 'have_ssl' variable, which MySQL removed - and which only
+    # said TLS was available, not that it was in use.
     out = driver.run(
         "s = shell.open_session('root:rootpass@localhost:{0}'); "
-        "print('HAVE_SSL', s.run_sql(\"SHOW GLOBAL VARIABLES LIKE 'have_ssl'\")"
-        ".fetch_one()[1]); s.close()".format(port))
-    assert "HAVE_SSL YES" in out, out
+        "cipher = s.run_sql(\"SHOW STATUS LIKE 'Ssl_cipher'\").fetch_one()[1]; "
+        "print('ENCRYPTED', bool(cipher)); s.close()".format(port))
+    assert "ENCRYPTED True" in out, out
 
 
 def test_ssl_can_be_disabled(driver):

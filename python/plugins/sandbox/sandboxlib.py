@@ -70,6 +70,19 @@ _SSL_FILES = {
     "client_cert": "client-cert.pem",
 }
 
+# The equivalent files MySQL generates by itself while initializing the data
+# directory (auto_generate_certs, on by default), keyed by the same roles. Note
+# the CA is named 'ca.pem', not MariaDB's 'ca-cert.pem'. They live in the data
+# directory rather than the sandbox root.
+_MYSQL_AUTO_SSL_FILES = {
+    "ca_key": "ca-key.pem",
+    "ca_cert": "ca.pem",
+    "server_key": "server-key.pem",
+    "server_cert": "server-cert.pem",
+    "client_key": "client-key.pem",
+    "client_cert": "client-cert.pem",
+}
+
 # Validity of the self-signed sandbox certificates, in days (10 years).
 _SSL_DAYS = "3650"
 
@@ -691,6 +704,102 @@ def _ssl_paths(sandbox_dir):
             for role, name in _SSL_FILES.items()}
 
 
+def _client_is_mariadb():
+    """Whether the running shell links MariaDB's Connector/C.
+
+    'shell.version' reports the client library the shell was built against, e.g.
+    "Ver 9.7.0 for Linux on aarch64 - for MariaDB 13.1.0-MariaDB (...)" versus
+    "... - for MySQL 9.7.0 (...)". This decides which authentication plugin a
+    MariaDB sandbox's root account can use: see _root_auth_plugin().
+    """
+    try:
+        return " for MariaDB" in globals.shell.version
+    except Exception as err:
+        # Be conservative: assume the MariaDB connector (today's behaviour).
+        _log("warning", "Unable to determine the shell's client library ({0}); "
+             "assuming MariaDB.".format(err))
+        return True
+
+
+def _root_auth_plugin(vendor):
+    """Authentication plugin to force on a sandbox's root accounts, or None.
+
+    None means "leave the server default", which is what a matching client always
+    wants: MySQL defaults to caching_sha2_password, MariaDB to
+    mysql_native_password, and each vendor's own client speaks its default.
+
+    The mismatch is a MySQL-built shell against a MariaDB sandbox. MySQL 9.0
+    REMOVED mysql_native_password, client plugin included, so such a shell cannot
+    authenticate to a stock MariaDB instance at all - it fails before running any
+    SQL with "Authentication plugin 'mysql_native_password' cannot be loaded".
+    caching_sha2_password is the one plugin both sides implement (MariaDB ships it
+    built-in for MySQL compatibility), so force it there.
+    """
+    if vendor == _VENDOR_MARIADB and not _client_is_mariadb():
+        return "caching_sha2_password"
+    return None
+
+
+def _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts, auth_plugin):
+    """Switch the local root accounts to 'auth_plugin' before the server starts.
+
+    Needed because the mismatch handled by _root_auth_plugin() bites on the very
+    first connection: the shell cannot log in to change anything, so this cannot
+    be done over SQL like the password is. 'mariadbd --bootstrap' runs statements
+    against the data directory directly, with no client and no listening server.
+    The accounts are left password-less (as mariadb-install-db leaves them);
+    deploy() then sets the real password through the normal path, keeping this
+    plugin.
+
+    The privilege row is updated directly rather than with ALTER USER, because
+    --bootstrap implies --skip-grant-tables, under which the server refuses
+    account management ("ERROR 1290 ... running with the --skip-grant-tables
+    option"). MariaDB keeps the plugin and credential in the JSON 'Priv' column of
+    mysql.global_priv; an empty authentication_string means "no password", which
+    is the state deploy() expects here.
+    """
+    hosts = ", ".join("'{0}'".format(h)
+                      for h in ("localhost", "127.0.0.1", "::1"))
+    statements = (
+        "UPDATE mysql.global_priv SET Priv = JSON_SET(Priv, "
+        "'$.plugin', '{0}', '$.authentication_string', '') "
+        "WHERE User = 'root' AND Host IN ({1});\n".format(auth_plugin, hosts))
+
+    args = [mariadbd, "--no-defaults", "--datadir={0}".format(datadir)]
+    args += ["--{0}={1}".format(k.replace("_", "-"), v)
+             for k, v in innodb_opts.items()]
+    args.append("--bootstrap")
+
+    result = subprocess.run(args, input=statements.encode("utf-8"),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode != 0:
+        raise Error("Could not switch the sandbox root accounts to '{0}' "
+                    "authentication:\n{1}".format(
+                        auth_plugin,
+                        result.stdout.decode("utf-8", "replace").strip()))
+
+
+def _mysql_auto_ssl_paths(datadir):
+    """SSL files MySQL generated for itself while initializing 'datadir'.
+
+    MySQL bootstraps a self-signed CA plus server and client certificates during
+    'mysqld --initialize-insecure' (auto_generate_certs), so a MySQL sandbox needs
+    no openssl CLI - the certificates arrive with the data directory. Returns the
+    same {role: path} mapping _generate_ssl_certs() produces, or None when the set
+    is incomplete (then the option file simply omits the ssl_* entries and the
+    server falls back to those very defaults).
+    """
+    paths = {role: os.path.join(datadir, name)
+             for role, name in _MYSQL_AUTO_SSL_FILES.items()}
+    missing = [p for p in paths.values() if not os.path.isfile(p)]
+    if missing:
+        _log("warning", "The server did not auto-generate all sandbox SSL files "
+             "(missing: {0}); the option file will not reference them."
+             "".format(", ".join(os.path.basename(p) for p in missing)))
+        return None
+    return paths
+
+
 def _run_openssl(openssl, args):
     """Run one openssl sub-command, raising with its output on failure."""
     result = subprocess.run([openssl] + args, stdout=subprocess.PIPE,
@@ -878,7 +987,17 @@ export MYSQLD_RESTART_EXIT=16
     wait "$server_pid"
     [ $? -ne "$MYSQLD_RESTART_EXIT" ] && break
   done
-  rm -f "$PID_FILE"
+  # Only clean up the PID file while it still refers to *our* server. A
+  # stop-then-start cycle races here: this loop is torn down asynchronously after
+  # the server exits, so a new start script can already have written its own PID
+  # before we get here. Removing that would strand the new instance - stop() and
+  # kill() find no PID file and refuse to act ("Could not find the PID file ...
+  # although a server is listening on it"). The window is wide enough to hit in
+  # practice: the port is free (so the caller proceeds) before the server process
+  # is fully reaped.
+  if [ "$(cat "$PID_FILE" 2>/dev/null)" = "$server_pid" ] ; then
+    rm -f "$PID_FILE"
+  fi
 ) </dev/null >/dev/null 2>&1 &
 disown
 echo "MariaDB sandbox started in the background."
@@ -1094,19 +1213,34 @@ def _open_root_session(port, sandbox_dir, password):
     return globals.shell.open_session(conn)
 
 
-def _set_root_password(session, password):
+def _identified_clause(auth_plugin):
+    """The 'IDENTIFIED ...' clause for CREATE/ALTER USER, with a '?' placeholder.
+
+    Without a forced plugin the server default applies ('IDENTIFIED BY'). With
+    one, MariaDB's syntax is used ('IDENTIFIED VIA <plugin> USING PASSWORD(?)'),
+    since the only case that forces a plugin is a MariaDB sandbox reached from a
+    MySQL-built shell - see _root_auth_plugin(). Plain 'IDENTIFIED BY' would
+    silently reset the account to the server default plugin (native password),
+    locking such a shell out again.
+    """
+    if auth_plugin:
+        return "IDENTIFIED VIA {0} USING PASSWORD(?)".format(auth_plugin)
+    return "IDENTIFIED BY ?"
+
+
+def _set_root_password(session, password, auth_plugin=None):
     """Set the password for the local root accounts, with binlog disabled."""
     session.run_sql("SET sql_log_bin = 0")
     try:
         for host in ("localhost", "127.0.0.1", "::1"):
             session.run_sql(
-                "ALTER USER IF EXISTS 'root'@'{0}' IDENTIFIED BY ?"
-                "".format(host), [password])
+                "ALTER USER IF EXISTS 'root'@'{0}' {1}"
+                "".format(host, _identified_clause(auth_plugin)), [password])
     finally:
         session.run_sql("SET sql_log_bin = 1")
 
 
-def _create_remote_root(session, allow_root_from, password):
+def _create_remote_root(session, allow_root_from, password, auth_plugin=None):
     """Create a root account reachable from the given host pattern."""
     # Restrict the pattern to characters valid in a host spec to avoid SQL
     # injection through the account name (the password is bound as a parameter).
@@ -1116,8 +1250,9 @@ def _create_remote_root(session, allow_root_from, password):
     session.run_sql("SET sql_log_bin = 0")
     try:
         session.run_sql(
-            "CREATE USER IF NOT EXISTS 'root'@'{0}' IDENTIFIED BY ?"
-            "".format(allow_root_from), [password])
+            "CREATE USER IF NOT EXISTS 'root'@'{0}' {1}"
+            "".format(allow_root_from, _identified_clause(auth_plugin)),
+            [password])
         session.run_sql(
             "GRANT ALL ON *.* TO 'root'@'{0}' WITH GRANT OPTION"
             "".format(allow_root_from))
@@ -1238,9 +1373,13 @@ def create_sandbox(port, options):
                    "--initialize-insecure"))
 
     # Resolve openssl up-front so deployment fails before doing any work when
-    # SSL is requested but the tool is unavailable.
+    # SSL is requested but the tool is unavailable. MariaDB only: MySQL generates
+    # its own CA/server/client certificates while initializing the data directory
+    # (auto_generate_certs), so it needs no openssl CLI - and requiring one would
+    # break deployment where none is usable (macOS ships LibreSSL, whose 'req'
+    # rejects our config, and the build bundles the CLI for MariaDB only).
     openssl = None
-    if ssl:
+    if ssl and vendor == _VENDOR_MARIADB:
         openssl = _resolve_openssl(basedir, options.get("opensslPath"))
         if not openssl:
             raise Error("Could not find the 'openssl' tool needed to generate "
@@ -1270,16 +1409,21 @@ def create_sandbox(port, options):
         raise Error("Unable to deploy the sandbox data directory '{0}': {1}"
                     "".format(datadir, err))
 
-    # 2) Generate the SSL certificates (CA + server + client) so the instance
-    #    can serve TLS connections. Done per sandbox so each gets its own CA.
+    # 2) Point the instance at the SSL certificates (CA + server + client) it will
+    #    serve TLS with. MySQL already generated its own set into the data
+    #    directory while initializing it, so only MariaDB needs them created here
+    #    - done per sandbox, so each gets its own CA.
     ssl_files = None
     if ssl:
-        print("Generating SSL certificates for the sandbox...")
-        try:
-            ssl_files = _generate_ssl_certs(sandbox_dir, openssl)
-        except Exception:
-            shutil.rmtree(sandbox_dir, ignore_errors=True)
-            raise
+        if vendor == _VENDOR_MARIADB:
+            print("Generating SSL certificates for the sandbox...")
+            try:
+                ssl_files = _generate_ssl_certs(sandbox_dir, openssl)
+            except Exception:
+                shutil.rmtree(sandbox_dir, ignore_errors=True)
+                raise
+        else:
+            ssl_files = _mysql_auto_ssl_paths(datadir)
 
     # 2b) MariaDB only: provision the caching_sha2_password RSA keypair the
     #     built-in plugin expects, so it stops logging a spurious startup error
@@ -1301,6 +1445,23 @@ def create_sandbox(port, options):
         except Exception as err:
             _log("warning", "Could not provision the caching_sha2_password RSA "
                  "keypair (non-fatal): {0}".format(err))
+
+    # 2c) A MySQL-built shell cannot authenticate to a stock MariaDB instance
+    #     (MySQL 9 dropped mysql_native_password), and it fails on the very first
+    #     connection - before any SQL can fix it. Switch the root accounts over
+    #     offline, straight against the copied data directory, so the session
+    #     opened below can log in. No-op for every matching client/server pair.
+    root_auth_plugin = _root_auth_plugin(vendor)
+    if root_auth_plugin:
+        _log("info", "Switching the sandbox root accounts to '{0}': this shell "
+             "links the MySQL client library, which cannot authenticate with "
+             "MariaDB's default plugin.".format(root_auth_plugin))
+        try:
+            _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts,
+                                        root_auth_plugin)
+        except Exception:
+            shutil.rmtree(sandbox_dir, ignore_errors=True)
+            raise
 
     # 3) Write the option file and the start/stop scripts (the scripts capture
     #    the resolved server binary and the option file path).
@@ -1326,9 +1487,10 @@ def create_sandbox(port, options):
     # 5) Set the root password and, optionally, create a remote root account.
     session = _open_root_session(port, sandbox_dir, "")
     try:
-        _set_root_password(session, password)
+        _set_root_password(session, password, root_auth_plugin)
         if allow_root_from:
-            _create_remote_root(session, allow_root_from, password)
+            _create_remote_root(session, allow_root_from, password,
+                                root_auth_plugin)
     finally:
         session.close()
 
@@ -1433,6 +1595,16 @@ def stop_sandbox(port, options):
     if not _wait_until(lambda: not is_listening("localhost", port), timeout):
         raise Error("Timeout waiting for the {0} sandbox on port {1} to "
                     "stop. You may need to use kill().".format(label, port))
+
+    # The port frees up before the start script's background restart loop is torn
+    # down, and that loop removes the PID file on its way out. Wait for it, so a
+    # start() right after this call cannot have its fresh PID file deleted by the
+    # loop we just ended: the loop only removes the file while it still holds its
+    # own PID, but that check is not atomic with the removal. Best effort - if the
+    # file lingers (e.g. the server was started outside the script), carry on; a
+    # stale PID is handled by the callers.
+    _wait_until(lambda: _read_pid(sandbox_dir, port) is None, 5)
+
     print("Instance localhost:{0} successfully stopped.".format(port))
 
 

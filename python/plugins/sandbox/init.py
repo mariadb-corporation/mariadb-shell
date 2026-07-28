@@ -55,11 +55,12 @@ def deploy(port, options=None):
     root password is set and, by default, a root account reachable from any host
     is created. The instance is left running.
 
-    SSL/TLS is enabled by default: a private certificate authority plus server
-    and client certificates are generated with openssl and written into the
-    sandbox directory, and the server and the bundled clients are configured to
-    use them. This requires the openssl command-line tool; set the 'ssl' option
-    to false to deploy without TLS.
+    SSL/TLS is enabled by default: the server and the bundled clients are
+    configured with a private certificate authority plus server and client
+    certificates. For MariaDB these are generated into the sandbox directory,
+    which requires the openssl command-line tool; MySQL generates its own while
+    initializing the data directory, so no external tool is needed there. Set the
+    'ssl' option to false to deploy without TLS.
 
     The one exception is MariaDB on Windows, where TLS defaults to off: those
     builds bundle wolfSSL, whose server-side TLS cannot complete a handshake with
@@ -93,7 +94,8 @@ def deploy(port, options=None):
             wolfSSL) where it defaults to false.
         opensslPath (str): Path to the openssl executable, or to a directory
             containing it, used to generate the SSL certificates. Located in
-            the MariaDB installation and then on the PATH by default.
+            the MariaDB installation and then on the PATH by default. Ignored
+            for MySQL, which generates its own certificates.
         mariadbdPath (str): Path to the mariadbd/mysqld binary, or to the
             server installation directory. Located on the PATH by default.
         mariadbdOptions (list): Additional server configuration options to

@@ -164,53 +164,56 @@ if(BUNDLED_OPENSSL)
     )
   ENDIF()
 
-  # The MariaDB sandbox plugin shells out to the openssl CLI to generate the
-  # sandbox SSL certificates (MariaDB, unlike MySQL, does not auto-generate them
-  # at datadir init). The system openssl cannot be relied on: Windows has none,
-  # and macOS ships LibreSSL, whose 'req' command is incompatible with our
-  # cert-generation config (empty distinguished_name + -subj aborts with "no
-  # objects specified in config file"). vcpkg keeps the tool under
-  # <prefix>/tools/openssl, which the normal library-deploy step does not copy,
-  # so bundle it next to the bundled OpenSSL libraries (INSTALL_LIBDIR, which
-  # maps to bin/ on Windows) for an out-of-the-box experience. MariaDB only: the
-  # MySQL build uses the AdminAPI sandbox (server-side cert generation) and does
-  # not need the CLI. Runtime discovery is in python/plugins/sandbox (see
-  # _shell_bundled_openssl), which looks beside the shell's OpenSSL libraries.
-  IF(MARIADB_BUILD)
-    FIND_PROGRAM(OPENSSL_CLI_EXECUTABLE
-      NAMES openssl
-      HINTS "${WITH_SSL_PATH}/tools/openssl" "${WITH_SSL_PATH}/bin"
-            "${OPENSSL_ROOT_DIR}/tools/openssl" "${OPENSSL_ROOT_DIR}/bin"
-      NO_DEFAULT_PATH)
-    IF(OPENSSL_CLI_EXECUTABLE)
-      SET(_OPENSSL_CLI_EXTRA_COMMANDS "")
-      IF(APPLE)
-        # install_bundled_binaries rewrites the copy's LC_LOAD_DYLIB references
-        # (-change) but never its LC_RPATH. The vcpkg CLI links its libs as
-        # @rpath/lib<x>.dylib and ships an rpath (@loader_path/../../lib) aimed at
-        # the vcpkg tools layout, not INSTALL_LIBDIR. Strip that stale rpath and
-        # add @loader_path so it resolves the OpenSSL dylibs bundled right beside
-        # it in INSTALL_LIBDIR.
-        get_fix_bundled_rpath_command(
-          PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/openssl"
-          STRIP_PREFIX "@loader_path/../../lib"
-          ADD_RPATH "@loader_path"
-          OUT_COMMAND _FIX_OPENSSL_CLI_RPATH)
-        SET(_OPENSSL_CLI_EXTRA_COMMANDS COMMAND ${_FIX_OPENSSL_CLI_RPATH})
-      ENDIF()
-      install_bundled_binaries(
-          DESCRIPTION "OpenSSL CLI (MariaDB sandbox cert generation)"
-          BINARIES "${OPENSSL_CLI_EXECUTABLE}"
-          DESTINATION "${INSTALL_LIBDIR}"
-          TARGET mysqlsh
-          EXTRA_COPY_COMMANDS ${_OPENSSL_CLI_EXTRA_COMMANDS}
-      )
-    ELSE()
-      MESSAGE(WARNING "openssl CLI not found near the resolved OpenSSL "
-        "(WITH_SSL_PATH='${WITH_SSL_PATH}', OPENSSL_ROOT_DIR='${OPENSSL_ROOT_DIR}'); "
-        "the MariaDB sandbox plugin will require openssl on PATH or the "
-        "'opensslPath' option.")
+  # The sandbox plugin shells out to the openssl CLI to generate the sandbox SSL
+  # certificates when it deploys a MariaDB instance (MariaDB, unlike MySQL, does
+  # not auto-generate them at datadir init). The system openssl cannot be relied
+  # on: Windows has none, and macOS ships LibreSSL, whose 'req' command is
+  # incompatible with our cert-generation config (empty distinguished_name +
+  # -subj aborts with "no objects specified in config file"). vcpkg keeps the tool
+  # under <prefix>/tools/openssl, which the normal library-deploy step does not
+  # copy, so bundle it next to the bundled OpenSSL libraries (INSTALL_LIBDIR,
+  # which maps to bin/ on Windows) for an out-of-the-box experience. Runtime
+  # discovery is in python/plugins/sandbox (see _shell_bundled_openssl), which
+  # looks beside the shell's OpenSSL libraries.
+  #
+  # This is deliberately NOT conditional on MARIADB_BUILD: the server the shell
+  # was built against says nothing about the server it deploys. The sandbox
+  # plugin ships in both builds and deploys either vendor, so a MySQL build needs
+  # the CLI just as much - without it, deploying a MariaDB sandbox fails wherever
+  # the system openssl is missing or is LibreSSL.
+  FIND_PROGRAM(OPENSSL_CLI_EXECUTABLE
+    NAMES openssl
+    HINTS "${WITH_SSL_PATH}/tools/openssl" "${WITH_SSL_PATH}/bin"
+          "${OPENSSL_ROOT_DIR}/tools/openssl" "${OPENSSL_ROOT_DIR}/bin"
+    NO_DEFAULT_PATH)
+  IF(OPENSSL_CLI_EXECUTABLE)
+    SET(_OPENSSL_CLI_EXTRA_COMMANDS "")
+    IF(APPLE)
+      # install_bundled_binaries rewrites the copy's LC_LOAD_DYLIB references
+      # (-change) but never its LC_RPATH. The vcpkg CLI links its libs as
+      # @rpath/lib<x>.dylib and ships an rpath (@loader_path/../../lib) aimed at
+      # the vcpkg tools layout, not INSTALL_LIBDIR. Strip that stale rpath and
+      # add @loader_path so it resolves the OpenSSL dylibs bundled right beside
+      # it in INSTALL_LIBDIR.
+      get_fix_bundled_rpath_command(
+        PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/openssl"
+        STRIP_PREFIX "@loader_path/../../lib"
+        ADD_RPATH "@loader_path"
+        OUT_COMMAND _FIX_OPENSSL_CLI_RPATH)
+      SET(_OPENSSL_CLI_EXTRA_COMMANDS COMMAND ${_FIX_OPENSSL_CLI_RPATH})
     ENDIF()
+    install_bundled_binaries(
+        DESCRIPTION "OpenSSL CLI (sandbox cert generation)"
+        BINARIES "${OPENSSL_CLI_EXECUTABLE}"
+        DESTINATION "${INSTALL_LIBDIR}"
+        TARGET mysqlsh
+        EXTRA_COPY_COMMANDS ${_OPENSSL_CLI_EXTRA_COMMANDS}
+    )
+  ELSE()
+    MESSAGE(WARNING "openssl CLI not found near the resolved OpenSSL "
+      "(WITH_SSL_PATH='${WITH_SSL_PATH}', OPENSSL_ROOT_DIR='${OPENSSL_ROOT_DIR}'); "
+      "the sandbox plugin will require openssl on PATH or the 'opensslPath' "
+      "option to deploy a MariaDB instance.")
   ENDIF()
 endif()
 
