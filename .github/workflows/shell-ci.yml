@@ -3,13 +3,11 @@ name: MariaDB-Shell-CI
 on:
   pull_request:
       branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-
-  # Custom keyword check (avoid using literal '[skip ci]')
-    if: |
-      !contains(github.event.pull_request.title, '[bypass-ci]')
+    name: Shell-CI-Verification
 
     runs-on: self-linux-x64
     
@@ -18,16 +16,23 @@ jobs:
       MYSQL_PORT: 3312
 
     steps:
+      # Echo a message if bypassing
+      - name: Skip CI Notice
+        if: contains(github.event.pull_request.title, '[bypass-ci]')
+        run: echo "Bypassing CI checks due to PR title tag."
+
       # ========================================
       # 0. CHECKOUT MAIN PROJECT (MUST BE FIRST)
       # ========================================
       - name: Checkout Main Project
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         uses: actions/checkout@v4
 
       # ============
       # 1. CONFIGURE
       # ============
       - name: Configure MariaDB Shell
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           # Resolve the wildcard path to an absolute path
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
@@ -44,6 +49,7 @@ jobs:
       # 1. BUILD
       # ============
       - name: Build MariaDB Shell
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cmake --build . --parallel
@@ -53,6 +59,7 @@ jobs:
       # 2. SETUP TEST ENVIRONMENT
       # ============
       - name: Setup Test Environment
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         id: setup
         run: |
           # The credential-store tests need a Secret Service provider reachable on
@@ -191,6 +198,7 @@ jobs:
       # 3. EXECUTE TESTS
       # ============
       - name: Execute Unit Tests
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
@@ -201,7 +209,7 @@ jobs:
       # ============
       - name: Teardown Test Environment
         # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
-        if: always() && steps.setup.outputs.deployed == 'true'
+        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.deployed == 'true'
         run: |
           echo "Tearing down server..."
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
@@ -212,7 +220,7 @@ jobs:
       - name: Teardown Secret Service
         # Separate from the step above: the daemons start before the sandbox
         # deploy, so they must be stopped even if that deploy failed.
-        if: always() && steps.setup.outputs.dbus_pid != ''
+        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.dbus_pid != ''
         run: |
           echo "Stopping keyring and D-Bus session..."
           for pid in "${{ steps.setup.outputs.keyring_pid }}" "${{ steps.setup.outputs.dbus_pid }}"; do
