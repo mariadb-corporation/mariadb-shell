@@ -3,13 +3,11 @@ name: MariaDB-Shell-CI
 on:
   pull_request:
       branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-
-  # Custom keyword check (avoid using literal '[skip ci]')
-    if: |
-      !contains(github.event.pull_request.title, '[bypass-ci]')
+    name: Shell-CI-Verification
 
     runs-on: self-linux-x64
     
@@ -18,16 +16,23 @@ jobs:
       MYSQL_PORT: 3312
 
     steps:
+      # Echo a message if bypassing
+      - name: Skip CI Notice
+        if: contains(github.event.pull_request.title, '[bypass-ci]')
+        run: echo "Bypassing CI checks due to PR title tag."
+
       # ========================================
       # 0. CHECKOUT MAIN PROJECT (MUST BE FIRST)
       # ========================================
       - name: Checkout Main Project
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         uses: actions/checkout@v4
 
       # ============
       # 1. CONFIGURE
       # ============
       - name: Configure MariaDB Shell
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           # Resolve the wildcard path to an absolute path
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
@@ -44,6 +49,7 @@ jobs:
       # 1. BUILD
       # ============
       - name: Build MariaDB Shell
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cmake --build . --parallel
@@ -53,6 +59,7 @@ jobs:
       # 2. SETUP TEST ENVIRONMENT
       # ============
       - name: Setup Test Environment
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         id: setup
         run: |
           # The credential-store tests need a Secret Service provider reachable on
@@ -60,10 +67,24 @@ jobs:
           # runner's service environment has neither, so start both here and
           # publish the bus address to the rest of the job; without them the
           # secret-service helper reports as <invalid>.
-          for tool in gnome-keyring-daemon secret-tool; do
+          for tool in gnome-keyring-daemon secret-tool dbus-send; do
             command -v "$tool" >/dev/null ||
-              { echo "$tool not found: install gnome-keyring and libsecret-tools"; exit 1; }
+              { echo "$tool not found: install gnome-keyring, libsecret-tools and dbus-bin"; exit 1; }
           done
+
+          # Keep the keyring in its own data dir: the runner shares $HOME with
+          # real logins, and an existing login.keyring with another password
+          # would refuse to unlock.
+          #
+          # This must happen *before* the bus is forked. dbus-daemon hands its own
+          # environment to every service it activates, so a daemon started by
+          # D-Bus activation (see below) inherits the environment as it is at fork
+          # time -- exporting this afterwards would leave that daemon looking in
+          # the real $HOME. Only daemons need the variable, so it is not published
+          # to $GITHUB_ENV.
+          export XDG_DATA_HOME="$RUNNER_TEMP/keyring-home"
+          rm -rf "$XDG_DATA_HOME"
+          mkdir -p "$XDG_DATA_HOME/keyrings"
 
           # dbus-daemon is in the base dbus package (a gnome-keyring dependency);
           # dbus-launch needs dbus-x11, which is often absent. Both --print-*
@@ -86,14 +107,6 @@ jobs:
           echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
           echo "dbus_pid=$dbus_pid" >> $GITHUB_OUTPUT
 
-          # Keep the keyring in its own data dir: the runner shares $HOME with
-          # real logins, and an existing login.keyring with another password
-          # would refuse to unlock. Only the daemon needs this, so it is not
-          # exported to later steps.
-          export XDG_DATA_HOME="$RUNNER_TEMP/keyring-home"
-          rm -rf "$XDG_DATA_HOME"
-          mkdir -p "$XDG_DATA_HOME/keyrings"
-
           # --unlock reads one password line from stdin and creates the login
           # keyring when it is missing -- the same path PAM uses at login. That
           # keyring is the default collection secret-tool stores into, so
@@ -101,8 +114,59 @@ jobs:
           # /org/freedesktop/secrets/collection/login". The password must be
           # non-empty and newline-terminated. D-Bus activation alone would
           # instead start the daemon with a locked keyring and no way to prompt.
-          printf 'ci\n' | gnome-keyring-daemon --unlock --components=secrets --foreground >/dev/null 2>&1 &
-          echo "keyring_pid=$!" >> $GITHUB_OUTPUT
+          #
+          # --replace is not optional. gnome-keyring ships a D-Bus activation file
+          # for org.freedesktop.secrets, so the first secret-tool call below
+          # activates a *second* daemon -- one that never received this password.
+          # Whichever instance claims the name first keeps it: when the activated
+          # one wins, this daemon logs "another secret service is running", stops
+          # serving secrets, and every store for the rest of the job fails against
+          # the collection-less activated daemon. --replace takes the name back.
+          # It works by displacing the other daemon through the control socket in
+          # $XDG_RUNTIME_DIR/keyring, so do not pass --control-directory: a private
+          # control dir makes the other daemon undiscoverable and silently turns
+          # --replace back into "another secret service is running".
+          #
+          # Keep the daemon's output: that message is the only trace of a lost race.
+          keyring_log="$RUNNER_TEMP/gnome-keyring.log"
+          printf 'ci\n' | gnome-keyring-daemon --unlock --replace --components=secrets --foreground >"$keyring_log" 2>&1 &
+          keyring_pid=$!
+          echo "keyring_pid=$keyring_pid" >> $GITHUB_OUTPUT
+
+          # Wait until *this* daemon owns org.freedesktop.secrets before storing
+          # anything. Neither a live daemon nor an existing login.keyring proves
+          # it: both hold while the activated daemon still owns the name, and the
+          # store loop below cannot recover from that -- it only ever talks to the
+          # owner. Ask the bus who the owner is instead.
+          secrets_owner_pid() {
+            local owner
+            owner="$(dbus-send --session --dest=org.freedesktop.DBus --print-reply=literal \
+              /org/freedesktop/DBus org.freedesktop.DBus.GetNameOwner \
+              string:org.freedesktop.secrets 2>/dev/null | tr -d '[:space:]')"
+            [ -n "$owner" ] || return 0
+            dbus-send --session --dest=org.freedesktop.DBus --print-reply=literal \
+              /org/freedesktop/DBus org.freedesktop.DBus.GetConnectionUnixProcessID \
+              string:"$owner" 2>/dev/null | awk 'END{print $NF}'
+          }
+          for _ in $(seq 1 40); do
+            if ! kill -0 "$keyring_pid" 2>/dev/null; then
+              echo "gnome-keyring-daemon exited during startup:"
+              cat "$keyring_log"
+              exit 1
+            fi
+            if [ "$(secrets_owner_pid)" = "$keyring_pid" ] &&
+               [ -s "$XDG_DATA_HOME/keyrings/login.keyring" ]; then
+              owned=1
+              break
+            fi
+            sleep 0.25
+          done
+          if [ -z "$owned" ]; then
+            echo "gnome-keyring-daemon did not take over org.freedesktop.secrets"
+            echo "(owner pid $(secrets_owner_pid), ours $keyring_pid). Daemon log:"
+            cat "$keyring_log"
+            exit 1
+          fi
 
           # Probe with a real store round-trip: `secret-tool search` succeeds
           # even when the default collection is missing, so it cannot tell a
@@ -117,6 +181,8 @@ jobs:
           if [ -z "$ready" ]; then
             echo "Secret Service did not become usable. Last attempt:"
             printf 'probe\n' | secret-tool store --label=ci-probe ci-probe 1 || true
+            echo "Daemon log:"
+            cat "$keyring_log"
             exit 1
           fi
           secret-tool clear ci-probe 1 >/dev/null 2>&1 || true
@@ -132,6 +198,7 @@ jobs:
       # 3. EXECUTE TESTS
       # ============
       - name: Execute Unit Tests
+        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
@@ -142,7 +209,7 @@ jobs:
       # ============
       - name: Teardown Test Environment
         # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
-        if: always() && steps.setup.outputs.deployed == 'true'
+        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.deployed == 'true'
         run: |
           echo "Tearing down server..."
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
@@ -153,7 +220,7 @@ jobs:
       - name: Teardown Secret Service
         # Separate from the step above: the daemons start before the sandbox
         # deploy, so they must be stopped even if that deploy failed.
-        if: always() && steps.setup.outputs.dbus_pid != ''
+        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.dbus_pid != ''
         run: |
           echo "Stopping keyring and D-Bus session..."
           for pid in "${{ steps.setup.outputs.keyring_pid }}" "${{ steps.setup.outputs.dbus_pid }}"; do
