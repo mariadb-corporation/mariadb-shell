@@ -34,6 +34,9 @@ confirm. Over plain SSH, in a container, or on a CI runner, none of them are, an
 sudo apt-get install -y gnome-keyring libsecret-tools
 ```
 
+On a headless host add `dbus-bin` — the CI setup in §4 needs `dbus-send`, and
+`dbus-run-session` lives there too.
+
 **Fedora / RHEL / CentOS**
 
 ```bash
@@ -123,6 +126,11 @@ in the setup step instead and publish its address, as
 - name: Setup Test Environment
   id: setup
   run: |
+    # before the bus fork: dbus-daemon hands this environment to whatever it activates
+    export XDG_DATA_HOME="$RUNNER_TEMP/keyring-home"
+    rm -rf "$XDG_DATA_HOME"
+    mkdir -p "$XDG_DATA_HOME/keyrings"
+
     pid_file="$(mktemp)"
     DBUS_SESSION_BUS_ADDRESS="$(dbus-daemon --session --fork \
       --print-address=1 --print-pid=3 3>"$pid_file")"
@@ -131,12 +139,32 @@ in the setup step instead and publish its address, as
     echo "dbus_pid=$(cat "$pid_file")" >> $GITHUB_OUTPUT
     rm -f "$pid_file"
 
-    export XDG_DATA_HOME="$RUNNER_TEMP/keyring-home"
-    rm -rf "$XDG_DATA_HOME"
-    mkdir -p "$XDG_DATA_HOME/keyrings"
+    keyring_log="$RUNNER_TEMP/gnome-keyring.log"
+    printf 'ci\n' | gnome-keyring-daemon --unlock --replace --components=secrets --foreground >"$keyring_log" 2>&1 &
+    keyring_pid=$!
+    echo "keyring_pid=$keyring_pid" >> $GITHUB_OUTPUT
 
-    printf 'ci\n' | gnome-keyring-daemon --unlock --components=secrets --foreground >/dev/null 2>&1 &
-    echo "keyring_pid=$!" >> $GITHUB_OUTPUT
+    # wait for *this* daemon to own the name (see below), then probe
+    secrets_owner_pid() {
+      local owner
+      owner="$(dbus-send --session --dest=org.freedesktop.DBus --print-reply=literal \
+        /org/freedesktop/DBus org.freedesktop.DBus.GetNameOwner \
+        string:org.freedesktop.secrets 2>/dev/null | tr -d '[:space:]')"
+      [ -n "$owner" ] || return 0
+      dbus-send --session --dest=org.freedesktop.DBus --print-reply=literal \
+        /org/freedesktop/DBus org.freedesktop.DBus.GetConnectionUnixProcessID \
+        string:"$owner" 2>/dev/null | awk 'END{print $NF}'
+    }
+    for _ in $(seq 1 40); do
+      kill -0 "$keyring_pid" 2>/dev/null || { cat "$keyring_log"; exit 1; }
+      if [ "$(secrets_owner_pid)" = "$keyring_pid" ] &&
+         [ -s "$XDG_DATA_HOME/keyrings/login.keyring" ]; then
+        owned=1
+        break
+      fi
+      sleep 0.25
+    done
+    [ -n "$owned" ] || { cat "$keyring_log"; exit 1; }
 
     # fail here rather than as puzzling credential-store test failures
     for _ in $(seq 1 20); do
@@ -177,12 +205,39 @@ in the setup step instead and publish its address, as
 * Probe with a real `secret-tool store`, not `secret-tool search`. Search
   succeeds against a *missing* default collection, so it cannot tell a working
   keyring from an unusable one — it will wave through a daemon whose every store
-  fails. The loop also closes the race between the daemon starting and it
-  claiming `org.freedesktop.secrets`.
+  fails.
+* **Wait for your own daemon to own `org.freedesktop.secrets` before the first
+  `secret-tool` call, and pass `--replace`.** gnome-keyring installs
+  `/usr/share/dbus-1/services/org.freedesktop.secrets.service`
+  (`Exec=… --start --foreground --components=secrets`), so the first client call
+  on the bus *activates a second daemon* — one that never received the unlock
+  password and therefore has no `login` collection. Whichever instance claims the
+  name first keeps it. When the activated one wins, the unlocking daemon prints
+  `another secret service is running`, stops serving secrets, and stays alive
+  while every store in the job fails against the activated daemon. A retry loop
+  cannot recover from this: it only ever talks to the name owner. Waiting on the
+  daemon's PID or on `login.keyring` does not help either — both are satisfied in
+  exactly that broken state. Ask the bus who owns the name instead. Ordering the
+  wait before the first store also means nothing ever triggers the activation.
+* Do **not** pass `--control-directory`. `--replace` displaces the other daemon
+  through the control socket in `$XDG_RUNTIME_DIR/keyring`; a private control
+  directory makes that daemon undiscoverable and silently degrades `--replace`
+  back to `another secret service is running`. A *stale* `control` socket left by
+  a killed daemon is harmless — the daemon recovers from it.
+* Keep the daemon's stdout/stderr in a log file. `>/dev/null 2>&1` hides
+  `another secret service is running`, which is the only trace of a lost race;
+  without it the failure looks like a plain timeout.
 * Point `XDG_DATA_HOME` at a scratch dir so the keyring is created fresh per run.
   Otherwise the shared `$HOME` decides the outcome: a leftover `login.keyring`
-  with a different password refuses to unlock. Only the daemon needs this
-  variable, so it is deliberately not published to `$GITHUB_ENV`.
+  with a different password refuses to unlock. Export it **before** forking the
+  bus: `dbus-daemon` passes its own environment to everything it activates, so
+  exporting it afterwards leaves an activated daemon looking in the real `$HOME`.
+  Only daemons need the variable, so it is deliberately not published to
+  `$GITHUB_ENV`.
+* Because `--replace` works per user, not per job, two jobs running concurrently
+  as the same user on one self-hosted runner will displace each other's daemon.
+  Serialize them (a workflow-level `concurrency` group) if the host can run more
+  than one at a time.
 * Stop both daemons in their own teardown step. They start before anything else
   in setup, so a teardown guarded on later setup work (a deployed sandbox, say)
   would leak a bus and a keyring per run — which matters on a long-lived
@@ -253,6 +308,7 @@ The helper lives next to the `mysqlsh` binary. Exit `0` means it is healthy; exi
 | `Cannot autolaunch D-Bus without X11 $DISPLAY`, or empty `DBUS_SESSION_BUS_ADDRESS` | No D-Bus session bus (SSH, container, service) | Use `dbus-run-session` (§4) |
 | `Prompt was dismissed` / `Cannot prompt` on store | Keyring is locked and nothing can ask for the password | Unlock it explicitly (§4) |
 | `Object does not exist at path "/org/freedesktop/secrets/collection/login"` on store, while `secret-tool search` exits `0` | Daemon is running but the login keyring — the default collection — was never created | Unlock with a non-empty, newline-terminated password (§4); an empty password creates no keyring |
+| The same error, on every retry, from a script that *did* unlock the keyring — and `gnome-keyring-daemon` logged `another secret service is running` | A D-Bus–activated daemon won `org.freedesktop.secrets`; your unlocked daemon is alive but not serving | Start it with `--replace` and wait for it to own the name before storing (§4) |
 | `shell.options['credentialStore.helper']` is `<invalid>` | The default helper failed to initialize; storage is disabled and passwords are prompted every time | Run the helper command above to get the reason |
 | `mysql-secret-store-secret-service: command not found` | Helper not installed alongside the shell | Reinstall the shell package |
 
