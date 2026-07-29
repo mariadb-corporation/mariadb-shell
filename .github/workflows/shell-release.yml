@@ -1,0 +1,250 @@
+name: MariaDB-Shell-Release
+
+on:
+  push:
+    branches: [ "release/candidate" ]
+  repository_dispatch:
+      types: [ "updated-shell-plugins-rc" ]
+jobs:
+  build:
+    runs-on: ${{ matrix.os-runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- LINUX ---
+          - os: linux
+            arch: x64
+            os-runner: ubuntu-latest
+            vcpkg-triplet: x64-linux-dynamic
+          - os: linux
+            arch: arm64
+            os-runner: ubuntu-24.04-arm
+            vcpkg-triplet: arm64-linux-dynamic
+
+          # --- MACOS ---
+          - os: macos
+            arch: x64
+            os-runner: macos-15-intel
+            vcpkg-triplet: x64-osx-dynamic
+          - os: macos
+            arch: arm64
+            os-runner: macos-latest
+            vcpkg-triplet: arm64-osx-dynamic
+
+          # --- WINDOWS ---
+          - os: windows
+            arch: x64
+            os-runner: windows-2022
+            vcpkg-triplet: x64-windows
+          - os: windows
+            arch: arm64
+            os-runner: windows-11-arm
+            vcpkg-triplet: arm64-windows
+
+    env:
+      MARIADB_SHELL_BUILD_DIR: bld
+
+    steps:
+      - name: Print Trigger Source
+        run: |
+          echo "Triggered by event: ${{ github.event_name }}"
+
+      # ========================================
+      # 0. CHECKOUT MAIN PROJECT
+      # ========================================
+      - name: Checkout Main Project
+        uses: actions/checkout@v4
+
+      # ========================================
+      # 0b. BUNDLE EXTERNAL SHELL PLUGINS
+      # ========================================
+      # The extra shell plugins (mrs_plugin, msm_plugin and, once it exists,
+      # mcp_plugin) live in a separate repo. Dropping them into plugins/external/
+      # BEFORE Configure is what gets them bundled: install_bundled_plugins()
+      # globs plugins/external/* at configure time and installs each folder into
+      # lib/mysqlsh/plugins (the same destination as the sandbox plugin), so they
+      # end up in the CPack packages. Copying after the build would NOT work --
+      # CPack stages from configure-time install() rules, not the build tree.
+      #
+      # mariadb-shell-plugins is a separate private repo in the same org, so the
+      # default GITHUB_TOKEN cannot read it. DEVTOOLS_TOKEN must be a PAT (or
+      # GitHub App token) with read access to mariadb-corporation/mariadb-shell-plugins.
+      - name: Checkout Shell Plugins (release/candidate)
+        uses: actions/checkout@v4
+        with:
+          repository: mariadb-corporation/mariadb-shell-plugins
+          ref: release/candidate
+          path: _shell-plugins-src
+          token: ${{ secrets.DEVTOOLS_TOKEN }}
+
+      - name: Bundle External Shell Plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="_shell-plugins-src"
+          DEST="plugins/external"
+
+          # Copy the wanted plugins. mcp_plugin is optional -- only bundle it if
+          # it already exists in the plugins repo.
+          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+            if [ -d "$SRC/$plugin" ]; then
+              echo "Bundling $plugin -> $DEST/"
+              rm -rf "$DEST/$plugin"
+              cp -R "$SRC/$plugin" "$DEST/$plugin"
+            else
+              echo "Skipping $plugin (not present in plugins repo)"
+            fi
+          done
+
+          # Clean up each bundled plugin before it gets packaged:
+          #   - any 'internal' folder
+          #   - any folder whose name starts with '.' (e.g. .git, .vscode)
+          #   - any '__pycache__' folder
+          # -depth removes nested matches before their parents so rm never
+          # trips over an already-deleted path.
+          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+            target="$DEST/$plugin"
+            [ -d "$target" ] || continue
+            find "$target" -depth -type d \
+              \( -name internal -o -name '.*' -o -name '__pycache__' \) \
+              -exec rm -rf {} +
+          done
+
+          echo "External plugins staged for packaging:"
+          ls -la "$DEST"
+
+      # ========================================
+      # 1. SETUP PYTHON (WINDOWS ONLY)
+      # ========================================
+      - name: Setup Python (Python.org)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: ${{ matrix.arch }}
+
+      # ========================================
+      # 2. SETUP VISUAL STUDIO 2022 (WINDOWS ONLY)
+      # ========================================
+      - name: Setup Visual Studio 2022 Environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      # ========================================
+      # 2b. REMOVE CONFLICTING GIT link.exe (WINDOWS ONLY)
+      # ========================================
+      # The Configure/Build steps run under Git Bash (shell: bash), which puts
+      # C:\Program Files\Git\usr\bin at the front of PATH. That dir ships a GNU
+      # coreutils `link.exe` (a hard-link utility) that shadows the MSVC linker.
+      # On Windows ARM64 there is no prebuilt `cryptography` wheel, so pip
+      # compiles its Rust sources and rustc picks up Git's link.exe instead of
+      # MSVC's -> "/usr/bin/link: extra operand" and the wheel build fails.
+      # Removing it lets the MSVC link.exe (added by msvc-dev-cmd) win.
+      - name: Remove conflicting Git link.exe
+        if: runner.os == 'Windows'
+        run: rm -f "C:/Program Files/Git/usr/bin/link.exe"
+        shell: bash
+
+      # ========================================
+      # 3. INSTALL BUILD DEPENDENCIES
+      # ========================================
+      - name: Install Linux Build Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential ninja-build git curl bison zip unzip tar pkg-config libncurses-dev patchelf
+
+      - name: Install macOS Build Dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install cmake ninja pkg-config bison ncurses
+
+      # ========================================
+      # 3a. INSTALL BISON (WINDOWS ARM64)
+      # ========================================
+      # cmake/bison.cmake searches c:\ProgramData\chocolatey\bin for win_bison.
+      # The x64 Windows runner ships winflexbison3 preinstalled, but
+      # windows-11-arm does not -> "Could NOT find BISON". It's only a Configure
+      # warning today, but the Build step fails once a grammar needs
+      # regenerating. choco's win_bison shim (x64, runs under emulation) lands in
+      # the exact directory cmake already looks in.
+      - name: Install Bison (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        run: choco install winflexbison3 -y
+
+      # ========================================
+      # 3b. POINT cryptography's OpenSSL BUILD AT vcpkg (WINDOWS ARM64)
+      # ========================================
+      # On Windows ARM64 there is no prebuilt `cryptography` wheel, so pip
+      # compiles it from source during Configure (CMakeLists.txt:1662, "install
+      # bundled Python packages"). Its Rust dependency `openssl-sys` then fails
+      # with "Could not find directory of OpenSSL installation" because none of
+      # OPENSSL_DIR / OPENSSL_LIB_DIR / OPENSSL_INCLUDE_DIR are set and vcpkg
+      # auto-detection can't read a manifest-mode vcpkg_installed/ tree.
+      #
+      # vcpkg already builds OpenSSL for arm64 earlier in the same Configure
+      # step, at bld/vcpkg_installed/<triplet>/<triplet>/{lib,include}. We just
+      # have to point openssl-sys at it. The directory doesn't exist yet when
+      # this step runs -- it's created by vcpkg during Configure, before the
+      # Python deps are bundled -- so exporting the paths ahead of time is fine.
+      # OPENSSL_NO_VENDOR forces use of this OpenSSL instead of vendoring.
+      - name: Point cryptography's OpenSSL build at vcpkg (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          OSSL="$GITHUB_WORKSPACE/${{ env.MARIADB_SHELL_BUILD_DIR }}/vcpkg_installed/${{ matrix.vcpkg-triplet }}/${{ matrix.vcpkg-triplet }}"
+          {
+            echo "OPENSSL_DIR=$OSSL"
+            echo "OPENSSL_LIB_DIR=$OSSL/lib"
+            echo "OPENSSL_INCLUDE_DIR=$OSSL/include"
+            echo "OPENSSL_NO_VENDOR=1"
+          } >> "$GITHUB_ENV"
+
+# ========================================
+      # 4. CONFIGURE
+      # ========================================
+      - name: Configure MariaDB Shell
+        run: |
+          # Build platform-specific CMake flags
+          EXTRA_CMAKE_ARGS=""
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            EXTRA_CMAKE_ARGS="-DWITH_PYTHON_SOURCE=3.14.6"
+          fi
+
+          cmake -B ${{ env.MARIADB_SHELL_BUILD_DIR }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DWITH_TESTS=0 \
+            -DWITH_VCPKG_TRIPLET=${{ matrix.vcpkg-triplet }} \
+            $EXTRA_CMAKE_ARGS
+        shell: bash
+
+      # ========================================
+      # 5. BUILD
+      # ========================================
+      - name: Build MariaDB Shell
+        run: |
+          cmake --build ${{ env.MARIADB_SHELL_BUILD_DIR }} --config RelWithDebInfo --parallel
+
+      # ========================================
+      # 6. PACKAGE (CPACK)
+      # ========================================
+      - name: Create Tarball Package
+        run: |
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          cpack -G TGZ -C RelWithDebInfo
+
+      # ========================================
+      # 7. UPLOAD ARTIFACTS FOR DOWNLOAD
+      # ========================================
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ env.MARIADB_SHELL_BUILD_DIR }}/*.tar.gz
+          archive: false
+          if-no-files-found: error

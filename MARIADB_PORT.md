@@ -724,6 +724,19 @@ message is a non-fatal notice as long as `/usr/include/linux` is present
 
 ### 12.7 Secret Service store retry (gnome-keyring transient encryption error)
 
+Because `HAVE_LOGIN_PATH` is non-MariaDB only, the `login-path` helper is not built
+and `get_default_helper_name()` returns **`secret-service`** on Linux — the only
+credential store this build has there. A keyring daemon is therefore a hard
+runtime requirement for credential storage, and for the
+`Mysqlsh_credential_store.*` / `Mysql_secret_store*` suites: with no provider
+owning `org.freedesktop.secrets`, the helper's `check_requirements()` (a real
+`secret-tool search`) fails, `get_available_helpers()` drops it, and
+`credentialStore.helper` becomes `<invalid>`. Headless machines (CI runners,
+containers) need `gnome-keyring` installed plus a session bus with an unlocked
+keyring — `dbus-run-session -- sh -c 'echo -n "" | gnome-keyring-daemon --unlock
+--components=secrets; <cmd>'`. End-user setup instructions:
+[docs/CREDENTIAL_STORE.md](docs/CREDENTIAL_STORE.md).
+
 The `secret-service` helper shells out to `secret-tool`, which talks to the D-Bus
 Secret Service (gnome-keyring). Newer gnome-keyring (seen with **50.0 / libsecret
 0.21.7 / libgcrypt 1.12.2** on Fedora 44) intermittently fails an otherwise valid

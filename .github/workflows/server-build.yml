@@ -1,0 +1,82 @@
+name: Weekly-Server-Update
+
+on:
+  # 1. Weekly Schedule: Runs every Monday at 02:00 UTC
+  schedule:
+    - cron: '0 2 * * 1'
+
+  # 2. Manual Trigger: Allows you to run it anytime from the GitHub UI
+  workflow_dispatch:
+    inputs:
+      mariadb_version:
+        description: 'MariaDB Branch/Tag to build'
+        required: false
+        default: 'main'
+
+env:
+  # Use input if manually triggered, otherwise fallback to default 'main'
+  MARIADB_VERSION: ${{ github.event.inputs.mariadb_version || 'main' }}
+  CCACHE_DIR: '~/.cache/ccache'
+
+jobs:
+  build-mariadb:
+    name: Build MariaDB Server
+    # Ensure this runs on your self-hosted runner
+    runs-on: self-linux-x64
+
+    steps:
+      - name: Checkout MariaDB Source
+        uses: actions/checkout@v4
+        with:
+          repository: 'MariaDB/server'
+          ref: ${{ env.MARIADB_VERSION }}
+          path: server-src
+          submodules: 'recursive'
+
+      - name: Ensure Build Dependencies & ccache
+        run: |
+          # Install ccache if not already installed on the host machine
+          if ! command -v ccache &> /dev/null; then
+            echo "Installing ccache and build essentials..."
+            sudo apt-get update && sudo apt-get install -y ccache bison flex build-essential cmake
+          fi
+
+      - name: Setup Local ccache Engine
+        run: |
+          mkdir -p $CCACHE_DIR
+          # Set max cache size on disk to 15GB
+          ccache --set-config=cache_dir=$CCACHE_DIR
+          ccache --set-config=max_size=15G
+          echo "=== Initial ccache Statistics ==="
+          ccache -s
+
+      - name: Configure and Build MariaDB Server
+        run: |
+          # Clean build directory to force fresh build check while keeping ccache
+          rm -rf server-bld
+          mkdir -p server-bld
+          cd server-bld
+
+          # Configure CMake with ccache launchers
+          cmake \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DWITHOUT_SERVER=OFF \
+            -DWITH_UNIT_TESTS=OFF \
+            ../server-src
+
+          echo "=== Compiling MariaDB Full Server ==="
+          make -j$(nproc)
+
+          cpack -T TGZ -X RelWithDebInfo
+
+          # Update the cached server for the shell CI builds
+          rm -Rf ~/.cache/ci/mariadb*
+          tar -xvf mariadb*.tar.gz -C ~/.cache/ci
+
+      - name: Display ccache Hits/Misses
+        if: always()
+        run: |
+          echo "=== Final ccache Statistics ==="
+          ccache -s

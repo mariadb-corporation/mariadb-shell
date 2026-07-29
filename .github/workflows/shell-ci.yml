@@ -3,11 +3,13 @@ name: MariaDB-Shell-CI
 on:
   pull_request:
       branches: [ "main" ]
-  push:
-    branches: [ "workflow-test" ]
 
 jobs:
   build:
+
+  # Custom keyword check (avoid using literal '[skip ci]')
+    if: |
+      !contains(github.event.pull_request.title, '[bypass-ci]')
 
     runs-on: self-linux-x64
     
@@ -53,6 +55,72 @@ jobs:
       - name: Setup Test Environment
         id: setup
         run: |
+          # The credential-store tests need a Secret Service provider reachable on
+          # a D-Bus session bus (see docs/CREDENTIAL_STORE.md, section 4). The
+          # runner's service environment has neither, so start both here and
+          # publish the bus address to the rest of the job; without them the
+          # secret-service helper reports as <invalid>.
+          for tool in gnome-keyring-daemon secret-tool; do
+            command -v "$tool" >/dev/null ||
+              { echo "$tool not found: install gnome-keyring and libsecret-tools"; exit 1; }
+          done
+
+          # dbus-daemon is in the base dbus package (a gnome-keyring dependency);
+          # dbus-launch needs dbus-x11, which is often absent. Both --print-*
+          # options need the =FD form -- the bare form takes the *next* argument
+          # as its descriptor. The PID goes to fd 3 to keep stdout to the address.
+          if command -v dbus-daemon >/dev/null; then
+            pid_file="$(mktemp)"
+            DBUS_SESSION_BUS_ADDRESS="$(dbus-daemon --session --fork \
+              --print-address=1 --print-pid=3 3>"$pid_file")"
+            export DBUS_SESSION_BUS_ADDRESS
+            dbus_pid="$(cat "$pid_file")"
+            rm -f "$pid_file"
+          elif command -v dbus-launch >/dev/null; then
+            eval "$(dbus-launch --sh-syntax)"
+            dbus_pid="$DBUS_SESSION_BUS_PID"
+          else
+            echo "no session bus launcher found: install dbus (dbus-daemon) or dbus-x11 (dbus-launch)"
+            exit 1
+          fi
+          echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS" >> $GITHUB_ENV
+          echo "dbus_pid=$dbus_pid" >> $GITHUB_OUTPUT
+
+          # Keep the keyring in its own data dir: the runner shares $HOME with
+          # real logins, and an existing login.keyring with another password
+          # would refuse to unlock. Only the daemon needs this, so it is not
+          # exported to later steps.
+          export XDG_DATA_HOME="$RUNNER_TEMP/keyring-home"
+          rm -rf "$XDG_DATA_HOME"
+          mkdir -p "$XDG_DATA_HOME/keyrings"
+
+          # --unlock reads one password line from stdin and creates the login
+          # keyring when it is missing -- the same path PAM uses at login. That
+          # keyring is the default collection secret-tool stores into, so
+          # without it every store fails with "Object does not exist at path
+          # /org/freedesktop/secrets/collection/login". The password must be
+          # non-empty and newline-terminated. D-Bus activation alone would
+          # instead start the daemon with a locked keyring and no way to prompt.
+          printf 'ci\n' | gnome-keyring-daemon --unlock --components=secrets --foreground >/dev/null 2>&1 &
+          echo "keyring_pid=$!" >> $GITHUB_OUTPUT
+
+          # Probe with a real store round-trip: `secret-tool search` succeeds
+          # even when the default collection is missing, so it cannot tell a
+          # working keyring from an unusable one.
+          for _ in $(seq 1 20); do
+            if printf 'probe\n' | secret-tool store --label=ci-probe ci-probe 1 >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ -z "$ready" ]; then
+            echo "Secret Service did not become usable. Last attempt:"
+            printf 'probe\n' | secret-tool store --label=ci-probe ci-probe 1 || true
+            exit 1
+          fi
+          secret-tool clear ci-probe 1 >/dev/null 2>&1 || true
+
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
           ./mysqlsh -- sandbox deploy $MYSQL_PORT --password=
@@ -81,3 +149,13 @@ jobs:
           cd bin
           ./mysqlsh -- sandbox stop $MYSQL_PORT
           ./mysqlsh -- sandbox delete $MYSQL_PORT
+
+      - name: Teardown Secret Service
+        # Separate from the step above: the daemons start before the sandbox
+        # deploy, so they must be stopped even if that deploy failed.
+        if: always() && steps.setup.outputs.dbus_pid != ''
+        run: |
+          echo "Stopping keyring and D-Bus session..."
+          for pid in "${{ steps.setup.outputs.keyring_pid }}" "${{ steps.setup.outputs.dbus_pid }}"; do
+            [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+          done
