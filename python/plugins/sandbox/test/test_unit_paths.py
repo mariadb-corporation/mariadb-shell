@@ -107,4 +107,4 @@ def test_default_base_dir_fallback(sandboxlib, shell):
     assert shell.options == {}
     result = sandboxlib.default_sandbox_base_dir()
     assert result.startswith(os.path.expanduser("~"))
-    assert result.endswith("mysql-sandboxes")
+    assert result.endswith(os.path.join("mariadb-shell", "sandboxes"))

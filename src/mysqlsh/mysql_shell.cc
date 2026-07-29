@@ -1592,7 +1592,7 @@ bool Mysql_shell::cmd_nowarnings(
 
 bool Mysql_shell::cmd_status(
     [[maybe_unused]] const std::vector<std::string> &args) {
-  std::string version_msg("MySQL Shell version ");
+  std::string version_msg("MariaDB Shell version ");
   version_msg += mysqlshdk::utils::k_shell_version.get_full();
   version_msg += "\n";
   println(version_msg);

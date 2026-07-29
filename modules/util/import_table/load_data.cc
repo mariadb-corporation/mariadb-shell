@@ -61,6 +61,7 @@ using off64_t = off_t;
 #include "mysqlshdk/libs/rest/error.h"
 #include "mysqlshdk/libs/storage/backend/in_memory/synchronized_file.h"
 #include "mysqlshdk/libs/storage/backend/in_memory/virtual_file.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
@@ -1102,7 +1103,7 @@ void Load_data_worker::execute(
                 warnings_count - m_warnings_to_show;
 
             mysqlsh::current_console()->print_info(
-                "Check mysqlsh.log for " +
+                "Check " + std::string{shcore::k_shell_log_file_name} + " for " +
                 std::to_string(remaining_warnings_count) + " more warning" +
                 (remaining_warnings_count == 1 ? "" : "s") + ".");
           }

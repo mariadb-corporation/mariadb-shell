@@ -61,7 +61,7 @@ IF (NOT DEFINED DEB_COPYRIGHT_YEAR)
   SET (DEB_COPYRIGHT_YEAR "2026" CACHE STRING "")
 ENDIF()
 
-set(PRODUCT   "MySQL Shell (part of MySQL Server) ${MYSH_BASE_VERSION}")
+set(PRODUCT   "MariaDB Shell ${MYSH_BASE_VERSION}")
 
 if(NOT DEBIAN_REVISION)
   set(DEBIAN_REVISION 1)
@@ -251,85 +251,116 @@ foreach(_in_file ${in_files})
   )
 endforeach()
 
-# We need mysql-shell.install file to be dynamic depending on BUNDLED_PYTHON_DIR
+# We need the .install file to be dynamic depending on BUNDLED_PYTHON_DIR
 # option, and configure_file() does not have control statements, therefore we
 # are creating this file in following way.
-file(WRITE "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
-"usr/bin/mysqlsh
-usr/bin/mysql-secret-store-login-path
+set(INSTALL_FILE "${DEST_DIR}/mariadb-shell${PRODUCT_SUFFIX}.install")
+
+file(WRITE "${INSTALL_FILE}"
+"usr/bin/mariadb-shell
+usr/bin/mysqlsh
+usr/bin/msh
 usr/bin/mysql-secret-store-secret-service
-usr/share/mysqlsh/LICENSE    usr/share/doc/mysqlsh
-usr/share/mysqlsh/README.md     usr/share/doc/mysqlsh
-usr/share/mysqlsh/Docs/INFO_SRC     usr/share/mysqlsh/Docs
-usr/share/mysqlsh/Docs/INFO_BIN     usr/share/mysqlsh/Docs
-usr/share/mysqlsh/prompt/*   usr/share/mysqlsh/prompt
-usr/share/mysqlsh/adminapi-metadata/* usr/share/mysqlsh/adminapi-metadata
-usr/share/mysqlsh/upgrade_checker.msg
-usr/share/mysqlsh/sysvars.json
-usr/lib/mysqlsh/plugins
-usr/lib/mysqlsh/python-packages
-usr/lib/mysqlsh/yparser
-usr/libexec/mysqlsh/mysqlbinlog
+usr/share/mariadb-shell/LICENSE    usr/share/doc/mariadb-shell
+usr/share/mariadb-shell/README.md     usr/share/doc/mariadb-shell
+usr/share/mariadb-shell/Docs/INFO_SRC     usr/share/mariadb-shell/Docs
+usr/share/mariadb-shell/Docs/INFO_BIN     usr/share/mariadb-shell/Docs
+usr/share/mariadb-shell/prompt/*   usr/share/mariadb-shell/prompt
+usr/lib/mariadb-shell/plugins
+usr/lib/mariadb-shell/python-packages
+usr/share/man/man1/mariadb-shell.1
 usr/share/man/man1/mysqlsh.1
+usr/share/man/man1/msh.1
 ")
 
+# The following are MySQL-server specific and are not built for MariaDB. This
+# project only sees the cache variables passed in (it is configured standalone,
+# see project() above), not the top-level HAVE_LOGIN_PATH / HAVE_ADMIN_API /
+# HAVE_UPGRADE_CHECKER, so key off MARIADB_SOURCE_DIR the same way the top-level
+# CMakeLists.txt derives those flags.
+if (NOT MARIADB_SOURCE_DIR)
+file(APPEND "${INSTALL_FILE}"
+"# Login-path secret store helper (needs MySQL's my_config_editor support)
+usr/bin/mysql-secret-store-login-path
+# AdminAPI metadata scripts
+usr/share/mariadb-shell/adminapi-metadata/* usr/share/mariadb-shell/adminapi-metadata
+# Upgrade Checker resources
+usr/share/mariadb-shell/upgrade_checker.msg
+usr/share/mariadb-shell/sysvars.json
+")
+endif()
+
+# Bundled mysqlbinlog, used by util.dumpBinlogs/loadBinlogs.
+if (BUNDLED_MYSQLBINLOG)
+file(APPEND "${INSTALL_FILE}"
+"usr/libexec/mariadb-shell/mysqlbinlog
+")
+endif()
+
 if (BUNDLED_PYTHON_DIR OR PYTHON_DEPS)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
-"usr/lib/mysqlsh/lib/*   usr/lib/mysqlsh/lib
+file(APPEND "${INSTALL_FILE}"
+"usr/lib/mariadb-shell/lib/*   usr/lib/mariadb-shell/lib
 ")
 endif()
 
 if (BUNDLED_PYTHON_DIR)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "# For python bundle
-usr/lib/mysqlsh/include
-usr/lib/mysqlsh/libpython*.so*
-usr/lib/mysqlsh/bin/python3.*
+usr/lib/mariadb-shell/include
+usr/lib/mariadb-shell/libpython*.so*
+usr/lib/mariadb-shell/bin/python3.*
 ")
 endif()
 
 if (BUNDLED_SSH_DIR)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "# For libssh bundle
-usr/lib/mysqlsh/libssh*.so*
+usr/lib/mariadb-shell/libssh*.so*
 ")
 endif()
 
 if (MYSQL_SOURCE_DIR)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "# For client authentication plugins
 usr/lib/mysql/plugins/*.so
-usr/lib/mysqlsh/libfido2.so*
+usr/lib/mariadb-shell/libfido2.so*
 # For protobuf library
-usr/lib/mysqlsh/libprotobuf*.so*
-usr/lib/mysqlsh/libabsl_*.so
+usr/lib/mariadb-shell/libprotobuf*.so*
+usr/lib/mariadb-shell/libabsl_*.so
+")
+endif()
+
+if (MARIADB_SOURCE_DIR)
+file(APPEND "${INSTALL_FILE}"
+"# For client authentication plugins
+usr/lib/mysql/plugins/*.so
 ")
 endif()
 
 if (BUNDLED_MYSQL_CONFIG_EDITOR OR MYSQL_DIR)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "
-usr/libexec/mysqlsh/mysql_config_editor
+usr/libexec/mariadb-shell/mysql_config_editor
 ")
 endif()
 
 if (BUNDLED_ANTLR_DIR)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "# For antlr4 bundle
-usr/lib/mysqlsh/libantlr4-runtime*.so*
+usr/lib/mariadb-shell/libantlr4-runtime*.so*
 ")
 endif()
 
 if (WITH_YACC_PARSER)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "
-usr/lib/mysqlsh/yparser
+usr/lib/mariadb-shell/yparser
 ")
 endif()
 
 if(JIT_EXECUTOR_LIB)
-file(APPEND "${DEST_DIR}/mysql-shell${PRODUCT_SUFFIX}.install"
+file(APPEND "${INSTALL_FILE}"
 "
-usr/lib/mysqlsh/libjitexecutor.so
+usr/lib/mariadb-shell/libjitexecutor.so
 ")
 endif()

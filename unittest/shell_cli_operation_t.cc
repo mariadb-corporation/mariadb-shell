@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -801,7 +802,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
 TEST_F(Shell_cli_operation_test, error_test) {
   SKIP_UNLESS_DIRECT_MODE();
 
-  std::vector<std::string> env{"MYSQLSH_TERM_COLOR_MODE=nocolor"};
+  std::vector<std::string> env{"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"};
 
   testutil->call_mysqlsh_c(
       {"--", "cluster", "rescan", "{--addUnmanaged : true}"}, "", env);
@@ -815,10 +816,10 @@ TEST_F(Shell_cli_operation_test, integration_test) {
   SKIP_UNLESS_DIRECT_MODE();
   testutil->mk_dir("cli-sandboxes");
 
-  std::vector<std::string> env{"MYSQLSH_TERM_COLOR_MODE=nocolor"};
+  std::vector<std::string> env{"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"};
   MY_EXPECT_EQ_OR_DUMP(
       0, testutil->call_mysqlsh_c({"--", "shell", "status"}, "", env));
-  MY_EXPECT_STDOUT_CONTAINS("MySQL Shell version");
+  MY_EXPECT_STDOUT_CONTAINS("MariaDB Shell version");
   output_handler.wipe_all();
 
   MY_EXPECT_EQ_OR_DUMP(
@@ -943,7 +944,7 @@ TEST_F(Shell_cli_operation_test, bug34887426_special_chars) {
   // In:
   //  mysqlsh -- util import-table ... --linesTerminatedBy=$'\n'
   // $'\n' is expanded by bash to a newline literal
-  std::vector<std::string> env{"MYSQLSH_TERM_COLOR_MODE=nocolor"};
+  std::vector<std::string> env{"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"};
 
   testutil->call_mysqlsh_c({_uri.c_str(), "--", "util", "import-table",
                             "/bad/file", "--linesTerminatedBy=\n"},

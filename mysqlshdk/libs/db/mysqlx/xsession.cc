@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +37,7 @@
 #include "mysqlshdk/libs/utils/fault_injection.h"
 #include "mysqlshdk/libs/utils/log_sql.h"
 #include "mysqlshdk/libs/utils/profiling.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 
 namespace mysqlshdk {
@@ -302,7 +304,8 @@ void XSession_impl::connect(const mysqlshdk::db::Connection_options &data) {
   bool user_defined_connection_attributes = false;
   if (_connection_options.is_connection_attributes_enabled()) {
     auto attrs = _mysql->get_connect_attrs();
-    attrs.emplace_back("program_name", xcl::Argument_value{"mysqlsh"});
+    attrs.emplace_back("program_name",
+                       xcl::Argument_value{shcore::k_shell_option_group});
 
     if (!_connection_options.get_connection_attributes().empty()) {
       user_defined_connection_attributes = true;

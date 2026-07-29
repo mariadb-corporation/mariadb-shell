@@ -1118,7 +1118,7 @@ shell function will need to ask user for input, this should return a tuple
 where first arguments is boolean indicating if user did input anything, and
 second is a user input string, expected signature: tuple<bool,str> passwordDelegate(str).
 @li logFile string which spcifies the location for the log file for new context.
-If this is not specified, logs from all threads will be stored in the mysqlsh.log
+If this is not specified, logs from all threads will be stored in the mariadb-shell.log
 file. If the file cannot be created, and exception will be thrown.
 )*");
 
@@ -1824,8 +1824,8 @@ REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL36,
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL37,
               "Users may create custom report files in the <b>init.d</b> "
               "folder located in the Shell configuration path (by default it "
-              "is <b>~/.mysqlsh/init.d</b> in Unix and "
-              "<b>@%AppData@%\\MySQL\\mysqlsh\\init.d</b> in Windows).");
+              "is <b>~/.mariadb-shell/init.d</b> in Unix and "
+              "<b>@%AppData@%\\MariaDB\\mariadb-shell\\init.d</b> in Windows).");
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL38,
               "Custom reports may be written in either JavaScript or Python. "
               "The standard file extension for each case should be used to get "

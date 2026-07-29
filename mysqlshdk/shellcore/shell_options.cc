@@ -55,6 +55,7 @@
 #include "shellcore/ishell_core.h"
 #include "shellcore/shell_notifications.h"
 #include "shellcore/shell_resultset_dumper.h"
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 #include "utils/utils_path.h"
@@ -222,7 +223,10 @@ using std::placeholders::_2;
 
 void Shell_options::handle_mycnf_options(int *argc, char ***argv,
                                          MEM_ROOT *argv_alloc) {
-  const char *load_default_groups[] = {"mysqlsh", "client", nullptr};
+  // Read both the current group and the pre-rename "mysqlsh" one, so option
+  // files written for the old binary name keep working.
+  const char *load_default_groups[] = {shcore::k_shell_option_group, "mysqlsh",
+                                       "client", nullptr};
 
   // Process the default (config-file) options my_load_defaults() has placed at
   // argv[1 .. defaults_end-1], then collapse argv down to
@@ -397,11 +401,18 @@ Shell_options::Shell_options(
     m_on_warning = default_print_out;
   }
 
+  // Sandboxes live under the per-user shell directory, so that everything the
+  // shell writes to $HOME stays in one place:
+  //   ~/.mariadb-shell/sandboxes                    (Unix)
+  //   %userprofile%\MariaDB\mariadb-shell\sandboxes (Windows)
   std::string home = shcore::get_home_dir();
 #ifdef WIN32
-  home += ("MySQL\\mysql-sandboxes");
+  home += shcore::path::join_path(shcore::k_shell_config_dir_win_vendor,
+                                  shcore::k_shell_config_dir_win,
+                                  shcore::k_shell_sandbox_dir_name);
 #else
-  home += ("mysql-sandboxes");
+  home += shcore::path::join_path(shcore::k_shell_user_config_dir_unix,
+                                  shcore::k_shell_sandbox_dir_name);
 #endif
 
   const auto create_result_format_handler = [this](const char *value) {
@@ -801,7 +812,8 @@ Shell_options::Shell_options(
         "In SQL batch mode, forces processing to continue if an error "
         "is found.", shcore::opts::Read_only<bool>())
     (&storage.log_file,
-        shcore::path::join_path(shcore::get_user_config_path(), "mysqlsh.log"),
+        shcore::path::join_path(shcore::get_user_config_path(),
+                                shcore::k_shell_log_file_name),
         SHCORE_LOG_FILE_NAME, cmdline("--log-file=<path>"),
         "Override location of the Shell log file.",
         shcore::opts::Read_only<std::string>()) // read-only in shell.options

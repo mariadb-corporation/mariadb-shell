@@ -194,7 +194,7 @@ plugin_path =  os.path.join(plugin_folder_path, "init.py")
 testutil.mkdir(plugin_folder_path, True)
 testutil.create_file(plugin_path, plugin_code)
 
-shell_env = ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQLSH_USER_CONFIG_HOME=" + user_path]
+shell_env = ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + user_path]
 
 def __call_mysqlsh(cmdline_args):
     return testutil.call_mysqlsh(["--quiet-start=2"] + cmdline_args, "", shell_env)

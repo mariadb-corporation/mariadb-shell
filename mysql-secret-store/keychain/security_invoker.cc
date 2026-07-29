@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +30,7 @@
 
 #include "mysql-secret-store/include/helper.h"
 #include "mysqlshdk/libs/utils/process_launcher.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
@@ -41,7 +43,7 @@ using mysql::secret_store::common::Helper_exception;
 namespace {
 
 constexpr auto k_keychain_name_env_variable =
-    "MYSQLSH_CREDENTIAL_STORE_KEYCHAIN";
+    "MARIADB_SHELL_CREDENTIAL_STORE_KEYCHAIN";
 constexpr auto k_creator_code = "MYSH";
 
 std::string quote_string(const std::string &input) {
@@ -237,7 +239,7 @@ void Security_invoker::get_args(const Entry &entry,
 }
 
 std::string Security_invoker::get_keychain() {
-  const auto env = getenv(k_keychain_name_env_variable);
+  const auto env = shcore::getenv_shell(k_keychain_name_env_variable);
 
   if (nullptr == env) {
     return shcore::str_strip(invoke({"default-keychain"}), "\"");

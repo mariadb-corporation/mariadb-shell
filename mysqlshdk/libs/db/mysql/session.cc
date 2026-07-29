@@ -46,6 +46,7 @@
 #include "mysqlshdk/libs/utils/logger.h"
 #include "mysqlshdk/libs/utils/option_tracker.h"
 #include "mysqlshdk/libs/utils/profiling.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 
 #ifdef _WIN32
@@ -288,7 +289,7 @@ void Session_impl::connect(
   if (_connection_options.is_connection_attributes_enabled()) {
     mysql_options(_mysql, MYSQL_OPT_CONNECT_ATTR_RESET, nullptr);
     mysql_options4(_mysql, MYSQL_OPT_CONNECT_ATTR_ADD, "program_name",
-                   "mysqlsh");
+                   shcore::k_shell_option_group);
 
     for (const auto &att : _connection_options.get_connection_attributes()) {
       std::string attribute = att.first;

@@ -773,7 +773,7 @@ FUNCTIONS
 
 
 #@<OUT> plugin1.list.data
-MySQL Py> \? plugin1.list.data
+MariaDB Py> \? plugin1.list.data
 NAME
       data - Get users configured within a service and/or auth_app
 
@@ -793,7 +793,7 @@ DESCRIPTION
           None
 
 #@<OUT> plugin2.list.data
-MySQL Py> \? plugin2.list.data
+MariaDB Py> \? plugin2.list.data
 NAME
       data - Lists users
 

@@ -116,7 +116,7 @@ TEST_F(Mysqlsh_misc, connection_attribute) {
            "attr_value) from performance_schema.session_connect_attrs where "
            "attr_name=\\'program_name\\'').fetchOne()[0])",
            nullptr});
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("program_name=mysqlsh");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("program_name=mariadb-shell");
 }
 #endif
 
@@ -132,7 +132,7 @@ TEST_F(Mysqlsh_misc, warning_insecure_password) {
 #endif
   // Test non secure call passing uri and password with cmd line params
   execute({_mysqlsh, _mysql_uri_nopasswd.c_str(), "-pwhatever", nullptr},
-          nullptr, nullptr, {"MYSQLSH_TERM_COLOR_MODE=nocolor"});
+          nullptr, nullptr, {"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "WARNING: Using a password on the command line interface can be "
       "insecure.");
@@ -140,7 +140,7 @@ TEST_F(Mysqlsh_misc, warning_insecure_password) {
 
   execute(
       {_mysqlsh, _mysql_uri_nopasswd.c_str(), "--password=whatever", nullptr},
-      nullptr, nullptr, {"MYSQLSH_TERM_COLOR_MODE=nocolor"});
+      nullptr, nullptr, {"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "WARNING: Using a password on the command line interface can be "
       "insecure.");
@@ -149,7 +149,7 @@ TEST_F(Mysqlsh_misc, warning_insecure_password) {
   // Test non secure call passing uri with empty password
   std::string tmp = "root:@localhost:" + _mysql_port;
   execute({_mysqlsh, tmp.c_str(), "-e1", nullptr}, nullptr, nullptr,
-          {"MYSQLSH_TERM_COLOR_MODE=nocolor"});
+          {"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "WARNING: Using a password on the command line interface can be "
       "insecure.");
@@ -158,7 +158,7 @@ TEST_F(Mysqlsh_misc, warning_insecure_password) {
   // Test non secure call passing uri with password
   tmp = "root:whatever@localhost:" + _mysql_port;
   execute({_mysqlsh, tmp.c_str(), nullptr}, nullptr, nullptr,
-          {"MYSQLSH_TERM_COLOR_MODE=nocolor"});
+          {"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "WARNING: Using a password on the command line interface can be "
       "insecure.");

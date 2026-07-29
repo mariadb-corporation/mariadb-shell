@@ -6,8 +6,8 @@ import re
 
 # constants
 
-# we're using mysqlshrec in order to trace syslog messages
-mysqlshrec = "mysqlshrec"
+# we're using mariadb-shell-rec in order to trace syslog messages
+mysqlshrec = "mariadb-shell-rec"
 if __os_type == "windows":
     mysqlshrec = mysqlshrec + ".exe"
 mysqlshrec = os.path.join(__bin_dir, mysqlshrec)
@@ -47,7 +47,7 @@ def unpersist_syslog_option():
 def mysqlsh_trace_syslog(argv, uri=uri, stdin=""):
     WIPE_STDOUT()
     remove_trace_file()
-    EXPECT_EQ(0, testutil.call_mysqlsh([ uri ] + argv, stdin, [ "MYSQLSH_TRACE_SYSLOG=" + syslog_trace_file ], mysqlshrec))
+    EXPECT_EQ(0, testutil.call_mysqlsh([ uri ] + argv, stdin, [ "MARIADB_SHELL_TRACE_SYSLOG=" + syslog_trace_file ], mysqlshrec))
 
 def make_kvp(key, value):
     def should_quote(s):

@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -112,7 +113,7 @@ def collect_member_info(zf: zipfile.ZipFile, prefix: str, session: InstanceSessi
     if benchmark:
         print("Executing BENCHMARK()...")
         # speed up tests
-        if mysqlsh.executable.endswith("mysqlshrec"):
+        if mysqlsh.executable.endswith("mariadb-shell-rec"):
             loop_count = 100
         bm_time = session.run_sql(
             f"SELECT BENCHMARK({loop_count},(1234*5678/37485-1298+8596^2))").get_execution_time()
@@ -193,7 +194,7 @@ def collect_basic_info(zf: zipfile.ZipFile, prefix: str, session: InstanceSessio
     if shell_logs:
         print("Copying shell log file...")
         if shell.options["logFile"] and os.path.exists(shell.options["logFile"]):
-            copy_local_file(zf, f"{prefix}mysqlsh.log",
+            copy_local_file(zf, f"{prefix}mariadb-shell.log",
                             shell.options["logFile"])
 
 

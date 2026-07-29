@@ -4,7 +4,7 @@
 // helpers
 
 function mysqlsh(args) {
-  return testutil.callMysqlsh(args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+  return testutil.callMysqlsh(args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

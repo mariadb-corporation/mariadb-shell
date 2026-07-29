@@ -245,7 +245,7 @@ session.run_sql("SET NAMES 'utf8mb4'")
 session.run_sql("DROP SCHEMA `test-ó`")
 )*");
     // disable prompt theme, so we can check output along with prompt
-    shcore::setenv("MYSQLSH_PROMPT_THEME", "invalid");
+    shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "invalid");
   }
 
   static void TearDownTestCase() {
@@ -266,7 +266,7 @@ session.run_sql("DROP SCHEMA `test-ó`")
     shcore::delete_file("prompt_new_line");
     shcore::delete_file("bug30156304.py");
     shcore::delete_file("bug31083617.py");
-    shcore::unsetenv("MYSQLSH_PROMPT_THEME");
+    shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
   }
 };
 
@@ -775,7 +775,7 @@ end)";
 TEST_F(ShellExeRunScript, reconnect_mysql_session_js) {
   static constexpr auto first_execution =
       R"(No default schema selected; type \use <schema> to set one.
-NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 mysql-js []> session.runSql('select 1');
 +---+
 | 1 |
@@ -823,7 +823,7 @@ mysql-js []> session.runSql('select 1');
 
 TEST_F(ShellExeRunScript, reconnect_mysqlx_session_js) {
   static constexpr auto first_execution =
-      R"(NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+      R"(NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 mysql-js []> session.sql('select 1').execute();
 +---+
 | 1 |
@@ -859,7 +859,7 @@ mysql-js []> session.sql('select 1').execute();
 
 TEST_F(ShellExeRunScript, reconnect_mysql_session_py) {
   static constexpr auto first_execution =
-      R"(NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+      R"(NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 mysql-py []> session.run_sql('select 1');
 +---+
 | 1 |
@@ -914,7 +914,7 @@ mysql-py []> session.run_sql('select 1');
 #ifdef HAVE_X_PROTOCOL
 TEST_F(ShellExeRunScript, reconnect_mysqlx_session_py) {
   static constexpr auto first_execution =
-      R"(NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+      R"(NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 mysql-py []> session.sql('select 1').execute();
 +---+
 | 1 |

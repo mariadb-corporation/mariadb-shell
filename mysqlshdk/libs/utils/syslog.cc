@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,13 +30,14 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/syslog_system.h"
 
 namespace shcore {
 
 namespace {
 
-constexpr auto k_syslog_name = "mysqlsh";
+constexpr auto k_syslog_name = k_shell_option_group;
 
 /**
  * Global system log, singleton.

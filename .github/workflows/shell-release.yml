@@ -64,7 +64,7 @@ jobs:
       # mcp_plugin) live in a separate repo. Dropping them into plugins/external/
       # BEFORE Configure is what gets them bundled: install_bundled_plugins()
       # globs plugins/external/* at configure time and installs each folder into
-      # lib/mysqlsh/plugins (the same destination as the sandbox plugin), so they
+      # lib/mariadb-shell/plugins (the same destination as the sandbox plugin), so they
       # end up in the CPack packages. Copying after the build would NOT work --
       # CPack stages from configure-time install() rules, not the build tree.
       #

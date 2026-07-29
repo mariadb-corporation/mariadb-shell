@@ -55,7 +55,7 @@ class Shell_history : public ::testing::Test {
       : m_handler(&m_capture, print_capture, print_capture, print_capture) {
     m_config_home = shcore::path::join_path(::getenv("TMPDIR"), "history_test");
     m_cleanup =
-        tests::Cleanup::set_env_var("MYSQLSH_USER_CONFIG_HOME", m_config_home);
+        tests::Cleanup::set_env_var("MARIADB_SHELL_USER_CONFIG_HOME", m_config_home);
     m_options_file =
         Shell_core_test_wrapper::get_options_file_name("test-options.json");
   }
@@ -484,7 +484,7 @@ TEST_F(Shell_history, history_linenoise) {
   // TS_CLE#1 Commands executed by the user in the shell are saved to the
   // command history
   // TS_HM#1 only commands interactively typed by the user in the shell prompt
-  // are saved to history file: ~/.mysqlsh/history file
+  // are saved to history file: ~/.mariadb-shell/history file
 
   char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
                   nullptr};

@@ -59,6 +59,7 @@ errno_t memset_s(void *__s, rsize_t __smax, int __c, rsize_t __n);
 #endif
 #endif
 
+#include <cassert>
 #include <cctype>
 #include <cstdio>
 #include <ctime>
@@ -67,6 +68,7 @@ errno_t memset_s(void *__s, rsize_t __smax, int __c, rsize_t __n);
 #include "mysqlshdk/include/shellcore/interrupt_handler.h"
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/db/uri_parser.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_lexing.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -1059,6 +1061,24 @@ std::optional<const char *> get_env(const char *name) {
   } else {
     return {};
   }
+}
+
+const char *getenv_shell(const char *name) {
+  if (const auto value = ::getenv(name)) return value;
+
+  // Fall back to the pre-rename MYSQLSH_ name for the same variable.
+  const std::string_view full{name};
+  const std::string_view prefix{k_shell_env_prefix};
+  if (!str_beginswith(full, prefix)) {
+    assert(false && "shell env vars must be MARIADB_SHELL_-prefixed");
+    return nullptr;
+  }
+
+  const std::string legacy =
+      std::string{k_shell_legacy_env_prefix} +
+      std::string{full.substr(prefix.size())};
+
+  return ::getenv(legacy.c_str());
 }
 
 bool is_valid_hostname(std::string_view hostname) {

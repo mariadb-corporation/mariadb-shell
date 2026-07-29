@@ -5,7 +5,7 @@ import json
 
 def callMysqlsh(additional_args):
     base_args = [__sandbox_uri1, "--quiet-start=2", "--log-level=debug"]
-    return testutil.call_mysqlsh(base_args + additional_args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    return testutil.call_mysqlsh(base_args + additional_args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 def rmdir(path):
     if os.path.exists(path):

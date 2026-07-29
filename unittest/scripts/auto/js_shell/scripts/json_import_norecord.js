@@ -441,7 +441,7 @@ EXPECT_THROWS(
 var rc = testutil.callMysqlsh([
   xuri + '/' + target_schema, '--', 'util', 'import-json', __import_data_path + '/sample.json',
   '--collection', 'blubb_table_view'
-], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 EXPECT_EQ(1, rc);
 EXPECT_STDOUT_CONTAINS(

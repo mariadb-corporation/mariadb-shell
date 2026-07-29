@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,7 @@
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/utils/process_launcher.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
@@ -69,8 +71,8 @@ void setup_recorder_environment(const std::string &cmd) {
     }
   }
 
-  shcore::setenv("MYSQLSH_RECORDER_MODE", mode);
-  shcore::setenv("MYSQLSH_RECORDER_PREFIX", prefix);
+  shcore::setenv("MARIADB_SHELL_RECORDER_MODE", mode);
+  shcore::setenv("MARIADB_SHELL_RECORDER_PREFIX", prefix);
 }
 
 shcore::Value value_from_argmap(const shcore::Argument_map &argmap) {
@@ -341,7 +343,8 @@ int ProvisioningInterface::execute_mysqlprovision(
 
     // This error implies a wrong integratio nbetween the chell and MP
     std::string log_path =
-        shcore::path::join_path(shcore::get_user_config_path(), "mysqlsh.log");
+        shcore::path::join_path(shcore::get_user_config_path(),
+                                shcore::k_shell_log_file_name);
 
     throw shcore::Exception::runtime_error(
         "Error calling mysqlprovision. For more details look at the log at: " +

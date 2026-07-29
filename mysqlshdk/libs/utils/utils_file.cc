@@ -40,6 +40,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
@@ -96,14 +97,15 @@ class Existing_folder_error : public std::runtime_error {
 
 /*
  * Returns the config path
- * (~/.mysqlsh in Unix or %AppData%\MySQL\mysqlsh in Windows).
- * May be overriden with MYSQLSH_USER_CONFIG_HOME
+ * (~/.mariadb-shell in Unix or %AppData%\MariaDB\mariadb-shell in Windows).
+ * May be overriden with MARIADB_SHELL_USER_CONFIG_HOME
  * (specially for tests)
  */
 std::string get_user_config_path() {
   // Check if there's an override of the config directory
   // This is needed required for unit-tests
-  const char *usr_config_path = getenv("MYSQLSH_USER_CONFIG_HOME");
+  const char *usr_config_path =
+      shcore::getenv_shell("MARIADB_SHELL_USER_CONFIG_HOME");
   if (usr_config_path) {
     return std::string(usr_config_path);
   }
@@ -124,8 +126,8 @@ std::string get_user_config_path() {
                    err.ErrorMessage()));
   }
 
-  to_append.push_back("MySQL");
-  to_append.push_back("mysqlsh");
+  to_append.push_back(k_shell_config_dir_win_vendor);
+  to_append.push_back(k_shell_config_dir_win);
 #else
   char *cpath = std::getenv("HOME");
 
@@ -136,7 +138,7 @@ std::string get_user_config_path() {
     path.assign(cpath);
   }
 
-  to_append.push_back(".mysqlsh");
+  to_append.push_back(k_shell_user_config_dir_unix);
 #endif
 
   // Up to know the path must exist since it was retrieved from OS standard
@@ -153,8 +155,8 @@ std::string get_user_config_path() {
 }
 
 /*
- * Returns the config path (/etc/mysql/mysqlsh in Unix or
- * %ProgramData%\MySQL\mysqlsh in Windows).
+ * Returns the config path (/etc/mysql/mariadb-shell in Unix or
+ * %ProgramData%\MariaDB\mariadb-shell in Windows).
  */
 std::string get_global_config_path() {
   std::string path;
@@ -167,7 +169,8 @@ std::string get_global_config_path() {
   if (SUCCEEDED(
           hr = SHGetFolderPathW(NULL, CSIDL_COMMON_APPDATA, NULL, 0, szPath))) {
     path = shcore::path::join_path(shcore::wide_to_utf8(szPath, wcslen(szPath)),
-                                   "MySQL", "mysqlsh");
+                                   k_shell_config_dir_win_vendor,
+                                   k_shell_config_dir_win);
   } else {
     _com_error err(hr);
     throw std::runtime_error(
@@ -175,7 +178,7 @@ std::string get_global_config_path() {
                    err.ErrorMessage()));
   }
 #else
-  path = "/etc/mysql/mysqlsh";
+  path = k_shell_global_config_dir_unix;
 #endif
 
   return path;
@@ -214,7 +217,7 @@ std::string get_binary_path() {
   uint32_t buffsize = sizeof(path);
   if (!_NSGetExecutablePath(path, &buffsize)) {
     // _NSGetExecutablePath may return tricky constructs on paths
-    // like symbolic links or things like i.e /path/to/./mysqlsh
+    // like symbolic links or things like i.e /path/to/./mariadb-shell
     // we need to normalize that
     if (realpath(path, real_path)) {
       exe_path.assign(real_path);
@@ -278,7 +281,8 @@ std::string get_binary_folder() {
 
 std::string get_share_folder() {
   std::string path =
-      shcore::path::join_path(get_mysqlx_home_path(), "share", "mysqlsh");
+      shcore::path::join_path(get_mysqlx_home_path(), "share",
+                              k_shell_install_dir_name);
   if (!shcore::path::exists(path))
     throw std::runtime_error(
         path + ": share folder not found, shell installation likely invalid");
@@ -288,7 +292,8 @@ std::string get_share_folder() {
 
 std::string get_library_folder() {
   std::string path =
-      shcore::path::join_path(get_mysqlx_home_path(), "lib", "mysqlsh");
+      shcore::path::join_path(get_mysqlx_home_path(), "lib",
+                              k_shell_install_dir_name);
   if (!shcore::path::exists(path))
     throw std::runtime_error(
         path + ": lib folder not found, shell installation likely invalid");
@@ -299,7 +304,8 @@ std::string get_library_folder() {
 #ifdef HAVE_LIBEXEC_DIR
 std::string get_libexec_folder() {
   std::string path =
-      shcore::path::join_path(get_mysqlx_home_path(), LIBEXECDIR, "mysqlsh");
+      shcore::path::join_path(get_mysqlx_home_path(), LIBEXECDIR,
+                              k_shell_install_dir_name);
   if (!shcore::path::exists(path))
     throw std::runtime_error(
         path + ": " + LIBEXECDIR +
@@ -311,12 +317,12 @@ std::string get_libexec_folder() {
 
 /*
  * Returns what should be considered the HOME folder for the shell.
- * If MYSQLSH_HOME is defined, returns its value.
+ * If MARIADB_SHELL_HOME is defined, returns its value.
  * If not, it will try to identify the value based on the binary full path:
  * In a standard setup the binary will be at <MYSQLX_HOME>/bin
  *
  * If that is the case MYSQLX_HOME is determined by trimming out
- * /bin/mysqlsh from the full executable name.
+ * /bin/mariadb-shell from the full executable name.
  *
  * An empty value would indicate MYSQLX_HOME is unknown.
  */
@@ -324,7 +330,7 @@ std::string get_mysqlx_home_path() {
   std::string ret_val;
   std::string binary_folder;
   std::string path_separator;
-  const char *env_home = getenv("MYSQLSH_HOME");
+  const char *env_home = shcore::getenv_shell("MARIADB_SHELL_HOME");
 
   if (env_home) {
     ret_val.assign(env_home);
@@ -1509,7 +1515,7 @@ std::string create_temporary_folder(size_t max_attempts) {
   std::string error;
   while (max_attempts > 0) {
     try {
-      std::string name("mysqlsh-");
+      std::string name(std::string{k_shell_binary_name} + "-");
       name.append(
           shcore::get_random_string(10,
                                     "_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno"

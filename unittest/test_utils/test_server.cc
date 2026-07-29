@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,7 @@ extern char **environ;
 #include <vector>
 
 #include "mysqlshdk/libs/rest/rest_service.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
@@ -115,7 +117,8 @@ bool Test_server::start_server(int start_port, bool use_env_var, bool https) {
   }
 
   const auto shell_executable =
-      shcore::path::join_path(shcore::get_binary_folder(), "mysqlsh");
+      shcore::path::join_path(shcore::get_binary_folder(),
+                              shcore::k_shell_binary_name);
   const auto script =
       shcore::path::join_path(g_test_home, "data", "rest", "test-server.py");
   const auto port_number = std::to_string(m_port);

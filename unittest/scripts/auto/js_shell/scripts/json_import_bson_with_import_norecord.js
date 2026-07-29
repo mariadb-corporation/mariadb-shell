@@ -9,7 +9,7 @@ const full_uri = "mysqlx://" + __uripwd + "/" + schema;
 var import_docs = function(newParams) {
   var params = [full_uri, "--", "util", "import-json", fname];
   var delta = params.splice.apply(params, [5,0].concat(newParams));
-  testutil.callMysqlsh(params, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+  testutil.callMysqlsh(params, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 }
 
 var import_doc = function(document, customParams) {
@@ -19,7 +19,7 @@ var import_doc = function(document, customParams) {
   testutil.createFile("single_doc.json", JSON.stringify(document));
   var params = [full_uri, "--", "util", "import-json", "single_doc.json"];
   var delta = params.splice.apply(params, [5,0].concat(customParams));
-  testutil.callMysqlsh(params, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+  testutil.callMysqlsh(params, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
   println(testutil.catFile("single_doc.json"));
   testutil.rmfile("single_doc.json");
 }

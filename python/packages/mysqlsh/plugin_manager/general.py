@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,8 +49,11 @@ def get_shell_user_dir(*argv):
     Returns:
         The plugin directory path as string
     """
-    if "MYSQLSH_USER_CONFIG_HOME" in os.environ:
-        shell_dir = os.environ["MYSQLSH_USER_CONFIG_HOME"]
+    config_home = os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME") or os.environ.get(
+        "MYSQLSH_USER_CONFIG_HOME"
+    )
+    if config_home:
+        shell_dir = config_home
     else:
         home_dir = Path.home()
         if not home_dir:
@@ -57,10 +61,10 @@ def get_shell_user_dir(*argv):
         os_name = platform.system()
         if os_name == "Windows":
             shell_dir = os.path.join(
-                home_dir, "AppData", "Roaming", "MySQL", "mysqlsh"
+                home_dir, "AppData", "Roaming", "MariaDB", "mariadb-shell"
             )
         else:
-            shell_dir = os.path.join(home_dir, ".mysqlsh")
+            shell_dir = os.path.join(home_dir, ".mariadb-shell")
 
     # Ensure the path exists
     try:

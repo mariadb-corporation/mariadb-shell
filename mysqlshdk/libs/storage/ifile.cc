@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +33,7 @@
 #include <string>
 #include <vector>
 
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 
 #include "mysqlshdk/libs/storage/backend/file.h"
@@ -119,7 +121,8 @@ std::string read_file(IFile *file) {
 
 File_options mmap_options() {
   static std::string s_mmap_mode = std::invoke([]() {
-    if (const char *mode = ::getenv("MYSQLSH_MMAP")) return mode;
+    if (const char *mode = shcore::getenv_shell("MARIADB_SHELL_MMAP"))
+      return mode;
     return "on";
   });
   static std::string s_mmap_key = "file.mmap";

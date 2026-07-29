@@ -136,7 +136,7 @@ EXPECT_STDOUT_CONTAINS(f"root@localhost	{__mysql_port}")
 #@<> mysqlsh --help
 # TSFR_5
 testutil.call_mysqlsh(["--help"], "", ["MYSQL_HOME="+homedir])
-EXPECT_STDOUT_CONTAINS("The following groups are read: mysqlsh client")
+EXPECT_STDOUT_CONTAINS("The following groups are read: mariadb-shell mysqlsh client")
 EXPECT_STDOUT_CONTAINS("Default options are read from the following files in the given order")
 EXPECT_STDOUT_CONTAINS(homedir)
 

@@ -34,7 +34,7 @@ def CHECK_DB_OBJECT_NOTICES():
 
 #@<> Check upgrade without passing configuration file
 WIPE_OUTPUT()
-rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
+rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
 EXPECT_EQ(0, rc)
 
 EXPECT_OUTPUT_CONTAINS_MULTILINE('''1) Usage of obsolete sql_mode flags (obsoleteSqlModeFlags)
@@ -65,7 +65,7 @@ NOTE: No fatal errors were found that would prevent an upgrade, but some potenti
 #@<> Check upgrade passing configuration file
 WIPE_OUTPUT()
 config_path = testutil.get_sandbox_conf_path(__mysql_sandbox_port1)
-rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags", "--config-path", config_path], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
+rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags", "--config-path", config_path], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
 EXPECT_EQ(0, rc)
 
 
@@ -93,7 +93,7 @@ WIPE_OUTPUT()
 testutil.change_sandbox_conf(__mysql_sandbox_port1, "sql_mode", ','.join(obsolete_modes), "mysqld")
 testutil.stop_sandbox(__mysql_sandbox_port1, {"wait":1})
 testutil.start_sandbox(__mysql_sandbox_port1)
-rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags", "--config-path", config_path], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
+rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "obsoleteSqlModeFlags", "--config-path", config_path], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
 EXPECT_EQ(0, rc)
 
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -39,8 +40,8 @@ class Mysqlsh_credential_store : public tests::Command_line_test {
 #endif
  public:
   void SetUp() override {
-    shcore::unsetenv("MYSQLSH_CREDENTIAL_STORE_HELPER");
-    shcore::unsetenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS");
+    shcore::unsetenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER");
+    shcore::unsetenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS");
 
     Command_line_test::SetUp();
   }
@@ -48,9 +49,9 @@ class Mysqlsh_credential_store : public tests::Command_line_test {
   void TearDown() override {
     Command_line_test::TearDown();
 
-    shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "<disabled>");
-    shcore::unsetenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS");
-    shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+    shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "<disabled>");
+    shcore::unsetenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS");
+    shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
   }
 };
 
@@ -91,7 +92,7 @@ TEST_F(Mysqlsh_credential_store, cmdline_invalid_helper) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_plaintext_helper) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "plaintext");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "plaintext");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.helper'])", nullptr});
@@ -100,7 +101,7 @@ TEST_F(Mysqlsh_credential_store, env_plaintext_helper) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_disabled_helper) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "<disabled>");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "<disabled>");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.helper'])", nullptr});
@@ -111,7 +112,7 @@ TEST_F(Mysqlsh_credential_store, env_disabled_helper) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_invalid_helper) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "unknown");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "unknown");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.helper'])", nullptr});
@@ -164,7 +165,7 @@ TEST_F(Mysqlsh_credential_store, cmdline_invalid_save_passwords) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_never_save_passwords) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS", "never");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS", "never");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.savePasswords'])", nullptr});
@@ -174,7 +175,7 @@ TEST_F(Mysqlsh_credential_store, env_never_save_passwords) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_always_save_passwords) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS", "always");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS", "always");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.savePasswords'])", nullptr});
@@ -184,7 +185,7 @@ TEST_F(Mysqlsh_credential_store, env_always_save_passwords) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_prompt_save_passwords) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS", "prompt");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS", "prompt");
 
   execute({_mysqlsh, mode.c_str(), "-e",
            "print(shell.options['credentialStore.savePasswords'])", nullptr});
@@ -194,7 +195,7 @@ TEST_F(Mysqlsh_credential_store, env_prompt_save_passwords) {
 }
 
 TEST_F(Mysqlsh_credential_store, env_invalid_save_passwords) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS", "unknown");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS", "unknown");
 
   execute({_mysqlsh, nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
@@ -204,8 +205,8 @@ TEST_F(Mysqlsh_credential_store, env_invalid_save_passwords) {
 }
 
 TEST_F(Mysqlsh_credential_store, bug_28216485) {
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "unknown");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "unknown");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
 
   // If shell is running in "nocolor" mode output should not contain VTERM
   // escape characters.

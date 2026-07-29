@@ -120,7 +120,7 @@ session.run_sql("""
 
 
 #@<> Invalid FK References Check - Verification
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 1) Checks for foreign keys not referencing a full unique index
@@ -159,7 +159,7 @@ Notices:  0
 """)
 
 #@<> Invalid FK References Check - Verification JSON
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences", "--outputFormat=JSON"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences", "--outputFormat=JSON"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 {
@@ -243,7 +243,7 @@ KEY `idx_id_key` (`id_key`),
 CONSTRAINT `fk_target_table_id_key` FOREIGN KEY (`id_key`) REFERENCES `fktestone`.`source_table` (`id_key`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;""")
 
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_OUTPUT_NOT_CONTAINS("fk_target_table_id_key")
 EXPECT_OUTPUT_CONTAINS("Warnings: 0")
 
@@ -272,7 +272,7 @@ session.run_sql("""CREATE TABLE `target_table` (
   CONSTRAINT `fk_target_table_id_key` FOREIGN KEY (`id_key`) REFERENCES `fktestone`.`source_table` (`id_key`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;""")
 
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=foreignKeyReferences"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_OUTPUT_CONTAINS("fk_target_table_id_key")
 EXPECT_OUTPUT_NOT_CONTAINS("Warnings: 0")
 

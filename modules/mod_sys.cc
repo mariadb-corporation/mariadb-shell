@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include "modules/mysqlxtest_utils.h"
 #include "shellcore/utils_help.h"
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 #include "utils/utils_path.h"
@@ -48,7 +50,8 @@ void Sys::init() {
     auto path = shcore::get_mysqlx_home_path();
 
     if (!path.empty()) {
-      path = shcore::path::join_path(path, "share", "mysqlsh", "modules", "js");
+      path = shcore::path::join_path(path, "share", shcore::k_shell_install_dir_name,
+                                    "modules", "js");
     } else {
       // If MYSQLX_HOME not found, sets the current directory as a module path
       path = shcore::get_binary_folder();
@@ -63,7 +66,7 @@ void Sys::init() {
   }
 
   // Finally sees if there are additional configured paths
-  if (const auto custom_paths = getenv("MYSQLSH_JS_MODULE_PATH")) {
+  if (const auto custom_paths = shcore::getenv_shell("MARIADB_SHELL_JS_MODULE_PATH")) {
     for (const auto &path : shcore::split_string(custom_paths, ";")) {
       if (!path.empty()) {
         _path->emplace_back(path);
@@ -143,8 +146,8 @@ REGISTER_HELP_FUNCTION_TEXT(SYS_PATH, R"*(
 Lists the search paths to load the JavaScript modules.
 
 When the shell is launched, this variable is initialized to
-@li the home folder of shell + "share/mysqlsh/modules/js",
-@li the folder specified in the <b>MYSQLSH_JS_MODULE_PATH</b> environment
+@li the home folder of shell + "share/mariadb-shell/modules/js",
+@li the folder specified in the <b>MARIADB_SHELL_JS_MODULE_PATH</b> environment
 variable (multiple folders are allowed, separated with semicolon).
 
 Users may change the sys.path variable at run-time.

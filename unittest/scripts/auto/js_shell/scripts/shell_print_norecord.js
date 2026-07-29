@@ -11,7 +11,7 @@ type_expectation = {
 for (element in type_expectation) {
     expected = type_expectation[element];
 
-    rc = testutil.callMysqlsh(["--js", "-e", `shell.print('sample', '${element}')`],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+    rc = testutil.callMysqlsh(["--js", "-e", `shell.print('sample', '${element}')`],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
     EXPECT_OUTPUT_CONTAINS(expected)
     WIPE_OUTPUT()
 }
@@ -20,7 +20,7 @@ for (element in type_expectation) {
 for (element in type_expectation) {
     expected = type_expectation[element];
 
-    rc = testutil.callMysqlsh(["--py", "-e", `shell.print('sample', '${element}')`],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+    rc = testutil.callMysqlsh(["--py", "-e", `shell.print('sample', '${element}')`],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
     EXPECT_OUTPUT_CONTAINS(expected)
     WIPE_OUTPUT()
 }
@@ -37,7 +37,7 @@ type_expectation = {
 for (element in type_expectation) {
     expected = type_expectation[element];
 
-    rc = testutil.callMysqlsh(["--js", "--json=raw", "-e", `shell.print('sample', '${element}')`],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+    rc = testutil.callMysqlsh(["--js", "--json=raw", "-e", `shell.print('sample', '${element}')`],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
     EXPECT_OUTPUT_CONTAINS(expected)
     WIPE_OUTPUT()
 }
@@ -46,7 +46,7 @@ for (element in type_expectation) {
 for (element in type_expectation) {
     expected = type_expectation[element];
 
-    rc = testutil.callMysqlsh(["--py", "--json=raw", "-e", `shell.print('sample', '${element}')`],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+    rc = testutil.callMysqlsh(["--py", "--json=raw", "-e", `shell.print('sample', '${element}')`],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
     EXPECT_OUTPUT_CONTAINS(expected)
     WIPE_OUTPUT()
 }
@@ -56,13 +56,13 @@ for (element in type_expectation) {
 // NOTE: these tests don't work because the test system also uses the <<<>>> pattern to replace "variables" with values
 // associated to them in the execution context, however, the functionality was manually verified as indicated here.
 //@<> Test API name case JS
-// testutil.callMysqlsh(["--js", "-e", "shell.print('shell.<<<someApiName>>>')"],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+// testutil.callMysqlsh(["--js", "-e", "shell.print('shell.<<<someApiName>>>')"],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 // EXPECT_OUTPUT_CONTAINS("shell.someApiName")
 // WIPE_OUTPUT()
 
 
 //@<> Test API name case PY
-// testutil.callMysqlsh(["--py", "-e", "shell.print('shell.<<<someApiName>>>')"],"", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+// testutil.callMysqlsh(["--py", "-e", "shell.print('shell.<<<someApiName>>>')"],"", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 // EXPECT_OUTPUT_CONTAINS("shell.some_api_name")
 // WIPE_OUTPUT()
 

@@ -64,8 +64,10 @@ constexpr auto k_exclude_filters_option = "credentialStore.excludeFilters";
 constexpr auto k_credential_helper_cmdline = "--credential-store-helper=<h>";
 constexpr auto k_save_passwords_cmdline = "--save-passwords=<value>";
 
-constexpr auto k_credential_helper_env = "MYSQLSH_CREDENTIAL_STORE_HELPER";
-constexpr auto k_save_passwords_env = "MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS";
+constexpr auto k_credential_helper_env =
+    "MARIADB_SHELL_CREDENTIAL_STORE_HELPER";
+constexpr auto k_save_passwords_env =
+    "MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS";
 
 constexpr auto k_save_passwords_always = "always";
 constexpr auto k_save_passwords_never = "never";

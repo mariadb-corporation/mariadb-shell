@@ -1,4 +1,5 @@
 # Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +25,8 @@
 set -e
 
 if [ "$1" = "purge" ]; then
-        rm -rf /usr/lib/mysqlsh 2>/dev/null
-        echo "Deleted /usr/lib/mysqlsh"
+        rm -rf /usr/lib/mariadb-shell 2>/dev/null
+        echo "Deleted /usr/lib/mariadb-shell"
 fi
 
 #DEBHELPER#

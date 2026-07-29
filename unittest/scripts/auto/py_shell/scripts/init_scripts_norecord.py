@@ -3,8 +3,8 @@ import os
 program_data = os.getenv("PROGRAMDATA")
 mysql_dir = os.path.join(program_data, "MySQL")
 mysqlsh_dir = os.path.join(mysql_dir, "mysqlsh")
-init_py = os.path.join(mysqlsh_dir, "mysqlshrc.py")
-init_js = os.path.join(mysqlsh_dir, "mysqlshrc.js")
+init_py = os.path.join(mysqlsh_dir, "mariadb-shellrc.py")
+init_js = os.path.join(mysqlsh_dir, "mariadb-shellrc.js")
 
 mysql_dir_exists = os.path.exists(mysql_dir)
 mysqlsh_dir_exists = os.path.exists(mysqlsh_dir)
@@ -31,7 +31,7 @@ testutil.create_file('test.py', "\\sql")
 
 #@<> Tests initialization and switch to sql {__have_js}
 WIPE_OUTPUT()
-testutil.call_mysqlsh(["--interactive=full", "-f", 'test.js'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(["--interactive=full", "-f", 'test.js'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS(f"WARNING: Global startup scripts are no longer supported, '{init_js}' will be ignored.")
 EXPECT_STDOUT_CONTAINS(f"WARNING: Global startup scripts are no longer supported, '{init_py}' will be ignored.")
 EXPECT_STDOUT_NOT_CONTAINS('Loaded JS Startup File')
@@ -39,7 +39,7 @@ EXPECT_STDOUT_NOT_CONTAINS('Loaded PY Startup File')
 
 #@<> Tests initialization and switch to sql
 WIPE_OUTPUT()
-testutil.call_mysqlsh(["--interactive=full", "-f", 'test.py'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(["--interactive=full", "-f", 'test.py'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 if __have_js:
   EXPECT_STDOUT_CONTAINS(f"WARNING: Global startup scripts are no longer supported, '{init_js}' will be ignored.")
 EXPECT_STDOUT_CONTAINS(f"WARNING: Global startup scripts are no longer supported, '{init_py}' will be ignored.")

@@ -2946,7 +2946,7 @@ To load this dump, you can either:
  * Disable the 'sql_generate_invisible_primary_key' option on the destination server.
  * Use an account that has the SESSION_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN or SUPER privileges.
  * Set the 'createInvisiblePKs' load option to true to create primary keys in tables that are missing them.
- * Set the 'MYSQLSH_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
+ * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
 #@<> BUG#34408669 - user requests no primary keys to be created, but since they don't have required privileges it fails {VER(>= 8.0.30)}
@@ -2960,17 +2960,17 @@ To load this dump, you can either:
  * Disable the 'sql_generate_invisible_primary_key' option on the destination server.
  * Use an account that has the SESSION_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN or SUPER privileges.
  * Set the 'createInvisiblePKs' load option to true to create primary keys in tables that are missing them.
- * Set the 'MYSQLSH_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
+ * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
 #@<> BUG#34408669 - user requests no primary keys to be created, env var is set, keys are created anyway {VER(>= 8.0.30)}
-os.environ["MYSQLSH_ALLOW_ALWAYS_GIPK"] = "1"
+os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"] = "1"
 
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - cleanup {VER(>= 8.0.30)}
-del os.environ["MYSQLSH_ALLOW_ALWAYS_GIPK"]
+del os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"]
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 

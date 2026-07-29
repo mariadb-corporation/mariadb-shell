@@ -45,25 +45,25 @@ CREATE TABLE scti_test.t (
 \js
 
 //@ Column type info disabled X
-testutil.callMysqlsh([__uripwd, '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__uripwd, '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info enabled X {VER(>=8.0.11)}
-testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info enabled X JSON {VER(>=8.0.11)}
-testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--json', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--json', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info disabled classic
-testutil.callMysqlsh([__mysqluripwd, '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__mysqluripwd, '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info enabled classic {VER(>=8.0.11)}
-testutil.callMysqlsh([__mysqluripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__mysqluripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info enabled X 5.7 {VER(<8.0.0)}
-testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__uripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Column type info enabled classic 5.7 {VER(<8.0.0)}
-testutil.callMysqlsh([__mysqluripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__mysqluripwd, '--column-type-info', '--sql', '--vertical', '-e', 'select * from scti_test.t;'], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@<> Cleanup
 \sql

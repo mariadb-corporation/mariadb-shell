@@ -71,10 +71,10 @@ echo "$DBUS_SESSION_BUS_ADDRESS"
 secret-tool search --all secret_store secret-service; echo "exit=$?"
 
 # 3. the shell sees its helper
-mysqlsh --py -e "print(shell.list_credential_helpers())"
+mariadb-shell --py -e "print(shell.list_credential_helpers())"
 
 # 4. the shell resolved the default helper
-mysqlsh --py -e "print(shell.options['credentialStore.helper'])"
+mariadb-shell --py -e "print(shell.options['credentialStore.helper'])"
 ```
 
 Expected: a non-empty bus address; step 2 exits `0` (no output yet is normal —
@@ -90,7 +90,7 @@ session bus at all. Create both around the command you want to run:
 ```bash
 dbus-run-session -- sh -c '
   printf "my-keyring-password\n" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1
-  mysqlsh --py -e "print(shell.options[\"credentialStore.helper\"])"'
+  mariadb-shell --py -e "print(shell.options[\"credentialStore.helper\"])"'
 ```
 
 * `dbus-run-session` starts a private session bus, so this works whether or not
@@ -250,7 +250,7 @@ By default the shell **asks** whether to save each new password
 persisting the setting to your shell configuration:
 
 ```bash
-mysqlsh --py -e "shell.options.set_persist('credentialStore.savePasswords', 'always')"
+mariadb-shell --py -e "shell.options.set_persist('credentialStore.savePasswords', 'always')"
 ```
 
 or, from an interactive session:
@@ -281,8 +281,8 @@ Related options:
   stored, e.g. `["*@myhost*"]`.
 
 These can also be set per invocation with `--credential-store-helper=<helper>` and
-`--save-passwords=<value>`, or via the `MYSQLSH_CREDENTIAL_STORE_HELPER` and
-`MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS` environment variables.
+`--save-passwords=<value>`, or via the `MARIADB_SHELL_CREDENTIAL_STORE_HELPER` and
+`MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS` environment variables.
 
 To inspect what the shell stored, using the keyring directly:
 
@@ -299,7 +299,7 @@ only writes to its log:
 mysql-secret-store-secret-service version; echo "exit=$?"
 ```
 
-The helper lives next to the `mysqlsh` binary. Exit `0` means it is healthy; exit
+The helper lives next to the `mariadb-shell` binary. Exit `0` means it is healthy; exit
 `1` prints the cause on stderr:
 
 | Symptom | Cause | Fix |
@@ -315,8 +315,8 @@ The helper lives next to the `mysqlsh` binary. Exit `0` means it is healthy; exi
 The shell logs the underlying error at startup. To see it:
 
 ```bash
-mysqlsh --log-level=debug --py -e "print(shell.options['credentialStore.helper'])"
-grep -i "helper" ~/.mysqlsh/mysqlsh.log | tail
+mariadb-shell --log-level=debug --py -e "print(shell.options['credentialStore.helper'])"
+grep -i "helper" ~/.mariadb-shell/mariadb-shell.log | tail
 ```
 
 Look for `Failed to initialize the default helper "secret-service"` followed by

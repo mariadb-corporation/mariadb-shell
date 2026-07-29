@@ -1,149 +1,209 @@
-# MySQL Shell
+# MariaDB Shell
 
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+Copyright (c) 2026, MariaDB Corporation.
 
-This is a release of MySQL Shell, an advanced client and code editor for MySQL.
+MariaDB Shell is an advanced client and code editor for MariaDB. It is derived
+from MySQL Shell and adapted to build and run against MariaDB server sources and
+the MariaDB Connector/C.
 
 License information can be found in the [LICENSE](LICENSE) file.
 This distribution may include materials developed by third parties. For license
 and attribution notices for these materials, please refer to the [LICENSE](LICENSE) file.
 
-For more information on MySQL Shell visit https://dev.mysql.com/doc/mysql-shell/en/
-For additional downloads and the source of MySQL Shell visit https://dev.mysql.com/downloads/shell/
+Contributing information for code and non-code submissions can be found in the
+[CONTRIBUTING.md](CONTRIBUTING.md) file.
 
-Contributing information for code and non-code submissions can be found in the [CONTRIBUTING.md](CONTRIBUTING.md) file.
+The shell installs as `mariadb-shell`; `mysqlsh` and `msh` are provided as
+aliases.
 
-MySQL Shell is brought to you by the MySQL team at Oracle.
-
-MySQL Shell is part of MySQL Server and provides an interactive console for **JavaScript**, **Python**, and **SQL**. It supports MySQL development and administration, and includes utilities for dump/load, upgrade readiness checks, and management of high-availability MySQL topologies.
+```
+$ mariadb-shell root@localhost
+MariaDB localhost:3306 ssl  SQL > SELECT VERSION();
+```
 
 ## Key Features
 
-### Dump and Load Utilities
+### SQL and Python
 
-MySQL Shell includes full-featured dump and load utilities to export MySQL instances and schemas to files and load them back efficiently.
+MariaDB Shell provides an interactive console for **SQL** and **Python**, and
+switches between them at runtime with `\sql` and `\py`. It connects over the
+classic MariaDB client/server protocol.
 
-Supported features include:
+The SQL mode offers multi-line editing, persistent history, autocompletion of
+schema/table/column names, result formats (table, vertical, tab-separated, JSON
+and NDJSON), pager support, and column type information.
 
-* Create and restore logical backups for MySQL
-* Dump, load and copy entire MySQL instances, schemas and tables including users, stored procedures and functions
-  * Multi-threaded and consistent
-  * Include and exclude individual objects
-  * Built-in support for compression and cloud storage in all major cloud providers
-  * Optional checksums
-* Migrate databases to the OCI MySQL HeatWave Service
-* Dump and restore MySQL binary logs
-* And more!
+The Python mode exposes the same connections as scriptable objects, so ad-hoc
+scripts and reusable modules can be run with `-f`, `--pym`, `-c` or from a
+start-up script.
 
-Use the built-in help for details on specific commands and options (see [Documentation](#documentation)).
+### Scriptable API
 
-### MySQL Upgrade Checker
+The following global objects are available in Python mode:
 
-MySQL Shell includes an upgrade readiness checker to help assess compatibility when upgrading MySQL Server versions.
+| Global | Purpose |
+|---|---|
+| `shell` | Connections and sessions, `shell.options`, credential store, reports, SQL handlers, extension objects, prompts, pager |
+| `session` / `db` | The current session and its default schema |
+| `mysql` | Classic sessions, SQL parsing/tokenizing helpers, identifier and account quoting |
+| `util` | `changePassword`, `upgradeAuthMethod`, and the `util.debug` diagnostics collectors |
+| `sandbox` | Deploy and manage local server sandboxes (see below) |
+| `plugins` | Install, list, update and remove shell plugins |
 
-### MySQL InnoDB Clusters and AdminAPI
+Every API is also reachable from the operating system shell through **API
+Command Line integration**, so no scripting is needed for one-off calls:
 
-MySQL Shell offers a management interface for MySQL clustering solutions through the **AdminAPI**, including:
+```bash
+$ mariadb-shell root@localhost -- util debug collect-diagnostics /tmp/diag.zip
+$ mariadb-shell -- shell status
+```
 
-- **MySQL InnoDB Cluster**
-- **MySQL InnoDB ReplicaSet**
-- **MySQL InnoDB ClusterSet**
+Run `\? cmdline` inside the shell for the full mapping rules.
 
-MySQL InnoDB Cluster is a turnkey, integrated solution for high availability and horizontal scaling, built on MySQL replication technologies.
-MySQL InnoDB ClusterSet is an integrated solution for disaster recovery, built on InnoDB Cluster.
-MySQL InnoDB ReplicaSet is an integrated solution for replication management, providing simplified administration of asynchronous replication between MySQL instances.
+### Local Server Sandboxes
 
-MySQL Group Replication and Asynchronous Replication can be combined with **MySQL Router** to provide an end-to-end solution for distributed MySQL deployments.
+The bundled `sandbox` plugin deploys and manages throwaway local server
+instances — useful for testing, reproducing issues and development:
 
-The AdminAPI in MySQL Shell enables you to work with MySQL InnoDB Cluster, InnoDB ReplicaSet, and InnoDB ClusterSet, providing an integrated solution for high availability and scalability using InnoDB-based MySQL databases (differently from NDB Cluster) without requiring advanced MySQL expertise.
+```
+sandbox.deploy(3310)      sandbox.start(3310)     sandbox.stop(3310)
+sandbox.kill(3310)        sandbox.delete(3310)
+sandbox.vendor()          sandbox.version()
+```
 
-For full documentation on supported topologies/solutions:
+It supports both **MariaDB** and **MySQL** servers, auto-detecting the vendor
+from the server binaries on `PATH` (or from an explicit `basedir`), and handles
+the per-vendor differences in datadir initialization, authentication and TLS
+certificate generation.
 
-- MySQL InnoDB Cluster:
-  https://dev.mysql.com/doc/mysql-shell/en/mysql-innodb-cluster.html
+### Reports
 
-- MySQL InnoDB ReplicaSets:
-  https://dev.mysql.com/doc/mysql-shell/en/mysql-innodb-replicaset.html
+Built-in reports (`query`, `thread`, `threads`) are available through
+`shell.reports` and the `\show` / `\watch` commands, and custom reports can be
+registered in Python from the `init.d` directory of the configuration path.
 
-- MySQL InnoDB ClusterSet:
-  https://dev.mysql.com/doc/mysql-shell/en/innodb-clusterset.html
+### Credential Store
 
-- MySQL Shell AdminAPI:
-  https://dev.mysql.com/doc/mysql-shell/en/admin-api-overview.html
+Passwords can be stored in and retrieved from the platform's own secret store,
+so they do not need to be retyped or embedded in scripts. The available helpers
+depend on the platform:
 
-### MySQL REST Service Management
+- **macOS** — Keychain
+- **Linux** — Secret Service (GNOME Keyring, KWallet)
+- **Windows** — Windows Credential Manager
+- **All platforms** — a `plaintext` helper, for testing only
 
-MySQL Shell provides a SQL based management interface for MRS, the **MySQL REST Service**.
-MRS allows you to create zero-code REST endpoints for MySQL databases, served through a MySQL Router plugin.
-For more information about MRS, see: https://dev.mysql.com/doc/dev/mysql-rest-service/latest/#what-is-the-mysql-rest-service
+See [docs/CREDENTIAL_STORE.md](docs/CREDENTIAL_STORE.md) for details, and
+`shell.storeCredential` / `shell.listCredentials` for the API.
 
-### MySQL Shell for Visual Studio Code
+### Plugins
 
-A GUI frontend for MySQL Shell is also available via the **MySQL Shell for VS Code** extension, which integrates MySQL Shell capabilities into the VS Code environment.
+Shell functionality can be extended with plugins written in Python, loaded from
+the `plugins` directory of the configuration path. The `plugins` global manages
+them. See `\? plugins` for the layout an `init.py` must follow.
 
-You may download it directly from VS Code by searching for "_MySQL Shell_" or from
-https://marketplace.visualstudio.com/items?itemName=Oracle.mysql-shell-for-vs-code
+### Diagnostics
 
-## MySQL Server Version Compatibility
+`util.debug.collectDiagnostics`, `collectHighLoadDiagnostics` and
+`collectSlowQueryDiagnostics` gather server and shell state into a single zip
+file for support and troubleshooting.
 
-All MySQL users are strongly encouraged to always upgrade to the latest version of MySQL Shell, regardless of the MySQL Server version they're using.
+### Connections
 
-The latest version of MySQL Shell is fully backwards compatible with all supported versions of MySQL Server (**9.x** and **8.4**).
+- Classic MariaDB protocol over TCP/IP and Unix sockets
+- Encrypted connections, including `--ssl-mode`, CA/certificate/CRL paths,
+  cipher and TLS-version selection
+- **SSH tunneling** (`--ssh`), with identity and config file support
+- Protocol compression
+- Connection data from URIs, individual options, or option files
+  (`[mariadb-shell]`, `[mysqlsh]` and `[client]` groups)
 
-MySQL Shell also supports older versions of MySQL (**8.0** and older) for a variety of specific purposes in a best-effort basis:
+## Features Not Available in This Build
 
-* Basic SQL query functionality (MySQL 5.7 and 8.0)
-* Upgrade Checker (MySQL 5.7 and 8.0)
-* Dump and load utilities (MySQL 5.6, 5.7 and 8.0)
-  * Note: downgrades (loading dumps into older MySQL servers than the original) are not supported, although they might work in some cases.
-* AdminAPI (MySQL 8.0)
+MariaDB Shell is a MariaDB-targeted build, and the following MySQL-specific
+features of MySQL Shell are deliberately excluded. Most are simply not compiled
+in, so their globals and methods do not exist at all — a handful whose backends
+were MySQL-specific still exist but raise a "not supported" error. Either way,
+`\?` and `--help` list only what this build actually has.
 
-## Downloads
+| Feature | Reason |
+|---|---|
+| **JavaScript mode** (`--js`) | Requires the GraalVM/Truffle JIT executor, which is not shipped |
+| **X Protocol / X DevAPI** | `mysqlx://` URIs, X sessions, collections and the document store depend on MySQL's `libmysqlxclient` |
+| **AdminAPI** (`dba`, InnoDB Cluster / ReplicaSet / ClusterSet) | Built on MySQL Group Replication and the MySQL metadata schema |
+| **Upgrade Checker** (`util.checkForServerUpgrade`) | Encodes MySQL Server upgrade rules |
+| **Dump, load and copy utilities** (`util.dumpInstance`, `util.loadDump`, `util.copySchemas`, `util.importTable`, `util.dumpBinlogs`, …) | Depend on MySQL-specific DDL handling, capabilities and binlog semantics |
+| **MySQL REST Service (MRS) management** | MySQL Router plugin specific |
+| **`--register-factor`** | Uses the MySQL FIDO/WebAuthn authentication plugin |
 
-Pre-compiled MySQL Shell binaries (and source packages) are available from:
+For the engineering detail behind each exclusion, and the macros that gate them,
+see [MARIADB_PORT.md](MARIADB_PORT.md).
 
-https://dev.mysql.com/downloads/shell/
+## Server Compatibility
+
+MariaDB Shell links the MariaDB Connector/C and speaks the classic protocol, so
+it connects to MariaDB servers as well as to MySQL servers reachable over the
+same protocol. It is built and validated against the MariaDB server version
+recorded in the build output of `mariadb-shell --version`.
+
+Note that `--ssl-mode=REQUIRED` cannot be strictly enforced by every
+Connector/C version the shell may be built against; when it cannot, the shell
+warns at connection time. See [MARIADB_PORT.md](MARIADB_PORT.md) for the current
+list of items under validation.
+
+## Files and Environment
+
+| Path | Contents |
+|---|---|
+| `~/.mariadb-shell/` | Per-user configuration: history, `prompt.json`, `init.d/`, `plugins/`, and the log file. On Windows, `%AppData%\MariaDB\mariadb-shell` |
+| `~/.mariadb-shell/mariadb-shell.log` | Shell log file; override with `--log-file` |
+| `mariadb-shellrc.py` | Optional start-up script, read from the global config directory, `share/mariadb-shell/`, then the per-user directory |
+| `share/mariadb-shell/`, `lib/mariadb-shell/` | Installed data files and private libraries, including the bundled Python runtime and built-in plugins |
+
+The shell's environment variables use the `MARIADB_SHELL_` prefix —
+`MARIADB_SHELL_HOME`, `MARIADB_SHELL_USER_CONFIG_HOME`,
+`MARIADB_SHELL_PROMPT_THEME`, `MARIADB_SHELL_TERM_COLOR_MODE` and others. The
+pre-rename `MYSQLSH_` names are still accepted, and are consulted only when the
+`MARIADB_SHELL_` name is unset.
 
 ## Compiling from Source
 
-Instructions for compiling MySQL Shell from source are available in:
-
-- `INSTALL.md`
+See [INSTALL.md](INSTALL.md) for platform-by-platform build instructions, and
+[MARIADB_PORT.md](MARIADB_PORT.md) for the build wiring of the MariaDB port.
 
 ## Documentation
 
-Full documentation for MySQL Shell:
-
-https://dev.mysql.com/doc/mysql-shell/en/
-
-API references:
-- JavaScript API documentation:
-  https://dev.mysql.com/doc/dev/mysqlsh-api-javascript/
-- Python API documentation:
-  https://dev.mysql.com/doc/dev/mysqlsh-api-python/
-- MySQL Server documentation (reference manual):
-  https://dev.mysql.com/doc/refman/en/
-
 ### Built-in Help
 
-MySQL Shell includes a built-in help system. Reference documentation for most commands can be obtained with the `\h` or `\?` built-in command.
+MariaDB Shell includes a built-in help system. Reference documentation for
+commands and APIs is obtained with the `\h` or `\?` built-in commands, which is
+the authoritative reference for this build — it only lists what is actually
+compiled in.
 
 Example:
 
 ```text
-MySQL JS > \h util.dumpInstance
+MariaDB localhost:3306 ssl  Py > \h shell.connect
 NAME
-      dumpInstance - Dumps the whole database to files in the output directory.
+      connect - Establishes the shell global session.
 
 SYNTAX
-      util.dumpInstance(outputUrl[, options])
+      shell.connect(connectionData[, password])
 
 WHERE
-      outputUrl: Target directory to store the dump files.
-      options: Dictionary with the dump options.
+      connectionData: the connection data to be used to establish the session.
+      password: The password to be used when establishing the session.
 ...
 ```
 
-## Reporting Bugs
+The `mariadb-shell(1)` manual page documents the command-line options, files and
+environment variables.
 
-Please file bugs and feature requests at https://bugs.mysql.com
+### Upstream Documentation
+
+Because MariaDB Shell is derived from MySQL Shell, the upstream documentation
+remains a useful reference for the shared functionality — bearing in mind that
+it also covers the features listed as unavailable above:
+
+https://dev.mysql.com/doc/mysql-shell/en/

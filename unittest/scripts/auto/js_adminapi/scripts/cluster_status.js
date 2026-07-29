@@ -25,7 +25,7 @@ if (__version_num < 80027) {
 // When run in debug mode, the MD state check logging should be present
 WIPE_SHELL_LOG()
 var user_path = testutil.getUserConfigPath();
-testutil.callMysqlsh([__sandbox_uri1, "--log-level=debug", "--", "cluster", "status"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQLSH_USER_CONFIG_HOME=" + user_path])
+testutil.callMysqlsh([__sandbox_uri1, "--log-level=debug", "--", "cluster", "status"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + user_path])
 EXPECT_SHELL_LOG_CONTAINS("Debug: Detected state of MD schema as OK");
 
 cluster.addInstance(__sandbox_uri2);

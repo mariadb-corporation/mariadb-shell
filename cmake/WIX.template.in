@@ -1,5 +1,6 @@
 <!--
   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2026, MariaDB Corporation.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,10 +31,10 @@
     RequiredVersion="4.0.5">
 
     <Package ProductCode="$(var.CPACK_WIX_PRODUCT_GUID)"
-        Name="MySQL Shell"
+        Name="MariaDB Shell"
         Language="1033"
         Version="$(var.CPACK_PACKAGE_VERSION)"
-        Manufacturer="Oracle Corporation"
+        Manufacturer="MariaDB Corporation"
         UpgradeCode="$(var.CPACK_WIX_UPGRADE_GUID)"
         InstallerVersion="301"
         Scope="perMachine">
@@ -62,11 +63,15 @@
         <?endif?>
 
         <FeatureRef Id="ProductFeature">
-            <Component Id="UpdatePath" Directory="CM_DP_main.bin" Guid="0D572FF7-1AE6-493D-8991-D2DC99E1F5C1">
+            <!-- Distinct from MySQL Shell's UpdatePath component GUID
+                 ("0D572FF7-1AE6-493D-8991-D2DC99E1F5C1"): the two products
+                 install different resources here, so they must not share a
+                 reference-counted component. -->
+            <Component Id="UpdatePath" Directory="CM_DP_main.bin" Guid="A23D3E3D-1B7F-4916-BAFD-27B6B0C5BB3F">
                 <CreateFolder />
                 <Environment Id="UpdatePathEnv" Action="set" Part="first" Name="PATH" Value="[CM_DP_main.bin]" />
-                <RegistryKey Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\mysqlsh">
-                    <RegistryValue Type="expandable" Name="EventMessageFile" Value="[CM_DP_main.bin]\mysqlsh.exe">
+                <RegistryKey Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\mariadb-shell">
+                    <RegistryValue Type="expandable" Name="EventMessageFile" Value="[CM_DP_main.bin]\mariadb-shell.exe">
                         <!-- Give full access to the authenticated users, system and built-in administrators -->
                         <PermissionEx Sddl="D:(A;;KA;;;AU)(A;;KA;;;SY)(A;;KA;;;BA)" />
                     </RegistryValue>
@@ -102,10 +107,10 @@
             Message="This application requires Visual Studio @CPACK_WIX_REDIST_YEAR@ Redistributable version @CPACK_WIX_REDIST_VERSION@ or newer. Please install the Redistributable then run this installer again." />
         <?endif?>
 
-        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch MySQL Shell" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch MariaDB Shell" />
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-        <Property Id="WixShellExecTarget" Value="[#mysqlsh.exe]" />
-        <CustomAction Id="LaunchApplication" Directory="CM_DP_main.bin" ExeCommand="[SystemFolder]cmd.exe /C mysqlsh.exe" Return="asyncNoWait" />
+        <Property Id="WixShellExecTarget" Value="[#mariadb-shell.exe]" />
+        <CustomAction Id="LaunchApplication" Directory="CM_DP_main.bin" ExeCommand="[SystemFolder]cmd.exe /C mariadb-shell.exe" Return="asyncNoWait" />
 
         <?if "1" = "@CPACK_WIX_WITH_PYTHON@" ?>
         <SetProperty

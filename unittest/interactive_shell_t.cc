@@ -28,6 +28,7 @@
 
 #include "src/mysqlsh/cmdline_shell.h"
 #include "unittest/test_utils.h"
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 
@@ -79,7 +80,7 @@ TEST_F(Interactive_shell_test, startup_modes) {
 TEST_F(Interactive_shell_test, test_quit_command) {
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\quit\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT("Testing \\quit",
                              multiline({"mysql-sql> \\quit", "Bye!"}),
@@ -87,7 +88,7 @@ TEST_F(Interactive_shell_test, test_quit_command) {
   wipe_all();
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\q\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT("Testing \\q",
                              multiline({"mysql-sql> \\q", "Bye!"}),
@@ -95,7 +96,7 @@ TEST_F(Interactive_shell_test, test_quit_command) {
   wipe_all();
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\exit\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT("Testing \\exit",
                              multiline({"mysql-sql> \\exit", "Bye!"}),
@@ -107,7 +108,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
 #ifdef HAVE_JS
   testutil->call_mysqlsh_c(
       {"--js", "-ifull"}, "\\sql\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT(
       "Testing \\sql",
@@ -120,7 +121,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
 
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\py\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT(
       "Testing \\py",
@@ -132,7 +133,7 @@ TEST_F(Interactive_shell_test, test_swicth_mode_commands) {
 #ifdef HAVE_JS
   testutil->call_mysqlsh_c(
       {"-ifull"}, "\\js\n",
-      {"MYSQLSH_PROMPT_THEME=" + shcore::get_binary_folder() +
+      {"MARIADB_SHELL_PROMPT_THEME=" + shcore::get_binary_folder() +
        "/prompt_classic.json"});
   MY_EXPECT_MULTILINE_OUTPUT(
       "Testing \\js",
@@ -1108,7 +1109,7 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
   }
 
   const auto user_path =
-      shcore::path::join_path(shcore::get_user_config_path(), "mysqlshrc.py");
+      shcore::path::join_path(shcore::get_user_config_path(), "mariadb-shellrc.py");
 
   // User Config path is executed last
   std::string user_backup;
@@ -1124,9 +1125,10 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
   const auto home_path = shcore::get_mysqlx_home_path();
   const auto bin_path =
       home_path.empty()
-          ? shcore::path::join_path(shcore::get_binary_folder(), "mysqlshrc.py")
-          : shcore::path::join_path(home_path, "share", "mysqlsh",
-                                    "mysqlshrc.py");
+          ? shcore::path::join_path(shcore::get_binary_folder(), "mariadb-shellrc.py")
+          : shcore::path::join_path(home_path, "share",
+                                    shcore::k_shell_install_dir_name,
+                                    "mariadb-shellrc.py");
 
   // Binary Config path is executed first
   std::string bin_backup;
@@ -1155,7 +1157,7 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
 
   execute("the_variable");
   if (bin_path == user_path) {
-    // When running tests, if MYSQLSH_USER_CONFIG_HOME environment variable is
+    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment variable is
     // not set, it is explicitly initialized to the binary folder. If
     // shcore::get_mysqlx_home_path() returns an empty value, we'll end up with
     // both variables pointing to the same location, with the `bin_path` one
@@ -1196,7 +1198,7 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
   }
 
   const auto user_path =
-      shcore::path::join_path(shcore::get_user_config_path(), "mysqlshrc.js");
+      shcore::path::join_path(shcore::get_user_config_path(), "mariadb-shellrc.js");
 
   // User Config path is executed last
   std::string user_backup;
@@ -1212,9 +1214,10 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
   const auto home_path = shcore::get_mysqlx_home_path();
   const auto bin_path =
       home_path.empty()
-          ? shcore::path::join_path(shcore::get_binary_folder(), "mysqlshrc.js")
-          : shcore::path::join_path(home_path, "share", "mysqlsh",
-                                    "mysqlshrc.js");
+          ? shcore::path::join_path(shcore::get_binary_folder(), "mariadb-shellrc.js")
+          : shcore::path::join_path(home_path, "share",
+                                    shcore::k_shell_install_dir_name,
+                                    "mariadb-shellrc.js");
 
   // Binary Config path is executed first
   std::string bin_backup;
@@ -1237,7 +1240,7 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
 
   execute("the_variable");
   if (bin_path == user_path) {
-    // When running tests, if MYSQLSH_USER_CONFIG_HOME environment variable is
+    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment variable is
     // not set, it is explicitly initialized to the binary folder. If
     // shcore::get_mysqlx_home_path() returns an empty value, we'll end up with
     // both variables pointing to the same location, with the `bin_path` one
@@ -1945,7 +1948,7 @@ TEST_F(Interactive_shell_test, status_ansi_quotes) {
   wipe_all();
 
   execute("\\status");
-  MY_EXPECT_STDOUT_CONTAINS("MySQL Shell version");
+  MY_EXPECT_STDOUT_CONTAINS("MariaDB Shell version");
   MY_EXPECT_STDOUT_CONTAINS("Connection Id:");
   MY_EXPECT_STDOUT_CONTAINS("TCP port:");
   ASSERT_TRUE(output_handler.std_err.empty());
@@ -1956,7 +1959,7 @@ TEST_F(Interactive_shell_test, status_ansi_quotes) {
   wipe_all();
 
   execute("\\status");
-  MY_EXPECT_STDOUT_CONTAINS("MySQL Shell version");
+  MY_EXPECT_STDOUT_CONTAINS("MariaDB Shell version");
   MY_EXPECT_STDOUT_CONTAINS("Connection Id:");
   MY_EXPECT_STDOUT_CONTAINS("TCP port:");
   ASSERT_TRUE(output_handler.std_err.empty());
@@ -1972,7 +1975,7 @@ TEST_F(Interactive_shell_test, status_ansi_quotes) {
   wipe_all();
 
   execute("\\status");
-  MY_EXPECT_STDOUT_CONTAINS("MySQL Shell version");
+  MY_EXPECT_STDOUT_CONTAINS("MariaDB Shell version");
   MY_EXPECT_STDOUT_CONTAINS("Connection Id:");
   MY_EXPECT_STDOUT_CONTAINS("TCP port:");
   ASSERT_TRUE(output_handler.std_err.empty());
@@ -1983,7 +1986,7 @@ TEST_F(Interactive_shell_test, status_ansi_quotes) {
   wipe_all();
 
   execute("\\status");
-  MY_EXPECT_STDOUT_CONTAINS("MySQL Shell version");
+  MY_EXPECT_STDOUT_CONTAINS("MariaDB Shell version");
   MY_EXPECT_STDOUT_CONTAINS("Connection Id:");
   MY_EXPECT_STDOUT_CONTAINS("TCP port:");
   ASSERT_TRUE(output_handler.std_err.empty());

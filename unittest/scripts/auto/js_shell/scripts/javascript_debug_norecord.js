@@ -5,7 +5,7 @@ function callMysqlshDebug(command_line_args) {
     //"--js-debug-port", "3939",
     default_args = ["--js",  "-f", script_path]
     args = [...default_args, ...command_line_args]
-    testutil.callMysqlsh(args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    testutil.callMysqlsh(args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 //@<> Verify existence of global objects

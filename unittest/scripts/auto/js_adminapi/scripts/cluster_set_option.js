@@ -22,7 +22,7 @@ function get_global_tags(cluster){
 }
 
 function callMysqlsh(command_line_args) {
-    testutil.callMysqlsh(command_line_args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    testutil.callMysqlsh(command_line_args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 

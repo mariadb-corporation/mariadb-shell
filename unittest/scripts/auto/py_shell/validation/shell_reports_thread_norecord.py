@@ -57,7 +57,7 @@ _server_host:             localhost
 ?{__os_type=='windows'}
 _thread:                  [[*]]
 ?{}
-program_name:             mysqlsh
+program_name:             mariadb-shell
 Protocol:                 classic
 Socket IP:                [[*]]
 Socket port:              [[*]]
@@ -88,7 +88,7 @@ _server_host:             localhost
 ?{__os_type=='windows'}
 _thread:                  [[*]]
 ?{}
-program_name:             mysqlsh
+program_name:             mariadb-shell
 Protocol:                 classic
 Socket IP:                [[*]]
 Socket port:              [[*]]
@@ -230,7 +230,7 @@ GENERAL
 Thread ID:                <<<__test_ids['tid']>>>
 Connection ID:            <<<__test_ids['cid']>>>
 Thread type:              FOREGROUND
-Program name:             mysqlsh
+Program name:             mariadb-shell
 User:                     thread_test
 Host:                     localhost
 Database:                 NULL

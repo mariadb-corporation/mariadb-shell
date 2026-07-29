@@ -86,7 +86,7 @@ CHECK_ALL_ERROR(check, {"pfsInstrumentation":{}}, nobasic=True)
 shell.log("info", b"test\xed\xf0")
 
 outpath = run_collect(__sandbox_uri1, None, hostInfo=0)
-EXPECT_FILE_CONTENTS(outpath, "mysqlsh.log", b"test\xed\xf0")
+EXPECT_FILE_CONTENTS(outpath, "mariadb-shell.log", b"test\xed\xf0")
 
 #@<> ensure query works with tables with more than one blob (or similar) columns
 
@@ -170,26 +170,26 @@ EXPECT_STDOUT_CONTAINS("'delay' is expected to be an integer")
 
 #@<> bogus value for options TSFR_1_1_3, TSFR_9_0_3, TSFR_9_0_4
 args = [hostname_uri, "--passwords-from-stdin", "--js", "-e", "util.debug.collectDiagnostics('x', false)"]
-testutil.call_mysqlsh(args, "\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(args, "\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS("Argument #2 is expected to be a map")
 RESET()
 
 args = [hostname_uri, "--passwords-from-stdin", "--js", "-e", "util.debug.collectHighLoadDiagnostics('x', false)"]
-testutil.call_mysqlsh(args, "\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(args, "\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS("Argument #2 is expected to be a map")
 RESET()
 
 args = [hostname_uri, "--passwords-from-stdin", "--js", "-e", "util.debug.collectSlowQueryDiagnostics('x', 'x', false)"]
-testutil.call_mysqlsh(args, "\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(args, "\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS("Argument #3 is expected to be a map")
 
 RESET()
 
 args = [hostname_uri, "--passwords-from-stdin", "--js", "-e", "util.debug.collectSlowQueryDiagnostics('x', {}, false)"]
-testutil.call_mysqlsh(args, "\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh(args, "\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS("Argument #2 is expected to be a string")
 

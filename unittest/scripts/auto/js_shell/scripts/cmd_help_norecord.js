@@ -1,6 +1,6 @@
 //@ Generic Help
 // call shell with disabled builtin plugins to prevent them from interfering with the output
-testutil.callMysqlsh(["--disable-builtin-plugins", "--interactive=full", "--js", "--execute", "\\?"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh(["--disable-builtin-plugins", "--interactive=full", "--js", "--execute", "\\?"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ Generic Help - plugins plugin
 \?

@@ -65,6 +65,7 @@
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
 #include "mysqlshdk/libs/utils/logger.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/syslog_system.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -4401,6 +4402,11 @@ mysqlshdk::db::Connection_options Testutils::sandbox_connection_options(
 }
 
 namespace {
+
+// The session-recording build of the shell, built as an extra target beside the
+// real binary when WITH_TESTS is on (see src/CMakeLists.txt).
+constexpr auto k_shell_recorder_binary_name = "mariadb-shell-rec";
+
 void setup_recorder_environment() {
   std::string mode;
   std::string prefix;
@@ -4416,11 +4422,12 @@ void setup_recorder_environment() {
       mode = "replay";
     }
 
-    prefix = mysqlshdk::db::replay::external_recording_path("mysqlsh");
+    prefix = mysqlshdk::db::replay::external_recording_path(
+        shcore::k_shell_binary_name);
   }
 
-  shcore::setenv("MYSQLSH_RECORDER_MODE", mode);
-  shcore::setenv("MYSQLSH_RECORDER_PREFIX", prefix);
+  shcore::setenv("MARIADB_SHELL_RECORDER_MODE", mode);
+  shcore::setenv("MARIADB_SHELL_RECORDER_PREFIX", prefix);
 }
 
 std::vector<const char *> prepare_mysqlsh_cmdline(
@@ -4430,15 +4437,17 @@ std::vector<const char *> prepare_mysqlsh_cmdline(
 
   setup_recorder_environment();
 
-  if (executable_path == "mysqlshrec") {
+  if (executable_path == k_shell_recorder_binary_name) {
     mysqlsh_found_path->assign(
-        shcore::path::join_path(shcore::get_binary_folder(), "mysqlshrec"));
+        shcore::path::join_path(shcore::get_binary_folder(),
+                                k_shell_recorder_binary_name));
   } else if (executable_path.empty()) {
     if (mysqlshdk::db::replay::g_replay_mode !=
         mysqlshdk::db::replay::Mode::Direct) {
-      // use mysqlshrec unless in direct mode
+      // use the recording binary unless in direct mode
       mysqlsh_found_path->assign(
-          shcore::path::join_path(shcore::get_binary_folder(), "mysqlshrec"));
+          shcore::path::join_path(shcore::get_binary_folder(),
+                                k_shell_recorder_binary_name));
     } else {
       mysqlsh_found_path->assign(mysqlsh_path);
     }

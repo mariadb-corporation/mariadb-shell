@@ -1,4 +1,5 @@
 # Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +38,7 @@ SET(ROOT_PROJECT_DIR "${CMAKE_SOURCE_DIR}/../../")
 include(../../version.cmake)
 
 #set(YEAR      2016)  # FIXME automate somehow
-set(PRODUCT   "MySQL Shell (part of MySQL Server) ${MYSH_BASE_VERSION}")
+set(PRODUCT   "MariaDB Shell ${MYSH_BASE_VERSION}")
 
 # User can specify the RPM_RELEASE string but if not given, create one
 if(NOT RPM_RELEASE)
@@ -99,7 +100,7 @@ file(
 )
 
 set(in_files
-  mysql-shell.spec
+  mariadb-shell.spec
 )
 
 foreach(_in_file ${in_files})

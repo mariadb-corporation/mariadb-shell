@@ -338,7 +338,7 @@ If the project was built using WITH_TESTS=1 (the default configuration) the foll
 binaries should have been built as well:
 
 - `run_unit_tests`
-- `mysqlshrec`
+- `mariadb-shell-rec`
 
 The firs one, is the test suite itself, while te second one is a shell binary with
 additional test helper functionality.

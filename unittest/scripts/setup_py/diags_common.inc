@@ -269,7 +269,7 @@ def CHECK_DIAGPACK(file, sessions_or_errors, is_cluster=False, innodbMutex=False
                 return f.read().decode("utf-8")
         ZEXPECT_NOT_EMPTY(zf, "shell_info.yaml")
         if diag_type == "basic":
-            ZEXPECT_NOT_EMPTY(zf, "mysqlsh.log")
+            ZEXPECT_NOT_EMPTY(zf, "mariadb-shell.log")
         if localTarget and hostInfo:
             ZEXPECT_NOT_EMPTY(zf, "host_info")
         filelist = zf.namelist()
@@ -336,7 +336,7 @@ def run_collect(uri, path, options={}, *, password="root", **kwargs):
     args = [uri] if uri else []
     args += ["--passwords-from-stdin", "--py", "-e", f"util.debug.collect_diagnostics({repr(path)}, {repr(options)})"]
     print(args)
-    testutil.call_mysqlsh(args, password+"\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor",env_path], mysqlshrec)
+    testutil.call_mysqlsh(args, password+"\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor",env_path], mysqlshrec)
     return path
 
 def run_collect_hl(uri, path, options={}, *, password="root",env=[],**kwargs):
@@ -352,7 +352,7 @@ def run_collect_hl(uri, path, options={}, *, password="root",env=[],**kwargs):
     args = [uri] if uri else []
     args += ["--passwords-from-stdin", "--py", "-e", f"util.debug.collect_high_load_diagnostics({repr(path)}, {repr(options)})"]
     print(args)
-    testutil.call_mysqlsh(args, password+"\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor",env_path]+env, mysqlshrec)
+    testutil.call_mysqlsh(args, password+"\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor",env_path]+env, mysqlshrec)
     return path
 
 def run_collect_sq(uri, path, query="select * from mysql.user join mysql.db", options={}, *, password="root", env=[],**kwargs):
@@ -370,7 +370,7 @@ def run_collect_sq(uri, path, query="select * from mysql.user join mysql.db", op
     args = [uri] if uri else []
     args += ["--passwords-from-stdin", "--py", "-e", f"util.debug.collect_slow_query_diagnostics({repr(path)}, {repr(query)}, {repr(options)})"]
     print(args)
-    testutil.call_mysqlsh(args, password+"\n", ["MYSQLSH_TERM_COLOR_MODE=nocolor",env_path]+env, mysqlshrec)
+    testutil.call_mysqlsh(args, password+"\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor",env_path]+env, mysqlshrec)
     return path
 
 def CHECK_ALL_ERROR(check_fn, options={}, uri=hostname_uri+"/mysql", query="select * from mysql.user join mysql.db", path=None, keep_file=False, nobasic=False):

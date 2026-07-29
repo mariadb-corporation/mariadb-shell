@@ -64,7 +64,7 @@
 	},
     {
 	  "separator": "",
-      "text": "MySQL"
+      "text": "MariaDB"
     },
     {
       "classes": ["nohost%host%", "noschema%schema%", "schema"],

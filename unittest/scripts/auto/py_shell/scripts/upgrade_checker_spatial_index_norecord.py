@@ -21,7 +21,7 @@ session.run_sql("CREATE TABLE spatial_clustered_correct (id INT PRIMARY KEY,geo2
 
 #@<> execute the check with no issues
 WIPE_OUTPUT()
-rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "spatialIndex"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
+rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "spatialIndex"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
 EXPECT_EQ(0, rc)
 
 if (should_execute):
@@ -35,7 +35,7 @@ session.run_sql("CREATE TABLE spatial_warning (geo3 GEOMETRY NOT NULL SRID 4326,
 session.run_sql("CREATE TABLE spatial_clustered_warning (id INT PRIMARY KEY,geo4 GEOMETRY NOT NULL SRID 4326,SPATIAL KEY  `index_geo2_warn` (geo4))")
 
 WIPE_OUTPUT()
-rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "spatialIndex"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
+rc = testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include", "spatialIndex"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MYSQL_HOME=."])
 EXPECT_EQ(0, rc)
 
 if should_execute:

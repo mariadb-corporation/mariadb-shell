@@ -36,6 +36,7 @@
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/db/uri_encoder.h"
 #include "mysqlshdk/libs/textui/textui.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
@@ -394,13 +395,14 @@ void Shell_test_env::teardown_recorder() {
  * Returns the path to the mysqlsh binary being used on the tests.
  */
 std::string Shell_test_env::get_path_to_mysqlsh() {
-// MYSQLSH_HOME will be honored during execution of the tests
+// MARIADB_SHELL_HOME will be honored during execution of the tests
 #ifdef _WIN32
   return shcore::path::join_path(shcore::get_mysqlx_home_path(), "bin",
-                                 "mysqlsh.exe");
+                                 std::string{shcore::k_shell_binary_name} +
+                                     ".exe");
 #else
   return shcore::path::join_path(shcore::get_mysqlx_home_path(), "bin",
-                                 "mysqlsh");
+                                 shcore::k_shell_binary_name);
 #endif
 }
 

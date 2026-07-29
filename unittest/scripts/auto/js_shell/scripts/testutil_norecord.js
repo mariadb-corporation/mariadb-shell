@@ -73,16 +73,16 @@ session.runSql("select 1");
 session.runSql("select 2");
 EXPECT_THROWS(function(){session.runSql("select * from mysql.host")}, "too many selects");
 
-//@<> throw error after 3 stmts (in mysqlshrec) {!__dbug_off && !__recording && !__replaying}
-testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug=[{'on':'mysql','if':['++match_counter == 3'],'code':1234,'msg':'injected error'}]", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mysqlshrec");
+//@<> throw error after 3 stmts (in mariadb-shell-rec) {!__dbug_off && !__recording && !__replaying}
+testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug=[{'on':'mysql','if':['++match_counter == 3'],'code':1234,'msg':'injected error'}]", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mariadb-shell-rec");
 EXPECT_STDOUT_CONTAINS("ERROR: 1234 at line 1: injected error");
 EXPECT_STDOUT_CONTAINS_MULTILINE(`5
 5
 7
 7`);
 
-//@<> crash after 3 stmts (in mysqlshrec) {!__dbug_off && !__recording && !__replaying}
-r = testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug={'on':'mysql','if':['++match_counter == 3'],'abort':1}", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mysqlshrec");
+//@<> crash after 3 stmts (in mariadb-shell-rec) {!__dbug_off && !__recording && !__replaying}
+r = testutil.callMysqlsh(["mysql://root:root@localhost:"+__mysql_sandbox_port1, "--debug={'on':'mysql','if':['++match_counter == 3'],'abort':1}", "--sql", "-e", "select 5; select 7; select 9;"], "", [], "mariadb-shell-rec");
 EXPECT_NE(0, r);
 EXPECT_STDOUT_CONTAINS_MULTILINE(`5
 5

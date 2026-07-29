@@ -53,8 +53,8 @@ SYNTAX
 DESCRIPTION
       When the shell is launched, this variable is initialized to
 
-      - the home folder of shell + "share/mysqlsh/modules/js",
-      - the folder specified in the MYSQLSH_JS_MODULE_PATH environment variable
+      - the home folder of shell + "share/mariadb-shell/modules/js",
+      - the folder specified in the MARIADB_SHELL_JS_MODULE_PATH environment variable
         (multiple folders are allowed, separated with semicolon).
 
       Users may change the sys.path variable at run-time.

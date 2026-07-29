@@ -15,8 +15,8 @@ except:
     from SocketServer import ThreadingMixIn
 
 # Sets the shell user path for testing purposes
-if "MYSQLSH_USER_CONFIG_HOME" not in os.environ:
-    os.environ["MYSQLSH_USER_CONFIG_HOME"] = __user_config_path
+if "MARIADB_SHELL_USER_CONFIG_HOME" not in os.environ:
+    os.environ["MARIADB_SHELL_USER_CONFIG_HOME"] = __user_config_path
 
 # Sets the https proxy if defined
 restore_https_proxy = False
@@ -261,7 +261,7 @@ x.start()
 
 def execute(command, prompt_answers=""):
     args = ["--py", "--quiet-start=2", "-ifull", "-e"]
-    env = ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQLSH_USER_CONFIG_HOME=" + __user_config_path]
+    env = ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + __user_config_path]
     rc = testutil.call_mysqlsh(args + [command], prompt_answers, env)
 
 

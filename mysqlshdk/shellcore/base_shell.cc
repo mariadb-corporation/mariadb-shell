@@ -32,6 +32,7 @@
 #include "shellcore/interrupt_handler.h"
 #include "shellcore/ishell_core.h"
 #include "shellcore/shell_notifications.h"
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 #include "utils/utils_path.h"
@@ -142,7 +143,7 @@ void Base_shell::init_scripts(shcore::Shell_core::Mode mode) {
 
   try {
     std::vector<std::string> script_paths;
-    const auto startup_script = "mysqlshrc" + extension;
+    const auto startup_script = shcore::k_shell_startup_script_name + extension;
 
     {
       // Checks existence of global startup script
@@ -164,14 +165,15 @@ void Base_shell::init_scripts(shcore::Shell_core::Mode mode) {
     }
 
     {
-      // Checks existence of startup script at MYSQLSH_HOME
+      // Checks existence of startup script at MARIADB_SHELL_HOME
       // Or the binary location if not a standard installation
       const auto home = shcore::get_mysqlx_home_path();
       std::string path;
 
       if (!home.empty()) {
         path =
-            shcore::path::join_path(home, "share", "mysqlsh", startup_script);
+            shcore::path::join_path(home, "share", shcore::k_shell_install_dir_name,
+                                    startup_script);
       } else {
         path = shcore::path::join_path(shcore::get_binary_folder(),
                                        startup_script);

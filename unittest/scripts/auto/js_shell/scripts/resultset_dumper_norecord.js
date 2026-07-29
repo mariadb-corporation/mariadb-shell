@@ -190,7 +190,7 @@ EXPECT_STDOUT_CONTAINS_MULTILINE(`+------+------+------+------+------+----------
 //@ Show Column Info Multiple Results
 function callMysqlsh(additional_args) {
   base_args = [__mysqluripwd, "--quiet-start=2"]
-  testutil.callMysqlsh(base_args.concat(additional_args), "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+  testutil.callMysqlsh(base_args.concat(additional_args), "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 session.runSql("CREATE SCHEMA bug34716739");

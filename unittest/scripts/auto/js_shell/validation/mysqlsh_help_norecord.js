@@ -1,14 +1,14 @@
 //@<OUT> Shell Help
-MySQL Shell <<<__mysh_version_full>>>
+MariaDB Shell <<<__mysh_version_full>>>
 
 Copyright (c) 2016, <<<__package_year>>>, Oracle and/or its affiliates.
 Oracle is a registered trademark of Oracle Corporation and/or its affiliates.
 Other names may be trademarks of their respective owners.
 
-Usage: mysqlsh [OPTIONS] [URI]
-       mysqlsh [OPTIONS] [URI] -f <path> [<script-args>...]
-       mysqlsh [OPTIONS] [URI] --cluster|--replicaset
-       mysqlsh [OPTIONS] [URI] -- <object> <method> [<method-args>...]
+Usage: mariadb-shell [OPTIONS] [URI]
+       mariadb-shell [OPTIONS] [URI] -f <path> [<script-args>...]
+       mariadb-shell [OPTIONS] [URI] --cluster|--replicaset
+       mariadb-shell [OPTIONS] [URI] -- <object> <method> [<method-args>...]
 
   -?, --help                       Display this help and exit.
   --                               Triggers API Command Line integration, which
@@ -281,12 +281,12 @@ The following options may be given as the first argument:
 --defaults-group-suffix=#
                         Also read groups with concat(group, suffix)
 --login-path=#          Read this path from the login file.
-The following groups are read: mysqlsh client
+The following groups are read: mariadb-shell mysqlsh client
 
 Usage examples:
-$ mysqlsh --login-path=server1 --sql
-$ mysqlsh root@localhost/schema
-$ mysqlsh mysqlx://root@some.server:3307/world_x
-$ mysqlsh --uri root@localhost --py -f sample.py sample param
-$ mysqlsh root@targethost:33070 -s world_x -f sample.js
-$ mysqlsh -- util check-for-server-upgrade root@localhost --output-format=JSON
+$ mariadb-shell --login-path=server1 --sql
+$ mariadb-shell root@localhost/schema
+$ mariadb-shell mysqlx://root@some.server:3307/world_x
+$ mariadb-shell --uri root@localhost --py -f sample.py sample param
+$ mariadb-shell root@targethost:33070 -s world_x -f sample.js
+$ mariadb-shell -- util check-for-server-upgrade root@localhost --output-format=JSON

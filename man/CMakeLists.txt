@@ -1,4 +1,5 @@
 # Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +24,17 @@
 
 # Copy man pages
 SET(MAN1_SHELL
-  mysqlsh.1
+  mariadb-shell.1
 )
 
 INSTALL(FILES ${MAN1_SHELL} DESTINATION ${INSTALL_MANDIR}/man1 COMPONENT ManPages)
+
+# One-line .so stubs for the binary aliases installed by src/CMakeLists.txt, so
+# `man mysqlsh` and `man msh` resolve to the real page. Plain files rather than
+# symlinks: they survive CPack's DESTDIR staging and the .deb/.rpm payloads
+# without being dereferenced into duplicate copies.
+FOREACH(_alias mysqlsh msh)
+  SET(_stub "${CMAKE_CURRENT_BINARY_DIR}/${_alias}.1")
+  FILE(WRITE "${_stub}" ".so man1/mariadb-shell.1\n")
+  INSTALL(FILES "${_stub}" DESTINATION ${INSTALL_MANDIR}/man1 COMPONENT ManPages)
+ENDFOREACH()

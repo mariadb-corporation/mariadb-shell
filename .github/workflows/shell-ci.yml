@@ -189,7 +189,7 @@ jobs:
 
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
-          ./mysqlsh -- sandbox deploy $MYSQL_PORT --password=
+          ./mariadb-shell -- sandbox deploy $MYSQL_PORT --password=
 
           # Mark that deployment succeeded so cleanup knows to run
           echo "deployed=true" >> $GITHUB_OUTPUT          
@@ -214,8 +214,8 @@ jobs:
           echo "Tearing down server..."
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
-          ./mysqlsh -- sandbox stop $MYSQL_PORT
-          ./mysqlsh -- sandbox delete $MYSQL_PORT
+          ./mariadb-shell -- sandbox stop $MYSQL_PORT
+          ./mariadb-shell -- sandbox delete $MYSQL_PORT
 
       - name: Teardown Secret Service
         # Separate from the step above: the daemons start before the sandbox

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -138,8 +139,8 @@ mysql-py>
 
 The MySQL Shell startup logic scans for extension scripts at the following paths:
 
-@li Windows: @%AppData@%/MySQL/mysqlsh/init.d
-@li Others ~/.mysqlsh/init.d
+@li Windows: @%AppData@%/MariaDB/mariadb-shell/init.d
+@li Others ~/.mariadb-shell/init.d
 
 An extension script is either a JavaScript (*.js) or Python (*.py) file which
 will be automatically processed when the MySQL Shell starts.

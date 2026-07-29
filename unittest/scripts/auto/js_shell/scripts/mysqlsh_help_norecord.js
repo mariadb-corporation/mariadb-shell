@@ -1,2 +1,2 @@
 //@ Shell Help
-testutil.callMysqlsh(["--help"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh(["--help"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);

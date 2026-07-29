@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -89,8 +90,8 @@ be made available on the MySQL Shell.
 User defined plugins should be located at plugins folder at the following
 paths:
 
-- Windows: %AppData%\\MySQL\\mysqlsh\\plugins
-- Others: ~/.mysqlsh/plugins
+- Windows: %AppData%\\MariaDB\\mariadb-shell\\plugins
+- Others: ~/.mariadb-shell/plugins
 
 A plugin must contain an init file which is the entry point to load the
 extension:

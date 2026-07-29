@@ -1,5 +1,5 @@
 function mysqlsh(options, envvars){
-    testutil.callMysqlsh(options, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"].concat(envvars))
+    testutil.callMysqlsh(options, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"].concat(envvars))
 }
 
 exports.mysqlsh = mysqlsh;

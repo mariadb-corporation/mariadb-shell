@@ -25,7 +25,7 @@
 				"pathMappings": [
 					{
 						"localRoot": "${workspaceFolder}/python/plugins",
-						"remoteRoot": "${workspaceFolder}/build/lib/mysqlsh/plugins"
+						"remoteRoot": "${workspaceFolder}/build/lib/mariadb-shell/plugins"
 					}
 				],
 				"justMyCode": false,
@@ -44,7 +44,7 @@
 				"pathMappings": [
 					{
 						"localRoot": "${workspaceFolder}/python/plugins",
-						"remoteRoot": "${workspaceFolder}/build/lib/mysqlsh/plugins"
+						"remoteRoot": "${workspaceFolder}/build/lib/mariadb-shell/plugins"
 					}
 				],
 				"justMyCode": false,
@@ -63,7 +63,7 @@
 				"pathMappings": [
 					{
 						"localRoot": "${workspaceFolder}/python/plugins",
-						"remoteRoot": "${workspaceFolder}/build/lib/mysqlsh/plugins"
+						"remoteRoot": "${workspaceFolder}/build/lib/mariadb-shell/plugins"
 					}
 				],
 				"justMyCode": false,
@@ -80,7 +80,7 @@
 				"args": [
 					"-s",
 					"${workspaceFolder}/tools/enable_python_debugger",
-					"~/.mysqlsh/init.d"
+					"~/.mariadb-shell/init.d"
 				],
 			},
 			{
@@ -105,10 +105,10 @@
 			{
 				"label": "Execute Shell in Python Mode",
 				"type": "shell",
-				"command": "${workspaceFolder}/build/bin/mysqlsh",
+				"command": "${workspaceFolder}/build/bin/mariadb-shell",
 				"args": [
 					"--log-file",
-					"${workspaceFolder}/mysqlsh.log",
+					"${workspaceFolder}/mariadb-shell.log",
 					"--py"
 				],
 				"isBackground": true,
@@ -138,10 +138,10 @@
 			{
 				"label": "Execute Shell in Python Mode (win)",
 				"type": "shell",
-				"command": "${workspaceFolder}/build/bin/mysqlsh",
+				"command": "${workspaceFolder}/build/bin/mariadb-shell",
 				"args": [
 					"--log-file",
-					"${workspaceFolder}/mysqlsh.log",
+					"${workspaceFolder}/mariadb-shell.log",
 					"--py"
 				],
 				"isBackground": true,
@@ -179,10 +179,10 @@
 			{
 				"label": "Execute Shell in Python Mode (win)",
 				"type": "shell",
-				"command": "${workspaceFolder}/build/bin/mysqlsh",
+				"command": "${workspaceFolder}/build/bin/mariadb-shell",
 				"args": [
 					"--log-file",
-					"${workspaceFolder}/mysqlsh.log",
+					"${workspaceFolder}/mariadb-shell.log",
 					"--py",
 				],
 				"isBackground": true,
@@ -222,7 +222,7 @@
 				"type": "shell",
 				"command": "rm",
 				"args": [
-					"~/.mysqlsh/init.d"
+					"~/.mariadb-shell/init.d"
 				],
 				"problemMatcher": []
 			},

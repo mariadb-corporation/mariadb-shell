@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -44,6 +45,7 @@
 #include "mysqlshdk/libs/mysql/group_replication.h"
 #include "mysqlshdk/libs/mysql/undo.h"
 #include "mysqlshdk/libs/mysql/utils.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 
 namespace mysqlsh {
 namespace dba {
@@ -696,7 +698,7 @@ class MetadataStorage {
         : m_md{std::move(md)} {
       m_md->execute_sql("START TRANSACTION");
 #ifndef NDEBUG
-      m_check_for_auto_commits = getenv("MYSQLSH_TEST_ALL");
+      m_check_for_auto_commits = shcore::getenv_shell("MARIADB_SHELL_TEST_ALL");
 #endif
     }
 

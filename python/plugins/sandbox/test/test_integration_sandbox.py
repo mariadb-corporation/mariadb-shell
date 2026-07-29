@@ -19,7 +19,7 @@ Unlike the test_unit_*.py files, these load the plugin in the real (built)
 MySQL/MariaDB Shell and deploy actual MariaDB sandbox instances, so they need:
 
   * a built ``mysqlsh`` binary -- set MARIADB_SANDBOX_TEST_MYSQLSH, or the
-    repository's build/bin/mysqlsh is used automatically when present;
+    repository's build/bin/mariadb-shell is used automatically when present;
   * an unpacked MariaDB server -- set MARIADB_SANDBOX_TEST_BASEDIR to its root
     (e.g. /path/to/mariadb-13.1.0-osx10.21-arm64).
 
@@ -39,7 +39,7 @@ import pytest
 
 _PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_PLUGIN_ROOT)))
-_DEFAULT_MYSQLSH = os.path.join(_REPO_ROOT, "build", "bin", "mysqlsh")
+_DEFAULT_MYSQLSH = os.path.join(_REPO_ROOT, "build", "bin", "mariadb-shell")
 
 MYSQLSH = os.environ.get("MARIADB_SANDBOX_TEST_MYSQLSH") or (
     _DEFAULT_MYSQLSH if os.path.isfile(_DEFAULT_MYSQLSH) else None)
@@ -81,8 +81,8 @@ class _Driver:
 
     def run(self, code, timeout=300):
         env = dict(os.environ)
-        env["MYSQLSH_USER_CONFIG_HOME"] = self.config_home
-        env["MYSQLSH_TERM_COLOR_MODE"] = "nocolor"
+        env["MARIADB_SHELL_USER_CONFIG_HOME"] = self.config_home
+        env["MARIADB_SHELL_TERM_COLOR_MODE"] = "nocolor"
         proc = subprocess.run(
             [MYSQLSH, "--quiet-start=2", "--py", "-e", code],
             capture_output=True, text=True, env=env, timeout=timeout)
@@ -129,7 +129,7 @@ def _short_tmpdir(prefix):
 
 @pytest.fixture(scope="session")
 def plugin_config_home():
-    """An isolated MYSQLSH_USER_CONFIG_HOME with the plugin installed."""
+    """An isolated MARIADB_SHELL_USER_CONFIG_HOME with the plugin installed."""
     home = _short_tmpdir("mdsbx-cfg-")
     dst = os.path.join(home, "plugins", "sandbox")
     os.makedirs(dst)

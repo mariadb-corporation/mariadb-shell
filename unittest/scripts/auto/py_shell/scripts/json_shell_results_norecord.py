@@ -11,7 +11,7 @@ session.run_sql("insert into json_shell.sample values (1, ?)", ["john doe"])
 session.run_sql("insert into json_shell.sample values (2, ?)", ["jane doe"])
 
 def mysqlsh(args):
-    testutil.call_mysqlsh(["--interactive=full","--quiet-start=2"] + args, "", ["MYSQLSH_JSON_SHELL=1", "MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    testutil.call_mysqlsh(["--interactive=full","--quiet-start=2"] + args, "", ["MARIADB_SHELL_JSON_SHELL=1", "MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 #@<> Validating result from SQL execution in SQL mode
 mysqlsh(["--sql", "-e", '{"execute":"SELECT * FROM json_shell.sample"}', __mysqluripwd])

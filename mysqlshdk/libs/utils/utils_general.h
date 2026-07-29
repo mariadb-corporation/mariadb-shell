@@ -523,6 +523,21 @@ bool unsetenv(const std::string &name);
  */
 std::optional<const char *> get_env(const char *name);
 
+/**
+ * Fetches one of the shell's own environment variables.
+ *
+ * The shell's variables were renamed from MYSQLSH_* to MARIADB_SHELL_* along
+ * with the binary; the legacy name is still honoured so existing setups keep
+ * working. Pass the new (MARIADB_SHELL_-prefixed) name: if it is not set, the
+ * same variable under the MYSQLSH_ prefix is looked up instead.
+ *
+ * @param name - name of the variable, must start with MARIADB_SHELL_
+ *
+ * @returns Value of the variable, with ::getenv() semantics (nullptr when
+ *          neither name is set; an empty string counts as set).
+ */
+const char *getenv_shell(const char *name);
+
 void parse_schema_and_object(const std::string &str, const std::string &context,
                              const std::string &object_type,
                              std::string *out_schema, std::string *out_table);

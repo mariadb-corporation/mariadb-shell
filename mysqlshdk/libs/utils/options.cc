@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,7 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 #include "utils/utils_string.h"
@@ -105,7 +107,12 @@ Generic_option::Generic_option(
 
 void Generic_option::handle_environment_variable() {
   if (environment_variable != nullptr) {
-    const char *val = getenv(environment_variable);
+    // Shell-owned variables use the MARIADB_SHELL_ prefix but still honour the
+    // pre-rename MYSQLSH_ name; anything else is a plain lookup.
+    const char *val =
+        shcore::str_beginswith(environment_variable, k_shell_env_prefix)
+            ? shcore::getenv_shell(environment_variable)
+            : getenv(environment_variable);
     if (val != nullptr) set(val, Source::Environment_variable);
   }
 }

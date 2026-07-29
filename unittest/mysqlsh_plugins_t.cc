@@ -55,8 +55,8 @@ class Mysqlsh_extension_test : public Command_line_test {
 
     cleanup();
 
-    shcore::setenv("MYSQLSH_PROMPT_THEME", "invalid");
-    shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+    shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "invalid");
+    shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
 
     shcore::create_directory(get_plugin_folder(), true);
   }
@@ -99,7 +99,7 @@ class Mysqlsh_extension_test : public Command_line_test {
 
     args.emplace_back(nullptr);
 
-    const auto user_config = std::string{"MYSQLSH_USER_CONFIG_HOME="} +
+    const auto user_config = std::string{"MARIADB_SHELL_USER_CONFIG_HOME="} +
                              shcore::get_user_config_path();
     EXPECT_EQ(0, execute(args, nullptr, k_file, {user_config}))
         << "unexpected exit code";
@@ -114,7 +114,7 @@ class Mysqlsh_extension_test : public Command_line_test {
 
     args.emplace_back(nullptr);
 
-    const auto user_config = std::string{"MYSQLSH_USER_CONFIG_HOME="} +
+    const auto user_config = std::string{"MARIADB_SHELL_USER_CONFIG_HOME="} +
                              shcore::get_user_config_path();
     execute(args, nullptr, nullptr, {user_config});
   }
@@ -233,8 +233,8 @@ class Mysqlsh_extension_test : public Command_line_test {
 
  private:
   void cleanup() {
-    shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-    shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+    shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+    shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
     wipe_out();
 
     const auto folder = get_plugin_folder();
@@ -544,7 +544,7 @@ Hello from module one.js!
 Hello from module two.js!
 Hello from fun(), module one.js!
 Hello from fun(), module two.js!
-NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 Bye!
 )");
 }
@@ -1198,7 +1198,7 @@ Hello from module one.js!
 Hello from module two.js!
 Hello from fun(), module one.js!
 Hello from fun(), module two.js!
-NOTE: MYSQLSH_PROMPT_THEME prompt theme file 'invalid' does not exist.
+NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file 'invalid' does not exist.
 Bye!
 )");
 

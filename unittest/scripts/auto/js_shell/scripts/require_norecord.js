@@ -341,7 +341,7 @@ modules.test('./');
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// WL13119-TSFR4_5: Repeat TSFR4_1 - TSFR4_3 but using the directories specified in the MYSQLSH_JS_MODULE_PATH environment variable.
+// WL13119-TSFR4_5: Repeat TSFR4_1 - TSFR4_3 but using the directories specified in the MARIADB_SHELL_JS_MODULE_PATH environment variable.
 
 //@ create a script file in a folder different than the one in sys.path [USE: create the script file to be executed]
 testutil.createFile(exe_file, `println('Running the file');
@@ -351,7 +351,7 @@ println('Done');
 `);
 
 //@ run the script file, specifying the module folder via the environment variable [USE: load the module using './' prefix from the script file executed in shell]
-testutil.callMysqlsh(['--js', '--file', exe_file], '', [`MYSQLSH_JS_MODULE_PATH=${subfolder_in_path_abs}`]);
+testutil.callMysqlsh(['--js', '--file', exe_file], '', [`MARIADB_SHELL_JS_MODULE_PATH=${subfolder_in_path_abs}`]);
 
 //@ remove the whole folder containing the script file [USE: delete the script file]
 testutil.rmdir(modules_subfolder_abs, true);
@@ -368,16 +368,16 @@ require('invalid_module');
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// WL13119-TSFR7_1: When starting the Shell, validate that the value of the sys.path variable contains the Shell home directory and the directories specified in the MYSQLSH_JS_MODULE_PATH environment variable.
+// WL13119-TSFR7_1: When starting the Shell, validate that the value of the sys.path variable contains the Shell home directory and the directories specified in the MARIADB_SHELL_JS_MODULE_PATH environment variable.
 
 //@ WL13119-TSFR7_1
-testutil.callMysqlsh(['--js', '--execute', 'for (var p of sys.path) println(p);'], '', ['MYSQLSH_JS_MODULE_PATH=/tmp;/usr/share;mod']);
+testutil.callMysqlsh(['--js', '--execute', 'for (var p of sys.path) println(p);'], '', ['MARIADB_SHELL_JS_MODULE_PATH=/tmp;/usr/share;mod']);
 
 //@ WL13119-TSFR7_1: no environment variable
 testutil.callMysqlsh(['--js', '--execute', 'for (var p of sys.path) println(p);']);
 
 //@ WL13119-TSFR7_1: empty environment variable [USE: WL13119-TSFR7_1: no environment variable]
-testutil.callMysqlsh(['--js', '--execute', 'for (var p of sys.path) println(p);'], '', ['MYSQLSH_JS_MODULE_PATH=']);
+testutil.callMysqlsh(['--js', '--execute', 'for (var p of sys.path) println(p);'], '', ['MARIADB_SHELL_JS_MODULE_PATH=']);
 
 ////////////////////////////////////////////////////////////////////////////////
 

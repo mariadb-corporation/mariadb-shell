@@ -38,13 +38,13 @@
 %global product_suffix @PRODUCT_SUFFIX@
 %endif
 
-Summary:        Command line shell and scripting environment for MySQL
-Name:           mysql-shell@PRODUCT_SUFFIX@
+Summary:        Command line shell and scripting environment for MariaDB
+Name:           mariadb-shell@PRODUCT_SUFFIX@
 Version:        @MYSH_NO_DASH_VERSION@
 Release:        @RPM_RELEASE@%{?dist}
 License:        @LICENSE_TYPE@
-URL:            http://dev.mysql.com/
-Source0:        https://cdn.mysql.com/Downloads/%{name}-@MYSH_VERSION@-src.tar.gz
+URL:            https://mariadb.com/
+Source0:        %{name}-@MYSH_VERSION@-src.tar.gz
 
 # Dependencies for the cloud version
 %if 0%{?cloud}
@@ -88,17 +88,23 @@ BuildRequires:  libcurl-devel
 %endif
 %endif
 %if 0%{?commercial} || %{?cloud}
-Provides:      mysql-shell = %{version}-%{release}
-Obsoletes:     mysql-shell < %{version}-%{release}
+Provides:      mariadb-shell = %{version}-%{release}
+Obsoletes:     mariadb-shell < %{version}-%{release}
 %endif
+# mysql-shell owns %{_bindir}/mysqlsh and %{_mandir}/man1/mysqlsh.1, which this
+# package also ships as aliases for mariadb-shell. Deliberately no
+# "Provides: mysql-shell": this is not a drop-in replacement (no AdminAPI,
+# dump/load, X DevAPI or Upgrade Checker), so it must not satisfy dependencies
+# on mysql-shell.
+Conflicts:     mysql-shell
 
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
-%global __provides_exclude_from ^(%{_datadir}/mysqlsh/.*|%{_prefix}/lib/mysqlsh/.*)$
+%global __provides_exclude_from ^(%{_datadir}/mariadb-shell/.*|%{_prefix}/lib/mariadb-shell/.*)$
 
 %if 0%{?rhel} && 0%{?rhel} < 7
 # https://fedoraproject.org/wiki/EPEL:Packaging#Generic_Filtering_on_EPEL6
-%filter_provides_in %{_datadir}/mysqlsh
-%filter_provides_in %{_prefix}/lib/mysqlsh
+%filter_provides_in %{_datadir}/mariadb-shell
+%filter_provides_in %{_prefix}/lib/mariadb-shell
 %endif
 
 %if 0%{?bundled_openssl:1}
@@ -161,7 +167,9 @@ Obsoletes:     mysql-shell < %{version}-%{release}
 
 %description
 @PRODUCT@
-a query and administration shell client and framework.
+a query and administration shell client and framework, with SQL and Python
+scripting modes. Installs as mariadb-shell, with mysqlsh and msh provided as
+aliases.
 
 %if 0%{?suse_version}
 %debug_package
@@ -251,65 +259,81 @@ make DESTDIR=%{buildroot} install
 rm -rf %{buildroot}%{_includedir} 2>/dev/null
 rm -f %{buildroot}%{_prefix}/lib*/*.{so*,a} 2>/dev/null
 # License and readme are included using %%doc below
-rm -f %{buildroot}%{_datadir}/mysqlsh/{LICENSE,README.md}
+rm -f %{buildroot}%{_datadir}/mariadb-shell/{LICENSE,README.md}
 
 %files
 # FIXME EL6 doesn't like 'license' macro here, so we use 'doc'
 %doc LICENSE
 %doc README.md
+%{_bindir}/mariadb-shell
 %{_bindir}/mysqlsh
-%{_bindir}/mysql-secret-store-login-path
+%{_bindir}/msh
 %{_bindir}/mysql-secret-store-secret-service
-%if 0%{?bundled_mysql_config_editor:1}
-%{_libexecdir}/mysqlsh/mysql_config_editor
+# The login-path secret store helper needs MySQL's my_config_editor support and
+# is not built for MariaDB (HAVE_LOGIN_PATH).
+%if 0%{!?with_mariadb_source:1}
+%{_bindir}/mysql-secret-store-login-path
 %endif
-%{_libexecdir}/mysqlsh/mysqlbinlog
+%if 0%{?bundled_mysql_config_editor:1}
+%{_libexecdir}/mariadb-shell/mysql_config_editor
+%endif
+%if 0%{?bundled_mysqlbinlog:1}
+%{_libexecdir}/mariadb-shell/mysqlbinlog
+%endif
 %if 0%{?with_mysql_source:1}
 %{_prefix}/lib/mysql/plugins/*
 %if 0%{?rhel}
 %if 0%{?rhel} > 7
-%{_prefix}/lib/mysqlsh/libfido2.so*
+%{_prefix}/lib/mariadb-shell/libfido2.so*
 %endif
 %else
-%{_prefix}/lib/mysqlsh/libfido2.so*
+%{_prefix}/lib/mariadb-shell/libfido2.so*
 %endif
-%{_prefix}/lib/mysqlsh/libprotobuf*
-%{_prefix}/lib/mysqlsh/libabsl_*
+%{_prefix}/lib/mariadb-shell/libprotobuf*
+%{_prefix}/lib/mariadb-shell/libabsl_*
 %endif
-%{_datadir}/mysqlsh/prompt/*
-%{_datadir}/mysqlsh/adminapi-metadata/*
-%{_datadir}/mysqlsh/upgrade_checker.msg
-%{_datadir}/mysqlsh/sysvars.json
-%{_datadir}/mysqlsh/Docs/INFO_SRC
-%{_datadir}/mysqlsh/Docs/INFO_BIN
+%{_datadir}/mariadb-shell/prompt/*
+# AdminAPI metadata scripts and Upgrade Checker resources are MySQL-server
+# specific and are not built for MariaDB (HAVE_ADMIN_API/HAVE_UPGRADE_CHECKER).
+%if 0%{!?with_mariadb_source:1}
+%{_datadir}/mariadb-shell/adminapi-metadata/*
+%{_datadir}/mariadb-shell/upgrade_checker.msg
+%{_datadir}/mariadb-shell/sysvars.json
+%endif
+%{_datadir}/mariadb-shell/Docs/INFO_SRC
+%{_datadir}/mariadb-shell/Docs/INFO_BIN
 %if 0%{?bundled_openssl:1}
-%{_prefix}/lib/mysqlsh/libcrypto*
-%{_prefix}/lib/mysqlsh/libssl*
+%{_prefix}/lib/mariadb-shell/libcrypto*
+%{_prefix}/lib/mariadb-shell/libssl*
 # we assume OpenSSL3 is bundled and it has the modules
-%{_prefix}/lib/mysqlsh/ossl-modules/*
+%{_prefix}/lib/mariadb-shell/ossl-modules/*
 %endif
 %if 0%{?bundled_python:1}
-%{_prefix}/lib/mysqlsh/include/python*
-%{_prefix}/lib/mysqlsh/bin/python3.*
+%{_prefix}/lib/mariadb-shell/include/python*
+%{_prefix}/lib/mariadb-shell/bin/python3.*
 %if 0%{?bundled_shared_python:1}
-%{_prefix}/lib/mysqlsh/libpython*
+%{_prefix}/lib/mariadb-shell/libpython*
 %endif
 %endif
 %if 0%{?python_deps:1}%{?bundled_python:1}
-%{_prefix}/lib/mysqlsh/lib/python*
+%{_prefix}/lib/mariadb-shell/lib/python*
 %endif
 %if 0%{?bundled_ssh:1}
-%{_prefix}/lib/mysqlsh/libssh*
+%{_prefix}/lib/mariadb-shell/libssh*
 %endif
 %if 0%{?bundled_antlr:1}
-%{_prefix}/lib/mysqlsh/libantlr4-runtime*
+%{_prefix}/lib/mariadb-shell/libantlr4-runtime*
 %endif
-%{_prefix}/lib/mysqlsh/plugins/*
-%{_prefix}/lib/mysqlsh/python-packages/*
-%{_prefix}/lib/mysqlsh/yparser/*
+%{_prefix}/lib/mariadb-shell/plugins/*
+%{_prefix}/lib/mariadb-shell/python-packages/*
+%if 0%{?with_yacc_parser:1}
+%{_prefix}/lib/mariadb-shell/yparser/*
+%endif
+%{_mandir}/man1/mariadb-shell.1*
 %{_mandir}/man1/mysqlsh.1*
+%{_mandir}/man1/msh.1*
 %if 0%{?jit_executor_lib:1}
-    %{_prefix}/lib/mysqlsh/libjitexecutor*
+    %{_prefix}/lib/mariadb-shell/libjitexecutor*
 %endif
 
 %changelog

@@ -59,6 +59,7 @@
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
@@ -828,7 +829,7 @@ void setup_test_keychain() {
             << system(("security set-keychain-settings " + keychain).c_str())
             << std::endl;
 
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_KEYCHAIN", keychain);
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_KEYCHAIN", keychain);
 }
 
 void remove_test_keychain() {
@@ -904,17 +905,18 @@ std::shared_ptr<shcore::Logger> setup_logger() {
     }
   }
 
-  if (!getenv("MYSQLSH_USER_CONFIG_HOME")) {
+  if (!getenv("MARIADB_SHELL_USER_CONFIG_HOME")) {
     // Override the configuration home for tests, to not mess with custom data
-    if (!shcore::setenv("MYSQLSH_USER_CONFIG_HOME",
+    if (!shcore::setenv("MARIADB_SHELL_USER_CONFIG_HOME",
                         shcore::get_binary_folder())) {
-      std::cerr << "MYSQLSH_USER_CONFIG_HOME could not be set with putenv\n";
+      std::cerr << "MARIADB_SHELL_USER_CONFIG_HOME could not be set with putenv\n";
     }
   }
 
   // Setup logger with default configs
   std::string log_path =
-      shcore::path::join_path(shcore::get_user_config_path(), "mysqlsh.log");
+      shcore::path::join_path(shcore::get_user_config_path(),
+                                shcore::k_shell_log_file_name);
   if (shcore::path_exists(log_path)) {
     std::cerr << "Deleting old " << log_path << " file\n";
     shcore::delete_file(log_path);
@@ -1001,7 +1003,7 @@ void setup_test_environment() {
 
   tests::Testutils::validate_boilerplate(getenv("TMPDIR"));
 
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "<disabled>");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "<disabled>");
 
   if (!getenv("MYSQL_TEST_LOGIN_FILE")) {
     shcore::setenv("MYSQL_TEST_LOGIN_FILE",
@@ -1128,8 +1130,8 @@ int main(int argc, char **argv) {
   mysqlshdk::textui::set_color_capability(mysqlshdk::textui::No_color);
 
   // Reset these environment vars to start with a clean environment
-  shcore::unsetenv("MYSQLSH_RECORDER_PREFIX");
-  shcore::unsetenv("MYSQLSH_RECORDER_MODE");
+  shcore::unsetenv("MARIADB_SHELL_RECORDER_PREFIX");
+  shcore::unsetenv("MARIADB_SHELL_RECORDER_MODE");
 
   bool listing_tests = false;
   bool show_all_skipped = false;
@@ -1277,16 +1279,17 @@ int main(int argc, char **argv) {
   }
 
   std::string mysqlsh_path;
-  // mysqlshrec is supposed to be in the same dir as run_unit_tests
+  // The recording shell is supposed to be in the same dir as run_unit_tests
   mysqlsh_path =
-      shcore::path::join_path(shcore::get_binary_folder(), "mysqlshrec");
+      shcore::path::join_path(shcore::get_binary_folder(),
+                              "mariadb-shell-rec");
 #ifdef _WIN32
   mysqlsh_path.append(".exe");
 #endif
 
   g_mysqlsh_path = mysqlsh_path.c_str();
 
-  if (!getenv("MYSQLSH_HOME"))
+  if (!shcore::getenv_shell("MARIADB_SHELL_HOME"))
     std::cout << "Testing: Shell Build." << std::endl;
   else
     std::cout << "Testing: Shell Package." << std::endl;

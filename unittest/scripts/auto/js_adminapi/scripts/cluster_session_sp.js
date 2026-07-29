@@ -207,13 +207,13 @@ testutil.callMysqlsh([__sandbox_uri2, "--js", "-e", "println(cluster.status())",
 testutil.callMysqlsh([__sandbox_uri1, "--py", "-e", "print(cluster.status())", "--cluster"]);
 
 //@ SP - Connect with --cluster on a non-cluster member + cmd (error)
-testutil.callMysqlsh([__sandbox_uri3, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_uri3, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ SP - Connect with --cluster on a non-cluster member interactive (error)
-testutil.callMysqlsh([__sandbox_uri3, "--js", "--interactive", "-e", "println(cluster.status())", "--cluster"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_uri3, "--js", "--interactive", "-e", "println(cluster.status())", "--cluster"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ SP - Connect with --cluster on a non-cluster member (error)
-testutil.callMysqlsh([__sandbox_uri3, "--js", "--cluster"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_uri3, "--js", "--cluster"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ SP - Connect with --replicaset, expect error
 testutil.callMysqlsh([__sandbox_uri1, "--js", "-e", "println(replicaset.status())", "--replicaset"]);
@@ -252,7 +252,7 @@ testutil.callMysqlsh([__sandbox_xuri2, "--js", "-e", "println(cluster.status())"
 testutil.callMysqlsh([__sandbox_xuri2, "--py", "-e", "print(cluster.status())", "--cluster"]);
 
 //@ SPX - Connect with --cluster on a non-cluster member (error)
-testutil.callMysqlsh([__sandbox_xuri3, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_xuri3, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ SPX - Connect with --replicaset, expect error [USE: SP - Connect with --replicaset, expect error]
 testutil.callMysqlsh([__sandbox_xuri1, "--js", "-e", "println(replicaset.status())", "--replicaset"]);
@@ -291,7 +291,7 @@ testutil.callMysqlsh([__sandbox_xuri2_, "--js", "-e", "println(cluster.status())
 testutil.callMysqlsh([__sandbox_xuri2_, "--py", "-e", "print(cluster.status())", "--cluster"]);
 
 //@ SPX implicit - Connect with --cluster on a non-cluster member (error)
-testutil.callMysqlsh([__sandbox_xuri3_, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_xuri3_, "--js", "-e", "println(cluster.status())", "--cluster"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
 //@ SPX implicit - Connect with --cluster + --redirect-primary 1
 testutil.callMysqlsh([__sandbox_xuri1_, "--js", "--redirect-primary", "-e", "println(cluster.status())", "--cluster"]);

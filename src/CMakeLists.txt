@@ -79,7 +79,7 @@ if(WIN32)
   # - Define the icon to be used on the application.
   # - Define the version information to be shown while looking at the file
   # properties.
-  generate_rc_file(NAME "mysqlsh.exe" DESCRIPTION "Advanced client and code editor for MySQL." OUT_RC_FILE RC_FILE)
+  generate_rc_file(NAME "mariadb-shell.exe" DESCRIPTION "Advanced client and code editor for MariaDB." OUT_RC_FILE RC_FILE)
   set(mysqlsh_SRC
       "${mysqlsh_SRC}"
       "${RC_FILE}"
@@ -96,11 +96,49 @@ endif()
 add_definitions(-DMYSH_COMMIT_ID="${MYSH_COMMIT_ID}")
 add_definitions(-DMYSH_PRODUCT_ID="${MYSH_PRODUCT_ID}")
 
-add_shell_executable(mysqlsh "${mysqlsh_SRC}")
-ADD_STAN_TARGET(mysqlsh mysqlsh/main.cc)
+add_shell_executable(mariadb-shell "${mysqlsh_SRC}")
+ADD_STAN_TARGET(mariadb-shell mysqlsh/main.cc)
 
 if(WIN32)
-  add_dependencies(mysqlsh generate_syslog_event_files)
+  add_dependencies(mariadb-shell generate_syslog_event_files)
+endif()
+
+# Compatibility / convenience names for the shell executable. "mysqlsh" keeps
+# scripts written against the pre-rename binary working; "msh" is a short alias.
+# On Unix these are symlinks beside the real binary, both in the build tree and
+# in an install; on Windows, where a symlink needs privileges the installer may
+# not have, they are .cmd shims that forward every argument.
+set(SHELL_BINARY_ALIASES mysqlsh msh)
+
+if(WIN32)
+  foreach(_alias ${SHELL_BINARY_ALIASES})
+    set(_shim "${CMAKE_CURRENT_BINARY_DIR}/${_alias}.cmd")
+    file(GENERATE OUTPUT "${_shim}"
+         CONTENT "@echo off\r\n\"%~dp0mariadb-shell.exe\" %*\r\n")
+    add_custom_command(TARGET mariadb-shell POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+              "${_shim}" "${CMAKE_BINARY_DIR}/${INSTALL_BINDIR}/${_alias}.cmd"
+      COMMENT "Creating ${_alias}.cmd alias for mariadb-shell")
+    install(PROGRAMS "${_shim}" DESTINATION "${INSTALL_BINDIR}" COMPONENT main)
+  endforeach()
+else()
+  foreach(_alias ${SHELL_BINARY_ALIASES})
+    add_custom_command(TARGET mariadb-shell POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E create_symlink
+              "mariadb-shell" "${CMAKE_BINARY_DIR}/${INSTALL_BINDIR}/${_alias}"
+      COMMENT "Creating ${_alias} symlink to mariadb-shell")
+  endforeach()
+
+  # install(CODE) rather than install(FILES) on the build-tree symlinks: CPack's
+  # DESTDIR staging would otherwise resolve them and ship two extra full copies
+  # of the binary.
+  install(CODE "
+    foreach(_alias ${SHELL_BINARY_ALIASES})
+      execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink
+        \"mariadb-shell\"
+        \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${INSTALL_BINDIR}/\${_alias}\")
+    endforeach()
+  " COMPONENT main)
 endif()
 
 set(mysqlsh_SRC
@@ -109,7 +147,7 @@ set(mysqlsh_SRC
   mysqlsh/debug_shell.cc
 )
 
-target_link_libraries(mysqlsh
+target_link_libraries(mariadb-shell
     shellfe
     api_modules
     mysqlshdk-static
@@ -122,13 +160,13 @@ target_link_libraries(mysqlsh
 
 IF(WITH_TESTS)
   IF(NOT HAVE_PYTHON)
-    message(FATAL_ERROR "Building test support (i.e.: mysqlshrec) requires Python support enabled.")
+    message(FATAL_ERROR "Building test support (i.e.: mariadb-shell-rec) requires Python support enabled.")
   ENDIF()
 
-  add_shell_executable(mysqlshrec "${mysqlsh_SRC}" TRUE)
-  target_compile_definitions(mysqlshrec PRIVATE -DENABLE_SESSION_RECORDING)
+  add_shell_executable(mariadb-shell-rec "${mysqlsh_SRC}" TRUE)
+  target_compile_definitions(mariadb-shell-rec PRIVATE -DENABLE_SESSION_RECORDING)
 
-  target_link_libraries(mysqlshrec
+  target_link_libraries(mariadb-shell-rec
     shellfe
     api_modules
     mysqlshdk-static
@@ -151,7 +189,7 @@ if(BUNDLED_OPENSSL)
       DESCRIPTION "OpenSSL libraries"
       BINARIES ${OPENSSL_LIBS}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 
   IF(OPENSSL_MODULES_DIR)
@@ -160,7 +198,7 @@ if(BUNDLED_OPENSSL)
         BINARIES ${OPENSSL_MODULES_LIST}
         DESTINATION "${INSTALL_LIBDIR}/ossl-modules"
         USE_LIBDIR
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
   ENDIF()
 
@@ -206,7 +244,7 @@ if(BUNDLED_OPENSSL)
         DESCRIPTION "OpenSSL CLI (sandbox cert generation)"
         BINARIES "${OPENSSL_CLI_EXECUTABLE}"
         DESTINATION "${INSTALL_LIBDIR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
         EXTRA_COPY_COMMANDS ${_OPENSSL_CLI_EXTRA_COMMANDS}
     )
   ELSE()
@@ -227,7 +265,7 @@ IF(HAVE_PYTHON)
         DESCRIPTION "Python executable"
         BINARIES "${PYTHON_EXECUTABLE}"
         DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
 
     file(GLOB PYTHON_DLLS "${PYTHON_ROOT}/python*.dll")
@@ -235,7 +273,7 @@ IF(HAVE_PYTHON)
         DESCRIPTION "Python dlls"
         BINARIES ${PYTHON_DLLS}
         DESTINATION "bin"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
 
     # GLOB is used here, because some of these files may not exist
@@ -248,7 +286,7 @@ IF(HAVE_PYTHON)
         DESCRIPTION "additional Python dlls"
         BINARIES ${PYTHON_ADDITIONAL_DLLS}
         DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}/DLLs"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
 
     # Python runtime
@@ -256,13 +294,13 @@ IF(HAVE_PYTHON)
         DESCRIPTION "Python library"
         DIRECTORY "${PYTHON_LIBRARY_PATH}"
         DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
     install_bundled_directory(
         DESCRIPTION "Python library dlls"
         DIRECTORY "${PYTHON_DLLS_PATH}"
         DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
 
     # Python dependencies
@@ -273,7 +311,7 @@ IF(HAVE_PYTHON)
           COPY_ONLY
           CONTENTS "${PYTHON_DEPS}"
           DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}/Lib/site-packages"
-          TARGET mysqlsh
+          TARGET mariadb-shell
       )
     ENDIF()
   elseif(BUNDLED_PYTHON_DIR)
@@ -330,10 +368,10 @@ IF(HAVE_PYTHON)
           list(APPEND EXTRA_COPY_COMMANDS COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
 
           # Same rewrite for the shell executables that embed libpython. Only
-          # mysqlsh is shipped; mysqlshrec (if built) is fixed too so a relocated
+          # mariadb-shell is shipped; mariadb-shell-rec (if built) is fixed too so a relocated
           # test tree works. run_unit_tests runs from the build tree, where the
           # absolute path still resolves, so it needs no fix.
-          foreach(_py_consumer mysqlsh mysqlshrec)
+          foreach(_py_consumer mariadb-shell mariadb-shell-rec)
             if(TARGET ${_py_consumer})
               add_custom_command(TARGET ${_py_consumer} POST_BUILD
                 COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "$<TARGET_FILE:${_py_consumer}>"
@@ -373,7 +411,7 @@ IF(HAVE_PYTHON)
           DESCRIPTION "Python shared library"
           BINARIES "${_PYTHON_SHARED_LIB}"
           DESTINATION "${INSTALL_LIBDIR}"
-          TARGET mysqlsh
+          TARGET mariadb-shell
           WRITE_RPATH FALSE
           EXTRA_COPY_COMMANDS ${LIB_EXTRA_COPY_COMMANDS}
       )
@@ -383,7 +421,7 @@ IF(HAVE_PYTHON)
         DESCRIPTION "Python executable"
         BINARIES "${PYTHON_EXECUTABLE}"
         DESTINATION "${INSTALL_LIBDIR}/bin"
-        TARGET mysqlsh
+        TARGET mariadb-shell
         WRITE_RPATH ${WRITE_RPATH}
         EXTRA_COPY_COMMANDS ${EXTRA_COPY_COMMANDS}
     )
@@ -441,7 +479,7 @@ IF(HAVE_PYTHON)
         DESCRIPTION "Python library"
         DIRECTORY "${BUNDLED_PYTHON_DIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}"
         DESTINATION "${INSTALL_LIBDIR}/lib"
-        TARGET mysqlsh
+        TARGET mariadb-shell
         EXTRA_COPY_COMMANDS ${EXTRA_COPY_COMMANDS}
         EXTRA_INSTALL_COMMANDS PATTERN "lib/python${PYTHONLIBS_MAJOR_MINOR}/test" EXCLUDE
     )
@@ -487,7 +525,7 @@ IF(HAVE_PYTHON)
           COPY_ONLY
           CONTENTS "${PYTHON_DEPS}"
           DESTINATION "${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages"
-          TARGET mysqlsh
+          TARGET mariadb-shell
           EXTRA_COPY_COMMANDS ${EXTRA_COPY_COMMANDS}
       )
     ENDIF()
@@ -498,7 +536,7 @@ IF(HAVE_PYTHON)
           DESCRIPTION "extra Python dependencies"
           CONTENTS "${PYTHON_DEPS}"
           DESTINATION "${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages"
-          TARGET mysqlsh
+          TARGET mariadb-shell
       )
     ENDIF()
   endif()
@@ -524,7 +562,7 @@ IF(BUNDLED_SSH_DIR)
       DESCRIPTION "SSH libraries"
       BINARIES ${_SSH_LIBRARIES}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 ENDIF()
 
@@ -550,7 +588,7 @@ ENDIF()
 # which must stay unbundled.
 #
 # This covers dynamic triplets on all three platforms. A static triplet (vcpkg's
-# default on Linux, x64-linux) links the dependencies into mysqlsh directly, so
+# default on Linux, x64-linux) links the dependencies into mariadb-shell directly, so
 # the per-triplet lib dir has only .a files, the glob below finds nothing, and
 # this is correctly a no-op - the binary is already self-contained.
 #
@@ -563,7 +601,7 @@ ENDIF()
 IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
   IF(WIN32)
     SET(_vcpkg_lib_glob "*.dll")
-    SET(_vcpkg_dest "${INSTALL_BINDIR}")   # DLLs sit next to mysqlsh.exe
+    SET(_vcpkg_dest "${INSTALL_BINDIR}")   # DLLs sit next to mariadb-shell.exe
     SET(_vcpkg_ext_re "\\.dll")
   ELSEIF(APPLE)
     SET(_vcpkg_lib_glob "*.dylib")
@@ -694,7 +732,7 @@ IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
             DESCRIPTION "vcpkg runtime libraries"
             BINARIES ${_vcpkg_bundle_libs}
             DESTINATION "${_vcpkg_dest}"
-            TARGET mysqlsh
+            TARGET mariadb-shell
         )
       ENDIF()
     ELSE()
@@ -748,7 +786,7 @@ IF(BUNDLED_KRB5_DIR)
       DESCRIPTION "Kerberos libraries"
       BINARIES ${_KRB5_LIBRARIES}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 ENDIF()
 
@@ -773,13 +811,13 @@ IF(BUNDLED_SASL_DIR)
       DESCRIPTION "SASL libraries"
       BINARIES ${_SASL_LIBRARIES}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
   install_bundled_binaries(
       DESCRIPTION "SASL plugins"
       BINARIES ${_SASL_PLUGINS}
       DESTINATION "${INSTALL_LIBDIR}/sasl2"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 ENDIF()
 
@@ -796,7 +834,7 @@ IF(BUNDLED_ANTLR_DIR)
       DESCRIPTION "ANTLR libraries"
       BINARIES ${_ANTLR4_SHARED_LIB}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
       WRITE_RPATH FALSE
   )
 ENDIF()
@@ -808,7 +846,7 @@ IF(AUTH_CLIENT_PLUGINS)
         DESCRIPTION "MySQL authentication plugins - dependencies"
         BINARIES ${AUTH_CLIENT_PLUGINS_DEPS}
         DESTINATION "${INSTALL_LIBDIR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
   ENDIF()
 
@@ -816,7 +854,7 @@ IF(AUTH_CLIENT_PLUGINS)
       DESCRIPTION "MySQL authentication plugins"
       BINARIES ${AUTH_CLIENT_PLUGINS}
       DESTINATION "${INSTALL_MYSQL_PLUGINS_DIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 ELSE()
   MESSAGE(WARNING "Could not find Authentication Client Plugins!")
@@ -827,7 +865,7 @@ IF(BUNDLED_PROTOBUF_LIBRARY)
       DESCRIPTION "Protobuf library"
       BINARIES ${BUNDLED_PROTOBUF_LIBRARY}
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
   )
 
   IF(BUNDLED_ABSEIL_LIBRARIES)
@@ -835,7 +873,7 @@ IF(BUNDLED_PROTOBUF_LIBRARY)
         DESCRIPTION "abseil libraries"
         BINARIES ${BUNDLED_ABSEIL_LIBRARIES}
         DESTINATION "${INSTALL_LIBDIR}"
-        TARGET mysqlsh
+        TARGET mariadb-shell
     )
   ENDIF()
 ENDIF()
@@ -851,7 +889,7 @@ IF (JIT_EXECUTOR_LIB)
       DESCRIPTION "Jit Executor library"
       BINARIES "${INSTALL_JIT_EXECUTOR_LIBRARY}"
       DESTINATION "${INSTALL_LIBDIR}"
-      TARGET mysqlsh
+      TARGET mariadb-shell
       WRITE_RPATH FALSE
   )
 ENDIF()

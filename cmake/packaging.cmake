@@ -101,9 +101,9 @@ if(NOT MYSH_PLATFORM)
   endif()
 endif()
 
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "MySQL Shell ${MYSH_VERSION}, a command line shell and scripting environment for MySQL")
-set(CPACK_PACKAGE_NAME                "mysql-shell${EXTRA_NAME_SUFFIX}")
-set(CPACK_PACKAGE_VENDOR              "Oracle and/or its affiliates")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "MariaDB Shell ${MYSH_VERSION}, a command line shell and scripting environment for MariaDB")
+set(CPACK_PACKAGE_NAME                "mariadb-shell${EXTRA_NAME_SUFFIX}")
+set(CPACK_PACKAGE_VENDOR              "MariaDB Corporation")
 set(CPACK_PACKAGE_DESCRIPTION_FILE    "${CMAKE_SOURCE_DIR}/README.md")
 if(WIN32)
   # WiX wants the license file to end in ".txt"
@@ -122,19 +122,22 @@ IF(CMAKE_BUILD_TYPE STREQUAL "Debug")
 ENDIF()
 
 set(CPACK_PACKAGE_FILE_NAME           "${CPACK_PACKAGE_INSTALL_DIRECTORY}")
-set(CPACK_STRIP_FILES                 "bin/mysqlsh")
+set(CPACK_STRIP_FILES                 "bin/mariadb-shell")
 
 if(WIN32)
-  set(CPACK_PACKAGE_INSTALL_DIRECTORY "MySQL/MySQL Shell ${MYSH_BASE_VERSION}")
+  set(CPACK_PACKAGE_INSTALL_DIRECTORY "MariaDB/MariaDB Shell ${MYSH_BASE_VERSION}")
   IF(WITH_DEV)
     SET(CPACK_GENERATOR                 "ZIP")
   ELSE()
     set(CPACK_GENERATOR                 "ZIP;WIX")
   ENDIF()
-  set(CPACK_PACKAGE_NAME              "MySQL Shell ${MYSH_VERSION}")
-  set(CPACK_WIX_UPGRADE_GUID          "292FA6A2-8E70-4BC8-8C93-C1A374C8636C")
+  set(CPACK_PACKAGE_NAME              "MariaDB Shell ${MYSH_VERSION}")
+  # MariaDB Shell is a separate product: this GUID must differ from MySQL
+  # Shell's ("292FA6A2-8E70-4BC8-8C93-C1A374C8636C") so the MSI never treats an
+  # installed MySQL Shell as an upgradeable predecessor (and vice versa).
+  set(CPACK_WIX_UPGRADE_GUID          "44BE7000-D488-4C81-8EA0-4C46CB94A4F2")
   set(CPACK_WIX_TEMPLATE              "${CMAKE_SOURCE_DIR}/cmake/WIX.template.in")
-  set(CPACK_WIX_PROGRAM_MENU_FOLDER   "MySQL")
+  set(CPACK_WIX_PROGRAM_MENU_FOLDER   "MariaDB")
   if(NOT BUNDLE_RUNTIME_LIBRARIES)
     set(CPACK_WIX_VS_REDIST_CHECK     "1")
     if(MSVC_VERSION GREATER_EQUAL 1940 AND MSVC_VERSION LESS_EQUAL 1949)
@@ -156,7 +159,7 @@ if(WIN32)
       message(FATAL_ERROR "Unknown Visual Studio version: ${MSVC_VERSION}")
     endif()
   endif()
-  set(CPACK_PACKAGE_EXECUTABLES       "mysqlsh;MySQL Shell")
+  set(CPACK_PACKAGE_EXECUTABLES       "mariadb-shell;MariaDB Shell")
   if(HAVE_PYTHON)
     set(CPACK_WIX_WITH_PYTHON "1")
     set(CPACK_WIX_PYTHON_DIR "Python${PYTHONLIBS_MAJOR_MINOR}")
@@ -164,9 +167,9 @@ if(WIN32)
   set(CPACK_WIX_EXTENSIONS "WixUtilExtension.dll")
 
   set(CPACK_WIX_MYSQLSH_USE_CUSTOM_ACTION "1")
-  set(CPACK_WIX_MYSQLSH_CUSTOM_ACTION_DLL "${CMAKE_BINARY_DIR}/packaging/wix4/custom_action/${CMAKE_BUILD_TYPE}/mysqlsh.ca.dll")
+  set(CPACK_WIX_MYSQLSH_CUSTOM_ACTION_DLL "${CMAKE_BINARY_DIR}/packaging/wix4/custom_action/${CMAKE_BUILD_TYPE}/mariadb-shell.ca.dll")
 else()
-  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "MySQL RE")
+  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "MariaDB Corporation <info@mariadb.com>")
 
   if(APPLE OR _shell_portable_build)
     # macOS, and portable (vcpkg/bundled) Linux builds: generic tarball only.
@@ -175,8 +178,8 @@ else()
   else()
     # System-dependency Linux build: emit a distro-native .deb/.rpm whose name
     # follows the distro convention, e.g.
-    #   mysql-shell_9.7.1-1ubuntu22.04_amd64.deb
-    #   mysql-shell-9.7.1-1.fc43.x86_64.rpm
+    #   mariadb-shell_9.7.1-1ubuntu22.04_amd64.deb
+    #   mariadb-shell-9.7.1-1.fc43.x86_64.rpm
     set(_distro_id "")
     set(_distro_ver "")
     if(EXISTS "/etc/os-release")
@@ -299,11 +302,11 @@ if(WIN32)
 else()
 
 # install(FILES ChangeLog    DESTINATION .)
-  install(FILES README.md       DESTINATION share/mysqlsh/ COMPONENT main)
-  install(FILES README.md       DESTINATION share/mysqlsh/ COMPONENT dev)
+  install(FILES README.md       DESTINATION share/mariadb-shell/ COMPONENT main)
+  install(FILES README.md       DESTINATION share/mariadb-shell/ COMPONENT dev)
 # install(FILES INSTALL.md     DESTINATION .)
-  install(FILES LICENSE      DESTINATION share/mysqlsh/ COMPONENT main)
-  install(FILES LICENSE      DESTINATION share/mysqlsh/ COMPONENT dev)
+  install(FILES LICENSE      DESTINATION share/mariadb-shell/ COMPONENT main)
+  install(FILES LICENSE      DESTINATION share/mariadb-shell/ COMPONENT dev)
 
 endif()
 

@@ -29,6 +29,7 @@
 #ifndef _WIN32
 #include <sys/stat.h>
 #endif
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -188,7 +189,7 @@ TEST(Cmdline_shell, help) {
   current_console()->add_print_handler(&handler);
 
   shell.print_cmd_line_helper();
-  EXPECT_TRUE(shcore::str_beginswith(capture, "MySQL Shell "));
+  EXPECT_TRUE(shcore::str_beginswith(capture, "MariaDB Shell "));
   EXPECT_TRUE(strstr(capture.c_str(), "Copyright (c)"));
   EXPECT_TRUE(strstr(capture.c_str(), "Oracle and/or its"));
   EXPECT_TRUE(strstr(capture.c_str(), "Usage examples:"));
@@ -213,7 +214,8 @@ TEST(Cmdline_shell, help) {
 TEST(Cmdline_shell, cmd_edit_with_history) {
   shcore::setenv(
       "EDITOR",
-      shcore::path::join_path(shcore::get_binary_folder(), "mysqlsh") +
+      shcore::path::join_path(shcore::get_binary_folder(),
+                              shcore::k_shell_binary_name) +
           " --file " +
           shcore::path::join_path(g_test_home, "data", "py",
                                   "edit_command.py"));

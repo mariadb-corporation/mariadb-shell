@@ -98,7 +98,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
   /**
    * Gets all the startup files for the supported scripting languages at:
    *
-   * - ${MYSQLSH_USER_CONFIG_HOME}/init.d
+   * - ${MARIADB_SHELL_USER_CONFIG_HOME}/init.d
    */
   void get_startup_scripts(File_list *list);
   /**
@@ -108,7 +108,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
    * init file extension. Checks following directories:
    *
    * - <INSTALL_ROOT>/share/plugins
-   * - ${MYSQLSH_USER_CONFIG_HOME}/plugins
+   * - ${MARIADB_SHELL_USER_CONFIG_HOME}/plugins
    */
   void get_plugins(File_list *list);
   bool get_plugins(File_list *list, const std::string &dir,

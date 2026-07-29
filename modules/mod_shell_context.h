@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +34,7 @@
 #include "mysqlshdk/include/scripting/types.h"
 #include "mysqlshdk/include/scripting/types/option_pack.h"
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/shellcore/shell_console.h"
@@ -81,7 +83,8 @@ class Shell_context_wrapper_options {
   shcore::Dictionary_t m_options;
 
   std::string m_log_file =
-      shcore::path::join_path(shcore::get_user_config_path(), "mysqlsh.log");
+      shcore::path::join_path(shcore::get_user_config_path(),
+                              shcore::k_shell_log_file_name);
   shcore::Function_base_ref m_deleg_print_func;
   shcore::Function_base_ref m_deleg_prompt_func;
   shcore::Function_base_ref m_deleg_error_func;

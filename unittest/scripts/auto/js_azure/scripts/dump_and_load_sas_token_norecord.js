@@ -5,7 +5,7 @@ shell.connect(__sandbox_uri1);
 session.runSql("set global local_infile=1");
 session.runSql("create schema world");
 testutil.importData(__sandbox_uri1, __data_path+"/sql/fieldtypes_all.sql");
-env_vars = ["MYSQLSH_TERM_COLOR_MODE=nocolor", "AZURE_STORAGE_CONNECTION_STRING="];
+env_vars = ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "AZURE_STORAGE_CONNECTION_STRING="];
 
 
 //@<> Testing Dump And Load

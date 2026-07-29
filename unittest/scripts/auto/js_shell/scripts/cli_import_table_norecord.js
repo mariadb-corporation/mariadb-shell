@@ -1,7 +1,7 @@
 //@<> Initialization
 function callMysqlsh(additional_args) {
     base_args = [__mysqluripwd, "--quiet-start=2", "--result-format=json/raw"]
-    return testutil.callMysqlsh(base_args.concat(additional_args), "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    return testutil.callMysqlsh(base_args.concat(additional_args), "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 function validate_and_cleanup(schema, table, expected_content) {

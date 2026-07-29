@@ -24,7 +24,7 @@ shell.disconnect()
 
 
 def execute_query(query):
-    testutil.call_mysqlsh(["--sql", "-e", query, __mysqluripwd], "", ["MYSQLSH_JSON_SHELL=1", "MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    testutil.call_mysqlsh(["--sql", "-e", query, __mysqluripwd], "", ["MARIADB_SHELL_JSON_SHELL=1", "MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 
 validations =[              # Data length

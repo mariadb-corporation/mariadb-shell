@@ -15,7 +15,7 @@ function compute_crc(schema, table, columns) {
 }
 
 function callMysqlsh(command_line_args) {
-    return testutil.callMysqlsh(command_line_args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    return testutil.callMysqlsh(command_line_args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 

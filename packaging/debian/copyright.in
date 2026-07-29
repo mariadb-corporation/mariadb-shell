@@ -1,12 +1,13 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: @PRODUCT@
-Upstream-Contact: MySQL Release Engineering <mysql-build@oss.oracle.com>
-Source: http://dev.mysql.com/
+Upstream-Contact: MariaDB Corporation <info@mariadb.com>
+Source: https://mariadb.com/
 Files: *
 Copyright: 2016, @DEB_COPYRIGHT_YEAR@, Oracle and/or its affiliates.
+           2026, @DEB_COPYRIGHT_YEAR@, MariaDB Corporation.
 License:
- License information can be found in the `/usr/share/mysqlsh/LICENSE' file.
+ License information can be found in the `/usr/share/mariadb-shell/LICENSE' file.
  .
  This distribution may include materials developed by third parties. 
  For license and attribution notices for these materials, please refer to
- the `/usr/share/mysqlsh/LICENSE' file. 
+ the `/usr/share/mariadb-shell/LICENSE' file. 

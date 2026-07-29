@@ -31,6 +31,7 @@
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/libs/db/replay/setup.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_process.h"
 #include "unittest/test_utils/mod_testutils.h"
@@ -137,8 +138,8 @@ tests::Test_net_utilities test_net_utilities;
 }  // namespace
 
 void handle_debug_options(int *argc, char ***argv) {
-  if (const char *mode = getenv("MYSQLSH_RECORDER_MODE")) {
-    const auto quiet = nullptr != getenv("MYSQLSH_RECORDER_QUIET");
+  if (const char *mode = shcore::getenv_shell("MARIADB_SHELL_RECORDER_MODE")) {
+    const auto quiet = nullptr != shcore::getenv_shell("MARIADB_SHELL_RECORDER_QUIET");
 
     if (shcore::str_caseeq(mode, "direct") || !*mode) {
       mysqlshdk::db::replay::set_mode(Mode::Direct);
@@ -149,13 +150,14 @@ void handle_debug_options(int *argc, char ***argv) {
     } else if (shcore::str_caseeq(mode, "record")) {
       mysqlshdk::db::replay::set_mode(Mode::Record);
 
-      if (!getenv("MYSQLSH_RECORDER_PREFIX")) {
+      if (!shcore::getenv_shell("MARIADB_SHELL_RECORDER_PREFIX")) {
         printf(
-            "MYSQLSH_RECORDER_MODE set but MYSQLSH_RECORDER_PREFIX is not!\n");
+            "MARIADB_SHELL_RECORDER_MODE set but "
+            "MARIADB_SHELL_RECORDER_PREFIX is not!\n");
         return;
       }
       mysqlshdk::db::replay::set_recording_path_prefix(
-          getenv("MYSQLSH_RECORDER_PREFIX"));
+          shcore::getenv_shell("MARIADB_SHELL_RECORDER_PREFIX"));
 
       // Set up hooks for keeping track of opened sessions
       mysqlshdk::db::replay::on_recorder_connect_hook =
@@ -187,14 +189,15 @@ void handle_debug_options(int *argc, char ***argv) {
     } else if (shcore::str_caseeq(mode, "replay")) {
       mysqlshdk::db::replay::set_mode(Mode::Replay);
 
-      if (!getenv("MYSQLSH_RECORDER_PREFIX")) {
+      if (!shcore::getenv_shell("MARIADB_SHELL_RECORDER_PREFIX")) {
         printf(
-            "MYSQLSH_RECORDER_MODE set but MYSQLSH_RECORDER_PREFIX is not!\n");
+            "MARIADB_SHELL_RECORDER_MODE set but "
+            "MARIADB_SHELL_RECORDER_PREFIX is not!\n");
         return;
       }
 
       mysqlshdk::db::replay::set_recording_path_prefix(
-          getenv("MYSQLSH_RECORDER_PREFIX"));
+          shcore::getenv_shell("MARIADB_SHELL_RECORDER_PREFIX"));
 
       if (!quiet) {
         printf("Replaying classic sessions from %s\n",
@@ -211,7 +214,7 @@ void handle_debug_options(int *argc, char ***argv) {
         }
       }
     } else {
-      printf("Invalid value for MYSQLSH_RECORDER_MODE '%s'\n", mode);
+      printf("Invalid value for MARIADB_SHELL_RECORDER_MODE '%s'\n", mode);
     }
   }
 
@@ -285,7 +288,7 @@ void init_debug_shell(std::shared_ptr<mysqlsh::Command_line_shell> shell) {
     }
   }
 
-  if (const auto file = getenv("MYSQLSH_TRACE_SYSLOG")) {
+  if (const auto file = shcore::getenv_shell("MARIADB_SHELL_TRACE_SYSLOG")) {
     testutil->trace_syslog(file);
   }
 

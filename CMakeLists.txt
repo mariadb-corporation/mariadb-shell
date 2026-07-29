@@ -468,7 +468,7 @@ IF(CMAKE_HOST_UNIX AND NOT FORCE_UNSUPPORTED_COMPILER
   ENDIF()
 ENDIF()
 
-project(mysqlsh)
+project(mariadb-shell)
 
 # Resolve RapidJSON headers for MariaDB builds. Done after project() so that,
 # when WITH_RAPIDJSON is not provided, FIND_PATH can search the system include
@@ -1313,13 +1313,13 @@ SET(INSTALL_BINDIR "bin")
 
 IF(LIBEXECDIR)
   ADD_DEFINITIONS(-DLIBEXECDIR="${LIBEXECDIR}")
-  SET(INSTALL_LIBEXECDIR "${LIBEXECDIR}/mysqlsh")
+  SET(INSTALL_LIBEXECDIR "${LIBEXECDIR}/mariadb-shell")
 ELSE()
   ADD_DEFINITIONS(-DLIBEXECDIR="libexec")
-  SET(INSTALL_LIBEXECDIR "libexec/mysqlsh")
+  SET(INSTALL_LIBEXECDIR "libexec/mariadb-shell")
 ENDIF()
 
-SET(INSTALL_LIBDIR "lib/mysqlsh")
+SET(INSTALL_LIBDIR "lib/mariadb-shell")
 SET(_plugin_ext "so")
 IF(WIN32)
   SET(_plugin_ext "dll")
@@ -1404,9 +1404,9 @@ IF(AUTH_CLIENT_PLUGINS)
   ADD_DEFINITIONS(-DDEFAULT_MYSQL_PLUGIN_DIR="${INSTALL_MYSQL_PLUGINS_DIR}")
 ENDIF()
 
-SET(INSTALL_INCLUDEDIR "include/mysqlsh")
-SET(INSTALL_SHAREDIR "share/mysqlsh")
-SET(INSTALL_DOCDIR "share/mysqlsh/Docs")
+SET(INSTALL_INCLUDEDIR "include/mariadb-shell")
+SET(INSTALL_SHAREDIR "share/mariadb-shell")
+SET(INSTALL_DOCDIR "share/mariadb-shell/Docs")
 SET(INSTALL_MANDIR "share/man")
 
 ##

@@ -49,6 +49,7 @@
 #include "modules/mod_shell_options.h"  // <---
 #include "mysqlshdk/libs/utils/log_sql.h"
 #include "mysqlshdk/libs/utils/logger.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/structured_text.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
@@ -1210,7 +1211,7 @@ void Command_line_shell::print_banner() {
 
 void Command_line_shell::print_cmd_line_helper() {
   // clang-format off
-  std::string help_msg("MySQL Shell ");
+  std::string help_msg("MariaDB Shell ");
   help_msg += mysqlshdk::utils::k_shell_version.get_full();
   println(help_msg);
   println("");
@@ -1220,12 +1221,13 @@ void Command_line_shell::print_cmd_line_helper() {
   println("Oracle is a registered trademark of Oracle Corporation and/or its affiliates.");
   println("Other names may be trademarks of their respective owners.");
   println("");
-  println("Usage: mysqlsh [OPTIONS] [URI]");
-  println("       mysqlsh [OPTIONS] [URI] -f <path> [<script-args>...]");
+  const std::string bin{shcore::k_shell_binary_name};
+  println("Usage: " + bin + " [OPTIONS] [URI]");
+  println("       " + bin + " [OPTIONS] [URI] -f <path> [<script-args>...]");
   #ifdef HAVE_ADMIN_API
-  println("       mysqlsh [OPTIONS] [URI] --cluster|--replicaset");
+  println("       " + bin + " [OPTIONS] [URI] --cluster|--replicaset");
   #endif
-  println("       mysqlsh [OPTIONS] [URI] -- <object> <method> [<method-args>...]");
+  println("       " + bin + " [OPTIONS] [URI] -- <object> <method> [<method-args>...]");
   println("");
   // clang-format on
   std::vector<std::string> details = Shell_options(0, nullptr).get_details();
@@ -1247,25 +1249,30 @@ void Command_line_shell::print_cmd_line_helper() {
   {
     std::string groups;
     if (my_defaults_group_suffix) {
-      for (const auto *g : {"mysqlsh", "client"}) {
+      for (const auto *g : {shcore::k_shell_option_group, "mysqlsh", "client"}) {
         groups.append(" ").append(g).append(my_defaults_group_suffix);
       }
     }
-    println("The following groups are read: mysqlsh client" + groups);
+    println(std::string{"The following groups are read: "} +
+            shcore::k_shell_option_group + " mysqlsh client" + groups);
   }
 
   println("");
   println("Usage examples:");
-  println("$ mysqlsh --login-path=server1 --sql");
-  println("$ mysqlsh root@localhost/schema");
-  println("$ mysqlsh mysqlx://root@some.server:3307/world_x");
-  println("$ mysqlsh --uri root@localhost --py -f sample.py sample param");
-  println("$ mysqlsh root@targethost:33070 -s world_x -f sample.js");
+  println("$ " + bin + " --login-path=server1 --sql");
+  println("$ " + bin + " root@localhost/schema");
+#ifdef HAVE_X_PROTOCOL
+  println("$ " + bin + " mysqlx://root@some.server:3307/world_x");
+#endif  // HAVE_X_PROTOCOL
+  println("$ " + bin + " --uri root@localhost --py -f sample.py sample param");
+#ifdef HAVE_JS
+  println("$ " + bin + " root@targethost:3307 -s world_x -f sample.js");
+#endif  // HAVE_JS
 #ifdef HAVE_UPGRADE_CHECKER
   // The Upgrade Checker is MySQL-server specific and is not built for MariaDB.
-  println(
-      "$ mysqlsh -- util check-for-server-upgrade root@localhost "
-      "--output-format=JSON");
+  println("$ " + bin +
+          " -- util check-for-server-upgrade root@localhost "
+          "--output-format=JSON");
 #endif  // HAVE_UPGRADE_CHECKER
   println("");
 }

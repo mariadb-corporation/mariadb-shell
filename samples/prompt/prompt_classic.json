@@ -6,7 +6,7 @@
   },
   "segments": [
     {
-      "text": "mysql"
+      "text": "mariadb"
     },
     {
       "text": "%mode%"

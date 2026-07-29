@@ -20,7 +20,7 @@ function verify_statement_id_in_api_dump(present) {
 
 function verify_statement_id_in_dump(target, present) {
     for (format of result_formats) {
-        testutil.callMysqlsh([target, "-ifull", "--result-format", format, "--sql", "-e", "select 1"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+        testutil.callMysqlsh([target, "-ifull", "--result-format", format, "--sql", "-e", "select 1"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 
         if (present) {
             EXPECT_STDOUT_CONTAINS(DUMP_STATEMENT_ID);
@@ -44,7 +44,7 @@ session.close();
 verify_statement_id_in_dump(__sandbox_uri1, false);
 
 //@<> Disabled by default, JSON output does not contain statementId in the JSON object
-testutil.callMysqlsh([__sandbox_uri1, "-ifull", "--json", "--sql", "-e", "select 1"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_uri1, "-ifull", "--json", "--sql", "-e", "select 1"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 EXPECT_STDOUT_NOT_CONTAINS(JSON_STATEMENT_ID);
 
 //@<> Disabled by default, enable Statement ID Session Tracker using "*"
@@ -76,7 +76,7 @@ session.close();
 
 
 //@<> Enabled by default, JSON output contains statementId in the JSON object
-testutil.callMysqlsh([__sandbox_uri2, "-ifull", "--json", "--sql", "-e", "select 1"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"]);
+testutil.callMysqlsh([__sandbox_uri2, "-ifull", "--json", "--sql", "-e", "select 1"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"]);
 EXPECT_STDOUT_CONTAINS(JSON_STATEMENT_ID);
 
 //@<> Disabled by default, result.getStatementId returns empty string

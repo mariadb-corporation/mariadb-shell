@@ -82,7 +82,7 @@
 |\sandboxDir|
 |"sandboxDir": "\\sandboxDir"|
 ||
-|mysql-sandboxes|
+|sandboxes|
 
 //@ showWarnings update and set back to default using shell.options
 ||
@@ -193,7 +193,7 @@
 |\sandboxDir|
 |"sandboxDir": "\\sandboxDir"|
 ||
-|mysql-sandboxes|
+|sandboxes|
 
 //@ showWarnings update and set back to default using \option
 ||

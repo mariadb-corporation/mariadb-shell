@@ -1173,8 +1173,8 @@ DESCRIPTION
       shell.reports object.
 
       Users may create custom report files in the init.d folder located in the
-      Shell configuration path (by default it is ~/.mysqlsh/init.d in Unix and
-      %AppData%\MySQL\mysqlsh\init.d in Windows).
+      Shell configuration path (by default it is ~/.mariadb-shell/init.d in
+      Unix and %AppData%\MariaDB\mariadb-shell\init.d in Windows).
 
       Custom reports may be written in either JavaScript or Python. The
       standard file extension for each case should be used to get them properly
@@ -2271,8 +2271,8 @@ Automatic Loading of Extension Objects
 The MySQL Shell startup logic scans for extension scripts at the following
 paths:
 
-- Windows: %AppData%/MySQL/mysqlsh/init.d
-- Others ~/.mysqlsh/init.d
+- Windows: %AppData%/MariaDB/mariadb-shell/init.d
+- Others ~/.mariadb-shell/init.d
 
 An extension script is either a JavaScript (*.js) or Python (*.py) file which
 will be automatically processed when the MySQL Shell starts.

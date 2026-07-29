@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -3605,7 +3606,7 @@ void Dump_loader::check_server_version() {
       !m_dump->should_create_pks() &&
       // - the environment variable which allows load to continue if all of the
       //   above is true is not set
-      !shcore::get_env("MYSQLSH_ALLOW_ALWAYS_GIPK").has_value()) {
+      nullptr == shcore::getenv_shell("MARIADB_SHELL_ALLOW_ALWAYS_GIPK")) {
     // then we're unable to disable automatic creation of PKs, offer solutions
     // and fail the load
 
@@ -3633,7 +3634,7 @@ To load this dump, you can either:
  * Disable the 'sql_generate_invisible_primary_key' option on the destination server.
  * Use an account that has the SESSION_VARIABLES_ADMIN, SYSTEM_VARIABLES_ADMIN or SUPER privileges.
  * Set the 'createInvisiblePKs' load option to true to create primary keys in tables that are missing them.
- * Set the 'MYSQLSH_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.)";
+ * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.)";
 
     console->print_warning(msg);
     THROW_ERROR(SHERR_LOAD_INVISIBLE_PKS_CANNOT_DISABLE_SYS_VAR);

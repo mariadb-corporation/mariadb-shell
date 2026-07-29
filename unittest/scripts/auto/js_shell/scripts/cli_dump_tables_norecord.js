@@ -1,7 +1,7 @@
 //@<> Initialization
 function callMysqlsh(additional_args) {
     base_args = [__mysqluripwd, "--quiet-start=2", "--log-level=debug"]
-    testutil.callMysqlsh(base_args.concat(additional_args), "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    testutil.callMysqlsh(base_args.concat(additional_args), "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 shell.connect(__mysqluripwd)

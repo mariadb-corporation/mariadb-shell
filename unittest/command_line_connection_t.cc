@@ -196,8 +196,8 @@ TEST_F(Command_line_connection_test, no_pwd_save_from_stdin) {
 
   wipe_out();
 
-  shcore::unsetenv("MYSQLSH_CREDENTIAL_STORE_HELPER");
-  shcore::unsetenv("MYSQLSH_CREDENTIAL_STORE_SAVE_PASSWORDS");
+  shcore::unsetenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER");
+  shcore::unsetenv("MARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS");
 
   std::string uri = "pwduser@localhost:" + _mysql_port;
   execute({_mysqlsh, uri.c_str(), "--passwords-from-stdin", "--sql", "-e",
@@ -205,7 +205,7 @@ TEST_F(Command_line_connection_test, no_pwd_save_from_stdin) {
           "verysecret");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("HELLO");
 
-  shcore::setenv("MYSQLSH_CREDENTIAL_STORE_HELPER", "<disabled>");
+  shcore::setenv("MARIADB_SHELL_CREDENTIAL_STORE_HELPER", "<disabled>");
 
   execute_in_session(_mysql_uri_nopasswd, "--mysql", "drop user pwduser@'%'");
 }
@@ -519,7 +519,7 @@ TEST_F(Command_line_connection_test, expired_account) {
            "drop user if exists expired@localhost; "
            "create user expired@localhost password expire;",
            nullptr},
-          nullptr, nullptr, {"MYSQLSH_TERM_COLOR_MODE=nocolor"});
+          nullptr, nullptr, {"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "WARNING: Using a password on the command line interface can be "
       "insecure.");

@@ -70,8 +70,8 @@ class Mysqlsh_pager_test : public Command_line_test {
     Command_line_test::SetUp();
 
     cleanup();
-    shcore::setenv("MYSQLSH_PROMPT_THEME", "invalid");
-    shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+    shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "invalid");
+    shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
   }
 
   void TearDown() override {
@@ -83,8 +83,8 @@ class Mysqlsh_pager_test : public Command_line_test {
  private:
   void cleanup() {
     shcore::unsetenv("PAGER");
-    shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-    shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+    shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+    shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
     execute({_mysqlsh, SCRIPTING_MODE, "-e",
              "shell.options." UNSET_PERSIST "('pager')", nullptr});
     wipe_out();

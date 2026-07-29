@@ -20,7 +20,7 @@ Tests are split by file name:
                              (see test/conftest.py) and need only pytest.
   * test_integration_*.py -- deploy real MariaDB sandboxes through the built
                              shell; skipped unless MARIADB_SANDBOX_TEST_MYSQLSH
-                             (or build/bin/mysqlsh) and MARIADB_SANDBOX_TEST_BASEDIR
+                             (or build/bin/mariadb-shell) and MARIADB_SANDBOX_TEST_BASEDIR
                              are available.
 
 conftest.py auto-applies a matching 'unit' / 'integration' marker based on the

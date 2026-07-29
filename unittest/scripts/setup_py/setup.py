@@ -14,7 +14,7 @@ import inspect
 import json
 
 
-mysqlshrec = "mysqlshrec"
+mysqlshrec = "mariadb-shell-rec"
 if __os_type == "windows":
     mysqlshrec = mysqlshrec + ".exe"
 mysqlshrec = os.path.join(__bin_dir, mysqlshrec)

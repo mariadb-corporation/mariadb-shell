@@ -178,10 +178,13 @@ def _wait_until(predicate, timeout):
 
 
 def default_sandbox_base_dir():
-    """The default base directory for sandboxes, mirroring the old dba default.
+    """The default base directory for sandboxes.
 
     Honors the shell ``sandboxDir`` option when it is set, otherwise uses
-    ``~/mysql-sandboxes`` (``%userprofile%\\MySQL\\mysql-sandboxes`` on Windows).
+    ``~/.mariadb-shell/sandboxes``
+    (``%userprofile%\\MariaDB\\mariadb-shell\\sandboxes`` on Windows). Must stay
+    in sync with the sandboxDir default in mysqlshdk/shellcore/shell_options.cc,
+    which is where the option value normally comes from.
     """
     try:
         configured = globals.shell.options["sandboxDir"]
@@ -191,8 +194,10 @@ def default_sandbox_base_dir():
         pass
 
     if os.name == "nt":
-        return os.path.join(os.path.expanduser("~"), "MySQL", "mysql-sandboxes")
-    return os.path.join(os.path.expanduser("~"), "mysql-sandboxes")
+        return os.path.join(
+            os.path.expanduser("~"), "MariaDB", "mariadb-shell", "sandboxes"
+        )
+    return os.path.join(os.path.expanduser("~"), ".mariadb-shell", "sandboxes")
 
 
 def _sandbox_dir(port, options):
@@ -422,18 +427,21 @@ def _shell_bundled_openssl():
 
     The CLI is bundled next to the shell's bundled OpenSSL libraries, i.e. in the
     embedded interpreter's prefix directory (``INSTALL_LIBDIR`` -> ``bin`` on
-    Windows, ``lib/mysqlsh`` on macOS/Linux). Locate the shell home via
-    MYSQLSH_HOME, the interpreter prefix, and (on Windows, where the interpreter
+    Windows, ``lib/mariadb-shell`` on macOS/Linux). Locate the shell home via
+    MARIADB_SHELL_HOME, the interpreter prefix, and (on Windows, where the interpreter
     lives under ``<home>/lib/Python<X.Y>``) the grandparent of that prefix.
     Returns the openssl path or None.
     """
     homes = []
-    env_home = os.environ.get("MYSQLSH_HOME")
+    env_home = os.environ.get("MARIADB_SHELL_HOME") or os.environ.get(
+        "MYSQLSH_HOME"
+    )
     if env_home:
         homes.append(env_home)
     if sys.prefix:
-        # On macOS/Linux sys.prefix is the bundle dir itself (lib/mysqlsh), which
-        # holds the bundled openssl. On Windows it is <mysqlsh_home>/lib/Python<X.Y>.
+        # On macOS/Linux sys.prefix is the bundle dir itself (lib/mariadb-shell),
+        # which holds the bundled openssl. On Windows it is
+        # <mariadb_shell_home>/lib/Python<X.Y>.
         homes.append(sys.prefix)
         if sys.platform == "win32":
             homes.append(os.path.dirname(os.path.dirname(sys.prefix)))

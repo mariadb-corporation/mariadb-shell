@@ -1,7 +1,7 @@
 //@<> Initialization
 function callMysqlsh(additional_args) {
     base_args = [__sandbox_uri1, "--quiet-start=2", "--log-level=debug"]
-    return testutil.callMysqlsh(base_args.concat(additional_args), "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+    return testutil.callMysqlsh(base_args.concat(additional_args), "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 testutil.deploySandbox(__mysql_sandbox_port1, 'root');

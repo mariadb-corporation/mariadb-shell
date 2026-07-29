@@ -1,5 +1,5 @@
 {
-  "desc": "256/24bit color terminal theme with MySQL prefix, default schema, host:port, ssl, + indicator for X protocol, active mode. Requires Powerline patched font with awesome symbols (e.g. awesome-terminal-fonts)",
+  "desc": "256/24bit color terminal theme with MariaDB prefix, default schema, host:port, ssl, + indicator for X protocol, active mode. Requires Powerline patched font with awesome symbols (e.g. awesome-terminal-fonts)",
   "classes": {
     "SQL": {
       "fg": "15",
@@ -112,13 +112,13 @@
       ]
     },
     {
-      "text": " My",
+      "text": " Maria",
       "bg": 254,
       "fg": 23
     },
     {
       "separator": "",
-      "text": "SQL ",
+      "text": "DB ",
       "bg": 254,
       "fg": 166
     },

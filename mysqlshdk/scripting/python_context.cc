@@ -35,6 +35,7 @@
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
 #include "scripting/module_registry.h"
+#include "utils/shell_naming.h"
 #include "utils/utils_file.h"
 #include "utils/utils_general.h"
 #include "utils/utils_path.h"
@@ -92,7 +93,7 @@ std::wstring python_home() {
   {
     // Set path to the bundled python version.
     std::string python_path = shcore::path::join_path(
-        shcore::get_mysqlx_home_path(), "lib", "mysqlsh");
+        shcore::get_mysqlx_home_path(), "lib", shcore::k_shell_install_dir_name);
     if (shcore::is_folder(python_path)) {
       // Override the system Python install with the bundled one
       log_info("Setting Python home to '%s'", python_path.c_str());

@@ -33,6 +33,7 @@
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/atomic_flag.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -108,7 +109,8 @@ void detect_interactive(mysqlsh::Shell_options *options, bool *stdin_is_tty,
 static bool detect_color_capability() {
   mysqlshdk::textui::Color_capability color_mode = mysqlshdk::textui::Color_256;
 
-  if (const char *force_mode = getenv("MYSQLSH_TERM_COLOR_MODE")) {
+  if (const char *force_mode =
+          shcore::getenv_shell("MARIADB_SHELL_TERM_COLOR_MODE")) {
     if (strcmp(force_mode, "rgb") == 0) {
       color_mode = mysqlshdk::textui::Color_rgb;
     } else if (strcmp(force_mode, "256") == 0) {
@@ -118,8 +120,9 @@ static bool detect_color_capability() {
     } else if (strcmp(force_mode, "nocolor") == 0) {
       color_mode = mysqlshdk::textui::No_color;
     } else if (strcmp(force_mode, "") != 0) {
-      std::cout << "NOTE: MYSQLSH_TERM_COLOR_MODE environment variable set to "
-                   "invalid value. Must be one of rgb, 256, 16, nocolor\n";
+      std::cout
+          << "NOTE: MARIADB_SHELL_TERM_COLOR_MODE environment variable set to "
+             "invalid value. Must be one of rgb, 256, 16, nocolor\n";
       return false;
     }
   } else {
@@ -165,11 +168,12 @@ static bool detect_color_capability() {
 
 std::string pick_prompt_theme() {
   // check environment variable to override prompt theme
-  if (char *theme = getenv("MYSQLSH_PROMPT_THEME")) {
+  if (const char *theme =
+          shcore::getenv_shell("MARIADB_SHELL_PROMPT_THEME")) {
     if (*theme) {
       if (!shcore::is_file(theme)) {
         const std::string prompt_theme_msg =
-            "NOTE: MYSQLSH_PROMPT_THEME prompt theme file '" +
+            "NOTE: MARIADB_SHELL_PROMPT_THEME prompt theme file '" +
             std::string{theme} + "' does not exist.\n";
         mysqlsh::current_console()->print(prompt_theme_msg.c_str());
         return "";
@@ -512,11 +516,13 @@ int main(int argc, char **argv) {
     bool valid_color_capability = detect_color_capability();
 
     // The Json_shell mode is enabled when this env variable is defined
-    char *json_shell = getenv("MYSQLSH_JSON_SHELL");
+    const char *json_shell =
+        shcore::getenv_shell("MARIADB_SHELL_JSON_SHELL");
     if (json_shell) {
       // The variable needs to be remvoved in case AAPI sandbox operations are
       // executed, this is because the launched shell instance will also use the
       // variable, breaking the output parsing
+      shcore::unsetenv("MARIADB_SHELL_JSON_SHELL");
       shcore::unsetenv("MYSQLSH_JSON_SHELL");
 
       // When shell is running as MYSQL_JSON_SHELL binary data is truncated at

@@ -10,7 +10,7 @@ testutil.deploySandbox(__mysql_sandbox_port2, "root", {report_host: hostname});
 testutil.deploySandbox(__mysql_sandbox_port3, "root", {report_host:hostname});
 
 function callMysqlsh(command_line_args) {
-  testutil.callMysqlsh(command_line_args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+  testutil.callMysqlsh(command_line_args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 }
 
 

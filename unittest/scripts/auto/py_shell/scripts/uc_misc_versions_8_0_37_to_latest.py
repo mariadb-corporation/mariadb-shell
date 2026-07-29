@@ -4,7 +4,7 @@
 testutil.deploy_sandbox(__mysql_sandbox_port1, "root", {}, { "mysqldPath": MYSQLD8037_PATH })
 
 #@<> Run the invalidPrivileges Upgrade Check In Interactive Mode
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=invalidPrivileges"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=invalidPrivileges"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 1) Checks for user privileges that will be removed (invalidPrivileges)
@@ -28,7 +28,7 @@ Notices:  2
 
 
 #@<> Run the invalidPrivileges Upgrade Check In JSON Mode
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=invalidPrivileges", "--output-format=JSON"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=invalidPrivileges", "--output-format=JSON"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 {
@@ -77,7 +77,7 @@ session.run_sql("create user sample2@localhost identified with mysql_native_pass
 session.run_sql("create user sample3@localhost identified with sha256_password by 'password'")
 session.run_sql("create user sample4@localhost identified with sha256_password by 'password'")
 session.close()
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=authMethodUsage"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=authMethodUsage"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 1) Check for deprecated or invalid user authentication methods.
@@ -117,7 +117,7 @@ Notices:  0
 """)
 
 #@<> Run the authMethodUsage Upgrade Check In JSON Mode
-testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=authMethodUsage", "--output-format=JSON"], "", ["MYSQLSH_TERM_COLOR_MODE=nocolor"])
+testutil.call_mysqlsh([__sandbox_uri1, "--", "util", "check-for-server-upgrade", "--include=authMethodUsage", "--output-format=JSON"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
 EXPECT_STDOUT_CONTAINS_MULTILINE("""
 {

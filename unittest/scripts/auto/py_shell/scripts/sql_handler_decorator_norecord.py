@@ -10,7 +10,7 @@ testutil.mkdir(plugin_folder_path, True)
 
 def call_mysqlsh(command_line_args):
     testutil.call_mysqlsh(command_line_args, "", [
-                          "MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQLSH_USER_CONFIG_HOME=" + user_path])
+                          "MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + user_path])
 
 #@<> Errors Registering SQL Handler - Missing Name
 plugin_code = """

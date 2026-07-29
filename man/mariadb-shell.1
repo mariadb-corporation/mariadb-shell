@@ -1,0 +1,551 @@
+'\" t
+.\"     Title: mariadb-shell
+.\"    Manual: MariaDB Database System
+.\"  Language: English
+.\"
+.TH "MARIADB\-SHELL" "1" "" "MariaDB" "MariaDB Database System"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+mariadb\-shell \- the MariaDB Shell, an advanced client and code editor for
+MariaDB
+.SH "SYNOPSIS"
+.HP \w'\fBmariadb\-shell\fR\ 'u
+\fBmariadb\-shell\fR [\fIoptions\fR] [\fIURI\fR]
+.HP \w'\fBmariadb\-shell\fR\ 'u
+\fBmariadb\-shell\fR [\fIoptions\fR] [\fIURI\fR] \fB\-f\fR \fIpath\fR [\fIscript\-args\fR...]
+.HP \w'\fBmariadb\-shell\fR\ 'u
+\fBmariadb\-shell\fR [\fIoptions\fR] [\fIURI\fR] \fB\-\-\fR \fIobject\fR \fImethod\fR [\fImethod\-args\fR...]
+.SH "DESCRIPTION"
+.PP
+\fBmariadb\-shell\fR
+is an advanced command\-line client and code editor for MariaDB\&. In addition to
+SQL it offers scripting in
+\fBPython\fR\&.
+It connects to a server over the classic MariaDB client/server protocol, using
+the MariaDB Connector/C\&.
+.PP
+Beyond a plain SQL client it provides scriptable global objects
+(\fBshell\fR,
+\fBsession\fR,
+\fBdb\fR,
+\fBmysql\fR,
+\fButil\fR,
+\fBsandbox\fR,
+\fBplugins\fR),
+user\-definable reports, a password credential store, a plugin system including
+a local server sandbox manager, and API Command Line integration so that shell
+APIs can be invoked directly from the operating system shell\&.
+.PP
+The commands
+\fBmysqlsh\fR
+and
+\fBmsh\fR
+are aliases for
+\fBmariadb\-shell\fR\&.
+.SH "OPTIONS"
+.PP
+The options below are supported\&. The authoritative and complete list for the
+installed build is printed by
+\fBmariadb\-shell \-\-help\fR\&.
+.SS "General Options"
+.PP
+\fB\-?\fR, \fB\-\-help\fR
+.RS 4
+Display help and exit\&.
+.RE
+.PP
+\fB\-V\fR, \fB\-\-version\fR
+.RS 4
+Print the version of the shell and exit\&.
+.RE
+.PP
+\fB\-\-\fR
+.RS 4
+Trigger API Command Line integration, allowing methods of the shell global
+objects to be executed from the command line as
+\fB\-\-\fR \fIobject\fR \fImethod\fR [\fIarguments\fR]\&.
+For details run
+\fB\e? cmdline\fR
+inside the shell\&.
+.RE
+.PP
+\fB\-e\fR, \fB\-\-execute=\fR\fIcmd\fR
+.RS 4
+Execute a command and quit\&.
+.RE
+.PP
+\fB\-c\fR, \fB\-\-pyc=\fR\fIcmd\fR
+.RS 4
+Execute a Python command and quit\&. Options given after this are passed as
+arguments to the command\&.
+.RE
+.PP
+\fB\-f\fR, \fB\-\-file=\fR\fIfile\fR
+.RS 4
+Process a file in batch mode\&. Options given after this are passed as arguments
+to the script\&.
+.RE
+.PP
+\fB\-\-pym\fR \fImodule\fR
+.RS 4
+Run a Python library module as a script; remaining arguments are forwarded to
+it\&.
+.RE
+.PP
+\fB\-\-execution\-context=\fR\fIid\fR
+.RS 4
+Define a custom shell execution context for option reporting\&.
+.RE
+.PP
+\fB\-i\fR, \fB\-\-interactive\fR[=full]
+.RS 4
+Force emulation of interactive\-mode processing in batch mode\&.
+.RE
+.PP
+\fB\-\-force\fR
+.RS 4
+In SQL batch mode, continue processing when an error is found\&.
+.RE
+.PP
+\fB\-\-quiet\-start\fR[={1|2}]
+.RS 4
+Suppress start\-up information: 1 suppresses the version banner, 2 suppresses
+everything that is not an error\&. Defaults to 1\&.
+.RE
+.PP
+\fB\-\-wizard\fR[=\fIbool\fR], \fB\-\-nw\fR, \fB\-\-no\-wizard\fR
+.RS 4
+Enable or disable wizard mode\&. Enabled by default\&.
+.RE
+.SS "Connection Options"
+.PP
+\fB\-\-uri=\fR\fIvalue\fR
+.RS 4
+Connect using a Uniform Resource Identifier of the form
+[\fIuser\fR[:\fIpass\fR]@]\fIhost\fR[:\fIport\fR][/\fIdb\fR]\&.
+.RE
+.PP
+\fB\-h\fR, \fB\-\-host=\fR\fIname\fR
+.RS 4
+Host to connect to\&.
+.RE
+.PP
+\fB\-P\fR, \fB\-\-port=\fR\fInumber\fR
+.RS 4
+TCP/IP port to use\&.
+.RE
+.PP
+\fB\-S\fR, \fB\-\-socket\fR[=\fIsock\fR]
+.RS 4
+Unix socket file to use; the default path is used when no value is given\&. Not
+available on Windows\&.
+.RE
+.PP
+\fB\-u\fR, \fB\-\-user=\fR\fIname\fR
+.RS 4
+User for the connection\&.
+.RE
+.PP
+\fB\-\-password\fR[=\fIpass\fR]
+.RS 4
+Password to use\&. An empty value connects without a password\&.
+.RE
+.PP
+\fB\-p\fR, \fB\-\-password\fR
+.RS 4
+Prompt for the password\&.
+.RE
+.PP
+\fB\-\-no\-password\fR
+.RS 4
+Set an empty password and disable the password prompt\&.
+.RE
+.PP
+\fB\-\-passwords\-from\-stdin\fR
+.RS 4
+Read passwords from standard input instead of the console\&.
+.RE
+.PP
+\fB\-D\fR, \fB\-\-schema=\fR\fIname\fR, \fB\-\-database=\fR\fIname\fR
+.RS 4
+Default schema to use\&.
+.RE
+.PP
+\fB\-\-connect\-timeout=\fR\fIms\fR
+.RS 4
+Connection timeout in milliseconds\&.
+.RE
+.PP
+\fB\-C\fR, \fB\-\-compress\fR[=\fIvalue\fR]
+.RS 4
+Use protocol compression\&. Allowed values are REQUIRED, PREFERRED, DISABLED,
+and the booleans True/False/1/0, which map to REQUIRED and DISABLED\&.
+.RE
+.PP
+\fB\-\-local\-infile\fR[=\fIbool\fR]
+.RS 4
+Enable LOAD DATA LOCAL INFILE\&.
+.RE
+.PP
+\fB\-\-mc\fR, \fB\-\-mysql\fR
+.RS 4
+Use the connection data to create a classic session\&.
+.RE
+.PP
+\fB\-\-auth\-method=\fR\fImethod\fR
+.RS 4
+Name of the client authentication plugin to use\&.
+.RE
+.PP
+\fB\-\-mysql\-plugin\-dir\fR[=\fIpath\fR]
+.RS 4
+Directory holding client\-side authentication plugins\&.
+.RE
+.PP
+\fB\-\-get\-server\-public\-key\fR, \fB\-\-server\-public\-key\-path=\fR\fIpath\fR
+.RS 4
+Request, or supply a local copy of, the server public key used for RSA key
+pair\-based password exchange\&.
+.RE
+.PP
+\fB\-\-ssh=\fR\fIvalue\fR, \fB\-\-ssh\-identity\-file=\fR\fIfile\fR, \fB\-\-ssh\-config\-file=\fR\fIfile\fR
+.RS 4
+Tunnel the connection through SSH, using the given identity and configuration
+files\&. The SSH target has the form [\fIuser\fR@]\fIhost\fR[:\fIport\fR]\&.
+.RE
+.SS "Options for Encrypted Connections"
+.PP
+\fB\-\-ssl\-mode=\fR\fImode\fR
+.RS 4
+Desired security state of the connection\&. Allowed values are DISABLED,
+PREFERRED, REQUIRED, VERIFY_CA and VERIFY_IDENTITY\&.
+.RE
+.PP
+\fB\-\-ssl\-ca=\fR\fIfile\fR, \fB\-\-ssl\-capath=\fR\fIdir\fR
+.RS 4
+Certificate authority file, or directory of certificate authority files, in PEM
+format\&.
+.RE
+.PP
+\fB\-\-ssl\-cert=\fR\fIfile\fR, \fB\-\-ssl\-key=\fR\fIfile\fR
+.RS 4
+Client public key certificate and private key, in PEM format\&.
+.RE
+.PP
+\fB\-\-ssl\-crl=\fR\fIfile\fR, \fB\-\-ssl\-crlpath=\fR\fIdir\fR
+.RS 4
+Certificate revocation list file, or directory of such files, in PEM format\&.
+.RE
+.PP
+\fB\-\-ssl\-cipher=\fR\fIcipher_list\fR
+.RS 4
+Permissible ciphers for connections that use TLS protocols up through
+TLSv1\&.2\&.
+.RE
+.PP
+\fB\-\-tls\-version=\fR\fIversion\fR
+.RS 4
+TLS version to use\&. Allowed values are TLSv1\&.2 and TLSv1\&.3\&.
+.RE
+.PP
+\fB\-\-tls\-ciphersuites=\fR\fIname\fR
+.RS 4
+TLS v1\&.3 ciphersuite to use\&.
+.RE
+.SS "Language and Output Options"
+.PP
+\fB\-\-sql\fR
+.RS 4
+Start in SQL mode\&.
+.RE
+.PP
+\fB\-\-sqlc\fR
+.RS 4
+Start in SQL mode using a classic session\&.
+.RE
+.PP
+\fB\-\-py\fR, \fB\-\-python\fR
+.RS 4
+Start in Python mode\&.
+.RE
+.PP
+\fB\-\-json\fR[=\fIformat\fR]
+.RS 4
+Produce output in JSON format\&. Allowed values are raw, pretty and off\&.
+Defaults to pretty\&.
+.RE
+.PP
+\fB\-\-table\fR, \fB\-\-tabbed\fR
+.RS 4
+Force table format (the interactive default) or tab\-separated format (the batch
+default)\&.
+.RE
+.PP
+\fB\-E\fR, \fB\-\-vertical\fR
+.RS 4
+Print query rows vertically\&.
+.RE
+.PP
+\fB\-\-result\-format=\fR\fIvalue\fR
+.RS 4
+Format of results\&. Allowed values are table, tabbed, vertical, json, ndjson,
+json/raw, json/array and json/pretty\&.
+.RE
+.PP
+\fB\-\-column\-type\-info\fR
+.RS 4
+Display column type information in SQL mode\&.
+.RE
+.PP
+\fB\-\-show\-warnings\fR[=\fIbool\fR]
+.RS 4
+Automatically display SQL warnings in SQL mode\&. Enabled by default\&.
+.RE
+.PP
+\fB\-\-pager=\fR\fIvalue\fR
+.RS 4
+Pager used to display text output in SQL mode and by selected commands\&.
+Defaults to the value of the PAGER environment variable\&. Interactive mode only,
+disabled by default\&.
+.RE
+.SS "Logging and Diagnostic Options"
+.PP
+\fB\-\-log\-file=\fR\fIpath\fR
+.RS 4
+Override the location of the shell log file\&.
+.RE
+.PP
+\fB\-\-log\-level=\fR\fIvalue\fR
+.RS 4
+Logging level: an integer between 1 and 8, or one of none, internal, error,
+warning, info, debug, debug2, debug3\&.
+.RE
+.PP
+\fB\-\-log\-sql=\fR{off|error|on|all|unfiltered}
+.RS 4
+Control the logging of SQL statements\&. Defaults to error, which logs only
+statements that failed\&.
+.RE
+.PP
+\fB\-\-syslog\fR[=\fIbool\fR]
+.RS 4
+Log filtered interactive commands to the system log\&. Filtering follows the
+histignore option\&.
+.RE
+.PP
+\fB\-\-verbose\fR[={0|1|2|3|4}]
+.RS 4
+Enable diagnostic message output to the console\&. If no level is given, 1 is
+assumed\&.
+.RE
+.PP
+\fB\-\-histignore=\fR\fIfilters\fR
+.RS 4
+History ignore list\&.
+.RE
+.SS "Completion, Credential and Plugin Options"
+.PP
+\fB\-\-name\-cache\fR[=\fIbool\fR], \fB\-A\fR, \fB\-\-no\-name\-cache\fR
+.RS 4
+Enable (the default) or disable the database name caching used for
+autocompletion\&. Use
+\fB\erehash\fR
+to load names manually\&.
+.RE
+.PP
+\fB\-\-credential\-store\-helper=\fR\fIhelper\fR
+.RS 4
+Helper used to store and retrieve passwords\&.
+.RE
+.PP
+\fB\-\-save\-passwords=\fR\fIvalue\fR
+.RS 4
+Control automatic storage of passwords\&. Allowed values are always, prompt and
+never\&.
+.RE
+.PP
+\fB\-\-disable\-plugins\fR, \fB\-\-disable\-builtin\-plugins\fR
+.RS 4
+Disable loading of user plugins, or of the built\-in plugins\&.
+.RE
+.SS "Option-File Options"
+.PP
+The following may be given only as the first argument\&.
+.PP
+\fB\-\-print\-defaults\fR
+.RS 4
+Print the program argument list and exit\&.
+.RE
+.PP
+\fB\-\-no\-defaults\fR
+.RS 4
+Do not read default options from any option file\&.
+.RE
+.PP
+\fB\-\-defaults\-file=\fR\fIfile\fR, \fB\-\-defaults\-extra\-file=\fR\fIfile\fR
+.RS 4
+Read default options only from the given file, or read the given file after the
+global files\&.
+.RE
+.PP
+\fB\-\-defaults\-group\-suffix=\fR\fIsuffix\fR
+.RS 4
+Also read groups named by concatenating the group name and the suffix\&.
+.RE
+.SH "OPTION FILES"
+.PP
+Default options are read from the usual MariaDB option files, in order:
+\fI/etc/my\&.cnf\fR,
+\fI/etc/mysql/my\&.cnf\fR
+and
+\fI~/\&.my\&.cnf\fR\&.
+The groups read are
+\fB[mariadb\-shell]\fR,
+\fB[mysqlsh]\fR
+(still read for compatibility with the pre\-rename binary name) and
+\fB[client]\fR\&.
+.SH "FILES"
+.PP
+\fI~/\&.mariadb\-shell/\fR
+.RS 4
+Per\-user configuration directory on Unix; on Windows it is
+\fI%AppData%\eMariaDB\emariadb\-shell\fR\&.
+It holds the command history, the
+\fIprompt\&.json\fR
+theme override, the
+\fIinit\&.d\fR
+and
+\fIplugins\fR
+directories, and the log file\&. Override it with
+\fBMARIADB_SHELL_USER_CONFIG_HOME\fR\&.
+.RE
+.PP
+\fI~/\&.mariadb\-shell/mariadb\-shell\&.log\fR
+.RS 4
+Shell log file\&. Override with
+\fB\-\-log\-file\fR\&.
+.RE
+.PP
+\fImariadb\-shellrc\&.py\fR
+.RS 4
+Optional Python start\-up script, looked up in
+\fI/etc/mysql/mariadb\-shell\fR,
+in
+\fIshare/mariadb\-shell\fR
+under the installation, and in the per\-user configuration directory, in that
+order\&.
+.RE
+.PP
+\fIshare/mariadb\-shell/\fR, \fIlib/mariadb\-shell/\fR
+.RS 4
+Installed data files (prompt themes, modules) and private libraries, including
+the bundled Python runtime and the built\-in plugins\&.
+.RE
+.SH "ENVIRONMENT"
+.PP
+The variables below are read by the shell\&. Each is also accepted under its
+pre\-rename
+\fBMYSQLSH_\fR
+prefix, which is consulted only when the
+\fBMARIADB_SHELL_\fR
+name is unset\&.
+.PP
+\fBMARIADB_SHELL_HOME\fR
+.RS 4
+Root of the shell installation, used to locate
+\fIshare/mariadb\-shell\fR
+and
+\fIlib/mariadb\-shell\fR\&.
+Derived from the executable path when unset\&.
+.RE
+.PP
+\fBMARIADB_SHELL_USER_CONFIG_HOME\fR
+.RS 4
+Override the per\-user configuration directory\&.
+.RE
+.PP
+\fBMARIADB_SHELL_PROMPT_THEME\fR
+.RS 4
+Path to a prompt theme file, overriding the built\-in themes\&.
+.RE
+.PP
+\fBMARIADB_SHELL_TERM_COLOR_MODE\fR
+.RS 4
+Force the terminal color mode\&. One of rgb, 256, 16 or nocolor\&.
+.RE
+.PP
+\fBMARIADB_SHELL_JS_MODULE_PATH\fR
+.RS 4
+Additional module search paths, separated by semicolons\&.
+.RE
+.PP
+\fBMARIADB_SHELL_CREDENTIAL_STORE_HELPER\fR, \fBMARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS\fR
+.RS 4
+Credential store helper and password saving policy; equivalent to
+\fB\-\-credential\-store\-helper\fR
+and
+\fB\-\-save\-passwords\fR\&.
+.RE
+.PP
+\fBPAGER\fR
+.RS 4
+Default pager used by
+\fB\-\-pager\fR\&.
+.RE
+.SH "EXAMPLES"
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+$ mariadb\-shell root@localhost/schema
+$ mariadb\-shell \-\-uri root@localhost \-\-py \-f sample\&.py sample param
+$ mariadb\-shell \-\- shell status
+.fi
+.if n \{\
+.RE
+.\}
+.SH "SEE ALSO"
+.PP
+\fBmariadb\fR(1),
+\fBmariadbd\fR(1)
+.PP
+The built\-in help system is the reference for the scripting APIs\&. Use
+\fB\eh\fR
+or
+\fB\e?\fR
+inside the shell, for example
+\fB\eh shell\&.connect\fR\&.
+.SH "COPYRIGHT"
+.PP
+Copyright \(co 2016, 2026, Oracle and/or its affiliates\&.
+.br
+Copyright \(co 2026, MariaDB Corporation\&.
+.PP
+This documentation is free software; you can redistribute it and/or modify it
+only under the terms of the GNU General Public License as published by the Free
+Software Foundation; version 2 of the License\&.
+.PP
+This documentation is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE\&. See the GNU General Public License for more
+details\&.
+.PP
+You should have received a copy of the GNU General Public License along with
+the program; if not, write to the Free Software Foundation, Inc\&., 51 Franklin
+Street, Fifth Floor, Boston, MA 02110\-1301 USA or see
+\%http://www\&.gnu\&.org/licenses/\&.

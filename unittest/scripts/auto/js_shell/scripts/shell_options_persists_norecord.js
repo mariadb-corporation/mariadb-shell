@@ -405,7 +405,7 @@ shell.options["ssh.bufferSize"]
 var user_path = testutil.getUserConfigPath()
 
 function callMysqlsh(command_line_args) {
-    testutil.callMysqlsh(command_line_args, "", ["MYSQLSH_TERM_COLOR_MODE=nocolor", "MYSQLSH_USER_CONFIG_HOME=" + user_path])
+    testutil.callMysqlsh(command_line_args, "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + user_path])
 }
 
 /**

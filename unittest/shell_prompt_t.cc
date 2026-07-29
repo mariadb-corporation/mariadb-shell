@@ -1033,48 +1033,48 @@ TEST_F(Shell_prompt_exe, environment) {
   std::string no_theme_prompt = expect_prompt;
 
   // by default this prompt is not necessarily the same as expect_prompt
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
   execute({_mysqlsh, "--interactive=full", "-e", "1", nullptr});
   const auto position = _output.rfind("\n");
   if (position != std::string::npos) {
     no_theme_prompt = _output.substr(position + 1);
   }
 
-  // TS_CP#1 set MYSQLSH_PROMPT_THEME environment variable to a file name , it
+  // TS_CP#1 set MARIADB_SHELL_PROMPT_THEME environment variable to a file name , it
   // configures prompt correctly accordingly to file
-  shcore::setenv("MYSQLSH_PROMPT_THEME", "altprompt.json");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "altprompt.json");
 #ifdef HAVE_JS
   execute({_mysqlsh, "--interactive=full", "--js", "-e", "1", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("ALT_PROMPT> 1\n1\nALT_PROMPT> ");
 #endif  // HAVE_JS
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
 
   // TS_CP#6 On startup, if an error is found in the prompt file, an error
   // message will be printed and a default prompt will be used.
 
-  // TS_EV#1 invalid values on MYSQLSH_PROMPT_THEME= will force the shell to use
+  // TS_EV#1 invalid values on MARIADB_SHELL_PROMPT_THEME= will force the shell to use
   // a default prompt with no colors and log an error to the log file and also
 
   // to the terminal, during startup.
-  shcore::setenv("MYSQLSH_PROMPT_THEME", "badprompt.json");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "badprompt.json");
   execute({_mysqlsh, "--interactive=full", "-e", "1", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Error loading prompt theme 'badprompt.json'");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expect_prompt);
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
 
   // no prompt theme
   execute({_mysqlsh, "--interactive=full", "-e", "1", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(no_theme_prompt);
 
-  // TS_EV#3 MYSQLSH_TERM_COLOR_MODE= with invalid value will force the shell to
+  // TS_EV#3 MARIADB_SHELL_TERM_COLOR_MODE= with invalid value will force the shell to
   // use a default prompt with no colors and log an error to the log file and
   // also to the terminal, during startup.
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "bla");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "bla");
   execute({_mysqlsh, "--interactive=full", "-e", "1", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "MYSQLSH_TERM_COLOR_MODE environment variable set to invalid value. ");
+      "MARIADB_SHELL_TERM_COLOR_MODE environment variable set to invalid value. ");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expect_prompt);
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 #ifdef HAVE_JS
@@ -1110,7 +1110,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   std::string segs;
   for (const char *s :
        {"host", "port", "mode", "Mode", "uri", "user", "schema", "ssl", "date",
-        "env:MYSQLSH_PROMPT_THEME", "sysvar:autocommit", "Sessvar:autocommit",
+        "env:MARIADB_SHELL_PROMPT_THEME", "sysvar:autocommit", "Sessvar:autocommit",
         "sessstatus:Mysqlx_ssl_active"}) {
     segs.append(shcore::str_format(
         "{\"text\": \"%s=%%%s%%\", \"separator\":\"  \"}, ", s, s));
@@ -1118,7 +1118,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   segs.append(shcore::str_format("{\"text\": \"END\"}"));
   shcore::create_file("allvars.json", "{\"segments\": [" + segs + "]}");
 
-  shcore::setenv("MYSQLSH_PROMPT_THEME", "allvars.json");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "allvars.json");
 
   using mysqlshdk::utils::fmttime;
   int rc;
@@ -1130,7 +1130,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   EXPECT_PROMPT(
       "host=  port=  mode=sql  Mode=SQL  uri=  user=  schema=  ssl=  date=" +
       fmttime("%F") +
-      "  env:MYSQLSH_PROMPT_THEME=allvars.json  "
+      "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  "
       "sysvar:autocommit=  Sessvar:autocommit=  "
       "sessstatus:Mysqlx_ssl_active= END> ");
 
@@ -1140,7 +1140,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   EXPECT_PROMPT(
       "host=  port=  mode=py  Mode=Py  uri=  user=  schema=  ssl=  date=" +
       fmttime("%F") +
-      "  env:MYSQLSH_PROMPT_THEME=allvars.json  "
+      "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  "
       "sysvar:autocommit=  Sessvar:autocommit=  "
       "sessstatus:Mysqlx_ssl_active= END> ");
 
@@ -1153,7 +1153,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
       "host=" + _host + "  port=" + _mysql_port + "  mode=sql" +
       "  Mode=SQL  uri=" + uri + ":" + _mysql_port +
       "  user=root  schema=  ssl=" + s_ssl_enabled + "  date=" + fmttime("%F") +
-      "  env:MYSQLSH_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
+      "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
       "Sessvar:autocommit=OFF  "
       "sessstatus:Mysqlx_ssl_active= END> ");
 
@@ -1167,7 +1167,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
       "host=" + _host + "  port=" + _mysql_port + "  mode=sql" +
       "  Mode=SQL  uri=" + uri + ":" + _mysql_port +
       "  user=root  schema=  ssl=  date=" + fmttime("%F") +
-      "  env:MYSQLSH_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
+      "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
       "Sessvar:autocommit=OFF  "
       "sessstatus:Mysqlx_ssl_active= END> ");
 #endif
@@ -1183,7 +1183,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
     EXPECT_PROMPT(
         "host=" + _host + "  port=" + "  mode=sql" + "  Mode=SQL  uri=" + uri +
         "  user=root  schema=  ssl=  date=" + fmttime("%F") +
-        "  env:MYSQLSH_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
+        "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  sysvar:autocommit=ON  "
         "Sessvar:autocommit=OFF  "
         "sessstatus:Mysqlx_ssl_active= END> ");
   }
@@ -1197,7 +1197,7 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
                 "  mode=sql  Mode=SQL  uri=" + uri + ":" + _port +
                 "  user=root  schema=mysql  ssl=SSL" +
                 "  date=" + fmttime("%F") +
-                "  env:MYSQLSH_PROMPT_THEME=allvars.json  "
+                "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  "
                 "sysvar:autocommit=ON  Sessvar:autocommit=OFF  "
                 "sessstatus:Mysqlx_ssl_active=ON END> ");
 
@@ -1211,20 +1211,20 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
                   "  mode=sql  Mode=SQL  uri=" + uri + ":" + _port +
                   "  user=root  schema=mysql  ssl=SSL" +
                   "  date=" + fmttime("%F") +
-                  "  env:MYSQLSH_PROMPT_THEME=allvars.json  "
+                  "  env:MARIADB_SHELL_PROMPT_THEME=allvars.json  "
                   "sysvar:autocommit=ON  Sessvar:autocommit=OFF  "
                   "sessstatus:Mysqlx_ssl_active=ON END> ");
   }
 #endif
   shcore::delete_file("allvars.json");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
 }
 
 // Test sample prompts (which in turn would test the whole thing)
 TEST_F(Shell_prompt_exe, sample_prompt_theme_nocolor) {
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
 
   int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
@@ -1232,16 +1232,16 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_nocolor) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MySQL [" + _host + ":" + _mysql_port + s_ssl_prompt +
+  EXPECT_PROMPT("MariaDB [" + _host + ":" + _mysql_port + s_ssl_prompt +
                 "/mysql] SQL> ");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 TEST_F(Shell_prompt_exe, sample_prompt_theme_16) {
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_16.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "16");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_16.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "16");
 
   int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
@@ -1249,16 +1249,16 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_16) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MySQL \x1B[1m[" + _host + s_ssl_prompt +
+  EXPECT_PROMPT("MariaDB \x1B[1m[" + _host + s_ssl_prompt +
                 "/mysql] \x1B[0mSQL> ");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 TEST_F(Shell_prompt_exe, sample_prompt_theme_256) {
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_256.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_256.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "256");
 
   int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
@@ -1267,19 +1267,19 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256) {
   std::cout << _output << "\n";
 
   EXPECT_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
+      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
       "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
       _host + ":" + _mysql_port + s_ssl_prompt +
       " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\x1B[48;5;0m> \x1B[0m");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 TEST_F(Shell_prompt_exe, sample_prompt_theme_dbl_256) {
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_dbl_256.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_dbl_256.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "256");
 
   int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
@@ -1288,20 +1288,20 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_dbl_256) {
   std::cout << _output << "\n";
 
   EXPECT_DBL_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
+      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
       "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
       _host + ":" + _mysql_port + s_ssl_prompt +
       " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\n\x1B[48;5;0m  > "
       "\x1B[0m");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_256pl.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "256");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_256pl.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "256");
 
   int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
                     "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
@@ -1310,7 +1310,7 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
   std::cout << _output << "\n";
 
   EXPECT_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m My\x1B[0m\x1B[48;5;254m\x1B[38;5;166mSQL "
+      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
       "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m\x1B[48;5;237m\x1B[38;5;"
       "15m " +
       _host + ":" + _mysql_port + s_ssl_prompt_x +
@@ -1319,15 +1319,15 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
       "\x1B[48;5;166m\x1B[38;5;242m\xEE\x82\xB0\x1B[0m\x1B[48;5;166m\x1B[38;5;"
       "15m SQL \x1B[0m\x1B[48;5;0m\x1B[38;5;166m\xEE\x82\xB0 \x1B[0m");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
 }
 
 #ifdef HAVE_JS
 TEST_F(Shell_prompt_exe, bug28314383_js) {
   static constexpr auto k_file = "close.js";
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
   shcore::create_file(k_file,
                       "session.close();\n"
                       "\\connect " +
@@ -1341,16 +1341,16 @@ TEST_F(Shell_prompt_exe, bug28314383_js) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _port +
                                 "+ ssl/mysql] JS> session.close();\n"
-                                "MySQL JS> \\connect " +
+                                "MariaDB JS> \\connect " +
                                 _uri + "?ssl-mode=REQUIRED\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _port +
                                 "+ ssl] JS> session.close();\n"
-                                "MySQL JS> Bye!");
+                                "MariaDB JS> Bye!");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
   shcore::delete_file(k_file);
 }
 #endif  // HAVE_JS
@@ -1358,8 +1358,8 @@ TEST_F(Shell_prompt_exe, bug28314383_js) {
 #ifdef HAVE_PYTHON
 TEST_F(Shell_prompt_exe, bug28314383_py) {
   static constexpr auto k_file = "close.py";
-  shcore::setenv("MYSQLSH_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", s_prompt_dir + "/prompt_nocolor.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
   shcore::create_file(k_file,
                       "session.close();\n"
                       "\\connect " +
@@ -1373,18 +1373,18 @@ TEST_F(Shell_prompt_exe, bug28314383_py) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _mysql_port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _mysql_port +
                                 s_ssl_prompt +
                                 "/mysql] Py> session.close();\n"
-                                "MySQL Py> \\connect " +
+                                "MariaDB Py> \\connect " +
                                 _mysql_uri + "?ssl-mode=REQUIRED\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MySQL [" + _host + ":" + _mysql_port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _mysql_port +
                                 s_ssl_prompt +
                                 "] Py> session.close();\n"
-                                "MySQL Py> Bye!");
+                                "MariaDB Py> Bye!");
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
   shcore::delete_file(k_file);
 }
 #endif  // HAVE_PYTHON
@@ -1393,8 +1393,8 @@ TEST_F(Shell_prompt_exe, bug30406283) {
   const std::string prompt_file = "invalid-utf8.json";
   const auto expect_prompt = "mysql-sql> ";
 
-  shcore::setenv("MYSQLSH_PROMPT_THEME", prompt_file);
-  shcore::setenv("MYSQLSH_TERM_COLOR_MODE", "nocolor");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", prompt_file);
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "nocolor");
   shcore::create_file(prompt_file, "{'prompt':{'text': '\xFF '}}");
 
   EXPECT_EQ(0, execute({_mysqlsh, "--interactive=full", "-e", "1", nullptr}));
@@ -1403,8 +1403,8 @@ TEST_F(Shell_prompt_exe, bug30406283) {
                                 "': File contains invalid UTF-8 sequence.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expect_prompt);
 
-  shcore::unsetenv("MYSQLSH_PROMPT_THEME");
-  shcore::unsetenv("MYSQLSH_TERM_COLOR_MODE");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
   shcore::delete_file(prompt_file);
 }
 

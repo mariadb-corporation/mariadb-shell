@@ -64,7 +64,7 @@ cmake -G Ninja \
   -DBUNDLED_PYTHON_DIR=/path/to/Python/install/usr/local \
   <path-to-mysql-shell-source>
 
-ninja all      # produces bin/mysqlsh
+ninja all      # produces bin/mariadb-shell
 ```
 
 > JavaScript stays off (dropped). Python is optional: pass `-DHAVE_PYTHON=1` +
@@ -93,7 +93,7 @@ nm libmariadb/libmariadb/libmariadbclient.a | grep -c gnutls
 nm libmariadb/libmariadb/libmariadbclient.a | grep -c -iE "SSL_connect|SSL_CTX_new"
 ```
 
-Then relink the shell: `ninja bin/mysqlsh`.
+Then relink the shell: `ninja bin/mariadb-shell`.
 
 > **Windows note:** the connector's TLS backend does not matter for reaching a
 > MariaDB **wolfSSL** server — *both* OpenSSL and Schannel connectors fail the
@@ -265,7 +265,7 @@ growth instead of scanning for `----args-separator----`).
 
 The test tree (`unittest/`) was not gated for the port the way `modules/` was, so
 enabling tests surfaced X-protocol, AdminAPI and server-header dependencies. The
-build now produces `run_unit_tests` (and `mysqlshrec`) cleanly. The suite has
+build now produces `run_unit_tests` (and `mariadb-shell-rec`) cleanly. The suite has
 **not** yet been run against a live MariaDB — only verified to build and load
 (`run_unit_tests --gtest_list_tests`).
 
@@ -614,7 +614,8 @@ CMake ≥ 3.25).
 
 Verified working: a full `arm64-linux-dynamic` (vcpkg) build with a from-source
 bundled Python (`-DWITH_PYTHON_SOURCE=3.14.6`) on Ubuntu (GCC 15, aarch64).
-`mysqlsh`, `mysqlshrec`, and `run_unit_tests` all link; `mysqlsh --version`
+`mariadb-shell`, `mariadb-shell-rec`, and `run_unit_tests` all link;
+`mariadb-shell --version`
 reports the MariaDB build and the embedded interpreter imports the bundled
 `certifi`/`pyyaml`/`antlr4`/`antlr4-python3-runtime`/`mcp` packages.
 
@@ -640,8 +641,8 @@ searched before the ldconfig cache, so it loads its own `libpython`. NOTE: the
 (delete the install *and* build trees; `make` alone won't relink cached binaries
 just because `LDFLAGS` changed). Verify with `ldd <prefix>/bin/python<ver> | grep
 python` (must point into `<prefix>/lib`) and `python -m pip --version`. The
-bundled shell inherits this correctly: `ldd bin/mysqlsh` resolves libpython to
-`lib/mysqlsh/libpython3.14.so.1.0`.
+bundled shell inherits this correctly: `ldd bin/mariadb-shell` resolves libpython to
+`lib/mariadb-shell/libpython3.14.so.1.0`.
 
 (The `ensurepip` self-heal in the top-level CMakeLists — `import pip`, else
 `python -m ensurepip --upgrade` before the bundled-package install — remains as
@@ -698,7 +699,7 @@ NOTE: the bundled Python is **cached** (`bootstrap_python.cmake` reuses an exist
 `Python-<ver>` install), so adding the dep alone won't rebuild it — delete the
 cached install (`$PYTHON_INSTALL_ROOT/Python-<ver>`, default alongside the shell
 source) so the next configure re-runs vcpkg + the Python bootstrap. Verify with
-`lib/mysqlsh/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
+`lib/mariadb-shell/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
 Cross-platform: the same manifest entry gives macOS/Windows builds `_sqlite3` too.
 
 ### 12.5 GCC 15 `-Werror=array-bounds` false positive (linenoise-ng)
@@ -789,7 +790,7 @@ self-hosted Ubuntu CI runner, at the `sys.executable`/`import ssl` check
 (`unittest/scripts/auto/py_shell/scripts/mysqlsh_python_norecord.py`) — a
 *subprocess* of the bundled interpreter, so only that module's own search path
 applies. Reproduce/confirm the mechanism with
-`LD_LIBRARY_PATH=/lib/x86_64-linux-gnu lib/mysqlsh/bin/python<ver> -c "import ssl"`
+`LD_LIBRARY_PATH=/lib/x86_64-linux-gnu lib/mariadb-shell/bin/python<ver> -c "import ssl"`
 (fails) versus the same command without it (silent).
 
 macOS already handled this (strip the build-tree `LC_RPATH`, add
@@ -812,9 +813,9 @@ executables with `-Wl,--disable-new-dtags`. Bundled copies now beat a system
 library of the same SONAME regardless of the environment.
 
 NOTE: the copy is a `make` target keyed on timestamps, so an incremental build will
-not re-patch existing copies — delete `<build>/lib/mysqlsh/lib/python<ver>` (or
+not re-patch existing copies — delete `<build>/lib/mariadb-shell/lib/python<ver>` (or
 rebuild from a clean tree, as CI does) to force the re-copy. Verify with
-`readelf -d lib/mysqlsh/lib/python<ver>/lib-dynload/_ssl*.so | grep -i rpath`
+`readelf -d lib/mariadb-shell/lib/python<ver>/lib-dynload/_ssl*.so | grep -i rpath`
 (expect `RPATH` — not `RUNPATH` — with `$ORIGIN/../../..`) and the
 `LD_LIBRARY_PATH=/lib/x86_64-linux-gnu` import above, which must now succeed.
 
@@ -867,3 +868,134 @@ Checker, both excluded from MariaDB builds (`HAVE_DUMP_AND_LOAD`,
 but the defect is in shared library code and would resurface the moment either
 feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
 Upgrade-Checker tests were updated to match the generated SQL.
+
+---
+
+## 14. Product rename: `mysqlsh` → `mariadb-shell`
+
+The shell is renamed from `mysqlsh` to **`mariadb-shell`**. The rename is
+**unconditional** — deliberately *not* gated on `MARIADB_BUILD` — so a
+MySQL-linked build produces the same names. There is therefore no `#ifdef` to
+maintain, and no divergence between the two builds' on-disk layouts.
+
+### 14.1 Single source of truth
+
+Every user-visible name derived from the product name lives in
+[mysqlshdk/libs/utils/shell_naming.h](mysqlshdk/libs/utils/shell_naming.h):
+
+| Constant | Value |
+|---|---|
+| `k_shell_binary_name` | `mariadb-shell` |
+| `k_shell_user_config_dir_unix` | `.mariadb-shell` |
+| `k_shell_config_dir_win_vendor` / `k_shell_config_dir_win` | `MariaDB` / `mariadb-shell` |
+| `k_shell_global_config_dir_unix` | `/etc/mysql/mariadb-shell` |
+| `k_shell_log_file_name` | `mariadb-shell.log` |
+| `k_shell_sandbox_dir_name` | `sandboxes` (leaf of the default `sandboxDir`, see §14.4) |
+| `k_shell_startup_script_name` | `mariadb-shellrc` |
+| `k_shell_option_group` | `mariadb-shell` (my.cnf group, syslog ident, `program_name` attribute) |
+| `k_shell_install_dir_name` | `mariadb-shell` (leaf of `share/`, `lib/`, `libexec/`, `include/`) |
+| `k_shell_env_prefix` / `k_shell_legacy_env_prefix` | `MARIADB_SHELL_` / `MYSQLSH_` |
+
+The CMake half of the same names is `INSTALL_LIBDIR` / `INSTALL_SHAREDIR` /
+`INSTALL_LIBEXECDIR` / `INSTALL_INCLUDEDIR` in the top-level
+[CMakeLists.txt](CMakeLists.txt) plus [cmake/packaging.cmake](cmake/packaging.cmake).
+**These must be changed together with the header** — the C++ resolves installed
+data at runtime by joining those same leaf names onto `MARIADB_SHELL_HOME`.
+
+### 14.2 Environment variables — legacy fallback
+
+`MYSQLSH_*` became `MARIADB_SHELL_*`, but the old names are still honoured:
+`shcore::getenv_shell()` ([utils_general.cc](mysqlshdk/libs/utils/utils_general.cc))
+looks up the `MARIADB_SHELL_`-prefixed name and, only if unset, retries under the
+`MYSQLSH_` prefix. Options that declare an `environment_variable` route through
+the same helper in
+[libs/utils/options.cc](mysqlshdk/libs/utils/options.cc) when the declared name
+carries the new prefix.
+
+The my.cnf reader likewise reads `[mariadb-shell]`, `[mysqlsh]` **and** `[client]`
+so existing option files keep working.
+
+### 14.3 Compatibility aliases
+
+`bin/mysqlsh` and `bin/msh` are installed alongside the real binary — symlinks on
+Unix, `.cmd` shims on Windows (a symlink needs privileges the installer may not
+have). See `SHELL_BINARY_ALIASES` in [src/CMakeLists.txt](src/CMakeLists.txt).
+The install uses `install(CODE ...)` rather than `install(FILES ...)`: CPack's
+DESTDIR staging dereferences symlinks, which would ship two extra full copies of
+the ~12 MB binary. `man/mysqlsh.1` and `man/msh.1` are one-line `.so` stubs
+pointing at `mariadb-shell.1`.
+
+The `.deb`/`.rpm` declare `Conflicts: mysql-shell` (both packages own
+`/usr/bin/mysqlsh` and `man1/mysqlsh.1`) but deliberately **not**
+`Provides: mysql-shell` — this build drops AdminAPI, dump/load, X DevAPI and the
+Upgrade Checker, so it must not satisfy dependencies on the upstream package.
+
+### 14.4 Sandbox directory
+
+Deployed sandboxes moved out of `~/mysql-sandboxes/` and under the per-user shell
+directory, so everything the shell writes to `$HOME` lives in one place:
+
+| Platform | Default `sandboxDir` |
+|---|---|
+| Unix / macOS | `~/.mariadb-shell/sandboxes` |
+| Windows | `%userprofile%\MariaDB\mariadb-shell\sandboxes` |
+
+The value is the default of the `sandboxDir` shell option, built from
+`k_shell_user_config_dir_unix` (or the two Windows constants) plus
+`k_shell_sandbox_dir_name` in
+[shell_options.cc](mysqlshdk/shellcore/shell_options.cc). The sandbox plugin
+normally just reads `shell.options["sandboxDir"]`, but
+`default_sandbox_base_dir()` in
+[sandboxlib.py](python/plugins/sandbox/sandboxlib.py) duplicates the same default
+as a fallback for when the option is unavailable (unit tests, plugin loaded
+outside the shell) — **the two must be changed together.**
+
+This is not a compatibility-preserving change: sandboxes deployed by an older
+build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed
+or found by `mariadbSandbox.*` unless the old path is passed explicitly
+(`{sandboxDir: "~/mysql-sandboxes"}`), which still works. Simply moving the
+directory does **not** work: each sandbox's `my.cnf`, start script and stop
+script carry absolute paths written at deploy time, and `start_sandbox()`
+regenerates the scripts only when `mariadbdPath` is given or the script is
+missing — never the `my.cnf`. Redeploy, or keep using the old path.
+
+The AdminAPI `dba.*Sandbox*` help text still documents `~/mysql-sandboxes`
+([mod_dba.cc](modules/adminapi/mod_dba.cc)), as does
+`DEFAULT_SANDBOX_DIR` in
+[mysql_gadgets/command/sandbox.py](python/packages/mysql_gadgets/command/sandbox.py);
+both are excluded from MariaDB builds by `HAVE_ADMIN_API` and were left untouched
+to keep the upstream diff small.
+
+### 14.5 Deliberately not renamed
+
+- The scripting API module **`mysqlsh`** (`from mysqlsh import ...`) and its
+  package directory `python/packages/mysqlsh` — renaming it would break every
+  existing plugin and user script.
+- The C++ `mysqlsh` namespace and the `src/mysqlsh/` source directory.
+- Test-harness-only variables: `MYSQLSH_TEST_HOME`, `MYSQLSH_S3_*`,
+  `MYSQLSH_AWS_*`.
+
+Note that the Windows installer GUIDs *were* changed
+([cmake/packaging.cmake](cmake/packaging.cmake),
+[cmake/WIX.template.in](cmake/WIX.template.in)): MariaDB Shell is a separate
+product, so `CPACK_WIX_UPGRADE_GUID` and the `UpdatePath` component GUID both
+differ from MySQL Shell's. The MSI therefore never sees an installed MySQL Shell
+as an upgradeable predecessor, the two can coexist, and uninstalling one does not
+strip the other's `PATH` entry or event-log registration.
+
+### 14.6 Test-expectation fallout
+
+Two classes of test breakage are worth knowing about when touching these names:
+
+1. **Word wrapping.** Help text is wrapped to a fixed width, so a longer name
+   shifts wrap points in unrelated lines. `~/.mariadb-shell/init.d` and
+   `mariadb-shell.log` both re-flowed paragraphs in
+   `unittest/scripts/auto/*/validation/shell_help_norecord.*`.
+2. **The prompt.** The 256-colour themes split the product name across two
+   coloured segments (`" My"` + `"SQL "` → `" Maria"` + `"DB "`), so
+   `unittest/shell_prompt_t.cc` asserts the exact escape-sequence string.
+
+Also note `mysqlshrec` → **`mariadb-shell-rec`**: the name appears both in
+`prepare_mysqlsh_cmdline` (`unittest/test_utils/mod_testutils.cc`) and as a bare
+string in several `unittest/scripts/` test scripts — a mismatch makes the child
+shell launch hang rather than fail loudly.
