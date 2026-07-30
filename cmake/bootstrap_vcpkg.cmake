@@ -86,12 +86,66 @@ IF(CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   RETURN()
 ENDIF()
 
-# Where to fetch vcpkg from, and which ref. Dependency versions are pinned by
-# the repo's vcpkg.json (builtin-baseline + overrides), so the tip of the
-# default branch is fine here.
+# Where to fetch vcpkg from, and which ref.
+#
+# The ref is not spelled out here. It is read from the "builtin-baseline" field
+# of the repo's vcpkg.json, so the commit lives in exactly one place: bumping
+# the baseline moves the checkout with it, and the two cannot drift apart.
+#
+# Checking out that same commit matters. Tracking "master" is NOT equivalent:
+# the baseline pins the *port versions* (which release of openssl, curl, ...
+# gets built), but the port *infrastructure* -- the scripts/cmake/*.cmake
+# helpers every portfile runs through -- always comes from whatever the tip of
+# the default branch happens to be at clone time. Those two drift apart, and an
+# upstream change to the infrastructure lands in a build that never asked for
+# it. That is not hypothetical: in July 2026 upstream moved SPDX manifest
+# generation into scripts/cmake/z_vcpkg_spdx.cmake using
+# string(JSON ... STRING_ENCODE), which requires CMake >= 4.3, and every port
+# build broke on runners carrying an older CMake.
 SET(VCPKG_GIT_REPOSITORY "https://github.com/microsoft/vcpkg.git"
   CACHE STRING "Git URL of vcpkg to fetch when WITH_VCPKG_TRIPLET is set")
-SET(VCPKG_GIT_TAG "master"
+
+# Skipped when the caller already pinned a ref (-DVCPKG_GIT_TAG=..., or a cache
+# entry from an earlier configure): the SET(... CACHE ...) below would not
+# overwrite it anyway, so there is nothing to read.
+SET(_vcpkg_ref_origin "")
+IF(NOT VCPKG_GIT_TAG)
+  # Same manifest root the vcpkg install step passes via --x-manifest-root.
+  SET(_vcpkg_manifest "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json")
+  IF(NOT EXISTS "${_vcpkg_manifest}")
+    MESSAGE(FATAL_ERROR
+      "WITH_VCPKG_TRIPLET is set but ${_vcpkg_manifest} does not exist. "
+      "Pass -DVCPKG_GIT_TAG=<commit> to pin the vcpkg checkout explicitly.")
+  ENDIF()
+  FILE(READ "${_vcpkg_manifest}" _vcpkg_manifest_text)
+
+  SET(_vcpkg_baseline "")
+  IF(NOT CMAKE_VERSION VERSION_LESS "3.19")
+    STRING(JSON _vcpkg_baseline ERROR_VARIABLE _vcpkg_json_error
+           GET "${_vcpkg_manifest_text}" "builtin-baseline")
+    IF(_vcpkg_json_error)
+      SET(_vcpkg_baseline "")
+    ENDIF()
+  ENDIF()
+  IF(NOT _vcpkg_baseline)
+    # string(JSON) landed in CMake 3.19, and this file is included before any
+    # cmake_minimum_required() runs -- so the interpreter here can predate it
+    # (a self-hosted runner with a distro CMake, say). Scan for the field.
+    STRING(REGEX MATCH
+      "\"builtin-baseline\"[ \t\r\n]*:[ \t\r\n]*\"([0-9a-fA-F]+)\""
+      _vcpkg_baseline_match "${_vcpkg_manifest_text}")
+    SET(_vcpkg_baseline "${CMAKE_MATCH_1}")
+  ENDIF()
+
+  IF(NOT _vcpkg_baseline MATCHES "^[0-9a-fA-F]+$")
+    MESSAGE(FATAL_ERROR
+      "Could not read a \"builtin-baseline\" commit from ${_vcpkg_manifest}. "
+      "Add one, or pass -DVCPKG_GIT_TAG=<commit> to pin the checkout directly.")
+  ENDIF()
+  SET(_vcpkg_ref_origin "  (vcpkg.json builtin-baseline)")
+ENDIF()
+
+SET(VCPKG_GIT_TAG "${_vcpkg_baseline}"
   CACHE STRING "Git ref (branch, tag, or commit) of vcpkg to fetch")
 
 # Where vcpkg is cloned. Honour an existing VCPKG_ROOT (cache or environment)
@@ -119,7 +173,7 @@ ENDIF()
 MESSAGE(STATUS "==========================================================")
 MESSAGE(STATUS "WITH_VCPKG_TRIPLET='${WITH_VCPKG_TRIPLET}' -- bootstrapping vcpkg.")
 MESSAGE(STATUS "  repo    : ${VCPKG_GIT_REPOSITORY}")
-MESSAGE(STATUS "  ref     : ${VCPKG_GIT_TAG}")
+MESSAGE(STATUS "  ref     : ${VCPKG_GIT_TAG}${_vcpkg_ref_origin}")
 MESSAGE(STATUS "  location: ${_vcpkg_root}")
 MESSAGE(STATUS "  (override with -DVCPKG_ROOT / -DVCPKG_GIT_TAG; this runs once)")
 MESSAGE(STATUS "==========================================================")

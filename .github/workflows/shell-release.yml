@@ -2,7 +2,7 @@ name: MariaDB-Shell-Release
 
 on:
   push:
-    branches: [ "release/candidate" ]
+    branches: [ "release/candidate", "workflow-test" ]
   repository_dispatch:
       types: [ "updated-shell-plugins-rc" ]
 jobs:
@@ -156,7 +156,32 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential ninja-build git curl bison zip unzip tar pkg-config libncurses-dev patchelf
+          sudo apt-get install -y build-essential ninja-build git curl bison zip unzip tar pkg-config libncurses-dev patchelf
+
+      # CMake deliberately does NOT come from apt. Ubuntu 24.04 ships 3.28.3,
+      # and vcpkg's port scripts have already outrun that: z_vcpkg_spdx.cmake
+      # calls string(JSON ... STRING_ENCODE), which needs CMake >= 4.3. The x64
+      # runner image happens to preinstall a newer CMake ahead of apt's in PATH
+      # and so escaped it; the arm64 image does not, so every port build there
+      # failed. Install the same pinned upstream CMake vcpkg itself vendors, on
+      # both arches, so the two runners agree and the version is not left to
+      # whatever the hosted image happens to carry.
+      - name: Install CMake (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          CMAKE_VERSION=4.4.1
+          case "$(uname -m)" in
+            x86_64)  CMAKE_ARCH=linux-x86_64  ;;
+            aarch64) CMAKE_ARCH=linux-aarch64 ;;
+            *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          CMAKE_DIR="cmake-${CMAKE_VERSION}-${CMAKE_ARCH}"
+          curl -fsSL --retry 3 -o /tmp/cmake.tar.gz \
+            "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${CMAKE_DIR}.tar.gz"
+          sudo tar -xzf /tmp/cmake.tar.gz -C /opt
+          echo "/opt/${CMAKE_DIR}/bin" >> "$GITHUB_PATH"
+          "/opt/${CMAKE_DIR}/bin/cmake" --version
 
       - name: Install macOS Build Dependencies
         if: runner.os == 'macOS'
