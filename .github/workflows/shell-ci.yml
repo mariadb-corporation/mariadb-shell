@@ -4,16 +4,46 @@ on:
   pull_request:
       branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      test:
+        description: 'Run the unit tests'
+        type: boolean
+        required: false
+        default: true
+      publish:
+        description: 'Package the shell and publish it to ~/.cache/ci'
+        type: boolean
+        required: false
+        default: false
+  workflow_call:
+    inputs:
+      test:
+        description: 'Run the unit tests'
+        type: boolean
+        required: false
+        default: true
+      publish:
+        description: 'Package the shell and publish it to ~/.cache/ci'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build:
     name: Shell-CI-Verification
 
     runs-on: self-linux-x64
-    
+
     env:
       MARIADB_SHELL_BUILD_DIR: bld
       MYSQL_PORT: 3312
+      # A pull_request run supplies no inputs, so `inputs.*` is empty there:
+      # fall back to the pull request policy of always testing, never
+      # publishing. Manual and called runs go by whatever they asked for.
+      RUN_TESTS: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
+        && (github.event_name == 'pull_request' || inputs.test) }}
+      RUN_PUBLISH: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
+        && github.event_name != 'pull_request' && inputs.publish }}
 
     steps:
       # Echo a message if bypassing
@@ -25,14 +55,14 @@ jobs:
       # 0. CHECKOUT MAIN PROJECT (MUST BE FIRST)
       # ========================================
       - name: Checkout Main Project
-        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
+        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
         uses: actions/checkout@v4
 
       # ============
       # 1. CONFIGURE
       # ============
       - name: Configure MariaDB Shell
-        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
+        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
         run: |
           # Resolve the wildcard path to an absolute path
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
@@ -49,7 +79,7 @@ jobs:
       # 1. BUILD
       # ============
       - name: Build MariaDB Shell
-        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
+        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cmake --build . --parallel
@@ -59,7 +89,7 @@ jobs:
       # 2. SETUP TEST ENVIRONMENT
       # ============
       - name: Setup Test Environment
-        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
+        if: env.RUN_TESTS == 'true'
         id: setup
         run: |
           # The credential-store tests need a Secret Service provider reachable on
@@ -198,18 +228,45 @@ jobs:
       # 3. EXECUTE TESTS
       # ============
       - name: Execute Unit Tests
-        if: "!contains(github.event.pull_request.title, '[bypass-ci]')"
+        if: env.RUN_TESTS == 'true'
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd bin
           ./run_unit_tests --gtest_filter="-*Slow_*"
 
       # ============
-      # 4. CLEANUP
+      # 4. PUBLISH
+      # ============
+      - name: Publish MariaDB Shell
+        # After the tests so a publishing run that also tests only ships a
+        # package the tests signed off on.
+        if: env.RUN_PUBLISH == 'true'
+        run: |
+          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+
+          # The tarball name carries the version, so a version bump would leave
+          # the previous one behind and make the glob below match two files.
+          rm -f mariadb-shell*.tar.gz
+
+          # -G, not -T: cpack silently ignores -T, which would leave the
+          # generator up to CPackConfig.cmake -- and that is only TGZ for a
+          # portable build (cmake/packaging.cmake). A system-dependency Linux
+          # configure would emit a .deb/.rpm instead and no tarball at all.
+          cpack -G TGZ -C RelWithDebInfo
+
+          # Publish the tarball itself: consumers unpack it wherever they need
+          # it. The name is versioned, so clear any previous one rather than
+          # leaving two tarballs for a consumer's glob to trip over.
+          mkdir -p ~/.cache/ci
+          rm -f ~/.cache/ci/mariadb-shell*.tar.gz
+          cp mariadb-shell*.tar.gz ~/.cache/ci/
+
+      # ============
+      # 5. CLEANUP
       # ============
       - name: Teardown Test Environment
         # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
-        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.deployed == 'true'
+        if: always() && steps.setup.outputs.deployed == 'true'
         run: |
           echo "Tearing down server..."
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
@@ -220,7 +277,7 @@ jobs:
       - name: Teardown Secret Service
         # Separate from the step above: the daemons start before the sandbox
         # deploy, so they must be stopped even if that deploy failed.
-        if: always() && !contains(github.event.pull_request.title, '[bypass-ci]') && steps.setup.outputs.dbus_pid != ''
+        if: always() && steps.setup.outputs.dbus_pid != ''
         run: |
           echo "Stopping keyring and D-Bus session..."
           for pid in "${{ steps.setup.outputs.keyring_pid }}" "${{ steps.setup.outputs.dbus_pid }}"; do

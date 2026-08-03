@@ -1,0 +1,27 @@
+name: MariaDB-Shell-CI-Publish
+
+on:
+  # Every merge into main. The pull request that produced the merge already ran
+  # MariaDB-Shell-CI with test=true, so this run only repackages.
+  push:
+    branches: [ "main" ]
+
+  # Manual re-publish, for when main is fine but the cached shell is not.
+  workflow_dispatch:
+
+# The publish step rewrites the shared ~/.cache/ci/mariadb-shell* directory on
+# the runner. Two runs doing that at once would interleave; serialize them and
+# let the newest queued commit win.
+concurrency:
+  group: shell-ci-publish
+  cancel-in-progress: false
+
+runs-on: self-linux-x64
+
+jobs:
+  publish:
+    name: Publish MariaDB Shell
+    uses: ./.github/workflows/shell-ci.yml
+    with:
+      test: false
+      publish: true
