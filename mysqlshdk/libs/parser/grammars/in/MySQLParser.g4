@@ -1,7 +1,8 @@
 parser grammar MySQLParser;
 
 /*
- * Copyright (c) 2012, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2012, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +55,7 @@ options {
 //----------------------------------------------------------------------------------------------------------------------
 
 @header {/*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -4503,8 +4504,8 @@ libraryRef:
 
 // Identifiers excluding keywords (except if they are quoted). IDENT_sys in sql_yacc.yy.
 pureIdentifier:
-    (IDENTIFIER | BACK_TICK_QUOTED_ID)
-    | {this.isSqlModeActive(SqlMode.AnsiQuotes)}? DOUBLE_QUOTED_TEXT
+    IDENTIFIER
+    | BACK_TICK_QUOTED_ID
 ;
 
 // Identifiers including a certain set of keywords, which are allowed also if not quoted.
@@ -4605,7 +4606,6 @@ stringList:
 // TEXT_STRING_validated in sql_yacc.yy.
 textStringLiteral:
     value = SINGLE_QUOTED_TEXT
-    | {!this.isSqlModeActive(SqlMode.AnsiQuotes)}? value = DOUBLE_QUOTED_TEXT
 ;
 
 textString:

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +33,6 @@
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "mysqlshdk/libs/utils/utils_string.h"
@@ -124,7 +124,8 @@ std::string Version::get_short() const {
   std::string ret_val = std::to_string(_major);
 
   if (_minor) {
-    ret_val.append(".").append(std::to_string(*_minor));
+    ret_val.append(".");
+    ret_val.append(std::to_string(*_minor));
   }
 
   return ret_val;
@@ -193,18 +194,160 @@ Version::operator bool() const {
   return !(get_major() == 0 && get_minor() == 0 && get_patch() == 0);
 }
 
-int major_version_difference(const Version &source, const Version &target) {
-  const auto major_version = [](const Version &v) {
-    // we pretend that version 5.7 is 7 to simplify the code
-    const auto m = v.get_major();
-    return 5 == m && 7 == v.get_minor() ? 7 : m;
-  };
-
-  return major_version(target) - major_version(source);
-}
+namespace version {
 
 namespace {
-namespace lts {
+
+const Version k_min_supported_mysql_server_version(8, 0, 0);
+const Version k_first_unsupported_legacy_mysql_server_version(10, 0, 0);
+const Version k_min_calendar_mysql_server_version(26, 7, 0);
+constexpr int k_july_2026_lts_anchor_patch_8_4 = 11;
+constexpr int k_july_2026_lts_anchor_patch_9_7 = 2;
+
+Version max_supported_mysql_server_version() {
+  return Version(k_shell_version.get_major(), k_shell_version.get_minor(),
+                 9999);
+}
+
+}  // namespace
+
+bool is_supported_server(const Version &v) {
+  if (v < k_min_supported_mysql_server_version) {
+    return false;
+  }
+
+  if (v < k_first_unsupported_legacy_mysql_server_version) {
+    return true;
+  }
+
+  return calendar::is_calendar_version(v) &&
+         v <= max_supported_mysql_server_version();
+}
+
+std::string supported_servers() {
+  return shcore::str_format(
+      "%s <= version < %s or %s <= version <= %s.*",
+      k_min_supported_mysql_server_version.get_short().c_str(),
+      k_first_unsupported_legacy_mysql_server_version.get_short().c_str(),
+      k_min_calendar_mysql_server_version.get_short().c_str(),
+      k_shell_version.get_short().c_str());
+}
+
+namespace calendar {
+
+constexpr int k_anchor_year = 26;
+constexpr int k_anchor_month = 7;
+constexpr int k_lts_start_year = 28;
+constexpr int k_lts_month = 4;
+constexpr int k_cycle_releases = 8;
+constexpr int k_legacy_anchor_major = 10;
+constexpr int k_legacy_lts_minor = 7;
+
+namespace {
+
+inline bool is_release_month(int month) {
+  return month == 1 || month == 4 || month == 7 || month == 10;
+}
+
+inline bool is_valid_month(int month) { return month >= 1 && month <= 12; }
+
+inline int release_index(int month) {
+  assert(is_valid_month(month));
+
+  return (month - 1) / 3;
+}
+
+inline bool is_lts_year(int year) {
+  return year >= k_lts_start_year && year % 2 == 0;
+}
+
+inline int release_offset(const Version &v) {
+  assert(is_calendar_version(v));
+
+  auto index = release_index(v.get_minor());
+
+  if (is_lts_year(v.get_major()) && v.get_minor() > k_lts_month &&
+      index == release_index(k_lts_month)) {
+    ++index;
+  }
+
+  return (v.get_major() - k_anchor_year) * 4 +
+         (index - release_index(k_anchor_month));
+}
+
+inline int cycle(const Version &v) {
+  return release_offset(v) / k_cycle_releases;
+}
+
+inline int lts_offset(int cycle) {
+  return (k_lts_start_year + cycle * 2 - k_anchor_year) * 4 +
+         (release_index(k_lts_month) - release_index(k_anchor_month));
+}
+
+inline Version lts_for_cycle(int cycle, int patch = 0) {
+  return Version(k_lts_start_year + cycle * 2, k_lts_month, patch);
+}
+
+[[maybe_unused]] inline bool is_legacy_lts_slot(const Version &v) {
+  return v.get_major() >= k_legacy_anchor_major &&
+         v.get_minor() == k_legacy_lts_minor;
+}
+
+}  // namespace
+
+bool is_calendar_version(const Version &v) {
+  return is_valid_month(v.get_minor()) &&
+         v >= Version(k_anchor_year, k_anchor_month, 0);
+}
+
+bool is_release_cadence_version(const Version &v) {
+  return is_calendar_version(v) && is_release_month(v.get_minor());
+}
+
+Version to_legacy(const Version &v) {
+  assert(is_calendar_version(v));
+
+  if (!is_calendar_version(v)) {
+    return v;
+  }
+
+  // 26.7.0 replaced the old 10.0.0 slot in the release sequence.
+  // Non-cadence calendar months are grouped into the matching quarterly slot.
+  const auto offset = release_offset(v);
+
+  return Version(k_legacy_anchor_major + offset / k_cycle_releases,
+                 offset % k_cycle_releases, v.get_patch());
+}
+
+Version lts_from_legacy(const Version &v) {
+  assert(is_legacy_lts_slot(v));
+
+  return lts_for_cycle(v.get_major() - k_legacy_anchor_major, v.get_patch());
+}
+
+Version first_lts(const Version &v) { return lts_for_cycle(cycle(v)); }
+
+Version next_lts(const Version &v) {
+  if (!is_lts(v)) {
+    return first_lts(v);
+  }
+
+  const auto current_lts = first_lts(v);
+  return Version(current_lts.get_major() + 2, k_lts_month, 0);
+}
+
+Version first_innovation(const Version &v) {
+  return Version(k_anchor_year + cycle(v) * 2, k_anchor_month, 0);
+}
+
+bool is_lts(const Version &v) {
+  return v.get_major() >= k_lts_start_year && v.get_major() % 2 == 0 &&
+         v.get_minor() == k_lts_month;
+}
+
+}  // namespace calendar
+
+namespace legacy {
 
 using off_cycle_releases_t = std::set<int>;
 
@@ -251,6 +394,30 @@ bool off_cycle_releases(int version_id, const off_cycle_releases_t **releases) {
 
 }  // namespace detail
 
+bool is_lts(const Version &v) {
+  if (8 == v.get_major()) {
+    return k_minor_version_8_0 == v.get_minor() ||
+           k_minor_version_8_4 == v.get_minor();
+  }
+
+  return k_minor_version == v.get_minor();
+}
+
+inline bool uses_july_2026_lts_anchor_cadence(const Version &v) {
+  return (v.get_major() == 8 && v.get_minor() == k_minor_version_8_4 &&
+          v.get_patch() >= k_july_2026_lts_anchor_patch_8_4) ||
+         (v.get_major() == 9 && v.get_minor() == k_minor_version &&
+          v.get_patch() >= k_july_2026_lts_anchor_patch_9_7);
+}
+
+inline Version corresponding_8_4_lts_version(const Version &version) {
+  assert(version.get_major() == 9 && version.get_minor() == k_minor_version);
+
+  return Version(8, k_minor_version_8_4,
+                 k_july_2026_lts_anchor_patch_8_4 + version.get_patch() -
+                     k_july_2026_lts_anchor_patch_9_7);
+}
+
 /**
  * Patch versions of the off-cycle releases of the given LTS release series.
  *
@@ -258,7 +425,7 @@ bool off_cycle_releases(int version_id, const off_cycle_releases_t **releases) {
  */
 inline bool off_cycle_releases(const Version &v,
                                const off_cycle_releases_t **releases) {
-  assert(is_lts_release(v));
+  assert(is_lts(v));
 
   int major = v.get_major();
 
@@ -274,12 +441,12 @@ inline bool off_cycle_releases(const Version &v,
  * one of the LTS versions listed above.
  */
 inline bool is_off_cycle_release(const Version &v) {
-  if (!is_lts_release(v)) {
+  if (!is_lts(v)) {
     return v.get_patch();
   }
 
-  if (const lts::off_cycle_releases_t * patch_versions;
-      lts::off_cycle_releases(v, &patch_versions)) {
+  if (const off_cycle_releases_t * patch_versions;
+      off_cycle_releases(v, &patch_versions)) {
     return std::binary_search(patch_versions->begin(), patch_versions->end(),
                               v.get_patch());
   }
@@ -312,10 +479,10 @@ inline int count_planned_releases(const Version &v) {
  * the given major.minor.patch version.
  */
 inline int count_off_cycle_releases(const Version &v) {
-  assert(is_lts_release(v));
+  assert(is_lts(v));
 
-  if (const lts::off_cycle_releases_t * patch_versions;
-      lts::off_cycle_releases(v, &patch_versions)) {
+  if (const off_cycle_releases_t * patch_versions;
+      off_cycle_releases(v, &patch_versions)) {
     int count = patch_versions->size();
 
     // starting with the latest off-cycle release, count the number of these
@@ -336,34 +503,52 @@ inline int count_off_cycle_releases(const Version &v) {
   }
 }
 
-}  // namespace lts
-}  // namespace
+int major_difference(const Version &source, const Version &target) {
+  const auto major_version = [](const Version &v) {
+    // we pretend that version 5.7 is 7 to simplify the code
+    const auto m = v.get_major();
 
-std::vector<Version> corresponding_versions(Version version) {
+    return 5 == m && 7 == v.get_minor() ? 7 : m;
+  };
+
+  return major_version(target) - major_version(source);
+}
+
+std::vector<Version> corresponding_versions(const Version &version) {
   // first innovation release
   assert(version >= Version(8, 1, 0));
   // LTS releases are 8.4.0, then x.7.0
-  assert(
-      (version.get_major() == 8 &&
-       version.get_minor() <= lts::k_minor_version_8_4) ||
-      (version.get_major() > 8 && version.get_minor() <= lts::k_minor_version));
+  assert((version.get_major() == 8 &&
+          version.get_minor() <= k_minor_version_8_4) ||
+         (version.get_major() > 8 && version.get_minor() <= k_minor_version));
+
+  if (uses_july_2026_lts_anchor_cadence(version)) {
+    std::vector<Version> result;
+
+    if (version.get_major() > 8) {
+      result.emplace_back(corresponding_8_4_lts_version(version));
+    }
+
+    result.emplace_back(version);
+    return result;
+  }
 
   // this holds number of planned releases released so far
-  int planned_releases = lts::count_planned_releases(version);
+  int planned_releases = count_planned_releases(version);
 
-  if (is_lts_release(version)) {
+  if (is_lts(version)) {
     // this is an LTS release, count number of releases in the LTS series
     planned_releases += version.get_patch();
     // but don't count off-cycle releases
-    planned_releases -= lts::count_off_cycle_releases(version);
+    planned_releases -= count_off_cycle_releases(version);
   }
 
   static const auto lts_release_patch = [](int major, int releases,
                                            bool allow_off_cycle) {
     // we have the number of planned releases, but we need to adjust this
     // number by the number of off-cycle releases that happened in between
-    if (const lts::off_cycle_releases_t * patch_versions;
-        lts::detail::off_cycle_releases(major, &patch_versions)) {
+    if (const off_cycle_releases_t * patch_versions;
+        detail::off_cycle_releases(major, &patch_versions)) {
       // add all off-cycle releases
       releases += patch_versions->size();
 
@@ -394,34 +579,33 @@ std::vector<Version> corresponding_versions(Version version) {
     return releases;
   };
 
-  const auto is_off_cycle = lts::is_off_cycle_release(version);
+  const auto is_off_cycle = is_off_cycle_release(version);
 
   // start with the requested version
   std::vector<Version> result;
-  result.emplace_back(std::move(version));
+  result.emplace_back(version);
 
   while (true) {
     // get the major version of the previous LTS release
     const auto lts_release_major = result.back().get_major() - 1;
 
-    if (lts::detail::k_release_8_0_id == lts_release_major) {
+    if (detail::k_release_8_0_id == lts_release_major) {
       // 8.0 series
       result.emplace_back(
-          8, lts::k_minor_version_8_0,
-          lts_release_patch(lts::detail::k_release_8_0_id,
-                            33 + planned_releases, is_off_cycle));
+          8, k_minor_version_8_0,
+          lts_release_patch(detail::k_release_8_0_id, 33 + planned_releases,
+                            is_off_cycle));
       break;
     } else {
       // minor version of the previous LTS release
-      const auto lts_release_minor = (8 == lts_release_major)
-                                         ? lts::k_minor_version_8_4
-                                         : lts::k_minor_version;
+      const auto lts_release_minor =
+          (8 == lts_release_major) ? k_minor_version_8_4 : k_minor_version;
 
       result.emplace_back(
           lts_release_major, lts_release_minor,
           lts_release_patch(lts_release_major, planned_releases, is_off_cycle));
       planned_releases +=
-          lts::count_planned_releases(lts_release_major, lts_release_minor);
+          count_planned_releases(lts_release_major, lts_release_minor);
     }
   }
 
@@ -429,7 +613,7 @@ std::vector<Version> corresponding_versions(Version version) {
   return result;
 }
 
-Version get_first_lts_version(Version version) {
+Version first_lts(const Version &version) {
   // This function should not be called with versions lower than 8.0.0
   assert(version >= Version(8, 0, 0));
 
@@ -437,7 +621,22 @@ Version get_first_lts_version(Version version) {
   return major == 8 ? Version(8, 4, 0) : Version(major, 7, 0);
 }
 
-Version get_first_innovation_version(Version version) {
+Version next_lts(const Version &version) {
+  // This function should not be called with versions lower than 8.0.0
+  assert(version >= Version(8, 0, 0));
+
+  if (!is_lts(version)) {
+    return first_lts(version);
+  }
+
+  if (version.get_major() == 8 && version.get_minor() == k_minor_version_8_0) {
+    return Version(8, k_minor_version_8_4, 0);
+  }
+
+  return first_lts(Version(version.get_major() + 1, 0, 0));
+}
+
+Version first_innovation(const Version &version) {
   // This function should not be called with versions lower than 8.0.0
   assert(version >= Version(8, 0, 0));
 
@@ -445,17 +644,106 @@ Version get_first_innovation_version(Version version) {
   return major == 8 ? Version(8, 1, 0) : Version(major, 0, 0);
 }
 
-/**
- * Checks if this is an LTS release.
- */
-bool is_lts_release(const Version &v) {
-  if (8 == v.get_major()) {
-    return lts::k_minor_version_8_0 == v.get_minor() ||
-           lts::k_minor_version_8_4 == v.get_minor();
-  } else {
-    return lts::k_minor_version == v.get_minor();
+}  // namespace legacy
+
+namespace calendar {
+
+std::vector<Version> corresponding_versions(const Version &version) {
+  const auto offset = release_offset(version);
+  const auto legacy_lts_patch = offset + version.get_patch();
+
+  std::vector<Version> result;
+  result.emplace_back(8, 4,
+                      k_july_2026_lts_anchor_patch_8_4 + legacy_lts_patch);
+  result.emplace_back(9, 7,
+                      k_july_2026_lts_anchor_patch_9_7 + legacy_lts_patch);
+
+  for (int i = 0; i <= offset / k_cycle_releases; ++i) {
+    const auto cycle_lts_offset = lts_offset(i);
+
+    if (offset >= cycle_lts_offset) {
+      result.emplace_back(
+          lts_for_cycle(i, offset - cycle_lts_offset + version.get_patch()));
+    }
   }
+
+  if (result.back() != version) {
+    result.emplace_back(version);
+  }
+
+  return result;
 }
+
+}  // namespace calendar
+
+int major_difference(const Version &source, const Version &target) {
+  return legacy::major_difference(
+      calendar::is_calendar_version(source) ? calendar::to_legacy(source)
+                                            : source,
+      calendar::is_calendar_version(target) ? calendar::to_legacy(target)
+                                            : target);
+}
+
+std::vector<Version> corresponding_versions(const Version &version) {
+  if (calendar::is_calendar_version(version)) {
+    return calendar::corresponding_versions(version);
+  }
+
+  return legacy::corresponding_versions(version);
+}
+
+Version first_lts(const Version &version) {
+  // This function should not be called with versions lower than 8.0.0
+  assert(version >= Version(8, 0, 0));
+
+  if (calendar::is_calendar_version(version)) {
+    return calendar::first_lts(version);
+  }
+
+  return legacy::first_lts(version);
+}
+
+Version next_lts(const Version &version) {
+  // This function should not be called with versions lower than 8.0.0
+  assert(version >= Version(8, 0, 0));
+
+  if (!is_lts(version)) {
+    return first_lts(version);
+  }
+
+  if (calendar::is_calendar_version(version)) {
+    return calendar::next_lts(version);
+  }
+
+  const auto next_legacy_lts = legacy::next_lts(version);
+
+  if (next_legacy_lts.get_major() >= calendar::k_legacy_anchor_major) {
+    return calendar::lts_from_legacy(next_legacy_lts);
+  }
+
+  return next_legacy_lts;
+}
+
+Version first_innovation(const Version &version) {
+  // This function should not be called with versions lower than 8.0.0
+  assert(version >= Version(8, 0, 0));
+
+  if (calendar::is_calendar_version(version)) {
+    return calendar::first_innovation(version);
+  }
+
+  return legacy::first_innovation(version);
+}
+
+bool is_lts(const Version &v) {
+  if (calendar::is_calendar_version(v)) {
+    return calendar::is_lts(v);
+  }
+
+  return legacy::is_lts(v);
+}
+
+}  // namespace version
 
 }  // namespace utils
 }  // namespace mysqlshdk

@@ -11,18 +11,18 @@
 // Set report_host to a valid value, in case hostname is bogus
 var uuid1 = "5ef81566-9395-11e9-87e9-111111111111";
 var uuid2 = "5ef81566-9395-11e9-87e9-222222222222";
-testutil.deploySandbox(__mysql_sandbox_port1, "root", {"report_host": hostname_ip, server_uuid: uuid1, server_id:11});
-testutil.deploySandbox(__mysql_sandbox_port2, "root", {"report_host": hostname_ip, server_uuid: uuid2, server_id:22});
+testutil.deploySandbox(__mysql_sandbox_port1, "root", { "report_host": hostname_ip, server_uuid: uuid1, server_id: 11 });
+testutil.deploySandbox(__mysql_sandbox_port2, "root", { "report_host": hostname_ip, server_uuid: uuid2, server_id: 22 });
 
 shell.connect(__sandbox_uri1);
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 
 var session1 = mysql.getSession(__sandbox_uri1);
 var session2 = mysql.getSession(__sandbox_uri2);
 
-__endpoint_uri1 = hostname_ip+":"+__mysql_sandbox_port1;
-__endpoint_uri2 = hostname_ip+":"+__mysql_sandbox_port2;
-__endpoint_uri3 = hostname_ip+":"+__mysql_sandbox_port3;
+__endpoint_uri1 = hostname_ip + ":" + __mysql_sandbox_port1;
+__endpoint_uri2 = hostname_ip + ":" + __mysql_sandbox_port2;
+__endpoint_uri3 = hostname_ip + ":" + __mysql_sandbox_port3;
 
 // enable interactive by default
 shell.options['useWizards'] = true;
@@ -39,20 +39,20 @@ rs.addInstance(__sandbox1, 1);
 rs.addInstance(__sandbox1, {}, {});
 rs.addInstance(null, {});
 rs.addInstance({}, {});
-rs.addInstance(__sandbox1, {badOption:123});
+rs.addInstance(__sandbox1, { badOption: 123 });
 rs.addInstance([__endpoint1]);
 rs.addInstance(__sandbox3);
-rs.addInstance(__sandbox2, {recoveryMethod: "bogus"});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", recoveryProgress:42});
-rs.addInstance(__sandbox1, {recoveryMethod: "incremental", recoveryProgress:42});
-rs.addInstance(__sandbox1, {recoveryMethod: "incremental", cloneDonor:__sandbox1});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:""});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:"foobar"});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:"root@foobar:3232"});
+rs.addInstance(__sandbox2, { recoveryMethod: "bogus" });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", recoveryProgress: 42 });
+rs.addInstance(__sandbox1, { recoveryMethod: "incremental", recoveryProgress: 42 });
+rs.addInstance(__sandbox1, { recoveryMethod: "incremental", cloneDonor: __sandbox1 });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "" });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "foobar" });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "root@foobar:3232" });
 // IPv6 not supported for cloneDonor. We check for auto-chosen donors that are IPv6 in simple_ipv6.js
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:"[::1]:3232"});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:"::1:3232"});
-rs.addInstance(__sandbox1, {recoveryMethod: "clone", cloneDonor:"::1"});
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "[::1]:3232" });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "::1:3232" });
+rs.addInstance(__sandbox1, { recoveryMethod: "clone", cloneDonor: "::1" });
 
 //@ disconnected rs object (should fail)
 rs.disconnect();
@@ -60,13 +60,13 @@ rs.addInstance(__sandbox2);
 rs = dba.getReplicaSet();
 
 //@ bad config (should fail)
-testutil.deployRawSandbox(__mysql_sandbox_port3, "root", {"report_host": hostname_ip});
+testutil.deployRawSandbox(__mysql_sandbox_port3, "root", { "report_host": hostname_ip });
 testutil.snapshotSandboxConf(__mysql_sandbox_port3);
 rs.addInstance(__sandbox3);
 testutil.destroySandbox(__mysql_sandbox_port3);
 
 //@ Invalid loopback ip (should fail)
-testutil.deploySandbox(__mysql_sandbox_port3, "root", {report_host: "127.0.1.1"});
+testutil.deploySandbox(__mysql_sandbox_port3, "root", { report_host: "127.0.1.1" });
 rs.addInstance(__sandbox3);
 testutil.destroySandbox(__mysql_sandbox_port3);
 
@@ -94,7 +94,7 @@ EXPECT_EQ(undefined, rs.status().replicaSet.topology[__endpoint_uri2]);
 // (add 2nd instance and prep 3rd sandbox)
 rs.addInstance(__sandbox2);
 EXPECT_NE(undefined, rs.status().replicaSet.topology[__endpoint_uri2]);
-testutil.deploySandbox(__mysql_sandbox_port3, "root", {"report_host": hostname_ip});
+testutil.deploySandbox(__mysql_sandbox_port3, "root", { "report_host": hostname_ip });
 var session3 = mysql.getSession(__sandbox_uri3);
 
 session3.runSql("SET GLOBAL server_id=11");
@@ -134,7 +134,7 @@ EXPECT_EQ(undefined, rs.status().replicaSet.topology[__endpoint_uri3]);
 
 //@ replication filters (should fail)
 testutil.destroySandbox(__mysql_sandbox_port3);
-testutil.deploySandbox(__mysql_sandbox_port3, "root", {"report_host": hostname_ip});
+testutil.deploySandbox(__mysql_sandbox_port3, "root", { "report_host": hostname_ip });
 session3 = mysql.getSession(__sandbox_uri3);
 session3.runSql("CHANGE REPLICATION FILTER REPLICATE_IGNORE_DB = (foo)");
 rs.addInstance(__sandbox3);
@@ -167,19 +167,19 @@ session2.runSql("CREATE USER foo@'localhost' IDENTIFIED BY 'bar'");
 session2.runSql("GRANT ALL ON *.* TO foo@'localhost' WITH GRANT OPTION");
 session2.runSql("SET SESSION sql_log_bin=1");
 
-shell.connect("mysql://foo:foo@localhost:"+__mysql_sandbox_port1);
+shell.connect("mysql://foo:foo@localhost:" + __mysql_sandbox_port1);
 rs = dba.getReplicaSet();
-rs.addInstance("localhost:"+__mysql_sandbox_port2);
+rs.addInstance("localhost:" + __mysql_sandbox_port2);
 
 //@ admin account doesn't allow connection from source host (should fail)
 // will connect as foo@hostname, but only foo@localhost exists, so should fail
-rs.addInstance(hostname+":"+__mysql_sandbox_port2);
+rs.addInstance(hostname + ":" + __mysql_sandbox_port2);
 
 //@ bad URI with a different user (should fail)
-rs.addInstance("admin2@"+__sandbox2);
+rs.addInstance("admin2@" + __sandbox2);
 
 //@ bad URI with a different password (should fail)
-rs.addInstance("root:bla@"+__sandbox2);
+rs.addInstance("root:bla@" + __sandbox2);
 
 //@ instance running unmanaged GR (should fail)
 var session2 = mysql.getSession(__sandbox_uri2);
@@ -196,7 +196,7 @@ stop_standalone_gr(session2);
 //@ instance belongs to a rs (should fail)
 reset_instance(session2);
 shell.connect(__sandbox_uri2);
-rs2 = dba.createReplicaSet("rs", {gtidSetIsComplete:true});
+rs2 = dba.createReplicaSet("rs", { gtidSetIsComplete: true });
 rs.addInstance(__sandbox2);
 
 //@ instance running unmanaged AR (should fail)
@@ -218,18 +218,18 @@ reset_instance(session1);
 reset_instance(session2);
 
 shell.connect(__sandbox_uri1);
-rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 
 // 3 sandbox tests
 //@ prepare rs with 2 members and a 3rd sandbox
 rs.addInstance(__sandbox2);
 
-testutil.deploySandbox(__mysql_sandbox_port3, "root", {"report_host": hostname_ip});
+testutil.deploySandbox(__mysql_sandbox_port3, "root", { "report_host": hostname_ip });
 
 //@ add while the instance we got the rs from is down (should fail)
 shell.connect(__sandbox_uri1);
 var rs = dba.getReplicaSet();
-testutil.stopSandbox(__mysql_sandbox_port1, {wait:true});
+testutil.stopSandbox(__mysql_sandbox_port1, { wait: true });
 
 rs.addInstance(__sandbox3);
 
@@ -258,14 +258,14 @@ shell.connect(__sandbox_uri1);
 reset_instance(session);
 reset_instance(session2);
 
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 rs.addInstance(__sandbox_uri2);
 
 //@ check state of the added instance
 reset_instance(session);
 reset_instance(session2);
 
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 rs.addInstance(__sandbox2);
 
 var cluster_id = session.runSql("SELECT cluster_id FROM mysql_innodb_cluster_metadata.clusters").fetchOne()[0];
@@ -306,7 +306,7 @@ reset_instance(session2);
 var snap1 = repl_snapshot(session);
 var snap2 = repl_snapshot(session2);
 
-rs.addInstance(__sandbox2, {label:"blargh", dryRun:true});
+rs.addInstance(__sandbox2, { label: "blargh", dryRun: true });
 
 EXPECT_JSON_EQ(snap1, repl_snapshot(session));
 EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
@@ -315,50 +315,47 @@ session2.runSql("SET global super_read_only=1");
 var snap2 = repl_snapshot(session2);
 
 //@ dryRun - 2
-rs.addInstance(__sandbox2, {label:"blargh", dryRun:true});
+rs.addInstance(__sandbox2, { label: "blargh", dryRun: true });
 
 EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
 session2.runSql("SET global super_read_only=0");
 
 //@ label
-rs.addInstance(__sandbox2, {label:"blargh"});
+rs.addInstance(__sandbox2, { label: "blargh" });
 shell.dumpRows(session.runSql("SELECT instance_name FROM mysql_innodb_cluster_metadata.instances"), "tabbed");
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout -1 {!__dbug_off && !__replaying && !__recording}
-testutil.dbugSet("+d,dba_add_instance_master_delay"); // add a master_delay of 3s
-session.runSql("create schema foobar1");
-
-rs.addInstance(__sandbox2, {timeout:-1}); // should finish without waiting
-EXPECT_EQ(null, session2.runSql("SHOW SCHEMAS LIKE 'foobar1'").fetchOne());
-rs.removeInstance(__sandbox_uri2);
-
-//@ timeout 2 and rollback (should fail) {!__dbug_off && !__replaying && !__recording}
+//@ timeout 2 and rollback (should fail) {__dbug_direct}
+testutil.dbugSet("+d,dba_sync_transactions_timeout");
 var snap1 = repl_snapshot(session);
-var snap2 = repl_snapshot(session2);
 
-session.runSql("create schema foobar2");
-
-rs.addInstance(__sandbox2, {timeout:2}); // should wait for 2s and fail
-EXPECT_EQ(null, session2.runSql("SHOW SCHEMAS LIKE 'foobar2'").fetchOne());
+rs.addInstance(__sandbox2, { timeout: 2 }); // should wait for 2s and fail
+testutil.dbugSet("");
 
 rs.status();
 
 // check that the operation rolled back
 EXPECT_JSON_EQ(snap1, repl_snapshot(session));
-EXPECT_JSON_EQ(snap2, repl_snapshot(session2));
+EXPECT_EQ(null, session2.runSql(
+    "select s.channel_name " +
+    "from performance_schema.replication_connection_status s " +
+    "join performance_schema.replication_connection_configuration c " +
+    "on s.channel_name = c.channel_name where s.channel_name=''"
+).fetchOne());
+testutil.dbugSet("");
+testutil.dbugSet("+d,dba_add_instance_master_delay"); // restore 3s delay for the next timeout checks
 
-//@ timeout 10 {!__dbug_off && !__replaying && !__recording}
+//@ timeout 10 {__dbug_direct}
 session.runSql("create schema foobar3");
 
-rs.addInstance(__sandbox2, {timeout:10}); // should wait for 3s
+rs.addInstance(__sandbox2, { timeout: 10 }); // should wait for 3s
 EXPECT_EQ(['foobar3'], session2.runSql("SHOW SCHEMAS LIKE 'foobar3'").fetchOne());
 rs.removeInstance(__sandbox_uri2);
 
-//@ timeout 0 {!__dbug_off && !__replaying && !__recording}
+//@ timeout 0 {__dbug_direct}
 session.runSql("create schema foobar4");
 
-rs.addInstance(__sandbox2, {timeout:0}); // should wait for 3s
+rs.addInstance(__sandbox2, { timeout: 0 }); // should wait for 3s
 EXPECT_EQ(['foobar4'], session2.runSql("SHOW SCHEMAS LIKE 'foobar4'").fetchOne());
 rs.removeInstance(__sandbox_uri2);
 
@@ -370,11 +367,11 @@ testutil.dbugSet("");
 //@ rebuild test setup
 testutil.destroySandbox(__mysql_sandbox_port1);
 testutil.destroySandbox(__mysql_sandbox_port2);
-testutil.deploySandbox(__mysql_sandbox_port1, "root", {"report_host": hostname_ip, server_uuid: uuid1, server_id:11});
-testutil.deploySandbox(__mysql_sandbox_port2, "root", {"report_host": hostname_ip, server_uuid: uuid2, server_id:22});
+testutil.deploySandbox(__mysql_sandbox_port1, "root", { "report_host": hostname_ip, server_uuid: uuid1, server_id: 11 });
+testutil.deploySandbox(__mysql_sandbox_port2, "root", { "report_host": hostname_ip, server_uuid: uuid2, server_id: 22 });
 
 shell.connect(__sandbox_uri1);
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 
 //@ Replication conflict error (should fail)
 // Create a DB at the slave and then create the same one in the master
@@ -394,7 +391,7 @@ EXPECT_EQ(undefined, rs.status().replicaSet.topology[__endpoint_uri2]);
 reset_instance(session2);
 inject_errant_gtid(session2);
 
-rs.addInstance(__sandbox2, {recoveryMethod: "incremental"});
+rs.addInstance(__sandbox2, { recoveryMethod: "incremental" });
 
 //@ instance has a subset of the master GTID set
 reset_provision_instance(session2, session);
@@ -408,7 +405,7 @@ rs.removeInstance(__sandbox2);
 var session2 = mysql.getSession(__sandbox_uri2);
 reset_instance(session2);
 inject_errant_gtid(session2);
-rs.addInstance(__sandbox2, {recoveryMethod: "clone"});
+rs.addInstance(__sandbox2, { recoveryMethod: "clone" });
 
 //@<> remove instance (diverged GTID-set) {VER(>=8.0.17)}
 rs.removeInstance(__sandbox2);
@@ -418,10 +415,10 @@ var session2 = mysql.getSession(__sandbox_uri2);
 inject_purged_gtids(session);
 reset_instance(session2);
 
-rs.addInstance(__sandbox2, {recoveryMethod: "incremental"});
+rs.addInstance(__sandbox2, { recoveryMethod: "incremental" });
 
 //@ master has purged GTIDs (should work with clone) {VER(>=8.0.17)}
-rs.addInstance(__sandbox2, {recoveryMethod: "clone"});
+rs.addInstance(__sandbox2, { recoveryMethod: "clone" });
 
 //@<> remove instance (purged GTIDs) {VER(>=8.0.17)}
 rs.removeInstance(__sandbox2);
@@ -430,7 +427,7 @@ rs.removeInstance(__sandbox2);
 reset_instance(session);
 
 shell.connect(__sandbox_uri1);
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:false});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: false });
 
 //@ instance has empty GTID set + gtidSetIsComplete:0 + not interactive (should fail)
 var session2 = mysql.getSession(__sandbox_uri2);
@@ -467,7 +464,7 @@ rs.removeInstance(__sandbox2);
 reset_instance(session2);
 
 shell.options.useWizards = true;
-rs.addInstance(__sandbox2, {recoveryMethod:"INCREMENTAL"});
+rs.addInstance(__sandbox2, { recoveryMethod: "INCREMENTAL" });
 shell.options.useWizards = false;
 
 //@ instance has empty GTID set + gtidSetIsComplete:0 + recoveryMethod:CLONE {VER(>=8.0.17)}
@@ -475,7 +472,7 @@ rs.removeInstance(__sandbox2);
 reset_instance(session2);
 
 shell.options.useWizards = true;
-rs.addInstance(__sandbox2, {recoveryMethod:"CLONE"});
+rs.addInstance(__sandbox2, { recoveryMethod: "CLONE" });
 shell.options.useWizards = false;
 
 //@ instance has a subset of the master GTID set + gtidSetIsComplete:0
@@ -491,13 +488,13 @@ reset_instance(session2);
 
 shell.options.useWizards = true;
 
-rs.addInstance(__sandbox2, {recoveryMethod:"clone", cloneDonor: __sandbox3});
+rs.addInstance(__sandbox2, { recoveryMethod: "clone", cloneDonor: __sandbox3 });
 
 //@ cloneDonor valid {VER(>=8.0.17)}
-rs.addInstance(__sandbox2, {recoveryMethod:"clone", cloneDonor: __sandbox1});
+rs.addInstance(__sandbox2, { recoveryMethod: "clone", cloneDonor: __sandbox1 });
 
 //@ cloneDonor valid 2 {VER(>=8.0.17)}
-rs.addInstance(__sandbox3, {recoveryMethod:"clone", cloneDonor: __sandbox2});
+rs.addInstance(__sandbox3, { recoveryMethod: "clone", cloneDonor: __sandbox2 });
 
 shell.options.useWizards = false;
 
@@ -505,18 +502,18 @@ shell.options.useWizards = false;
 // This bug caused a failure when a clone donor was selected that was processing transactions.
 // A new sync was added to ensure the donor was in sync with the primary before starting clone
 // so to test the fix we need to simulate an wait for that sync to happen.
-//@<> BUG#30628746: preparation {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@<> BUG#30628746: preparation {VER(>=8.0.17) && __dbug_direct}
 rs.removeInstance(__sandbox3);
 var session2 = mysql.getSession(__sandbox_uri2);
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
-//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@ BUG#30628746: wait for timeout {VER(>=8.0.17) && __dbug_direct}
 shell.options.useWizards = true;
-rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox2});
+rs.addInstance(__sandbox3, { timeout: 3, recoveryMethod: "clone", cloneDonor: __sandbox2 });
 testutil.dbugSet("");
 
-//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && (!__dbug_off && !__replaying && !__recording)}
-rs.addInstance(__sandbox3, {timeout:3, recoveryMethod:"clone", cloneDonor: __sandbox1});
+//@ BUG#30628746: donor primary should not error with timeout {VER(>=8.0.17) && __dbug_direct}
+rs.addInstance(__sandbox3, { timeout: 3, recoveryMethod: "clone", cloneDonor: __sandbox1 });
 shell.options.useWizards = false;
 
 //@<> BUG#30632029: preparation
@@ -539,7 +536,7 @@ shell.options['logSql'] = "unfiltered"
 WIPE_SHELL_LOG();
 
 shell.options.useWizards = true;
-rs.addInstance(__sandbox3, {recoveryMethod:"clone", cloneDonor: __sandbox2});
+rs.addInstance(__sandbox3, { recoveryMethod: "clone", cloneDonor: __sandbox2 });
 shell.options.useWizards = false;
 
 EXPECT_SHELL_LOG_CONTAINS(bug_30632029[0]);
@@ -554,7 +551,7 @@ testutil.changeSandboxConf(__mysql_sandbox_port3, "foo", "bar");
 // Also tests the restartWaitTimeout option
 shell.options["dba.restartWaitTimeout"] = 1;
 shell.options["useWizards"] = true;
-rs.addInstance(__sandbox_uri3, {recoveryMethod:"clone"});
+rs.addInstance(__sandbox_uri3, { recoveryMethod: "clone" });
 shell.options["useWizards"] = false;
 shell.options["dba.restartWaitTimeout"] = 60;
 
@@ -584,8 +581,8 @@ reset_instance(session);
 reset_instance(mysql.getSession(__sandbox_uri2));
 reset_instance(mysql.getSession(__sandbox_uri3));
 
-var rs = dba.createReplicaSet("rset", {gtidSetIsComplete:true});
-rs.addInstance(__sandbox_uri2, {recoveryMethod:"clone"});
+var rs = dba.createReplicaSet("rset", { gtidSetIsComplete: true });
+rs.addInstance(__sandbox_uri2, { recoveryMethod: "clone" });
 
 testutil.waitMemberTransactions(__mysql_sandbox_port2, __mysql_sandbox_port1);
 
@@ -595,21 +592,22 @@ testutil.startSandbox(__mysql_sandbox_port2);
 
 testutil.waitMemberTransactions(__mysql_sandbox_port2, __mysql_sandbox_port1);
 
-EXPECT_NO_THROWS(function() { rs.addInstance(__sandbox_uri3, {recoveryMethod:"clone"}); });
+EXPECT_NO_THROWS(function () { rs.addInstance(__sandbox_uri3, { recoveryMethod: "clone" }); });
 EXPECT_STDOUT_NOT_CONTAINS(`Unable to find instance '${hostname_ip}:${__mysql_sandbox_port2}' in the topology.`)
 
-//@<> BUG#33237648: check if output is all-JSON {VER(>= 8.0.17) && (!__dbug_off && !__replaying && !__recording)}
+//@<> BUG#33237648: check if output is all-JSON {VER(>= 8.0.17) && __dbug_direct}
 shell.connect(__sandbox_uri1);
 
 reset_instance(session);
 reset_instance(mysql.getSession(__sandbox_uri2));
+reset_instance(mysql.getSession(__sandbox_uri3));
 
-var rs = dba.createReplicaSet("myrs", {gtidSetIsComplete:true});
+var rs = dba.createReplicaSet("myrs", { gtidSetIsComplete: true });
 
 WIPE_OUTPUT();
 
 // if DBUG is OFF, use some other option, as using --debug will result in non-JSON message
-EXPECT_EQ(0, testutil.callMysqlsh([__dbug_off ? "--log-level=8" : "--debug=+d,clone_rig_poll_interval", "--json=raw", "--js", "-e", `shell.connect('${__sandbox_uri1}'); dba.getReplicaSet().addInstance('${__sandbox2}', {'recoveryMethod': 'clone'})`], "", [ "MARIADB_SHELL_RECORDER_QUIET=1" ]))
+EXPECT_EQ(0, testutil.callMysqlsh([__dbug_off ? "--log-level=8" : "--debug=+d,clone_rig_poll_interval", "--json=raw", "--js", "-e", `shell.connect('${__sandbox_uri1}'); dba.getReplicaSet().addInstance('${__sandbox2}', {'recoveryMethod': 'clone'})`], "", ["MARIADB_SHELL_RECORDER_QUIET=1"]))
 
 EXPECT_STDOUT_MATCHES(new RegExp(`(${__endpoint_uri2} is shutting down...)|(Connection to server lost, restart probably in progress...)`))
 EXPECT_STDOUT_CONTAINS("* Waiting for server restart...")
@@ -618,7 +616,7 @@ EXPECT_STDOUT_CONTAINS(`* ${__endpoint_uri2} has restarted, waiting for clone to
 
 for (const line of testutil.fetchCapturedStdout(false).split(/[\r\n]+/)) {
     if (line) {
-        EXPECT_NO_THROWS(function() { JSON.parse(line); }, `testing line: ${line}`);
+        EXPECT_NO_THROWS(function () { JSON.parse(line); }, `testing line: ${line}`);
     }
 }
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +29,7 @@
 
 #include <map>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -61,6 +63,8 @@ std::vector<std::string> get_sized_strings(const std::string &input,
 
 enum Color_capability { No_color, Color_16, Color_256, Color_rgb };
 
+enum class Sanitization_mode { Text, Result_field };
+
 void SHCORE_PUBLIC set_color_capability(Color_capability cap);
 
 inline Color_capability get_color_capability() {
@@ -92,6 +96,11 @@ void SHCORE_PUBLIC scroll_screen();
  * the upper left corner.
  */
 void SHCORE_PUBLIC clear_screen();
+
+std::string SHCORE_PUBLIC sanitize_utf8_terminal_text(
+    std::string_view text, Sanitization_mode mode = Sanitization_mode::Text);
+
+std::string SHCORE_PUBLIC sanitize_and_strip_ansi(std::string_view text);
 
 bool SHCORE_PUBLIC parse_rgb(const std::string &color, uint8_t rgb[3]);
 int SHCORE_PUBLIC parse_color_set(const std::string &color_spec,

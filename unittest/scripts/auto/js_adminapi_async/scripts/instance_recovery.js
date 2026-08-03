@@ -1,4 +1,4 @@
-//@{!__dbug_off}
+//@{__dbug}
 
 // Tests recovery method selection for addInstance() and rejoinInstance() in ReplicaSets
 
@@ -678,7 +678,7 @@ EXPECT_OUTPUT_CONTAINS(`WARNING: Clone-based recovery not available: Instance '$
 
 // Tests for the scenario on which clone is unavailable
 
-//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable (fail) {VER(>=8.0.17) && !__dbug_off}
+//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable (fail) {VER(>=8.0.17) && __dbug}
 testutil.dbugSet("");
 
 EXPECT_NO_THROWS(function() { rs.addInstance(__sandbox_uri3, {recoveryMethod:"clone"}); });
@@ -697,12 +697,12 @@ EXPECT_OUTPUT_CONTAINS(`ERROR: The target instance must be either cloned or full
 
 // rejoinInstance()
 
-//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable + recoveryMethod (fail) {VER(>=8.0.17) && !__dbug_off}
+//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable + recoveryMethod (fail) {VER(>=8.0.17) && __dbug}
 session3.runSql("STOP " + get_replica_keyword());
 EXPECT_THROWS(function() { rs.rejoinInstance(__sandbox3, {recoveryMethod: "clone"}); }, "Cannot use recoveryMethod=clone because the selected donor is incompatible or no compatible donors are available due to version/platform incompatibilities.");
 EXPECT_OUTPUT_CONTAINS(`WARNING: Clone-based recovery not available: Instance '${__endpoint_uri2}' cannot be a donor because its version (8.0.17) isn't compatible with the recipient's (${__version})`);
 
-//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable + recoveryMethod + cloneDonor (fail) {VER(>=8.0.17) && !__dbug_off}
+//@<> Try to rejoin instance with purged transactions on PRIMARY + clone unavailable + recoveryMethod + cloneDonor (fail) {VER(>=8.0.17) && __dbug}
 EXPECT_THROWS(function() { rs.rejoinInstance(__sandbox3, {recoveryMethod: "clone", cloneDonor: __sandbox1}); }, "Cannot use recoveryMethod=clone because the selected donor is incompatible or no compatible donors are available due to version/platform incompatibilities.");
 EXPECT_OUTPUT_CONTAINS(`WARNING: Clone-based recovery not available: Instance '${__endpoint_uri2}' cannot be a donor because its version (8.0.17) isn't compatible with the recipient's (${__version})`);
 

@@ -4,6 +4,7 @@ import yaml
 import os
 import re
 import shutil
+from debug.collect_diagnostics import extract_referenced_tables
 
 #@<> INCLUDE diags_common.inc
 
@@ -22,6 +23,14 @@ session1.run_sql("grant select, process, replication client, replication slave o
 session1.run_sql("grant execute, select, create temporary tables on sys.* to minimal@'%'")
 
 session1.run_sql("create schema test")
+
+#@<> BUG#37018247 - diagnostics uses session sql_mode when parsing query references
+session1.run_sql("set session sql_mode='ANSI_QUOTES'")
+EXPECT_EQ(
+    [["test", "quoted table"]],
+    extract_referenced_tables(session1, 'select * from test."quoted table"'),
+)
+EXPECT_EQ("ANSI_QUOTES", session1.run_sql("select @@session.sql_mode").fetch_one()[0])
 
 # TODO replace localhost connections with 127.0.0.1 except where system stuff is wanted
 

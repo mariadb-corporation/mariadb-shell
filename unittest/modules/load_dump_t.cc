@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -421,7 +422,13 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
           ++m_session_count;
 
           auto mock = std::make_shared<testing::Mock_mysql_session>();
-          EXPECT_CALL(*mock, do_connect(_)).Times(1);
+          EXPECT_CALL(*mock, do_connect(_))
+              .Times(1)
+              .WillOnce([this](const mysqlshdk::db::Connection_options
+                                   &connection_options) {
+                std::lock_guard<std::mutex> l(m_connected_options_mutex);
+                m_connected_options.push_back(connection_options);
+              });
           EXPECT_CALL(*mock, executes(_, _)).Times(AtLeast(0));
           EXPECT_CALL(*mock, execute(_)).Times(AtLeast(0));
           EXPECT_CALL(*mock, get_connection_options())
@@ -598,6 +605,7 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
 
   void TearDown() override {
     m_sessions.clear();
+    m_connected_options.clear();
 
     mysqlsh::current_console()->remove_print_handler(&g_silencer);
 
@@ -658,6 +666,8 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
 
   std::mutex m_sessions_mutex;
   std::vector<std::shared_ptr<testing::Mock_mysql_session>> m_sessions;
+  std::mutex m_connected_options_mutex;
+  std::vector<mysqlshdk::db::Connection_options> m_connected_options;
 
   std::function<void(const std::string &)> m_on_load_data;
 
@@ -678,6 +688,17 @@ TEST_F(Load_dump_mocked, chunk_scheduling_more_tables) {
   // real, but no actual data) and DB sessions are mocked
   // The goal is to test that the chunk scheduling is working as expected
   load_dump(4, true);
+}
+
+TEST_F(Load_dump_mocked, load_sessions_reject_unexpected_local_infile) {
+  load_dump(1, false);
+
+  ASSERT_FALSE(m_connected_options.empty());
+
+  for (const auto &connection_options : m_connected_options) {
+    EXPECT_TRUE(connection_options.reject_local_infile_requests());
+    EXPECT_TRUE(connection_options.is_enabled(mysqlshdk::db::kLocalInfile));
+  }
 }
 
 static constexpr const char *k_mds_administrator_restrictions =

@@ -1987,4 +1987,75 @@ shell.register_global('pyObject', obj);
   delete_user_plugin(utf8_name + "-py");
 }
 
+TEST_F(Mysqlsh_plugin_test, bug39179022) {
+  const std::string plugin_name = "bug39179022";
+
+  write_user_plugin(plugin_name, R"(# factory plugin
+def label():
+  return 'callable-label'
+
+class Widget:
+  def __init__(self, name):
+    self._name = name
+    self.label = label
+    self.join = '-'.join
+
+  def __repr__(self):
+    return f'Widget(name={self._name!r})'
+
+  @property
+  def name(self):
+    return self._name
+
+  def describe(self):
+    print(f'My name is: {self._name}')
+
+  def rename(self, name):
+    self._name = name
+
+  def add_alias(self, alias):
+    self.alias = alias
+
+  @staticmethod
+  def default_name():
+    return 'Alice'
+
+def factory():
+  return Widget(Widget.default_name())
+
+obj = shell.create_extension_object()
+shell.add_extension_object_member(obj, "factory", factory);
+shell.register_global('pyObject', obj);
+)",
+                    ".py");
+
+  add_js_test("\\js", "Switching to JavaScript mode...");
+  add_js_test("x = pyObject.factory()", "Widget(name='Alice')");
+  add_js_test("x", "Widget(name='Alice')");
+  add_js_test("x.name", "Alice");
+  add_js_test("x.describe", "<Function:describe>");
+  add_js_test("x.rename", "<Function:rename>");
+  add_js_test("x.describe()", "My name is: Alice");
+  add_js_test("x.rename('Alex')", "");
+  add_js_test("x", "Widget(name='Alex')");
+  add_js_test("x.name", "Alex");
+  add_js_test("x.describe()", "My name is: Alex");
+  add_js_test("x.default_name()", "Alice");
+  add_js_test("x.label()", "callable-label");
+  add_js_test("x.join(['One', 'Two'])", "One-Two");
+  add_js_test("x.add_alias('A')", "");
+  add_js_test("x.alias", "A");
+  add_js_test("x.nickname = 'Ace'");
+  add_js_test("x.nickname", "Ace");
+
+  // run the test
+  run({"--sql"});
+
+  // check the output
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
+
+  // cleanup
+  delete_user_plugin(plugin_name);
+}
+
 }  // namespace tests

@@ -9,3 +9,10 @@ mysqlshdk/libs/db/mysqlx/xpl_error.h
 /build/
 tests/fuzz/corpus/**
 plugins/external
+AGENTS.md
+__pycache__/
+.DS_Store
+.vscode/
+.codex/
+.agents/
+.release-prep/

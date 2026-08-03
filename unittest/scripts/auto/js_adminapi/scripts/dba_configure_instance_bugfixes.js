@@ -265,7 +265,7 @@ EXPECT_OUTPUT_CONTAINS("The instance '" + hostname + ":" + __mysql_sandbox_port1
 
 shell.options.useWizards=1;
 
-//@<> improve restart message NONE BUG#29634795 {!__dbug_off && VER(>=8.0.11)}
+//@<> improve restart message NONE BUG#29634795 {__dbug && VER(>=8.0.11)}
 testutil.changeSandboxConf(__mysql_sandbox_port1, "skip_log_bin", "ON");
 testutil.snapshotSandboxConf(__mysql_sandbox_port1);
 testutil.restartSandbox(__mysql_sandbox_port1);

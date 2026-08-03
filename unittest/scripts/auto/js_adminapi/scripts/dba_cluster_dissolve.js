@@ -505,7 +505,7 @@ WARNING: The cluster was successfully dissolved, but the following instance was 
 `);
 }
 
-//@<> Dissolve doesn't stop due to error in replication cleanup {!__dbug_off}
+//@<> Dissolve doesn't stop due to error in replication cleanup {__dbug}
 
 // re-create cluster
 shell.connect(__sandbox_uri3);

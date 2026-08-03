@@ -238,7 +238,7 @@ try:
 except Exception as e:
     print(f'Unable to read CPU count, skipping test: {e}')
 
-#@<> check cancel {not __dbug_off and not __replaying}
+#@<> check cancel {__dbug and not __replaying}
 
 shell.options.useWizards = True;
 testutil.dbug_set("+d,execute_cancel")

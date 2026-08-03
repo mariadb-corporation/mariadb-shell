@@ -62,38 +62,12 @@ using off64_t = off_t;
 #include "mysqlshdk/libs/storage/backend/in_memory/synchronized_file.h"
 #include "mysqlshdk/libs/storage/backend/in_memory/virtual_file.h"
 #include "mysqlshdk/libs/utils/shell_naming.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlsh {
 namespace import_table {
-namespace {
-int local_infile_init_nop(void ** /* buffer */, const char *filename,
-                          void * /* userdata */) noexcept {
-  mysqlsh::current_console()->print_error(
-      "Premature request for \"" + std::string(filename) +
-      "\" local infile transfer. Rogue server?");
-  return 1;
-}
-
-int local_infile_read_nop(void * /* userdata */, char * /* buffer */,
-                          unsigned int /* length */) noexcept {
-  return -1;
-}
-
-void local_infile_end_nop(void * /* userdata */) noexcept {}
-
-int local_infile_error_nop(void * /* userdata */, char * /* error_msg */,
-                           unsigned int /* error_msg_len */) noexcept {
-#ifdef MARIADB_BUILD
-  // CR_LOAD_DATA_LOCAL_INFILE_REJECTED is MySQL-only; any nonzero code aborts.
-  return CR_UNKNOWN_ERROR;
-#else
-  return CR_LOAD_DATA_LOCAL_INFILE_REJECTED;
-#endif
-}
-
-}  // namespace
 
 Transaction_buffer::Transaction_buffer(const Dialect &dialect,
                                        mysqlshdk::storage::IFile *file,
@@ -663,11 +637,7 @@ void Load_data_worker::operator()() {
   // Prevent local infile rogue server attack. Safe local infile callbacks
   // must be set before connecting to the MySQL Server. Otherwise, rogue MySQL
   // Server can ask for arbitrary file from client.
-  session->set_local_infile_userdata(nullptr);
-  session->set_local_infile_init(local_infile_init_nop);
-  session->set_local_infile_read(local_infile_read_nop);
-  session->set_local_infile_end(local_infile_end_nop);
-  session->set_local_infile_error(local_infile_error_nop);
+  session->reject_local_infile();
 
   try {
     auto const conn_opts = m_opt.connection_options();
@@ -867,11 +837,6 @@ void Load_data_worker::execute(
     };
 
     init_session(session, m_opt);
-    session->set_local_infile_userdata(static_cast<void *>(&fi));
-    session->set_local_infile_init(local_infile_init);
-    session->set_local_infile_read(local_infile_read);
-    session->set_local_infile_end(local_infile_end);
-    session->set_local_infile_error(local_infile_error);
 
     const auto query_body = load_data_body(m_opt);
 
@@ -966,6 +931,15 @@ void Load_data_worker::execute(
       });
 
       try {
+        session->set_local_infile_userdata(static_cast<void *>(&fi));
+        session->set_local_infile_init(local_infile_init);
+        session->set_local_infile_read(local_infile_read);
+        session->set_local_infile_end(local_infile_end);
+        session->set_local_infile_error(local_infile_error);
+
+        const shcore::on_leave_scope restore_local_infile{
+            [&session]() { session->reject_local_infile(); }};
+
         set_state(Thread_state::READING);
         fi.buffer.before_query();
         load_result = query(m_query_comment + full_query);
@@ -1103,9 +1077,10 @@ void Load_data_worker::execute(
                 warnings_count - m_warnings_to_show;
 
             mysqlsh::current_console()->print_info(
-                "Check " + std::string{shcore::k_shell_log_file_name} + " for " +
-                std::to_string(remaining_warnings_count) + " more warning" +
-                (remaining_warnings_count == 1 ? "" : "s") + ".");
+                "Check " + std::string{shcore::k_shell_log_file_name} +
+                " for " + std::to_string(remaining_warnings_count) +
+                " more warning" + (remaining_warnings_count == 1 ? "" : "s") +
+                ".");
           }
         }
       }

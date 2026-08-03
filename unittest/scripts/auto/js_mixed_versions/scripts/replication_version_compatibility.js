@@ -19,19 +19,80 @@ function check_output(primary_version, secondary_version, primary_port=null, tar
   }
 }
 
-if (testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, '>', __version)) {
-    testutil.deploySandbox(__mysql_sandbox_port1, "root", { report_host: hostname }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
-    testutil.deploySandbox(__mysql_sandbox_port2, "root", { report_host: hostname });
-    testutil.deploySandbox(__mysql_sandbox_port3, "root", { report_host: hostname });
-} else {
-    testutil.deploySandbox(__mysql_sandbox_port1, "root", { report_host: hostname });
-    testutil.deploySandbox(__mysql_sandbox_port3, "root", { report_host: hostname });
-    testutil.deploySandbox(__mysql_sandbox_port2, "root", { report_host: hostname }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+function check_incompatible_output(source_version, target_version, source_port, target_port) {
+    EXPECT_OUTPUT_CONTAINS("The replication source ('" + hostname + ":" + source_port + "') is running version " + source_version + ", which is incompatible with the target replica's ('" + hostname + ":" + target_port + "') version " + target_version + ". If you understand the limitations and potential issues, use the 'dba.versionCompatibilityChecks' option to bypass this check.");
+    WIPE_OUTPUT()
+    WIPE_SHELL_LOG()
 }
+
+//@<> INCLUDE replication_version_compatibility_utils.inc
+
+//@<> Determine default/secondary replication compatibility
+determine_replication_version_compatibility();
+
+if (!current_to_secondary_replication_is_incompatible() &&
+    !higher_to_lower_replication_is_downgrade_only()) {
+    testutil.skip("Unsupported mixed-version replication compatibility scenario.");
+}
+
+//@<> Verify incompatible replication compatibility checks {current_to_secondary_replication_is_incompatible()}
+testutil.deploySandbox(__mysql_sandbox_port1, "root", { report_host: hostname });
+testutil.deploySandbox(__mysql_sandbox_port2, "root", { report_host: hostname }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+testutil.deploySandbox(__mysql_sandbox_port3, "root", { report_host: hostname }, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+testutil.deploySandbox(__mysql_sandbox_port4, "root", { report_host: hostname });
+
+// Verify that a current source cannot replicate to an older incompatible target
+shell.connect(__sandbox_uri1);
+var current_session = session;
+var older_session = mysql.getSession(__sandbox_uri2);
+
+var current_version = current_session.runSql('SELECT @@version').fetchOne()[0];
+current_version = current_version.split('-')[0];
+
+var older_version = older_session.runSql('SELECT @@version').fetchOne()[0];
+older_version = older_version.split('-')[0];
+
+var r;
+EXPECT_NO_THROWS(function() { r = dba.createReplicaSet("rs"); });
+EXPECT_THROWS(function() { r.addInstance(__sandbox_uri2, {recoveryMethod: "incremental"}); }, "Incompatible replication source version");
+check_incompatible_output(current_version, older_version, __mysql_sandbox_port1, __mysql_sandbox_port2);
+
+EXPECT_NO_THROWS(function() { r.dissolve(); });
+current_session.close();
+older_session.close();
+
+// Verify that an older compatible source can replicate to the current target
+shell.connect(__sandbox_uri3);
+older_session = session;
+current_session = mysql.getSession(__sandbox_uri4);
+WIPE_SHELL_LOG()
+
+EXPECT_NO_THROWS(function() { r = dba.createReplicaSet("rs"); });
+EXPECT_NO_THROWS(function() { r.addInstance(__sandbox_uri4, {recoveryMethod: "incremental"}); });
+EXPECT_SHELL_LOG_CONTAINS("The replication source's ('" + hostname + ":" + __mysql_sandbox_port3 + "') version (" + older_version + ") is compatible with the replica instance's ('" + hostname + ":" + __mysql_sandbox_port4 + "') version (" + current_version + ").");
+
+// Verify setPrimaryInstance rejects an incompatible source
+EXPECT_THROWS(function() { r.setPrimaryInstance(__sandbox_uri4); }, "Incompatible replication source version");
+check_incompatible_output(current_version, older_version, __mysql_sandbox_port4, __mysql_sandbox_port3);
+
+EXPECT_NO_THROWS(function() { r.dissolve(); });
+
+// Cleanup incompatible replication compatibility test
+older_session.close();
+current_session.close();
+testutil.destroySandbox(__mysql_sandbox_port1);
+testutil.destroySandbox(__mysql_sandbox_port2);
+testutil.destroySandbox(__mysql_sandbox_port3);
+testutil.destroySandbox(__mysql_sandbox_port4);
+
+//@<> Setup rollback replication compatibility test {higher_to_lower_replication_is_downgrade_only()}
+deploy_high_version_sandbox(__mysql_sandbox_port1);
+deploy_low_version_sandbox(__mysql_sandbox_port2);
+deploy_high_version_sandbox(__mysql_sandbox_port3);
 
 //Verify the replication compatibility warnings in ReplicaSet
 
-//@<> Verify the replication compatibility warning in addInstance()
+//@<> Verify the replication compatibility warning in addInstance() {higher_to_lower_replication_is_downgrade_only()}
 shell.connect(__sandbox_uri1);
 session2 = mysql.getSession(__sandbox_uri2);
 
@@ -47,14 +108,14 @@ secondary_version = secondary_version.split('-')[0];
 
 check_output(primary_version, secondary_version);
 
-//@<> Verify the replication compatibility warning in rejoinInstance()
+//@<> Verify the replication compatibility warning in rejoinInstance() {higher_to_lower_replication_is_downgrade_only()}
 session2.runSql("STOP replica");
 
 EXPECT_NO_THROWS(function() { r.rejoinInstance(__sandbox_uri2, {recoveryMethod: "incremental"}); });
 
 check_output(primary_version, secondary_version);
 
-//@<> Verify the warning is ignored and just logged if dba.versionCompatibilityChecks is disabled
+//@<> Verify the warning is ignored and just logged if dba.versionCompatibilityChecks is disabled {higher_to_lower_replication_is_downgrade_only()}
 session2.runSql("STOP replica");
 
 shell.options["dba.versionCompatibilityChecks"] = false;
@@ -65,7 +126,7 @@ EXPECT_SHELL_LOG_CONTAINS("The replication source ('" + hostname + ":" + __mysql
 
 shell.options["dba.versionCompatibilityChecks"] = true;
 
-//@<> Verify the replication compatibility warning in setPrimaryInstance()
+//@<> Verify the replication compatibility warning in setPrimaryInstance() {higher_to_lower_replication_is_downgrade_only()}
 
 // Add another instance to verify that the checks will check all potential sources
 
@@ -84,7 +145,7 @@ check_output(primary_version, secondary_version, __mysql_sandbox_port3, __mysql_
 
 // Forced failover: add a new member, kill the primary and failover
 
-testutil.deploySandbox(__mysql_sandbox_port4, "root", { report_host: hostname });
+deploy_high_version_sandbox(__mysql_sandbox_port4);
 EXPECT_NO_THROWS(function() { r.addInstance(__sandbox_uri4, {recoveryMethod: "incremental"}); });
 
 // Kill primary
@@ -92,7 +153,7 @@ testutil.killSandbox(__mysql_sandbox_port1);
 shell.connect(__sandbox_uri2);
 r = dba.getReplicaSet();
 
-//@<> Verify the replication compatibility warning in forcePrimaryInstance()
+//@<> Verify the replication compatibility warning in forcePrimaryInstance() {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { r.forcePrimaryInstance(__sandbox_uri2); });
 
 check_output(primary_version, secondary_version, __mysql_sandbox_port3, __mysql_sandbox_port2, true, false);
@@ -103,7 +164,7 @@ EXPECT_NO_THROWS(function() { r.removeInstance(__sandbox_uri4); });
 EXPECT_NO_THROWS(function() { r.setPrimaryInstance(__sandbox_uri3); });
 check_output(primary_version, secondary_version, __mysql_sandbox_port3, __mysql_sandbox_port2);
 
-//@<> Verify the replication compatibility warning in rescan({addUnmanaged: true})
+//@<> Verify the replication compatibility warning in rescan addUnmanaged true {higher_to_lower_replication_is_downgrade_only()}
 testutil.startSandbox(__mysql_sandbox_port1);
 EXPECT_NO_THROWS(function() { r.rejoinInstance(__sandbox_uri1); });
 
@@ -115,7 +176,7 @@ EXPECT_NO_THROWS(function() { r.rescan({addUnmanaged: true}); });
 
 check_output(primary_version, secondary_version, __mysql_sandbox_port3);
 
-//@<> Verify the replication compatibility warning in  createReplicaSet({adoptFromAR: true})
+//@<> Verify the replication compatibility warning in createReplicaSet adoptFromAR true {higher_to_lower_replication_is_downgrade_only()}
 session.runSql("DROP SCHEMA mysql_innodb_cluster_metadata");
 
 EXPECT_NO_THROWS(function() { r = dba.createReplicaSet("rs", {adoptFromAr: true}); });
@@ -126,7 +187,7 @@ EXPECT_NO_THROWS(function() { r.dissolve(); });
 
 // Verify the replication compatibility warnings in Read-Replicas
 
-//@<> Verify the replication compatibility warning in addReplicaInstance()
+//@<> Verify the replication compatibility warning in addReplicaInstance() {higher_to_lower_replication_is_downgrade_only()}
 shell.connect(__sandbox_uri1);
 var c;
 EXPECT_NO_THROWS(function() { c = dba.createCluster("c"); });
@@ -136,12 +197,12 @@ check_output(primary_version, secondary_version);
 
 session2.runSql("STOP replica");
 
-//@<> Verify the replication compatibility warning in rejoinInstance() (read-replicas)
+//@<> Verify the replication compatibility warning in rejoinInstance() (read-replicas) {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { c.rejoinInstance(__sandbox_uri2, {recoveryMethod: "incremental"}); });
 
 check_output(primary_version, secondary_version);
 
-//@<> Verify the replication compatibility warning in force_quorum (read-replicas)
+//@<> Verify the replication compatibility warning in force_quorum (read-replicas) {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { c.addInstance(__sandbox_uri3); });
 testutil.killSandbox(__mysql_sandbox_port3);
 testutil.waitMemberState(__mysql_sandbox_port3, "(MISSING),UNREACHABLE");
@@ -166,7 +227,7 @@ EXPECT_NO_THROWS(function() { c.forceQuorumUsingPartitionOf(__sandbox_uri1); });
 
 EXPECT_OUTPUT_NOT_CONTAINS("The replication source ('" + hostname + ":" + __mysql_sandbox_port1 + "') is running version " + primary_version + ", which has limited compatibility with the target instance's ('" + hostname + ":" + __mysql_sandbox_port3 + "') version " + secondary_version + ". This setup should only be used for rollback purposes, where new functionality from version " + primary_version + " is not yet utilized. It is not suitable for regular continuous production deployment.");
 
-//@<> Verify the replication compatibility warning in setInstanceOption() when changing the replicationSources for a Read-Replica
+//@<> Verify the replication compatibility warning in setInstanceOption() when changing the replicationSources for a Read-Replica {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { c.setInstanceOption(__sandbox_uri2, "replicationSources", [__endpoint1]); });
 
 check_output(primary_version, secondary_version, __mysql_sandbox_port1, __mysql_sandbox_port2);
@@ -175,7 +236,7 @@ check_output(primary_version, secondary_version, __mysql_sandbox_port1, __mysql_
 EXPECT_NO_THROWS(function() { c.rejoinInstance(__sandbox_uri2); });
 EXPECT_NO_THROWS(function() { c.rejoinInstance(__sandbox_uri3); });
 
-//@<> Verify the replication compatibility warning for all potential sources in Read-Replicas
+//@<> Verify the replication compatibility warning for all potential sources in Read-Replicas {higher_to_lower_replication_is_downgrade_only()}
 
 // Add a Read-Replica using the default options (primary source), ensure the check is performed on all potential sources (all cluster members)
 
@@ -217,7 +278,7 @@ EXPECT_NO_THROWS(function() { c.rescan({addUnmanaged: true}); });
 
 check_output(primary_version, secondary_version, __mysql_sandbox_port3, __mysql_sandbox_port2, true);
 
-//@<> Verify that adding a read-replica without any incompatible source does not throw or print warnings
+//@<> Verify that adding a read-replica without any incompatible source does not throw or print warnings {higher_to_lower_replication_is_downgrade_only()}
 
 // Clean up the cluster
 EXPECT_NO_THROWS(function() { c.dissolve(); });
@@ -233,7 +294,7 @@ EXPECT_OUTPUT_NOT_CONTAINS("The replication source ('" + hostname + ":" + __mysq
 
 // Verify the replication compatibility warnings in ClusterSet
 
-//@<> Verify the replication compatibility warning in createCluster()
+//@<> Verify the replication compatibility warning in createCluster() {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { c.removeInstance(__sandbox_uri2); });
 EXPECT_NO_THROWS(function() { c.addInstance(__sandbox_uri4, {recoveryMethod: "incremental"}); });
 
@@ -248,7 +309,7 @@ check_output(primary_version, secondary_version, __mysql_sandbox_port4, __mysql_
 EXPECT_NO_THROWS(function() { c.setInstanceOption(__sandbox_uri3, "replicationSources", "primary"); });
 EXPECT_NO_THROWS(function() { c.rejoinInstance(__sandbox_uri3); });
 
-//@<> Verify the replication compatibility warning in setPrimaryCluster()
+//@<> Verify the replication compatibility warning in setPrimaryCluster() {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { cs.setPrimaryCluster("replica_cluster"); });
 
 check_output(secondary_version, primary_version);
@@ -257,7 +318,7 @@ EXPECT_NO_THROWS(function() { cs.setPrimaryCluster("c"); });
 
 check_output(primary_version, secondary_version);
 
-//@<> Verify the replication compatibility warning in rejoinCluster()
+//@<> Verify the replication compatibility warning in rejoinCluster() {higher_to_lower_replication_is_downgrade_only()}
 session2.runSql("STOP replica");
 
 EXPECT_NO_THROWS(function() { cs.rejoinCluster("replica_cluster"); });
@@ -266,7 +327,7 @@ check_output(primary_version, secondary_version);
 
 EXPECT_NO_THROWS(function() { c.removeInstance(__sandbox_uri3); });
 
-//@<> Verify the replication compatibility warning in forcePrimaryCluster()
+//@<> Verify the replication compatibility warning in forcePrimaryCluster() {higher_to_lower_replication_is_downgrade_only()}
 
 // "replica_cluster" is running the older version, primary the newer. Add another Replica Cluster running the newer
 EXPECT_NO_THROWS(function() { cs.createReplicaCluster(__sandbox_uri3, "replica_cluster2", {recoveryMethod: "incremental"}); });
@@ -282,7 +343,7 @@ EXPECT_NO_THROWS(function() { cs.forcePrimaryCluster("replica_cluster2"); });
 
 check_output(primary_version, secondary_version, __mysql_sandbox_port3);
 
-//@<> Verify the replication compatibility warning in rebootCluster() when restoring a Replica Cluster
+//@<> Verify the replication compatibility warning in rebootCluster() when restoring a Replica Cluster {higher_to_lower_replication_is_downgrade_only()}
 testutil.startSandbox(__mysql_sandbox_port1);
 shell.connect(__sandbox_uri1);
 
@@ -317,7 +378,7 @@ EXPECT_SHELL_LOG_CONTAINS("The replication source ('" + hostname + ":" + __mysql
 
 shell.options["dba.versionCompatibilityChecks"] = true;
 
-//@<> Verify the replication compatibility warning when adding an instance to a PRIMARY Cluster that is incompatible with the REPLICA Clusters
+//@<> Verify the replication compatibility warning when adding an instance to a PRIMARY Cluster that is incompatible with the REPLICA Clusters {higher_to_lower_replication_is_downgrade_only()}
 
 // primary cluster (replica_cluster2): sandbox3 (higher version)
 // replica cluster (replica_cluster): sandbox2 (lower version)
@@ -336,7 +397,7 @@ session4.runSql("STOP GROUP_REPLICATION");
 EXPECT_NO_THROWS(function() { c.rejoinInstance(__sandbox_uri4); });
 check_output(primary_version, secondary_version, __mysql_sandbox_port4, __mysql_sandbox_port2, true);
 
-//@<> Verify the replication compatibility warning when adding an instance to a REPLICA Cluster that is incompatible with the PRIMARY Cluster
+//@<> Verify the replication compatibility warning when adding an instance to a REPLICA Cluster that is incompatible with the PRIMARY Cluster {higher_to_lower_replication_is_downgrade_only()}
 
 // primary cluster (replica_cluster2): sandbox3 (higher version), sandbox4 (higher version)
 // replica cluster (replica_cluster): sandbox2 (lower version)
@@ -357,14 +418,14 @@ check_output(secondary_version, primary_version, __mysql_sandbox_port4, __mysql_
 
 // Positive tests
 
-//@<> Add a compatible read-replica
+//@<> Add a compatible read-replica {higher_to_lower_replication_is_downgrade_only()}
 EXPECT_NO_THROWS(function() { cs.removeCluster("c"); });
 EXPECT_NO_THROWS(function() { c.addReplicaInstance(__sandbox_uri1, {recoveryMethod: "incremental"}); })
 
 EXPECT_SHELL_LOG_CONTAINS("The replication source's ('" + hostname + ":" + __mysql_sandbox_port3 + "') version (" + primary_version + ") is compatible with the replica instance's ('" + hostname + ":" + __mysql_sandbox_port1 + "') version (" + primary_version + ").");
 WIPE_SHELL_LOG()
 
-//@<> Add a compatible read-replica - log disabled
+//@<> Add a compatible read-replica - log disabled {higher_to_lower_replication_is_downgrade_only()}
 shell.options.logLevel = "info"
 EXPECT_NO_THROWS(function() { c.removeInstance(__sandbox_uri1); });
 EXPECT_NO_THROWS(function() { c.addReplicaInstance(__sandbox_uri1, {recoveryMethod: "incremental"}); })
@@ -374,7 +435,7 @@ EXPECT_SHELL_LOG_NOT_CONTAINS("The replication source's ('" + hostname + ":" + _
 EXPECT_NO_THROWS(function() { cs.dissolve(); });
 WIPE_SHELL_LOG()
 
-//@<> Create a ReplicaSet with 2 instances, compatible
+//@<> Create a ReplicaSet with 2 instances, compatible {higher_to_lower_replication_is_downgrade_only()}
 shell.options.logLevel = "debug"
 var r;
 EXPECT_NO_THROWS(function() { r = dba.createReplicaSet("rs"); });
@@ -382,7 +443,7 @@ EXPECT_NO_THROWS(function() { r.addInstance(__sandbox_uri4, {recoveryMethod: "in
 
 EXPECT_SHELL_LOG_CONTAINS("The replication source's ('" + hostname + ":" + __mysql_sandbox_port3 + "') version (" + primary_version + ") is compatible with the replica instance's ('" + hostname + ":" + __mysql_sandbox_port4 + "') version (" + primary_version + ").");
 
-//@<> Cleanup
+//@<> Cleanup {higher_to_lower_replication_is_downgrade_only()}
 session.close();
 session2.close();
 session3.close();

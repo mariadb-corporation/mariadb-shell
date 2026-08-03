@@ -386,7 +386,7 @@ EXPECT_OUTPUT_CONTAINS("Authentication error during connection check.");
 reset_instance(session1);
 reset_instance(session2);
 
-//@<> check reverted remove cluster {!__dbug_off}
+//@<> check reverted remove cluster {__dbug}
 
 update_conf(__mysql_sandbox_port2, ca_path, cert2_path);
 

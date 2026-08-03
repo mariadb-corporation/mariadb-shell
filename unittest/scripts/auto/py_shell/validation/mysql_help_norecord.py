@@ -36,7 +36,7 @@ FUNCTIONS
       make_account(user, host)
             Joins user and host into an quoted account string.
 
-      parse_statement_ast(statements)
+      parse_statement_ast(statements[, options])
             Parse MySQL statements and return its AST representation.
 
       quote_identifier(s)
@@ -46,10 +46,10 @@ FUNCTIONS
       split_account(account)
             Splits account string into user and host.
 
-      split_script(script)
+      split_script(script[, options])
             Split a SQL script into individual statements.
 
-      tokenize_statement(statement)
+      tokenize_statement(statement[, options])
             Lexes a MySQL statement into a list of tokens.
 
       unquote_identifier(s)

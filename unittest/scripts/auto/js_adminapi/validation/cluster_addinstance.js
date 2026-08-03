@@ -91,15 +91,6 @@ Number of accounts for '<<<recovery_user_2>>>': 1
 //@<OUT> BUG#25503159: number of recovery users before executing addInstance().
 Number of recovery user before addInstance(): 1
 
-//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17)}
-|WARNING: Clone process appears to have finished and tried to restart the MySQL server, but it has not yet started back up.|
-|Please make sure the MySQL server at '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' is restarted and call <Cluster>.rescan() to complete the process. To increase the timeout, change shell.options["dba.restartWaitTimeout"].|
-||Timeout waiting for server to restart (MYSQLSH 51156)
-
-//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17)}
-|Adding instance to the cluster metadata...|
-|The instance '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' was successfully added to the cluster metadata.|
-
 //@ canonical IPv6 addresses are supported on addInstance WL#12758 {VER(>= 8.0.14)}
 |[::1]:<<<__mysql_sandbox_port1>>> = {"mysqlX": "[::1]:<<<__mysql_sandbox_x_port1>>>", "grLocal": "[::1]:<<<__mysql_sandbox_gr_port1>>>", "mysqlClassic": "[::1]:<<<__mysql_sandbox_port1>>>"}|
 |[::1]:<<<__mysql_sandbox_port2>>> = {"mysqlX": "[::1]:<<<__mysql_sandbox_x_port2>>>", "grLocal": "[::1]:<<<__mysql_sandbox_gr_port2>>>", "mysqlClassic": "[::1]:<<<__mysql_sandbox_port2>>>"}|
@@ -115,3 +106,11 @@ Number of recovery user before addInstance(): 1
 //@ IPv6 on ipAllowlist is not supported below 8.0.14 WL#12758 {VER(< 8.0.14)}
 ||Invalid value for ipAllowlist '::1': IPv6 not supported (version >= 8.0.14 required for IPv6 support). (ArgumentError)
 
+//@ BUG#30281908: add instance using clone and simulating a restart timeout {VER(>= 8.0.17) && __dbug}
+|WARNING: Clone process appears to have finished and tried to restart the MySQL server, but it has not yet started back up.|
+|Please make sure the MySQL server at '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' is restarted and call <Cluster>.rescan() to complete the process. To increase the timeout, change shell.options["dba.restartWaitTimeout"].|
+||Timeout waiting for server to restart (MYSQLSH 51156)
+
+//@ BUG#30281908: complete the process with .rescan() {VER(>= 8.0.17) && __dbug}
+|Adding instance to the cluster metadata...|
+|The instance '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' was successfully added to the cluster metadata.|

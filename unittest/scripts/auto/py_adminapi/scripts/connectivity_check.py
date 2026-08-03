@@ -172,7 +172,8 @@ def TEST_COMBINATION_LOCAL_ADDRESS(memberSslMode, memberAuthType):
     shell.connect(__sandbox_uri1)
     EXPECT_THROWS(lambda:dba.create_cluster("cluster", merge({"gtidSetIsComplete": 1, "memberAuthType": memberAuthType,
                            "memberSslMode": memberSslMode}, cert_issuer, cert_subject, local_address1)), "Server address configuration error", "create")
-    EXPECT_STDOUT_CONTAINS(f"ERROR: MySQL server at '198.51.100.100:{__mysql_sandbox_port1}' can't connect to '198.51.100.100:{__mysql_sandbox_port1}'")
+    EXPECT_STDOUT_CONTAINS(
+        f"ERROR: Connectivity check failed: MySQL server at '198.51.100.100:{__mysql_sandbox_port1}' can't connect to '198.51.100.100:{__mysql_sandbox_port1}' using the configured report_host.")
     WIPE_OUTPUT()
     print("\n###### addInstance@sb2 localAddress", memberSslMode, memberAuthType)
     shell.connect(__sandbox_uri3)
@@ -180,7 +181,8 @@ def TEST_COMBINATION_LOCAL_ADDRESS(memberSslMode, memberAuthType):
                            "memberSslMode": memberSslMode}, cert_issuer, cert_subject))
     WIPE_OUTPUT()
     EXPECT_THROWS(lambda:c.add_instance(__sandbox_uri2, merge(cert_subject, local_address2)), "Server address configuration error", "add")
-    EXPECT_STDOUT_CONTAINS(f"ERROR: MySQL server at '{hostname}:{__mysql_sandbox_port3}' can't connect to '198.51.100.100:{__mysql_sandbox_port2}'")
+    EXPECT_STDOUT_CONTAINS(
+        f"ERROR: Connectivity check failed: MySQL server at '{hostname}:{__mysql_sandbox_port3}' can't connect to '198.51.100.100:{__mysql_sandbox_port2}' using the configured report_host.")
     WIPE_OUTPUT()
 
 #@<> report_host is wrong

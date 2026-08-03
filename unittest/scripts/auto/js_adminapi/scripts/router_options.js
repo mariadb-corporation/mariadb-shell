@@ -3121,6 +3121,10 @@ EXPECT_EQ("primary", target_cluster);
 // Set to a specific cluster
 clusterset.setRoutingOption("routerhost1::system", "target_cluster", "cluster");
 
+//@<> ClusterSet.setRoutingOption() must allow configuring unreachable_quorum_allowed_traffic
+EXPECT_NO_THROWS(function() { clusterset.setRoutingOption("routerhost1::system", "unreachable_quorum_allowed_traffic", "ALL"); });
+EXPECT_EQ("all", session.runSql("SELECT options->>'$.unreachable_quorum_allowed_traffic' FROM mysql_innodb_cluster_metadata.routers WHERE address = 'routerhost1'").fetchOne()[0]);
+
 // extended:0
 router_options = clusterset.routerOptions();
 target_cluster = router_options["routers"]["routerhost1::system"]["configuration"]["routing_rules"]["target_cluster"];

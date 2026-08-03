@@ -1,4 +1,4 @@
-//@{!__dbug_off}
+//@{__dbug}
 
 //@<> Setup
 var scene = new ClusterScenario([__mysql_sandbox_port1]);

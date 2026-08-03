@@ -319,14 +319,14 @@ EXPECT_DDM_NOT_DUMPED()
 #@<> WL17279-FR2 - prepare a dump to be loaded
 EXPECT_SUCCESS({"allowDataMasking": True})
 
-#@<> WL17279-FR2.1 - target version does not support DDM - {not __dbug_off}
+#@<> WL17279-FR2.1 - target version does not support DDM - {__dbug}
 testutil.dbug_set("+d,dump_loader_ddm_unsupported_version")
 
 EXPECT_LOAD_FAIL("Shell Error (53038)", "The dump contains dynamic data masking DDL which requires server 9.7.0 or newer.")
 
 testutil.dbug_set("")
 
-#@<> WL17279-FR2.1 - target version does not support DDM, but we're not loading DDL - {not __dbug_off}
+#@<> WL17279-FR2.1 - target version does not support DDM, but we're not loading DDL - {__dbug}
 testutil.dbug_set("+d,dump_loader_ddm_unsupported_version")
 
 # dry run, because target instance is empty

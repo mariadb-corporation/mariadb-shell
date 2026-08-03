@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -681,8 +682,10 @@ class Check_table_command : public Upgrade_check {
           });
     };
 
-    const std::unordered_map<std::string, Checker_cache::Table_info> *tables;
-    const std::unordered_map<std::string, Checker_cache::Table_info> *views;
+    const std::unordered_map<std::string, Checker_cache::Table_info> *tables =
+        nullptr;
+    const std::unordered_map<std::string, Checker_cache::Table_info> *views =
+        nullptr;
     {
       auto workers =
           context.make_worker_pool([&context](int current, int total) {
@@ -1610,21 +1613,21 @@ class Deprecated_partition_temporal_delimiter_check : public Sql_upgrade_check {
       : Sql_upgrade_check(
             ids::k_deprecated_temporal_delimiter_check, Category::SCHEMA,
             std::vector<Check_query>{{
-                R"(select 
-p.table_schema, 
-p.table_name, 
-column_name, 
-CONCAT(' - partition ', 
-p.partition_name, ' uses deprecated temporal delimiters') AS message, 
-p.partition_expression, 
-p.partition_description 
-from 
+                R"(select
+p.table_schema,
+p.table_name,
+column_name,
+CONCAT(' - partition ',
+p.partition_name, ' uses deprecated temporal delimiters') AS message,
+p.partition_expression,
+p.partition_description
+from
 information_schema.partitions p
 left join information_schema.columns c
 on p.table_schema = c.table_schema and
-p.table_name = c.table_name and 
+p.table_name = c.table_name and
 p.partition_expression LIKE concat('%`', c.column_name, '`%')
-where 
+where
 <<p.schema_and_table_filter>> and (
 (not partition_description REGEXP ')" +
                     deprecated_delimiter_funcs::k_date_regex_multi_str +
@@ -1751,56 +1754,59 @@ std::unique_ptr<Upgrade_check> get_foreign_key_references_check() {
  * Last, the final part, produces from previous parts results a list of
  * constraints that have any (non zero) non unique keys .
  */
-R"(select 
-  fk.constraint_schema, 
+R"(select
+  fk.constraint_schema,
   fk.table_name,
   fk.constraint_name,
   fk.parent_fk_definition as fk_definition,
-  fk.REFERENCED_TABLE_NAME as target_table,
+  fk.target_table,
   '##fkToNonUniqueKey'
-from (select 
-      rc.constraint_schema, 
+from (select
+      rc.constraint_schema,
       rc.constraint_name,
       CONCAT(rc.table_name, '(', GROUP_CONCAT(kc.column_name order by kc.ORDINAL_POSITION),')') as parent_fk_definition,
       CONCAT(kc.REFERENCED_TABLE_SCHEMA,'.',kc.REFERENCED_TABLE_NAME, '(', GROUP_CONCAT(kc.REFERENCED_COLUMN_NAME order by kc.POSITION_IN_UNIQUE_CONSTRAINT),')') as target_fk_definition,
       rc.REFERENCED_TABLE_NAME,
+      CONCAT(kc.REFERENCED_TABLE_SCHEMA,'.',rc.REFERENCED_TABLE_NAME) as target_table,
       rc.table_name
-    from 
+    from
       information_schema.REFERENTIAL_CONSTRAINTS rc
-        join 
+        join
           information_schema.KEY_COLUMN_USAGE kc
-        on 
+        on
           rc.constraint_schema = kc.constraint_schema AND
           rc.constraint_name = kc.constraint_name AND
-          rc.constraint_schema = kc.REFERENCED_TABLE_SCHEMA AND
+          rc.UNIQUE_CONSTRAINT_SCHEMA = kc.REFERENCED_TABLE_SCHEMA AND
           rc.REFERENCED_TABLE_NAME = kc.REFERENCED_TABLE_NAME AND
           kc.REFERENCED_TABLE_NAME is not NULL AND
           kc.REFERENCED_COLUMN_NAME is not NULL
-    where 
-      <<schema_filter:rc.constraint_schema>> 
+    where
+      <<schema_filter:rc.constraint_schema>>
     group by
       rc.constraint_schema,
       rc.constraint_name,
       rc.table_name,
-      rc.REFERENCED_TABLE_NAME) fk
-  join (SELECT 
+      rc.REFERENCED_TABLE_NAME,
+      kc.referenced_table_schema) fk
+  join (SELECT
       CONCAT(table_schema,'.',table_name,'(',GROUP_CONCAT(column_name order by seq_in_index),')') as fk_definition,
       SUM(non_unique) as non_unique_count
-    FROM 
-      INFORMATION_SCHEMA.STATISTICS 
-    WHERE 
-      <<schema_filter:table_schema>> AND 
+    FROM
+      INFORMATION_SCHEMA.STATISTICS
+    WHERE
+      <<schema_filter_without_user_filters:table_schema>> AND
       sub_part IS NULL
-    GROUP BY 
+    GROUP BY
       table_schema, table_name, index_name) idx
-    on 
+    on
       fk.target_fk_definition = idx.fk_definition
   group by
     fk.constraint_schema,
     fk.constraint_name,
     fk.parent_fk_definition,
     fk.REFERENCED_TABLE_NAME,
-    fk.table_name
+    fk.table_name,
+    fk.target_table
   having
     SUM(idx.non_unique_count = 0) = 0 AND
     <<fk.schema_and_table_filter:constraint_schema:table_name>>
@@ -1824,7 +1830,7 @@ from (select
   fk.table_name,
   fk.constraint_name,
   fk_definition,
-  fk.referenced_table_name AS target_table,
+  CONCAT(fk.referenced_table_schema,'.',fk.referenced_table_name) AS target_table,
   '##fkToPartialKey'
 FROM (
   SELECT
@@ -1863,7 +1869,7 @@ LEFT JOIN (
     INFORMATION_SCHEMA.STATISTICS s
   WHERE
     s.sub_part IS NULL
-    AND <<schema_filter:table_schema>>
+    AND <<schema_filter_without_user_filters:table_schema>>
   GROUP BY
     s.table_schema,
     s.table_name,

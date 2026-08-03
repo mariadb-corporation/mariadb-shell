@@ -58,7 +58,7 @@ set(mysh_SRC
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
   SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/linenoise.cpp PROPERTIES COMPILE_FLAGS "-Wno-stringop-overflow")
-  SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp PROPERTIES COMPILE_FLAGS "-Wno-implicit-fallthrough")
+  SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp PROPERTIES COMPILE_FLAGS "-Wno-implicit-fallthrough -Wno-array-bounds")
 ENDIF()
 
 IF(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -178,7 +178,7 @@ IF(WITH_TESTS)
 ENDIF()
 
 ### Bundling of OpenSSL libraries (if needed)
-if(BUNDLED_OPENSSL)
+if(BUNDLED_OPENSSL AND NOT WITH_PARFAIT)
   IF(WIN32)
     SET(OPENSSL_LIBS "${HAVE_CRYPTO_DLL}" "${HAVE_OPENSSL_DLL}")
   ELSE()
@@ -842,6 +842,14 @@ ENDIF()
 # If defined, installs the client authentication plugins
 IF(AUTH_CLIENT_PLUGINS)
   IF(AUTH_CLIENT_PLUGINS_DEPS)
+    SET(AUTH_CLIENT_PLUGINS_DEPS_OPTIONS)
+    IF(LINUX_UBUNTU AND NOT BUNDLED_OPENSSL)
+      # Do not add an RPATH to libfido2 itself; debugedit corrupts this
+      # patched DSO in dh_strip on Ubuntu builds using the system OpenSSL
+      # libraries.
+      LIST(APPEND AUTH_CLIENT_PLUGINS_DEPS_OPTIONS WRITE_RPATH FALSE)
+    ENDIF()
+
     install_bundled_binaries(
         DESCRIPTION "MySQL authentication plugins - dependencies"
         BINARIES ${AUTH_CLIENT_PLUGINS_DEPS}

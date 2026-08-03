@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,8 +44,8 @@ namespace dba {
 
 namespace {
 
-// replication errors that indicate the connection check succeeded
-constexpr const int k_successful_errors[] = {
+// Replication errors that indicate the temporary channel reached the source.
+constexpr const int k_expected_connection_check_errors[] = {
 #ifdef ER_SLAVE_FATAL_ERROR
     ER_SLAVE_FATAL_ERROR,
     ER_SLAVE_MASTER_COM_FAILURE  // Master command COM_REGISTER_SLAVE failed:
@@ -55,6 +56,15 @@ constexpr const int k_successful_errors[] = {
     ER_REPLICA_SOURCE_COM_FAILURE  //
 #endif
 };
+
+constexpr const char *k_connectivity_check_context =
+    "AdminAPI Connectivity Check";
+
+bool is_expected_connection_check_error(int code) {
+  return std::find(std::begin(k_expected_connection_check_errors),
+                   std::end(k_expected_connection_check_errors),
+                   code) != std::end(k_expected_connection_check_errors);
+}
 
 void throw_ssl_connection_error_diagnostic(std::string_view error,
                                            const std::string &printable_error,
@@ -124,40 +134,40 @@ void throw_connect_error_diagnostic(
     std::string_view to_address, std::string_view to_address_source,
     std::string_view cert_issuer, std::string_view cert_subject,
     Cluster_ssl_mode ssl_mode, Replication_auth_type auth_type) {
-  if (std::find(std::begin(k_successful_errors), std::end(k_successful_errors),
-                error.code) != std::end(k_successful_errors))
-    return;
+  if (error.code == 0 || is_expected_connection_check_error(error.code)) return;
 
   log_info(
-      "Test replication channel between %.*s and %.*s (%.*s) failed with error "
-      "%i: %s",
-      static_cast<int>(from_address.size()), from_address.data(),
-      static_cast<int>(to_address.size()), to_address.data(),
-      static_cast<int>(to_address_source.size()), to_address_source.data(),
-      error.code, error.message.c_str());
+      "%s: temporary replication channel 'mysqlsh.test' between %.*s and "
+      "%.*s (%.*s) reported error %i: %s",
+      k_connectivity_check_context, static_cast<int>(from_address.size()),
+      from_address.data(), static_cast<int>(to_address.size()),
+      to_address.data(), static_cast<int>(to_address_source.size()),
+      to_address_source.data(), error.code, error.message.c_str());
 
   switch (error.code) {
     case CR_CONN_HOST_ERROR:
     case CR_UNKNOWN_HOST:
       current_console()->print_error(shcore::str_format(
-          "MySQL server at '%.*s' can't connect to '%.*s'. Verify configured "
-          "%.*s and that the address is valid at that host.",
+          "Connectivity check failed: MySQL server at '%.*s' can't connect to "
+          "'%.*s' using the configured %.*s. Verify that the %.*s value is "
+          "valid at '%.*s' and reachable from that host.",
           static_cast<int>(from_address.size()), from_address.data(),
           static_cast<int>(to_address.size()), to_address.data(),
-          static_cast<int>(to_address_source.size()),
-          to_address_source.data()));
+          static_cast<int>(to_address_source.size()), to_address_source.data(),
+          static_cast<int>(to_address_source.size()), to_address_source.data(),
+          static_cast<int>(from_address.size()), from_address.data()));
 
       throw shcore::Exception::runtime_error(
           "Server address configuration error");
 
     case CR_SSL_CONNECTION_ERROR: {
       auto printable_error = shcore::str_format(
-          "Test replication channel between %.*s and %.*s (%.*s) failed with "
-          "error %i: %s",
-          static_cast<int>(from_address.size()), from_address.data(),
-          static_cast<int>(to_address.size()), to_address.data(),
-          static_cast<int>(to_address_source.size()), to_address_source.data(),
-          error.code, error.message.c_str());
+          "%s: temporary replication channel 'mysqlsh.test' between %.*s and "
+          "%.*s (%.*s) failed with error %i: %s",
+          k_connectivity_check_context, static_cast<int>(from_address.size()),
+          from_address.data(), static_cast<int>(to_address.size()),
+          to_address.data(), static_cast<int>(to_address_source.size()),
+          to_address_source.data(), error.code, error.message.c_str());
 
       throw_ssl_connection_error_diagnostic(error.message, printable_error,
                                             from_address, to_instance_address,
@@ -250,11 +260,30 @@ mysqlshdk::mysql::Replication_channel::Error try_connect_channel(
   auto channel = mysqlshdk::mysql::wait_replication_done_connecting(
       from_instance, "mysqlsh.test");
 
-  log_info("Connection check %s -> %.*s io_state=%s io_error=%s",
-           from_instance.descr().c_str(), static_cast<int>(to_address.size()),
-           to_address.data(),
-           mysqlshdk::mysql::to_string(channel.receiver.state).c_str(),
-           mysqlshdk::mysql::to_string(channel.receiver.last_error).c_str());
+  if (channel.receiver.last_error.code == 0) {
+    log_info(
+        "%s: temporary replication channel 'mysqlsh.test' from %s to %.*s "
+        "connected successfully",
+        k_connectivity_check_context, from_instance.descr().c_str(),
+        static_cast<int>(to_address.size()), to_address.data());
+  } else if (is_expected_connection_check_error(
+                 channel.receiver.last_error.code)) {
+    log_info(
+        "%s: temporary replication channel 'mysqlsh.test' from %s to %.*s "
+        "reached the source; replica I/O error %i is expected and non-fatal "
+        "for this validation",
+        k_connectivity_check_context, from_instance.descr().c_str(),
+        static_cast<int>(to_address.size()), to_address.data(),
+        channel.receiver.last_error.code);
+  } else {
+    log_info(
+        "%s: temporary replication channel 'mysqlsh.test' from %s to %.*s "
+        "io_state=%s io_error=%s",
+        k_connectivity_check_context, from_instance.descr().c_str(),
+        static_cast<int>(to_address.size()), to_address.data(),
+        mysqlshdk::mysql::to_string(channel.receiver.state).c_str(),
+        mysqlshdk::mysql::to_string(channel.receiver.last_error).c_str());
+  }
 
   return channel.receiver.last_error;
 }
@@ -288,10 +317,11 @@ void test_async_channel_connection(
          ssl_mode != Cluster_ssl_mode::NONE);
 
   log_info(
-      "Checking connection from %s to %s@%.*s:%i (%.*s) ssl_mode=%s "
-      "auth_type=%s "
+      "%s: checking temporary replication channel 'mysqlsh.test' from %s to "
+      "%s@%.*s:%i (%.*s). The channel is used only to validate connectivity "
+      "and is not part of the final topology. ssl_mode=%s auth_type=%s "
       "cert_issuer=%.*s cert_subject=%.*s",
-      from_instance.descr().c_str(), user.c_str(),
+      k_connectivity_check_context, from_instance.descr().c_str(), user.c_str(),
       static_cast<int>(to_address.size()), to_address.data(), to_address_port,
       static_cast<int>(to_address_source.size()), to_address_source.data(),
       to_string(ssl_mode).c_str(), to_string(member_auth_type).c_str(),
@@ -516,6 +546,12 @@ void test_peer_connection(const mysqlshdk::mysql::IInstance &from_instance,
                           std::string_view comm_stack, bool skip_self_check) {
   // We perform full tests from from to to, but only connectivity checks the
   // other way around
+
+  log_info(
+      "%s: testing connectivity in both directions between '%s' and '%s' using "
+      "temporary replication channel 'mysqlsh.test'",
+      k_connectivity_check_context, from_instance.descr().c_str(),
+      to_instance.descr().c_str());
 
   shcore::Scoped_callback cleanup_user([&to_instance, &from_instance]() {
     {

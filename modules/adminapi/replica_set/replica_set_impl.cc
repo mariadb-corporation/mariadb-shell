@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1075,10 +1076,12 @@ void Replica_set_impl::add_instance(
         sync_transactions(*target_instance, {k_replicaset_channel_name},
                           sync_timeout);
       } catch (const shcore::Exception &e) {
-        if (e.code() != SHERR_DBA_GTID_SYNC_TIMEOUT) throw;
-        console->print_info(
-            "You may increase or disable the transaction sync timeout with "
-            "the timeout option for <<<addInstance>>>()");
+        if (e.code() == SHERR_DBA_GTID_SYNC_TIMEOUT) {
+          console->print_info(
+              "You may increase or disable the transaction sync timeout with "
+              "the timeout option for <<<addInstance>>>()");
+        }
+        throw;
       } catch (const cancel_sync &) {
         throw;
       }

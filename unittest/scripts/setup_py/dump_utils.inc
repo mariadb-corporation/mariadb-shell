@@ -10,6 +10,11 @@ import threading
 import time
 import urllib.parse
 
+supported_versions = f"8.0 <= version < 10.0 or 26.7 <= version <= {'.'.join(__mysh_version.split('.')[:2])}.*"
+
+def unsupported_target_version_msg(version):
+    return f"Target MySQL version '{version}' is not supported by this version of MySQL Shell. Supported MySQL Server versions are {supported_versions}"
+
 def md5_table(session, schema, table, where = "", partitions = []):
     columns = []
     has_pri = 0 != session.run_sql("SELECT COUNT(*) FROM information_schema.statistics WHERE index_name = 'PRIMARY' AND table_schema = ? AND table_name = ?", [schema, table]).fetch_one()[0]

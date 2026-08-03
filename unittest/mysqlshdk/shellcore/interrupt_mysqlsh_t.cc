@@ -142,6 +142,8 @@ class Interrupt_mysqlsh : public tests::Command_line_test {
         << "x=0\n"
         << "try:\n"
         << "    while 1:\n"
+        // workaround for https://github.com/python/cpython/issues/130279
+        << "        time.sleep(0.01)\n"
         << "        if x == 0:\n"
         << "            x = 1\n"
         << "            print('ready')\n"

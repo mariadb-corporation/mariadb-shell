@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -183,6 +184,9 @@ std::shared_ptr<mysqlsh::dba::Instance> monitor_clone_recovery(
 
   if (wait_restart) {
     ignore_cancel = true;
+
+    DBUG_EXECUTE_IF("dba_abort_monitor_clone_recovery_wait_restart",
+                    { throw restart_timeout(); });
 
     // Wait for the server to start again
     try {

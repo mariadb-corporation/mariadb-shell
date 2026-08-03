@@ -996,7 +996,7 @@ var comm_stack = json_find_key(stat, "defaultReplicaSet")["communicationStack"];
 
 session.close();
 
-//@<> Verify that any error present in PFS is added to the status of the members when calling cluster.status() {!__dbug_off}
+//@<> Verify that any error present in PFS is added to the status of the members when calling cluster.status() {__dbug}
 if (comm_stack == "XCOM") {
     // Drop replication accounts
     var session1 = mysql.getSession(__sandbox_uri1);

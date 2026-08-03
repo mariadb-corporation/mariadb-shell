@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -44,11 +45,14 @@ struct Setup_options {
   bool user_exists = true;
   mysqlshdk::utils::Version version{8, 0, 20};
   std::optional<bool> activate_all_roles_on_login = false;
+  std::optional<bool> activate_mandatory_roles;
   std::vector<std::string> mandatory_roles;
+  std::vector<std::string> missing_mandatory_roles;
   std::vector<shcore::Account> active_roles;
   std::vector<std::string> grants;
   bool allow_skip_grants_user = false;
   std::optional<bool> partial_revokes;
+  std::string current_user = "username@hostname";
 };
 
 void setup(const Setup_options &options, Mock_session *session);

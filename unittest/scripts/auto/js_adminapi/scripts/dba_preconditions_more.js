@@ -232,7 +232,7 @@ if (__version_num >= 80027) {
 
 session.close();
 
-//@<> Check for min MD version requirements for dba commands {!__dbug_off}
+//@<> Check for min MD version requirements for dba commands {__dbug}
 testutil.destroySandbox(__mysql_sandbox_port1);
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
 shell.connect(__sandbox_uri1);
@@ -262,7 +262,7 @@ check_exception(function(){ dba.getClusterSet(); }, expect_exp, expect_output);
 
 testutil.dbugSet("");
 
-//@<> Check for min MD version requirements for cluster commands {!__dbug_off}
+//@<> Check for min MD version requirements for cluster commands {__dbug}
 testutil.destroySandbox(__mysql_sandbox_port1);
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
 shell.connect(__sandbox_uri1);
@@ -315,7 +315,7 @@ check_exception(function(){ cluster.importRoutingGuideline("foo"); }, expect_exp
 
 testutil.dbugSet("");
 
-//@<> Check for min MD version requirements for replicaset commands {VER(>=8.0.11) && !__dbug_off}
+//@<> Check for min MD version requirements for replicaset commands {VER(>=8.0.11) && __dbug}
 testutil.destroySandbox(__mysql_sandbox_port1);
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
 shell.connect(__sandbox_uri1);
@@ -334,7 +334,7 @@ check_exception(function(){ rset.routerOptions(); }, expect_exp, expect_output);
 testutil.dbugSet("");
 
 
-//@<> Check for min MD version requirements for clusterset commands {VER(>=8.0.27) && !__dbug_off}
+//@<> Check for min MD version requirements for clusterset commands {VER(>=8.0.27) && __dbug}
 testutil.destroySandbox(__mysql_sandbox_port1);
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
 shell.connect(__sandbox_uri1);

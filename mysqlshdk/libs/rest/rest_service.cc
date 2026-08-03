@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +27,10 @@
 #include "mysqlshdk/libs/rest/rest_service.h"
 
 #include <curl/curl.h>
+#include <charconv>
 #include <optional>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -57,10 +61,10 @@ static constexpr auto k_content_type = "Content-Type";
 static constexpr auto k_application_json = "application/json";
 
 constexpr const char *get_user_agent() { return "mysqlsh/" MYSH_VERSION; }
-constexpr const char *k_allowed_rest_protocols = "http,https";
 
 void configure_allowed_protocols(CURL *handle) {
 #if LIBCURL_VERSION_NUM >= 0x075500
+  constexpr const char *k_allowed_rest_protocols = "http,https";
   curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, k_allowed_rest_protocols);
   curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR,
                    k_allowed_rest_protocols);
@@ -88,12 +92,200 @@ size_t response_data_callback(char *ptr, size_t size, size_t nmemb,
   return bytes;
 }
 
+struct Origin {
+  std::string scheme;
+  std::string host;
+  int port = 0;
+
+  bool operator==(const Origin &other) const {
+    return shcore::str_caseeq(scheme, other.scheme) &&
+           shcore::str_caseeq(host, other.host) && port == other.port;
+  }
+
+  bool operator!=(const Origin &other) const { return !(*this == other); }
+};
+
+int default_port(std::string_view scheme) {
+  return shcore::str_caseeq(scheme, "https") ? 443 : 80;
+}
+
+std::string origin_url(std::string_view url) {
+  constexpr std::string_view k_scheme_separator{"://"};
+  const auto scheme_end = url.find(k_scheme_separator);
+
+  if (std::string_view::npos == scheme_end) {
+    throw std::invalid_argument{"URL does not have an authority"};
+  }
+
+  const auto authority_begin = scheme_end + k_scheme_separator.length();
+  auto authority_end = url.find_first_of("/?#", authority_begin);
+
+  if (std::string_view::npos == authority_end) {
+    authority_end = url.length();
+  }
+
+  if (authority_begin == authority_end) {
+    throw std::invalid_argument{"URL authority is empty"};
+  }
+
+  return std::string{url.substr(0, authority_end)};
+}
+
+Origin parse_origin(std::string_view value) {
+  mysqlshdk::db::uri::Generic_uri url;
+  mysqlshdk::db::uri::Uri_parser parser{mysqlshdk::db::uri::Type::Generic};
+
+  parser.parse(origin_url(value), &url);
+
+  if (url.host.empty()) {
+    throw std::invalid_argument{"URL host is empty"};
+  }
+
+  const auto port = url.port.value_or(default_port(url.scheme));
+
+  return {std::move(url.scheme), std::move(url.host), port};
+}
+
+bool is_status_line(std::string_view line) {
+  constexpr std::string_view k_http_prefix{"HTTP/"};
+
+  return line.size() >= k_http_prefix.length() &&
+         line.substr(0, k_http_prefix.length()) == k_http_prefix;
+}
+
+Response::Status_code parse_status_code(std::string_view line) {
+  const auto begin = line.find(' ');
+
+  if (std::string_view::npos == begin) {
+    return static_cast<Response::Status_code>(0);
+  }
+
+  const auto code_begin = line.find_first_not_of(' ', begin + 1);
+
+  if (std::string_view::npos == code_begin) {
+    return static_cast<Response::Status_code>(0);
+  }
+
+  const auto first = line.data() + code_begin;
+  const auto last = line.data() + line.size();
+
+  int code = 0;
+  const auto result = std::from_chars(first, last, code);
+
+  if (result.ec != std::errc{} || result.ptr == first) {
+    return static_cast<Response::Status_code>(0);
+  }
+
+  return static_cast<Response::Status_code>(code);
+}
+
+std::string_view trim_header_value(std::string_view value) {
+  const auto begin = value.find_first_not_of(" \t");
+
+  if (std::string_view::npos == begin) {
+    return {};
+  }
+
+  auto end = value.find_last_not_of(" \t\r\n");
+
+  if (std::string_view::npos == end || end < begin) {
+    return {};
+  }
+
+  return value.substr(begin, end - begin + 1);
+}
+
+bool is_redirect_status(Response::Status_code status) {
+  return status >= Response::Status_code::MULTIPLE_CHOICES &&
+         status < Response::Status_code::BAD_REQUEST;
+}
+
+bool is_http_url(std::string_view location) {
+  return shcore::str_ibeginswith(location, "http://", "https://");
+}
+
+bool has_http_scheme(std::string_view location) {
+  return shcore::str_ibeginswith(location, "http:", "https:");
+}
+
+bool is_network_path_url(std::string_view location) {
+  return shcore::str_beginswith(location, "//");
+}
+
+struct Response_header_context {
+  explicit Response_header_context(Origin request_origin)
+      : origin(std::move(request_origin)) {}
+
+  Origin origin;
+  Response::Status_code status = static_cast<Response::Status_code>(0);
+  std::string headers;
+  std::optional<std::string> blocked_redirect;
+};
+
+std::optional<std::string> redirect_policy_error(const Origin &origin,
+                                                 std::string_view location) {
+  std::string url;
+
+  if (is_network_path_url(location)) {
+    url = origin.scheme + ":" + std::string{location};
+  } else if (is_http_url(location)) {
+    url = std::string{location};
+  } else if (has_http_scheme(location)) {
+    const auto scheme_end = location.find(':');
+    const auto after_scheme = location.substr(scheme_end + 1);
+
+    if (shcore::str_beginswith(after_scheme, "/") &&
+        !shcore::str_beginswith(after_scheme, "//")) {
+      url = std::string{location.substr(0, scheme_end + 1)} + "/" +
+            std::string{after_scheme};
+    } else {
+      url = std::string{location};
+    }
+  } else {
+    return {};
+  }
+
+  try {
+    if (origin != parse_origin(url)) {
+      throw std::runtime_error{"Redirect not allowed"};
+    }
+  } catch (const std::exception &) {
+    return "Redirect to a different origin is not allowed";
+  }
+
+  return {};
+}
+
 size_t response_header_callback(char *ptr, size_t size, size_t nmemb,
                                 void *userdata) {
-  auto data = static_cast<std::string *>(userdata);
+  auto context = static_cast<Response_header_context *>(userdata);
   const auto bytes = size * nmemb;
+  const std::string_view line{ptr, bytes};
 
-  data->append(ptr, bytes);
+  if (is_status_line(line)) {
+    // this is beginning of a new response, reset the headers
+    context->status = parse_status_code(line);
+    context->headers.assign(ptr, bytes);
+
+    return bytes;
+  }
+
+  if (is_redirect_status(context->status)) {
+    constexpr std::string_view k_location_header{"Location:"};
+
+    if (shcore::str_ibeginswith(line, k_location_header)) {
+      if (auto error = redirect_policy_error(
+              context->origin,
+              trim_header_value(line.substr(k_location_header.length())));
+          error.has_value()) {
+        context->blocked_redirect = std::move(error);
+
+        return 0;
+      }
+    }
+  }
+
+  context->headers.append(ptr, bytes);
 
   return bytes;
 }
@@ -316,8 +508,8 @@ class Rest_service::Impl {
         set_headers(request->headers(), request->size != 0);
 
     // set callbacks which will receive the response
-    std::string header_data;
-    curl_easy_setopt(m_handle.get(), CURLOPT_HEADERDATA, &header_data);
+    Response_header_context header_context{parse_origin(m_base_url.real())};
+    curl_easy_setopt(m_handle.get(), CURLOPT_HEADERDATA, &header_context);
     curl_easy_setopt(m_handle.get(), CURLOPT_WRITEDATA,
                      response ? response->body : nullptr);
 
@@ -326,6 +518,11 @@ class Rest_service::Impl {
     m_error_buffer[0] = '\0';
     // execute the request
     auto ret_val = curl_easy_perform(m_handle.get());
+
+    if (header_context.blocked_redirect.has_value()) {
+      throw Redirect_policy_error{*header_context.blocked_redirect};
+    }
+
     if (ret_val != CURLE_OK) {
       const auto error_buffer = '\0' == m_error_buffer[0]
                                     ? curl_easy_strerror(ret_val)
@@ -337,11 +534,11 @@ class Rest_service::Impl {
 
     const auto status = get_status_code();
 
-    log_response(m_request_sequence, status, header_data);
+    log_response(m_request_sequence, status, header_context.headers);
 
     if (response) {
       response->status = status;
-      response->headers = parse_headers(header_data);
+      response->headers = parse_headers(header_context.headers);
     }
 
     return status;
@@ -625,6 +822,9 @@ Response::Status_code Rest_service::execute(Request *request,
 
         return code;
       }
+    } catch (const Redirect_policy_error &error) {
+      log_failed_request(base_url, *request, format_exception(error));
+      throw;
     } catch (const rest::Connection_error &error) {
       // exception was thrown when connection was being established or while
       // transfer was in progress, there is no response

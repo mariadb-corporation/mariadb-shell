@@ -320,6 +320,27 @@ TEST_F(Mysqlsh_misc, autodetect_script_type) {
   shcore::delete_file("bla.sql");
 }
 
+TEST_F(Mysqlsh_misc, Bug36648483) {
+  try {
+    shcore::delete_file(shcore::path::join_path(shcore::get_user_config_path(),
+                                                "options.json"));
+  } catch (...) {
+  }
+
+  const auto rc = execute({_mysqlsh, "--js", "-e",
+                           "println(shell.options['defaultMode']); "
+                           "shell.options.setPersist('defaultMode', 'none'); "
+                           "println(shell.options['defaultMode'])",
+                           nullptr});
+  EXPECT_NE(0, rc);
+#ifdef HAVE_JS
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "Valid values for shell mode are sql, js or py.");
+#else
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("unknown option --js");
+#endif
+}
+
 TEST_F(Mysqlsh_misc, run_python_module) {
   execute({_mysqlsh, "--pym", "unittest", "-h", nullptr});
 

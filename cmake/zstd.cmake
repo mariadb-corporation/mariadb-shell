@@ -25,6 +25,8 @@
 # cmake -DWITH_ZSTD=bundled|system
 # system is the default
 
+include(mysql_server_dependency)
+
 macro (FIND_SYSTEM_ZSTD)
   find_path(PATH_TO_ZSTD NAMES zstd.h)
   find_library(ZSTD_SYSTEM_LIBRARY NAMES zstd)
@@ -41,10 +43,13 @@ macro(MYSQL_USE_BUNDLED_ZSTD)
   if(MYSQL_SOURCE_DIR AND MYSQL_BUILD_DIR)
     set(WITH_ZSTD "bundled" CACHE STRING "By default use bundled zstd library")
     set(BUILD_BUNDLED_ZSTD 1)
-    file(GLOB_RECURSE ZSTD_INCLUDE_FILE ${MYSQL_SOURCE_DIR}/extra/zstd/*/lib/zstd.h)
 
-    if(NOT ZSTD_INCLUDE_FILE)
-      message(FATAL_ERROR "Could not find \"zstd.h\"")
+    mysql_resolve_versioned_dependency("zstd"
+        "${MYSQL_SOURCE_DIR}/extra/zstd" "zstd-" ZSTD_SOURCE_DIR ZSTD_VERSION)
+    set(ZSTD_INCLUDE_FILE "${ZSTD_SOURCE_DIR}/lib/zstd.h")
+
+    if(NOT EXISTS "${ZSTD_INCLUDE_FILE}")
+      message(FATAL_ERROR "Could not find \"${ZSTD_INCLUDE_FILE}\"")
     endif()
 
     get_filename_component(ZSTD_INCLUDE_DIR ${ZSTD_INCLUDE_FILE} DIRECTORY)

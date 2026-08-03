@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,56 @@
 
 namespace mysqlshdk {
 namespace textui {
+namespace {
+
+inline bool is_c1_control(uint32_t codepoint) {
+  return codepoint >= 0x80 && codepoint <= 0x9F;
+}
+
+inline bool is_crlf_newline(std::string_view text, size_t offset) {
+  return text[offset] == '\r' && offset + 1 < text.size() &&
+         text[offset + 1] == '\n';
+}
+
+inline bool is_allowed_control(std::string_view text, size_t offset,
+                               Sanitization_mode mode) {
+  // Result fields have existing NUL rendering semantics through
+  // PRINT_0_AS_ESC. Other terminal text has no such contract, so encode NUL.
+  const auto byte = text[offset];
+  return byte == '\n' || byte == '\t' || is_crlf_newline(text, offset) ||
+         (mode == Sanitization_mode::Result_field && byte == '\0');
+}
+
+inline size_t get_sgr_sequence_size(std::string_view text, size_t offset) {
+  if (offset + 2 >= text.size()) return 0;
+
+  if (static_cast<unsigned char>(text[offset]) != 0x1B ||
+      text[offset + 1] != '[') {
+    return 0;
+  }
+
+  for (size_t i = offset + 2; i < text.size(); ++i) {
+    const auto byte = static_cast<unsigned char>(text[i]);
+
+    if (byte == 'm') return i - offset + 1;
+
+    if (byte < 0x20 || byte > 0x3F) return 0;
+  }
+
+  return 0;
+}
+
+void append_hex_escape(unsigned char byte, std::string *out) {
+  constexpr char k_hex[] = "0123456789ABCDEF";
+
+  out->push_back('\\');
+  out->push_back('x');
+  out->push_back(k_hex[byte >> 4]);
+  out->push_back(k_hex[byte & 0x0F]);
+}
+
+}  // namespace
+
 namespace internal {
 Highlight find_highlight(const std::string &where) {
   static const std::map<std::string, std::string> tags = {{"<b>", "</b>"},
@@ -298,6 +349,125 @@ std::vector<std::string> get_sized_strings(const std::string &input,
 Color_capability g_color_capability = Color_256;
 
 void set_color_capability(Color_capability cap) { g_color_capability = cap; }
+
+std::string sanitize_utf8_terminal_text(std::string_view text,
+                                        Sanitization_mode mode) {
+  std::string sanitized;
+  sanitized.reserve(text.size());
+  uint32_t codepoint = 0;
+
+  for (size_t i = 0; i < text.size();) {
+    const auto byte = static_cast<unsigned char>(text[i]);
+
+    // Preserve text styling produced by textui helpers such as bold(), while
+    // non-SGR controls and all result-field escapes still fall through to the
+    // normal encoding path.
+    if (mode == Sanitization_mode::Text) {
+      if (const auto sgr_size = get_sgr_sequence_size(text, i); sgr_size != 0) {
+        sanitized.append(text.substr(i, sgr_size));
+        i += sgr_size;
+        continue;
+      }
+    }
+
+    if (byte < 0x20) {
+      if (is_allowed_control(text, i, mode)) {
+        sanitized.push_back(static_cast<char>(byte));
+      } else {
+        append_hex_escape(byte, &sanitized);
+      }
+
+      ++i;
+      continue;
+    }
+
+    if (byte == 0x7F || is_c1_control(byte)) {  // 0x7F is DEL
+      append_hex_escape(byte, &sanitized);
+      ++i;
+      continue;
+    }
+
+    if (byte < 0x80) {
+      sanitized.push_back(static_cast<char>(byte));
+      ++i;
+      continue;
+    }
+
+    if (const auto sequence_size =
+            shcore::get_utf8_codepoint_size(text, i, &codepoint);
+        sequence_size != 0) {
+      if (is_c1_control(codepoint)) {
+        append_hex_escape(static_cast<unsigned char>(codepoint), &sanitized);
+      } else {
+        sanitized.append(text.substr(i, sequence_size));
+      }
+
+      i += sequence_size;
+      continue;
+    }
+
+    append_hex_escape(byte, &sanitized);
+    ++i;
+  }
+
+  return sanitized;
+}
+
+std::string sanitize_and_strip_ansi(std::string_view text) {
+  std::string sanitized;
+  sanitized.reserve(text.size());
+  uint32_t codepoint = 0;
+
+  for (size_t i = 0; i < text.size();) {
+    const auto byte = static_cast<unsigned char>(text[i]);
+
+    if (const auto sgr_size = get_sgr_sequence_size(text, i); sgr_size != 0) {
+      i += sgr_size;
+      continue;
+    }
+
+    if (byte < 0x20) {
+      if (is_allowed_control(text, i, Sanitization_mode::Text)) {
+        sanitized.push_back(static_cast<char>(byte));
+      } else {
+        append_hex_escape(byte, &sanitized);
+      }
+
+      ++i;
+      continue;
+    }
+
+    if (byte == 0x7F || is_c1_control(byte)) {  // 0x7F is DEL
+      append_hex_escape(byte, &sanitized);
+      ++i;
+      continue;
+    }
+
+    if (byte < 0x80) {
+      sanitized.push_back(static_cast<char>(byte));
+      ++i;
+      continue;
+    }
+
+    if (const auto sequence_size =
+            shcore::get_utf8_codepoint_size(text, i, &codepoint);
+        sequence_size != 0) {
+      if (is_c1_control(codepoint)) {
+        append_hex_escape(static_cast<unsigned char>(codepoint), &sanitized);
+      } else {
+        sanitized.append(text.substr(i, sequence_size));
+      }
+
+      i += sequence_size;
+      continue;
+    }
+
+    append_hex_escape(byte, &sanitized);
+    ++i;
+  }
+
+  return sanitized;
+}
 
 bool parse_rgb(const std::string &color, uint8_t rgb[3]) {
   if (color.empty() || color[0] != '#' ||

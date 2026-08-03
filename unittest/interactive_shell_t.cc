@@ -480,7 +480,8 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
         execute("\\connect --mc " +
                 data.as_uri(mysqlshdk::db::uri::formats::full()));
         MY_EXPECT_STDOUT_CONTAINS("Creating a Classic session to ");
-        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor + " connection id is ");
+        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor +
+                                  " connection id is ");
         MY_EXPECT_STDOUT_CONTAINS(
             "No default schema selected; type \\use <schema> to set one.");
         output_handler.wipe_all();
@@ -501,7 +502,8 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
         execute("\\connect " +
                 data.as_uri(mysqlshdk::db::uri::formats::full()));
         MY_EXPECT_STDOUT_CONTAINS("Creating a session to ");
-        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor + " connection id is ");
+        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor +
+                                  " connection id is ");
         MY_EXPECT_STDOUT_CONTAINS(
             "No default schema selected; type \\use <schema> to set one.");
         output_handler.wipe_all();
@@ -548,7 +550,8 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
         execute("\\connect --mx " +
                 data.as_uri(mysqlshdk::db::uri::formats::full()));
         MY_EXPECT_STDOUT_CONTAINS("Creating an X protocol session to ");
-        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor + " connection id is ");
+        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor +
+                                  " connection id is ");
         MY_EXPECT_STDOUT_CONTAINS(
             "No default schema selected; type \\use <schema> to set one.");
         output_handler.wipe_all();
@@ -569,7 +572,8 @@ TEST_F(Interactive_shell_test, shell_command_connect_auto) {
         execute("\\connect " +
                 data.as_uri(mysqlshdk::db::uri::formats::full()));
         MY_EXPECT_STDOUT_CONTAINS("Creating a session to ");
-        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor + " connection id is ");
+        MY_EXPECT_STDOUT_CONTAINS("Your " + server_vendor +
+                                  " connection id is ");
         MY_EXPECT_STDOUT_CONTAINS(
             "No default schema selected; type \\use <schema> to set one.");
         output_handler.wipe_all();
@@ -1108,8 +1112,8 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
         "execution.");
   }
 
-  const auto user_path =
-      shcore::path::join_path(shcore::get_user_config_path(), "mariadb-shellrc.py");
+  const auto user_path = shcore::path::join_path(shcore::get_user_config_path(),
+                                                 "mariadb-shellrc.py");
 
   // User Config path is executed last
   std::string user_backup;
@@ -1125,7 +1129,8 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
   const auto home_path = shcore::get_mysqlx_home_path();
   const auto bin_path =
       home_path.empty()
-          ? shcore::path::join_path(shcore::get_binary_folder(), "mariadb-shellrc.py")
+          ? shcore::path::join_path(shcore::get_binary_folder(),
+                                    "mariadb-shellrc.py")
           : shcore::path::join_path(home_path, "share",
                                     shcore::k_shell_install_dir_name,
                                     "mariadb-shellrc.py");
@@ -1157,11 +1162,11 @@ TEST_F(Interactive_shell_test, python_startup_scripts) {
 
   execute("the_variable");
   if (bin_path == user_path) {
-    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment variable is
-    // not set, it is explicitly initialized to the binary folder. If
-    // shcore::get_mysqlx_home_path() returns an empty value, we'll end up with
-    // both variables pointing to the same location, with the `bin_path` one
-    // created last.
+    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment
+    // variable is not set, it is explicitly initialized to the binary folder.
+    // If shcore::get_mysqlx_home_path() returns an empty value, we'll end up
+    // with both variables pointing to the same location, with the `bin_path`
+    // one created last.
     MY_EXPECT_STDOUT_CONTAINS("Global Value");
   } else {
     MY_EXPECT_STDOUT_CONTAINS("Local Value");
@@ -1197,8 +1202,8 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
         "execution.");
   }
 
-  const auto user_path =
-      shcore::path::join_path(shcore::get_user_config_path(), "mariadb-shellrc.js");
+  const auto user_path = shcore::path::join_path(shcore::get_user_config_path(),
+                                                 "mariadb-shellrc.js");
 
   // User Config path is executed last
   std::string user_backup;
@@ -1214,7 +1219,8 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
   const auto home_path = shcore::get_mysqlx_home_path();
   const auto bin_path =
       home_path.empty()
-          ? shcore::path::join_path(shcore::get_binary_folder(), "mariadb-shellrc.js")
+          ? shcore::path::join_path(shcore::get_binary_folder(),
+                                    "mariadb-shellrc.js")
           : shcore::path::join_path(home_path, "share",
                                     shcore::k_shell_install_dir_name,
                                     "mariadb-shellrc.js");
@@ -1240,11 +1246,11 @@ TEST_F(Interactive_shell_test, js_startup_scripts) {
 
   execute("the_variable");
   if (bin_path == user_path) {
-    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment variable is
-    // not set, it is explicitly initialized to the binary folder. If
-    // shcore::get_mysqlx_home_path() returns an empty value, we'll end up with
-    // both variables pointing to the same location, with the `bin_path` one
-    // created last.
+    // When running tests, if MARIADB_SHELL_USER_CONFIG_HOME environment
+    // variable is not set, it is explicitly initialized to the binary folder.
+    // If shcore::get_mysqlx_home_path() returns an empty value, we'll end up
+    // with both variables pointing to the same location, with the `bin_path`
+    // one created last.
     MY_EXPECT_STDOUT_CONTAINS("Global Value");
   } else {
     MY_EXPECT_STDOUT_CONTAINS("Local Value");
@@ -3527,7 +3533,7 @@ TEST_F(Interactive_shell_test, windows_python_locale) {
   execute("import locale");
   ASSERT_TRUE(output_handler.std_err.empty());
   wipe_all();
-  execute("locale.getlocale() == (None, None)");
+  execute("locale.getlocale() == ('en_US', 'UTF-8')");
   EXPECT_EQ("true\n", output_handler.std_out);
   EXPECT_TRUE(output_handler.std_err.empty());
 }

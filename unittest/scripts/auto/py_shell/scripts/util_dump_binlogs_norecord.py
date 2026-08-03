@@ -565,21 +565,21 @@ for value in [
     print("--> value:", value)
     EXPECT_FAIL("ValueError", "Argument #2: The 'ignoreDdlChanges' option cannot be used when the 'since' option is not set.", options={"ignoreDdlChanges": value})
 
-#@<> WL15977-FR2.3.1 - source instance has binlog disabled {not __dbug_off}
+#@<> WL15977-FR2.3.1 - source instance has binlog disabled {__dbug}
 testutil.dbug_set("+d,dump_binlogs_binlog_disabled")
 
 EXPECT_FAIL("ValueError", "The binary logging on the source instance is disabled.", options={"startFrom": start_from_beginning})
 
 testutil.dbug_set("")
 
-#@<> WL15977-FR2.3.2 - source instance has GTID mode set to OFF {not __dbug_off}
+#@<> WL15977-FR2.3.2 - source instance has GTID mode set to OFF {__dbug}
 testutil.dbug_set("+d,dump_binlogs_gtid_disabled")
 
 EXPECT_FAIL("ValueError", "The 'gtid_mode' system variable on the source instance is set to 'OFF'. This utility requires GTID support to be enabled.", options={"startFrom": start_from_beginning})
 
 testutil.dbug_set("")
 
-#@<> WL15977-FR2.3.4 - source instance was started with --binlog-do-db {not __dbug_off}
+#@<> WL15977-FR2.3.4 - source instance was started with --binlog-do-db {__dbug}
 testutil.dbug_set("+d,dump_binlogs_has_do_db")
 
 EXPECT_SUCCESS(options={"startFrom": start_from_beginning})
@@ -589,7 +589,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: The binary log on the source instance is filtered 
 wipe_dir(default_dump_dir)
 testutil.dbug_set("")
 
-#@<> WL15977-FR2.3.4 - source instance was started with --binlog-ignore-db {not __dbug_off}
+#@<> WL15977-FR2.3.4 - source instance was started with --binlog-ignore-db {__dbug}
 testutil.dbug_set("+d,dump_binlogs_has_ignore_db")
 
 EXPECT_SUCCESS(options={"startFrom": start_from_beginning})
@@ -599,7 +599,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: The binary log on the source instance is filtered 
 wipe_dir(default_dump_dir)
 testutil.dbug_set("")
 
-#@<> WL15977-FR2.3.4 - source instance was started with both --binlog-do-db and --binlog-ignore-db {not __dbug_off}
+#@<> WL15977-FR2.3.4 - source instance was started with both --binlog-do-db and --binlog-ignore-db {__dbug}
 testutil.dbug_set("+d,dump_binlogs_has_do_db,dump_binlogs_has_ignore_db")
 
 EXPECT_SUCCESS(options={"startFrom": start_from_beginning})
@@ -663,7 +663,7 @@ EXPECT_SUCCESS(options={"startFrom": start_from_beginning})
 
 wipe_dir(default_dump_dir)
 
-#@<> WL15977-FR2.4.6 - first dump fails {not __dbug_off}
+#@<> WL15977-FR2.4.6 - first dump fails {__dbug}
 # this reuses server state from the previous dump
 testutil.set_trap("binlog", [f"file == {binlog_file_prefix}.000003", "++match_counter > 10"], { "msg": "Internal error." })
 
@@ -672,7 +672,7 @@ EXPECT_STDOUT_CONTAINS("Removing files...")
 
 testutil.clear_traps("binlog")
 
-#@<> WL15977-FR2.4.6 - second dump fails {not __dbug_off}
+#@<> WL15977-FR2.4.6 - second dump fails {__dbug}
 # this reuses server state from the previous dump
 EXPECT_SUCCESS(options={"startFrom": start_from_beginning})
 

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +33,7 @@
 #include "modules/adminapi/common/instance_pool.h"
 #include "modules/adminapi/common/metadata_storage.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
 namespace dba {
@@ -333,11 +335,11 @@ void Precondition_checker::check_session() const {
         " and above");
   }
 
-  if (server_version > Precondition_checker::k_max_adminapi_server_version) {
+  if (!mysqlshdk::utils::version::is_supported_server(server_version)) {
     throw shcore::Exception::runtime_error(
         "Unsupported server version: AdminAPI operations in this version of "
-        "MySQL Shell support MySQL Server up to version " +
-        Precondition_checker::k_max_adminapi_server_version.get_short());
+        "MySQL Shell support MySQL Server versions " +
+        mysqlshdk::utils::version::supported_servers());
   }
 
   // Print a warning for deprecated version

@@ -504,7 +504,7 @@ for param in [
         ]:
     EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Invalid options: {param}", __sandbox_uri2, { param: "fails" })
 
-#@<> WL15887 - setup {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887 - setup {__dbug and VER(>=8.2.0)}
 schema_name = "wl15887"
 test_table_primary = "ttp"
 test_table_trigger = "ttt"
@@ -521,7 +521,7 @@ def setup_db(account):
 setup_db(test_user_account)
 testutil.dbug_set("+d,copy_utils_force_mds")
 
-#@<> WL15887-TSFR_3_1_1 - restricted accounts {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_3_1_1 - restricted accounts {__dbug and VER(>=8.2.0)}
 for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "ocidbm", "ocirpl"]:
     account = f"`{account}`@`localhost`"
     setup_db(account)
@@ -533,7 +533,7 @@ for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "o
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_3_2_1 - valid account {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_3_2_1 - valid account {__dbug and VER(>=8.2.0)}
 EXPECT_SUCCESS(__sandbox_uri2, { "dryRun": True, "showProgress": False }, schema = schema_name , tables = test_tables)
 
 # no warnings about DEFINER=
@@ -546,11 +546,11 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_definers_security_clause(schema_name, test_view
 # WL15887-TSFR_3_3_1 - no account is not included in the dump
 EXPECT_STDOUT_CONTAINS(definer_clause_uses_unknown_account_once().warning(True))
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0)}
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "strip_definers" ], "dryRun": True, "showProgress": False }, schema = schema_name , tables = test_tables)
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887 - cleanup {not __dbug_off and VER(>=8.2.0)}
+#@<> WL15887 - cleanup {__dbug and VER(>=8.2.0)}
 src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 testutil.dbug_set("")
 

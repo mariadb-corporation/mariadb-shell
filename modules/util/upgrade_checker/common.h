@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -125,10 +126,13 @@ inline constexpr const char *k_dynamic_group = "dynamicGroup";
 using mysqlshdk::utils::Version;
 
 // This map should be updated with the latest version of each series to enable
-// gatting the latest version available in case a partial version is provided
-// as the taget value, so for example, not needed when patch version is 0 in
-// the last version of a series
+// getting the latest version available in case a partial version is provided
+// as the target value, so for example, not needed when patch version is 0 in
+// the last version of a series.
 extern std::unordered_map<std::string, Version> k_latest_versions;
+
+std::unordered_map<std::string, Version> generate_latest_versions_mapping(
+    const Version &shell_version);
 
 enum class Config_mode { DEFINED, UNDEFINED };
 

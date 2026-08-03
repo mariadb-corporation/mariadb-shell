@@ -1,5 +1,6 @@
 #
-# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +43,7 @@ import subprocess
 
 import mysqlsh
 
-from mysql_gadgets import MIN_MYSQL_VERSION, MAX_MYSQL_VERSION
+from mysql_gadgets import is_supported_mysql_version
 from mysql_gadgets.exceptions import (GadgetCnxInfoError, GadgetCnxError,
                                       GadgetQueryError, GadgetServerError,
                                       GadgetError)
@@ -166,7 +167,7 @@ def is_valid_mysqld(mysqld_path):
     # Check if mysqld is executable and version is valid.
     if is_executable(mysqld_path):
         mysqld_ver, _ = get_mysqld_version(mysqld_path)
-        if MIN_MYSQL_VERSION <= mysqld_ver < MAX_MYSQL_VERSION:
+        if is_supported_mysql_version(mysqld_ver):
             _LOGGER.debug("Valid mysqld found with version %s: '%s'",
                           ".".join(str(num) for num in mysqld_ver),
                           mysqld_path)

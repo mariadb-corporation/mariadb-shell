@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -3675,7 +3676,7 @@ std::shared_ptr<Cluster_set_impl>
 Cluster_impl::check_and_get_cluster_set_for_cluster() {
   auto cs = get_cluster_set_object(true);
 
-  current_ipool()->set_metadata(cs->get_metadata_storage());
+  cs->set_current_instance_pool_context();
 
   if (is_invalidated()) {
     current_console()->print_warning(
@@ -4391,9 +4392,12 @@ void Cluster_impl::set_routing_option(const std::string &option,
 void Cluster_impl::set_routing_option(const std::string &router,
                                       const std::string &option,
                                       const shcore::Value &value) {
-  if (((option == k_router_option_read_only_targets) ||
-       (option == k_router_option_stats_updates_frequency)) &&
-      is_cluster_set_member()) {
+  const bool blocked_option_if_clusterset =
+      (option == k_router_option_read_only_targets) ||
+      (option == k_router_option_stats_updates_frequency) ||
+      (option == k_router_option_unreachable_quorum_allowed_traffic);
+
+  if (blocked_option_if_clusterset && is_cluster_set_member()) {
     current_console()->print_error(shcore::str_format(
         "Cluster '%s' is a member of ClusterSet '%s', use "
         "<ClusterSet>.<<<setRoutingOption>>>() to change the option '%s'",

@@ -45,6 +45,7 @@
 #include "mysqlshdk/libs/utils/utils_lexing.h"
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
 namespace dump {
@@ -327,20 +328,18 @@ void Dump_options::set_target_version(const mysqlshdk::utils::Version &version,
                                       bool fatal) {
   std::string error;
 
-  // BUG#38107377 - compare only major.minor version
-  if (version.numeric_version_series() >
-      current_version().numeric_version_series()) {
-    error = "Target MySQL version '" + version.get_base() +
-            "' is newer than the maximum version '" +
-            current_version().get_short() +
-            ".*' supported by this version of MySQL Shell";
-  } else if (const auto k_minimum_version = mysqlshdk::utils::Version(8, 0, 25);
-             version < k_minimum_version) {
+  if (const auto k_minimum_version = mysqlshdk::utils::Version(8, 0, 25);
+      version < k_minimum_version) {
     // 8.0.25 is the minimum MDS version we support
     error = "Target MySQL version '" + version.get_base() +
             "' is older than the minimum version '" +
             k_minimum_version.get_base() +
             "' supported by this version of MySQL Shell";
+  } else if (!mysqlshdk::utils::version::is_supported_server(version)) {
+    error = "Target MySQL version '" + version.get_base() +
+            "' is not supported by this version of MySQL Shell. Supported "
+            "MySQL Server versions are " +
+            mysqlshdk::utils::version::supported_servers();
   }
 
   if (!error.empty()) {

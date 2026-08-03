@@ -1493,12 +1493,15 @@ PyObject *ao_index(Array_object *self, PyObject *args) {
     }
 
 #if PY_VERSION_HEX >= 0x030e0000
-    // Python 3.14 changed the message to a static string matching list.remove().
     Python_context::set_python_error(PyExc_ValueError,
                                      "list.index(x): x not in list");
 #else
-    // Python 3.13 and earlier include the repr of the missing value.
-    PyErr_Format(PyExc_ValueError, "%R is not in list", v);
+    py::Release repr{PyObject_Repr(v)};
+    std::string repr_str;
+
+    Python_context::pystring_to_string(repr, &repr_str);
+    Python_context::set_python_error(PyExc_ValueError,
+                                     repr_str + " is not in list");
 #endif
   } catch (const std::exception &exc) {
     Python_context::set_python_error(PyExc_RuntimeError, exc.what());

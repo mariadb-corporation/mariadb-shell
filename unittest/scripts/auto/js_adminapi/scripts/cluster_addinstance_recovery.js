@@ -1,4 +1,4 @@
-//@{!__dbug_off}
+//@{__dbug}
 
 // Tests recovery method selection for addInstance()
 

@@ -1886,10 +1886,10 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Backup lock is not {reason} and DDL changes we
 #@<> BUG#33697289 terminate the process immediately
 constantly_create_tables.stop()
 
-#@<> BUG#33697289 create a process which will add tables in the background (2) {not __dbug_off}
+#@<> BUG#33697289 create a process which will add tables in the background (2) {__dbug}
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#33697289 warning if gtid is disabled and DDL changes {not __dbug_off}
+#@<> BUG#33697289 warning if gtid is disabled and DDL changes {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS(tested_schema, [], test_output_absolute, { "all": True, "consistent": True, "showProgress": False, "threads": 1 }, check_number_of_tables = False)
@@ -1900,10 +1900,10 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Backup lock is not {reason} and DDL changes we
 
 testutil.dbug_set("")
 
-#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {not __dbug_off}
+#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {__dbug}
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 warning if binlog and gtid are disabled {not __dbug_off}
+#@<> BUG#33697289 warning if binlog and gtid are disabled {__dbug}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled")
 
 EXPECT_SUCCESS(tested_schema, [], test_output_absolute, { "all": True, "consistent": True, "showProgress": False })
@@ -2412,7 +2412,7 @@ TEST_LOAD(tested_schema, tested_table)
 
 session.run_sql("DROP SCHEMA !;", [ tested_schema ])
 
-#@<> BUG#31766490 {not __dbug_off}
+#@<> BUG#31766490 {__dbug}
 tested_schema = "test_schema"
 tested_table = "test"
 
@@ -3249,10 +3249,13 @@ for i in range(3):
     version[i] = str(int(version[i]) + 1)
     version = ".".join(version)
     if i < 2:
-        EXPECT_FAIL("ValueError", f"Argument #4: Target MySQL version '{version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell", schema_name, test_tables, test_output_absolute, { "targetVersion": version, "showProgress": False })
+        EXPECT_FAIL("ValueError", f"Argument #4: {unsupported_target_version_msg(version)}", schema_name, test_tables, test_output_absolute, { "targetVersion": version, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS(schema_name, test_tables, test_output_absolute, { "targetVersion": version, "dryRun": True, "showProgress": False })
+
+EXPECT_FAIL("ValueError", f"Argument #4: {unsupported_target_version_msg('10.0.0')}", schema_name, test_tables, test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
+EXPECT_FAIL("ValueError", f"Argument #4: {unsupported_target_version_msg('26.6.0')}", schema_name, test_tables, test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower
 EXPECT_FAIL("ValueError", "Argument #4: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", schema_name, test_tables, test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })

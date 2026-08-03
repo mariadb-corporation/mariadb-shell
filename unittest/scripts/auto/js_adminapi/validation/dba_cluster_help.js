@@ -1774,15 +1774,15 @@ DESCRIPTION
       - none: All current connections are disconnected and new ones are refused
         (default behavior).
 
-      ATTENTION: Setting this option to a different value other than the
-                 default may have unwanted consequences: the consistency
-                 guarantees provided by InnoDB Cluster are broken since the
-                 data read can be stale; different Routers may be accessing
-                 different partitions, thus return different data; and
-                 different Routers may also have different behavior (i.e. some
-                 provide only read traffic while others read and write
-                 traffic). Note that writes on a partition with no quorum will
-                 block until quorum is restored.
+      ATTENTION: Setting this option to a value other than the default may have
+                 unwanted consequences: the consistency guarantees provided by
+                 InnoDB Cluster are broken since the data read can be stale;
+                 different Routers may be accessing different partitions of the
+                 target Cluster, thus return different data; and different
+                 Routers may also have different behavior (i.e. some provide
+                 only read traffic while others read and write traffic). Note
+                 that writes on a partition of the target Cluster with no
+                 quorum will block until quorum is restored.
 
       This option has no practical effect if
       group_replication_unreachable_majority_timeout is set to a positive value

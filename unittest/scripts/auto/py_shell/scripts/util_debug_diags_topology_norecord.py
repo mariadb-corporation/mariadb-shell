@@ -30,6 +30,9 @@ r.add_instance(__sandbox_uri2)
 
 outpath = run_collect(__sandbox_uri1, None, allMembers=1)
 CHECK_DIAGPACK(outpath, [(1, session1), (2, session2)], is_cluster=True, innodbMutex=False, localTarget=True)
+EXPECT_FILE_IN_ZIP(outpath, "replica_set_status.yaml")
+EXPECT_FILE_NOT_IN_ZIP(outpath, "replica_set_status.error")
+EXPECT_FILE_CONTENTS(outpath, "replica_set_status.yaml", b"^replicaSet:")
 
 outpath = run_collect_hl(__sandbox_uri1, None)
 CHECK_DIAGPACK(outpath, [(None, session1)], localTarget=True)
@@ -65,6 +68,9 @@ CHECK_DIAGPACK(outpath, [(None, session1)], localTarget=True, hostInfo=0)
 testutil.expect_password("Password for root: ", "root")
 outpath = run_collect(hostname_uri, None, innodbMutex=1, schemaStats=1, allMembers=1, hostInfo=0)
 CHECK_DIAGPACK(outpath, [(1, session1), (2, session2), (3, session3)], is_cluster=True, innodbMutex=True, schemaStats=True, hostInfo=0)
+EXPECT_FILE_IN_ZIP(outpath, "cluster_status.yaml")
+EXPECT_FILE_NOT_IN_ZIP(outpath, "cluster_status.error")
+EXPECT_FILE_CONTENTS(outpath, "cluster_status.yaml", b"^clusterName:")
 
 #@<> cluster with allMembers=False
 outpath = run_collect(hostname_uri, None, schemaStats=1, allMembers=0, hostInfo=0)
@@ -131,6 +137,9 @@ testutil.wait_member_transactions(__mysql_sandbox_port2, __mysql_sandbox_port1)
 
 outpath = run_collect(hostname_uri, None, allMembers=1)
 CHECK_DIAGPACK(outpath, [(1, session1), (2, session2), (3, session3), (4, session4)], is_cluster=True, innodbMutex=False)
+EXPECT_FILE_IN_ZIP(outpath, "cluster_set_status.yaml")
+EXPECT_FILE_NOT_IN_ZIP(outpath, "cluster_set_status.error")
+EXPECT_FILE_CONTENTS(outpath, "cluster_set_status.yaml", b"^domainName:")
 
 outpath = run_collect_hl(__sandbox_uri1, None)
 CHECK_DIAGPACK(outpath, [(None, session1)], localTarget=True)

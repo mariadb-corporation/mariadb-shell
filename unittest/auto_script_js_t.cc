@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -301,8 +302,19 @@ TEST_P(Auto_script_js, run_and_check) {
   run_and_check();
 }
 
-std::vector<std::string> find_js_tests(const std::string &subdir,
-                                       const std::string &ext) {
+#ifdef _WIN32
+#undef IGNORE
+#endif
+
+enum class Dbug_tests {
+  IGNORE,
+  INCLUDE,
+  EXCLUDE,
+};
+
+std::vector<std::string> find_js_tests(
+    const std::string &subdir, const std::string &ext,
+    Dbug_tests dbug_tests = Dbug_tests::IGNORE) {
   std::string path = shcore::path::join_path(g_test_home, "scripts", "auto",
                                              subdir, "scripts");
   if (!shcore::is_folder(path)) return {};
@@ -312,25 +324,58 @@ std::vector<std::string> find_js_tests(const std::string &subdir,
   std::vector<std::string> filtered;
   for (const auto &s : tests) {
     // We let files starting with underscore as modules
-    if (shcore::str_endswith(s, ext) && s[0] != '_')
-      filtered.push_back(subdir + "/" + s);
+    if (!shcore::str_endswith(s, ext) || s[0] == '_') continue;
+
+    if (dbug_tests != Dbug_tests::IGNORE) {
+      const auto script_path = shcore::path::join_path(path, s);
+      const auto script = shcore::get_text_file(script_path, false);
+      const auto has_dbug_tests =
+          script.find("__dbug") != std::string::npos ||
+          script.find("testutil.dbugSet(") != std::string::npos ||
+          script.find("testutil.setTrap(") != std::string::npos;
+
+      if (dbug_tests == Dbug_tests::INCLUDE && !has_dbug_tests) continue;
+      if (dbug_tests == Dbug_tests::EXCLUDE && has_dbug_tests) continue;
+    }
+
+    filtered.push_back(subdir + "/" + s);
   }
   return filtered;
 }
 
 // General test cases
 INSTANTIATE_TEST_SUITE_P(Admin_api, Auto_script_js,
-                         testing::ValuesIn(find_js_tests("js_adminapi", ".js")),
+                         testing::ValuesIn(find_js_tests("js_adminapi", ".js",
+                                                         Dbug_tests::EXCLUDE)),
                          fmt_param);
 
 INSTANTIATE_TEST_SUITE_P(Admin_api_async, Auto_script_js,
                          testing::ValuesIn(find_js_tests("js_adminapi_async",
-                                                         ".js")),
+                                                         ".js",
+                                                         Dbug_tests::EXCLUDE)),
                          fmt_param);
 
 INSTANTIATE_TEST_SUITE_P(
     Admin_api_clusterset, Auto_script_js,
-    testing::ValuesIn(find_js_tests("js_adminapi_clusterset", ".js")),
+    testing::ValuesIn(find_js_tests("js_adminapi_clusterset", ".js",
+                                    Dbug_tests::EXCLUDE)),
+    fmt_param);
+
+INSTANTIATE_TEST_SUITE_P(Admin_api_dbug, Auto_script_js,
+                         testing::ValuesIn(find_js_tests("js_adminapi", ".js",
+                                                         Dbug_tests::INCLUDE)),
+                         fmt_param);
+
+INSTANTIATE_TEST_SUITE_P(Admin_api_async_dbug, Auto_script_js,
+                         testing::ValuesIn(find_js_tests("js_adminapi_async",
+                                                         ".js",
+                                                         Dbug_tests::INCLUDE)),
+                         fmt_param);
+
+INSTANTIATE_TEST_SUITE_P(
+    Admin_api_clusterset_dbug, Auto_script_js,
+    testing::ValuesIn(find_js_tests("js_adminapi_clusterset", ".js",
+                                    Dbug_tests::INCLUDE)),
     fmt_param);
 
 INSTANTIATE_TEST_SUITE_P(Shell_scripted, Auto_script_js,

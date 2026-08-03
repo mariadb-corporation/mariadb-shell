@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -387,7 +388,11 @@ void Rejoin_instance::do_run() {
           m_target_instance->get_canonical_address(), true);
     }
 
-    if (m_uuid_mismatch && !m_options.dry_run) {
+    // Query for metadata changes and update it if needed when:
+    //   - The instance's UUID changed
+    //   - The GR communication stack changed (_local_address might have
+    //     changed)
+    if ((m_uuid_mismatch || m_is_switching_comm_stack) && !m_options.dry_run) {
       m_cluster_impl->update_metadata_for_instance(*m_target_instance);
     }
 

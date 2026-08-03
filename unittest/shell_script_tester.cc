@@ -390,7 +390,7 @@ Shell_script_tester::Shell_script_tester() {
 }
 
 void Shell_script_tester::SetUp() {
-  Crud_test_wrapper::SetUp();
+  Shell_core_test_wrapper::SetUp();
 
   if (_options->trace_protocol) {
     // Redirect cout
@@ -411,7 +411,7 @@ void Shell_script_tester::TearDown() {
     }
   }
 
-  Crud_test_wrapper::TearDown();
+  Shell_core_test_wrapper::TearDown();
 
   if (_options->trace_protocol) {
     // Restore old cout.
@@ -422,7 +422,7 @@ void Shell_script_tester::TearDown() {
 }
 
 void Shell_script_tester::reset_shell() {
-  Crud_test_wrapper::reset_shell();
+  Shell_core_test_wrapper::reset_shell();
   g_tdb->on_reset_shell(_interactive_shell);
 }
 
@@ -1697,7 +1697,7 @@ void Shell_script_tester::set_defaults() {
   _cout.str("");
   _cout.clear();
 
-  Crud_test_wrapper::set_defaults();
+  Shell_core_test_wrapper::set_defaults();
 
   std::string test_mode;
   switch (g_test_recording_mode) {
@@ -1835,14 +1835,13 @@ void Shell_script_tester::set_defaults() {
 #endif
 
 #ifdef NDEBUG
-  // TODO(.) - remove __dbug_off and replace all uses with __dbug
-  def_var("__dbug_off", "1");
-  // dbug tests should only run in direct mode, so that traces aren't affected
-  // by different code branches being taken
-  def_var("__dbug", !_replaying && !_recording ? "1==1" : "0==1");
-#else
-  def_var("__dbug_off", "0");
   def_var("__dbug", "0==1");
+  def_var("__dbug_direct", "0==1");
+#else
+  def_var("__dbug", "1==1");
+  // dbug tests which should only run in direct mode (or _norecord tests), so
+  // that traces aren't affected by different code branches being taken
+  def_var("__dbug_direct", !_replaying && !_recording ? "1==1" : "0==1");
 #endif
   // Variables for OCI Tests
   def_string_var_from_env("OCI_CONFIG_HOME");
@@ -2147,7 +2146,7 @@ void Shell_script_tester::execute(int location, const std::string &code) {
   // save location in test script that is being currently executed
   _current_entry_point = context_identifier();
   try {
-    Crud_test_wrapper::execute(location, code);
+    Shell_core_test_wrapper::execute(location, code);
     _current_entry_point.clear();
   } catch (...) {
     _current_entry_point.clear();
@@ -2159,7 +2158,7 @@ void Shell_script_tester::execute(const std::string &code) {
   // save location in test script that is being currently executed
   _current_entry_point = context_identifier();
   try {
-    Crud_test_wrapper::execute(code);
+    Shell_core_test_wrapper::execute(code);
     _current_entry_point.clear();
   } catch (...) {
     _current_entry_point.clear();

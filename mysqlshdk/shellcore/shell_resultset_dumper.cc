@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,12 +30,14 @@
 #include <algorithm>
 #include <cinttypes>
 #include <deque>
+#include <string_view>
 
 #include "ext/linenoise-ng/include/linenoise.h"
 #include "mysqlshdk/include/shellcore/base_shell.h"
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/libs/db/column.h"
 #include "mysqlshdk/libs/db/row_copy.h"
+#include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/dtoa.h"
 #include "mysqlshdk/libs/utils/strformat.h"
 #include "mysqlshdk/libs/utils/utils_encoding.h"  // base64 encoding utilities
@@ -226,6 +229,15 @@ namespace {
 
 enum class ResultFormat { VERTICAL, TABBED, TABLE };
 
+inline std::string sanitize_result_field(std::string_view text) {
+  return mysqlshdk::textui::sanitize_utf8_terminal_text(
+      text, mysqlshdk::textui::Sanitization_mode::Result_field);
+}
+
+inline std::string sanitize_result_text(std::string_view text) {
+  return mysqlshdk::textui::sanitize_utf8_terminal_text(text);
+}
+
 class Field_formatter {
  public:
   Field_formatter(ResultFormat format, const mysqlshdk::db::Column &column)
@@ -235,7 +247,8 @@ class Field_formatter {
         m_max_mb_holes(0),
         m_format(format),
         m_type(column.get_type()),
-        m_is_numeric(column.is_numeric()) {
+        m_is_numeric(column.is_numeric()),
+        m_column_label(sanitize_result_text(column.get_column_label())) {
     m_zerofill = column.is_zerofill() ? column.get_length() : 0;
 
     switch (m_format) {
@@ -254,8 +267,7 @@ class Field_formatter {
 
         // Gets the column name display/buffer sizes
         auto col_sizes =
-            get_utf8_sizes(column.get_column_label().c_str(),
-                           column.get_column_label().length(),
+            get_utf8_sizes(m_column_label.c_str(), m_column_label.length(),
                            Print_flags(Print_flag::PRINT_0_AS_ESC));
 
         m_max_mb_holes = std::get<1>(col_sizes) - std::get<0>(col_sizes);
@@ -284,7 +296,7 @@ class Field_formatter {
       auto data = row->get_string_data(index);
       dlength = blength = 2 + data.second * 2;
     } else {
-      auto data = row->get_as_string(index);
+      auto data = sanitize_result_field(row->get_as_string(index));
       auto fsizes = get_utf8_sizes(data.c_str(), data.length(), m_flags);
       dlength = std::get<0>(fsizes);
       blength = std::get<1>(fsizes);
@@ -349,6 +361,9 @@ class Field_formatter {
           get_utf8_sizes(data, length, m_flags);
     } else {
       tmp = row->get_as_string(index);
+      if (m_format != ResultFormat::TABBED) {
+        tmp = sanitize_result_field(tmp);
+      }
       data = tmp.data();
       length = tmp.length();
 
@@ -365,10 +380,16 @@ class Field_formatter {
         return false;
       }
     }
+
+    if (m_format == ResultFormat::TABBED) {
+      m_buffer = sanitize_result_field(m_buffer);
+    }
+
     return true;
   }
 
   const std::string &str() const { return m_buffer; }
+  const std::string &column_label() const { return m_column_label; }
   size_t get_max_display_length() const { return m_max_display_length; }
   size_t get_max_buffer_length() const { return m_max_buffer_length; }
 
@@ -386,6 +407,7 @@ class Field_formatter {
   Print_flags m_flags;
   mysqlshdk::db::Type m_type;
   bool m_is_numeric;
+  std::string m_column_label;
 
   void reset() {
     // sets the buffer only once
@@ -423,6 +445,10 @@ class Field_formatter {
       } else if (m_flags.is_set(Print_flag::PRINT_0_AS_SPC) &&
                  text[index] == '\0') {
         buffer[next_index++] = ' ';
+      } else if (m_flags.is_set(Print_flag::PRINT_CTRL) &&
+                 text[index] == '\r' && index + 1 < length &&
+                 text[index + 1] == '\n') {
+        continue;
       } else if (m_flags.is_set(Print_flag::PRINT_CTRL) &&
                  text[index] == '\t') {
         buffer[next_index++] = '\\';
@@ -582,7 +608,7 @@ size_t Resultset_dumper::dump(const std::string &item_label, bool is_query,
       if (!is_query) {
         std::string info = m_result->get_info();
         if (!info.empty()) {
-          info = "\n" + info + "\n";
+          info = "\n" + sanitize_result_text(info) + "\n";
           m_printer->print(info);
         }
       }
@@ -598,7 +624,7 @@ size_t Resultset_dumper::dump(const std::string &item_label, bool is_query,
   } else if (!wrapping_json) {
     const auto statement_id = m_result->get_statement_id();
     if (!statement_id.empty()) {
-      m_printer->println("Statement ID: " + statement_id);
+      m_printer->println("Statement ID: " + sanitize_result_text(statement_id));
     }
   }
 
@@ -722,7 +748,7 @@ size_t Resultset_dumper_base::dump_tabbed() {
     auto column = metadata[index];
 
     fmt.emplace_back(ResultFormat::TABBED, column);
-    m_printer->print(column.get_column_label().c_str());
+    m_printer->print(fmt.back().column_label());
     m_printer->print(index < (field_count - 1) ? "\t" : "\n");
   }
 
@@ -734,7 +760,7 @@ size_t Resultset_dumper_base::dump_tabbed() {
         m_printer->print(fmt[field_index].str());
       } else {
         mysqlshdk::db::is_string_type(column.get_type());
-        m_printer->print(row->get_string(field_index));
+        m_printer->print(sanitize_result_field(row->get_string(field_index)));
       }
       m_printer->print(field_index < (field_count - 1) ? "\t" : "\n");
     }
@@ -762,8 +788,8 @@ size_t Resultset_dumper_base::format_vertical(bool has_header, bool align_right,
   // column descriptions
   std::size_t max_col_len = min_label_width;
   for (const auto &column : metadata) {
-    max_col_len = std::max(max_col_len, column.get_column_label().length());
     fmt.emplace_back(ResultFormat::VERTICAL, column);
+    max_col_len = std::max(max_col_len, fmt.back().column_label().length());
   }
 
   auto row = m_result->fetch_one();
@@ -780,8 +806,9 @@ size_t Resultset_dumper_base::format_vertical(bool has_header, bool align_right,
     for (size_t col_index = 0; col_index < metadata.size(); col_index++) {
       auto column = metadata[col_index];
 
-      std::string padding(max_col_len - column.get_column_label().size(), ' ');
-      std::string label = column.get_column_label() + ": ";
+      const auto &column_label = fmt[col_index].column_label();
+      std::string padding(max_col_len - column_label.size(), ' ');
+      std::string label = column_label + ": ";
 
       if (align_right) {
         label = padding + label;
@@ -794,7 +821,7 @@ size_t Resultset_dumper_base::format_vertical(bool has_header, bool align_right,
         m_printer->print(fmt[col_index].str());
       } else {
         assert(mysqlshdk::db::is_string_type(column.get_type()));
-        m_printer->print(row->get_string(col_index));
+        m_printer->print(sanitize_result_field(row->get_string(col_index)));
       }
       m_printer->raw_print("\n");
     }
@@ -949,9 +976,8 @@ size_t Resultset_dumper_base::dump_table() {
     std::string format = "%-";
     format.append(std::to_string(fmt[index].get_max_display_length()));
     format.append((index == field_count - 1) ? "s |\n" : "s | ");
-    auto column = metadata[index];
     m_printer->print(
-        shcore::str_format(format.c_str(), column.get_column_label().c_str()));
+        shcore::str_format(format.c_str(), fmt[index].column_label().c_str()));
   }
   m_printer->print(separator);
 
@@ -971,7 +997,8 @@ size_t Resultset_dumper_base::dump_table() {
           std::tie(data, length) = row.get_string_data(field_index);
           m_printer->print(shcore::string_to_hex({data, length}));
         } else {
-          m_printer->print(row.get_as_string(field_index));
+          m_printer->print(
+              sanitize_result_field(row.get_as_string(field_index)));
         }
       }
       if (field_index < field_count - 1) m_printer->print(" | ");
@@ -993,7 +1020,8 @@ size_t Resultset_dumper_base::dump_table() {
         } else {
           assert(
               mysqlshdk::db::is_string_type(metadata[field_index].get_type()));
-          m_printer->print(row->get_as_string(field_index));
+          m_printer->print(
+              sanitize_result_field(row->get_as_string(field_index)));
         }
         if (field_index < field_count - 1) m_printer->print(" | ");
       }
@@ -1050,7 +1078,7 @@ void Resultset_dumper_base::dump_warnings() {
   while (warning && !m_cancelled.test()) {
     m_printer->print((shcore::str_format(
         "%s (code %d): %s\n", mysqlshdk::db::to_string(warning->level),
-        warning->code, warning->msg.c_str())));
+        warning->code, sanitize_result_text(warning->msg).c_str())));
 
     warning = m_result->fetch_one_warning();
   }
@@ -1096,7 +1124,7 @@ void Resultset_dumper_base::dump_metadata() {
   } else {
     for (std::size_t i = 0; i < cols.size(); i++) {
       m_printer->println(shcore::str_format("Field %zu", i + 1));
-      m_printer->println(to_string(cols[i]));
+      m_printer->println(sanitize_result_text(to_string(cols[i])));
     }
   }
 }

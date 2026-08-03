@@ -285,7 +285,7 @@ try:
     elapsed = round(timer() - start)
     print(f'Elapsed time: {elapsed}')
     if num_cpus >= 6:
-        EXPECT_EQ(elapsed == 2 or elapsed == 3)
+        EXPECT_TRUE(elapsed == 2 or elapsed == 3)
     else:
         EXPECT_EQ(int(math.ceil(6 / num_cpus)), elapsed)
 except Exception as e:
@@ -305,7 +305,7 @@ try:
 except Exception as e:
     print(f'Unable to read CPU count, skipping test: {e}')
 
-#@<> check cancel {not __dbug_off and not __replaying}
+#@<> check cancel {__dbug and not __replaying}
 
 shell.options.useWizards = True;
 testutil.dbug_set("+d,execute_cancel")

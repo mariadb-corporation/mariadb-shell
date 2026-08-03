@@ -345,28 +345,28 @@ EXPECT_STDOUT_MATCHES(re.compile(r'\d+% \(\d+\.?\d* [TGMK]?B / \d+\.?\d* [TGMK]?
 
 wipeout_server(session)
 
-#@<> WL15977-FR3.3.1 - target instance has binlog disabled {not __dbug_off}
+#@<> WL15977-FR3.3.1 - target instance has binlog disabled {__dbug}
 testutil.dbug_set("+d,load_binlogs_binlog_disabled")
 
 EXPECT_FAIL("ValueError", "The binary logging on the target instance is disabled.")
 
 testutil.dbug_set("")
 
-#@<> WL15977-FR3.3.2 - target instance has GTID mode set to OFF {not __dbug_off}
+#@<> WL15977-FR3.3.2 - target instance has GTID mode set to OFF {__dbug}
 testutil.dbug_set("+d,load_binlogs_gtid_disabled")
 
 EXPECT_FAIL("ValueError", "The 'gtid_mode' system variable on the target instance is set to 'OFF'. This utility requires GTID support to be enabled.")
 
 testutil.dbug_set("")
 
-#@<> WL15977-FR3.3.3 - target instance has an incompatible version {not __dbug_off}
+#@<> WL15977-FR3.3.3 - target instance has an incompatible version {__dbug}
 testutil.dbug_set("+d,load_binlogs_unsupported_version")
 
 EXPECT_FAIL("ValueError", f"Version of the source instance ({__version}) is incompatible with version of the target instance (100.0.0). Enable the 'ignoreVersion' option to load anyway.", incremental_dump_dir)
 
 testutil.dbug_set("")
 
-#@<> WL15977-FR3.3.3 - target instance has an incompatible version + `ignoreVersion` {not __dbug_off}
+#@<> WL15977-FR3.3.3 - target instance has an incompatible version + `ignoreVersion` {__dbug}
 testutil.dbug_set("+d,load_binlogs_unsupported_version")
 
 EXPECT_SUCCESS(incremental_dump_dir, options={"ignoreVersion": True})
@@ -389,7 +389,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: While replaying the binary log events: The MySQL 
 #@<> BUG#37331023 - clean up
 session.run_sql("SET @@GLOBAL.super_read_only=OFF")
 
-#@<> capture stderr of the mysqlbinlog process {not __dbug_off}
+#@<> capture stderr of the mysqlbinlog process {__dbug}
 testutil.dbug_set("+d,load_binlogs_mysqlbinlog_error")
 
 EXPECT_FAIL("RuntimeError", "Loading the binary log files has failed", incremental_dump_dir)

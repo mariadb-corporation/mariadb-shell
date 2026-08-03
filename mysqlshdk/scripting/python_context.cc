@@ -32,6 +32,7 @@
 #include <type_traits>
 
 #include "mysqlshdk/include/scripting/python_object_wrapper.h"
+#include "mysqlshdk/include/scripting/types/cpp.h"
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
 #include "scripting/module_registry.h"
@@ -60,6 +61,17 @@ extern const char *g_mysqlsh_path;
 namespace shcore {
 
 namespace {
+
+bool lookup_member_in_dict(PyObject *dict, PyObject *name, bool *is_callable) {
+  if (!dict || !PyDict_Check(dict) || !name || !is_callable) return false;
+
+  auto *member = PyDict_GetItem(dict, name);  // borrowed reference
+  if (!member) return false;
+
+  *is_callable = PyCallable_Check(member);
+
+  return true;
+}
 
 void check_status(PyStatus status, const char *context) {
   assert(context);
@@ -92,8 +104,9 @@ std::wstring python_home() {
 #if HAVE_PYTHON == 2
   {
     // Set path to the bundled python version.
-    std::string python_path = shcore::path::join_path(
-        shcore::get_mysqlx_home_path(), "lib", shcore::k_shell_install_dir_name);
+    std::string python_path =
+        shcore::path::join_path(shcore::get_mysqlx_home_path(), "lib",
+                                shcore::k_shell_install_dir_name);
     if (shcore::is_folder(python_path)) {
       // Override the system Python install with the bundled one
       log_info("Setting Python home to '%s'", python_path.c_str());
@@ -933,10 +946,84 @@ void Python_context::get_members_of(
     std::string s;
 
     if (m && pystring_to_string(m, &s) && !shcore::str_beginswith(s, "__")) {
-      py::Release mem{PyObject_GetAttrString(object, s.c_str())};
-      out_keys->push_back(std::make_pair(PyCallable_Check(mem.get()), s));
+      out_keys->push_back(
+          std::make_pair(is_member_callable(object, m.get()), s));
     }
   }
+}
+
+bool Python_context::is_member_callable(PyObject *object, PyObject *name) {
+  if (!object || !name) return false;
+
+  auto is_callable = false;
+
+  // Modules keep their exported members directly in the module dictionary.
+  if (PyModule_Check(object) &&
+      lookup_member_in_dict(PyModule_GetDict(object), name, &is_callable)) {
+    return is_callable;
+  }
+
+  // Type objects expose class members in tp_dict, while tp_mro below would
+  // only walk the metaclass hierarchy for them.
+  if (PyType_Check(object) &&
+      lookup_member_in_dict(reinterpret_cast<PyTypeObject *>(object)->tp_dict,
+                            name, &is_callable)) {
+    return is_callable;
+  }
+
+  // Shell object wrappers expose their dynamic methods through tp_getattro(),
+  // so they are not discoverable through the raw Python dictionaries below.
+  {
+    std::shared_ptr<Object_bridge> wrapped_object;
+
+    if (unwrap(object, wrapped_object)) {
+      if (auto cpp_object =
+              std::dynamic_pointer_cast<Cpp_object_bridge>(wrapped_object)) {
+        std::string member_name;
+
+        if (pystring_to_string(name, &member_name)) {
+          shcore::Scoped_naming_style ns(
+              shcore::NamingStyle::LowerCaseUnderscores);
+          return cpp_object->has_method_advanced(member_name);
+        }
+      }
+
+      PyErr_Clear();
+    }
+  }
+
+  // For regular instances, inspect the raw instance dictionary without
+  // invoking Python attribute resolution.
+  {
+    py::Release instance_dict{PyObject_GenericGetDict(object, nullptr)};
+
+    if (instance_dict &&
+        lookup_member_in_dict(instance_dict.get(), name, &is_callable)) {
+      return is_callable;
+    }
+
+    PyErr_Clear();
+  }
+
+  auto *mro = Py_TYPE(object)->tp_mro;
+
+  if (!mro || !PyTuple_Check(mro)) return false;
+
+  for (auto i = Py_ssize_t{0}, c = PyTuple_GET_SIZE(mro); i < c; ++i) {
+    auto *type = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(mro, i));
+
+    if (lookup_member_in_dict(type->tp_dict, name, &is_callable)) {
+      return is_callable;
+    }
+  }
+
+  // fallback to fetching the value
+  py::Release member{PyObject_GetAttr(object, name)};
+
+  if (member) return PyCallable_Check(member.get());
+  PyErr_Clear();
+
+  return false;
 }
 
 std::vector<std::pair<bool, std::string>> Python_context::list_globals() {

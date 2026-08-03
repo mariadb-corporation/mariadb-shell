@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -410,61 +411,35 @@ TEST(Upgrade_check_registry, create_checklist) {
             std::make_pair(Version(8, 0, patch), Version(8, 4, patch2)));
       }
     }
-    for (auto major = 9; major <= mysqlshdk::utils::k_shell_version.get_major();
-         major++) {
-      // series innovation
-      for (auto minor =
-               mysqlshdk::utils::get_first_innovation_version(Version(major, 0))
-                   .get_minor();
-           minor < mysqlshdk::utils::get_first_lts_version(Version(major, 0))
-                       .get_minor();
-           minor++) {
-        // between bugfix and innovation
-        for (auto patch = 0; patch <= k_latest_versions["8.0"].get_patch();
-             patch++) {
-          version_checks.emplace_back(
-              std::make_pair(Version(8, 0, patch), Version(major, minor)));
-        }
-        // between lts and innovation
-        for (auto patch = 0; patch <= k_latest_versions["8.4"].get_patch();
-             patch++) {
-          version_checks.emplace_back(
-              std::make_pair(Version(8, 4, patch), Version(major, minor)));
-        }
-        // between innovation and same series lts
-        for (auto lts_minor =
-                 mysqlshdk::utils::get_first_lts_version(Version(major, 0))
-                     .get_minor();
-             lts_minor < 10; lts_minor++) {
-          version_checks.emplace_back(
-              std::make_pair(Version(major, minor), Version(major, lts_minor)));
-        }
+    const std::vector<Version> innovation_targets = {
+        Version(9, 0, 0), Version(9, 6, 0), Version(26, 7, 0)};
+
+    for (const auto &target : innovation_targets) {
+      // between bugfix and innovation
+      for (auto patch = 0; patch <= k_latest_versions["8.0"].get_patch();
+           patch++) {
+        version_checks.emplace_back(
+            std::make_pair(Version(8, 0, patch), target));
       }
-      // series lts
-      for (auto minor =
-               mysqlshdk::utils::get_first_lts_version(Version(major, 0))
-                   .get_minor();
-           minor < 10; minor++) {
-        // between lts and next series innovation
-        for (auto inno_minor = mysqlshdk::utils::get_first_innovation_version(
-                                   Version(major + 1, 0))
-                                   .get_minor();
-             inno_minor <
-             mysqlshdk::utils::get_first_lts_version(Version(major + 1, 0))
-                 .get_minor();
-             inno_minor++) {
-          version_checks.emplace_back(std::make_pair(
-              Version(major, minor), Version(major + 1, inno_minor)));
-        }
-        // between lts and next series lts
-        for (auto lts_minor =
-                 mysqlshdk::utils::get_first_lts_version(Version(major + 1, 0))
-                     .get_minor();
-             lts_minor < 10; lts_minor++) {
-          version_checks.emplace_back(std::make_pair(
-              Version(major, minor), Version(major + 1, lts_minor)));
-        }
+      // between lts and innovation
+      for (auto patch = 0; patch <= k_latest_versions["8.4"].get_patch();
+           patch++) {
+        version_checks.emplace_back(
+            std::make_pair(Version(8, 4, patch), target));
       }
+    }
+
+    // between innovation and same series lts
+    for (auto minor = 0; minor < 7; minor++) {
+      version_checks.emplace_back(
+          std::make_pair(Version(9, minor, 0), Version(9, 7, 0)));
+    }
+
+    // between lts and next innovation series
+    for (auto patch = 0; patch <= k_latest_versions["9.7"].get_patch();
+         patch++) {
+      version_checks.emplace_back(
+          std::make_pair(Version(9, 7, patch), Version(26, 7, 0)));
     }
     test_check_availability(ids::k_syntax_check, true, version_checks);
   }
@@ -489,20 +464,17 @@ TEST(Upgrade_check_registry, create_checklist) {
       }
     }
     // other
-    for (auto major = 9; major <= mysqlshdk::utils::k_shell_version.get_major();
-         major++) {
-      for (auto minor = 0; minor < 10; minor++) {
-        auto it = k_latest_versions.find(Version(major, minor).get_short());
-        if (it == k_latest_versions.end()) {
-          continue;
-        }
-        auto latest = it->second;
-        for (auto patch = 0; patch <= latest.get_patch(); patch++) {
-          for (auto patch2 = patch + 1; patch2 <= latest.get_patch();
-               patch2++) {
-            version_checks.emplace_back(std::make_pair(
-                Version(major, minor, patch), Version(major, minor, patch2)));
-          }
+    for (const auto &key : {"9.7", "26.7"}) {
+      auto it = k_latest_versions.find(key);
+      if (it == k_latest_versions.end()) {
+        continue;
+      }
+      const auto latest = it->second;
+      for (auto patch = 0; patch <= latest.get_patch(); patch++) {
+        for (auto patch2 = patch + 1; patch2 <= latest.get_patch(); patch2++) {
+          version_checks.emplace_back(std::make_pair(
+              Version(latest.get_major(), latest.get_minor(), patch),
+              Version(latest.get_major(), latest.get_minor(), patch2)));
         }
       }
     }
@@ -582,7 +554,8 @@ TEST(Upgrade_check_registry, create_checklist) {
         add_checks(source_version, Version(8, 4, target_patch));
       }
       for (auto target_minor = 0;
-           target_minor < k_latest_versions["9"].get_minor(); target_minor++) {
+           target_minor < k_latest_versions["9.7"].get_minor();
+           target_minor++) {
         add_checks(source_version, Version(9, target_minor));
       }
     };
@@ -595,7 +568,8 @@ TEST(Upgrade_check_registry, create_checklist) {
          patch++) {
       add_target_checks(Version(8, 4, patch));
     }
-    for (auto minor = 0; minor <= k_latest_versions["9"].get_minor(); minor++) {
+    for (auto minor = 0; minor <= k_latest_versions["9.7"].get_minor();
+         minor++) {
       add_target_checks(Version(9, minor));
     }
 

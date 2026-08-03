@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -223,7 +224,7 @@ class Rescan : public Command_interface {
    */
   void ensure_recovery_accounts_match();
 
-  void check_mismatched_hostnames_addresses(shcore::Array_t instances) const;
+  void check_mismatched_instance_metadata(shcore::Array_t instances) const;
 
   bool is_clusterset_metadata_consistent();
 

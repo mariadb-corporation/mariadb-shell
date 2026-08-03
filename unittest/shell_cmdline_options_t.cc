@@ -822,6 +822,18 @@ TEST_F(Shell_cmdline_options, default_values) {
 #endif
 }
 
+TEST_F(Shell_cmdline_options, default_mode_none_is_rejected) {
+  char arg0[] = "ut";
+  char arg1[] = "--js";
+  char *argv[] = {arg0, arg1, nullptr};
+
+  Shell_options cmd_options(2, argv);
+
+  EXPECT_THROW_LIKE(
+      cmd_options.set_and_notify("defaultMode", "none"), shcore::Exception,
+      "defaultMode: Valid values for shell mode are sql, js or py.");
+}
+
 TEST_F(Shell_cmdline_options, app) {
   test_option_with_value("host", "h", "localhost", "", IS_CONNECTION_DATA,
                          !IS_NULLABLE);
@@ -1246,6 +1258,17 @@ TEST_F(Shell_cmdline_options, conflicts_output) {
                            "The acceptable values for the option "
                            "--result-format are: table, tabbed, vertical, "
                            "json, ndjson, json/raw, json/array, json/pretty\n");
+}
+
+TEST_F(Shell_cmdline_options, conflicts_passwords_from_stdin_and_no_wizard) {
+  char *argv[] = {const_cast<char *>("ut"),
+                  const_cast<char *>("--passwords-from-stdin"),
+                  const_cast<char *>("--nw"), nullptr};
+
+  test_conflicting_options(
+      "--passwords-from-stdin --nw", 3, argv,
+      "Conflicting options: --passwords-from-stdin cannot be used together "
+      "with --no-wizard.\n");
 }
 
 TEST_F(Shell_cmdline_options, override_port) {
