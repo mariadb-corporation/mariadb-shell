@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +32,7 @@
 #include <utility>
 
 #include <CommonToken.h>
+#include <misc/Interval.h>
 
 #include "mysqlshdk/libs/parser/base/symbol-info.h"
 #include "mysqlshdk/libs/parser/mysql/MySQLLexer.h"
@@ -71,10 +73,6 @@ bool MySQLBaseLexer::isIdentifier(size_t type_) const {
   if ((type_ == MySQLLexer::IDENTIFIER) ||
       (type_ == MySQLLexer::BACK_TICK_QUOTED_ID))
     return true;
-
-  // Double quoted text represents identifiers only if the ANSI QUOTES sql mode
-  // is active.
-  if (type_ == MySQLLexer::DOUBLE_QUOTED_TEXT) return (sqlMode & AnsiQuotes);
 
   if (auto symbol = getVocabulary().getSymbolicName(type_); !symbol.empty()) {
     if (symbol.ends_with("_SYMBOL")) {
@@ -1000,22 +998,86 @@ bool MySQLBaseLexer::isOperator(size_t type) {
  * Allow a grammar rule to emit as many tokens as it needs.
  */
 std::unique_ptr<antlr4::Token> MySQLBaseLexer::nextToken() {
+  auto normalize_double_quotes = [this](std::unique_ptr<Token> tok) {
+    if (!tok || tok->getType() != MySQLLexer::DOUBLE_QUOTED_TEXT) {
+      return tok;
+    }
+
+    auto *common_token = dynamic_cast<antlr4::CommonToken *>(tok.get());
+    if (!common_token) {
+      return tok;
+    }
+
+    common_token->setType(isSqlModeActive(AnsiQuotes)
+                              ? MySQLLexer::BACK_TICK_QUOTED_ID
+                              : MySQLLexer::SINGLE_QUOTED_TEXT);
+
+    return tok;
+  };
+
+  auto scan_ansi_quotes_identifier = [this]() -> std::unique_ptr<Token> {
+    if (!isSqlModeActive(AnsiQuotes) || _input->LA(1) != '"') {
+      return {};
+    }
+
+    size_t lookahead = 1;
+
+    for (;;) {
+      const auto c = _input->LA(lookahead + 1);
+      if (c == Token::EOF) {
+        return {};
+      }
+
+      if (c == '"') {
+        if (_input->LA(lookahead + 2) == '"') {
+          lookahead += 2;
+          continue;
+        }
+
+        ++lookahead;
+        break;
+      }
+
+      ++lookahead;
+    }
+
+    const auto start_index = _input->index();
+    const auto start_line = getLine();
+    const auto start_position = getCharPositionInLine();
+
+    for (size_t i = 0; i < lookahead; ++i) {
+      getInterpreter<antlr4::atn::LexerATNSimulator>()->consume(_input);
+    }
+
+    const auto stop_index = _input->index() - 1;
+    const auto text =
+        _input->getText(antlr4::misc::Interval(start_index, stop_index));
+
+    return _factory->create({this, _input}, MySQLLexer::BACK_TICK_QUOTED_ID,
+                            text, Token::DEFAULT_CHANNEL, start_index,
+                            stop_index, start_line, start_position);
+  };
+
   // First respond with pending tokens to the next token request, if there are
   // any.
   if (!_pendingTokens.empty()) {
     auto pending = std::move(_pendingTokens.front());
     _pendingTokens.pop_front();
-    return pending;
+    return normalize_double_quotes(std::move(pending));
+  }
+
+  if (auto quoted_identifier = scan_ansi_quotes_identifier()) {
+    return quoted_identifier;
   }
 
   // Let the main lexer class run the next token recognition.
   // This might create additional tokens again.
-  auto next = Lexer::nextToken();
+  auto next = normalize_double_quotes(Lexer::nextToken());
   if (!_pendingTokens.empty()) {
     auto pending = std::move(_pendingTokens.front());
     _pendingTokens.pop_front();
     _pendingTokens.push_back(std::move(next));
-    return pending;
+    return normalize_double_quotes(std::move(pending));
   }
   return next;
 }

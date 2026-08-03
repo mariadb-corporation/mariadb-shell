@@ -24,6 +24,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#ifdef HAVE_PYTHON
+// python_context.h includes Python.h, which has to be included first.
+#include "mysqlshdk/include/scripting/python_context.h"
+#endif
+
 #include "mysqlsh/cmdline_shell.h"
 #include "mysqlsh/json_shell.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
@@ -38,9 +43,6 @@
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
-#ifdef HAVE_PYTHON
-#include "mysqlshdk/include/scripting/python_context.h"
-#endif
 
 #include <sys/stat.h>
 #include <clocale>
@@ -168,8 +170,7 @@ static bool detect_color_capability() {
 
 std::string pick_prompt_theme() {
   // check environment variable to override prompt theme
-  if (const char *theme =
-          shcore::getenv_shell("MARIADB_SHELL_PROMPT_THEME")) {
+  if (const char *theme = shcore::getenv_shell("MARIADB_SHELL_PROMPT_THEME")) {
     if (*theme) {
       if (!shcore::is_file(theme)) {
         const std::string prompt_theme_msg =
@@ -438,16 +439,16 @@ int main(int argc, char **argv) {
       exit(1);
     }
   }
-#else
-  auto locale = std::setlocale(LC_ALL, "en_US.UTF-8");
-  // logger is not initialized yet here
-  if (!locale)
+#endif  // _WIN32
+
+  if (const auto locale = std::setlocale(LC_ALL, "en_US.UTF-8"); !locale) {
+    // logger is not initialized yet here
     fprintf(stderr, "Cannot set LC_ALL to locale en_US.UTF-8: %s\n",
             strerror(errno));
+  }
   // set the environment variable as well, this ensures that locale is not
   // reset using setlocale(LC_XXX, "") call by any of our dependencies
   shcore::setenv("LC_ALL", "en_US.UTF-8");
-#endif  // _WIN32
 
   mysqlsh::global_init();
 
@@ -516,8 +517,7 @@ int main(int argc, char **argv) {
     bool valid_color_capability = detect_color_capability();
 
     // The Json_shell mode is enabled when this env variable is defined
-    const char *json_shell =
-        shcore::getenv_shell("MARIADB_SHELL_JSON_SHELL");
+    const char *json_shell = shcore::getenv_shell("MARIADB_SHELL_JSON_SHELL");
     if (json_shell) {
       // The variable needs to be remvoved in case AAPI sandbox operations are
       // executed, this is because the launched shell instance will also use the

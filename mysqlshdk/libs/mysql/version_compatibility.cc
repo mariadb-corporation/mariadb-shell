@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,12 +24,72 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <cstdlib>
 #include <stdexcept>
 
 #include "mysqlshdk/libs/mysql/version_compatibility.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlshdk::mysql {
+namespace {
+
+constexpr mysqlshdk::utils::Version k_first_rollback_supported_8_0_version(8, 0,
+                                                                           34);
+
+utils::Version compatibility_version(const utils::Version &version) {
+  if (utils::version::calendar::is_calendar_version(version)) {
+    return utils::version::calendar::to_legacy(version);
+  }
+
+  return version;
+}
+
+bool is_unsupported_version(const utils::Version &version) {
+  if (version.numeric_version_series() < 800) {
+    return true;
+  }
+
+  return version >= utils::Version(10, 0, 0) &&
+         !utils::version::calendar::is_calendar_version(version);
+}
+
+bool is_lts_or_bugfix_release(const utils::Version &version) {
+  return version.numeric_version_series() == 800 ||
+         utils::version::is_lts(version);
+}
+
+utils::Version first_lts_or_bugfix_rollback_target(
+    const utils::Version &source_series) {
+  if (source_series.get_major() == 8 && source_series.get_minor() == 4) {
+    return k_first_rollback_supported_8_0_version;
+  }
+
+  return utils::version::legacy::first_lts(
+      utils::Version(source_series.get_major() - 1, 0, 0));
+}
+
+bool can_rollback_from_lts_or_bugfix(const utils::Version &source_series,
+                                     const utils::Version &replica_series) {
+  if (source_series.numeric_version_series() == 800) {
+    return false;
+  }
+
+  const auto first_rollback_target =
+      first_lts_or_bugfix_rollback_target(source_series);
+  return replica_series >= first_rollback_target &&
+         replica_series < source_series;
+}
+
+bool can_rollback_within_innovation_series(
+    const utils::Version &source, const utils::Version &replica,
+    const utils::Version &source_series, const utils::Version &replica_series) {
+  return !is_lts_or_bugfix_release(source) &&
+         !is_lts_or_bugfix_release(replica) &&
+         source_series.get_major() == replica_series.get_major();
+}
+
+}  // namespace
+
 Replication_version_compatibility verify_compatible_replication_versions(
     const utils::Version &source, const utils::Version &replica) {
   // In general, replication is only fully supported from one release series
@@ -66,17 +127,13 @@ Replication_version_compatibility verify_compatible_replication_versions(
   //     previous LTS series
   //   - From within an Innovation series
 
-  const mysqlshdk::utils::Version min_lts_version_80(8, 0, 34);
-  const mysqlshdk::utils::Version first_lts_version(8, 4, 0);
-
-  // Anything < 8.0.0 is unsupported
-  if (source.numeric_version_series() < 800) {
+  if (is_unsupported_version(source)) {
     throw std::runtime_error(shcore::str_format(
         "Unsupported MySQL Server version at source instance: %s",
         source.get_full().c_str()));
   }
 
-  if (replica.numeric_version_series() < 800) {
+  if (is_unsupported_version(replica)) {
     throw std::runtime_error(shcore::str_format(
         "Unsupported MySQL Server version at replica instance: %s",
         replica.get_full().c_str()));
@@ -87,14 +144,20 @@ Replication_version_compatibility verify_compatible_replication_versions(
     return Replication_version_compatibility::COMPATIBLE;
   }
 
-  if (source.numeric_version_series() == 800 &&
-      replica.numeric_version_series() == 800) {
-    if ((source >= min_lts_version_80 && replica >= min_lts_version_80) ||
+  const auto source_series = compatibility_version(source);
+  const auto replica_series = compatibility_version(replica);
+  const auto first_lts_version =
+      utils::version::legacy::first_lts(source_series);
+
+  if (source_series.numeric_version_series() == 800 &&
+      replica_series.numeric_version_series() == 800) {
+    if ((source >= k_first_rollback_supported_8_0_version &&
+         replica >= k_first_rollback_supported_8_0_version) ||
         source < replica) {
       return Replication_version_compatibility::COMPATIBLE;
     }
 
-    if (replica < min_lts_version_80) {
+    if (replica < k_first_rollback_supported_8_0_version) {
       return Replication_version_compatibility::INCOMPATIBLE;
     }
 
@@ -102,31 +165,47 @@ Replication_version_compatibility verify_compatible_replication_versions(
   }
 
   // Incompatible if source is 8.0.x and replica is 9.0 or above
-  if (source.numeric_version_series() == 800 &&
-      replica.numeric_version_series() >= 900) {
+  if (source_series.numeric_version_series() == 800 &&
+      replica_series.numeric_version_series() >= 900) {
     return Replication_version_compatibility::INCOMPATIBLE;
   }
 
   // Incompatible if major version difference is 2 or more
-  if (abs(replica.get_major() - source.get_major()) >= 2) {
+  if (std::abs(replica_series.get_major() - source_series.get_major()) >= 2) {
     return Replication_version_compatibility::INCOMPATIBLE;
   }
 
-  // Incompatible if both are within an innovation release and the difference of
-  // the major version is 1
-  if (source < first_lts_version &&
-      abs(replica.get_major() - source.get_major()) >= 1) {
+  // Incompatible if the source is within an innovation release and the replica
+  // is in the next release cycle.
+  if (source_series < replica_series && source_series < first_lts_version &&
+      std::abs(replica_series.get_major() - source_series.get_major()) >= 1) {
     return Replication_version_compatibility::INCOMPATIBLE;
   }
 
-  // If source is higher than replica it's compatible if both are LTS and
-  // only the patch version differs, otherwise, it's limited
+  // If source is higher than replica it's compatible if both are LTS or Bugfix
+  // and only the patch version differs. Limited rollback is allowed only for
+  // the explicit rollback paths from the WL.
   if (source > replica) {
-    if (source.numeric_version_series() == replica.numeric_version_series() &&
-        source >= first_lts_version && replica >= first_lts_version) {
+    const auto source_is_lts_or_bugfix = is_lts_or_bugfix_release(source);
+    const auto replica_is_lts_or_bugfix = is_lts_or_bugfix_release(replica);
+
+    if (source_series.numeric_version_series() ==
+            replica_series.numeric_version_series() &&
+        source_is_lts_or_bugfix && replica_is_lts_or_bugfix) {
       return Replication_version_compatibility::COMPATIBLE;
     }
-    return Replication_version_compatibility::DOWNGRADE_ONLY;
+
+    if (source_is_lts_or_bugfix &&
+        can_rollback_from_lts_or_bugfix(source_series, replica_series)) {
+      return Replication_version_compatibility::DOWNGRADE_ONLY;
+    }
+
+    if (can_rollback_within_innovation_series(source, replica, source_series,
+                                              replica_series)) {
+      return Replication_version_compatibility::DOWNGRADE_ONLY;
+    }
+
+    return Replication_version_compatibility::INCOMPATIBLE;
   }
 
   // Default to compatible for all other scenarios

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,7 @@
 #include "mysqlshdk/libs/mysql/instance.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/version.h"
 #include "scripting/types.h"
 #include "unittest/gtest_clean.h"
 #include "unittest/mysqlshdk/libs/mysql/user_privileges_t.h"
@@ -1320,10 +1322,18 @@ TEST(mod_dba_common, is_option_supported) {
       std::runtime_error,
       shcore::str_format(
           "Unsupported server version '100.0.0': AdminAPI operations in this "
-          "version of MySQL Shell support MySQL Server up to version %s",
-          mysqlsh::dba::Precondition_checker::k_max_adminapi_server_version
-              .get_short()
-              .c_str()));
+          "version of MySQL Shell support MySQL Server versions %s",
+          mysqlshdk::utils::version::supported_servers().c_str()));
+
+  EXPECT_THROW_LIKE(
+      mysqlsh::dba::is_option_supported(
+          Version(10, 0, 0), mysqlsh::dba::kExitStateAction,
+          mysqlsh::dba::k_global_cluster_supported_options),
+      std::runtime_error,
+      shcore::str_format(
+          "Unsupported server version '10.0.0': AdminAPI operations in this "
+          "version of MySQL Shell support MySQL Server versions %s",
+          mysqlshdk::utils::version::supported_servers().c_str()));
 
   // testing the result of exit-state action case since it has requirements
   // for 8.0 MySQL versions.

@@ -1,4 +1,5 @@
-/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB Corporation.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -133,6 +134,52 @@ TEST_F(Shell_output_test, vertical_output_result_with_newline) {
 a: te
 st)";
   MY_EXPECT_STDOUT_CONTAINS(expected_output);
+}
+
+TEST_F(Shell_output_test, result_output_sanitizes_terminal_controls) {
+  const std::string raw_control = "\x1B]52;c;AAAA\x07";
+  const std::string safe_label = "label\\x1B]52;c;AAAA\\x07after";
+  const std::string safe_value = "safe\\x1B]52;c;AAAA\\x07after";
+  const std::string query =
+      "select convert(0x736166651B5D35323B633B41414141076166746572 "
+      "using utf8mb4) as "
+      "`label\x1B]52;c;AAAA\x07"
+      "after`";
+
+  std::stringstream table_stream(query + ";");
+  _ret_val = _interactive_shell->process_stream(table_stream, "STDIN", {});
+  EXPECT_EQ(0, _ret_val);
+  MY_EXPECT_STDOUT_CONTAINS(safe_label);
+  MY_EXPECT_STDOUT_CONTAINS(safe_value);
+  EXPECT_EQ(std::string::npos, output_handler.std_out.find(raw_control));
+  wipe_all();
+
+  std::stringstream vertical_stream(query + "\\G");
+  _ret_val = _interactive_shell->process_stream(vertical_stream, "STDIN", {});
+  EXPECT_EQ(0, _ret_val);
+  MY_EXPECT_STDOUT_CONTAINS(safe_label);
+  MY_EXPECT_STDOUT_CONTAINS(safe_value);
+  EXPECT_EQ(std::string::npos, output_handler.std_out.find(raw_control));
+  wipe_all();
+
+  _options->result_format = "tabbed";
+  std::stringstream tabbed_stream(query + ";");
+  _ret_val = _interactive_shell->process_stream(tabbed_stream, "STDIN", {});
+  EXPECT_EQ(0, _ret_val);
+  MY_EXPECT_STDOUT_CONTAINS(safe_label);
+  MY_EXPECT_STDOUT_CONTAINS(safe_value);
+  EXPECT_EQ(std::string::npos, output_handler.std_out.find(raw_control));
+  _options->result_format = "table";
+  wipe_all();
+
+  _options->show_column_type_info = true;
+  std::stringstream metadata_stream(query + ";");
+  _ret_val = _interactive_shell->process_stream(metadata_stream, "STDIN", {});
+  EXPECT_EQ(0, _ret_val);
+  MY_EXPECT_STDOUT_CONTAINS("Name:      `" + safe_label + "`");
+  MY_EXPECT_STDOUT_CONTAINS(safe_value);
+  EXPECT_EQ(std::string::npos, output_handler.std_out.find(raw_control));
+  _options->show_column_type_info = false;
 }
 
 TEST_F(Shell_output_test, output_format_option) {

@@ -35,6 +35,7 @@
 
 #include "mysqlshdk/libs/mysql/user_privileges.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_lexing.h"
 
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_result.h"
 #include "unittest/test_utils/mocks/mysqlshdk/libs/db/mock_session.h"
@@ -173,22 +174,54 @@ void setup(const Setup_options &options, Mock_session *session) {
     }
 
     if (options.activate_all_roles_on_login.has_value()) {
-      std::string query;
+      bool use_applicable_roles_table = false;
 
-      if (*options.activate_all_roles_on_login) {
-        for (const auto &role : options.mandatory_roles) {
-          std::string user;
-          std::string host;
+      if (options.version >= Version(8, 0, 19)) {
+        session->expect_query("SELECT CURRENT_USER()")
+            .then_return({{"",
+                           {"CURRENT_USER()"},
+                           {Type::String},
+                           {{options.current_user}}}});
 
-          shcore::split_account(role, &user, &host);
+        std::string user;
+        std::string host;
 
-          if (host.empty()) {
-            host = '%';
-          }
+        shcore::split_account(options.current_user, &user, &host);
+        use_applicable_roles_table =
+            options.user == user && options.host == host;
+      }
 
-          all_roles.emplace(shcore::make_account(user, host));
+      const auto make_mandatory_role_account = [](const std::string &role) {
+        mysqlshdk::utils::SQL_iterator it(role, 0, false);
+        std::string role_account{it.next_token()};
+        const auto token = it.next_token();
+
+        if (!token.empty() && shcore::str_caseeq(token, "@")) {
+          role_account += token;
+          role_account += it.next_token();
+        } else {
+          role_account += "@%";
         }
 
+        std::string user;
+        std::string host;
+
+        shcore::split_account(role_account, &user, &host);
+
+        if (host.empty()) {
+          host = '%';
+        }
+
+        return shcore::make_account(user, host);
+      };
+
+      std::set<std::string> missing_mandatory_roles;
+
+      for (const auto &role : options.missing_mandatory_roles) {
+        missing_mandatory_roles.emplace(make_mandatory_role_account(role));
+      }
+
+      const auto add_mandatory_roles = [&]() {
         session->expect_query("SHOW GLOBAL VARIABLES LIKE 'mandatory_roles'")
             .then_return(
                 {{"",
@@ -197,13 +230,76 @@ void setup(const Setup_options &options, Mock_session *session) {
                   {{"mandatory_roles",
                     shcore::str_join(options.mandatory_roles, ",")}}}});
 
-        query =
-            "SELECT from_user, from_host FROM mysql.role_edges WHERE "
-            "to_user=? AND to_host=?";
+        for (const auto &role : options.mandatory_roles) {
+          const auto role_account = make_mandatory_role_account(role);
+          auto &role_exists =
+              session
+                  ->expect_query(shcore::sqlformat(
+                      "SELECT PRIVILEGE_TYPE FROM "
+                      "INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE=? "
+                      "LIMIT 1",
+                      role_account))
+                  .then({"PRIVILEGE_TYPE"});
+
+          const auto missing = missing_mandatory_roles.contains(role_account);
+
+          if (!missing) {
+            role_exists.add_row({"USAGE"});
+          }
+
+          if (missing) {
+            continue;
+          }
+
+          all_roles.emplace(role_account);
+        }
+      };
+
+      std::string query;
+
+      if (*options.activate_all_roles_on_login) {
+        add_mandatory_roles();
+
+        if (use_applicable_roles_table) {
+          query =
+              "SELECT ROLE_NAME, ROLE_HOST FROM "
+              "information_schema.applicable_roles";
+        } else {
+          query =
+              "SELECT from_user, from_host FROM mysql.role_edges WHERE "
+              "to_user=? AND to_host=?";
+        }
       } else {
-        query =
-            "SELECT default_role_user, default_role_host FROM "
-            "mysql.default_roles WHERE user=? AND host=?";
+        {
+          auto &r = session
+                        ->expect_query(
+                            "show GLOBAL variables where `variable_name` in "
+                            "('activate_mandatory_roles')")
+                        .then({"Variable_name", "Value"});
+
+          if (options.activate_mandatory_roles.has_value()) {
+            r.add_row({"activate_mandatory_roles",
+                       *options.activate_mandatory_roles ? "1" : "0"});
+          }
+        }
+
+        if (options.activate_mandatory_roles.value_or(false)) {
+          add_mandatory_roles();
+        }
+
+        if (use_applicable_roles_table) {
+          query =
+              "SELECT ROLE_NAME, ROLE_HOST FROM "
+              "information_schema.applicable_roles WHERE IS_DEFAULT='YES'";
+        } else {
+          query =
+              "SELECT default_role_user, default_role_host FROM "
+              "mysql.default_roles WHERE user=? AND host=?";
+        }
+      }
+
+      if (!use_applicable_roles_table) {
+        query = shcore::sqlformat(std::move(query), options.user, options.host);
       }
 
       std::vector<std::vector<std::string>> active_roles;
@@ -214,12 +310,8 @@ void setup(const Setup_options &options, Mock_session *session) {
         all_roles.emplace(shcore::make_account(role));
       }
 
-      session
-          ->expect_query(shcore::sqlformat(query, options.user, options.host))
-          .then_return({{"",
-                         {"user", "host"},
-                         {Type::String, Type::String},
-                         active_roles}});
+      session->expect_query(query).then_return(
+          {{"", {"user", "host"}, {Type::String, Type::String}, active_roles}});
     }
 
     if (options.version >= Version(8, 0, 16)) {
@@ -554,6 +646,128 @@ TEST_F(User_privileges_test, get_user_roles) {
         up.get_user_roles());
   }
 
+  // User with mandatory roles and activate mandatory roles.
+  {
+    SCOPED_TRACE("User with mandatory roles and activate_mandatory_roles=ON.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = true;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ(
+        (std::set<std::string>{"'admin_role'@'dba_host'", "'m_role'@'dba_host'",
+                               "'write_role'@'dba_host'"}),
+        up.get_user_roles());
+  }
+
+  // User with missing mandatory role.
+  {
+    SCOPED_TRACE("User with missing mandatory role.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = true;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "public",
+    };
+    setup.missing_mandatory_roles = {
+        "public",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'",
+                                     "'m_role'@'dba_host'"}),
+              up.get_user_roles());
+  }
+
+  // User with mandatory roles, but activate mandatory roles is disabled.
+  {
+    SCOPED_TRACE("User with mandatory roles and activate_mandatory_roles=OFF.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles = false;
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'"}),
+              up.get_user_roles());
+  }
+
+  // User with mandatory roles, but activate_mandatory_roles is not available.
+  {
+    SCOPED_TRACE("User with mandatory roles and no activate_mandatory_roles.");
+
+    Setup_options setup;
+    setup.user = "dba_user";
+    setup.host = "dba_host";
+    setup.version = Version(8, 0, 0);
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.activate_all_roles_on_login = false;
+    setup.activate_mandatory_roles.reset();
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+    setup.mandatory_roles = {
+        "m_role@dba_host",
+        "write_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{"'admin_role'@'dba_host'"}),
+              up.get_user_roles());
+  }
+
   // BUG#35963431 - server has a version which should support roles, but
   // activate_all_roles_on_login system variable is not available
   {
@@ -647,6 +861,38 @@ TEST_F(User_privileges_test, validate_role_privileges) {
   };
 
   validate_role_privileges(setup_test(setup));
+}
+
+TEST_F(User_privileges_test, validate_mandatory_role_privileges) {
+  // Verify privileges inherited through a mandatory role while
+  // activate_all_roles_on_login is disabled.
+  Setup_options setup;
+
+  setup.user = "test_user";
+  setup.host = "%";
+  setup.version = Version(8, 0, 0);
+  setup.activate_all_roles_on_login = false;
+  setup.activate_mandatory_roles = true;
+
+  setup.mandatory_roles = {
+      "mandatory_role@%",
+  };
+
+  setup.grants = {
+      "GRANT USAGE ON *.* TO u@h",
+      "GRANT SELECT ON *.* TO u@h",
+  };
+
+  const auto up = setup_test(setup);
+  const auto result = up.validate({"SELECT"});
+
+  EXPECT_TRUE(up.user_exists());
+  EXPECT_EQ((std::set<std::string>{"'mandatory_role'@'%'"}),
+            up.get_user_roles());
+  EXPECT_TRUE(result.user_exists());
+  EXPECT_FALSE(result.has_missing_privileges());
+  EXPECT_FALSE(result.has_grant_option());
+  EXPECT_TRUE(result.missing_privileges().empty());
 }
 
 TEST_F(User_privileges_test, validate_role_privileges_direct) {
@@ -779,6 +1025,8 @@ TEST_F(User_privileges_test, partial_revokes) {
 
 TEST_F(User_privileges_test, parse_grants) {
   Setup_options setup;
+  setup.user = "dba_user";
+  setup.host = "dba_host";
 
   setup.grants = {
       "REVOKE SELECT ON `1`.* FROM u@h",
@@ -1144,6 +1392,66 @@ TEST_F(User_privileges_test, wildcard_grants) {
       EXPECT_FALSE(result.has_grant_option());
       EXPECT_FALSE(result.has_missing_privileges());
     }
+  }
+}
+
+TEST_F(User_privileges_test, bug_36247713) {
+  // don't use mysql schema when fetching roles, if possible
+  {
+    SCOPED_TRACE("activate all roles");
+
+    Setup_options setup;
+    // server has INFORMATION_SCHEMA.APPLICABLE_ROLES
+    setup.version = Version(8, 0, 19);
+    setup.activate_all_roles_on_login = true;
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+
+    setup.mandatory_roles = {
+        "read_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{
+                  "'admin_role'@'dba_host'",
+                  "'read_role'@'dba_host'",
+              }),
+              up.get_user_roles());
+  }
+
+  {
+    SCOPED_TRACE("don't activate all roles");
+
+    Setup_options setup;
+    // server has INFORMATION_SCHEMA.APPLICABLE_ROLES
+    setup.version = Version(8, 0, 19);
+    setup.activate_all_roles_on_login = false;
+
+    setup.grants = {
+        "GRANT USAGE *.* TO u@h",
+    };
+
+    setup.active_roles = {
+        {"admin_role", "dba_host"},
+    };
+
+    setup.mandatory_roles = {
+        "read_role@dba_host",
+    };
+
+    const auto up = setup_test(setup);
+
+    EXPECT_EQ((std::set<std::string>{
+                  "'admin_role'@'dba_host'",
+              }),
+              up.get_user_roles());
   }
 }
 

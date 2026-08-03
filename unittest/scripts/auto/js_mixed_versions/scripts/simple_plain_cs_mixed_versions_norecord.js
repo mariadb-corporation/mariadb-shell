@@ -25,19 +25,78 @@ k_mycnf_options = {
 var pwdAdmin = "C0mPL1CAT3D_pa22w0rd_adm1n";
 var pwdExtra = "C0mPL1CAT3D_pa22w0rd_3x7ra";
 
-if (testutil.versionCheck(MYSQLD_SECONDARY_SERVER_A.version, '<', __version)) {
-    testutil.deployRawSandbox(__mysql_sandbox_port1, __secure_password, {report_host: hostname, ...k_mycnf_options}, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
-    testutil.deploySandbox(__mysql_sandbox_port2, __secure_password, {report_host: hostname, ...k_mycnf_options});
-    testutil.deploySandbox(__mysql_sandbox_port3, __secure_password, {report_host: hostname, log_error_verbosity:3, ...k_mycnf_options});
-    testutil.deployRawSandbox(__mysql_sandbox_port4, __secure_password, {report_host: hostname, "log-error-verbosity": "3", ...k_mycnf_options});
-} else {
+function get_sandbox_version(uri) {
+    let version_session = mysql.getSession(uri);
+    let version = version_session.runSql('SELECT @@version').fetchOne()[0];
+    version_session.close();
+    return version.split('-')[0];
+}
+
+function deploy_default_lower_sandboxes() {
     testutil.deployRawSandbox(__mysql_sandbox_port1, __secure_password, {report_host: hostname, ...k_mycnf_options});
     testutil.deploySandbox(__mysql_sandbox_port2, __secure_password, {report_host: hostname, ...k_mycnf_options}, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
     testutil.deploySandbox(__mysql_sandbox_port3, __secure_password, {report_host: hostname, log_error_verbosity:3, ...k_mycnf_options}, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
     testutil.deployRawSandbox(__mysql_sandbox_port4, __secure_password, {report_host: hostname, "log-error-verbosity": "3", ...k_mycnf_options}, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
 }
 
+function deploy_secondary_lower_sandboxes() {
+    testutil.deployRawSandbox(__mysql_sandbox_port1, __secure_password, {report_host: hostname, ...k_mycnf_options}, { mysqldPath: MYSQLD_SECONDARY_SERVER_A.path });
+    testutil.deploySandbox(__mysql_sandbox_port2, __secure_password, {report_host: hostname, ...k_mycnf_options});
+    testutil.deploySandbox(__mysql_sandbox_port3, __secure_password, {report_host: hostname, log_error_verbosity:3, ...k_mycnf_options});
+    testutil.deployRawSandbox(__mysql_sandbox_port4, __secure_password, {report_host: hostname, "log-error-verbosity": "3", ...k_mycnf_options});
+}
+
+function destroy_sandboxes() {
+    testutil.destroySandbox(__mysql_sandbox_port1);
+    testutil.destroySandbox(__mysql_sandbox_port2);
+    testutil.destroySandbox(__mysql_sandbox_port3);
+    testutil.destroySandbox(__mysql_sandbox_port4);
+}
+
 let __version_A = MYSQLD_SECONDARY_SERVER_A.version.replace(/[-_].*$/, '');
+
+deploy_default_lower_sandboxes();
+
+let default_server_version = get_sandbox_version(__sandbox_uri_secure_password1);
+let secondary_server_version = get_sandbox_version(__sandbox_uri_secure_password2);
+
+if (testutil.versionCheck(default_server_version, '>', secondary_server_version)) {
+    destroy_sandboxes();
+    deploy_secondary_lower_sandboxes();
+
+    secondary_server_version = get_sandbox_version(__sandbox_uri_secure_password1);
+    default_server_version = get_sandbox_version(__sandbox_uri_secure_password2);
+}
+
+let lower_server_version = get_sandbox_version(__sandbox_uri_secure_password1);
+let higher_server_version = get_sandbox_version(__sandbox_uri_secure_password2);
+let default_to_secondary_replication_incompatible =
+    testutil.versionCheck(default_server_version, "between", "[26.7.0,28.4.0)") &&
+    testutil.versionCheck(secondary_server_version, "between", "[9.7.0,10.0.0)");
+let higher_to_lower_replication_downgrade_only =
+    testutil.versionCheck(higher_server_version, "between", "[9.7.0,10.0.0)") &&
+    testutil.versionCheck(lower_server_version, "between", "[8.4.0,9.0.0)");
+
+WIPE_OUTPUT()
+
+function check_incompatible_replication_source(source_version, target_version, source_port, target_port) {
+    EXPECT_OUTPUT_CONTAINS("The replication source ('" + hostname + ":" + source_port + "') is running version " + source_version + ", which is incompatible with the target replica's ('" + hostname + ":" + target_port + "') version " + target_version + ". If you understand the limitations and potential issues, use the 'dba.versionCompatibilityChecks' option to bypass this check.");
+    WIPE_OUTPUT()
+}
+
+function current_to_secondary_replication_is_incompatible() {
+    return default_to_secondary_replication_incompatible;
+}
+
+function higher_to_lower_replication_is_downgrade_only() {
+    return higher_to_lower_replication_downgrade_only;
+}
+
+if (!current_to_secondary_replication_is_incompatible() &&
+    !higher_to_lower_replication_is_downgrade_only()) {
+    destroy_sandboxes();
+    testutil.skip("Unsupported mixed-version replication compatibility scenario.");
+}
 
 shell.options.useWizards = false;
 
@@ -231,7 +290,7 @@ NOTE: Group Replication will communicate with other members using '${hostname}:$
 
 * Checking transaction state of the instance...
 
-WARNING: Clone-based recovery not available: Instance '${hostname}:${__mysql_sandbox_port1}' cannot be a donor because its version (${__version_A}) isn't compatible with the recipient's (${__version}).
+WARNING: Clone-based recovery not available: Instance '${hostname}:${__mysql_sandbox_port1}' cannot be a donor because its version (${lower_server_version}) isn't compatible with the recipient's (${higher_server_version}).
 
 NOTE: The target instance '${hostname}:${__mysql_sandbox_port4}' has not been pre-provisioned (GTID set is empty).
 
@@ -405,9 +464,14 @@ cs = dba.getClusterSet();
 
 cs.status({extended:1});
 
-cs.setPrimaryCluster("replicacluster");
+if (current_to_secondary_replication_is_incompatible()) {
+    EXPECT_THROWS(function() { cs.setPrimaryCluster("replicacluster"); }, "Incompatible replication source version");
+    check_incompatible_replication_source(higher_server_version, lower_server_version, __mysql_sandbox_port4, __mysql_sandbox_port1);
+} else {
+    cs.setPrimaryCluster("replicacluster");
+}
 
-//@<> forcePrimaryCluster
+//@<> forcePrimaryCluster {higher_to_lower_replication_is_downgrade_only()}
 session4.runSql("shutdown");
 
 shell.connect(__sandbox_uri1);
@@ -415,7 +479,7 @@ cs = dba.getClusterSet();
 
 cs.forcePrimaryCluster("cluster");
 
-//@<> rejoinCluster
+//@<> rejoinCluster {higher_to_lower_replication_is_downgrade_only()}
 testutil.startSandbox(__mysql_sandbox_port4);
 session4 = mysql.getSession(__sandbox_uri4);
 shell.connect(__sandbox_uri4);

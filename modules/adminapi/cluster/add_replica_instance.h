@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -72,6 +73,7 @@ class Add_replica_instance {
   cluster::Add_replica_instance_options m_options;
   Undo_tracker m_undo_tracker;
   Cluster_ssl_mode m_ssl_mode{Cluster_ssl_mode::NONE};
+  bool m_fail_rollback_after_sync_timeout = false;
 };
 
 }  // namespace mysqlsh::dba::cluster

@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -78,9 +79,9 @@ namespace mysql {
 ClassicSession getClassicSession(ConnectionData connectionData,
                                  String password);
 ClassicSession getSession(ConnectionData connectionData, String password);
-Array splitScript(String script);
-Dictionary parseStatementAst(String statements);
-Array tokenizeStatement(String statement);
+Array splitScript(String script, Dictionary options);
+Dictionary parseStatementAst(String statements, Dictionary options);
+Array tokenizeStatement(String statement, Dictionary options);
 String quoteIdentifier(String s);
 String unquoteIdentifier(String s);
 String makeAccount(String user, String host);
@@ -88,9 +89,9 @@ Dictionary splitAccount(String account);
 #elif DOXYGEN_PY
 ClassicSession get_classic_session(ConnectionData connectionData, str password);
 ClassicSession get_session(ConnectionData connectionData, str password);
-list split_script(str script);
-dict parse_statement_ast(str statements);
-list tokenize_statement(str statement);
+list split_script(str script, dict options);
+dict parse_statement_ast(str statements, dict options);
+list tokenize_statement(str statement, dict options);
 str quote_identifier(str s);
 str unquote_identifier(str s);
 str make_account(str user, str host);
@@ -108,9 +109,14 @@ std::shared_ptr<shcore::Object_bridge> get_session(
 virtual shcore::Value get_member(const std::string &prop) const;
 #endif
 
-shcore::Value split_script(const std::string &script) const;
-shcore::Value parse_statement_ast(const std::string &statement) const;
-shcore::Value tokenize_statement(const std::string &statement) const;
+shcore::Value split_script(const std::string &script,
+                           const shcore::Dictionary_t &options = {}) const;
+shcore::Value parse_statement_ast(
+    const std::string &statement,
+    const shcore::Dictionary_t &options = {}) const;
+shcore::Value tokenize_statement(
+    const std::string &statement,
+    const shcore::Dictionary_t &options = {}) const;
 
 std::string quote_identifier(const std::string &s) const;
 std::string unquote_identifier(const std::string &s) const;

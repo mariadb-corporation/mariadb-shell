@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +25,7 @@
 # cmake -DWITH_ZLIB=bundled|system
 # bundled is the default
 
-SET(ZLIB_VERSION "1.3.2")
+include(mysql_server_dependency)
 
 macro (FIND_SYSTEM_ZLIB)
   find_path(PATH_TO_ZLIB NAMES zlib.h zconf.h)
@@ -42,7 +43,20 @@ macro(MYSQL_USE_BUNDLED_ZLIB)
   if(MYSQL_SOURCE_DIR AND MYSQL_BUILD_DIR)
     set(WITH_ZLIB "bundled" CACHE STRING "By default use bundled zlib library")
     set(BUILD_BUNDLED_ZLIB 1)
-    include_directories(BEFORE SYSTEM ${MYSQL_SOURCE_DIR}/extra/zlib/zlib-${ZLIB_VERSION} ${MYSQL_BUILD_DIR}/extra/zlib/zlib-${ZLIB_VERSION})
+
+    mysql_resolve_versioned_dependency("zlib source"
+        "${MYSQL_SOURCE_DIR}/extra/zlib" "zlib-" ZLIB_SOURCE_DIR ZLIB_VERSION)
+    mysql_resolve_versioned_dependency("zlib build"
+        "${MYSQL_BUILD_DIR}/extra/zlib" "zlib-" ZLIB_BUILD_DIR
+        ZLIB_BUILD_VERSION)
+
+    if(NOT ZLIB_VERSION STREQUAL ZLIB_BUILD_VERSION)
+      message(FATAL_ERROR
+          "Bundled zlib source version ${ZLIB_VERSION} does not match "
+          "build version ${ZLIB_BUILD_VERSION}")
+    endif()
+
+    include_directories(BEFORE SYSTEM ${ZLIB_SOURCE_DIR} ${ZLIB_BUILD_DIR})
 
     if(WIN32)
       find_file(ZLIB_LIBRARY NAMES zlib.lib PATHS "${MYSQL_BUILD_DIR}/archive_output_directory/"

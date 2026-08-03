@@ -30,6 +30,10 @@ __mysql_sandbox_gr_port2 = __mysql_sandbox_port2 * 10 + 1;
 
 session.runSql("SET GLOBAL group_replication_group_name='6ed4243e-88b9-11e9-8eac-7281347dd9c6'");
 session2.runSql("SET GLOBAL group_replication_group_name='6ed4243e-88b9-11e9-8eac-7281347dd9c6'");
+if (__version_num >= 100000) {
+    session.runSql("SET GLOBAL group_replication_communication_stack='XCOM'");
+    session2.runSql("SET GLOBAL group_replication_communication_stack='XCOM'");
+}
 session.runSql("SET GLOBAL group_replication_local_address='localhost:"+__mysql_sandbox_gr_port1+"'");
 session2.runSql("SET GLOBAL group_replication_local_address='localhost:"+__mysql_sandbox_gr_port2+"'");
 session2.runSql("SET GLOBAL group_replication_group_seeds='"+hostname+":"+__mysql_sandbox_gr_port1+"'");

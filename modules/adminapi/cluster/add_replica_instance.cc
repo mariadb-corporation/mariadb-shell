@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -421,6 +422,37 @@ void Add_replica_instance::do_run() {
   //  - Update metadata
   //  - Setup the managed async replication channel
   {
+    bool target_had_metadata = true;
+    try {
+      target_had_metadata = metadata::installed_version(m_target_instance) !=
+                            metadata::kNotInstalled;
+    } catch (const std::exception &e) {
+      log_info("Unable to verify installed metadata version: %s", e.what());
+    }
+
+    auto drop_read_replica_metadata = [this]() {
+      bool restore_super_read_only = false;
+
+      try {
+        if (m_target_instance->get_sysvar_bool("super_read_only", false)) {
+          m_target_instance->set_sysvar(
+              "super_read_only", false,
+              mysqlshdk::mysql::Var_qualifier::GLOBAL);
+          restore_super_read_only = true;
+        }
+
+        metadata::uninstall(m_target_instance);
+      } catch (std::exception &e) {
+        log_info("Failed to drop Metadata schema from Read-Replica: %s",
+                 e.what());
+      }
+
+      if (restore_super_read_only) {
+        m_target_instance->set_sysvar("super_read_only", true,
+                                      mysqlshdk::mysql::Var_qualifier::GLOBAL);
+      }
+    };
+
     // Create the replication user
     Async_replication_options ar_options;
     std::string repl_account_host;
@@ -447,30 +479,9 @@ void Add_replica_instance::do_run() {
       // broken metadata will cause unexpected SQL errors while reading from it.
       // To avoid that, we drop the Metadata schema from the target instance
       // when clone is aborted.
-      auto &clone_cleanup = m_undo_tracker.add_back(
-          "Dropping Metadata schema from Read-Replica", [this]() {
-            try {
-              bool restore_super_read_only = false;
-              if (m_target_instance->get_sysvar_bool("super_read_only",
-                                                     false)) {
-                m_target_instance->set_sysvar(
-                    "super_read_only", false,
-                    mysqlshdk::mysql::Var_qualifier::GLOBAL);
-                restore_super_read_only = true;
-              }
-
-              metadata::uninstall(m_target_instance);
-
-              if (restore_super_read_only) {
-                m_target_instance->set_sysvar(
-                    "super_read_only", true,
-                    mysqlshdk::mysql::Var_qualifier::GLOBAL);
-              }
-            } catch (std::exception &e) {
-              log_info("Failed to drop Metadata schema from Read-Replica: %s",
-                       e.what());
-            }
-          });
+      auto &clone_cleanup =
+          m_undo_tracker.add_back("Dropping Metadata schema from Read-Replica",
+                                  drop_read_replica_metadata);
 
       m_cluster_impl->handle_clone_provisioning(
           m_target_instance, m_donor_instance, ar_options, repl_account_host,
@@ -608,6 +619,11 @@ void Add_replica_instance::do_run() {
                                             m_options.dry_run);
         });
 
+    if (!target_had_metadata) {
+      m_undo_tracker.add_back("Dropping Metadata schema from Read-Replica",
+                              drop_read_replica_metadata);
+    }
+
     // Synchronize with source
     try {
       console->print_info();
@@ -622,6 +638,7 @@ void Add_replica_instance::do_run() {
       }
     } catch (const shcore::Exception &e) {
       if (e.code() == SHERR_DBA_GTID_SYNC_TIMEOUT) {
+        m_fail_rollback_after_sync_timeout = true;
         console->print_warning(
             "The Read-Replica failed to synchronize its transaction set "
             "with the Cluster. You may increase or disable the "
@@ -646,6 +663,26 @@ void Add_replica_instance::do_run() {
   }
 }
 
-void Add_replica_instance::do_undo() { m_undo_tracker.execute(); }
+void Add_replica_instance::do_undo() {
+  m_undo_tracker.execute();
+
+  if (!m_fail_rollback_after_sync_timeout) return;
+
+  log_info(
+      "Read-Replica setup on '%s' timed out during final synchronization. "
+      "Rollback removed the configuration, but the target may already contain "
+      "replicated transactions from the cluster and may not be back to its "
+      "original pre-operation state.",
+      m_target_instance->descr().c_str());
+
+  throw shcore::Exception(
+      "The Read-Replica setup timed out while waiting for replicated "
+      "transactions to be applied on target instance '" +
+          m_target_instance->descr() +
+          "'. The configuration changes were reverted, but the target may "
+          "already contain replicated transactions from the cluster and may "
+          "not be back to its original pre-operation state.",
+      SHERR_DBA_READ_REPLICA_SETUP_ERROR);
+}
 
 }  // namespace mysqlsh::dba::cluster

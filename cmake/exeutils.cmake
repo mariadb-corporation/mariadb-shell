@@ -262,6 +262,11 @@ function(install_bundled_binaries)
 
   message(STATUS "Bundling ${ARG_DESCRIPTION}")
 
+  if(WITH_PARFAIT)
+    message(STATUS "  Skipping bundled binaries for Parfait build")
+    return()
+  endif()
+
   if(NOT DEFINED ARG_WRITE_RPATH)
     if(APPLE)
       # if we bundle OpenSSL, then we want the bundled binary to use it instead of the system one

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -125,6 +126,15 @@ bool Base_cluster_impl::check_valid() const {
   return true;
 }
 
+void Base_cluster_impl::set_current_instance_pool_context() const {
+  auto ipool = current_ipool();
+
+  // Keep metadata and default credentials bound to the same AdminAPI object
+  // when switching between Cluster and ClusterSet contexts
+  ipool->set_metadata(get_metadata_storage());
+  ipool->set_default_auth_options(default_admin_credentials());
+}
+
 void Base_cluster_impl::check_preconditions(const Command_conditions &conds) {
   log_debug("Checking '%s' preconditions.", conds.name.c_str());
 
@@ -136,7 +146,7 @@ void Base_cluster_impl::check_preconditions(const Command_conditions &conds) {
 
   bool primary_available = false;
   try {
-    current_ipool()->set_metadata(get_metadata_storage());
+    set_current_instance_pool_context();
 
     primary_available =
         (acquire_primary(conds.primary_required, true) != nullptr);
@@ -1739,9 +1749,9 @@ void Base_cluster_impl::store_routing_guideline(
     console->print_info();
     console->print_note(shcore::str_format(
         "Routing guideline '%s' won't be made active by default. To activate "
-        "this guideline, please use .<<<setRoutingOption()>>> with the option "
-        "'guideline'.",
-        guideline->get_name().c_str()));
+        "this guideline, please use %s.<<<setRoutingOption()>>> with the "
+        "option 'guideline'.",
+        guideline->get_name().c_str(), api_class(get_type()).c_str()));
   } else if (!active_rg.empty()) {
     // Print a message indicating which Guideline is the active one, if any
     console->print_info();

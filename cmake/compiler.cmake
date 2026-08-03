@@ -24,8 +24,11 @@
 
 include(CheckCXXCompilerFlag)
 
-# Check for C++ 23 support
 set(CXX_STD "23")
+
+IF(WITH_PARFAIT)
+  set(CXX_STD "${PARFAIT_CXX_STD}")
+ENDIF()
 
 macro(APPEND_FLAG _string_var _addition)
   set(${_string_var} "${${_string_var}} ${_addition}")

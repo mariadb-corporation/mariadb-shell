@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -82,7 +83,7 @@ Cluster with Read-Replicas.
 default in global shell sessions.
 
 @li <b>defaultMode</b>: shell mode to use when shell is started, allowed values:
-"js", "py", "sql" or "none"
+"js", "py" or "sql"
 
 @li <b>devapi.dbObjectHandles</b>: true to enable schema collection and table
 name aliases in the db object, for DevAPI operations

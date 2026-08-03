@@ -149,7 +149,7 @@ for extension in [ "", ".zst" ]:
 #@<> BUG#35018278 - cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 
-#@<> BUG#35313366 - exception when importing a single uncompressed file crashes shell {not __dbug_off}
+#@<> BUG#35313366 - exception when importing a single uncompressed file crashes shell {__dbug}
 testutil.set_trap("os_bucket", ["op == get_object", f"name == {raw_files[0]}"], {"code": 404, "msg": "Injected exception"})
 
 EXPECT_THROWS(lambda: util.import_table(raw_files[0], {'schema': TARGET_SCHEMA, 'table': 'lorem', 'osBucketName': OS_BUCKET_NAME, 'osNamespace': OS_NAMESPACE, 'ociConfigFile': oci_config_file, 'replaceDuplicates': True}), "Injected exception (404)")

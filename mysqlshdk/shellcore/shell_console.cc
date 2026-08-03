@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +30,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #ifdef __sun
@@ -315,100 +317,129 @@ std::string fit_screen(const std::string &text) {
 
 void Shell_console::print_diag(const std::string &text) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("error", ftext);
   } else {
-    delegate_print_diag(ftext.c_str());
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
+    delegate_print_diag(safe_text.c_str());
   }
+
   if (shcore::current_logger()->log_allowed()) {
     shcore::Log_reentrant_protector lock;
-    log_debug("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_debug("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_error(const std::string &text,
                                 const Json_attributes &attribs) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("error", ftext + "\n", attribs);
   } else {
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
     delegate_print_error(
-        (mysqlshdk::textui::error("ERROR: ") + ftext + "\n").c_str());
+        (mysqlshdk::textui::error("ERROR: ") + safe_text + "\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed()) {
     shcore::Log_reentrant_protector lock;
-    log_error("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_error("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_warning(const std::string &text,
                                   const Json_attributes &attribs) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("warning", ftext + "\n", attribs);
   } else {
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
     delegate_print_error(
-        (mysqlshdk::textui::warning("WARNING: ") + ftext + "\n").c_str());
+        (mysqlshdk::textui::warning("WARNING: ") + safe_text + "\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed()) {
     shcore::Log_reentrant_protector lock;
-    log_warning("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_warning("%s",
+                mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_note(const std::string &text,
                                const Json_attributes &attribs) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("note", ftext + "\n", attribs);
   } else {
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
     delegate_print_error(
-        (mysqlshdk::textui::notice("NOTE: ") + ftext + "\n").c_str());
+        (mysqlshdk::textui::notice("NOTE: ") + safe_text + "\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed()) {
     shcore::Log_reentrant_protector lock;
-    log_info("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_info("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_info(const std::string &text,
                                const Json_attributes &attribs) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("info", ftext + "\n", attribs);
   } else {
-    delegate_print_error((ftext + "\n").c_str());
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
+    delegate_print_error((safe_text + "\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed() && !text.empty()) {
     shcore::Log_reentrant_protector lock;
-    log_debug("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_debug("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_status(const std::string &text,
                                  const Json_attributes &attribs) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("status", ftext + "\n", attribs);
   } else {
-    delegate_print_error((ftext + "\n").c_str());
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
+    delegate_print_error((safe_text + "\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed() && !text.empty()) {
     shcore::Log_reentrant_protector lock;
-    log_debug("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_debug("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 
 void Shell_console::print_para(const std::string &text) const {
   std::string ftext = format_vars(text);
+
   if (use_json()) {
     dump_json("info", ftext + "\n\n");
   } else {
-    delegate_print_error((fit_screen(ftext) + "\n\n").c_str());
+    const auto safe_text =
+        mysqlshdk::textui::sanitize_utf8_terminal_text(ftext);
+    delegate_print_error((fit_screen(safe_text) + "\n\n").c_str());
   }
+
   if (shcore::current_logger()->log_allowed() && !text.empty()) {
     shcore::Log_reentrant_protector lock;
-    log_debug2("%s", mysqlshdk::textui::strip_colors(ftext).c_str());
+    log_debug2("%s", mysqlshdk::textui::sanitize_and_strip_ansi(ftext).c_str());
   }
 }
 

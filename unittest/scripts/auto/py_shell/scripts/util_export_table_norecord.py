@@ -2,8 +2,8 @@
 
 #@<> entry point
 # imports
+import ast
 import hashlib
-import json
 import os
 import os.path
 import random
@@ -178,47 +178,52 @@ def get_all_columns(schema, table):
         columns.append(column[0])
     return columns
 
+def extract_literal(node):
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in { "true", "false", "null" }:
+        return { "true": True, "false": False, "null": None }[node.id]
+    if isinstance(node, ast.List):
+        return [extract_literal(item) for item in node.elts]
+    if isinstance(node, ast.Dict):
+        return { extract_literal(key): extract_literal(value) for key, value in zip(node.keys, node.values) }
+    raise ValueError("Unexpected expression in util.import_table() command: {0}".format(ast.dump(node)))
+
+def extract_import_table_arguments(import_table_code):
+    command = ast.parse(import_table_code.strip(), mode="eval")
+    call = command.body
+    is_import_table = isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "import_table" and isinstance(call.func.value, ast.Name) and call.func.value.id == "util"
+    if not is_import_table:
+        raise ValueError("Expected util.import_table() command")
+    if 2 != len(call.args) or call.keywords:
+        raise ValueError("Expected util.import_table() with two positional arguments")
+    return extract_literal(call.args[0]), extract_literal(call.args[1])
+
 def TEST_LOAD(schema, table, options = {}, source_table = None):
     print("---> testing: `{0}`.`{1}` with options: {2}".format(schema, table, options))
-    # prepare the options
-    run_options = { "showProgress": False }
-    # add extra options
-    run_options.update(options)
     # export the table
     WIPE_STDOUT()
-    EXPECT_SUCCESS(quote(schema, table), test_output_absolute, run_options)
+    EXPECT_SUCCESS(quote(schema, table), test_output_absolute, dict(options, showProgress = options.get("showProgress", False)))
     import_table_code = extract_import_table_code()
-    import_table_options = json.loads(import_table_code[import_table_code.find("{") : import_table_code.rfind("}") + 1])
+    import_table_file, import_table_options = extract_import_table_arguments(import_table_code)
     # create target table
     recreate_verification_schema()
     session.run_sql("CREATE TABLE !.! LIKE !.!;", [verification_schema, verification_table, schema, source_table if source_table is not None else table])
     # prepare options for load
-    run_options.update({ "schema": verification_schema, "table": verification_table, "characterSet": "utf8mb4" })
-    # rename the character set key (if it was provided)
-    if "defaultCharacterSet" in run_options:
-        run_options["characterSet"] = run_options["defaultCharacterSet"]
-        del run_options["defaultCharacterSet"]
+    import_table_options["schema"] = verification_schema
+    import_table_options["table"] = verification_table
+    import_table_options["showProgress"] = options.get("showProgress", False)
     # filtering options
     where = ""
-    if "where" in run_options:
-        where = run_options["where"]
-        del run_options["where"]
+    if "where" in options:
+        where = options["where"]
     partitions = []
-    if "partitions" in run_options:
-        partitions = run_options["partitions"]
-        del run_options["partitions"]
-    # add decoded columns
-    if "decodeColumns" in import_table_options:
-        run_options["columns"] = import_table_options["columns"]
-        run_options["decodeColumns"] = import_table_options["decodeColumns"]
+    if "partitions" in options:
+        partitions = options["partitions"]
     # load in chunks
-    run_options["bytesPerChunk"] = "1k"
-    # remove unsupported options
-    for unsupported in ["compression"]:
-        if unsupported in run_options:
-            del run_options[unsupported]
+    import_table_options["bytesPerChunk"] = "1k"
     # load data
-    util.import_table(test_output_absolute, run_options)
+    util.import_table(import_table_file, import_table_options)
     # compute CRC
     EXPECT_EQ(md5_table(session, schema, table, where, partitions), md5_table(session, verification_schema, verification_table))
 
@@ -851,10 +856,11 @@ EXPECT_FAIL("ValueError", "Failed to parse table to be exported '{0}.{1}': Inval
 EXPECT_FAIL("ValueError", "The requested table `{0}`.`{1}a` was not found in the database.".format(tested_schema, tested_name), quote(tested_schema, tested_name + "a"), test_output_absolute)
 
 #@<> WL13804-TSFR_1_1
-# use 20 random ASCII characters, we don't want to use too many, 'cause server may have problems renaming the table
-new_tested_name = ""
-for i in range(1, 21):
-    new_tested_name = new_tested_name + chr(random.randint(0x01, 0x7F))
+# use 20 ASCII characters, we don't want to use too many, 'cause server may have problems renaming the table
+# include DEL to verify that sanitized console output does not break TEST_LOAD()
+new_tested_name = chr(0x7F)
+for i in range(1, 20):
+    new_tested_name = new_tested_name + chr(random.randint(0x01, 0x7E))
 
 # identifier may not end with a space character
 new_tested_name = new_tested_name + "a"
@@ -1386,10 +1392,18 @@ class Http_file_server(BaseHTTPRequestHandler):
     def __file_path(self):
         return os.path.join(tmp_dir, "file-server", self.path[1:].replace("/", os.path.sep))
     def __reply(self, response, status=200, content_type="application/json", extra_headers={}):
-        self.log_message("Content-Length: %s", str(len(response)))
+        content_length = str(len(response))
+        has_content_length = False
+        for k, v in extra_headers.items():
+            if k.lower() == "content-length":
+                content_length = v
+                has_content_length = True
+                break
+        self.log_message("Content-Length: %s", content_length)
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(response)))
+        if not has_content_length:
+            self.send_header("Content-Length", content_length)
         self.send_header("Accept-Ranges", "bytes")
         for k, v in extra_headers.items():
             self.send_header(k, v)

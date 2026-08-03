@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +34,9 @@
 #include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlshdk {
+
+utils::Version normalize_auto_completion_server_version(
+    const utils::Version &server_version);
 
 class Auto_complete_sql_options final {
  public:

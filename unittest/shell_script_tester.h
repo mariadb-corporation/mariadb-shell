@@ -107,7 +107,7 @@ struct Chunk_t {
 /**
  * Base class for the Shell Script Testing engine.
  */
-class Shell_script_tester : public Crud_test_wrapper {
+class Shell_script_tester : public Shell_core_test_wrapper {
  public:
   // You can define per-test set-up and tear-down logic as usual.
   Shell_script_tester();

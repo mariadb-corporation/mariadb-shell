@@ -103,14 +103,22 @@ int ProvisioningInterface::execute_mysqlprovision(
     return false;
   });
 
+  const auto &shell_options = mysqlsh::current_shell_options()->get();
+
   std::string log_level = "--log-level=";
-  if (mysqlsh::current_shell_options()->get().log_to_stderr)
-    log_level.append("@");
+  if (shell_options.log_to_stderr) log_level.append("@");
   log_level.append(std::to_string(
       static_cast<int>(shcore::current_logger()->get_log_level())));
 
   args_script.push_back(g_mysqlsh_path);
   args_script.push_back(log_level.c_str());
+
+  // Keep the child Shell's plugin loading behavior aligned with the parent
+  if (shell_options.disable_user_plugins)
+    args_script.push_back("--disable-plugins");
+  if (shell_options.disable_builtin_plugins)
+    args_script.push_back("--disable-builtin-plugins");
+
   args_script.push_back("--pym");
 
   args_script.push_back("mysql_gadgets");
@@ -342,9 +350,8 @@ int ProvisioningInterface::execute_mysqlprovision(
               std::to_string(exit_code).c_str(), full_output.c_str());
 
     // This error implies a wrong integratio nbetween the chell and MP
-    std::string log_path =
-        shcore::path::join_path(shcore::get_user_config_path(),
-                                shcore::k_shell_log_file_name);
+    std::string log_path = shcore::path::join_path(
+        shcore::get_user_config_path(), shcore::k_shell_log_file_name);
 
     throw shcore::Exception::runtime_error(
         "Error calling mysqlprovision. For more details look at the log at: " +

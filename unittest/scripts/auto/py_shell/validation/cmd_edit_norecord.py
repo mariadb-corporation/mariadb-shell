@@ -88,9 +88,11 @@ end
 
 #@<OUT> \edit - get path to the temporary file
 mysql-py []>
-           > temporary_file_path = r'[[*]]'
+           > temporary_file_path = '[[*]]'
+           > temporary_directory_path = '[[*]]'
+           > temporary_file_mode = [[*]]
 
-#@ temporary file should not exist after it was used by the editor
+#@ temporary file and directory should not exist after use
 ||
 
 #@<OUT> \edit with extra arguments

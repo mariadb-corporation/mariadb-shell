@@ -64,14 +64,8 @@
 
 #include <Python.h>
 
-#if defined(__clang__) && \
-    ((__clang_major__ == 3 && __clang_minor__ >= 8) || __clang_major__ > 3)
-#pragma clang diagnostic pop
-#endif
-
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
+#include <type_traits>
+#include <utility>
 
 #include <type_traits>
 #include <utility>

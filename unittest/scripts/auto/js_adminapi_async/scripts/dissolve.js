@@ -289,7 +289,7 @@ reset_instance(session);
 
 shell.options.useWizards=0;
 
-//@<> Dissolve fail due to timeout {!__dbug_off}
+//@<> Dissolve fail due to timeout {__dbug}
 var rset = dba.createReplicaSet('rset', {gtidSetIsComplete: true});
 rset.addInstance(__sandbox_uri2);
 rset.addInstance(__sandbox_uri3);
@@ -321,7 +321,7 @@ EXPECT_OUTPUT_CONTAINS(`The ReplicaSet was successfully dissolved, but the follo
 
 testutil.dbugSet("");
 
-//@<> Dissolve doesn't stop due to error in replication cleanup {!__dbug_off}
+//@<> Dissolve doesn't stop due to error in replication cleanup {__dbug}
 var rset = dba.createReplicaSet('rset', {gtidSetIsComplete: true});
 rset.addInstance(__sandbox_uri2);
 rset.addInstance(__sandbox_uri3);

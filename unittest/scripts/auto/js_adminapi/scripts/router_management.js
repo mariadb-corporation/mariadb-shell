@@ -226,7 +226,7 @@ CHECK_SET_ROUTING_OPTION("unreachable_quorum_allowed_traffic", "read", "read");
 WIPE_OUTPUT();
 
 cluster.setRoutingOption("unreachable_quorum_allowed_traffic", "all");
-EXPECT_OUTPUT_CONTAINS("Setting the 'unreachable_quorum_allowed_traffic' option to 'all' may have unwanted consequences: the consistency guarantees provided by InnoDB Cluster are broken since the data read can be stale; different Routers may be accessing different partitions, thus return different data; and different Routers may also have different behavior (i.e. some provide only read traffic while others read and write traffic). Note that writes on a partition with no quorum will block until quorum is restored.");
+EXPECT_OUTPUT_CONTAINS("Setting the 'unreachable_quorum_allowed_traffic' option to 'all' may have unwanted consequences: the consistency guarantees provided by InnoDB Cluster are broken since the data read can be stale; different Routers may be accessing different partitions of the target Cluster, thus return different data; and different Routers may also have different behavior (i.e. some provide only read traffic while others read and write traffic). Note that writes on a partition of the target Cluster with no quorum will block until quorum is restored.");
 EXPECT_OUTPUT_CONTAINS("This option has no practical effect if the server variable group_replication_unreachable_majority_timeout is set to a positive number and group_replication_exit_state_action is set to either OFFLINE_MODE or ABORT_SERVER.");
 
 options = JSON.parse(session.runSql("SELECT router_options FROM mysql_innodb_cluster_metadata.clusters").fetchOne()[0]);
@@ -267,6 +267,15 @@ EXPECT_OUTPUT_CONTAINS("Cluster 'cluster' is a member of ClusterSet 'cs', use <C
 EXPECT_THROWS(function(){ cluster.setRoutingOption(router1, "stats_updates_frequency", 1); },
   "Option not available for ClusterSet members");
 EXPECT_OUTPUT_CONTAINS("Cluster 'cluster' is a member of ClusterSet 'cs', use <ClusterSet>.setRoutingOption() to change the option 'stats_updates_frequency'");
+
+// Setting 'unreachable_quorum_allowed_traffic' on a cluster that belongs to a ClusterSet must be blocked
+EXPECT_THROWS(function(){ cluster.setRoutingOption("unreachable_quorum_allowed_traffic", "all"); },
+  "Option not available for ClusterSet members");
+EXPECT_OUTPUT_CONTAINS("Cluster 'cluster' is a member of ClusterSet 'cs', use <ClusterSet>.setRoutingOption() to change the option 'unreachable_quorum_allowed_traffic'");
+
+EXPECT_THROWS(function(){ cluster.setRoutingOption(router1, "unreachable_quorum_allowed_traffic", "all"); },
+  "Option not available for ClusterSet members");
+EXPECT_OUTPUT_CONTAINS("Cluster 'cluster' is a member of ClusterSet 'cs', use <ClusterSet>.setRoutingOption() to change the option 'unreachable_quorum_allowed_traffic'");
 
 //@<> Cleanup
 scene.destroy();

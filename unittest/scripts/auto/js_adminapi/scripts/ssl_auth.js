@@ -658,7 +658,7 @@ if (__version_num >= 80023) {
     EXPECT_OUTPUT_CONTAINS(`ERROR: Authentication error during connection check. Please ensure that the SSL certificate (@@ssl_cert) configured for '${hostname}:${__mysql_sandbox_port3}' was issued by '/CN=Test_CA' (certIssuer), is recognized at '${hostname}:${__mysql_sandbox_port3}' and that the value specified for certIssuer itself is correct.`);
 }
 
-//@<> check if status recognizes mix of different client versions (remove ssl_ variables) {!__dbug_off}
+//@<> check if status recognizes mix of different client versions (remove ssl_ variables) {__dbug}
 if (__version_num >= 80023) {
     update_conf(__mysql_sandbox_port3, ca_path, cert3_path);
 }

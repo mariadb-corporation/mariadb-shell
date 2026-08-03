@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +36,7 @@ namespace regions {
 namespace {
 
 // clang-format off
-// OCI SDK version: 2.168.0
+// OCI SDK version: 2.177.0
 const std::unordered_map<std::string_view, std::string_view> k_short_names = {
     {"yny", "ap-chuncheon-1"},
     {"hyd", "ap-hyderabad-1"},
@@ -106,6 +107,7 @@ const std::unordered_map<std::string_view, std::string_view> k_short_names = {
     {"str", "eu-frankfurt-2"},
     {"beg", "eu-jovanovac-1"},
     {"doh", "me-dcc-doha-1"},
+    {"vve", "me-alrayyan-1"},
     {"ebb", "us-somerset-1"},
     {"ebl", "us-thames-1"},
     {"avz", "eu-dcc-zurich-1"},

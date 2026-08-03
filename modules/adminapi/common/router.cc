@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +51,8 @@ const std::map<std::string, shcore::Value> k_default_clusterset_router_options =
       shcore::Value(k_router_option_target_cluster_primary)},
      {k_router_option_stats_updates_frequency, shcore::Value::Null()},
      {k_router_option_use_replica_primary_as_rw, shcore::Value::False()},
+     {k_router_option_unreachable_quorum_allowed_traffic,
+      shcore::Value::Null()},
      {k_router_option_tags, shcore::Value(shcore::make_dict())},
      {k_router_option_read_only_targets,
       shcore::Value(k_default_router_option_read_only_targets)},
@@ -433,28 +436,31 @@ shcore::Value validate_router_option(const Base_cluster_impl &cluster,
           k_router_option_unreachable_quorum_allowed_traffic));
     }
 
-    const auto &value_str = value.get_string();
-    if (!shcore::str_caseeq(value_str, "read") &&
-        !shcore::str_caseeq(value_str, "all") &&
-        !shcore::str_caseeq(value_str, "none")) {
+    const auto value_str = shcore::str_lower(value.get_string());
+    if (value_str != "read" && value_str != "all" && value_str != "none") {
       throw shcore::Exception::argument_error(shcore::str_format(
           "Invalid value for routing option '%s', value is "
           "expected to be either 'read', 'all' or 'none'.",
           k_router_option_unreachable_quorum_allowed_traffic));
     }
 
-    if (!shcore::str_caseeq(value_str, "none")) {
+    fixed_value = shcore::Value(value_str);
+
+    if (value_str != "none") {
+      const auto topology_type =
+          to_display_string(cluster.get_type(), Display_form::THING_FULL);
+
       mysqlsh::current_console()->print_warning(shcore::str_format(
           "Setting the '%s' option to '%s' may have unwanted consequences: the "
-          "consistency guarantees provided by InnoDB Cluster are broken since "
+          "consistency guarantees provided by %s are broken since "
           "the data read can be stale; different Routers may be accessing "
-          "different partitions, thus return different data; and different "
-          "Routers may also have different behavior (i.e. some provide only "
-          "read traffic while others read and write traffic). Note that "
-          "writes on a partition with no quorum will block until quorum is "
-          "restored.",
-          k_router_option_unreachable_quorum_allowed_traffic,
-          value_str.c_str()));
+          "different partitions of the target Cluster, thus return different "
+          "data; and different Routers may also have different behavior (i.e. "
+          "some provide only read traffic while others read and write "
+          "traffic). Note that writes on a partition of the target Cluster "
+          "with no quorum will block until quorum is restored.",
+          k_router_option_unreachable_quorum_allowed_traffic, value_str.c_str(),
+          topology_type.c_str()));
 
       mysqlsh::current_console()->print_warning(
           "This option has no practical effect if the server variable "

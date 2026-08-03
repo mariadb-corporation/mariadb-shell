@@ -2220,10 +2220,10 @@ if __version_num >= 80000:
         f"NOTE: Backup lock is not available to the account {test_user_account} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.",
         fatal=False
     )
-    # 8.0 has roles which are checked prior to running the dump, if user is missing the SELECT privilege, error will be reported at this stage
-    required_privileges["SELECT"] = PrivilegeError(  # table-level privilege
-        "Unable to get roles information.",
-        f"ERROR: Unable to check privileges for user {test_user_account}. User requires SELECT privilege on mysql.* to obtain information about all roles."
+    # 8.0 requires SELECT on mysql.* before dumping users
+    required_privileges["SELECT"] = PrivilegeError(  # schema-level privilege
+        re.compile(r"While 'Initializing': User {0} is missing the following privilege\(s\) for schema `mysql`: SELECT.".format(test_user_account)),
+        exception_type = "Error: Shell Error (52008)",
     )
 
 # setup the user, grant only required privileges
@@ -2301,7 +2301,7 @@ EXPECT_STDOUT_CONTAINS("Global read lock acquired")
 
 session.run_sql("UNLOCK TABLES")
 
-#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws access denied error, fallback to LOCK TABLES {not __dbug_off}
+#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws access denied error, fallback to LOCK TABLES {__dbug}
 testutil.set_trap("mysql", ["sql == FLUSH TABLES WITH READ LOCK;"], { "code": 1045, "msg": "Access denied for user ‘root’@‘%’ (using password: YES)", "state": "28000" })
 
 for dry_run in [ True, False ]:
@@ -2311,7 +2311,7 @@ for dry_run in [ True, False ]:
 
 testutil.clear_traps("mysql")
 
-#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws some random error {not __dbug_off}
+#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws some random error {__dbug}
 testutil.set_trap("mysql", ["sql == FLUSH TABLES WITH READ LOCK;"], { "code": 1226, "msg": "User 'root' has exceeded the 'max_questions' resource (current value: 2)", "state": "42000" })
 
 EXPECT_FAIL("Error: Shell Error (52001)", "While 'Initializing': Unable to acquire global read lock", test_output_absolute, { "showProgress": False })
@@ -2338,7 +2338,7 @@ setup_session()
 session.run_sql(f"REVOKE BACKUP_ADMIN ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> BUG#37226153 - user has the privileges to execute LOCK TABLES, but dump fails to lock mysql tables due to access denied {not __dbug_off}
+#@<> BUG#37226153 - user has the privileges to execute LOCK TABLES, but dump fails to lock mysql tables due to access denied {__dbug}
 testutil.set_trap("mysql", ["sql regex LOCK TABLES mysql\\..*"], { "code": 1044, "msg": "Access denied for user 'root'@'%' to database 'mysql'.", "state": "42000" })
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
@@ -2456,10 +2456,10 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 #@<> BUG#34556560 terminate the process immediately - skipConsistencyChecks
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 create a process which will add tables in the background (2) {not __dbug_off}
+#@<> BUG#33697289 create a process which will add tables in the background (2) {__dbug}
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#33697289 fail if gtid is disabled and DDL changes {not __dbug_off}
+#@<> BUG#33697289 fail if gtid is disabled and DDL changes {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False, "threads": 1 }, expect_dir_created = True)
@@ -2474,13 +2474,13 @@ EXPECT_STDOUT_CONTAINS("ERROR: Consistency check has failed")
 
 testutil.dbug_set("")
 
-#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {not __dbug_off}
+#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {__dbug}
 constantly_create_tables.stop()
 
-#@<> BUG#34556560 create a process which will add tables in the background (2) - skipConsistencyChecks {not __dbug_off}
+#@<> BUG#34556560 create a process which will add tables in the background (2) - skipConsistencyChecks {__dbug}
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#34556560 fail if gtid is disabled and DDL changes - skipConsistencyChecks {not __dbug_off}
+#@<> BUG#34556560 fail if gtid is disabled and DDL changes - skipConsistencyChecks {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "skipConsistencyChecks": True, "showProgress": False, "threads": 1 })
@@ -2492,7 +2492,7 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 
 testutil.dbug_set("")
 
-#@<> BUG#34556560 terminate the process immediately, it will not stop on its own - skipConsistencyChecks {not __dbug_off}
+#@<> BUG#34556560 terminate the process immediately, it will not stop on its own - skipConsistencyChecks {__dbug}
 constantly_create_tables.stop(drop_schema=False)
 
 #@<> BUG#33697289 without the process, the dump should succeed
@@ -2502,7 +2502,7 @@ EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a 
 EXPECT_STDOUT_CONTAINS(f"NOTE: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK, backup lock is not {reason} and DDL changes cannot be blocked. The DDL consistency will be checked using the binary log.")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were not blocked. The DDL is consistent, the world may resume now.")
 
-#@<> BUG#33697289 fail if binlog and gtid are disabled while SHOW * STATUS privilege is available {not __dbug_off}
+#@<> BUG#33697289 fail if binlog and gtid are disabled while SHOW * STATUS privilege is available {__dbug}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2522,7 +2522,7 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog is disabled and gtid is enabled while SHOW * STATUS privilege is available  {not __dbug_off}
+#@<> BUG#39035448 fail if binlog is disabled and gtid is enabled while SHOW * STATUS privilege is available  {__dbug}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_replication_client_unavailable")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2541,7 +2541,7 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog and gtid are disabled and SHOW * STATUS privilege is missing {not __dbug_off}
+#@<> BUG#39035448 fail if binlog and gtid are disabled and SHOW * STATUS privilege is missing {__dbug}
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled,dumper_replication_client_unavailable")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2563,7 +2563,7 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog is enabled, gtid is disabled and SHOW * STATUS privilege is missing {not __dbug_off}
+#@<> BUG#39035448 fail if binlog is enabled, gtid is disabled and SHOW * STATUS privilege is missing {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled,dumper_replication_client_unavailable")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2601,10 +2601,10 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 #@<> BUG#34556560 terminate the process immediately
 constantly_update_table.stop()
 
-#@<> BUG#34556560 create a process which will update a table in the background (2) {not __dbug_off}
+#@<> BUG#34556560 create a process which will update a table in the background (2) {__dbug}
 constantly_update_table.generate_data()
 
-#@<> BUG#34556560 - gtid is disabled {not __dbug_off}
+#@<> BUG#34556560 - gtid is disabled {__dbug}
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False, "threads": 1 })
@@ -2616,7 +2616,7 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 
 testutil.dbug_set("")
 
-#@<> BUG#34556560 terminate the process immediately, it will not stop on its own {not __dbug_off}
+#@<> BUG#34556560 terminate the process immediately, it will not stop on its own {__dbug}
 constantly_update_table.stop()
 
 #@<> BUG#34556560 reconnect to the user with full privilages, restore test user account
@@ -2651,7 +2651,7 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_EQ(binlog_file, new_binlog_file, "binlog file should not change")
 EXPECT_EQ(binlog_position, new_binlog_position, "binlog position should not change")
 
-#@<> BUG#32515696 dump should not fail if table histograms are not available {VER(>=8.0.0) and not __dbug_off}
+#@<> BUG#32515696 dump should not fail if table histograms are not available {VER(>=8.0.0) and __dbug}
 testutil.set_trap("mysql", ["sql regex .*number-of-buckets-specified.*"], { "code": 1109, "msg": "Unknown table 'COLUMN_STATISTICS' in information_schema.", "state": "42S02" })
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
@@ -2667,7 +2667,7 @@ with open(os.path.join(test_output_absolute, "@.json"), encoding="utf-8") as jso
     EXPECT_EQ(True, "binlogFile" in metadata, "'binlogFile' should be in metadata")
     EXPECT_EQ(True, "binlogPosition" in metadata, "'binlogPosition' should be in metadata")
 
-#@<> BUG#32528110 shell could crash if exception is thrown from the main thread and one of the worker threads is slow to start {not __dbug_off}
+#@<> BUG#32528110 shell could crash if exception is thrown from the main thread and one of the worker threads is slow to start {__dbug}
 testutil.set_trap("mysql", ["sql == SHOW GLOBAL VARIABLES"], { "code": 7777, "msg": "Internal error.", "state": "HY000" })
 testutil.set_trap("dumper", ["op == WORKER_SLEEP_AT_START", "id == 0"], { "sleep": 1000 })
 
@@ -2695,7 +2695,7 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 # restore connection
 setup_session()
 
-#@<> BUG#34049624 - dumping users from MariaDB is not supported {not __dbug_off}
+#@<> BUG#34049624 - dumping users from MariaDB is not supported {__dbug}
 testutil.dbug_set("+d,dumper_dump_mariadb")
 
 # trying to dump users results in error
@@ -4209,10 +4209,13 @@ for i in range(3):
     version[i] = str(int(version[i]) + 1)
     version = ".".join(version)
     if i < 2:
-        EXPECT_FAIL("ValueError", f"Argument #2: Target MySQL version '{version}' is newer than the maximum version '{'.'.join(__mysh_version.split('.')[:2])}.*' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+        EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg(version)}", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "users": False, "showProgress": False })
+
+EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg('10.0.0')}", test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg('26.6.0')}", test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower
 EXPECT_FAIL("ValueError", "Argument #2: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
@@ -4261,6 +4264,14 @@ setup_db(test_user_account)
 
 #@<> WL15887-TSFR_3_2_1 - valid account
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
+
+if __version_num < 80000:
+    # BUG#39441374 - dump uses upgrade checker for MHS compatibility checks, but
+    # must not display the in-place upgrade target-version suggestion.
+    EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": "8.4.0", "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
+    EXPECT_STDOUT_CONTAINS("NOTE: MySQL Server 5.7 detected, please consider upgrading to 8.0 first.")
+    EXPECT_STDOUT_NOT_CONTAINS("Upgrading MySQL Server from version")
+    EXPECT_STDOUT_NOT_CONTAINS("targetVersion=8.0")
 
 # no warnings about DEFINER=
 EXPECT_STDOUT_NOT_CONTAINS(strip_definers_definer_clause(schema_name, test_schema_event, "Event", test_user_account).warning())
@@ -4502,7 +4513,7 @@ EXPECT_STDOUT_CONTAINS("Checksumming enabled.")
 #@<> WL15947 - cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#36701854 - dumps from a server with a greater minor version are allowed, but a warning is printed {VER(>=8.0.0) and not __dbug_off}
+#@<> BUG#36701854 - dumps from a server with a greater minor version are allowed, but a warning is printed {VER(>=8.0.0) and __dbug}
 testutil.dbug_set("+d,dumper_newer_server_version")
 
 newer_version = __mysh_version.split(".")
@@ -4516,7 +4527,7 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: MySQL Server {newer_version} detected, which i
 
 testutil.dbug_set("")
 
-#@<> BUG#37866205 - dumps from a server with a greater major version are disallowed {not __dbug_off}
+#@<> BUG#37866205 - dumps from a server with a greater major version are disallowed {__dbug}
 testutil.dbug_set("+d,dumper_unsupported_server_version")
 
 unsupported_version = __mysh_version.split(".")
@@ -4530,11 +4541,48 @@ EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} det
 
 testutil.dbug_set("")
 
+#@<> BUG#37866205 - dumps from an unsupported calendar-gap server are disallowed {__dbug}
+testutil.dbug_set("+d,dumper_unsupported_calendar_gap_server_version")
+
+unsupported_version = "26.6.0"
+
+# trying to dump from an unsupported version results in an error
+EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
+
+testutil.dbug_set("")
+
 #@<> WL17279-FR1.1 - 'dataMaskingPolicies' option - type
 TEST_BOOL_OPTION("dataMaskingPolicies")
 
 #@<> WL17279-FR1.2 - 'allowDataMasking' option - type
 TEST_BOOL_OPTION("allowDataMasking")
+
+#@<> BUG#36247713 - setup {VER(>=8.0.19)}
+# revoke SELECT ON mysql.*
+setup_session()
+session.run_sql("SET GLOBAL partial_revokes=1")
+
+session.run_sql(f"GRANT ALL ON *.* TO {test_user_account}")
+session.run_sql(f"REVOKE SELECT ON mysql.* FROM {test_user_account}")
+
+# connect
+shell.connect(test_user_uri(__mysql_sandbox_port1))
+
+#@<> BUG#36247713 - dry run works {VER(>=8.0.19)}
+EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "users": False, "showProgress": False })
+
+#@<> BUG#36247713 - dump works {VER(>=8.0.19)}
+EXPECT_SUCCESS([types_schema], test_output_absolute, { "users": False, "showProgress": False })
+
+#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19)}
+EXPECT_FAIL("Error: Shell Error (52008)", f"While 'Initializing': User {test_user_account} is missing the following privilege(s) for schema `mysql`: SELECT.", test_output_absolute, { "users": True, "showProgress": False })
+
+#@<> BUG#36247713 - cleanup {VER(>=8.0.19)}
+setup_session()
+create_users()
+
+#@<> BUG#36247713 - restore partial_revokes {VER(>=8.0.19)}
+session.run_sql("SET GLOBAL partial_revokes=0")
 
 #@<> Cleanup
 drop_all_schemas()

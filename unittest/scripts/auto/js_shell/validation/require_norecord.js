@@ -149,16 +149,16 @@ Done
 //@<ERR> load the module which throws an exception
 Exception!!! (Error)
  at [[*]]<<<exe_file>>>:2
- at ModuleHandler.__load_module(core.js:94)
- at ModuleHandler.__require(core.js:83)
- at this.require(core.js:100)
+ at ModuleHandler.__load_module(core.js:99)
+ at ModuleHandler.__require(core.js:88)
+ at this.require(core.js:105)
  at :program((shell):1)
 
 //@ delete modules in the current working directory
 |Module has been removed.|
 
 //@ WL13119-TSFR4_6: If Shell can't find the file or module specified, validate that an exception is thrown.
-||Could not find module 'invalid_module'. (Error)
+||Could not find module 'invalid_module'. Searched in: <<<sys.path[0]>>>, <<<subfolder_in_path_abs>>> (Error)
 
 //@<OUT> WL13119-TSFR7_1
 <<<sys.path[0]>>>

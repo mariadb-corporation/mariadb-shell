@@ -162,7 +162,14 @@ def TEST_COMBINATION(memberSslMode, clusterSetSslMode, memberAuthType):
         reset_instance(session)
     WIPE_OUTPUT()
     print("\n###### createReplicaCluster@sb3", memberSslMode, clusterSetSslMode, memberAuthType)
+    WIPE_SHELL_LOG()
     cs.create_replica_cluster(__sandbox_uri3, "replica", cert_subject)
+    EXPECT_SHELL_LOG_CONTAINS(
+        "AdminAPI Connectivity Check: testing connectivity in both directions")
+    EXPECT_SHELL_LOG_CONTAINS("temporary replication channel 'mysqlsh.test'")
+    EXPECT_SHELL_LOG_CONTAINS(
+        "The channel is used only to validate connectivity and is not part of the final topology")
+    EXPECT_SHELL_LOG_CONTAINS("expected and non-fatal for this validation")
     WIPE_OUTPUT()
     shell.dump_rows(session.run_sql(
         "select user, x509_issuer, x509_subject from mysql.user where user like 'mysql_innodb%'"))
@@ -186,11 +193,22 @@ shell.connect(__sandbox_uri1)
 c = dba.create_cluster("cluster")
 cs = c.create_cluster_set("cs")
 
+WIPE_SHELL_LOG()
 EXPECT_THROWS(lambda: cs.create_replica_cluster(__sandbox_uri2, "replica"),
               "Server address configuration error")
 
 EXPECT_STDOUT_CONTAINS(
     f"This instance reports its own address as 198.51.100.100:{__mysql_sandbox_port2}")
+
+EXPECT_SHELL_LOG_CONTAINS("temporary replication channel 'mysqlsh.test'")
+EXPECT_SHELL_LOG_CONTAINS(
+    "The channel is used only to validate connectivity and is not part of the final topology")
+EXPECT_SHELL_LOG_CONTAINS(
+    f"to mysqlsh.test@198.51.100.100:{__mysql_sandbox_port2} (report_host)")
+EXPECT_SHELL_LOG_CONTAINS(
+    f"Connectivity check failed: MySQL server at "
+    f"'198.51.100.100:{__mysql_sandbox_port2}' can't connect to "
+    f"'198.51.100.100:{__mysql_sandbox_port2}' using the configured report_host")
 
 shell.options['dba.connectivityChecks']=False
 EXPECT_THROWS(lambda: cs.create_replica_cluster(__sandbox_uri2, "replica", {"recoveryMethod":"clone"}), "Group Replication failed to start: ")

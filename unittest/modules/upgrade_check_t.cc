@@ -28,6 +28,7 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <utility>
 
 #include "modules/util/mod_util.h"
 #include "modules/util/upgrade_check.h"
@@ -43,6 +44,7 @@
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
+#include "mysqlshdk/libs/utils/version.h"
 #include "mysqlshdk/libs/yparser/parser.h"
 #include "unittest/modules/util/upgrade_checker/test_utils.h"
 #include "unittest/test_utils.h"
@@ -734,31 +736,17 @@ TEST(Upgrade_check_cache, get_schema_filter) {
 }
 
 TEST(Upgrade_check_options, set_target_version) {
-  using mysqlshdk::utils::corresponding_versions;
   using mysqlshdk::utils::k_shell_version;
+  using mysqlshdk::utils::version::corresponding_versions;
 
   Upgrade_check_options options;
 
-  options.set_target_version(std::to_string(k_shell_version.get_major()));
-  EXPECT_EQ(k_shell_version, options.target_version);
-
   for (const auto &expected : corresponding_versions(k_shell_version)) {
-    if (expected > Version(8, 1, 0)) {
-      const auto target = std::to_string(expected.get_major());
-      options.set_target_version(target);
-      EXPECT_EQ(expected, options.target_version);
+    const auto target = expected.get_short();
+    options.set_target_version(target);
+    EXPECT_EQ(expected, options.target_version);
 
-      std::cout << target << " -> " << expected.get_base() << std::endl;
-    }
-
-    if (expected < Version(9, 0, 0)) {
-      const auto target = std::to_string(expected.get_major()) + "." +
-                          std::to_string(expected.get_minor());
-      options.set_target_version(target);
-      EXPECT_EQ(expected, options.target_version);
-
-      std::cout << target << " -> " << expected.get_base() << std::endl;
-    }
+    std::cout << target << " -> " << expected.get_base() << std::endl;
   }
 
   options.set_target_version("8.1");
@@ -770,8 +758,53 @@ TEST(Upgrade_check_options, set_target_version) {
   options.set_target_version("8.3");
   EXPECT_EQ(Version(8, 3, 0), options.target_version);
 
+  options.set_target_version("8.0");
+  EXPECT_EQ(Version(8, 0, 46), options.target_version);
+
   options.set_target_version("8.0.34");
   EXPECT_EQ(Version(8, 0, 34), options.target_version);
+
+  options.set_target_version("26.7");
+  EXPECT_EQ(Version(26, 7, 0), options.target_version);
+
+  options.set_target_version("26.7.1");
+  EXPECT_EQ(Version(26, 7, 1), options.target_version);
+
+  EXPECT_THROW(options.set_target_version("8"), std::invalid_argument);
+  EXPECT_THROW(options.set_target_version("9"), std::invalid_argument);
+  EXPECT_THROW(options.set_target_version("26"), std::invalid_argument);
+  EXPECT_THROW(options.set_target_version("26.07"), std::invalid_argument);
+  EXPECT_THROW(options.set_target_version("26.07.0"), std::invalid_argument);
+  EXPECT_THROW(options.set_target_version("26.7.01"), std::invalid_argument);
+}
+
+TEST(Upgrade_check_options, generated_target_version_aliases_match_current) {
+  const auto generated =
+      generate_latest_versions_mapping(mysqlshdk::utils::k_shell_version);
+
+  ASSERT_EQ(k_latest_versions.size(), generated.size());
+  for (const auto &[key, version] : k_latest_versions) {
+    SCOPED_TRACE(key);
+    EXPECT_EQ(version, generated.at(key));
+  }
+
+  EXPECT_EQ(Version(26, 7, 0), generated.at("26.7"));
+  EXPECT_EQ(Version(8, 0, 46), generated.at("8.0"));
+  EXPECT_EQ(Version(8, 4, 11), generated.at("8.4"));
+  EXPECT_EQ(Version(9, 7, 2), generated.at("9.7"));
+  EXPECT_FALSE(generated.contains("8"));
+  EXPECT_FALSE(generated.contains("9"));
+  EXPECT_FALSE(generated.contains("26"));
+}
+
+TEST(Upgrade_check_options,
+     generated_future_target_version_aliases_use_lts_anchor) {
+  const auto generated = generate_latest_versions_mapping(Version(26, 10, 0));
+
+  EXPECT_EQ(Version(8, 0, 46), generated.at("8.0"));
+  EXPECT_EQ(Version(8, 4, 12), generated.at("8.4"));
+  EXPECT_EQ(Version(9, 7, 3), generated.at("9.7"));
+  EXPECT_EQ(Version(26, 10, 0), generated.at("26.10"));
 }
 
 TEST_F(MySQL_upgrade_check_test, upgrade_info_validation) {
@@ -782,6 +815,25 @@ TEST_F(MySQL_upgrade_check_test, upgrade_info_validation) {
         std::invalid_argument,
         "Detected MySQL server version is 5.6.0, but this tool "
         "requires server to be at least at version 5.7");
+
+    const auto unsupported_source_error = [](const Version &version) {
+      return shcore::str_format(
+          "Detected MySQL server version is %s, but this tool supports "
+          "checking upgrades from MySQL Server versions 5.7 <= version < 8.0 "
+          "or %s",
+          version.get_base().c_str(),
+          mysqlshdk::utils::version::supported_servers().c_str());
+    };
+
+    EXPECT_THROW_LIKE(
+        upgrade_info(Version("10.0.0"), Version("26.7.0")).validate(),
+        std::invalid_argument,
+        unsupported_source_error(Version("10.0.0")).c_str());
+
+    EXPECT_THROW_LIKE(
+        upgrade_info(Version("26.6.0"), Version("26.7.0")).validate(),
+        std::invalid_argument,
+        unsupported_source_error(Version("26.6.0")).c_str());
   }
 
   // Second Check - Pointless to use shell on server of the same version or
@@ -803,13 +855,13 @@ TEST_F(MySQL_upgrade_check_test, upgrade_info_validation) {
   }
 
   {
-    // Third check, only 8.* upgrades and within the last shell version series
+    // Third check, only supported target versions up to the current Shell
+    // release.
 
-    auto error = shcore::str_format(
+    const auto error = shcore::str_format(
         "This tool supports checking upgrade to MySQL servers of the following "
-        "versions: 8.0 to %d.%d.*",
-        mysqlshdk::utils::k_shell_version.get_major(),
-        mysqlshdk::utils::k_shell_version.get_minor());
+        "versions: %s",
+        mysqlshdk::utils::version::supported_servers().c_str());
 
     EXPECT_THROW_LIKE(upgrade_info(Version("5.7"), Version("5.7")).validate(),
                       std::invalid_argument, error.c_str());
@@ -822,6 +874,14 @@ TEST_F(MySQL_upgrade_check_test, upgrade_info_validation) {
             .validate(),
         std::invalid_argument, error.c_str());
 
+    EXPECT_THROW_LIKE(
+        upgrade_info(Version("5.7.19"), Version("10.0.0")).validate(),
+        std::invalid_argument, error.c_str());
+
+    EXPECT_THROW_LIKE(
+        upgrade_info(Version("5.7.19"), Version("26.6.0")).validate(),
+        std::invalid_argument, error.c_str());
+
     // OK to migrate to versions about the shell as long as it is in the same
     // series
     EXPECT_NO_THROW(
@@ -829,6 +889,9 @@ TEST_F(MySQL_upgrade_check_test, upgrade_info_validation) {
 
     EXPECT_NO_THROW(
         upgrade_info(Version(8, 3, 0), Version(8, 3, 9)).validate());
+
+    EXPECT_NO_THROW(
+        upgrade_info(Version(9, 7, 1), Version(26, 7, 99)).validate());
   }
 
   {
@@ -4948,20 +5011,6 @@ extern std::unordered_map<std::string, Version> k_latest_versions;
 extern std::string check_for_version_suggestion(const Version &serverVersion,
                                                 const Version &targetVersion);
 
-Version get_next_series(const Version &version) {
-  if (version.get_major() == 8 && version.get_minor() == 0) {
-    return Version(8, 4, 0);
-  }
-  return Version(version.get_major() + 1, 0, 0);
-}
-
-std::string get_next_series_key(const Version &version) {
-  if (version.get_major() == 8 && version.get_minor() == 0) {
-    return "8.4";
-  }
-  return std::to_string(version.get_major() + 1);
-}
-
 #define EXPECT_NEXT_LTS(version, next_lts, key) \
   expect_next_lts(version, next_lts, key, __FILE__, __LINE__)
 
@@ -4983,7 +5032,16 @@ TEST_F(MySQL_upgrade_check_test, get_next_suggested_lts_version) {
     EXPECT_EQ(expected_key, actual_key);
   };
 
-  // Next LTS for all under 8.0.0 leads is the latest 8.0.X
+  auto latest_by_key = [](const std::string &key) {
+    const auto item = k_latest_versions.find(key);
+    return item == k_latest_versions.end()
+               ? std::make_pair(std::optional<Version>{}, std::string{})
+               : std::make_pair(std::optional<Version>{item->second},
+                                item->first);
+  };
+
+  // 8.0 has reached EOL, but the upgrade checker keeps a fixed 8.0.46
+  // intermediate suggestion for pre-8.0 sources.
   EXPECT_NEXT_LTS(Version(5, 7, 44), k_latest_versions.at("8.0"), "8.0");
 
   // BUG#36930714 - Hard sanity checks on expected suggested versions
@@ -4991,11 +5049,7 @@ TEST_F(MySQL_upgrade_check_test, get_next_suggested_lts_version) {
   EXPECT_NEXT_LTS(Version(8, 0, 11), k_latest_versions.at("8.4"), "8.4");
   EXPECT_NEXT_LTS(Version(8, 0, 25), k_latest_versions.at("8.4"), "8.4");
   {
-    auto lts9it = k_latest_versions.find(
-        get_first_lts_version(Version(9, 0)).get_short());
-    auto ver9 = lts9it == k_latest_versions.end() ? std::optional<Version>()
-                                                  : lts9it->second;
-    auto ver9key = lts9it == k_latest_versions.end() ? "" : lts9it->first;
+    const auto [ver9, ver9key] = latest_by_key("9.7");
     EXPECT_NEXT_LTS(Version(8, 4, 0), ver9, ver9key);
     EXPECT_NEXT_LTS(Version(8, 4, 1), ver9, ver9key);
   }
@@ -5006,80 +5060,20 @@ TEST_F(MySQL_upgrade_check_test, get_next_suggested_lts_version) {
     EXPECT_NEXT_LTS(Version(8, 0, index), k_latest_versions.at("8.4"), "8.4");
   }
 
-  Version first_lts;
+  EXPECT_NEXT_LTS(Version(8, 1, 0), k_latest_versions.at("8.4"), "8.4");
+  EXPECT_NEXT_LTS(Version(8, 3, 0), k_latest_versions.at("8.4"), "8.4");
+  EXPECT_NEXT_LTS(Version(9, 0, 0), k_latest_versions.at("9.7"), "9.7");
+  EXPECT_NEXT_LTS(Version(9, 6, 0), k_latest_versions.at("9.7"), "9.7");
 
-  // For all the LTS releases the next LTS is next in the series
-  // For all innovation releases the next LTS is the latest in the series
-  int major, minor, patch;
-  for (major = 8; major < mysqlshdk::utils::k_shell_version.get_major();
-       major++) {
-    first_lts = get_first_lts_version(Version(major, 0));
-
-    // All innovation versions next LTS is the latest version in the series
-    auto first_innovation = get_first_innovation_version(Version(major, 0));
-    for (minor = first_innovation.get_minor(); minor < first_lts.get_minor();
-         minor++) {
-      Version innovation(major, minor, 0);
-      EXPECT_NEXT_LTS(innovation, k_latest_versions.at(first_lts.get_short()),
-                      first_lts.get_short());
-    }
-
-    // All LTS version next LTS is the latest version in the next series
-    Version series(major, minor, 0);
-
-    for (patch = 0;
-         patch < k_latest_versions.at(series.get_short()).get_patch();
-         patch++) {
-      Version lts(major, minor, patch);
-      auto next_lts = get_first_lts_version(get_next_series(lts));
-      auto item = k_latest_versions.find(next_lts.get_short());
-
-      std::optional<Version> expected_version;
-      std::string expected_key = "";
-
-      // if no LTS version was released yet, the latest innovation in the next
-      // series is latest, and no suggestion should be required
-      if (item != k_latest_versions.end()) {
-        expected_version = item->second;
-        expected_key = item->first;
-      }
-
-      EXPECT_NEXT_LTS(lts, expected_version, expected_key);
-    }
+  {
+    const auto [version, key] = latest_by_key("28.4");
+    EXPECT_NEXT_LTS(Version(9, 7, 0), version, key);
+    EXPECT_NEXT_LTS(Version(9, 7, 1), version, key);
+    EXPECT_NEXT_LTS(Version(26, 7, 0), version, key);
+    EXPECT_NEXT_LTS(Version(26, 7, 1), version, key);
   }
 
-  // Now verifies the current shell version series
-  first_lts = get_first_lts_version(mysqlshdk::utils::k_shell_version);
-  auto next_series_first_lts =
-      get_first_lts_version(get_next_series(mysqlshdk::utils::k_shell_version));
-  std::string key, next_series_key;
-  std::optional<Version> next_lts, next_series_lts;
-  if (mysqlshdk::utils::k_shell_version >= first_lts) {
-    key = first_lts.get_short();
-    next_lts = k_latest_versions.at(key);
-  }
-  if (k_latest_versions.contains(next_series_first_lts.get_short())) {
-    next_series_key = next_series_first_lts.get_short();
-    next_series_lts = k_latest_versions.at(next_series_key);
-  }
-
-  // next lts for innovation line is the latest lts in that series
-  auto first_innovation =
-      get_first_innovation_version(mysqlshdk::utils::k_shell_version);
-  for (minor = first_innovation.get_minor(); minor < first_lts.get_minor();
-       minor++) {
-    Version innovation(mysqlshdk::utils::k_shell_version.get_major(), minor, 0);
-    EXPECT_NEXT_LTS(innovation, next_lts, key);
-  }
-
-  // next lts for lts line is the latest lts in the next series
-  for (patch = 0; patch < mysqlshdk::utils::k_shell_version.get_patch();
-       patch++) {
-    Version lts(major, minor, patch);
-    EXPECT_NEXT_LTS(lts, next_series_lts, next_series_key);
-  }
-
-  // The current version (latest) never has a next series LTS
+  EXPECT_NEXT_LTS(Version(28, 4, 0), {}, "");
   EXPECT_NEXT_LTS(mysqlshdk::utils::k_shell_version, {}, "");
 }
 
@@ -5117,6 +5111,8 @@ TEST_F(MySQL_upgrade_check_test, suggested_version_check) {
             .c_str());
   };
 
+  const auto has_lts_28_04 = k_latest_versions.contains("28.4");
+
   CHECK_MSG_EMPTY(Version(5, 7, 44), Version(8, 0, 0));
   CHECK_MSG_EMPTY(Version(5, 7, 44), Version(8, 0, 37));
   CHECK_MSG_SUGGEST(Version(5, 7, 44), Version(8, 1, 0), "8.0");
@@ -5128,7 +5124,7 @@ TEST_F(MySQL_upgrade_check_test, suggested_version_check) {
        index++) {
     CHECK_MSG_EMPTY(Version(8, 0, 0), Version(8, 0, index));
     CHECK_MSG_EMPTY(Version(8, 0, index),
-                    get_first_lts_version(Version(8, 0, 0)));
+                    mysqlshdk::utils::version::first_lts(Version(8, 0, 0)));
     CHECK_MSG_SUGGEST(Version(8, 0, index), Version(9, 0, 0), "8.4");
   }
 
@@ -5145,74 +5141,24 @@ TEST_F(MySQL_upgrade_check_test, suggested_version_check) {
   {
     // upgrading from any patch version of LTS to the next LTS (any patch) is
     // allowed
-    const auto first_lts = get_first_lts_version(Version(9, 0));
+    const auto first_lts = mysqlshdk::utils::version::first_lts(Version(9, 0));
     CHECK_MSG_EMPTY(Version(8, 4, 1), first_lts);
     CHECK_MSG_EMPTY(Version(8, 4, 1),
                     Version(first_lts.get_major(), first_lts.get_minor(), 1));
   }
 
-  // For all the LTS releases (including the initial innovation releses in the
-  // series) the next LTS is the latest LTS release in the series
-  int major, minor, patch;
-  for (major = 8; major < mysqlshdk::utils::k_shell_version.get_major();
-       major++) {
-    auto first_lts = get_first_lts_version(Version(major, 0));
-    // All innovation versions next LTS is the latest version in the series
-    auto first_innovation = get_first_innovation_version(Version(major, 0));
-    for (minor = first_innovation.get_minor(); minor < first_lts.get_minor();
-         minor++) {
-      Version innovation(major, minor, 0);
-      CHECK_MSG_SUGGEST(innovation, Version(major + 1, 0, 0),
-                        first_lts.get_short());
-    }
+  CHECK_MSG_SUGGEST(Version(8, 4, 1), Version(26, 7, 0), "9.7");
+  CHECK_MSG_SUGGEST(Version(9, 0, 0), Version(26, 7, 0), "9.7");
+  CHECK_MSG_SUGGEST(Version(9, 6, 0), Version(26, 7, 0), "9.7");
+  CHECK_MSG_EMPTY(Version(9, 7, 1), Version(26, 7, 0));
 
-    // All LTS versions next LTS is the latest LTS in the next series
-    Version series(major, minor, 0);
-    for (patch = 0;
-         patch < k_latest_versions.at(series.get_short()).get_patch();
-         patch++) {
-      Version lts(major, minor, patch);
-      auto next_lts = get_first_lts_version(get_next_series(lts));
-      auto item = k_latest_versions.find(next_lts.get_short());
-
-      // if no LTS version was released yet for the next series, no suggest
-      // message should be displayed
-      if (item == k_latest_versions.end()) {
-        CHECK_MSG_EMPTY(lts, get_next_series(next_lts));
-      } else {
-        CHECK_MSG_SUGGEST(lts, get_next_series(item->second), item->first);
-      }
-    }
+  if (has_lts_28_04) {
+    CHECK_MSG_SUGGEST(Version(26, 7, 0), Version(28, 7, 0), "28.4");
+  } else {
+    CHECK_MSG_EMPTY(Version(26, 7, 0), Version(28, 7, 0));
   }
 
-  // Now verifies the current shell version series
-  auto first_lts = get_first_lts_version(mysqlshdk::utils::k_shell_version);
-  auto next_series_first_lts =
-      get_first_lts_version(get_next_series(mysqlshdk::utils::k_shell_version));
-  std::string key;
-  std::optional<Version> next_lts;
-  if (mysqlshdk::utils::k_shell_version >= first_lts) {
-    key = first_lts.get_short();
-    next_lts = k_latest_versions.at(key);
-    major = first_lts.get_major() + 1;
-
-    auto first_innovation =
-        get_first_innovation_version(mysqlshdk::utils::k_shell_version);
-    for (minor = first_innovation.get_minor(); minor < first_lts.get_minor();
-         minor++) {
-      Version innovation(mysqlshdk::utils::k_shell_version.get_major(), minor,
-                         0);
-
-      CHECK_MSG_SUGGEST(innovation, Version(major, 0, 0), key);
-    }
-
-    // next series lts does not exist for the lts line of the latest series
-    for (patch = 0; patch < mysqlshdk::utils::k_shell_version.get_patch();
-         patch++) {
-      Version lts(mysqlshdk::utils::k_shell_version.get_major(), minor, patch);
-      CHECK_MSG_EMPTY(lts, Version(major, 0, 0));
-    }
-  }
+  CHECK_MSG_EMPTY(mysqlshdk::utils::k_shell_version, Version(26, 10, 0));
 }
 
 TEST_F(MySQL_upgrade_check_test, incomplete_roles_privileges) {
@@ -5407,7 +5353,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
   EXPECT_EQ(
       "invalid foreign key defined as "
       "'child_ccc_full_fk_to_non_unique_index(a,b)' references a non unique "
-      "key at table 'parent'.",
+      "key at table 'fk_invalid_reference.parent'.",
       issue_table1.description);
 
   auto issue_table2 =
@@ -5421,7 +5367,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
       "invalid foreign key defined as "
       "'fk_invalid_reference.child_bbb_partial_fk_to_unique_index(a)' "
       "references a "
-      "partial key at table 'parent'.",
+      "partial key at table 'fk_invalid_reference.parent'.",
       issue_table2.description);
 
   auto issue_table3 = *find_issue("child_aaa_partial_fk_to_primary_ibfk_1");
@@ -5432,7 +5378,7 @@ TEST_F(MySQL_upgrade_check_test, invalid_foreign_key_reference_check) {
   EXPECT_EQ(
       "invalid foreign key defined as "
       "'fk_invalid_reference.child_aaa_partial_fk_to_primary(a)' "
-      "references a partial key at table 'parent'.",
+      "references a partial key at table 'fk_invalid_reference.parent'.",
       issue_table3.description);
 
   {

@@ -27,7 +27,7 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 |<Cluster:C>|
 
 //@<OUT> FR1-TS-01 check persisted variables {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -113,6 +113,9 @@ one server failure.
 //@<OUT> FR1-TS-04/05 {VER(>=8.0.12)}
 ?{VER(<8.0.16)}
 group_replication_exit_state_action = READ_ONLY
+?{}
+?{VER(>=10.0.0)}
+group_replication_communication_stack = XCOM
 ?{}
 group_replication_group_name = 62d73bbd-b830-11e7-a7b7-34e6d72fbd80
 ?{VER(>=8.0.23)}
@@ -204,7 +207,7 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 |<Cluster:ClusterName>|
 
 //@<OUT> FR1-TS-7 check persisted variables {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -414,6 +417,9 @@ The instance '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' was successfully added
 }
 
 //@<OUT> FR2-TS-4 Check that persisted variables match the ones passed on the arguments to create cluster and addInstance {VER(>=8.0.12)}
+?{VER(>=10.0.0)}
+group_replication_communication_stack = XCOM
+?{}
 group_replication_group_name = ca94447b-e6fc-11e7-b69d-4485005154dc
 group_replication_group_seeds = localhost:<<<__local_address_2>>>
 ?{VER(>=8.0.23)}
@@ -434,6 +440,9 @@ group_replication_ssl_mode = REQUIRED
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
+?{VER(>=10.0.0)}
+group_replication_communication_stack = XCOM
+?{}
 ?{VER(>=8.4.0)}
 group_replication_consistency = BEFORE_ON_PRIMARY_FAILOVER
 ?{}
@@ -468,6 +477,9 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{VER(<8.0.16)}
 group_replication_exit_state_action = READ_ONLY
 ?{}
+?{VER(>=10.0.0)}
+group_replication_communication_stack = XCOM
+?{}
 group_replication_group_name = ca94447b-e6fc-11e7-b69d-4485005154dc
 group_replication_group_seeds = localhost:<<<__local_address_3>>>
 group_replication_local_address = <<<hostname>>>:<<<__mysql_sandbox_gr_port1_xcom>>>
@@ -482,6 +494,9 @@ group_replication_ssl_mode = REQUIRED
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
+?{VER(>=10.0.0)}
+group_replication_communication_stack = XCOM
+?{}
 ?{VER(>=8.4.0)}
 group_replication_consistency = BEFORE_ON_PRIMARY_FAILOVER
 ?{}
@@ -533,7 +548,7 @@ The instance '<<<hostname>>>:<<<__mysql_sandbox_port2>>>' was successfully added
 ||
 
 //@<OUT> FR2-TS-8 Check that correct values were persisted and that instance rejoins automatically {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_enforce_update_everywhere_checks = ON
@@ -554,7 +569,7 @@ group_replication_ssl_mode = REQUIRED
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -649,7 +664,7 @@ ONLINE
 ||
 
 //@<OUT> FR2-TS-9 Check that correct values were persisted on instance 2 {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -673,7 +688,7 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ||
 
 //@<OUT> FR2-TS-9 Check that correct values are persisted and updated when instances are added and that instances rejoin automatically {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -693,7 +708,7 @@ group_replication_ssl_mode = REQUIRED
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -713,7 +728,7 @@ group_replication_ssl_mode = REQUIRED
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_group_name = ca94447b-e6fc-11e7-b69d-4485005154dc
@@ -824,7 +839,7 @@ ONLINE
 
 //@<OUT> FR5-TS-1 Check that persisted variables are updated/reset after removeCluster operation {VER(>=8.0.12)}
 group_replication_bootstrap_group = OFF
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -846,7 +861,7 @@ group_replication_start_on_boot = OFF
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_group_name = ca94447b-e6fc-11e7-b69d-4485005154dc
@@ -870,7 +885,7 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ||
 
 //@<OUT> FR5-TS-4 Check that persisted variables are updated/reset after removeCluster operation - before {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -899,7 +914,7 @@ The instance will be removed from the InnoDB Cluster.
 The instance 'localhost:<<<__mysql_sandbox_port2>>>' was successfully removed from the cluster.
 
 //@<OUT> FR5-TS-4 Check that persisted variables are updated/reset after removeCluster operation - after {VER(>=8.0.12)}
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -920,7 +935,7 @@ group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
 group_replication_bootstrap_group = OFF
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 ?{VER(>=8.4.0)}
@@ -942,7 +957,7 @@ group_replication_start_on_boot = OFF
 group_replication_view_change_uuid = <<<__gr_view_change_uuid>>>
 ?{}
 
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_group_name = ca94447b-e6fc-11e7-b69d-4485005154dc
@@ -1022,7 +1037,7 @@ WARNING: Support for AdminAPI operations in MySQL version 5.7 is deprecated and 
 
 //@<OUT> Check if Cluster dissolve will reset persisted variables {VER(>=8.0.12)}
 group_replication_bootstrap_group = OFF
-?{VER(>=8.0.27)}
+?{VER(>=8.0.27) && VER(<10.0.0)}
 group_replication_communication_stack = MYSQL
 ?{}
 group_replication_enforce_update_everywhere_checks = OFF

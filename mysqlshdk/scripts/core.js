@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -44,10 +45,15 @@ function ModuleHandler() { }
 ModuleHandler.__native_modules = __list_native_modules();
 
 ModuleHandler.__find_module = function (module, paths) {
+  const searched_paths = [];
+
   for (let path of paths) {
     if (!os.path.isabs(path)) {
       path = os.path.join(os.getcwd(), path);
     }
+
+    path = os.path.normpath(path);
+    searched_paths.push(path);
 
     const full_path = os.path.normpath(os.path.join(path, module));
 
@@ -68,7 +74,7 @@ ModuleHandler.__find_module = function (module, paths) {
     }
   }
 
-  throw new Error(`Could not find module '${module}'.`);
+  throw new Error(`Could not find module '${module}'. Searched in: ${searched_paths.join(', ')}`);
 };
 
 ModuleHandler.prototype.__cache = {};

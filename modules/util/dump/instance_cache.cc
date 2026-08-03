@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -131,6 +132,10 @@ void Instance_cache::Index::add_column(const Column *column) {
   }
 
   m_columns_sql += column->quoted_name;
+}
+
+void Instance_cache::Index::set_name(const std::string &name) {
+  m_quoted_name = shcore::quote_identifier(name);
 }
 
 Instance_cache_builder::Instance_cache_builder(
@@ -574,7 +579,7 @@ void Instance_cache_builder::fetch_view_metadata() {
   info.table_name = "views";
 
   mysqlshdk::parser::Extract_table_references etr{
-      m_cache.server.version.number};
+      mysqlshdk::parser::Parser_config{m_cache.server.version.number, true}};
 
   iterate_views(info, [&etr](const std::string &schema, const std::string &,
                              Instance_cache::View *view,
@@ -839,6 +844,7 @@ void Instance_cache_builder::fetch_table_indexes() {
         }
 
         if (add_index) {
+          new_index.set_name(index.first);
           auto ptr = &t.indexes.emplace(index.first, std::move(new_index))
                           .first->second;
 

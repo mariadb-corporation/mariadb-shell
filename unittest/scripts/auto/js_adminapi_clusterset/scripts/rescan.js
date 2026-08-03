@@ -51,7 +51,7 @@ EXPECT_FALSE("instanceErrors" in status["defaultReplicaSet"]["topology"][`${host
 status = rcluster.status();
 EXPECT_FALSE("instanceErrors" in status["defaultReplicaSet"]["topology"][`${hostname}:${__mysql_sandbox_port3}`]);
 
-//@<> rescan() should detect inconsistencies in the ClusterSet metadata {!__dbug_off}
+//@<> rescan() should detect inconsistencies in the ClusterSet metadata {__dbug}
 
 // All metadata updated are atomic, to ensure consistency. The operations are
 // executed inside transactions:

@@ -118,7 +118,7 @@ mhs_excluded_users = [
 
 ## Tests to ensure restricted users dumped with strip_restricted_grants can be loaded with a restricted user and not just with root
 
-#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and not __dbug_off}
+#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and __dbug}
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -714,7 +714,7 @@ EXPECT_INCLUDE_EXCLUDE({ "ignoreExistingObjects": True }, [], [])
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping CREATE/ALTER USER statements for user 'mysql.sys'@'localhost'")
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping GRANT/REVOKE statements for user 'mysql.sys'@'localhost'")
 
-#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and not __dbug_off}
+#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and __dbug}
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -763,7 +763,7 @@ session.run_sql("DROP ROLE 'local'@'localhost';")
 session.run_sql("DROP user wolodia@localhost;")
 session.run_sql("DROP user zenon@localhost;")
 
-#@<> BUG#31748786 {not __dbug_off}
+#@<> BUG#31748786 {__dbug}
 # create a MDS-compatible dump
 shell.connect(__sandbox_uri1)
 
@@ -795,7 +795,7 @@ EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "skipBinlog": True, "showProgre
 
 testutil.dbug_set("")
 
-#@<> BUG#32140970 {not __dbug_off}
+#@<> BUG#32140970 {__dbug}
 # create a MDS-compatible dump but without 'ocimds' option
 shell.connect(__sandbox_uri1)
 
@@ -929,7 +929,7 @@ EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires ser
 # 'createInvisiblePKs' is true explicitly
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
 
-#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and not __dbug_off}
+#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
 # WL14506-TSFR_4_5
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -942,7 +942,7 @@ EXPECT_STDOUT_NOT_CONTAINS("createInvisiblePKs")
 
 testutil.dbug_set("")
 
-#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and not __dbug_off}
+#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
 # WL14506-TSFR_4_7
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -1452,7 +1452,7 @@ snapshot = dump_and_load({ "includeLibraries": [] })
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_4", "libraries"]))
 
-#@<> WL16731-TSFR_2_5_1 - includeLibraries - full dump {instance_supports_libraries and not __dbug_off}
+#@<> WL16731-TSFR_2_5_1 - includeLibraries - full dump {instance_supports_libraries and __dbug}
 testutil.dbug_set("+d,dump_loader_libraries_unsupported_version")
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Error: Shell Error (53032): The dump contains library DDL which requires server 9.2.0 or newer.")
@@ -2389,7 +2389,7 @@ for deferred in [ ("off", 0), ("fulltext", 1), ("all", 13) ]:
     # verify correctness
     compare_servers(session1, session2, check_users=False)
 
-#@<> BUG#33414321 - table with a secondary engine with resume {VER(>=8.0.21) and (not __dbug_off)}
+#@<> BUG#33414321 - table with a secondary engine with resume {VER(>=8.0.21) and (__dbug)}
 # connect to the destination server
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
@@ -2410,7 +2410,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed 
 # verify correctness
 compare_servers(session1, session2, check_users=False)
 
-#@<> BUG#33976718 - retry in case of full innodb_tmpdir {(not __dbug_off)}
+#@<> BUG#33976718 - retry in case of full innodb_tmpdir {(__dbug)}
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -2469,7 +2469,7 @@ compare_servers(session1, session2, check_users=False)
 # cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#33976718 - test scheduling {(not __dbug_off)}
+#@<> BUG#33976718 - test scheduling {(__dbug)}
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -3233,7 +3233,7 @@ EXPECT_STDOUT_CONTAINS("1 rows were replaced")
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> WL#15887 - warning when loading to a different version than requested during dump {not __dbug_off}
+#@<> WL#15887 - warning when loading to a different version than requested during dump {__dbug}
 # constants
 dump_dir = os.path.join(outdir, "wl_15887")
 
@@ -3514,7 +3514,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "includeSchemas": [schema_na
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#35830920 mysql_audit and mysql_firewall schemas should be automatically excluded when loading a dump into MHS - setup {not __dbug_off}
+#@<> BUG#35830920 mysql_audit and mysql_firewall schemas should be automatically excluded when loading a dump into MHS - setup {__dbug}
 # BUG#37023079 - exclude mysql_option schema
 # BUG#37278169 - exclude mysql_autopilot schema
 # BUG#37637843 - exclude `mysql_rest_service_metadata` and `mysql_tasks` schemas
@@ -3536,7 +3536,7 @@ shell.connect(__sandbox_uri1)
 dump_dir = os.path.join(outdir, "bug_35830920")
 EXPECT_NO_THROWS(lambda: util.dump_schemas(schema_names, dump_dir, { "ddlOnly": True, "showProgress": False }), "Dumping the instance should not fail")
 
-#@<> BUG#35830920 - test {not __dbug_off}
+#@<> BUG#35830920 - test {__dbug}
 shell.connect(__sandbox_uri2)
 
 # loading into non-MHS should fail, because schemas already exist
@@ -3548,7 +3548,7 @@ testutil.dbug_set("+d,dump_loader_force_mds")
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "ignoreVersion": True, "showProgress": False }), "Loading should not fail")
 testutil.dbug_set("")
 
-#@<> BUG#35830920 - cleanup {not __dbug_off}
+#@<> BUG#35830920 - cleanup {__dbug}
 for schema_name in schema_names:
     session.run_sql("DROP SCHEMA !;", [schema_name])
 
@@ -3600,7 +3600,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "L
 # cleanup
 session.run_sql("SET @@global.sql_mode = @saved_sql_mode")
 
-#@<> BUG#36127633 - reconnect session when connection is lost {not __dbug_off}
+#@<> BUG#36127633 - reconnect session when connection is lost {__dbug}
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -3737,6 +3737,63 @@ session.run_sql("SET @@GLOBAL.explain_json_format_version = @saved_explain_json_
 #@<> BUG#36470302 - cleanup
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
+
+#@<> composite integer key chunking uses later key parts
+# constants
+dump_dir = os.path.join(outdir, "composite_integer_chunking")
+test_schema = "test_composite_integer_chunking"
+test_table = "test_table"
+row_count = 1200
+
+# setup
+shell.connect(__sandbox_uri1)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
+session1.run_sql("CREATE SCHEMA !", [ test_schema ])
+session1.run_sql("""CREATE TABLE !.! (
+  a INT NOT NULL,
+  b INT NOT NULL,
+  payload VARBINARY(1024) NOT NULL,
+  PRIMARY KEY (a, b)
+)
+DEFAULT CHARACTER SET = utf8mb4
+""", [ test_schema, test_table ])
+values = ",".join([f"(1,{i},REPEAT('x', 1024))" for i in range(row_count)])
+session1.run_sql(f"INSERT INTO !.! (a, b, payload) VALUES {values}", [ test_schema, test_table ])
+session1.run_sql("ANALYZE TABLE !.!", [ test_schema, test_table ])
+
+#@<> composite integer key chunking uses later key parts - test
+EXPECT_NO_THROWS(lambda: util.dump_schemas([ test_schema ], dump_dir, { "bytesPerChunk": "128k", "compression": "none", "showProgress": False }), "Dump should not throw")
+
+table_basename = encode_table_basename(test_schema, test_table)
+chunk_files = sorted([f for f in os.listdir(dump_dir) if f.startswith(table_basename + "@") and f.endswith(".tsv")])
+EXPECT_TRUE(len(chunk_files) > 1, "Composite integer key should be split into multiple chunks")
+
+last_chunk_files = [f for f in chunk_files if f.startswith(table_basename + "@@")]
+EXPECT_EQ(1, len(last_chunk_files), "There should be exactly one final chunk marker")
+
+def chunk_index(filename):
+    suffix = filename[len(table_basename):]
+    if suffix.startswith("@@"):
+        suffix = suffix[2:]
+    else:
+        suffix = suffix[1:]
+    return int(suffix.split(".")[0])
+
+chunk_indexes = sorted([chunk_index(f) for f in chunk_files])
+EXPECT_EQ(list(range(len(chunk_files))), chunk_indexes, "Chunk indexes should be consecutive")
+EXPECT_EQ(len(chunk_files) - 1, chunk_index(last_chunk_files[0]), "The final chunk marker should use the last chunk index")
+
+wipeout_server(session2)
+
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Load should not throw")
+
+compare_schema(session1, session2, test_schema, check_rows=True)
+
+#@<> composite integer key chunking uses later key parts - cleanup
+shell.connect(__sandbox_uri1)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
+wipe_dir(dump_dir)
 
 #@<> BUG#36509026 - warn if there's mismatch between source's and target's lower_case_table_names
 # constants
@@ -4055,7 +4112,7 @@ session.run_sql(f"DROP USER IF EXISTS {tested_user}")
 shell.connect(__sandbox_uri2)
 session.run_sql("SET @@GLOBAL.log_bin_trust_function_creators = 0")
 
-#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {__dbug and VER(>=8.0.0)}
 # constants
 tested_schema = "test_schema"
 dump_dir = os.path.join(outdir, "bug_38089433")
@@ -4083,7 +4140,7 @@ session1.run_sql("CREATE EVENT !.e ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1
 # restore collations
 session1.run_sql("set names utf8mb4")
 
-#@<> BUG#38089433 - dump {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38089433 - dump {__dbug and VER(>=8.0.0)}
 testutil.dbug_set("+d,dumper_unsupported_collation")
 
 shell.connect(__sandbox_uri1)
@@ -4117,7 +4174,7 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had DATABASE_CO
 EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had COLLATION_CONNECTION set to '{unsupported_collation}', it has been replaced with '{supported_collation}'")
 
 
-#@<> BUG#38089433 - load {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38089433 - load {__dbug and VER(>=8.0.0)}
 wipeout_server(session2)
 
 shell.connect(__sandbox_uri2)
@@ -4132,7 +4189,7 @@ session1.run_sql(f"CREATE TABLE !.t2 (c TEXT) COLLATE {supported_collation}", [ 
 
 EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session2, tested_schema), "Verifying schema")
 
-#@<> BUG#38089433 - cleanup {not __dbug_off and VER(>=8.0.0)}
+#@<> BUG#38089433 - cleanup {__dbug and VER(>=8.0.0)}
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 #@<> BUG#37326937 - if the first load attempt failed with duplicate objects error, the second one should also fail
@@ -4360,7 +4417,7 @@ EXPECT_FALSE(has_primary_key(tested_schema, "t2"))
 # PK is created
 EXPECT_TRUE(has_primary_key(tested_schema, "t3"))
 
-#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {not __dbug_off and VER(>=9.7.0)}
+#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {__dbug and VER(>=9.7.0)}
 testutil.dbug_set("+d,dump_loader_force_mds")
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, {"createInvisiblePKs": False, "dropExistingObjects": True, "showProgress": False}), "sql_require_primary_key enabled at destination server")

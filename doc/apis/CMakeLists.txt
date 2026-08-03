@@ -1,4 +1,5 @@
-# Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +22,7 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-cmake_minimum_required (VERSION 3.2)
+cmake_minimum_required (VERSION 3.8.0)
 
 SET(ROOT_PROJECT_DIR "${CMAKE_SOURCE_DIR}/../../")
 

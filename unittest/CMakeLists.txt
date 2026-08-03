@@ -85,6 +85,7 @@ if(WITH_TESTS)
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/preconditions_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/clone_handling_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/metadata_management_t.cc"
+        "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/provisioning_interface_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/router_options_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/replication_version_compatibility_t.cc"
         "${PROJECT_SOURCE_DIR}/unittest/modules/devapi/mod_mysqlx_collection_find_t.cc"
@@ -146,6 +147,7 @@ if(WITH_TESTS)
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/preconditions_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/clone_handling_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/metadata_management_t.cc")
+      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/provisioning_interface_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/router_options_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/adminapi/common/replication_version_compatibility_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/test_utils/admin_api_test.cc")
@@ -207,7 +209,7 @@ if(WITH_TESTS)
 
     IF(CMAKE_COMPILER_IS_GNUCXX)
       SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/linenoise.cpp PROPERTIES COMPILE_FLAGS "-Wno-stringop-overflow")
-      SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp PROPERTIES COMPILE_FLAGS "-Wno-implicit-fallthrough")
+      SET_SOURCE_FILES_PROPERTIES(${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp PROPERTIES COMPILE_FLAGS "-Wno-implicit-fallthrough -Wno-array-bounds")
       SET_SOURCE_FILES_PROPERTIES(
         "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/db/db_row_decimal_t.cc"
         "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/db/db_row_t.cc"
@@ -263,7 +265,7 @@ if(WITH_TESTS)
             shellcore-minimal
             ${GTEST_LIBRARIES}
             ${MYSQLX_LIBRARIES}
-            ${PROTOBUF_LIBRARY}
+            ${PROTOBUF_LIBRARIES}
             ${LZ4_LIBRARY}
             ${SSL_LIBRARIES}
             ${SSL_LIBRARIES_DL}

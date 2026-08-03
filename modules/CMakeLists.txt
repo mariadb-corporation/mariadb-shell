@@ -158,6 +158,20 @@ ELSE()
   list(APPEND api_module_SOURCES ${devapi_SOURCES} "util/json_importer.cc")
 ENDIF()
 
+IF(WITH_PARFAIT)
+  # The binlog sources include MySQL server GTID parser headers that currently
+  # crash Parfait's clang-15 translator. Keep them in the native build, but do
+  # not translate them to Parfait bitcode.
+  SET_SOURCE_FILES_PROPERTIES(
+      "util/binlog/binlog_dump_info.cc"
+      "util/binlog/binlog_dumper.cc"
+      "util/binlog/binlog_loader.cc"
+      "util/binlog/dump_binlogs_options.cc"
+      "util/binlog/load_binlogs_options.cc"
+      "util/binlog/utils.cc"
+      PROPERTIES COMPILE_OPTIONS "--parfait-native-only")
+ENDIF()
+
 IF(CMAKE_COMPILER_IS_GNUCXX)
     SET_SOURCE_FILES_PROPERTIES(
         "mod_shell.cc"

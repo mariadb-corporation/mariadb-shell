@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -172,6 +173,9 @@ struct Table_reference {
  * @returns Extracted table references.
  */
 std::vector<Table_reference> extract_table_references(
+    std::string_view stmt, const Parser_config &config);
+
+std::vector<Table_reference> extract_table_references(
     std::string_view stmt, const mysqlshdk::utils::Version &version);
 
 /**
@@ -180,6 +184,8 @@ std::vector<Table_reference> extract_table_references(
  */
 class Extract_table_references final {
  public:
+  explicit Extract_table_references(const Parser_config &config);
+
   explicit Extract_table_references(const mysqlshdk::utils::Version &version);
 
   ~Extract_table_references();

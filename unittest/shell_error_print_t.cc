@@ -27,6 +27,10 @@
 #include "unittest/gtest_clean.h"
 #include "unittest/test_utils.h"
 
+#include <string>
+
+#include "mysqlshdk/libs/textui/textui.h"
+
 namespace mysqlsh {
 
 class Shell_error_printing : public Shell_core_test_wrapper {};
@@ -48,6 +52,51 @@ TEST_F(Shell_error_printing, print_diag) {
   wipe_all();
   current_console()->print_diag("test\n");
   EXPECT_EQ("test\n", output_handler.std_err);
+}
+
+TEST_F(Shell_error_printing, sanitizes_terminal_controls) {
+  reset_shell();
+  wipe_all();
+
+  const std::string text =
+      "server\x1B]52;c;AAAA\x07"
+      "after";
+
+  current_console()->print_error(text);
+  EXPECT_EQ("ERROR: server\\x1B]52;c;AAAA\\x07after\n", output_handler.std_out);
+  wipe_all();
+
+  current_console()->print_warning(text);
+  EXPECT_EQ("WARNING: server\\x1B]52;c;AAAA\\x07after\n",
+            output_handler.std_out);
+  wipe_all();
+
+  current_console()->print_diag(text);
+  EXPECT_EQ("server\\x1B]52;c;AAAA\\x07after", output_handler.std_err);
+}
+
+TEST_F(Shell_error_printing, preserves_text_decorations) {
+  reset_shell();
+  wipe_all();
+
+  struct Color_capability_guard {
+    explicit Color_capability_guard(mysqlshdk::textui::Color_capability cap)
+        : original(mysqlshdk::textui::get_color_capability()) {
+      mysqlshdk::textui::set_color_capability(cap);
+    }
+
+    ~Color_capability_guard() {
+      mysqlshdk::textui::set_color_capability(original);
+    }
+
+    mysqlshdk::textui::Color_capability original;
+  };
+
+  const Color_capability_guard guard{mysqlshdk::textui::Color_16};
+  const auto decorated = mysqlshdk::textui::bold("decorated");
+
+  current_console()->print_info(decorated);
+  EXPECT_EQ(decorated + "\n", output_handler.std_out);
 }
 
 TEST_F(Shell_error_printing, python_stack) {

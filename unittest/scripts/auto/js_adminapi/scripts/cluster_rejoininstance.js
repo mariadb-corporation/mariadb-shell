@@ -364,6 +364,8 @@ session.runSql("CREATE DATABASE error_trx_db");
 
 shell.connect(__sandbox_uri2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ERROR");
+shell.connect(__sandbox_uri1);
+cluster = dba.getCluster();
 
 // rejoin with clone (errant transactions) - dryRun test
 EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__sandbox_uri2, {dryRun: 1}); });
@@ -379,7 +381,7 @@ EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__sandbox_uri2, {recoveryMe
 shell.connect(__sandbox_uri2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
 
-//@<> Check if proper clone validations regarding compatibility are done {!__dbug_off}
+//@<> Check if proper clone validations regarding compatibility are done {__dbug}
 shell.connect(__sandbox_uri2);
 reset_instance(session);
 

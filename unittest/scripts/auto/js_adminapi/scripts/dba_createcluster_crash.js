@@ -1,4 +1,4 @@
-//@{!__dbug_off}
+//@{__dbug}
 
 // Crash recovery tests for createCluster()
 

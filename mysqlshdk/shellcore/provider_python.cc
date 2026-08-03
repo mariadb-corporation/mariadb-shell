@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -128,10 +129,8 @@ class PyObject_proxy : public Object {
 
   bool is_member_callable(const std::string &name) const override {
     WillEnterPython lock;
-    py::Release mem{PyObject_GetAttrString(pyobj_.get(), name.c_str())};
-    if (mem) return PyCallable_Check(mem.get());
-
-    return false;
+    py::Release py_name{PyString_FromString(name.c_str())};
+    return Python_context::is_member_callable(pyobj_.get(), py_name.get());
   }
 
   std::shared_ptr<Object> get_member(const std::string &name) const override {

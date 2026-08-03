@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -111,7 +112,12 @@ TEST_F(Admin_api_preconditions, check_session) {
                          mysqlshdk::utils::k_shell_version.get_major(),
                          mysqlshdk::utils::k_shell_version.get_minor() + 1),
       shcore::str_format("%d.%d", mysqlshdk::utils::k_shell_version.get_major(),
-                         mysqlshdk::utils::k_shell_version.get_minor() + 2)};
+                         mysqlshdk::utils::k_shell_version.get_minor() + 2),
+      "10.0",
+      "10.0.1",
+      "10.0.99",
+      "26.6",
+      "26.6.99"};
 
   EXPECT_CALL(*m_mock_metadata, get_md_server())
       .Times(min_invalid_versions.size());
@@ -149,37 +155,17 @@ TEST_F(Admin_api_preconditions, check_session) {
       EXPECT_STREQ(
           shcore::str_format(
               "Unsupported server version: AdminAPI operations in this version "
-              "of MySQL Shell support MySQL Server up to version %d.%d",
-              mysqlshdk::utils::k_shell_version.get_major(),
-              mysqlshdk::utils::k_shell_version.get_minor())
+              "of MySQL Shell support MySQL Server versions %s",
+              mysqlshdk::utils::version::supported_servers().c_str())
               .c_str(),
           e.what());
     }
   }
 
-  std::vector<std::string> valid_versions;
-
-  valid_versions.push_back(shcore::str_format(
-      "%d.%d.%d", mysqlshdk::utils::k_shell_version.get_major(),
-      mysqlshdk::utils::k_shell_version.get_minor(),
-      mysqlshdk::utils::k_shell_version.get_patch()));
-
-  // Now inserts corner cases for the different versions starting at 8.0
-  // Valid versions start at 8.0
-  int lower_major = 8;
-  for (auto major = lower_major;
-       major <= mysqlshdk::utils::k_shell_version.get_major(); major++) {
-    // Valid minor versions end at current minor for the last release or at 6
-    // for previous releases
-    int max_minor = major < mysqlshdk::utils::k_shell_version.get_major()
-                        ? 6
-                        : mysqlshdk::utils::k_shell_version.get_minor();
-    for (auto minor = 0; minor <= max_minor; minor++) {
-      valid_versions.push_back(shcore::str_format("%d.%d", major, minor));
-      valid_versions.push_back(shcore::str_format("%d.%d.1", major, minor));
-      valid_versions.push_back(shcore::str_format("%d.%d.99", major, minor));
-    }
-  }
+  std::vector<std::string> valid_versions = {
+      "8.0",    "8.0.1", "8.0.99", "8.4",    "8.4.1", "8.4.99", "9.0",
+      "9.6.99", "9.7",   "9.7.1",  "9.7.99", "26.7",  "26.7.0", "26.7.99",
+  };
   EXPECT_CALL(*m_mock_metadata, get_md_server()).Times(valid_versions.size());
   EXPECT_CALL(*m_mock_session, is_open()).Times(valid_versions.size());
 

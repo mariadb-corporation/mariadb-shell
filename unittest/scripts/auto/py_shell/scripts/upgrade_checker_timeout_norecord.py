@@ -37,7 +37,7 @@ EXPECT_NO_THROWS(lambda: util.check_for_server_upgrade(__mysql_uri, {"targetVers
 EXPECT_OUTPUT_CONTAINS("Warning: Check timed out and was interrupted.")
 session.run_sql("unlock tables")
 
-#@<> WL16757-TSFR_2_1 {not __dbug_off}
+#@<> WL16757-TSFR_2_1 {__dbug}
 testutil.dbug_set("+d,dbg_uc_sql_mode_sleep")
 session.run_sql("lock table test.Clone read")
 run_after(5, lambda: session.run_sql("unlock tables"))
@@ -45,7 +45,7 @@ EXPECT_NO_THROWS(lambda: util.check_for_server_upgrade(__mysql_uri, {"targetVers
 EXPECT_OUTPUT_NOT_CONTAINS("Warning: Check timed out and was interrupted.")
 testutil.dbug_set("")
 
-#@<> All checks are interrupted {not __dbug_off}
+#@<> All checks are interrupted {__dbug}
 testutil.dbug_set("+d,dbg_uc_sql_mode_sleep")
 session.run_sql("lock table test.Clone read")
 EXPECT_NO_THROWS(lambda: util.check_for_server_upgrade(__mysql_uri, {"targetVersion": "9.0.0", "checkTimeout": 1, "include": ["obsoleteSqlModeFlags", "checkTableCommand"]}))
@@ -53,7 +53,7 @@ session.run_sql("unlock tables")
 EXPECT_OUTPUT_CONTAINS('''Warning: Check timed out and was interrupted.''')
 testutil.dbug_set("")
 
-#@<> WL16757-TSFR_2_2 {not __dbug_off}
+#@<> WL16757-TSFR_2_2 {__dbug}
 testutil.dbug_set("+d,dbg_uc_sql_mode_sleep")
 session.run_sql("lock table test.Clone read")
 EXPECT_NO_THROWS(lambda: util.check_for_server_upgrade(__mysql_uri, {"targetVersion": "9.0.0", "checkTimeout": 2, "include": ["oldTemporal", "obsoleteSqlModeFlags", "checkTableCommand"]}))
@@ -62,7 +62,7 @@ EXPECT_OUTPUT_CONTAINS("Warning: Check timed out and was interrupted.")
 EXPECT_OUTPUT_CONTAINS("No issues found")
 testutil.dbug_set("")
 
-#@<> WL16757-TSFR_3_1 {not __dbug_off}
+#@<> WL16757-TSFR_3_1 {__dbug}
 testutil.dbug_set("+d,dbg_uc_sql_mode_sleep")
 session.run_sql("lock table test.Clone read")
 run_after(5, lambda: session.run_sql("unlock tables"))

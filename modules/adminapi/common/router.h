@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,12 +85,13 @@ inline constexpr std::array<std::string_view, 6>
 inline constexpr auto k_default_router_option_read_only_targets =
     k_router_option_read_only_targets_secondaries;
 
-inline constexpr std::array<decltype(k_router_option_target_cluster), 7>
+inline constexpr std::array<decltype(k_router_option_target_cluster), 8>
     k_clusterset_router_options = {
         k_router_option_invalidated_cluster_routing_policy,
         k_router_option_target_cluster,
         k_router_option_stats_updates_frequency,
         k_router_option_use_replica_primary_as_rw,
+        k_router_option_unreachable_quorum_allowed_traffic,
         k_router_option_tags,
         k_router_option_read_only_targets,
         k_router_option_routing_guideline};

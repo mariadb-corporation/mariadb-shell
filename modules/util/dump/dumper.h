@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -489,7 +490,9 @@ class Dumper {
   std::string get_query_comment(const Table_data_task &task,
                                 const char *context) const;
 
-  void validate_privileges() const;
+  void validate_preflight_privileges() const;
+
+  void validate_object_privileges() const;
 
   bool is_gtid_executed_inconsistent() const;
 

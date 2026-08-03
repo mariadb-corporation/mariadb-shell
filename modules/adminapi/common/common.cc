@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -231,13 +232,12 @@ bool is_option_supported(
             .c_str()));
   }
 
-  if (version > Precondition_checker::k_max_adminapi_server_version) {
+  if (!mysqlshdk::utils::version::is_supported_server(version)) {
     throw std::runtime_error(shcore::str_format(
         "Unsupported server version '%s': AdminAPI operations in this version "
-        "of MySQL Shell support MySQL Server up to version %s",
+        "of MySQL Shell support MySQL Server versions %s",
         version.get_full().c_str(),
-        Precondition_checker::k_max_adminapi_server_version.get_short()
-            .c_str()));
+        mysqlshdk::utils::version::supported_servers().c_str()));
   }
 
   return version >= opt_avail.support;

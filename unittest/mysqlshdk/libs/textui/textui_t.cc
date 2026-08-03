@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +26,8 @@
 
 #include <gtest/gtest.h>
 #include <initializer_list>
+#include <string>
+#include <string_view>
 #include "mysqlshdk/libs/textui/term_vt100.h"
 #include "mysqlshdk/libs/textui/textui.h"
 
@@ -830,6 +833,60 @@ TEST(Textui, remark_no_color) {
   EXPECT_EQ("'word'", remark("word"));
   EXPECT_EQ("\"what's up\"", remark("what's up"));
   EXPECT_EQ("'\"two words\"'", remark("\"two words\""));
+}
+
+TEST(Textui, sanitize_utf8_terminal_text_for_text) {
+  std::string controls{"a\0b\rc", 5};
+  controls.push_back('\x7F');
+  controls.push_back('d');
+
+  EXPECT_EQ("", sanitize_utf8_terminal_text(""));
+  EXPECT_EQ("plain text", sanitize_utf8_terminal_text("plain text"));
+  EXPECT_EQ("line 1\nline 2\tend",
+            sanitize_utf8_terminal_text("line 1\nline 2\tend"));
+  EXPECT_EQ("line 1\r\nline 2",
+            sanitize_utf8_terminal_text("line 1\r\nline 2"));
+  EXPECT_EQ("line 1\\x0Dline 2", sanitize_utf8_terminal_text("line 1\rline 2"));
+  EXPECT_EQ("before\\x1B]52;c;AAAA\\x07after",
+            sanitize_utf8_terminal_text("before\x1B]52;c;AAAA\x07"
+                                        "after"));
+  EXPECT_EQ("\x1B[31mred\x1B[0m",
+            sanitize_utf8_terminal_text("\x1B[31mred\x1B[0m"));
+  EXPECT_EQ("\\x1B[2J", sanitize_utf8_terminal_text("\x1B[2J"));
+  EXPECT_EQ("a\\x00b\\x0Dc\\x7Fd", sanitize_utf8_terminal_text(controls));
+  EXPECT_EQ("I \xE2\x9D\xA4 MySQL Shell",
+            sanitize_utf8_terminal_text("I \xE2\x9D\xA4 MySQL Shell"));
+  EXPECT_EQ("c1=\\x9Bdone",
+            sanitize_utf8_terminal_text(std::string{"c1=\xC2\x9B"
+                                                    "done"}));
+  EXPECT_EQ("invalid=\\xC0\\xA4done",
+            sanitize_utf8_terminal_text(std::string{"invalid=\xC0\xA4"
+                                                    "done"}));
+}
+
+TEST(Textui, sanitize_utf8_terminal_text_for_result_field) {
+  const auto mode = Sanitization_mode::Result_field;
+  std::string controls{"a\0b\nc\td", 7};
+
+  EXPECT_EQ(controls, sanitize_utf8_terminal_text(controls, mode));
+  EXPECT_EQ("line 1\r\nline 2",
+            sanitize_utf8_terminal_text("line 1\r\nline 2", mode));
+  EXPECT_EQ("line 1\\x0Dline 2",
+            sanitize_utf8_terminal_text("line 1\rline 2", mode));
+  EXPECT_EQ("safe\\x1B]52;c;AAAA\\x07",
+            sanitize_utf8_terminal_text("safe\x1B]52;c;AAAA\x07", mode));
+  EXPECT_EQ("field\\x1B[31mred\\x1B[0m",
+            sanitize_utf8_terminal_text("field\x1B[31mred\x1B[0m", mode));
+}
+
+TEST(Textui, sanitize_and_strip_ansi) {
+  EXPECT_EQ("red text \\x1B[2J \\x1B]52;c;AAAA\\x07end",
+            sanitize_and_strip_ansi("\x1B[31mred\x1B[0m text \x1B[2J "
+                                    "\x1B]52;c;"
+                                    "AAAA\x07"
+                                    "end"));
+  EXPECT_EQ("clear \\x1B[2J red",
+            sanitize_and_strip_ansi("clear \x1B[2J \x1B[31mred\x1B[0m"));
 }
 
 }  // namespace textui

@@ -222,6 +222,13 @@ MARK_AS_ADVANCED(FORCE_UNSUPPORTED_COMPILER)
 
 OPTION(MAINTAINER_MODE "Enable maintainer-specific build checks" OFF)
 
+SET(CMAKE_MODULE_PATH
+    ${CMAKE_SOURCE_DIR}/cmake
+    ${CMAKE_MODULE_PATH}
+)
+
+INCLUDE(parfait)
+
 # Use 'uname -r' and 'rpm -qf /' to figure out host system.
 # For Docker images we cannot trust uname, so use rpm instead.
 IF(UNIX)
@@ -536,11 +543,6 @@ ENDFOREACH()
 IF(CMAKE_VERSION VERSION_GREATER "3.12.0")
   CMAKE_POLICY(SET CMP0075 NEW)
 ENDIF()
-
-set(CMAKE_MODULE_PATH
-    ${CMAKE_SOURCE_DIR}/cmake
-    ${CMAKE_MODULE_PATH}
-)
 
 IF(LINUX_RHEL10 AND MY_HOST_MACHINE_NAME MATCHES "aarch64")
   SET(CMAKE_POSITION_INDEPENDENT_CODE ON)

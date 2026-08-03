@@ -1,4 +1,4 @@
-//@{!__dbug_off && VER(>=8.0.27)}
+//@{__dbug && VER(>=8.0.27)}
 
 // Tests recovery method selection for createReplicaCluster() in ClusterSet
 

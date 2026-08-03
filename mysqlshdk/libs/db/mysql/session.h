@@ -274,7 +274,11 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
 
   MYSQL *release_connection();
 
+  struct Local_infile_callbacks;
+
   void set_character_set(const std::string &charset_name);
+  void apply_local_infile_callbacks(const Local_infile_callbacks &callbacks);
+  void set_reject_local_infile_callbacks();
 
   void check_session_track_system_variables() const;
 
@@ -310,6 +314,7 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
     int (*error)(void *, char *, unsigned int) = nullptr;
     void *userdata = nullptr;
   };
+  static const Local_infile_callbacks k_reject_local_infile_callbacks;
   Local_infile_callbacks m_local_infile;
 
   bool m_is_mysql_native_password = false;
@@ -438,6 +443,8 @@ class SHCORE_PUBLIC Session : public ISession,
     if (_impl->_mysql)
       _impl->_mysql->options.local_infile_userdata = local_infile_userdata;
   }
+
+  void reject_local_infile();
 
   socket_t get_socket_fd() const override {
     if (!_impl || !_impl->_mysql || _impl->_mysql->net.fd == -1)

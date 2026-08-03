@@ -201,7 +201,7 @@ shell.connect(__sandbox_uri4)
 session.run_sql(f"DROP SCHEMA IF EXISTS sakila")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "ignoreVersion": True, "resetProgress": True }), "Plugin 'mysql_native_password' is not loaded")
 
-#@<> BUG#36552764 - loader should ignore unknown plugin errors if target is MDS {VER(>=8.4.0) and not __dbug_off}
+#@<> BUG#36552764 - loader should ignore unknown plugin errors if target is MDS {VER(>=8.4.0) and __dbug}
 testutil.dbug_set("+d,dump_loader_force_mds")
 
 shell.connect(__sandbox_uri4)

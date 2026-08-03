@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -67,6 +68,54 @@ TEST_F(Admin_api_replication_version_compat_test,
       std::runtime_error,
       "Unsupported MySQL Server version at replica instance: 5.7.11");
 
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(10, 0, 0),
+                                             Version(26, 7, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at source instance: 10.0.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(26, 7, 0),
+                                             Version(10, 0, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at replica instance: 10.0.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(26, 6, 0),
+                                             Version(26, 7, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at source instance: 26.6.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(26, 7, 0),
+                                             Version(26, 6, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at replica instance: 26.6.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(26, 5, 0),
+                                             Version(27, 1, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at source instance: 26.5.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(27, 1, 0),
+                                             Version(26, 5, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at replica instance: 26.5.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(27, 0, 0),
+                                             Version(27, 1, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at source instance: 27.0.0");
+
+  EXPECT_THROW_LIKE(
+      verify_compatible_replication_versions(Version(27, 1, 0),
+                                             Version(27, 0, 0)),
+      std::runtime_error,
+      "Unsupported MySQL Server version at replica instance: 27.0.0");
+
   // Easy path: if {major.minor.patch} are equal they're compatible
   EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
             verify_compatible_replication_versions(Version(9, 1, 4),
@@ -107,7 +156,10 @@ TEST_F(Admin_api_replication_version_compat_test,
   // If source is lower than replica for 2 major versions it's incompatible
   EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
             verify_compatible_replication_versions(Version(8, 4, 0),
-                                                   Version(10, 7, 0)));
+                                                   Version(28, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(9, 7, 0),
+                                                   Version(28, 7, 0)));
 
   // If source and replica are both an innovation release and the source has 1
   // major version lower, it's incompatible
@@ -126,9 +178,9 @@ TEST_F(Admin_api_replication_version_compat_test,
             verify_compatible_replication_versions(Version(8, 0, 32),
                                                    Version(9, 0, 0)));
 
-  // If source is innovation and replica is LTS and have different major
-  // version, it's incompatible
-  EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
+  // If source is innovation and replica is LTS in a previous release cycle,
+  // it's incompatible.
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
             verify_compatible_replication_versions(Version(9, 1, 0),
                                                    Version(8, 4, 0)));
 
@@ -161,6 +213,15 @@ TEST_F(Admin_api_replication_version_compat_test,
   EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
             verify_compatible_replication_versions(Version(8, 1, 0),
                                                    Version(8, 3, 0)));
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(9, 7, 1),
+                                                   Version(26, 7, 0)));
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(26, 7, 1),
+                                                   Version(28, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(28, 4, 0),
+                                                   Version(28, 7, 0)));
 
   // If source is higher than replica it's compatible if both are LTS and
   // only the patch version differs, otherwise, it's limited
@@ -170,6 +231,12 @@ TEST_F(Admin_api_replication_version_compat_test,
   EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
             verify_compatible_replication_versions(Version(9, 7, 0),
                                                    Version(9, 7, 2)));
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(28, 4, 1),
+                                                   Version(28, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(28, 7, 0),
+                                                   Version(28, 4, 0)));
   EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
             verify_compatible_replication_versions(Version(9, 7, 0),
                                                    Version(8, 4, 0)));
@@ -179,6 +246,9 @@ TEST_F(Admin_api_replication_version_compat_test,
   EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
             verify_compatible_replication_versions(Version(9, 7, 0),
                                                    Version(9, 5, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(9, 7, 0),
+                                                   Version(8, 3, 0)));
   EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
             verify_compatible_replication_versions(Version(8, 4, 0),
                                                    Version(8, 0, 34)));
@@ -188,6 +258,46 @@ TEST_F(Admin_api_replication_version_compat_test,
   EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
             verify_compatible_replication_versions(Version(8, 4, 0),
                                                    Version(8, 2, 0)));
+  EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
+            verify_compatible_replication_versions(Version(28, 4, 0),
+                                                   Version(26, 10, 0)));
+}
+
+TEST_F(Admin_api_replication_version_compat_test,
+       calendar_version_support_ends_at_next_lts) {
+  using mysqlshdk::mysql::Replication_version_compatibility;
+  using mysqlshdk::mysql::verify_compatible_replication_versions;
+  using mysqlshdk::utils::Version;
+
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(9, 7, 0),
+                                                   Version(28, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(9, 7, 0),
+                                                   Version(28, 7, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(26, 7, 0),
+                                                   Version(28, 7, 0)));
+}
+
+TEST_F(Admin_api_replication_version_compat_test,
+       calendar_version_compatibility_uses_legacy_overlap_semantics) {
+  using mysqlshdk::mysql::Replication_version_compatibility;
+  using mysqlshdk::mysql::verify_compatible_replication_versions;
+  using mysqlshdk::utils::Version;
+
+  EXPECT_EQ(Replication_version_compatibility::COMPATIBLE,
+            verify_compatible_replication_versions(Version(58, 7, 0),
+                                                   Version(60, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(58, 7, 0),
+                                                   Version(60, 7, 0)));
+  EXPECT_EQ(Replication_version_compatibility::INCOMPATIBLE,
+            verify_compatible_replication_versions(Version(60, 7, 0),
+                                                   Version(60, 4, 0)));
+  EXPECT_EQ(Replication_version_compatibility::DOWNGRADE_ONLY,
+            verify_compatible_replication_versions(Version(63, 1, 1),
+                                                   Version(63, 1, 0)));
 }
 
 }  // namespace mysqlsh::dba

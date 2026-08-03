@@ -323,7 +323,7 @@ EXPECT_EQ("OFFLINE", session.runSql("select member_state from performance_schema
 
 testutil.startSandbox(__mysql_sandbox_port5);
 
-//@<> Dissolve fails due to timeout {!__dbug_off}
+//@<> Dissolve fails due to timeout {__dbug}
 
 // re-create clusterset
 
@@ -361,7 +361,7 @@ testutil.dbugSet("");
 
 EXPECT_OUTPUT_CONTAINS(`The Cluster 'replica' failed to synchronize its transaction set with the PRIMARY Cluster. You may increase the transaction sync timeout with the option 'timeout' or use the 'force' option to ignore the timeout.`);
 
-//@<> Dissolve should succeed if timeout + force: true {!__dbug_off}
+//@<> Dissolve should succeed if timeout + force: true {__dbug}
 testutil.dbugSet("+d,dba_sync_transactions_timeout");
 
 EXPECT_NO_THROWS(function(){ cs.dissolve({force: true}); });
@@ -385,7 +385,7 @@ EXPECT_OUTPUT_CONTAINS(`The instance '${hostname}:${__mysql_sandbox_port2}' fail
 
 EXPECT_OUTPUT_CONTAINS("The ClusterSet has been dissolved, user data was left intact.");
 
-//@<> Dissolve fail due to error in replication cleanup {!__dbug_off}
+//@<> Dissolve fail due to error in replication cleanup {__dbug}
 shell.connect(__sandbox_uri5);
 reset_instance(session);
 shell.connect(__sandbox_uri4);

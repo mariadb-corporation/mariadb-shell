@@ -10,6 +10,23 @@
 //@<> INCLUDE gr_utils.inc
 
 //@<> Setup
+function get_metadata_gr_local_address(endpoint) {
+  var md_session = mysql.getSession(__sandbox_uri1);
+  var gr_local = md_session.runSql(
+      "SELECT addresses->>'$.grLocal' FROM mysql_innodb_cluster_metadata.instances WHERE address = ?",
+      [endpoint]).fetchOne()[0];
+  md_session.close();
+  return gr_local;
+}
+
+function set_metadata_gr_local_address(endpoint, gr_local) {
+  var md_session = mysql.getSession(__sandbox_uri1);
+  md_session.runSql(
+      "UPDATE mysql_innodb_cluster_metadata.instances SET addresses = JSON_SET(addresses, '$.grLocal', ?) WHERE address = ?",
+      [gr_local, endpoint]);
+  md_session.close();
+}
+
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {report_host: hostname});
 testutil.snapshotSandboxConf(__mysql_sandbox_port1);
 testutil.deploySandbox(__mysql_sandbox_port2, "root", {report_host: hostname});
@@ -285,6 +302,28 @@ var configured_local_address = session2.runSql("SELECT @@group_replication_local
 
 EXPECT_EQ(configured_local_address, __cfg_local_address);
 
+//@<> Rejoin an unreachable instance after switching communication stack to MYSQL during reboot must update metadata {VER(>=8.0.27)}
+shutdown_cluster(cluster);
+shell.connect(__sandbox_uri1);
+
+testutil.killSandbox(__mysql_sandbox_port2); //to prevent instance from joining
+EXPECT_NO_THROWS(function() { cluster = dba.rebootClusterFromCompleteOutage("test", {switchCommunicationStack: "MYSQL", force: true}) });
+testutil.startSandbox(__mysql_sandbox_port2);
+
+check_gr_settings(cluster, [__endpoint1], "MYSQL");
+
+EXPECT_NO_THROWS(function() { cluster.rejoinInstance(__endpoint2); });
+
+check_gr_settings(cluster, [__endpoint1, __endpoint2], "MYSQL");
+EXPECT_EQ(__endpoint2, get_metadata_gr_local_address(__endpoint2));
+
+// Restore XCOM so the following MYSQL switch scenario keeps its original setup.
+shutdown_cluster(cluster);
+shell.connect(__sandbox_uri1);
+EXPECT_NO_THROWS(function() { cluster = dba.rebootClusterFromCompleteOutage("test", {switchCommunicationStack: "XCOM"}) });
+
+check_gr_settings(cluster, [__endpoint1, __endpoint2], "XCOM");
+
 //@<> Switch the communication stack while rebooting a cluster from complete outage and rejoin instances separately (switch to MYSQL) {VER(>=8.0.27)}
 shutdown_cluster(cluster);
 shell.connect(__sandbox_uri1);
@@ -311,10 +350,31 @@ EXPECT_NO_THROWS(function() {cluster.rescan(); });
 testutil.restartSandbox(__mysql_sandbox_port2);
 testutil.waitMemberState(__mysql_sandbox_port2, "ONLINE");
 
-//@<> A failure in addInstance() while using MYSQL comm stack must not leave inconsistencies related to the recovery accounts and/or metadata {VER(>=8.0.27) && !__dbug_off}
+//@<> Rebooting while switching communication stack to MYSQL must update metadata {VER(>=8.0.27)}
 shutdown_cluster(cluster);
-EXPECT_NO_THROWS(function() { cluster = dba.rebootClusterFromCompleteOutage("test", {switchCommunicationStack: "MYSQL"}) });
+EXPECT_NO_THROWS(function() { cluster = dba.rebootClusterFromCompleteOutage("test", {primary: __endpoint1, switchCommunicationStack: "MYSQL"}) });
 
+check_gr_settings(cluster, [__endpoint1, __endpoint2], "MYSQL");
+
+//@<> Metadata grLocal must be updated after switching communication stack to MYSQL during reboot {VER(>=8.0.27)}
+for (var endpoint of [__endpoint1, __endpoint2]) {
+  EXPECT_EQ(endpoint, get_metadata_gr_local_address(endpoint));
+}
+
+//@<> Rescan must repair stale grLocal metadata after switching communication stack to MYSQL during reboot {VER(>=8.0.27)}
+set_metadata_gr_local_address(__endpoint2, __endpoint2 + "1");
+EXPECT_EQ(__endpoint2 + "1", get_metadata_gr_local_address(__endpoint2));
+
+EXPECT_NO_THROWS(function() { cluster.rescan(); });
+EXPECT_EQ(__endpoint2, get_metadata_gr_local_address(__endpoint2));
+
+//@<> Adding an instance after switching communication stack to MYSQL during reboot must use updated metadata {VER(>=8.0.27)}
+EXPECT_NO_THROWS(function() { cluster.addInstance(__sandbox_uri3, {recoveryMethod: "clone"}) });
+check_gr_settings(cluster, [__endpoint1, __endpoint2, __endpoint3], "MYSQL");
+EXPECT_EQ(__endpoint3, get_metadata_gr_local_address(__endpoint3));
+EXPECT_NO_THROWS(function() { cluster.removeInstance(__sandbox_uri3) });
+
+//@<> A failure in addInstance() while using MYSQL comm stack must not leave inconsistencies related to the recovery accounts and/or metadata {VER(>=8.0.27) && __dbug}
 testutil.dbugSet("+d,fail_add_instance_mysql_stack");
 
 EXPECT_THROWS_TYPE(function() { cluster.addInstance(__sandbox_uri3, {recoveryMethod: "clone"}) }, "debug", "LogicError");

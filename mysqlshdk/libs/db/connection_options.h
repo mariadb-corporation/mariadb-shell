@@ -276,6 +276,14 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   void set_interactive(bool value);
   bool is_interactive() const;
 
+  inline void set_reject_local_infile_requests(bool value) {
+    m_reject_local_infile_requests = value;
+  }
+
+  inline bool reject_local_infile_requests() const {
+    return m_reject_local_infile_requests;
+  }
+
   bool has_webauth_device_index() const;
   void set_webauth_device_index(uint8_t index);
   uint8_t get_webauth_device_index() const;
@@ -305,6 +313,7 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   std::optional<std::string> m_mfa_password_2;
   std::optional<std::string> m_mfa_password_3;
   bool m_interactive = false;
+  bool m_reject_local_infile_requests = false;
 
   // whether a (mfa) password is needed even if not given
   // regular password is assumed to be required for compatibility options

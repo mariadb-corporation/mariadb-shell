@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -86,9 +87,15 @@ struct Instance_cache {
 
     inline const std::string &columns_sql() const { return m_columns_sql; }
 
+    inline const std::string &quoted_name() const { return m_quoted_name; }
+
+    void set_name(const std::string &name);
+
     void add_column(const Column *column);
 
    private:
+    std::string m_quoted_name;
+
     std::vector<const Column *> m_columns;
 
     std::string m_columns_sql;

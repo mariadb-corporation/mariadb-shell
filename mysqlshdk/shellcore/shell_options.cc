@@ -1467,6 +1467,12 @@ void Shell_options::check_password_conflicts() {
       throw std::runtime_error(error);
     }
   }
+
+  if (storage.passwords_from_stdin && !storage.wizards) {
+    throw std::runtime_error(
+        "Conflicting options: --passwords-from-stdin cannot be used together "
+        "with --no-wizard.");
+  }
 }
 
 void Shell_options::check_file_execute_conflicts() {

@@ -1,5 +1,6 @@
 #
-# Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2026, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +49,11 @@ from mysql_gadgets.common.config_parser import (create_option_file,
                                                 MySQLOptionsParser,
                                                 option_list_to_dictionary)
 from mysql_gadgets.common.logger import CustomLevelLogger
-from mysql_gadgets import exceptions, MIN_MYSQL_VERSION, MAX_MYSQL_VERSION
+from mysql_gadgets import (
+    exceptions,
+    is_supported_mysql_version,
+    MYSQL_VERSION_RANGE_DESCRIPTION,
+)
 
 if sys.version_info[0] >= 3:
     unicode = str
@@ -107,13 +112,13 @@ _ERROR_NOT_CREATED = ("Cannot start MySQL sandbox for the given port because "
                       "it does not exist.")
 _ERROR_VERSION_NOT_SUPPORTED = ("Provided mysqld executable '{0}' has a non "
                                 "supported version: '{1}'. MySQL version must "
-                                "be >= '{2}' and < '{3}'.")
+                                "be {2}.")
 _ERROR_CANNOT_FIND_TOOL = ("Could not find {exec_name} executable. "
                            "Make sure it is on the {path_var_name} "
                            "environment variable.")
 _ERROR_CANNOT_FIND_VALID_TOOL = (
     "Could not find a valid {exec_name} executable with a supported version "
-    "(>= {min_ver} and < {max_ver}). Make sure it is on the {path_var_name} "
+    "({versions}). Make sure it is on the {path_var_name} "
     "environment variable.")
 _ERROR_CHECK_VALID_TOOL = "Could not verify {exec_name} executable: {error}."
 
@@ -465,8 +470,7 @@ def create_sandbox(**kwargs):
         elif err.errno == 2:
             raise exceptions.GadgetError(_ERROR_CANNOT_FIND_VALID_TOOL.format(
                 exec_name="mysqld",
-                min_ver='.'.join(str(i) for i in MIN_MYSQL_VERSION),
-                max_ver='.'.join(str(i) for i in MAX_MYSQL_VERSION),
+                versions=MYSQL_VERSION_RANGE_DESCRIPTION,
                 path_var_name=PATH_ENV_VAR))
         else:
             raise exceptions.GadgetError(_ERROR_CHECK_VALID_TOOL.format(
@@ -494,12 +498,11 @@ def create_sandbox(**kwargs):
 
     # Checking version
     mysqld_ver, version_str = server.get_mysqld_version(mysqld_path)
-    if not MIN_MYSQL_VERSION <= mysqld_ver < MAX_MYSQL_VERSION:
+    if not is_supported_mysql_version(mysqld_ver):
         raise exceptions.GadgetError(
             _ERROR_VERSION_NOT_SUPPORTED.format(
                 mysqld_path, version_str,
-                '.'.join(str(i) for i in MIN_MYSQL_VERSION),
-                '.'.join(str(i) for i in MAX_MYSQL_VERSION)))
+                MYSQL_VERSION_RANGE_DESCRIPTION))
 
     if mysqld_ver >= MAX_SSL_RSA_SETUP_VERSION:
         ignore_ssl_error = True

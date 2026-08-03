@@ -1,9 +1,12 @@
 import sys
+import os
+import stat
 
 if len(sys.argv) != 2:
     raise Exception("{0} requires two parameters".format(sys.argv[0]))
 
 input_cmd = ""
+temporary_file_mode = stat.S_IMODE(os.stat(sys.argv[1]).st_mode)
 output_cmd = {
     "": "\nprint('empty input file')\n",
     "first": "\nprint('first test')\n",
@@ -13,7 +16,12 @@ output_cmd = {
                  "    print('multiline -> optional')\n"
                  "  \n"
                  "  print('multiline test: {0}'.format(req))\n",
-    "temporary": "\ntemporary_file_path = r'{0}'\n".format(sys.argv[1]),
+    "temporary": "\ntemporary_file_path = {0}\n"
+                 "temporary_directory_path = {1}\n"
+                 "temporary_file_mode = {2}\n".format(
+                     repr(sys.argv[1]),
+                     repr(os.path.dirname(sys.argv[1])),
+                     temporary_file_mode),
     "extra \"quoted \\\"arguments\\\"\"": "\nprint('test with extra additional quoted arguments')\n",
     "display": "def display():\n"
                "  print('display test')\n",

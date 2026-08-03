@@ -119,7 +119,7 @@ REMOTE_DUMP_SUCCESS(create_test_par(), options={"startFrom": start_from_beginnin
 
 wipe_bucket()
 
-#@<> WL15977-FR2.4.6 - first dump fails {not __dbug_off}
+#@<> WL15977-FR2.4.6 - first dump fails {__dbug}
 # this reuses server state from the previous dump
 testutil.set_trap("binlog", [f"file == {binlog_file_prefix}.000003", "++match_counter > 10"], { "msg": "Internal error." })
 
@@ -130,7 +130,7 @@ EXPECT_STDOUT_NOT_CONTAINS("Removing files...")
 testutil.clear_traps("binlog")
 wipe_bucket()
 
-#@<> WL15977-FR2.4.6 - second dump fails {not __dbug_off}
+#@<> WL15977-FR2.4.6 - second dump fails {__dbug}
 # this reuses server state from the previous dump
 dump_par = create_test_par()
 

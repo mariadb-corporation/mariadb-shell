@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +36,7 @@
 #include "modules/adminapi/cluster_set/cluster_set_impl.h"
 #include "modules/adminapi/common/common.h"
 #include "modules/adminapi/common/dba_errors.h"
+#include "modules/adminapi/common/instance_pool.h"
 #include "modules/adminapi/replica_set/replica_set_impl.h"
 #include "mysqlshdk/include/shellcore/interrupt_handler.h"
 #include "mysqlshdk/libs/textui/progress.h"
@@ -74,14 +76,17 @@ class Scheduler {
   void spawn_threads(size_t num_threads) {
     if (m_finish) return;
 
+    const auto ipool = current_ipool();
+
     for (size_t i = 0; i < num_threads; i++) {
-      auto t = mysqlsh::spawn_scoped_thread([this, i]() {
+      auto t = mysqlsh::spawn_scoped_thread([this, i, ipool]() {
         mysqlsh::Mysql_thread mysql_thread;
 
         auto thread_name = shcore::str_format("execute_%zu", i + 1);
         shcore::set_current_thread_name(thread_name.c_str());
 
         log_info("Thread '%s' started", thread_name.c_str());
+        Scoped_instance_pool scoped_ipool(ipool);
         execute();
         log_info("Thread '%s' finished", thread_name.c_str());
       });

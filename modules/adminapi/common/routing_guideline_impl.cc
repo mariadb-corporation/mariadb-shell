@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1236,9 +1237,11 @@ Routing_guideline_impl::classify_topology(const std::string &router) const {
     // Handle remaining endpoints without setting ports
     for (const auto &[endpoint_name, endpoint_schema] :
          router_options_parsed.get_all_endpoints()) {
+      // Parfait's translator rejects capturing a structured-binding name.
+      const auto &route_name = endpoint_name;
       if (std::any_of(router_info_list.begin(), router_info_list.end(),
                       [&](const routing_guidelines::Router_info &info) {
-                        return info.route_name == endpoint_name;
+                        return info.route_name == route_name;
                       })) {
         continue;
       }

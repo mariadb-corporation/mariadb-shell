@@ -24,6 +24,10 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+// Python.h has to be included first:
+//   https://docs.python.org/3/c-api/intro.html#include-files
+#include <Python.h>
+
 #include "unittest/test_utils.h"
 #include "unittest/test_utils/mocks/gmock_clean.h"
 
@@ -76,7 +80,7 @@ TEST_F(Shell_python, stdin_read) {
 TEST_F(Shell_python, help) {
   // Regression test for Bug #24554329
   // CALLING HELP() IN MYSQLSH --PY RESULTS IN ATTRIBUTEERROR
-  output_handler.feed_to_prompt("");
+  output_handler.feed_to_prompt("quit");
   execute("help()");
   EXPECT_EQ("", output_handler.std_err);
   MY_EXPECT_STDOUT_NOT_CONTAINS("AttributeError");
@@ -85,7 +89,7 @@ TEST_F(Shell_python, help) {
   output_handler.wipe_all();
 
   output_handler.feed_to_prompt("spam");
-  output_handler.feed_to_prompt("");
+  output_handler.feed_to_prompt("quit");
   execute("help()");
 
 #if PY_VERSION_HEX == 0x030b0000

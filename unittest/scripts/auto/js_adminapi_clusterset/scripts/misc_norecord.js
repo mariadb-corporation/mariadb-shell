@@ -1,4 +1,4 @@
-//@{VER(>=8.0.27) && !__dbug_off}
+//@{VER(>=8.0.27) && __dbug}
 //@<> Setup   
 testutil.deploySandbox(__mysql_sandbox_port1, "root", {"report_host": hostname});
 testutil.deploySandbox(__mysql_sandbox_port2, "root", {"report_host": hostname});

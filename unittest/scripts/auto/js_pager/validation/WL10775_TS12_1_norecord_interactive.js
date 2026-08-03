@@ -41,7 +41,7 @@ FUNCTIONS
       makeAccount(user, host)
             Joins user and host into an quoted account string.
 
-      parseStatementAst(statements)
+      parseStatementAst(statements[, options])
             Parse MySQL statements and return its AST representation.
 
       quoteIdentifier(s)
@@ -51,10 +51,10 @@ FUNCTIONS
       splitAccount(account)
             Splits account string into user and host.
 
-      splitScript(script)
+      splitScript(script[, options])
             Split a SQL script into individual statements.
 
-      tokenizeStatement(statement)
+      tokenizeStatement(statement[, options])
             Lexes a MySQL statement into a list of tokens.
 
       unquoteIdentifier(s)
@@ -114,7 +114,7 @@ FUNCTIONS
       makeAccount(user, host)
             Joins user and host into an quoted account string.
 
-      parseStatementAst(statements)
+      parseStatementAst(statements[, options])
             Parse MySQL statements and return its AST representation.
 
       quoteIdentifier(s)
@@ -124,10 +124,10 @@ FUNCTIONS
       splitAccount(account)
             Splits account string into user and host.
 
-      splitScript(script)
+      splitScript(script[, options])
             Split a SQL script into individual statements.
 
-      tokenizeStatement(statement)
+      tokenizeStatement(statement[, options])
             Lexes a MySQL statement into a list of tokens.
 
       unquoteIdentifier(s)
@@ -140,5 +140,4 @@ CLASSES
  - ClassicSession Enables interaction with a MySQL Server using the MySQL
                   Protocol.
  - ShellResult    Encapsulates custom query result and metadata.
-
 

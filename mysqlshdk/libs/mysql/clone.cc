@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -24,6 +25,7 @@
 #include "mysqlshdk/libs/mysql/clone.h"
 #include "mysqlshdk/libs/mysql/plugin.h"
 #include "mysqlshdk/libs/utils/logger.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlshdk::mysql {
 
@@ -58,6 +60,10 @@ bool is_clone_available(const mysqlshdk::mysql::IInstance &instance) {
 bool verify_compatible_clone_versions(
     const mysqlshdk::utils::Version &donor,
     const mysqlshdk::utils::Version &recipient) {
+  using mysqlshdk::utils::Version;
+  using mysqlshdk::utils::version::is_lts;
+  using mysqlshdk::utils::version::next_lts;
+
   // both must support clone (>= 8.0.17)
   if (!mysqlsh::dba::supports_mysql_clone(donor) ||
       !mysqlsh::dba::supports_mysql_clone(recipient))
@@ -67,44 +73,49 @@ bool verify_compatible_clone_versions(
   if ((donor == recipient) && (donor.get_extra() == recipient.get_extra()))
     return true;
 
-  // can't mix LTS with innovation releases: {major.minor} must always match
-  if (donor.numeric_version_series() != recipient.numeric_version_series())
-    return false;
+  constexpr uint32_t min_mix_patch_version_series = 804;
+  constexpr uint32_t mix_build_version_series = 800;
 
-  // reaching this point, both donor and recipient have the same {major.minor}
-  // version but with different patch numbers and or build/extra.
+  // Same-series clone is allowed across patch versions for 8.4 and newer.
+  // 8.0 keeps the narrower backported patch rules below
+  const auto version_series = donor.numeric_version_series();
+  if (version_series == recipient.numeric_version_series()) {
+    // from 8.4 or newer, cloning is allowed if {major.minor} is the same (the
+    // rest is ignored)
+    if (version_series >= min_mix_patch_version_series) {
+      return true;
+    }
 
-  const mysqlshdk::utils::Version min_mix_patch_version(8, 4, 0);
-  constexpr uint32_t mix_build_version_series(800);
+    // if neither are in the 8.0 series, there's nothing to do and clone isn't
+    // supported
+    if (version_series != mix_build_version_series) {
+      return false;
+    }
 
-  // from 8.4 or newer, cloning is allowed if {major.minor} is the same (the
-  // rest is ignored)
-  if ((donor >= min_mix_patch_version) && (recipient >= min_mix_patch_version))
-    return true;
+    // cloning is allowed if {major.minor.patch} is the same (the build/extra is
+    // ignored)
+    if (donor == recipient) return true;
 
-  // if neither are in the 8.0 series, there's nothing to do and clone isn't
-  // supported
-  if ((donor.numeric_version_series() != mix_build_version_series) ||
-      (recipient.numeric_version_series() != mix_build_version_series))
-    return false;
+    // reaching this point, both donor and recipient are in the 8.0 series,
+    // {major.minor} is the same but patch (and possibly build/extra) is
+    // different
+    const Version backported_mix_patch_version(8, 0, 37);
 
-  // cloning is allowed if {major.minor.patch} is the same (the build/extra is
-  // ignored)
-  if (donor == recipient) return true;
+    // cloning between different patch numbers is allowed if *both* versions
+    // are 8.0.37 or newer
+    return donor >= backported_mix_patch_version &&
+           recipient >= backported_mix_patch_version;
+  }
 
-  // reaching this point, both donor and recipient are in the 8.0 series,
-  // {major.minor} is the same but patch (and possibly build/extra) is different
+  // Cross-series LTS clone is supported only starting with 9.7
+  const Version first_cross_lts_version(9, 7, 0);
 
-  const mysqlshdk::utils::Version backported_mix_patch_version(8, 0, 37);
+  // Cross-series clone is only supported from one LTS to its next LTS
+  const auto recipient_is_next_lts = recipient.numeric_version_series() ==
+                                     next_lts(donor).numeric_version_series();
 
-  // cloning between different patch numbers is allowed if *both* versions
-  // are 8.0.37 or newer
-  if ((donor >= backported_mix_patch_version) &&
-      (recipient >= backported_mix_patch_version))
-    return true;
-
-  // anything else isn't supported
-  return false;
+  return donor >= first_cross_lts_version && is_lts(donor) &&
+         is_lts(recipient) && recipient_is_next_lts;
 }
 
 int64_t force_clone(const mysqlshdk::mysql::IInstance &instance) {

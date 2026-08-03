@@ -174,7 +174,7 @@ CHECK_REPLICA_CLUSTER([__sandbox_uri4, __sandbox_uri6], c1, c2);
 CHECK_INVALIDATED_CLUSTER([], c1, c3);
 CHECK_CLUSTER_SET(session);
 
-//@<> the GTID sets must be applied in all instances {!__dbug_off}
+//@<> the GTID sets must be applied in all instances {__dbug}
 
 testutil.dbugSet("+d,dba_wait_for_apply_retrieved_trx_timeout");
 
