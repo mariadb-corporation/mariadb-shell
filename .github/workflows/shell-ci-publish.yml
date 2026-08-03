@@ -16,7 +16,6 @@ concurrency:
   group: shell-ci-publish
   cancel-in-progress: false
 
-runs-on: self-linux-x64
 
 jobs:
   publish:
