@@ -869,6 +869,81 @@ but the defect is in shared library code and would resurface the moment either
 feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
 Upgrade-Checker tests were updated to match the generated SQL.
 
+### 13.2 `sql_mode` is never reported via session state tracking
+
+MariaDB lists `sql_mode` in the default `session_track_system_variables`, but it
+never emits an `sql_mode` entry in the OK packet's session-state tracker. Dumping
+the tracker in `Session_impl::check_session_track_system_variables` against
+MariaDB 13.1 shows the complete set it does emit:
+
+```
+autocommit, time_zone, character_set_client, character_set_connection,
+character_set_results, redirect_url
+```
+
+`SET @@sql_mode = ...` produces no tracker at all. MySQL emits one, and the shell
+relied on it.
+
+The consequence is a silently stale cache. `ShellBaseSession::m_tracking_sql_mode`
+was set from the variable *list*, so it became true, `is_sql_mode_tracking_enabled()`
+returned true, and the shell trusted a tracker that never fires — leaving the cached
+`m_sql_mode` stale after `SET @@sql_mode='ANSI_QUOTES'`. That broke the SQL splitter's
+ANSI_QUOTES handling and auto-completion: `SELECT "acte` + TAB no longer completed to
+`"actest"`, because `provider_sql`'s `update_completion_context` reads
+`session->get_sql_mode()`, which re-queries only when the cache is empty.
+
+Fix: in `ShellBaseSession::track_system_variable`
+([mysqlshdk/shellcore/base_session.cc](mysqlshdk/shellcore/base_session.cc)), force
+`m_tracking_sql_mode = false` when the peer is MariaDB. Note this is a **runtime
+vendor check** (`get_core_session()->get_server_vendor() == ServerVendor::MariaDB`),
+not a `#ifdef MARIADB_BUILD` — a MySQL-linked build can connect to a MariaDB server,
+so the compile-time gate would be wrong. Callers then fall back to the explicit
+refresh path: `shell_sql.cc` detects `SET ... SQL_MODE` and calls
+`refresh_sql_mode()` (`SELECT @@sql_mode`), keeping splitter and completer in sync.
+
+### 13.3 libmariadb dereferences a NULL `MYSQL*` where libmysqlclient does not
+
+A class of port bug rather than a single defect: C-API accessors that hand `_mysql`
+straight to a `mysql_*()` function crash when the session was never connected,
+where libmysqlclient returned safely.
+
+Concrete instance: `Session_impl::get_mysql_info()`
+([mysqlshdk/libs/db/mysql/session.h](mysqlshdk/libs/db/mysql/session.h)) called
+`mysql_info(_mysql)` with no null guard, unlike every adjacent accessor
+(`get_ssl_cipher`, `get_server_version`, … all test `_mysql` first). With a mock
+session (`testing::Mock_mysql_session`, which never connects, so `_mysql == nullptr`),
+`Load_data_worker::execute` reached `mysql_info(nullptr)` and took a SIGSEGV,
+crashing `Load_dump_mocked.chunk_scheduling_more_threads` and `_more_tables`
+(rc=139). The call site already handled a null return.
+
+The guard is unconditional — no `MARIADB_BUILD` gate — since it simply makes the
+accessor consistently null-safe. **When a "this worked on MySQL" segfault appears in
+`db/` session code, look first for an unguarded `_mysql` passed to a `mysql_*()`
+call.**
+
+### 13.4 `my_load_defaults()` and `--print-defaults`
+
+MariaDB's mysys `my_load_defaults()` (the 5-arg form the shell links, from
+`mysys/my_default.c`) diverges from MySQL's for `--print-defaults`:
+
+| | MySQL mysys | MariaDB mysys |
+|---|---|---|
+| Return code | 0 | **4** |
+| Password in output | masked to `--password=*****` | **printed in clear text** |
+| After printing | `exit(0)` | returns, does not exit |
+
+In `Shell_options::handle_mycnf_options`
+([mysqlshdk/shellcore/shell_options.cc](mysqlshdk/shellcore/shell_options.cc)) the
+generic `if (my_load_defaults(...)) throw` read rc 4 as failure. That produced three
+faults at once: a bogus "Could not read my.cnf files" error, a leaked argv buffer
+(safemalloc "bytes lost" plus a SIGSEGV at exit, because `m_mariadb_defaults_argv`
+was only stored after the success check), and an unmasked password on stdout.
+
+Fix: store `m_mariadb_defaults_argv` when rc is 0 **or** 4 so the buffer is always
+reclaimed, and intercept `--print-defaults` in the shell — strip it from the argv
+handed to `my_load_defaults()` so mysys stays quiet, load the defaults, then print
+the list with `--password*` masked and `exit(0)`, matching MySQL.
+
 ---
 
 ## 14. Product rename: `mysqlsh` → `mariadb-shell`
