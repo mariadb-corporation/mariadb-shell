@@ -37,9 +37,7 @@ if (WIN32)
 else()
   # mysql_config_editor reads password from TTY, Process_launcher cannot handle
   # that on Windows
-  IF (HAVE_LOGIN_PATH)
-    add_subdirectory(login-path)
-  ENDIF()
+  add_subdirectory(login-path)
 
   if (APPLE)
     add_subdirectory(keychain)

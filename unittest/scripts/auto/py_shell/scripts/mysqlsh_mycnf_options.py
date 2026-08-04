@@ -119,12 +119,16 @@ EXPECT_STDOUT_CONTAINS(f"mycnfusr@localhost	{__mysql_port}")
 
 EXPECT_STDOUT_CONTAINS(k_cmdline_password_insecure_msg)
 
-#@<> check that login-path works {__have_login_path}
+#@<> check that login-path works {not __mariadb_build}
+# --login-path= is consumed by mysys' my_load_defaults(), not by the shell.
+# MariaDB's mysys implements neither it nor .mylogin.cnf, so the option reaches
+# the shell's own parser and is rejected. Unrelated to the login-path credential
+# helper, which does work on MariaDB (see MARIADB_PORT.md 12.7).
 # TSFR_4_1
 testutil.call_mysqlsh(["--login-path=lpathusr", "--sql", "-e", "select user(), @@port"], "", [myloginvar+"="+myloginfile])
 EXPECT_STDOUT_CONTAINS(f"lpathusr@localhost	{__mysql_port}")
 
-#@<> check that login-path + mycnf works (login-path wins)  {__have_login_path}
+#@<> check that login-path + mycnf works (login-path wins) {not __mariadb_build}
 testutil.call_mysqlsh(["--login-path=lpathusr", "--sql", "-e", "select user(), @@port"], "", [myloginvar+"="+myloginfile, "MYSQL_HOME="+homedir])
 EXPECT_STDOUT_CONTAINS(f"lpathusr@localhost	{__mysql_port}")
 

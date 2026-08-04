@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +26,12 @@
 
 #include "mysql-secret-store/login-path/login_path_helper.h"
 
+#ifndef MARIADB_BUILD
+// only load() needs these, and it reads the login file directly on MariaDB
 #include <my_alloc.h>
 #include <my_default.h>
 #include <mysql.h>
+#endif  // !MARIADB_BUILD
 
 #include <cassert>
 #include <iterator>
@@ -294,6 +298,12 @@ Login_path_helper::Login_path_helper()
 void Login_path_helper::check_requirements() { m_invoker.validate(); }
 
 void Login_path_helper::store(const common::Secret &secret) {
+#ifdef MARIADB_BUILD
+  // Login_file quotes the value itself, the escaping of backslashes is still
+  // required by the format. The version sniff and the 78-character limit below
+  // are both mysql_config_editor bugs which do not apply here.
+  const auto s = shcore::str_replace(secret.secret, "\\", "\\\\");
+#else   // !MARIADB_BUILD
   using mysqlshdk::utils::Version;
 
   // my_load_defaults will replace \* combinations with *, need to quote it
@@ -314,6 +324,7 @@ void Login_path_helper::store(const common::Secret &secret) {
         "characters. Please keep in mind that all '\\' characters are "
         "prepended with '\\', decreasing available space."};
   }
+#endif  // !MARIADB_BUILD
 
   if (!validate_secret(secret.secret)) {
     throw get_helper_exception(Helper_exception_code::INVALID_SECRET);
@@ -514,6 +525,11 @@ Entry Login_path_helper::to_entry(const common::Secret_id &secret) const {
 }
 
 std::string Login_path_helper::load(const Entry &entry) {
+#ifdef MARIADB_BUILD
+  // libmariadb does not implement .mylogin.cnf, my_load_defaults() would
+  // return an argv without the password
+  return m_invoker.get_secret(entry);
+#else   // !MARIADB_BUILD
   static constexpr auto password = "--password=";
   // call to mysql_init() is required to initialize mutexes
   std::unique_ptr<MYSQL, decltype(&mysql_close)> deleter{mysql_init(nullptr),
@@ -546,6 +562,7 @@ std::string Login_path_helper::load(const Entry &entry) {
   }
 
   throw Helper_exception{"Failed to read the secret"};
+#endif  // !MARIADB_BUILD
 }
 
 }  // namespace login_path

@@ -100,12 +100,8 @@ std::string get_default_helper_name() {
 #else  // ! _WIN32
 #ifdef __APPLE__
       "keychain";
-#else  // ! __APPLE__
-#ifdef MARIADB_BUILD
-      "secret-service";
-#else
+#else   // ! __APPLE__
       "login-path";
-#endif
 #endif  // ! __APPLE__
 #endif  // ! _WIN32
   return default_helper;

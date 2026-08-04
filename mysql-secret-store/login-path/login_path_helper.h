@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +32,12 @@
 
 #include "mysql-secret-store/include/helper.h"
 
+#ifdef MARIADB_BUILD
+// MariaDB ships no mysql_config_editor, the login file is handled in-tree
+#include "mysql-secret-store/login-path/login_file.h"
+#else   // !MARIADB_BUILD
 #include "mysql-secret-store/login-path/config_editor_invoker.h"
+#endif  // !MARIADB_BUILD
 #include "mysql-secret-store/login-path/entry.h"
 
 namespace mysql {
@@ -62,7 +68,11 @@ class Login_path_helper : public common::Helper {
 
   std::string load(const Entry &);
 
+#ifdef MARIADB_BUILD
+  Login_file m_invoker;
+#else   // !MARIADB_BUILD
   Config_editor_invoker m_invoker;
+#endif  // !MARIADB_BUILD
 };
 
 }  // namespace login_path

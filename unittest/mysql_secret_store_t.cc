@@ -1135,6 +1135,33 @@ class Parametrized_helper_test_with_type : public Parametrized_helper_test<T> {
   }
 };
 
+#ifdef MARIADB_BUILD
+/**
+ * MariaDB ships no mysql_config_editor - the login-path helper implements
+ * .mylogin.cnf itself. The tests which drive the external binary (to prove the
+ * on-disk format stays interoperable) only run where it happens to be
+ * installed.
+ */
+bool has_config_editor() {
+  static const bool available =
+      !shcore::path::search_stdpath("mysql_config_editor").empty();
+  return available;
+}
+#else   // !MARIADB_BUILD
+constexpr bool has_config_editor() { return true; }
+#endif  // !MARIADB_BUILD
+
+/**
+ * True when the login-path helper enforces mysql_config_editor's 78-character
+ * secret limit. The native MariaDB implementation does not - it writes the
+ * login file directly and is bounded only by the 4k line cap of the format.
+ */
+#ifdef MARIADB_BUILD
+constexpr bool k_login_path_limits_secret_length = false;
+#else   // !MARIADB_BUILD
+constexpr bool k_login_path_limits_secret_length = true;
+#endif  // !MARIADB_BUILD
+
 class Config_editor_invoker {
  public:
   void store(const std::string &name, const std::string &id,
@@ -1218,9 +1245,7 @@ void verify_available_helpers(const std::set<std::string> &helpers) {
 #ifdef __APPLE__
   expected.emplace("keychain");
 #endif  // ! __APPLE__
-#ifdef HAVE_LOGIN_PATH
   expected.emplace("login-path");
-#endif
 #endif  // ! _WIN32
 
   std::set<std::string> missing;
@@ -1343,7 +1368,7 @@ void test_available_helpers() {
     op("user@host:33060", "six");                                           \
     op("ssh://user@host.com:22", "test");                                   \
     op("file:/user/host/com", "test");                                      \
-    if (is_login_path()) {                                                  \
+    if (is_login_path() && k_login_path_limits_secret_length) {              \
       op("user@host:55555",                                                 \
          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"   \
          "abcdefghijklm");                                                  \
@@ -1453,7 +1478,7 @@ void test_available_helpers() {
   }                                                                           \
                                                                               \
   PASSWORD_TEST(test_case_name, login_path_external_entry) {                  \
-    if (!is_login_path()) {                                                   \
+    if (!is_login_path() || !has_config_editor()) {                           \
       return;                                                                 \
     }                                                                         \
     Config_editor_invoker invoker;                                            \
@@ -1469,7 +1494,7 @@ void test_available_helpers() {
   }                                                                           \
                                                                               \
   PASSWORD_TEST(test_case_name, login_path_external_and_helper_entries) {     \
-    if (!is_login_path()) {                                                   \
+    if (!is_login_path() || !has_config_editor()) {                           \
       return;                                                                 \
     }                                                                         \
     Config_editor_invoker invoker;                                            \
@@ -1488,7 +1513,7 @@ void test_available_helpers() {
                                                                               \
   PASSWORD_TEST(test_case_name,                                               \
                 login_path_external_entry_with_port_and_socket) {             \
-    if (!is_login_path()) {                                                   \
+    if (!is_login_path() || !has_config_editor()) {                           \
       return;                                                                 \
     }                                                                         \
     Config_editor_invoker invoker;                                            \
@@ -1522,7 +1547,7 @@ void test_available_helpers() {
   }                                                                           \
                                                                               \
   PASSWORD_TEST(test_case_name, login_path_ipv6_stored_by_config_editor) {    \
-    if (!is_login_path()) {                                                   \
+    if (!is_login_path() || !has_config_editor()) {                           \
       return;                                                                 \
     }                                                                         \
     Config_editor_invoker invoker;                                            \
@@ -1543,7 +1568,7 @@ void test_available_helpers() {
   }                                                                           \
                                                                               \
   PASSWORD_TEST(test_case_name, login_path_ipv6_stored_by_helper) {           \
-    if (!is_login_path()) {                                                   \
+    if (!is_login_path() || !has_config_editor()) {                           \
       return;                                                                 \
     }                                                                         \
     Config_editor_invoker invoker;                                            \
