@@ -1819,12 +1819,6 @@ void Shell_script_tester::set_defaults() {
   def_bool_var("__have_dump_and_load", false);
 #endif
 
-#ifdef HAVE_DUMP_AND_LOAD
-  def_bool_var("__have_login_path", true);
-#else
-  def_bool_var("__have_login_path", false);
-#endif
-
   def_var("__user_config_path",
           shcore::quote_string(shcore::get_user_config_path(), '\''));
 

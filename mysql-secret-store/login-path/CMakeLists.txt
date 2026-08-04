@@ -1,4 +1,5 @@
 # Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -32,16 +33,25 @@ set(helper_name "login-path")
 set(helper_file "login_path_helper.h")
 set(helper_class "login_path::Login_path_helper")
 
-set(helper_src
-  config_editor_invoker.cc
-  login_path_helper.cc
-)
+IF(MARIADB_BUILD)
+  # MariaDB ships no mysql_config_editor, .mylogin.cnf is handled in-tree
+  set(helper_src
+    login_file.cc
+    login_path_helper.cc
+  )
+ELSE()
+  set(helper_src
+    config_editor_invoker.cc
+    login_path_helper.cc
+  )
+ENDIF()
 set(helper_includes
   "${CMAKE_SOURCE_DIR}/mysqlshdk/include"
 )
 set(helper_libs
   ${MYSQL_CLIENT_LIB}
   ${MYSQL_EXTRA_LIBRARIES}
+  ${SSL_LIBRARIES}
 )
 
 add_helper_executable()

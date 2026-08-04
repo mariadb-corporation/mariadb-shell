@@ -261,6 +261,7 @@ file(WRITE "${INSTALL_FILE}"
 usr/bin/mysqlsh
 usr/bin/msh
 usr/bin/mysql-secret-store-secret-service
+usr/bin/mysql-secret-store-login-path
 usr/share/mariadb-shell/LICENSE    usr/share/doc/mariadb-shell
 usr/share/mariadb-shell/README.md     usr/share/doc/mariadb-shell
 usr/share/mariadb-shell/Docs/INFO_SRC     usr/share/mariadb-shell/Docs
@@ -275,14 +276,12 @@ usr/share/man/man1/msh.1
 
 # The following are MySQL-server specific and are not built for MariaDB. This
 # project only sees the cache variables passed in (it is configured standalone,
-# see project() above), not the top-level HAVE_LOGIN_PATH / HAVE_ADMIN_API /
-# HAVE_UPGRADE_CHECKER, so key off MARIADB_SOURCE_DIR the same way the top-level
-# CMakeLists.txt derives those flags.
+# see project() above), not the top-level HAVE_ADMIN_API / HAVE_UPGRADE_CHECKER,
+# so key off MARIADB_SOURCE_DIR the same way the top-level CMakeLists.txt derives
+# those flags.
 if (NOT MARIADB_SOURCE_DIR)
 file(APPEND "${INSTALL_FILE}"
-"# Login-path secret store helper (needs MySQL's my_config_editor support)
-usr/bin/mysql-secret-store-login-path
-# AdminAPI metadata scripts
+"# AdminAPI metadata scripts
 usr/share/mariadb-shell/adminapi-metadata/* usr/share/mariadb-shell/adminapi-metadata
 # Upgrade Checker resources
 usr/share/mariadb-shell/upgrade_checker.msg

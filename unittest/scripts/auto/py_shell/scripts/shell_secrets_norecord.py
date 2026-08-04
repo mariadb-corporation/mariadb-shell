@@ -63,9 +63,18 @@ with TEST("plaintext"):
     EXPECT_EQ(test_secret, actual_secret)
     EXPECT_EQ("str", type(actual_secret).__name__)
 
-#@<> WL16958-TSFR_1_2_2 - login-path limitations {has_login_path}
+#@<> WL16958-TSFR_1_2_2 - login-path limitations {has_login_path and not __mariadb_build}
+# the 78-character cap is a mysql_config_editor buffer bug; MariaDB builds write
+# .mylogin.cnf themselves and are only bound by the 4k line cap of the format
 with TEST("login-path"):
     EXPECT_THROWS(lambda: shell.store_secret(test_key, "x" * 100), "RuntimeError: Failed to save the secret: The login-path helper cannot store secrets longer than 78 characters.")
+
+#@<> login-path stores a long secret {has_login_path and __mariadb_build}
+with TEST("login-path"):
+    long_secret = "x" * 1000
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, long_secret))
+    EXPECT_NO_THROWS(lambda: read_secret(test_key))
+    EXPECT_EQ(long_secret, actual_secret)
 
 #@<> WL16958-TSFR_1_2_8 - there are no limitations on secret's value {has_login_path}
 with TEST("login-path"):
