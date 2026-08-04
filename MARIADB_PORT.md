@@ -23,12 +23,14 @@ These are defined in [CMakeLists.txt](CMakeLists.txt) **exactly when
 | `HAVE_UPGRADE_CHECKER` | the Upgrade Checker | `#ifdef HAVE_UPGRADE_CHECKER` = MySQL-only code |
 | `HAVE_ADMIN_API` | AdminAPI (`dba`, Cluster/ReplicaSet/ClusterSet, InnoDB Cluster, metadata) | `#ifdef HAVE_ADMIN_API` = MySQL-only code; `#ifndef HAVE_ADMIN_API` = MariaDB stub |
 | `HAVE_X_PROTOCOL` | X protocol / X DevAPI (`mysqlx://`, X sessions, collections, X expr parser, `importJson`) | `#ifdef HAVE_X_PROTOCOL` = MySQL-only code; `#ifndef HAVE_X_PROTOCOL` = MariaDB stub |
+| `HAVE_DUMP_AND_LOAD` | the dump/load utilities | `#ifdef HAVE_DUMP_AND_LOAD` = MySQL-only code |
 
 A bare `#ifdef MARIADB_BUILD` / `#ifndef MARIADB_BUILD` now denotes a guard that
 is **neither** AdminAPI nor X-protocol — i.e. an intrinsic build difference
 (Connector/C client-API gaps, mysys lifecycle, Python macro conflicts, the
 binlog port and its native GTID model, version/error-code macros, the
-secret-store login-path). See §10 for the full inventory.
+`.mylogin.cnf` implementation behind the login-path helper). See §10 for the
+full inventory.
 
 ---
 
@@ -317,7 +319,8 @@ These are intentional and should stay as `MARIADB_BUILD`:
 | Area | Files | Reason |
 |---|---|---|
 | Connector/C client API | `libs/db/mysql/session.cc` (most guards), `libs/db/mysql/result.cc`, `libs/mysql/utils.{h,cc}`, `libs/mysql/async_replication.cc`, `mod_mysql.cc`, `import_table/load_data.cc`, `dump/dumper.cc`, `load/dump_loader.cc` | libmariadb lacks MySQL 8.x client APIs (ssl-mode, query attributes, MFA, compression/cipher opts, `MYSQL_TYPE_VECTOR`, `CR_*`/`ER_*` codes, escape-quote) |
-| Header include order | `dump/schema_dumper.cc`, `upgrade_checker/{custom_check,upgrade_check_creators}.cc`, `login-path/login_path_helper.cc` | `my_global.h` / `m_ctype.h` / `my_dbug.h` ordering for libmariadb |
+| Header include order | `dump/schema_dumper.cc`, `upgrade_checker/{custom_check,upgrade_check_creators}.cc` | `my_global.h` / `m_ctype.h` / `my_dbug.h` ordering for libmariadb |
+| Secret store `.mylogin.cnf` | `mysql-secret-store/login-path/login_path_helper.h` (which header, which class backs `m_invoker`) + `login_path_helper.cc` (the mysys includes, the `store()` preamble, the `load()` body) + the new `login_file.{h,cc}` | MariaDB has no `.mylogin.cnf` support and no `mysql_config_editor`, so both halves are implemented in-tree on OpenSSL (§12.7) |
 | mysys lifecycle | `shellcore/shell_init.cc`, `shellcore/shell_options.cc` (defaults), `include/shellcore/shell_options.h` | `my_init`/`my_end`/`my_load_defaults`/`free_defaults`, `MEM_ROOT` differences |
 | Python macro conflicts | `include/scripting/python_utils.h`, `libs/utils/debug.h` | `pyconfig.h` vs `my_config.h` `SIZEOF_*` redefinition; DBUG API differences |
 | UUID / version macros | `libs/utils/uuid_gen.cc`, `libs/utils/utils_general.cc`, `shell_script_tester.cc`, `utils_general_t.cc` | `my_rnd_*` rename; `LIBMYSQL_VERSION*` → `MYSQL_*` |
@@ -723,20 +726,135 @@ Install the full standard set with `sudo dnf install -y perl-core` (Ubuntu's
 message is a non-fatal notice as long as `/usr/include/linux` is present
 (`kernel-headers`, installed by default).
 
-### 12.7 Secret Service store retry (gnome-keyring transient encryption error)
+### 12.7 The credential store: native `.mylogin.cnf`, and `secret-service` notes
 
-Because `HAVE_LOGIN_PATH` is non-MariaDB only, the `login-path` helper is not built
-and `get_default_helper_name()` returns **`secret-service`** on Linux — the only
-credential store this build has there. A keyring daemon is therefore a hard
-runtime requirement for credential storage, and for the
-`Mysqlsh_credential_store.*` / `Mysql_secret_store*` suites: with no provider
-owning `org.freedesktop.secrets`, the helper's `check_requirements()` (a real
-`secret-tool search`) fails, `get_available_helpers()` drops it, and
-`credentialStore.helper` becomes `<invalid>`. Headless machines (CI runners,
-containers) need `gnome-keyring` installed plus a session bus with an unlocked
-keyring — `dbus-run-session -- sh -c 'echo -n "" | gnome-keyring-daemon --unlock
---components=secrets; <cmd>'`. End-user setup instructions:
+#### `login-path` is the Linux default and reads/writes `.mylogin.cnf` in-tree
+
+The `login-path` helper is built for both vendors, on every platform except
+Windows (upstream's own `if (WIN32)` in
+[mysql-secret-store/CMakeLists.txt](mysql-secret-store/CMakeLists.txt)). It is
+therefore the default credential helper on Linux, exactly as upstream, and
+`get_default_helper_name()` carries **no** MariaDB guard. macOS still defaults to
+`keychain` (that function tests `__APPLE__` first) with `login-path` merely
+available. The helper needs no external binary and no daemon: only OpenSSL, which
+the shell already links.
+
+The difference from upstream is *how* the login file is accessed. Upstream drives
+`mysql_config_editor` to write it and `my_load_defaults()` to read it; neither
+works here. MariaDB ships no `mysql_config_editor`, and libmariadb has no
+`.mylogin.cnf` support at all — `grep -rniE
+"mylogin|login_file|LOGIN_KEY_LEN|MAX_CIPHER_STORE" mysys/ include/ libmariadb/`
+in the server tree returns nothing — so `my_load_defaults()` compiles but hands
+back an argv with no password, and `load()` throws `"Failed to read the secret"`.
+Both halves are consequently implemented in
+`mysql-secret-store/login-path/login_file.{h,cc}` (new files, so they cannot
+conflict on merge). `config_editor_invoker.{h,cc}` are untouched and still back
+the MySQL build.
+
+`Login_file` exposes **exactly** the method signatures of `Config_editor_invoker`
+(`validate`/`list`/`store`/`erase`/`erase_port`/`erase_socket`/`version`, plus a
+`get_secret()` that the MySQL build has no use for), so every `m_invoker.foo()`
+call site is unchanged and the drift in upstream files is five guards: two in
+`login_path_helper.h` (which header to include, which class backs `m_invoker`)
+and three in `login_path_helper.cc` (the
+`<my_alloc.h>`/`<my_default.h>`/`<mysql.h>` includes, the `store()` preamble, the
+`load()` body).
+
+The include guard is not cosmetic. `my_default.h` needs `my_global.h` ahead of it
+under libmariadb, so those three headers do not compile here at all; only `load()`
+ever needed them, so they are excluded outright. (§10 previously listed this file
+under "header include order" — that entry described an ordering which does not in
+fact work, and had never been exercised because the helper was not built.)
+
+`list()` returns the option-file *text*, masked and stripped exactly as
+`mysql_config_editor print --all` piped through `str_strip()` would be, so
+upstream's `parse_ini()` needs no change. Serialising to INI only to re-parse it
+is silly, and deliberate: it protects the merge path. The strip is load-bearing —
+`parse_ini()` indexes `line.substr(pos + 3)` with `pos == npos` on an empty
+trailing line.
+
+The two details that silently produce a corrupt-but-plausible file:
+
+* **The 20→16 byte key fold.** `mysql_config_editor` hands a 20-byte key
+  (`LOGIN_KEY_LEN`) to a 128-bit cipher; mysys folds it inside
+  `my_aes_create_key()` (`mysys/my_aes.cc`) by XOR-ing every key byte into a zeroed
+  16-byte buffer, cycling. Calling OpenSSL EVP directly means reproducing that.
+* **Key generation.** MySQL's `generate_login_key()` fills all 20 bytes with
+  `(char)((int)(my_rnd_ssl(&failed) * 100000) % 32)` — values 0-31 only. We use
+  `RAND_bytes` and apply the same `% 32`.
+
+We deliberately do **not** use MariaDB's `my_aes_crypt`: `include/mysql/service_my_crypt.h`
+only exposes it through the plugin-service indirection (`my_crypt_service->my_aes_crypt`),
+which is server plumbing and the wrong fit for a standalone helper executable.
+
+Beyond format compatibility the implementation is stricter than MySQL's where it
+costs nothing: the file is created `0600` (its directory `0700`), updates go to a
+temporary file in the same directory and are `rename()`d over the original so an
+interrupted operation cannot destroy the store, and an advisory `flock` is held
+across the read-modify-write (re-checking after acquisition that the descriptor
+still refers to the path, since a competing `rename()` would otherwise leave us
+holding a lock on an unlinked inode). A group/other-readable file is read anyway,
+as MySQL does — refusing would lock out anybody with an existing `0644` file.
+There is no warning for it, because the helper protocol has no channel for one:
+`Process_launcher` folds the helper's stderr into the stdout the shell parses, so
+anything printed there would corrupt every command's output.
+
+Two upstream workarounds do not apply, both being
+`mysql_config_editor` bugs rather than format properties: the
+`Version(m_invoker.version()) < Version(8, 0, 24)` quoting sniff, and the
+78-character secret cap (the editor reads the password into a fixed 80-byte buffer
+and fails to null-terminate past 78). The backslash escaping (`"\\"` → `"\\\\"`)
+**stays** — the format still needs it, since a mysys reader expands `\s` to a
+space. `validate_secret()`'s control-code blacklist also stays: a newline in a
+secret would still break the INI structure.
+
+Not implemented, deliberately: the `--login-path=` command-line option. It is not
+standard in the MariaDB ecosystem, and `shellcore/shell_options.cc`'s
+`my_load_defaults` path is untouched. The file is only the credential store's
+backing file.
+
+**Verified interoperable at the byte level** against `mysql_config_editor` from
+both MySQL 9.7.1 and 26.7.0: seeded with the same login key, the two writers
+produce byte-identical files for every secret tried (spaces, `#`, embedded double
+and single quotes, UTF-8, empty, punctuation), and each reads what the other
+writes. The one intentional divergence is a secret longer than 78 characters,
+which the editor truncates to 79 and we store in full.
+
+In-tree, the interop coverage is the five `login_path_*` cases in
+`unittest/mysql_secret_store_t.cc`, which drive the real binary in both
+directions. Two test-side differences from upstream: they `return` early when
+`mysql_config_editor` is not on `PATH` (`has_config_editor()`) — avoiding an
+external binary is the whole point, so it must not become a test requirement —
+and `k_login_path_limits_secret_length` guards the 78-character expectation, as
+does the `{has_login_path and not __mariadb_build}` gate in
+`unittest/scripts/auto/py_shell/scripts/shell_secrets_norecord.py`.
+
+**Caveat on that in-tree coverage:** the whole `Parametrized_helper_test` family
+(`Mysql_secret_store*`, `Shell_secret_api*`, `Helper_executable_test`) skips in a
+MariaDB build, because `SetUp()` requires the target server version to be ≥ the
+shell version and the shell is versioned 26.x. It was exercised by temporarily
+defeating that gate: 119/119 `Helper_executable_test` (including
+`valid_id_characters` and `valid_secret_characters` over all 256 byte values),
+37/37 `Mysql_secret_store_api_test*`, and 54/54
+`Shell_secret_api*`/`Shell_all_api*`/`Mysqlsh_credential_store*` pass for
+`login-path`. `unittest/scripts/auto/js_credential/` cannot be run in this build
+tree at all: `HAVE_JS` is off, so `auto_script_js_t.cc` is not compiled.
+
+#### `secret-service`: built and selectable, but not the default
+
+`secret-service` is fully buildable and selectable on Linux; it is simply not the
+default. A keyring daemon is therefore **not** a runtime requirement for
+credential storage, nor a CI requirement: `get_available_helpers()` omits
+`secret-service` when `check_requirements()` (a real `secret-tool search`) fails,
+and `login-path` is used instead. Keeping the
+`dbus-run-session` / `gnome-keyring-daemon --unlock --components=secrets` setup in
+CI now buys **`secret-service` test coverage** rather than making the suites pass,
+which is why it has been kept rather than dropped. End-user setup instructions:
 [docs/CREDENTIAL_STORE.md](docs/CREDENTIAL_STORE.md).
+
+The notes below still apply to `secret-service` whenever it is selected.
+
+##### Store retry (gnome-keyring transient encryption error)
 
 The `secret-service` helper shells out to `secret-tool`, which talks to the D-Bus
 Secret Service (gnome-keyring). Newer gnome-keyring (seen with **50.0 / libsecret

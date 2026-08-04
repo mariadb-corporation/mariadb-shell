@@ -1,20 +1,52 @@
 # Credential store setup (Linux)
 
 MariaDB Shell can remember the passwords you type when connecting, so you are not
-prompted again for the same account. On Linux this requires a **Secret Service
-provider** — a keyring daemon that the shell talks to over D-Bus. This is a hard
-requirement: without it, credential storage stays disabled and every connection
-prompts for the password again.
+prompted again for the same account. **No setup is required on any platform.** On
+Linux the default helper is `login-path`, which keeps the passwords in
+`~/.mylogin.cnf` and needs no external command and no background daemon. Windows
+and macOS use the Windows Credential Manager and the macOS keychain, which are
+always present.
 
-Windows and macOS need no setup — the shell uses the Windows Credential Manager
-and the macOS keychain, which are always present.
+Everything below is about the **optional** `secret-service` helper, which stores
+passwords in a keyring daemon instead. Choose it if you want your MariaDB Shell
+passwords protected by the same keyring as the rest of your desktop session — the
+`login-path` file is only obfuscated (see §0). It costs a keyring daemon and a
+D-Bus session bus as runtime dependencies, which is why it is not the default.
 
-## 1. What the shell needs
+## 0. The default: `login-path`
 
-On Linux the shell stores passwords through its `secret-service` helper, which
-calls the `secret-tool` command, which in turn talks to whatever daemon owns the
-`org.freedesktop.secrets` name on your **D-Bus session bus**. So three things must
-be in place:
+`login-path` writes `~/.mylogin.cnf`, the same file MySQL's `mysql_config_editor`
+produces, in the same on-disk format. MariaDB Shell reads and writes it itself —
+`mysql_config_editor` is not needed and is not shipped.
+
+**The file is obfuscated, not encrypted.** Its contents are AES-encrypted, but the
+key is stored in the file's own header, so anyone who can read the file can
+recover the passwords. This is inherited from the MySQL format and is deliberate:
+the protection is the file's permissions, not the cipher. MariaDB Shell creates it
+mode `0600`. If you have an older file with looser permissions the shell still
+reads it, but you should tighten it:
+
+```bash
+chmod 600 ~/.mylogin.cnf
+```
+
+Treat `~/.mylogin.cnf` as you would a private key: do not copy it to shared hosts,
+do not commit it, and do not include it in backups you would not trust with
+plaintext passwords. If that is not acceptable for your environment, switch to
+`secret-service` (§1-§4) or turn the credential store off entirely:
+
+```bash
+mariadb-shell --py -e "shell.options.set_persist('credentialStore.helper', '<disabled>')"
+```
+
+Point the shell at a different file with the `MYSQL_TEST_LOGIN_FILE` environment
+variable (the same variable MySQL's tooling honours).
+
+## 1. What the `secret-service` helper needs
+
+The `secret-service` helper calls the `secret-tool` command, which in turn talks to
+whatever daemon owns the `org.freedesktop.secrets` name on your **D-Bus session
+bus**. So three things must be in place:
 
 | Requirement | Provided by |
 | --- | --- |
@@ -24,7 +56,11 @@ be in place:
 
 Inside a normal desktop session all three are usually already true — see §3 to
 confirm. Over plain SSH, in a container, or on a CI runner, none of them are, and
-§4 applies.
+§4 applies. Select the helper once the chain works:
+
+```bash
+mariadb-shell --py -e "shell.options.set_persist('credentialStore.helper', 'secret-service')"
+```
 
 ## 2. Install the packages
 
@@ -59,7 +95,7 @@ sudo pacman -S --needed gnome-keyring libsecret
 missing you will get `The name org.freedesktop.secrets was not provided by any
 .service files` (see §6).
 
-## 3. Verify (desktop session)
+## 3. Verify `secret-service` (desktop session)
 
 Log in graphically, open a terminal, and check the whole chain bottom-up:
 
@@ -70,22 +106,29 @@ echo "$DBUS_SESSION_BUS_ADDRESS"
 # 2. the Secret Service answers
 secret-tool search --all secret_store secret-service; echo "exit=$?"
 
-# 3. the shell sees its helper
+# 3. the shell sees the helper
 mariadb-shell --py -e "print(shell.list_credential_helpers())"
 
-# 4. the shell resolved the default helper
-mariadb-shell --py -e "print(shell.options['credentialStore.helper'])"
+# 4. the shell can use it
+mariadb-shell --credential-store-helper=secret-service --py \
+  -e "print(shell.options['credentialStore.helper'])"
 ```
 
 Expected: a non-empty bus address; step 2 exits `0` (no output yet is normal —
-nothing is stored); step 3 prints `["secret-service"]`; step 4 prints `default`.
+nothing is stored); step 3 lists `secret-service` alongside `login-path`; step 4
+prints `secret-service`.
 
-If step 4 prints `<invalid>`, the helper could not be initialized — go to §6.
+If step 3 does not list it, or step 4 prints `<invalid>`, the helper could not be
+initialized — go to §6. Note that `login-path` keeps working either way, so the
+shell will not stop remembering passwords; it just will not use the keyring.
 
 ## 4. Headless: SSH, containers, CI
 
 Without a desktop session there is no keyring daemon running and, often, no
-session bus at all. Create both around the command you want to run:
+session bus at all. This is the case where `login-path` — the default — is simply
+the better answer, and nothing in this section is needed. Follow it only if you
+specifically want `secret-service` on a headless host. Create both around the
+command you want to run:
 
 ```bash
 dbus-run-session -- sh -c '
@@ -111,10 +154,12 @@ dbus-run-session -- sh -c '
 Secrets stored this way live in the keyring created inside that session. To keep
 them across sessions, reuse the same keyring password and the same `$HOME`.
 
-**In CI**, the same applies: a CI runner started as a service has no session bus
-and no keyring, so the shell's credential-store test suites
-(`Mysqlsh_credential_store.*`, `Mysql_secret_store*`) — which store and retrieve
-real secrets — fail with the helper reported as `<invalid>`.
+**In CI**, the credential-store test suites (`Mysqlsh_credential_store.*`,
+`Mysql_secret_store*`) no longer *need* any of this — they exercise whichever
+helpers are available, and `login-path` always is. Setting up a keyring only adds
+`secret-service` coverage. If you do want it, note that a CI runner started as a
+service has no session bus and no keyring, and the helper would be reported as
+`<invalid>`.
 
 If a single step both sets up and runs, the wrapper above is enough. If setup and
 tests are separate steps, it is not: the bus `dbus-run-session` creates lives only
@@ -276,7 +321,8 @@ shell.list_credential_helpers()                 # helpers available on this syst
 Related options:
 
 * `credentialStore.helper` — which helper to use. Leave it at `default`
-  (`secret-service` on Linux). `<disabled>` turns the mechanism off entirely.
+  (`login-path` on Linux, `keychain` on macOS, `windows-credential` on Windows).
+  `<disabled>` turns the mechanism off entirely.
 * `credentialStore.excludeFilters` — URL patterns whose passwords are never
   stored, e.g. `["*@myhost*"]`.
 
@@ -296,14 +342,17 @@ Start by asking the helper itself — it prints the real reason, which the shell
 only writes to its log:
 
 ```bash
-mysql-secret-store-secret-service version; echo "exit=$?"
+mysql-secret-store-login-path version; echo "exit=$?"       # the default
+mysql-secret-store-secret-service version; echo "exit=$?"   # if you selected it
 ```
 
-The helper lives next to the `mariadb-shell` binary. Exit `0` means it is healthy; exit
+The helpers live next to the `mariadb-shell` binary. Exit `0` means healthy; exit
 `1` prints the cause on stderr:
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| `Failed to open the login file` / `exists but cannot be read` from `login-path` | `~/.mylogin.cnf` is owned by another user, or its directory is not writable | Fix the ownership, or remove the file to start over |
+| `is corrupted, invalid record length` / `may be corrupted` from `login-path` | `~/.mylogin.cnf` was truncated or hand-edited | Remove the file; the shell recreates it and you re-enter the passwords |
 | `secret-tool: The name org.freedesktop.secrets was not provided by any .service files` | No keyring daemon installed — `secret-tool` is only a client | Install `gnome-keyring` (§2) |
 | `Cannot autolaunch D-Bus without X11 $DISPLAY`, or empty `DBUS_SESSION_BUS_ADDRESS` | No D-Bus session bus (SSH, container, service) | Use `dbus-run-session` (§4) |
 | `Prompt was dismissed` / `Cannot prompt` on store | Keyring is locked and nothing can ask for the password | Unlock it explicitly (§4) |
@@ -319,18 +368,22 @@ mariadb-shell --log-level=debug --py -e "print(shell.options['credentialStore.he
 grep -i "helper" ~/.mariadb-shell/mariadb-shell.log | tail
 ```
 
-Look for `Failed to initialize the default helper "secret-service"` followed by
-the reason.
+Look for `Failed to initialize the default helper` followed by the reason.
 
 An occasional `The secret was transferred or encrypted in an invalid way` from
-newer gnome-keyring is a known transient fault; the helper retries automatically
-and it is not a configuration problem.
+newer gnome-keyring is a known transient fault; the `secret-service` helper retries
+automatically and it is not a configuration problem.
 
-## Note on `login-path`
+## Note on interoperability and on `plaintext`
 
-Upstream MySQL Shell also ships a `login-path` helper, which stores passwords in
-the obfuscated `.mylogin.cnf` file and needs no keyring. It is **not** available
-in MariaDB Shell, so `secret-service` is the only credential store on Linux and
-the setup above is required. (The `plaintext` helper you may see in a development
-build tree is a test fixture — it is never installed and must not be used to hold
-real passwords.)
+MariaDB Shell's `~/.mylogin.cnf` is bit-compatible with MySQL's: MySQL's
+`mysql_config_editor` and `my_print_defaults` read what the shell writes, and the
+shell reads what they write. Nothing else in the MariaDB toolset reads the file —
+MariaDB has no `.mylogin.cnf` support of its own — so compatibility with the MySQL
+tooling is the only reason the format was kept.
+
+MariaDB Shell does **not** implement a `--login-path=` command-line option; the
+file is used only as the credential store's backing file.
+
+The `plaintext` helper you may see in a development build tree is a test fixture —
+it is never installed and must not be used to hold real passwords.
