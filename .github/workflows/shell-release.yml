@@ -2,7 +2,7 @@ name: MariaDB-Shell-Release
 
 on:
   push:
-    branches: [ "release/candidate", "workflow-test" ]
+    branches: [ "release/candidate"]
   repository_dispatch:
       types: [ "updated-shell-plugins-rc" ]
 jobs:
