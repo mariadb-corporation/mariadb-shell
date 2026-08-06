@@ -219,6 +219,19 @@ inline void assert_transaction_is_open(
  */
 bool sysvar_to_bool(std::string_view name, std::string_view value);
 
+/**
+ * Get the correct keyword for the binary-log statements, which were renamed in
+ * MySQL 8.2 ('SHOW MASTER STATUS' -> 'SHOW BINARY LOG STATUS', 'RESET MASTER'
+ * -> 'RESET BINARY LOGS AND GTIDS').
+ *
+ * @param version Version of the target server.
+ * @param status Whether the keyword is for the status statement.
+ *
+ * @return the keyword to splice into the statement.
+ */
+const char *get_binary_logs_keyword(const mysqlshdk::utils::Version &version,
+                                    bool status = false);
+
 }  // namespace mysql
 }  // namespace mysqlshdk
 

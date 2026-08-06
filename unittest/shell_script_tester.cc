@@ -1813,11 +1813,12 @@ void Shell_script_tester::set_defaults() {
   def_bool_var("__have_upgrade_checker", false);
 #endif
 
-#ifdef HAVE_DUMP_AND_LOAD
+  // Dump/load is built for every vendor now; the variable is kept (always true)
+  // so the existing scripted tests still resolve it. Removing it means editing
+  // the ~33 conditionals in the util_help / credential_handling /
+  // json_output_as_normal scripts and their validation files - test content
+  // work, tracked separately from the build change.
   def_bool_var("__have_dump_and_load", true);
-#else
-  def_bool_var("__have_dump_and_load", false);
-#endif
 
   def_var("__user_config_path",
           shcore::quote_string(shcore::get_user_config_path(), '\''));

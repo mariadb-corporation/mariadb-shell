@@ -170,21 +170,11 @@ if(WITH_TESTS)
       # for MariaDB (see MARIADB_PORT.md §5), so this test has nothing to load.
       # This is a build-artifact concern, not an AdminAPI/X-protocol feature gate.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/mysqlshdk/libs/yparser/parser_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/gtid_utils_t.cc")
-    endif()
-
-    if(NOT HAVE_DUMP_AND_LOAD)
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/util/dump/decimal_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/dump_utils_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/load_dump_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/compatibility_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/instance_cache_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/schema_dumper_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/instance_cache_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/modules/checksums_t.cc")
+      # gtid_utils/lock_service are MySQL-only sources (see
+      # mysqlshdk/libs/mysql/CMakeLists.txt), so their tests have nothing to
+      # link against.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/gtid_utils_t.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/lock_service_t.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/user_privileges_t.cc")
     endif()
 
     if(NOT HAVE_PYTHON)

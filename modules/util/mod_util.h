@@ -33,9 +33,10 @@
 #include <vector>
 
 #include "modules/mod_extensible_object.h"
-#ifdef HAVE_DUMP_AND_LOAD
+#ifdef HAVE_BINLOG_UTILS
 #include "modules/util/binlog/dump_binlogs_options.h"
 #include "modules/util/binlog/load_binlogs_options.h"
+#endif
 #include "modules/util/copy/copy_instance_options.h"
 #include "modules/util/copy/copy_schemas_options.h"
 #include "modules/util/copy/copy_tables_options.h"
@@ -45,7 +46,6 @@
 #include "modules/util/dump/export_table_options.h"
 #include "modules/util/import_table/import_table_options.h"
 #include "modules/util/load/load_dump_options.h"
-#endif
 #ifdef HAVE_UPGRADE_CHECKER
 #include "modules/util/upgrade_check.h"
 #endif
@@ -95,7 +95,6 @@ class SHCORE_PUBLIC Util : public Extensible_object {
       const upgrade_checker::Upgrade_check_options &options = {});
 #endif  // HAVE_UPGRADE_CHECKER
 
-#ifdef HAVE_DUMP_AND_LOAD
 #ifdef HAVE_X_PROTOCOL
 #if DOXYGEN_JS
   Undefined importJson(String file, Dictionary options);
@@ -190,6 +189,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
                    const mysqlshdk::db::Connection_options &connection_options,
                    copy::Copy_tables_options &&options = {});
 
+#ifdef HAVE_BINLOG_UTILS
 #if DOXYGEN_JS
   Undefined copyTables(String outputUrl, Dictionary options);
 #elif DOXYGEN_PY
@@ -205,7 +205,7 @@ class SHCORE_PUBLIC Util : public Extensible_object {
 #endif
   void load_binlogs(const std::string &url,
                     binlog::Load_binlogs_options &&options);
-#endif
+#endif  // HAVE_BINLOG_UTILS
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> global_session() const;

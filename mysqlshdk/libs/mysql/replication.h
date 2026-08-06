@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -476,23 +477,6 @@ std::string get_replica_keyword(const mysqlshdk::utils::Version &version);
  */
 std::string get_replication_source_keyword(
     const mysqlshdk::utils::Version &version, bool command = false);
-
-/**
- * Get the correct keyword in use for the replication configuration commands:
- * 'SHOW MASTER LOGS' / 'SHOW MASTER STATUS' / 'PURGE MASTER LOGS'
- *  regarding the target instance version.
- *
- * Useful for the construction of queries or output/error messages.
- *
- * @param version Version of the target server.
- * @param command Boolean value to indicate if the keyword is for status
- * command: 'SHOW MASTER STATUS'
- *
- * @return a string with the right keyword to be used for the replication
- * configuration command
- */
-const char *get_binary_logs_keyword(const mysqlshdk::utils::Version &version,
-                                    bool status = false);
 
 /**
  * Get the correct keywords in use for the replication configuration command:

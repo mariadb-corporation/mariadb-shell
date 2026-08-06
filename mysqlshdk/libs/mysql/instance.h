@@ -224,13 +224,11 @@ class IInstance {
   virtual void set_user_password(std::string_view username,
                                  std::string_view hostname,
                                  std::string_view password) const = 0;
-#ifndef MARIADB_BUILD
   virtual std::unique_ptr<User_privileges> get_user_privileges(
       const std::string &user, const std::string &host,
       bool allow_skip_grants_user = false) const = 0;
   virtual std::unique_ptr<User_privileges> get_current_user_privileges(
       bool allow_skip_grants_user = false) const = 0;
-#endif
   virtual std::optional<bool> is_set_persist_supported() const = 0;
   virtual std::optional<std::string> get_persisted_value(
       std::string_view variable_name) const = 0;
@@ -465,13 +463,11 @@ class Instance : public IInstance {
 
     return co;
   }
-#ifndef MARIADB_BUILD
   std::unique_ptr<User_privileges> get_user_privileges(
       const std::string &user, const std::string &host,
       bool allow_skip_grants_user = false) const override;
   std::unique_ptr<User_privileges> get_current_user_privileges(
       bool allow_skip_grants_user = false) const override;
-#endif
 
   bool is_read_only(bool super) const override;
   utils::Version get_version() const override;

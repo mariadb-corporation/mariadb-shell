@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2000, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,8 +47,31 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#ifdef MARIADB_BUILD
+// MariaDB's my_sys.h/m_string.h need my_bool (mysql.h) and the my_global.h
+// typedefs (uchar, longlong, DBUG_ASSERT) first; m_ctype.h is at the include
+// root rather than under mysql/strings/. m_ctype.h's CHARSET_INFO uses an
+// anonymous struct inside an anonymous union, which Clang flags as a GNU
+// extension; these are Clang diagnostic names (GCC would error on them under
+// -Werror=pragmas), so the suppression is Clang-only.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
+#endif
+#include <mysql.h>
+
+#include <my_global.h>
+
+#include <m_ctype.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#include "my_sys.h"
+#else
 #include "my_sys.h"
 #include "mysql/strings/m_ctype.h"
+#endif
 #include "mysqld_error.h"
 
 #include "mysqlshdk/include/shellcore/console.h"
@@ -111,6 +135,25 @@ namespace {
 
 using IFile = Schema_dumper::IFile;
 
+// CHARSET_INFO spells the charset/collation names differently per vendor:
+// MariaDB uses LEX_CSTRING cs_name/coll_name, MySQL 8.x plain const char*
+// csname/m_coll_name.
+inline const char *charset_name(const CHARSET_INFO *cs) {
+#ifdef MARIADB_BUILD
+  return cs->cs_name.str;
+#else
+  return cs->csname;
+#endif
+}
+
+inline const char *collation_name(const CHARSET_INFO *cs) {
+#ifdef MARIADB_BUILD
+  return cs->coll_name.str;
+#else
+  return cs->m_coll_name;
+#endif
+}
+
 constexpr std::size_t k_max_innodb_columns = 1017;
 constexpr std::string_view k_innodb_engine = "InnoDB";
 
@@ -165,7 +208,7 @@ bool is_supported_collation(std::string_view collation) {
 
     for (int i = 0; i < MY_ALL_CHARSETS_SIZE; ++i) {
       if (const auto charset = all_charsets[i]) {
-        collations.emplace(charset->m_coll_name);
+        collations.emplace(collation_name(charset));
       }
     }
 
@@ -444,8 +487,8 @@ void switch_db_collation(IFile *sql_file, const std::string &db_name,
     }
 
     fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-            shcore::quote_identifier(db_name).c_str(), db_cl->csname,
-            db_cl->m_coll_name, delimiter);
+            shcore::quote_identifier(db_name).c_str(), charset_name(db_cl),
+            collation_name(db_cl), delimiter);
 
     *db_cl_altered = 1;
     return;
@@ -464,7 +507,8 @@ void restore_db_collation(IFile *sql_file, const std::string &db_name,
   }
 
   fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-          quoted_db_name.c_str(), db_cl->csname, db_cl->m_coll_name, delimiter);
+          quoted_db_name.c_str(), charset_name(db_cl), collation_name(db_cl),
+          delimiter);
 }
 
 void switch_cs_variables(IFile *sql_file, const char *delimiter,

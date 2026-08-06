@@ -575,7 +575,6 @@ void Instance::drop_user(std::string_view user, std::string_view host,
   execute(stmt);
 }
 
-#ifndef MARIADB_BUILD
 /**
  * Get all privileges of the given user.
  *
@@ -600,7 +599,6 @@ std::unique_ptr<User_privileges> Instance::get_current_user_privileges(
 
   return get_user_privileges(user, host, allow_skip_grants_user);
 }
-#endif
 
 bool Instance::is_read_only(bool super) const {
   // Check if the member is not read_only

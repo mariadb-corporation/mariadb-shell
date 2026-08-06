@@ -53,9 +53,12 @@
 #include "mysqlshdk/include/shellcore/shell_init.h"
 #include "mysqlshdk/include/shellcore/shell_options.h"
 #include "mysqlshdk/libs/db/utils/utils.h"
+#ifdef HAVE_BINLOG_UTILS
 #include "mysqlshdk/libs/mysql/binlog_utils.h"
 #include "mysqlshdk/libs/mysql/gtid_utils.h"
+#endif
 #include "mysqlshdk/libs/mysql/replication.h"
+#include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/thread_pool.h"
@@ -231,6 +234,12 @@ int64_t to_int64_t(const std::string &s) { return std::stoll(s); }
 
 uint64_t to_uint64_t(const std::string &s) { return std::stoull(s); }
 
+#ifdef HAVE_BINLOG_UTILS
+// Replays the binlog to decide whether the statements executed during the dump
+// were DDL. Needs MySQL's binlog streaming and its uuid:N-M GTID model
+// (gtid_utils/binlog_utils), neither of which is available in a MariaDB build -
+// MariaDB uses domain-based d-s-seq positions and mariadb_rpl_* streaming. See
+// MARIADB_DUMP_LOAD.md section 4.4.
 using mysqlshdk::mysql::Gtid;
 using mysqlshdk::mysql::Gtid_range;
 using mysqlshdk::mysql::Gtid_set;
@@ -363,6 +372,7 @@ bool check_if_transactions_are_ddl_safe(
 
   return is_safe;
 }
+#endif  // HAVE_BINLOG_UTILS
 
 void append_capability_metadata(
     const std::unordered_set<Capability> &capabilities,
@@ -6449,6 +6459,7 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
+#ifdef HAVE_BINLOG_UTILS
         // check if executed statements are safe
         // get GTID sets which were executed since the dump has started
 
@@ -6459,6 +6470,12 @@ void Dumper::validate_dump_consistency(
 
         consistent = check_if_transactions_are_ddl_safe(
             instance, m_cache.server.binlog.file, binlog(session).file, set);
+#else
+        console->print_note(
+            "Verifying via the binary log whether the executed statements were "
+            "DDL is not supported yet against this server; treating the dump "
+            "as not verified.");
+#endif  // HAVE_BINLOG_UTILS
       }
     }
   } else {
@@ -6475,9 +6492,16 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
+#ifdef HAVE_BINLOG_UTILS
         // check if executed statements are safe
         consistent = check_if_transactions_are_ddl_safe(
             instance, m_cache.server.binlog.file, binlog);
+#else
+        console->print_note(
+            "Verifying via the binary log whether the executed statements were "
+            "DDL is not supported yet against this server; treating the dump "
+            "as not verified.");
+#endif  // HAVE_BINLOG_UTILS
       }
     }
   }
@@ -6561,6 +6585,10 @@ void Dumper::fetch_server_information() {
   }
 }
 
+// The Upgrade Checker is MySQL-server specific and is not built for MariaDB.
+// This is only reached from validate_mds(), i.e. the MySQL HeatWave Service
+// compatibility path, which does not apply to MariaDB either.
+#ifdef HAVE_UPGRADE_CHECKER
 issues::Status_set Dumper::check_for_upgrade_errors() const {
   if (!m_options.mds_compatibility()) {
     return {};
@@ -6654,6 +6682,9 @@ issues::Status_set Dumper::check_for_upgrade_errors() const {
 
   return status;
 }
+#else
+issues::Status_set Dumper::check_for_upgrade_errors() const { return {}; }
+#endif  // HAVE_UPGRADE_CHECKER
 
 void Dumper::throw_if_cannot_dump_users() const {
   if (m_server_version.is_maria_db && dump_users()) {

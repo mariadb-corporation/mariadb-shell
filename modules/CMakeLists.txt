@@ -69,16 +69,11 @@ file(GLOB api_module_SOURCES
       "reports/utils.cc"
 )
 
-# The Upgrade Checker is MySQL-server specific; it is excluded from MariaDB
-# builds (HAVE_UPGRADE_CHECKER is unset there).
-IF(HAVE_DUMP_AND_LOAD)
-  list(APPEND api_module_SOURCES
-      "util/binlog/binlog_dump_info.cc"
-      "util/binlog/binlog_dumper.cc"
-      "util/binlog/binlog_loader.cc"
-      "util/binlog/dump_binlogs_options.cc"
-      "util/binlog/load_binlogs_options.cc"
-      "util/binlog/utils.cc"
+# The dump/load utilities are supported against both MySQL and MariaDB servers.
+# MySQL-only sub-features inside them (HeatWave/MDS, InnoDB vector store, BULK
+# LOAD) are turned off by vendor-aware feature predicates at run time rather than
+# excluded from the build. See MARIADB_DUMP_LOAD.md.
+list(APPEND api_module_SOURCES
       "util/common/dump/basenames.cc"
       "util/common/dump/checksums.cc"
       "util/common/dump/dump_info.cc"
@@ -120,6 +115,18 @@ IF(HAVE_DUMP_AND_LOAD)
       "util/load/heatwave_load.cc"
       "util/load/lakehouse_source_option.cc"
       "util/load/load_dump_options.cc")
+
+# util.dumpBinlogs()/loadBinlogs() still need MySQL's client binlog API and
+# libbinlogevents; MySQL-only until ported (see HAVE_BINLOG_UTILS in the
+# top-level CMake). Independent of dump/load above.
+IF(HAVE_BINLOG_UTILS)
+  list(APPEND api_module_SOURCES
+      "util/binlog/binlog_dump_info.cc"
+      "util/binlog/binlog_dumper.cc"
+      "util/binlog/binlog_loader.cc"
+      "util/binlog/dump_binlogs_options.cc"
+      "util/binlog/load_binlogs_options.cc"
+      "util/binlog/utils.cc")
 ENDIF()
 
 # The Upgrade Checker is MySQL-server specific; it is excluded from MariaDB

@@ -1187,5 +1187,14 @@ bool sysvar_to_bool(std::string_view name, std::string_view value) {
                          static_cast<int>(name.size()), name.data()));
 }
 
+const char *get_binary_logs_keyword(const mysqlshdk::utils::Version &version,
+                                    bool status) {
+  if (version < mysqlshdk::utils::Version(8, 2, 0)) {
+    return "MASTER";
+  } else {
+    return (status == true ? "BINARY LOG" : "BINARY LOGS AND GTIDS");
+  }
+}
+
 }  // namespace mysql
 }  // namespace mysqlshdk

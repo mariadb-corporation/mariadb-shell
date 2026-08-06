@@ -130,8 +130,16 @@ IF(NOT MARIADB_BUILD)
   SET(HAVE_X_PROTOCOL 1)
   ADD_DEFINITIONS(-DHAVE_X_PROTOCOL)
 
-  SET(HAVE_DUMP_AND_LOAD 1)
-  ADD_DEFINITIONS(-DHAVE_DUMP_AND_LOAD)
+  # util.dumpBinlogs() / util.loadBinlogs() and the low-level binlog streaming
+  # they sit on still depend on MySQL's client binlog API (MYSQL_RPL,
+  # mysql_binlog_open/fetch/close) and on libbinlogevents
+  # (mysql::binlog::event, mysql::gtids) - none of which exist in MariaDB.
+  # Porting them means rewriting the streaming against MariaDB Connector/C's
+  # mariadb_rpl_* API and replacing mysql::gtids with a native domain-based GTID
+  # model. Until then the utility is MySQL-only. This is independent of
+  # dump/load, which is built for both vendors.
+  SET(HAVE_BINLOG_UTILS 1)
+  ADD_DEFINITIONS(-DHAVE_BINLOG_UTILS)
 ENDIF()
 
 

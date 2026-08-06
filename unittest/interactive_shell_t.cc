@@ -1313,11 +1313,9 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",
        "cluster", "status"},
 #endif
-#ifdef HAVE_DUMP_AND_LOAD
       // Attempt to dump an instance (even in interactive mode)
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",
        "util", "dump-instance", "sample"},
-#endif
 #ifdef HAVE_UPGRADE_CHECKER
       // Attempt to use UC (even in interactive mode)
       {"mysql://expired:sample@localhost:" + _mysql_port, "--interactive", "--",

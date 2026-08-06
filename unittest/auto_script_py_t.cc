@@ -313,15 +313,6 @@ std::vector<std::string> find_py_tests(const std::string &subdir,
   std::vector<std::string> filtered;
 
   for (const auto &s : tests) {
-#ifndef HAVE_DUMP_AND_LOAD
-    if (subdir == "py_shell" && (shcore::str_beginswith(s, "util_dump") ||
-                                 shcore::str_beginswith(s, "util_load") ||
-                                 shcore::str_beginswith(s, "util_import") ||
-                                 shcore::str_beginswith(s, "util_export") ||
-                                 shcore::str_beginswith(s, "util_copy"))) {
-      continue;
-    }
-#endif
     // We let files starting with underscore as modules
     if (shcore::str_endswith(s, ext) && s[0] != '_' &&
         !shcore::str_beginswith(s, "upgrade_check")) {
