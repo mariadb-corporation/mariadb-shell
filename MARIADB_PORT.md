@@ -23,7 +23,7 @@ These are defined in [CMakeLists.txt](CMakeLists.txt) **exactly when
 | `HAVE_UPGRADE_CHECKER` | the Upgrade Checker | `#ifdef HAVE_UPGRADE_CHECKER` = MySQL-only code |
 | `HAVE_ADMIN_API` | AdminAPI (`dba`, Cluster/ReplicaSet/ClusterSet, InnoDB Cluster, metadata) | `#ifdef HAVE_ADMIN_API` = MySQL-only code; `#ifndef HAVE_ADMIN_API` = MariaDB stub |
 | `HAVE_X_PROTOCOL` | X protocol / X DevAPI (`mysqlx://`, X sessions, collections, X expr parser, `importJson`) | `#ifdef HAVE_X_PROTOCOL` = MySQL-only code; `#ifndef HAVE_X_PROTOCOL` = MariaDB stub |
-| `HAVE_DUMP_AND_LOAD` | the dump/load utilities | `#ifdef HAVE_DUMP_AND_LOAD` = MySQL-only code |
+| `HAVE_BINLOG_UTILS` | `util.dumpBinlogs()` / `util.loadBinlogs()` and the binlog streaming under them | `#ifdef HAVE_BINLOG_UTILS` = MySQL-only code |
 
 A bare `#ifdef MARIADB_BUILD` / `#ifndef MARIADB_BUILD` now denotes a guard that
 is **neither** AdminAPI nor X-protocol — i.e. an intrinsic build difference
@@ -981,10 +981,8 @@ identifiers cannot contain trailing spaces (`1102`). Verified passing against bo
 a `UTF8_IS_UTF8MB3` server (12.3.2) and an empty-`old_mode` server (13.1.0).
 
 Scope note: `Query_helper`'s only product consumers are dump/load and the Upgrade
-Checker, both excluded from MariaDB builds (`HAVE_DUMP_AND_LOAD`,
-`HAVE_UPGRADE_CHECKER`), so today the code is exercised only by its own unit test —
-but the defect is in shared library code and would resurface the moment either
-feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
+Checker. Dump/load is now built for MariaDB too, so this code is live there; the
+Upgrade Checker remains MySQL-only (`HAVE_UPGRADE_CHECKER`). The 66 SQL-literal expectations in the (MySQL-only)
 Upgrade-Checker tests were updated to match the generated SQL.
 
 ### 13.2 `sql_mode` is never reported via session state tracking

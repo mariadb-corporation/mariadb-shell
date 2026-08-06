@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -374,6 +375,12 @@ class Load_dump_options : public common::Common_options {
   bool m_disable_bulk_load = false;
 
   mysqlshdk::utils::Version m_target_server_version;
+  // Whether the *target* server is MariaDB. m_target_server_version alone
+  // cannot answer that: MariaDB reports 11/12/13, which satisfies every
+  // ">= 8.0.x" test in the loader and makes it probe MySQL-only variables and
+  // features. Detected at run time, so a shell built against either vendor can
+  // load into either. See MARIADB_DUMP_LOAD.md section 4.0.
+  bool m_target_is_maria_db = false;
   bool m_is_mds = false;
   bool m_is_lakehouse_enabled = false;
   bool m_show_metadata = false;

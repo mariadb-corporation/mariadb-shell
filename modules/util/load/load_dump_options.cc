@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +37,7 @@
 #include "modules/mod_utils.h"
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/load/load_errors.h"
@@ -178,8 +180,12 @@ void Load_dump_options::on_set_session(
 
   const auto instance = mysqlshdk::mysql::Instance(session);
 
-  m_target_server_version =
-      Version(session->query("SELECT @@version")->fetch_one()->get_string(0));
+  {
+    const auto server = dump::common::server_version(session);
+    m_target_server_version = Version(
+        session->query("SELECT @@version")->fetch_one()->get_string(0));
+    m_target_is_maria_db = server.is_maria_db;
+  }
   DBUG_EXECUTE_IF("dump_loader_bulk_unsupported_version",
                   { m_target_server_version = Version(8, 3, 0); });
 
@@ -215,9 +221,22 @@ void Load_dump_options::on_set_session(
     }
   }
 
-  m_server_uuid = session->query("SELECT @@server_uuid")
-                      ->fetch_one_or_throw()
-                      ->get_string(0);
+  // @@server_uuid is MySQL-only; MariaDB identifies an instance by @@server_id.
+  // This value only names the default progress file and is recorded in the
+  // progress log so a resume can tell it is pointed at a different server, so
+  // any stable per-instance identifier does. Detected at run time rather than
+  // per build, because a MariaDB-linked shell can be pointed at MySQL and vice
+  // versa (see MARIADB_DUMP_LOAD.md section 4.0).
+  if (dump::common::server_version(session).is_maria_db) {
+    // @@server_id is an integer, unlike MySQL's @@server_uuid string.
+    m_server_uuid = std::to_string(session->query("SELECT @@server_id")
+                                       ->fetch_one_or_throw()
+                                       ->get_uint(0));
+  } else {
+    m_server_uuid = session->query("SELECT @@server_uuid")
+                        ->fetch_one_or_throw()
+                        ->get_string(0);
+  }
 
   if (m_load_users) {
     // some users are always excluded
@@ -238,7 +257,7 @@ void Load_dump_options::on_set_session(
     filters().schemas().exclude(dump::common::k_mhs_excluded_schemas);
   }
 
-  if (m_target_server_version >= Version(8, 0, 27)) {
+  if (!m_target_is_maria_db && m_target_server_version >= Version(8, 0, 27)) {
     // adding indexes in parallel was added in 8.0.27,
     // innodb_parallel_read_threads threads are used during the first stage,
     // innodb_ddl_threads threads are used during second and third stages, in
@@ -253,7 +272,7 @@ void Load_dump_options::on_set_session(
             ->get_uint(0);
   }
 
-  if (m_target_server_version >= Version(8, 0, 16)) {
+  if (!m_target_is_maria_db && m_target_server_version >= Version(8, 0, 16)) {
     m_partial_revokes =
         instance.get_sysvar_bool("partial_revokes").value_or(false);
   }
@@ -261,16 +280,24 @@ void Load_dump_options::on_set_session(
   m_lower_case_table_names =
       instance.get_sysvar_int("lower_case_table_names", 0);
 
+  // MLE (JavaScript), library DDL, PKE-as-PK and dynamic data masking are all
+  // MySQL-only features whose version thresholds a MariaDB version number would
+  // otherwise satisfy. Pending the vendor-aware supports_*() predicates
+  // (MARIADB_DUMP_LOAD.md section 7.3), keep them off for a MariaDB target.
   // this system variable is only available when MLE component is installed
-  m_is_mle_component_installed = instance.get_sysvar_int("mle.memory_max", 0);
+  m_is_mle_component_installed =
+      m_target_is_maria_db ? 0 : instance.get_sysvar_int("mle.memory_max", 0);
 
   m_is_library_ddl_supported =
+      !m_target_is_maria_db &&
       compatibility::supports_library_ddl(m_target_server_version);
 
   m_supports_pke_as_pk =
+      !m_target_is_maria_db &&
       compatibility::supports_pke_as_pk(m_target_server_version);
 
   m_is_ddm_ddl_supported =
+      !m_target_is_maria_db &&
       compatibility::supports_dynamic_data_masking(m_target_server_version);
 
   if (m_is_ddm_ddl_supported) {

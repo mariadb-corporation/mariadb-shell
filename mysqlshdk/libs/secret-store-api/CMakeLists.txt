@@ -1,4 +1,5 @@
 # Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -55,5 +56,8 @@ if(WITH_TESTS)
   target_link_libraries(link-test-mysql-secret-store-api
     mysql-secret-store-api
     ${MYSQLX_LIBRARIES}
+    # utils pulls in Mysys_thread_scope (mysys_thread.cc), which calls
+    # my_thread_init()/my_thread_end() from the server's mysys.
+    ${MYSQL_LIBRARIES}
   )
 endif()

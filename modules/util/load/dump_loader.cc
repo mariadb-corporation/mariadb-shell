@@ -900,6 +900,13 @@ class Dump_loader::Bulk_load_support {
       return false;
     }
 
+#ifdef MARIADB_BUILD
+    // BULK LOAD is MySQL-only and is never scheduled against MariaDB (the
+    // feature is version-gated off), so this retry path is unreachable. The
+    // ER_BULK_* codes it tests for do not exist in libmariadb.
+    (void)e;
+    return false;
+#else
     const auto code = e.code();
 
     // ER_BULK_EXECUTOR_ERROR is reported in case of various resource-related
@@ -923,6 +930,7 @@ class Dump_loader::Bulk_load_support {
                               });
 
     return true;
+#endif  // MARIADB_BUILD
   }
 
  private:
@@ -3722,11 +3730,18 @@ void Dump_loader::check_tables_without_primary_key() {
     return;
   }
 
-  if (sql::ar::query(m_reconnect_callback, m_session,
-                     "show variables like 'sql_require_primary_key';")
-          ->fetch_one()
-          ->get_string(1) != "ON")
-    return;
+  {
+    // SHOW VARIABLES LIKE returns no rows at all when the variable does not
+    // exist, which is the case on MariaDB (sql_require_primary_key is MySQL
+    // 8.0.13+). fetch_one() then yields nullptr - dereferencing it is a
+    // segfault, so treat "not present" the same as "not ON".
+    const auto result = sql::ar::query(
+        m_reconnect_callback, m_session,
+        "show variables like 'sql_require_primary_key';");
+    const auto row = result->fetch_one();
+
+    if (!row || row->get_string(1) != "ON") return;
+  }
 
   std::string tbs;
   for (const auto &s : m_dump->tables_without_pk())

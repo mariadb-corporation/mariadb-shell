@@ -31,10 +31,11 @@
 #include <utility>
 #include <vector>
 #include "modules/mod_utils.h"
-#ifdef HAVE_DUMP_AND_LOAD
 #include "modules/mysqlxtest_utils.h"
+#ifdef HAVE_BINLOG_UTILS
 #include "modules/util/binlog/binlog_dumper.h"
 #include "modules/util/binlog/binlog_loader.h"
+#endif
 #include "modules/util/copy/copy_operation.h"
 #include "modules/util/dump/dump_instance.h"
 #include "modules/util/dump/dump_instance_options.h"
@@ -51,7 +52,6 @@
 #endif
 #include "modules/util/load/dump_loader.h"
 #include "modules/util/load/load_dump_options.h"
-#endif
 #include "mysqlshdk/include/scripting/shexcept.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/include/shellcore/console.h"
@@ -87,8 +87,9 @@ Util::Util(shcore::IShell_core *owner)
          "?connectionData", "?options")
       ->cli();
 #endif  // HAVE_UPGRADE_CHECKER
-#ifdef HAVE_DUMP_AND_LOAD
+#ifdef HAVE_X_PROTOCOL
   expose("importJson", &Util::import_json, "path", "?options")->cli();
+#endif  // HAVE_X_PROTOCOL
   expose("importTable", &Util::import_table_file, "path", "?options")
       ->cli(false);
   expose("importTable", &Util::import_table_files, "files", "?options")->cli();
@@ -110,9 +111,10 @@ Util::Util(shcore::IShell_core *owner)
          "?options")
       ->cli();
 
+#ifdef HAVE_BINLOG_UTILS
   expose("dumpBinlogs", &Util::dump_binlogs, "outputUrl", "?options")->cli();
   expose("loadBinlogs", &Util::load_binlogs, "urls", "?options")->cli();
-#endif
+#endif  // HAVE_BINLOG_UTILS
 }
 
 #ifdef HAVE_UPGRADE_CHECKER
@@ -320,7 +322,6 @@ void Util::check_for_server_upgrade(
 }
 #endif  // HAVE_UPGRADE_CHECKER
 
-#ifdef HAVE_DUMP_AND_LOAD
 #ifdef HAVE_X_PROTOCOL
 
 REGISTER_HELP_FUNCTION(importJson, util);
@@ -2702,6 +2703,7 @@ std::shared_ptr<mysqlshdk::db::ISession> Util::global_session() const {
   return session->get_core_session();
 }
 
+#ifdef HAVE_BINLOG_UTILS
 REGISTER_HELP_FUNCTION(dumpBinlogs, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_DUMPBINLOGS, R"*(
 Dumps binary logs generated since a specific point in time to the given local or
@@ -2895,6 +2897,6 @@ void Util::load_binlogs(const std::string &url,
 
   loader.run();
 }
-#endif
+#endif  // HAVE_BINLOG_UTILS
 
 }  // namespace mysqlsh

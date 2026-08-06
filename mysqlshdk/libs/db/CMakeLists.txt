@@ -55,7 +55,9 @@ set(db_SOURCE
     replay/trace.cc
 )
 
-IF(HAVE_DUMP_AND_LOAD)
+# Binlog streaming uses MySQL's client binlog API and libbinlogevents; MySQL-only
+# until ported to mariadb_rpl_* (see HAVE_BINLOG_UTILS in the top-level CMake).
+IF(HAVE_BINLOG_UTILS)
   list(APPEND db_SOURCE
     mysql/binary_log.cc
   )
@@ -63,7 +65,6 @@ ENDIF()
 
 IF(HAVE_X_PROTOCOL)
   list(APPEND db_SOURCE
-    mysql/binary_log.cc
     replay/mysqlx.cc
     mysqlx/xsession.cc
     mysqlx/xresult.cc

@@ -19,7 +19,9 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **analysis only — no code changes yet.**
+> Status: **phase 0 done** (§11). Dump/load builds for MariaDB and a
+> dumpInstance -> loadDump round-trip works against a live server; the MySQL
+> build is verified unaffected (§11.7). Phases 1-6 outstanding.
 > Last updated: 2026-08-06.
 
 ---
@@ -36,10 +38,13 @@
 | [modules/util/mod_util.h:36](modules/util/mod_util.h#L36), [mod_util.cc:34](modules/util/mod_util.cc#L34) | the `util.dump*` / `util.load*` / `util.copy*` methods are not registered |
 | [unittest/CMakeLists.txt:176](unittest/CMakeLists.txt#L176) | dump/load unit tests dropped; `auto_script_py_t.cc:316` and `shell_script_tester.cc:1816` skip the scripted ones |
 
-Note `util/import_table/*` is **not** gated — `util.importTable()` and the whole
-`LOAD DATA LOCAL INFILE` machinery already build and run on MariaDB. That is the
-data-ingest engine `loadDump` uses, so the hardest part of the load side is
-already alive.
+Note `util/import_table/*` is **not** gated — the whole `LOAD DATA LOCAL INFILE`
+machinery already compiled on MariaDB. That is the data-ingest engine `loadDump`
+uses, so the hardest part of the load side was already alive. (Correction found
+in phase 0: the *sources* were compiled, but `util.importTable()` itself was
+never **exposed** — its `expose()` call sat inside the same
+`#ifdef HAVE_DUMP_AND_LOAD` block in `mod_util.cc`, so the method did not exist
+on the MariaDB build. Removing the gate restored it.)
 
 `MARIADB_PORT.md` §2 still describes dump/load as "supported"; that line is stale
 and should be corrected when this work lands.
@@ -853,8 +858,8 @@ predicates without it.
 
 | Phase | Goal | Notes |
 |---|---|---|
-| 0 | **Compile.** Turn on `HAVE_DUMP_AND_LOAD` for MariaDB. Gate — do not remove — whatever HeatWave/MDS surface actually needs it (§4.11); keep remote storage and `util/copy/*`. | Expect Connector/C gaps like `MARIADB_PORT.md` §321. **No** behaviour change on either vendor: MySQL untouched, MariaDB still remapped to 5.6 and degraded. Bisectable boundary. |
-| 1 | **Stop the bleeding.** §4.0 load-side vendor detection **and its twin in `copy_operation.h`**, §4.10 `sql_require_primary_key` null deref, §4.3 `mysql` lock list, §4.2 roles. | These are crashes and silent wrong behaviour, independent of the refactor. |
+| 0 | ~~**Compile.**~~ **DONE** (§11) — `HAVE_DUMP_AND_LOAD` removed entirely; binlog split out to `HAVE_BINLOG_UTILS`; 4 defects fixed (3 crashes); round-trip verified. | MySQL build still needs compiling (§11.6). |
+| 1 | **Stop the bleeding.** Remaining after §11: §4.0 vendor detection for `copy_operation.h` (the loader got a down-payment already), §4.3 `mysql` lock list, §4.2 roles. §4.10's null deref is fixed. | These are crashes and silent wrong behaviour, independent of the refactor. |
 | 2 | **Vendor-aware gating** (§7). Remove the 5.6 remap; export the build-time server version + vendor to C++ (§7.4); move the `supports_*` predicates to `common/dump/server_features.h` and make them vendor-aware (§7.3); convert all 14 `is_*` sites, ~30 `Version` comparisons and the 5 `k_shell_version` sites; add the vendor field to the manifest; refuse cross-vendor loads and cross-vendor copy. | The foundation, and where most of §4.11 turns itself off for free. Verify MySQL→MySQL dumps are byte-identical before/after. |
 | 3 | **`BACKUP STAGE`** (§4.1) — now expressible as `supports_backup_stage()`. Removes the consistency-or-error dead end. | Needs a locking-session redesign, not a statement swap. |
 | 4 | **GTID** (§4.4), reusing the binlog port's native-GTID model, both dump and load. | |
@@ -887,6 +892,141 @@ topology probing — the MariaDB detection lives here), `checksums.cc`,
 (`LOAD DATA LOCAL INFILE`), `mysqlshdk/libs/storage/*` (local + remote backends),
 `mysqlshdk/libs/mysql/user_privileges.cc` (§4.2).
 
-**Also gated by `HAVE_DUMP_AND_LOAD`** — `modules/util/copy/*` (dump+load in
-memory), `modules/util/binlog/*` (already ported per `MARIADB_PORT.md` §4 —
-worth checking whether it can be un-gated independently of dump/load).
+**Formerly gated by `HAVE_DUMP_AND_LOAD`** — `modules/util/copy/*` (dump+load in
+memory) now builds for both vendors; `modules/util/binlog/*` moved to its own
+`HAVE_BINLOG_UTILS` gate and stays MySQL-only (§11.2).
+
+---
+
+## 11. Phase 0 — done
+
+Landed 2026-08-06. Goal was "compile, link, register, no behaviour change".
+Achieved, plus a verified round-trip; four real defects were found on the way,
+three of them crashes.
+
+### 11.1 `HAVE_DUMP_AND_LOAD` is gone
+
+Dump/load is supported on both vendors, so the macro was a no-op gate and was
+**removed** rather than flipped — CMake variable, compile definition, and all
+twelve `#ifdef`/`IF()` sites. `MARIADB_PORT.md` §0 and `.continue/rules/` are
+updated.
+
+Also un-gated, because dump/load needs them and they are vendor-neutral:
+`mysqlshdk/libs/mysql/user_privileges.cc` (was `IF(NOT MARIADB_BUILD)`, though
+it already carried a MariaDB-specific fix), and `IInstance::get_user_privileges`
+/ `get_current_user_privileges`.
+
+### 11.2 New gate: `HAVE_BINLOG_UTILS` (MySQL-only)
+
+`util.dumpBinlogs()` / `util.loadBinlogs()` shared the old gate but are a
+*separate* feature. **`MARIADB_PORT.md` §4 claims the binlog library was ported
+to `mariadb_rpl_*`; it was not.** `git log --all -S mariadb_rpl` finds the string
+only in `MARIADB_PORT.md` itself — no commit on any branch touches
+`modules/util/binlog/*` or `db/mysql/binary_log.cc`, and those files still
+`#include <mysql/binlog/event/binlog_event.h>`, `<mysql/gtids/gtids.h>` and
+`<sql/rpl_constants.h>`. §4 of that document describes work that was never
+committed and should be corrected.
+
+So binlog got its own gate covering `modules/util/binlog/*`,
+`db/mysql/binary_log.cc`, `mysqlshdk/libs/mysql/{gtid_utils,binlog_utils}.cc`,
+and the two `Dumper` call sites that replay the binlog to verify no DDL ran
+during a dump (`check_if_transactions_are_ddl_safe`). On MariaDB that
+verification now prints a note and treats the dump as unverified — honest
+degradation until §4.4.
+
+One helper had to move: `get_binary_logs_keyword()` lived in the AdminAPI-only
+`replication.cc` but is needed by `server_info.cc` on both vendors. It is now in
+`mysqlshdk/libs/mysql/utils.{h,cc}`, unchanged.
+
+### 11.3 Defects found and fixed
+
+| # | Symptom | Cause | Fix |
+|---|---|---|---|
+| 1 | **SIGSEGV** in every dump, during data dump | `is_supported_collation()` lazily initializes the charset table via `get_charset(0,0)` on whichever thread reaches it first — a worker. MariaDB's mysys then stats a charset index file, and on failure writes `my_errno`, a **thread-local that worker threads never initialized**. Same failure class `MARIADB_PORT.md` §6 documents for the main thread. | New `mysqlshdk::utils::Mysys_thread_scope` (`libs/utils/mysys_thread.{h,cc}`), instantiated in `detail::spawn_scoped_thread` — the single choke point for every shell worker thread. No-op on MySQL. Declared free of mysys headers because `scoped_contexts.h` is included very widely. |
+| 2 | **SIGSEGV** in every load, after "Checking for pre-existing objects" | `check_tables_without_primary_key()` does `fetch_one()->get_string(1)` on `SHOW VARIABLES LIKE 'sql_require_primary_key'`; the variable does not exist on MariaDB, so `fetch_one()` returns nullptr. **This is exactly the defect predicted in §4.10 before any code was built.** | Null-row check. Vendor-neutral: on MySQL the row exists and behaviour is unchanged. |
+| 3 | Load aborts: `Unknown system variable 'server_uuid'` | MySQL-only variable, queried unconditionally to name the progress file. | Runtime vendor branch → `@@server_id` on MariaDB (an integer, so `get_uint`). |
+| 4 | Load aborts: `Unknown system variable 'innodb_parallel_read_threads'` | §4.0 exactly: `m_target_server_version >= Version(8, 0, 27)` is **true** for MariaDB 12.3, so the loader probes MySQL-only variables. | Down-payment on §7.1: `Load_dump_options` now carries `m_target_is_maria_db`, detected at run time via `common::server_version()`. Used to suppress the 8.0.27 / 8.0.16 probes and the MLE / library-DDL / PKE-as-PK / data-masking feature flags. |
+
+Also gated, as MySQL-only rather than removed: the `ER_BULK_EXECUTOR_ERROR` /
+`ER_BULK_LOAD_RESOURCE` retry path (codes absent from libmariadb; BULK LOAD never
+runs on MariaDB anyway), and `Dumper::check_for_upgrade_errors()` (reachable only
+from `ocimds`).
+
+`schema_dumper.cc` needed the `MARIADB_PORT.md` §322 include-order treatment
+(`mysql.h` → `my_global.h` → `m_ctype.h`, with the Clang anonymous-struct
+diagnostics suppressed) and a pair of accessors, because `CHARSET_INFO` spells
+the names differently per vendor: MariaDB `LEX_CSTRING cs_name`/`coll_name`,
+MySQL `const char *csname`/`m_coll_name`.
+
+### 11.4 Verified
+
+Against a live MariaDB 12.3.2 (sandbox on 3312):
+
+- `util` now exposes `dump_instance`, `dump_schemas`, `dump_tables`,
+  `export_table`, `load_dump`, `copy_instance`, `copy_schemas`, `copy_tables`,
+  `import_table`. `dump_binlogs` / `load_binlogs` and `import_json` are correctly
+  absent.
+- `dumpInstance` → `loadDump` round-trip of 2 schemas / 2 tables / 1 view /
+  5 rows, with data, view definition and `DECIMAL` values all verified after
+  reload.
+- `throw_if_cannot_dump_users` fires as designed (`users: false` needed).
+
+### 11.5 Live confirmation of the §7.4 asymmetry
+
+The best evidence yet for the phase-2 refactor, from a real load:
+
+```
+Target is MySQL 12.3.2-MariaDB-debug. Dump was produced from MySQL 5.6.0-12.3.2-MariaDB-debug
+ERROR: Destination MySQL version is newer ... non-consecutive major MySQL versions
+```
+
+The *same server*, dumped and reloaded, is rejected as a non-consecutive major
+version jump — because the dump side applies the 5.6 remap and the load side does
+not. `ignoreVersion: true` is currently required for any MariaDB→MariaDB load.
+Phase 2 removes this.
+
+### 11.6 Known-unfixed / follow-ups
+
+- ~~The MySQL build was not compiled.~~ **Verified** — see §11.7.
+- `Error in my_thread_global_end(): 1 threads didn't exit` at exit. **Pre-existing** —
+  it also appears on `--version`, which spawns no workers, and the count stays 1
+  during a 4-thread dump, so the guard in 11.3(1) is pairing correctly. It is the
+  main thread's `my_thread_end()` accounting.
+- `__have_dump_and_load` is still defined for scripted tests, now always true.
+  Removing it means editing ~33 conditionals and their validation files — test
+  content, deferred to phase 6.
+- The dump/load unit-test suites are now compiled for MariaDB but **have not been
+  run**; `lock_service_t.cc` and `gtid_utils_t.cc` are excluded there (their
+  sources are MySQL-only).
+- `Load_dump_options::on_set_session` now issues one extra `SELECT @@GLOBAL.VERSION`
+  on both vendors. Folds away in phase 2 when the vendor is carried properly.
+
+### 11.7 MySQL build verified unaffected
+
+Built clean against MySQL 26.7.0 (`MYSQL_SOURCE_DIR=/Users/juanram/dev/mysql-server`,
+`MYSQL_BUILD_DIR=.../build`) in a separate `bld-mysql/` tree: **934/934 targets,
+zero failures**, `mariadb-shell`, `mariadb-shell-rec` and `run_unit_tests` all
+linked.
+
+This covers what the MariaDB build structurally cannot:
+
+- `modules/adminapi/*` compiles here, so the previously unverified hunk — the
+  `mysqlshdk/libs/mysql/utils.h` include added to `adminapi/common/common.cc` for
+  the relocated `get_binary_logs_keyword()` — is confirmed. All four call sites
+  (`adminapi/common/common.cc`, `adminapi/cluster/cluster_impl.cc`,
+  `dump/dumper.cc`, `common/dump/server_info.cc`) compile and link.
+- `HAVE_BINLOG_UTILS` is defined throughout; every `util/binlog/*` object builds.
+
+Functional check — the MySQL `util` surface is complete and unchanged:
+
+```
+change_password, check_for_server_upgrade, copy_instance, copy_schemas,
+copy_tables, debug, dump_binlogs, dump_instance, dump_schemas, dump_tables,
+export_table, help, import_json, import_table, load_binlogs, load_dump,
+upgrade_auth_method
+```
+
+`check_for_server_upgrade` (Upgrade Checker), `dump_binlogs`/`load_binlogs`
+(`HAVE_BINLOG_UTILS`), and `import_json` (X protocol) are all still there, and
+`dba` still exposes its 19 functions. The MariaDB build correctly lacks exactly
+those four and nothing else.
