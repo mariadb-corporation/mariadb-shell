@@ -1,0 +1,102 @@
+# .github/workflows/security-review.yml
+# Security-only review pass using claude-code-action (works with OAuth token).
+# Replaces anthropics/claude-code-security-review, which requires an API key.
+# If you later get a Console API key, you can swap back to the dedicated action
+# for its built-in false-positive filtering.
+name: Security Review
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.c"
+      - "**/*.cc"
+      - "**/*.cpp"
+      - "**/*.h"
+      - "**/*.hpp"
+      - "**/*.py"
+      - "**/CMakeLists.txt"
+      - "**/*.cmake"
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      # Pin to a specific version; consider pinning to a commit SHA instead
+      # since this job handles a credential.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history: lets Claude read surrounding code,
+                           # not just the diff, when verifying a finding
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-5
+            --effort xhigh
+            --max-turns 20
+          prompt: |
+            You are performing a SECURITY-ONLY review of this pull request. The
+            project is primarily C/C++ with some Python. Review ONLY the changed
+            files and the code they directly interact with. Ignore style,
+            performance, and general code quality — a separate review job covers
+            those. Report security findings exclusively.
+
+            ## C/C++ — actively hunt for:
+            - Memory safety: buffer overflows/underflows, out-of-bounds
+              reads/writes, use-after-free, double-free, dangling pointers,
+              uninitialized memory.
+            - Integer issues: overflow/underflow, signed/unsigned mismatches,
+              truncating casts — especially in size, length, and index
+              arithmetic before allocation or memcpy/memmove.
+            - Unsafe APIs: strcpy, strcat, sprintf, gets, scanf without width,
+              alloca on untrusted sizes. Flag them even if "it works here."
+            - Format string vulnerabilities (user-controlled format arguments).
+            - Undefined behavior with security impact: strict aliasing
+              violations, out-of-bounds pointer arithmetic, shifting by type
+              width, data races on shared state.
+            - Missing or wrong bounds/length validation of any externally
+              influenced input (network, files, env, CLI args, IPC).
+            - TOCTOU races on file operations; predictable temp files;
+              incorrect permissions.
+            - Error paths that leak resources or leave objects in a state
+              usable for exploitation.
+            - Cryptography misuse: home-rolled crypto, weak primitives (MD5 or
+              SHA-1 for security purposes, ECB mode), hardcoded keys/IVs/salts,
+              non-constant-time comparisons of secrets.
+
+            ## Python — actively hunt for:
+            - Command injection: subprocess/os.system with shell=True or
+              string-built commands from any variable data.
+            - Deserialization of untrusted data: pickle, yaml.load without
+              SafeLoader, eval/exec.
+            - Path traversal in any file path built from external input.
+            - SQL or format-string injection in query construction.
+            - Secrets in code, logs, or exception messages.
+            - requests/urllib with verify=False or disabled certificate checks.
+
+            ## Reporting discipline
+            - For every finding: state the concrete attack scenario or failure
+              mode, the affected lines, and a specific fix. Do not report vague
+              "consider hardening" advice — either it is exploitable/risky and
+              you explain how, or you stay silent.
+            - Read enough surrounding code to be confident before commenting.
+              If you cannot verify a finding from the code available, say so
+              explicitly instead of guessing.
+            - Severity per finding: [CRITICAL] (exploitable), [HIGH] (likely
+              weakness), [MEDIUM] (defense-in-depth gap with real conditions).
+              Do not report LOW/informational noise.
+            - Post findings as inline comments on the specific lines where
+              possible.
+            - No praise, no PR summary, no restating the diff. Findings only.
+            - If there are no findings, post exactly one short comment saying
+              no security issues were found in the changed code — do not
+              invent findings to appear useful.
+            - End with a one-line verdict: PASS or REQUEST CHANGES (any
+              CRITICAL or HIGH finding => REQUEST CHANGES).
