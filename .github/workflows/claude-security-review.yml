@@ -66,7 +66,11 @@ jobs:
             --model claude-opus-5
             --effort xhigh
             --max-turns 25
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
             You are performing a code review of this pull request. The project is
             primarily C/C++ with some Python. Review ONLY the changed files and
             the code they directly interact with.
@@ -164,13 +168,18 @@ jobs:
               or crash/data-corruption), [HIGH] (likely bug or serious
               weakness), [MEDIUM] (real but bounded impact), [LOW]
               (simplicity/readability).
-            - Post findings as inline comments on the specific lines where
-              possible.
+            - Post line-specific findings with
+              `mcp__github_inline_comment__create_inline_comment` (pass
+              `confirmed: true`). Post the verdict and anything not tied to a
+              specific line with `gh pr comment`.
+            - ONLY post GitHub comments. Do not return review text as a chat
+              message — output that is not posted to the PR is lost.
             - No praise padding, no summaries of what the PR does, no
               restating the diff. Findings only.
             - If there are no findings at a given severity, don't invent any.
-              A short "No security or stability issues found in the changed
-              code" is a valid review.
+              If the PR is clean, post exactly one short `gh pr comment` saying
+              no security or stability issues were found in the changed code.
+              Never end the run without posting something.
             - End with a one-line verdict: APPROVE, APPROVE WITH COMMENTS, or
               REQUEST CHANGES (any CRITICAL or HIGH finding => REQUEST
               CHANGES).
