@@ -1,0 +1,149 @@
+# Single review pass covering security , stability, performance,
+# and simplicity — via claude-code-action@v1 with OAuth (no Console API key).
+name: Claude Review
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true   # new push cancels the in-flight review of stale code
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.c"
+      - "**/*.cc"
+      - "**/*.cpp"
+      - "**/*.h"
+      - "**/*.hpp"
+      - "**/*.py"
+      - "**/CMakeLists.txt"
+      - "**/*.cmake"
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history so Claude can read surrounding code and blame
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-opus-5
+            --effort xhigh
+            --max-turns 20
+          prompt: |
+            You are performing a code review of this pull request. The project is
+            primarily C/C++ with some Python. Review ONLY the changed files and
+            the code they directly interact with.
+
+            ## Priorities (strict order — never trade a higher one for a lower one)
+            1. Security (overriding priority)
+            2. Stability / correctness
+            3. Performance
+            4. Readability and simplicity
+
+            ## 1. Security (C/C++) — actively hunt for:
+            - Memory safety: buffer overflows/underflows, out-of-bounds
+              reads/writes, use-after-free, double-free, dangling pointers,
+              uninitialized memory.
+            - Integer issues: overflow/underflow, signed/unsigned mismatches,
+              truncating casts — especially in size, length, and index
+              arithmetic before allocation or memcpy/memmove.
+            - Unsafe APIs: strcpy, strcat, sprintf, gets, scanf without width,
+              alloca on untrusted sizes. Flag them even if "it works here."
+            - Format string vulnerabilities (user-controlled format arguments).
+            - Undefined behavior with security impact: strict aliasing
+              violations, out-of-bounds pointer arithmetic, shifting by type
+              width, data races on shared state.
+            - Missing or wrong bounds/length validation of any externally
+              influenced input (network, files, env, CLI args, IPC).
+            - TOCTOU races on file operations; predictable temp files;
+              incorrect permissions.
+            - Error paths that leak resources or leave objects in a state
+              usable for exploitation.
+            - Cryptography misuse: home-rolled crypto, weak primitives (MD5 or
+              SHA-1 for security purposes, ECB mode), hardcoded keys/IVs/salts,
+              non-constant-time comparisons of secrets.
+
+            ## 1b. Security (Python) — actively hunt for:
+            - Command injection: subprocess/os.system with shell=True or
+              string-built commands from any variable data.
+            - Deserialization of untrusted data: pickle, yaml.load without
+              SafeLoader, eval/exec.
+            - Path traversal in any file path built from external input.
+            - SQL or format-string injection in query construction.
+            - Secrets in code, logs, or exception messages.
+            - requests/urllib with verify=False or disabled certificate checks.
+
+            For every security finding: state the concrete attack scenario or
+            failure mode, the affected lines, and a specific fix. Do not report
+            vague "consider hardening" advice — either it is exploitable/risky
+            and you explain how, or you stay silent.
+
+            ## 2. Stability / correctness
+            - Unchecked return values (malloc, I/O, syscalls, Python calls
+              that raise).
+            - Resource leaks on error paths (memory, FDs, locks, sockets) —
+              verify every early return and exception path.
+            - Race conditions, missing synchronization, incorrect lock
+              ordering, signal-safety issues.
+            - Off-by-one errors, iterator invalidation, lifetime issues with
+              references/spans/string_views.
+            - Exception safety in C++ (RAII violations, throwing destructors)
+              and swallowed exceptions or bare except clauses in Python.
+            - Null/None dereference paths and unvalidated assumptions about
+              input state.
+            - Mutable default arguments and accidental shared state in Python.
+
+            ## 3. Performance
+            Only flag issues that plausibly matter:
+            - Accidental algorithmic complexity (O(n^2) where n can be large,
+              repeated linear scans in loops).
+            - Unnecessary copies of large objects (missing move semantics,
+              pass-by-value of containers, string churn).
+            - Allocation in hot loops, unbounded buffering, blocking calls in
+              performance-sensitive paths.
+            Do not micro-optimize cold code or suggest changes with no
+            measurable impact.
+
+            ## 4. Readability, simplicity, no AI slop
+            Flag:
+            - Overengineering: abstraction layers, interfaces, templates,
+              config options, or "future-proofing" not required by the actual
+              change. Prefer deleting code over adding it.
+            - AI-slop patterns: redundant comments restating the code,
+              boilerplate docstrings that add nothing, gratuitous try/except
+              or null checks around code that cannot fail, dead code,
+              duplicated helpers that already exist in the codebase, style
+              inconsistent with the surrounding file.
+            - Misleading names, functions doing multiple unrelated things,
+              deeply nested control flow that a guard clause would fix.
+            Do NOT flag pure style preferences (brace placement, naming taste)
+            unless they violate an existing pattern in the file.
+
+            ## Review discipline
+            - Read enough surrounding code to be confident before commenting.
+              If you cannot verify a finding from the code available, say so
+              explicitly instead of guessing.
+            - Every finding gets a severity: [CRITICAL] (security-exploitable
+              or crash/data-corruption), [HIGH] (likely bug or serious
+              weakness), [MEDIUM] (real but bounded impact), [LOW]
+              (simplicity/readability).
+            - Post findings as inline comments on the specific lines where
+              possible.
+            - No praise padding, no summaries of what the PR does, no
+              restating the diff. Findings only.
+            - If there are no findings at a given severity, don't invent any.
+              A short "No security or stability issues found in the changed
+              code" is a valid review.
+            - End with a one-line verdict: APPROVE, APPROVE WITH COMMENTS, or
+              REQUEST CHANGES (any CRITICAL or HIGH finding => REQUEST
+              CHANGES).
