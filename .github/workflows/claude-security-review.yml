@@ -1,4 +1,5 @@
-# Single review pass covering security , stability, performance,
+# .github/workflows/claude-review.yml
+# Single review pass covering security (top priority), stability, performance,
 # and simplicity — via claude-code-action@v1 with OAuth (no Console API key).
 name: Claude Review
 
@@ -6,6 +7,8 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write   # REQUIRED: the action exchanges an OIDC token to call the GitHub API
+  actions: read     # lets Claude read CI run results when relevant
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -28,6 +31,17 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      # Optional CI gate — uncomment if you want to skip reviews on red PRs.
+      # Set check-name to your CI *job* name and pin the action to a
+      # verified release SHA before use.
+      # - name: Wait for CI to succeed
+      #   uses: lewagon/wait-on-check-action@<release-sha>
+      #   with:
+      #     ref: ${{ github.event.pull_request.head.sha }}
+      #     check-name: "build"
+      #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+      #     wait-interval: 30
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history so Claude can read surrounding code and blame
@@ -38,7 +52,7 @@ jobs:
           claude_args: |
             --model claude-opus-5
             --effort xhigh
-            --max-turns 20
+            --max-turns 25
           prompt: |
             You are performing a code review of this pull request. The project is
             primarily C/C++ with some Python. Review ONLY the changed files and
