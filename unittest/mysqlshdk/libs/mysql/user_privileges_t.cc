@@ -157,6 +157,9 @@ void setup(const Setup_options &options, Mock_session *session) {
   if (options.user_exists && !is_skip_grants_user) {
     EXPECT_CALL(*session, get_server_version())
         .WillRepeatedly(Return(options.version));
+    // these tests cover the MySQL role model
+    EXPECT_CALL(*session, get_server_vendor())
+        .WillRepeatedly(Return(mysqlshdk::db::ServerVendor::MySQL));
 
     std::set<std::string> all_roles;
 

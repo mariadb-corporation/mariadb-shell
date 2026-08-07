@@ -180,12 +180,12 @@ void Load_dump_options::on_set_session(
 
   const auto instance = mysqlshdk::mysql::Instance(session);
 
-  {
-    const auto server = dump::common::server_version(session);
-    m_target_server_version = Version(
-        session->query("SELECT @@version")->fetch_one()->get_string(0));
-    m_target_is_maria_db = server.is_maria_db;
-  }
+  m_target_server_version =
+      Version(session->query("SELECT @@version")->fetch_one()->get_string(0));
+  // the vendor is cached off the client-side handshake data, so unlike
+  // common::server_version() this costs no round trip
+  m_target_is_maria_db =
+      mysqlshdk::db::ServerVendor::MariaDB == session->get_server_vendor();
   DBUG_EXECUTE_IF("dump_loader_bulk_unsupported_version",
                   { m_target_server_version = Version(8, 3, 0); });
 
@@ -227,7 +227,7 @@ void Load_dump_options::on_set_session(
   // any stable per-instance identifier does. Detected at run time rather than
   // per build, because a MariaDB-linked shell can be pointed at MySQL and vice
   // versa (see MARIADB_DUMP_LOAD.md section 4.0).
-  if (dump::common::server_version(session).is_maria_db) {
+  if (m_target_is_maria_db) {
     // @@server_id is an integer, unlike MySQL's @@server_uuid string.
     m_server_uuid = std::to_string(session->query("SELECT @@server_id")
                                        ->fetch_one_or_throw()

@@ -438,6 +438,8 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
           EXPECT_CALL(*mock, is_open()).WillRepeatedly(Return(false));
           EXPECT_CALL(*mock, get_server_version())
               .WillRepeatedly(Return(Version(m_version)));
+          EXPECT_CALL(*mock, get_server_vendor())
+              .WillRepeatedly(Return(mysqlshdk::db::ServerVendor::MySQL));
 
           if (m_auto_generate_pk_value.has_value() &&
               *m_auto_generate_pk_value != m_create_invisible_pks) {
