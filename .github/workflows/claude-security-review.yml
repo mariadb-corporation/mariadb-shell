@@ -60,12 +60,18 @@ jobs:
           #     workflows (fine for review-only; matters if Claude pushes fixes)
           # If an org owner later installs https://github.com/apps/claude,
           # delete this line to switch to the recommended app auth.
+          # TEMPORARY DEBUG — remove after one run.
+          # Reveals which tools are being denied and whether --effort /
+          # --max-turns are actually applied. Full output is hidden by
+          # default for security, so do not leave this enabled on a repo
+          # that accepts external PRs.
+          show_full_output: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-opus-5
-            --effort high
-            --max-turns 12
+            --effort xhigh
+            --max-turns 25
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
           prompt: |
             REPO: ${{ github.repository }}
