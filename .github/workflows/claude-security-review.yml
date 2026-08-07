@@ -60,6 +60,11 @@ jobs:
           #     workflows (fine for review-only; matters if Claude pushes fixes)
           # If an org owner later installs https://github.com/apps/claude,
           # delete this line to switch to the recommended app auth.
+          # Full transcript in the job log: shows denied tools, per-turn
+          # activity, and token/cost detail. Note the log is visible to anyone
+          # who can read this repo's Actions logs, and it echoes file contents
+          # the review touched.
+          show_full_output: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
