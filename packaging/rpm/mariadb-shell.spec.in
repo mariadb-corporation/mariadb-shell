@@ -269,11 +269,7 @@ rm -f %{buildroot}%{_datadir}/mariadb-shell/{LICENSE,README.md}
 %{_bindir}/mysqlsh
 %{_bindir}/msh
 %{_bindir}/mysql-secret-store-secret-service
-# The login-path secret store helper needs MySQL's my_config_editor support and
-# is not built for MariaDB (HAVE_LOGIN_PATH).
-%if 0%{!?with_mariadb_source:1}
 %{_bindir}/mysql-secret-store-login-path
-%endif
 %if 0%{?bundled_mysql_config_editor:1}
 %{_libexecdir}/mariadb-shell/mysql_config_editor
 %endif
