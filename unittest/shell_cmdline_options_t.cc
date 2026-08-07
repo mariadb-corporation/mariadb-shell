@@ -2104,5 +2104,4 @@ TEST_F(Shell_cmdline_options, password_prompt_default) {
   }
 }
 
-
 }  // namespace shcore
