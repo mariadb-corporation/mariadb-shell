@@ -1,14 +1,17 @@
-# .github/workflows/claude-review.yml
 # Single review pass covering security (top priority), stability, performance,
 # and simplicity — via claude-code-action@v1 with OAuth (no Console API key).
 name: Claude Review
 
+# With an explicit github_token (below), the action skips the OIDC -> GitHub App
+# exchange, so the default GITHUB_TOKEN only has what is granted here. Grant
+# explicitly rather than relying on repo defaults.
 permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  id-token: write   # REQUIRED: the action exchanges an OIDC token to call the GitHub API
-  actions: read     # lets Claude read CI run results when relevant
+  contents: read        # read code; bump to write only if Claude should push fixes
+  pull-requests: write  # post review + inline comments
+  issues: write         # post issue comments
+  actions: read         # read CI run results when relevant
+  id-token: write       # only needed if you switch to the Claude GitHub App path;
+                        # harmless to keep, and avoids re-breaking if you do
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -48,6 +51,16 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
+          # Supplying github_token bypasses the Claude GitHub App entirely
+          # (the app is not installed on this org repo). Consequences:
+          #   - comments post as github-actions[bot], not claude[bot]
+          #   - do NOT enable use_sticky_comment: it only works with
+          #     claude[bot] auth and will duplicate/misbehave here
+          #   - commits/comments made with this token do not trigger other
+          #     workflows (fine for review-only; matters if Claude pushes fixes)
+          # If an org owner later installs https://github.com/apps/claude,
+          # delete this line to switch to the recommended app auth.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-opus-5
