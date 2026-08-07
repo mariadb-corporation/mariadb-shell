@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -64,6 +65,10 @@ class Mock_mysql_session : public mysqlshdk::db::mysql::Session,
                      const mysqlshdk::db::Connection_options &());
   MOCK_CONST_METHOD0(is_open, bool());
   MOCK_CONST_METHOD0(get_server_version, mysqlshdk::utils::Version());
+  // the real implementation reads the vendor from the server handshake and
+  // throws when there is none, so a mock which never connects has to answer
+  // this itself
+  MOCK_METHOD0(get_server_vendor, mysqlshdk::db::ServerVendor());
 
   // Error handling
   MOCK_CONST_METHOD0(get_last_error, mysqlshdk::db::Error *());

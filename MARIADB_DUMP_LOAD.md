@@ -19,9 +19,10 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **phase 0 done** (§11). Dump/load builds for MariaDB and a
-> dumpInstance -> loadDump round-trip works against a live server; the MySQL
-> build is verified unaffected (§11.7). Phases 1-6 outstanding.
+> Status: **phases 0 and 1 done** (§11, §12). Dump/load builds for MariaDB, a
+> dumpInstance -> loadDump round-trip works against a live server, and the
+> crashes and silently-wrong behaviour of phase 1 are fixed; the MySQL build is
+> verified unaffected (§11.7, §12.5). Phases 2-6 outstanding.
 > Last updated: 2026-08-06.
 
 ---
@@ -172,7 +173,18 @@ Several of these are MySQL-shaped (`gtidExecuted`, `partialRevokes`,
 Each item: **what the code does → why it is MySQL-specific → MariaDB
 alternative**. Ordered roughly by how blocking it is.
 
-### 4.0 The load side has no MariaDB detection at all — **most dangerous item**
+### 4.0 The load side has no MariaDB detection at all — **fixed in phase 1**
+
+> **Phase 1:** both holes are closed. `Load_dump_options` and
+> `copy_operation.h` now carry the target's vendor, obtained from
+> `ISession::get_server_vendor()` — which is cached off the client-side
+> handshake string (`mysql_get_server_info()`), so it costs no round trip and
+> needs no `SELECT @@version`. The version *scale* is still MySQL's, which is
+> what phase 2 fixes; what phase 1 removes is the loader and the copy front-end
+> attempting MySQL-only features against a MariaDB target. The analysis below
+> is kept because §7.1 still has to replace the bare `Version` with a
+> `Server_version`.
+
 
 The dump side and the load side obtain the server version by two completely
 different routes:
@@ -248,7 +260,7 @@ non-nestable* — one backup stage at a time per server, and the session that
 started it must end it. The current code holds locks in a set of side sessions
 (`m_lock_sessions`); that model needs rethinking, not just a statement swap.
 
-### 4.2 Privileges & roles — **must fix (latent bug)**
+### 4.2 Privileges & roles — **fixed in phase 1**
 
 - `validate_preflight_privileges` ([dumper.cc:6162](modules/util/dump/dumper.cc#L6162))
   branches on `is_5_6` → demands `SUPER`. On MariaDB (remapped to 5.6) this is
@@ -257,23 +269,14 @@ started it must end it. The current code holds locks in a set of side sessions
   live the moment user dumping is implemented.
 - `validate_object_privileges` ([dumper.cc:6190](modules/util/dump/dumper.cc#L6190))
   requires explicit `SELECT` on `!is_8_0` — correct and harmless for MariaDB.
-- **Roles are silently dropped.** `User_privileges::read_user_roles`
-  ([mysqlshdk/libs/mysql/user_privileges.cc:548](mysqlshdk/libs/mysql/user_privileges.cc#L548))
-  reads `activate_all_roles_on_login`; that sysvar does not exist in MariaDB, so
-  the function returns early with "Roles are not supported in this instance" and
-  **no role-granted privilege is ever counted**. A MariaDB user whose `SELECT` /
-  `RELOAD` comes via a role will be told they lack privileges. Note this path
-  uses the *real* server version (`IInstance::get_version()` → 11/12/13), so the
-  5.6 remap does not shield it.
-  MariaDB alternative: `information_schema.APPLICABLE_ROLES` (present since
-  10.0.5, incl. an `IS_DEFAULT` column) and `mysql.roles_mapping`. `SET ROLE` /
-  default role comes from `mysql.user.default_role`, not `mysql.default_roles`.
+- ~~**Roles are silently dropped.**~~ **Fixed in phase 1** — see §12.2.
 - Privilege-name mapping for the consistency checks:
-  `REPLICATION CLIENT` → **`BINLOG MONITOR`** (and `SLAVE MONITOR`),
-  `SUPER`-implied checks → `BINLOG ADMIN` / `READ_ONLY ADMIN` / `FEDERATED ADMIN`.
-  Confirmed present in `sql/sql_acl.cc`.
+  `REPLICATION CLIENT` → **`BINLOG MONITOR`** — **done in phase 1** (§12.3).
+  Still outstanding for the user-dumping work of phase 5: `SLAVE MONITOR`, and
+  the `SUPER`-implied checks → `BINLOG ADMIN` / `READ_ONLY ADMIN` /
+  `FEDERATED ADMIN`. Confirmed present in `sql/sql_acl.cc`.
 
-### 4.3 `mysql` system-table lock list — **must fix**
+### 4.3 `mysql` system-table lock list — **fixed in phase 1** (§12.1)
 
 `lock_all_tables()` ([dumper.cc:3247](modules/util/dump/dumper.cc#L3247)) locks a
 hardcoded MySQL list:
@@ -859,12 +862,12 @@ predicates without it.
 | Phase | Goal | Notes |
 |---|---|---|
 | 0 | ~~**Compile.**~~ **DONE** (§11) — `HAVE_DUMP_AND_LOAD` removed entirely; binlog split out to `HAVE_BINLOG_UTILS`; 4 defects fixed (3 crashes); round-trip verified. | MySQL build still needs compiling (§11.6). |
-| 1 | **Stop the bleeding.** Remaining after §11: §4.0 vendor detection for `copy_operation.h` (the loader got a down-payment already), §4.3 `mysql` lock list, §4.2 roles. §4.10's null deref is fixed. | These are crashes and silent wrong behaviour, independent of the refactor. |
+| 1 | ~~**Stop the bleeding.**~~ **DONE** (§12) — §4.0 vendor detection for `copy_operation.h`, §4.3 `mysql` lock list, §4.2 roles and the `REPLICATION CLIENT` privilege name. Vendor detection now goes through the cached `ISession::get_server_vendor()`. | |
 | 2 | **Vendor-aware gating** (§7). Remove the 5.6 remap; export the build-time server version + vendor to C++ (§7.4); move the `supports_*` predicates to `common/dump/server_features.h` and make them vendor-aware (§7.3); convert all 14 `is_*` sites, ~30 `Version` comparisons and the 5 `k_shell_version` sites; add the vendor field to the manifest; refuse cross-vendor loads and cross-vendor copy. | The foundation, and where most of §4.11 turns itself off for free. Verify MySQL→MySQL dumps are byte-identical before/after. |
 | 3 | **`BACKUP STAGE`** (§4.1) — now expressible as `supports_backup_stage()`. Removes the consistency-or-error dead end. | Needs a locking-session redesign, not a statement swap. |
 | 4 | **GTID** (§4.4), reusing the binlog port's native-GTID model, both dump and load. | |
 | 5 | **MariaDB-native objects**: sequences (§4.5.1), check constraints, Oracle-mode packages, users/roles/grants. | Largest chunk. Sequences first — smallest and closes a silent-data-loss gap; users/roles is the long pole and unblocks `users: true`. |
-| 6 | **Tests.** Re-enable the gated suites; follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. |
+| 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
 ---
 
@@ -998,8 +1001,11 @@ Phase 2 removes this.
 - The dump/load unit-test suites are now compiled for MariaDB but **have not been
   run**; `lock_service_t.cc` and `gtid_utils_t.cc` are excluded there (their
   sources are MySQL-only).
-- `Load_dump_options::on_set_session` now issues one extra `SELECT @@GLOBAL.VERSION`
-  on both vendors. Folds away in phase 2 when the vendor is carried properly.
+- ~~`Load_dump_options::on_set_session` now issues one extra
+  `SELECT @@GLOBAL.VERSION` on both vendors.~~ **Fixed in phase 1** — it went
+  through `common::server_version()` purely to learn the vendor; that is now
+  `ISession::get_server_vendor()`, which costs nothing. The extra query had also
+  broken the whole `Load_dump_mocked` suite in the MySQL build (§12.4).
 
 ### 11.7 MySQL build verified unaffected
 
@@ -1030,3 +1036,173 @@ upgrade_auth_method
 (`HAVE_BINLOG_UTILS`), and `import_json` (X protocol) are all still there, and
 `dba` still exposes its 19 functions. The MariaDB build correctly lacks exactly
 those four and nothing else.
+
+---
+
+## 12. Phase 1 — done
+
+Landed 2026-08-06. Goal was "stop the bleeding": the crashes and the silently
+wrong behaviour that are independent of the phase-2 refactor.
+
+**The vendor is now obtained from `ISession::get_server_vendor()`**
+([db/session.h:120](mysqlshdk/libs/db/session.h#L120),
+[db/mysql/session.h:180](mysqlshdk/libs/db/mysql/session.h#L180)). It already
+existed and is the right primitive: it reads `mysql_get_server_info()` — the
+handshake string the client already holds — and caches the answer, so it costs
+no round trip and no `SELECT @@version`. Every vendor decision below is
+therefore made from the *server actually connected to*, never from
+`MARIADB_BUILD`; a MySQL-linked shell pointed at MariaDB takes the same
+branches.
+
+It was not null-safe: `std::string info = get_server_info()` constructs a
+`std::string` from `nullptr` when the session is not connected. It now throws
+`std::runtime_error("Not connected")`, matching the convention already used in
+`session.cc`. `Mock_mysql_session` mocks the method, since a mock never
+connects and has to state its own vendor.
+
+### 12.1 The `mysql` system-table lock list (§4.3)
+
+`Dumper::lock_all_tables()` ([dumper.cc:3247](modules/util/dump/dumper.cc#L3247))
+picks the table list by `m_server_version.is_maria_db`. MariaDB gets
+`global_priv` (the real account table — `user` is only a view over it since
+10.4, so locking `user` locks nothing that matters), `roles_mapping` instead of
+`role_edges`, no `default_roles` / `global_grants`, and `event`, which MySQL
+does not need because 8.0 keeps events in the data dictionary. Verified against
+a live server: the emitted statement is exactly that list.
+
+Because the statement is built from `SHOW TABLES IN mysql WHERE ... IN (...)`,
+the old behaviour was to silently lock a subset rather than fail — a quiet
+correctness hole, which is why it survived phase 0's round-trip test.
+
+### 12.2 Roles (§4.2)
+
+`User_privileges::read_user_roles` returned early on MariaDB because
+`activate_all_roles_on_login` does not exist there, so **no role-granted
+privilege was ever counted** and an account whose `SELECT` / `RELOAD` comes via
+a role was told it lacked privileges.
+
+MariaDB's role model is different enough to need its own path, not a translated
+one:
+
+- No mandatory roles, and no way to activate every granted role on login —
+  exactly one role, the account's default role, is enabled when it connects.
+- Enabling a role implicitly enables everything granted to *that* role, so the
+  role graph does not have to be walked client-side.
+- Roles are hostless.
+- `SHOW GRANTS` has **no `USING` clause**. Its bare form (`current_user_and_
+  current_role` in the grammar) reports the account's own grants, the full
+  transitive closure of its active role, and the `PUBLIC` role in one
+  statement, and needs no privileges on the `mysql` schema. For any other
+  account, `SHOW GRANTS FOR <role>` is transitive as well
+  (`traverse_role_graph_down`, `sql/sql_acl.cc:11431`).
+
+So: roles come from `information_schema.APPLICABLE_ROLES` (current account, no
+privileges needed) or `mysql.user.default_role` (any other account), and
+`parse_user_grants` issues the bare `SHOW GRANTS` or a `SHOW GRANTS FOR <role>`
+per role rather than a `USING` clause.
+
+Two smaller fixes in the same file:
+
+- `parse_grant` accepts `DENY` (MariaDB 12.0+, `DENY privileges ON level TO
+  account` — a revoke which keeps GRANT's token order) instead of throwing
+  `std::logic_error`. The `SET DEFAULT ROLE` case it already skipped lost its
+  `#ifdef MARIADB_BUILD`: MySQL's `SHOW GRANTS` never emits either statement,
+  so neither needs a build gate.
+- `get_mandatory_roles` did `fetch_one()->get_string(1)` on
+  `SHOW GLOBAL VARIABLES LIKE 'mandatory_roles'`, the same null-row crash shape
+  as §4.10 and the `partial_revokes` one. Unreachable on MariaDB now, guarded
+  anyway.
+
+`User_privileges_test.validate_role_privileges_direct` is a live-server test
+which exercises exactly this (nested roles, non-current account). It **fails
+before this change and passes after** — verified by reverting just this file.
+
+### 12.3 `REPLICATION CLIENT` does not exist in MariaDB (§4.2)
+
+Found while testing 12.1. MariaDB 10.5 renamed the privilege to `BINLOG
+MONITOR` and `SHOW PRIVILEGES` does not report the old name, so
+`User_privileges::validate({"REPLICATION CLIENT", "SUPER"})`
+([dumper.cc:3530](modules/util/dump/dumper.cc#L3530)) hit
+`validate_privileges()`'s unknown-privilege check and threw. The result was that
+**every `dumpSchemas` / `dumpInstance` on MariaDB aborted** with
+`Invalid privilege in the privileges list: REPLICATION CLIENT` as soon as FTWRL
+was unavailable — i.e. whenever the account lacks `RELOAD`. The name and the two
+user-facing messages that quote it are now vendor-selected.
+
+The remaining `validate()` call sites were audited: `BACKUP_ADMIN` and
+`FLUSH_TABLES` are behind `>= 8.0` version gates that the 5.6 remap turns off,
+`MANAGE_DATA_MASKING_POLICY` and `SET_ANY_DEFINER` sit behind MySQL-only feature
+gates, and the rest (`SELECT`, `LOCK TABLES`, `EVENT`, `TRIGGER`, `SUPER`,
+`RELOAD`) exist in MariaDB. Phase 2 must re-check the first two when the remap
+goes.
+
+### 12.4 `util.copy*` (§4.0) and the loader's extra query
+
+`copy_operation.h` read the target's `@@version` into a bare `Version` — §4.0's
+hole reproduced verbatim outside `Load_dump_options`. Against a MariaDB target
+`is_supported_server(12.3.2)` is false, so every `copyInstance` / `copySchemas`
+printed a bogus *"Target MySQL version '12.3.2' is not supported by this version
+of MySQL Shell"*. The MDS check, the target-version validation and the 8.4
+`mysql_native_password` probe are now skipped for a MariaDB target; the MySQL
+path is textually unchanged.
+
+Separately, phase 0's `Load_dump_options::on_set_session` called
+`common::server_version(session)` purely to learn the vendor, which issued an
+extra `SELECT @@GLOBAL.VERSION`. That query **aborted the entire
+`Load_dump_mocked` suite** in both builds (the mocked session scripts its
+queries). Replacing it with `get_server_vendor()` removes the query and the
+failure.
+
+### 12.5 Verified
+
+Against a live MariaDB 12.3.2 (sandboxes on 3312 and 3313), using an account
+whose `SELECT` / `SHOW VIEW` / `EVENT` / `TRIGGER` / `LOCK TABLES` / `RELOAD`
+are reachable only through a *nested* role (`baserole` -> `dumprole` -> user):
+
+- `dumpSchemas` succeeds — previously it was refused for missing privileges.
+  `SHOW GRANTS FOR` that account lists only `USAGE`, so the role expansion is
+  doing the work.
+- With `RELOAD` revoked so FTWRL is unavailable, the `LOCK TABLES` fallback runs
+  and emits the MariaDB system-table list (12.1) instead of aborting on
+  `REPLICATION CLIENT` (12.3).
+- `copySchemas` completes MariaDB -> MariaDB with no spurious version warning,
+  which also covers the in-memory `Dump_writer` path phase 0 did not exercise.
+  `ignoreVersion: true` is still required — that is §11.5, removed in phase 2.
+
+Unit tests, MariaDB build (`Compatibility_test`, `Dump_utils`, `Dump_scheduler`,
+`Load_dump`, `Load_dump_mocked`, `Schema_dumper_test`, `User_privileges_test`):
+68 passed, 7 failed (§12.6). Before this change the same filter aborted in
+`Load_dump_mocked` and, with that suite excluded, reported 59 passed / 8 failed.
+Net: `Load_dump_mocked` (6 tests) runs again and
+`validate_role_privileges_direct` passes; nothing regressed.
+
+MySQL build, same filter against MySQL 26.7.0: **78/78 passed**, one skip
+(`dump_filtered_grants_super_priv`, "SUPER has been deprecated in 8.0").
+
+### 12.6 Known-unfixed
+
+**Testing policy (decided).** Component-level unit tests — `Schema_dumper_test`,
+`User_privileges_test`, `Compatibility_test` and the like — count on both
+vendors and are tracked per phase; they are tied to a specific piece of code, so
+a MariaDB failure there is a real signal. The end-to-end **dump/load** suites
+are the exception: they are deferred on MariaDB until the port is complete
+(phase 6), because until the vendor-aware gating of phase 2 lands they mostly
+re-report the same handful of known gaps. The **MySQL** suites are a gate at
+every phase without exception — they are what proves MySQL -> MySQL is
+untouched.
+
+Failing on the MariaDB build, all **pre-existing** (confirmed by running the
+same filter on a clean tree):
+
+- `Schema_dumper_test.dump_libraries` — MySQL 9 JS libraries; MariaDB has no
+  `LIBRARY` object at all. This wants a gate on the **active server's vendor**,
+  not new expected output — the test-side counterpart of `supports_library_ddl()`
+  becoming vendor-aware in §7.3, so it belongs with phase 2 rather than phase 6.
+- `User_privileges_test.partial_revokes` — sets a MySQL-only system variable on
+  a MariaDB server; same treatment, same phase.
+- `Schema_dumper_test.{dump_grants, dump_filtered_grants, opt_mysqlaas,
+  compat_ddl, unknown_collations}` — genuine expected-output differences,
+  needing the `schema_dumper_t.cc` recipe from the
+  `mariadb-schema-dumper-tests` note. Phase 6.
+
+Also still open: `Version::is_mds()` is vendor-blind (§7.1).

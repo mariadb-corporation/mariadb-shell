@@ -79,9 +79,15 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
 
   using mysqlshdk::utils::k_shell_version;
   using mysqlshdk::utils::Version;
+  // everything below reasons about the target on MySQL's version scale;
+  // MariaDB version numbers are not on it, so handing them to the MySQL
+  // version policy yields a bogus "version is not supported" warning and bogus
+  // feature detection - the same hole Load_dump_options used to have
+  const auto target_is_maria_db = mysqlshdk::db::ServerVendor::MariaDB ==
+                                  load_session->get_server_vendor();
   auto version = Version(
       load_session->query("SELECT @@version")->fetch_one()->get_string(0));
-  auto is_mds = version.is_mds();
+  auto is_mds = !target_is_maria_db && version.is_mds();
   DBUG_EXECUTE_IF("copy_utils_force_mds", { is_mds = true; });
   DBUG_EXECUTE_IF("copy_utils_unsupported_target_version", {
     version =
@@ -89,11 +95,13 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
                 k_shell_version.get_patch());
   });
 
-  // if target is MDS, then we want to validate the version, so we won't copy
-  // to an unsupported version
-  // BUG#38107377 - but only if ignoreVersion is false
-  copy_options->dump_options()->set_target_version(
-      version, is_mds && !copy_options->load_options()->ignore_version());
+  if (!target_is_maria_db) {
+    // if target is MDS, then we want to validate the version, so we won't copy
+    // to an unsupported version
+    // BUG#38107377 - but only if ignoreVersion is false
+    copy_options->dump_options()->set_target_version(
+        version, is_mds && !copy_options->load_options()->ignore_version());
+  }
 
   // enable MDS checks if target is an MDS instance
   if (is_mds) {
@@ -102,7 +110,7 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
 
   // BUG#38852692 - automatically use 'target_has_mysql_native_password'
   // compatibility option
-  if (804 == version.numeric_version_series()) {
+  if (!target_is_maria_db && 804 == version.numeric_version_series()) {
     const bool has_mysql_native_password =
         load_session
             ->query(

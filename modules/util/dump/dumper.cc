@@ -3253,11 +3253,21 @@ void Dumper::lock_all_tables() {
       // be possible to list tables
       validate_privileges(mysql);
 
+      // MariaDB stores the account data in `global_priv` (`user` is only a
+      // view over it since 10.4, locking it does not lock the account data),
+      // roles in `roles_mapping`, and has neither `default_roles` nor
+      // `global_grants`. Events live in `event`; they are part of the dumped
+      // DDL and there is no data dictionary to read them from instead.
       const auto result = query(
-          "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
-          "('columns_priv', 'db', 'default_roles', 'func', 'global_grants', "
-          "'proc', 'procs_priv', 'proxies_priv', 'role_edges', 'tables_priv', "
-          "'user')");
+          m_server_version.is_maria_db
+              ? "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
+                "('columns_priv', 'db', 'event', 'func', 'global_priv', "
+                "'proc', 'procs_priv', 'proxies_priv', 'roles_mapping', "
+                "'tables_priv')"
+              : "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
+                "('columns_priv', 'db', 'default_roles', 'func', "
+                "'global_grants', 'proc', 'procs_priv', 'proxies_priv', "
+                "'role_edges', 'tables_priv', 'user')");
 
       auto stmt = k_lock_tables;
 
@@ -3516,8 +3526,13 @@ void Dumper::lock_instance() {
       }
     }
   } else if (!m_ftwrl_used) {
+    // MariaDB 10.5 renamed REPLICATION CLIENT to BINLOG MONITOR and does not
+    // report the old name in SHOW PRIVILEGES, which makes validate() reject it
+    // as an unknown privilege rather than report it as missing
+    const auto *const replication_client =
+        m_server_version.is_maria_db ? "BINLOG MONITOR" : "REPLICATION CLIENT";
     auto can_execute_show_status =
-        2 != m_user_privileges->validate({"REPLICATION CLIENT", "SUPER"})
+        2 != m_user_privileges->validate({replication_client, "SUPER"})
                  .missing_privileges()
                  .size();
     DBUG_EXECUTE_IF("dumper_replication_client_unavailable",
@@ -3581,18 +3596,19 @@ void Dumper::lock_instance() {
               "\n * Enable binary logging and set the gtid_mode system "
               "variable to ON or ON_PERMISSIVE.";
 
-          msg +=
+          msg += shcore::str_format(
               "\n * Enable binary logging and use an account which has the "
-              "REPLICATION CLIENT or SUPER privileges.";
+              "%s or SUPER privileges.",
+              replication_client);
         }
       } else {
         assert(!can_check_dump_consistency);
 
         msg += "\n * Set the gtid_mode system variable to ON or ON_PERMISSIVE.";
 
-        msg +=
-            "\n * Use an account which has the REPLICATION CLIENT or SUPER "
-            "privileges.";
+        msg += shcore::str_format(
+            "\n * Use an account which has the %s or SUPER privileges.",
+            replication_client);
       }
 
       console->print_note(msg);
