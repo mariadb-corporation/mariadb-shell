@@ -1,4 +1,3 @@
-# .github/workflows/claude-review.yml
 # Single review pass covering security (top priority), stability, performance,
 # and simplicity — via claude-code-action@v1 with OAuth (no Console API key).
 name: Claude Review
@@ -76,7 +75,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: |
             --model claude-opus-5
-            --effort medium
+            --effort high
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
           prompt: |
             REPO: ${{ github.repository }}
