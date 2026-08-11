@@ -35,7 +35,7 @@
 #   dyld: Library not loaded: /Users/runner/work/.../lib/libpython3.14.dylib
 #
 # Applied to every executable rather than a named few. It used to be a list of
-# the two obvious consumers, which is how both mysql-secret-store helpers came
+# the two obvious consumers, which is how both secret store helpers came
 # to ship in the macOS package unable to start: they embed Python through
 # mysqlshdk and nobody thought to add them. -change is a no-op on a binary that
 # has no such reference, so there is no cost to covering everything, and the

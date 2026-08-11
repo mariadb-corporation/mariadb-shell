@@ -1,4 +1,5 @@
 # Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB Corporation.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +32,12 @@ function(add_helper_executable)
 
   configure_file(${client_input_file} client.cc)
 
-  set(exec_name "mysql-secret-store-${helper_name}")
+  # The prefix must match shcore::k_secret_store_helper_prefix
+  # (mysqlshdk/libs/utils/shell_naming.h): the shell discovers helpers by
+  # scanning its binary folder for it. It must also not be mysql-prefixed --
+  # MySQL Shell's own mysql-secret-store-* helpers share a system bindir with
+  # these, and would be picked up as this shell's.
+  set(exec_name "mariadb-secret-store-${helper_name}")
   set(exec_src
     client.cc
     ${helper_src}

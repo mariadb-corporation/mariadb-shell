@@ -1329,7 +1329,14 @@ IF(WIN32)
   SET(_plugin_ext "dll")
 ENDIF()
 
-SET(INSTALL_MYSQL_PLUGINS_DIR "lib/mysql/plugins")
+# Bundled client authentication plugins. Must not be a mysql-prefixed path:
+# mysql-shell installs its own plugins into lib/mysql/plugins, and a system
+# install of both packages would fight over it. Compiled into the binary as
+# DEFAULT_MYSQL_PLUGIN_DIR below and resolved at run time relative to the shell
+# home by shcore::get_default_mysql_plugin_dir(), so the packaging file lists
+# (packaging/debian/CMakeLists.txt, packaging/rpm/mariadb-shell.spec.in) are the
+# only other places that spell the path out.
+SET(INSTALL_MYSQL_PLUGINS_DIR "lib/mariadb/plugins")
 IF(MYSQL_BUILD_DIR)
   SET(_plugin_subdirs "${MYSQL_BUILD_DIR}/plugin_output_directory")
   IF(WIN32)

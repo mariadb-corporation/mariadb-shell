@@ -342,8 +342,8 @@ Start by asking the helper itself — it prints the real reason, which the shell
 only writes to its log:
 
 ```bash
-mysql-secret-store-login-path version; echo "exit=$?"       # the default
-mysql-secret-store-secret-service version; echo "exit=$?"   # if you selected it
+mariadb-secret-store-login-path version; echo "exit=$?"       # the default
+mariadb-secret-store-secret-service version; echo "exit=$?"   # if you selected it
 ```
 
 The helpers live next to the `mariadb-shell` binary. Exit `0` means healthy; exit
@@ -359,7 +359,7 @@ The helpers live next to the `mariadb-shell` binary. Exit `0` means healthy; exi
 | `Object does not exist at path "/org/freedesktop/secrets/collection/login"` on store, while `secret-tool search` exits `0` | Daemon is running but the login keyring — the default collection — was never created | Unlock with a non-empty, newline-terminated password (§4); an empty password creates no keyring |
 | The same error, on every retry, from a script that *did* unlock the keyring — and `gnome-keyring-daemon` logged `another secret service is running` | A D-Bus–activated daemon won `org.freedesktop.secrets`; your unlocked daemon is alive but not serving | Start it with `--replace` and wait for it to own the name before storing (§4) |
 | `shell.options['credentialStore.helper']` is `<invalid>` | The default helper failed to initialize; storage is disabled and passwords are prompted every time | Run the helper command above to get the reason |
-| `mysql-secret-store-secret-service: command not found` | Helper not installed alongside the shell | Reinstall the shell package |
+| `mariadb-secret-store-secret-service: command not found` | Helper not installed alongside the shell | Reinstall the shell package |
 
 The shell logs the underlying error at startup. To see it:
 

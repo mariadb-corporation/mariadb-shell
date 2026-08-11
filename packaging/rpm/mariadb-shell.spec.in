@@ -91,12 +91,9 @@ BuildRequires:  libcurl-devel
 Provides:      mariadb-shell = %{version}-%{release}
 Obsoletes:     mariadb-shell < %{version}-%{release}
 %endif
-# mysql-shell owns %{_bindir}/mysqlsh and %{_mandir}/man1/mysqlsh.1, which this
-# package also ships as aliases for mariadb-shell. Deliberately no
-# "Provides: mysql-shell": this is not a drop-in replacement (no AdminAPI,
+# No "Provides: mysql-shell": this is not a drop-in replacement (no AdminAPI,
 # dump/load, X DevAPI or Upgrade Checker), so it must not satisfy dependencies
 # on mysql-shell.
-Conflicts:     mysql-shell
 
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
 %global __provides_exclude_from ^(%{_datadir}/mariadb-shell/.*|%{_prefix}/lib/mariadb-shell/.*)$
@@ -168,8 +165,7 @@ Conflicts:     mysql-shell
 %description
 @PRODUCT@
 a query and administration shell client and framework, with SQL and Python
-scripting modes. Installs as mariadb-shell, with mysqlsh and msh provided as
-aliases.
+scripting modes. Installs as mariadb-shell, with msh provided as a short alias.
 
 %if 0%{?suse_version}
 %debug_package
@@ -266,10 +262,9 @@ rm -f %{buildroot}%{_datadir}/mariadb-shell/{LICENSE,README.md}
 %doc LICENSE
 %doc README.md
 %{_bindir}/mariadb-shell
-%{_bindir}/mysqlsh
 %{_bindir}/msh
-%{_bindir}/mysql-secret-store-secret-service
-%{_bindir}/mysql-secret-store-login-path
+%{_bindir}/mariadb-secret-store-secret-service
+%{_bindir}/mariadb-secret-store-login-path
 %if 0%{?bundled_mysql_config_editor:1}
 %{_libexecdir}/mariadb-shell/mysql_config_editor
 %endif
@@ -277,7 +272,7 @@ rm -f %{buildroot}%{_datadir}/mariadb-shell/{LICENSE,README.md}
 %{_libexecdir}/mariadb-shell/mysqlbinlog
 %endif
 %if 0%{?with_mysql_source:1}
-%{_prefix}/lib/mysql/plugins/*
+%{_prefix}/lib/mariadb/plugins/*
 %if 0%{?rhel}
 %if 0%{?rhel} > 7
 %{_prefix}/lib/mariadb-shell/libfido2.so*
@@ -326,7 +321,6 @@ rm -f %{buildroot}%{_datadir}/mariadb-shell/{LICENSE,README.md}
 %{_prefix}/lib/mariadb-shell/yparser/*
 %endif
 %{_mandir}/man1/mariadb-shell.1*
-%{_mandir}/man1/mysqlsh.1*
 %{_mandir}/man1/msh.1*
 %if 0%{?jit_executor_lib:1}
     %{_prefix}/lib/mariadb-shell/libjitexecutor*

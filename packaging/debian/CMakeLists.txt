@@ -258,10 +258,9 @@ set(INSTALL_FILE "${DEST_DIR}/mariadb-shell${PRODUCT_SUFFIX}.install")
 
 file(WRITE "${INSTALL_FILE}"
 "usr/bin/mariadb-shell
-usr/bin/mysqlsh
 usr/bin/msh
-usr/bin/mysql-secret-store-secret-service
-usr/bin/mysql-secret-store-login-path
+usr/bin/mariadb-secret-store-secret-service
+usr/bin/mariadb-secret-store-login-path
 usr/share/mariadb-shell/LICENSE    usr/share/doc/mariadb-shell
 usr/share/mariadb-shell/README.md     usr/share/doc/mariadb-shell
 usr/share/mariadb-shell/Docs/INFO_SRC     usr/share/mariadb-shell/Docs
@@ -270,7 +269,6 @@ usr/share/mariadb-shell/prompt/*   usr/share/mariadb-shell/prompt
 usr/lib/mariadb-shell/plugins
 usr/lib/mariadb-shell/python-packages
 usr/share/man/man1/mariadb-shell.1
-usr/share/man/man1/mysqlsh.1
 usr/share/man/man1/msh.1
 ")
 
@@ -321,7 +319,7 @@ endif()
 if (MYSQL_SOURCE_DIR)
 file(APPEND "${INSTALL_FILE}"
 "# For client authentication plugins
-usr/lib/mysql/plugins/*.so
+usr/lib/mariadb/plugins/*.so
 usr/lib/mariadb-shell/libfido2.so*
 # For protobuf library
 usr/lib/mariadb-shell/libprotobuf*.so*
@@ -332,7 +330,7 @@ endif()
 if (MARIADB_SOURCE_DIR)
 file(APPEND "${INSTALL_FILE}"
 "# For client authentication plugins
-usr/lib/mysql/plugins/*.so
+usr/lib/mariadb/plugins/*.so
 ")
 endif()
 
