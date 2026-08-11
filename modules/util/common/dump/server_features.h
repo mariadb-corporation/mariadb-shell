@@ -100,10 +100,24 @@ bool produces_maria_db_dialect(bool source_is_maria_db);
 /**
  * LOCK INSTANCE FOR BACKUP and the BACKUP_ADMIN privilege which guards it.
  *
- * MariaDB's analogue is BACKUP STAGE BLOCK_DDL, which needs RELOAD rather than
- * a dedicated privilege - see MARIADB_DUMP_LOAD.md section 4.1 (phase 3).
+ * MariaDB's analogue is BACKUP STAGE BLOCK_DDL - see supports_backup_stage().
  */
 bool supports_lock_instance_for_backup(const Server_version &v);
+
+/**
+ * BACKUP STAGE, MariaDB's answer to LOCK INSTANCE FOR BACKUP (10.4+).
+ *
+ * BACKUP STAGE BLOCK_DDL blocks DDL and writes to non-transactional tables
+ * while leaving InnoDB DML running, which is what the dumper wants for the
+ * whole length of the dump. It is guarded by RELOAD rather than by a dedicated
+ * privilege, and it differs from LOCK INSTANCE FOR BACKUP in two ways that the
+ * dumper has to design around: it is a server-wide singleton held by one
+ * connection, and the statement commits the transaction of the session that
+ * runs it - so it needs a session of its own.
+ *
+ * See MARIADB_DUMP_LOAD.md section 4.1.
+ */
+bool supports_backup_stage(const Server_version &v);
 
 /**
  * The FLUSH_TABLES privilege, an alternative to RELOAD for executing FLUSH

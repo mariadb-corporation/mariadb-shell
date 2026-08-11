@@ -19,12 +19,14 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **phases 0, 1 and 2 done** (§11, §12, §13). Dump/load builds for
-> MariaDB, a dumpInstance -> loadDump round-trip works against a live server
-> with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build and all
-> version gating is vendor-aware; the MySQL build is verified unaffected
-> (§11.7, §12.5, §13.7). Phases 3-6 outstanding.
-> Last updated: 2026-08-10.
+> Status: **phases 0, 1, 2 and 3 done** (§11, §12, §13, §14). Dump/load builds
+> for MariaDB, a dumpInstance -> loadDump round-trip works against a live server
+> with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build, all
+> version gating is vendor-aware, and a consistent dump now holds a real backup
+> lock (`BACKUP STAGE BLOCK_DDL`) instead of running with DDL wide open; the
+> MySQL build is verified unaffected (§11.7, §12.5, §13.7, §14.4). Phases 4-6
+> outstanding.
+> Last updated: 2026-08-11.
 
 ---
 
@@ -135,7 +137,7 @@ is the authoritative description of the locking protocol — read it first.
 | 7 | Start `REPEATABLE READ` + `START TRANSACTION WITH CONSISTENT SNAPSHOT` | `start_transaction` |
 | 8 | Spawn N worker sessions, each with its own consistent snapshot | `create_worker_sessions` / `create_worker_threads` |
 | 9 | Build the instance cache (all metadata) | `initialize_instance_cache` |
-| 10 | **Lock instance for backup** (`LOCK INSTANCE FOR BACKUP`) | `lock_instance` |
+| 10 | **Lock instance for backup** (`LOCK INSTANCE FOR BACKUP`; `BACKUP STAGE BLOCK_DDL` on MariaDB, §14) | `lock_instance` |
 | 11 | Release read locks | `release_read_locks` |
 | 12 | Per-schema/table task planning | `create_schema_tasks`, `create_table_tasks` |
 | 13 | Object-level privilege check | `validate_object_privileges` |
@@ -218,7 +220,14 @@ everything is attempted). Any work on the load path must start here. This is als
 the clearest argument for §7: the fix is not to add a second remap on the load
 side, it is to make both sides carry a vendor and gate on `(vendor, version)`.
 
-### 4.1 Consistency: `LOCK INSTANCE FOR BACKUP` / `BACKUP_ADMIN` — **must replace**
+### 4.1 Consistency: `LOCK INSTANCE FOR BACKUP` / `BACKUP_ADMIN` — **fixed in phase 3**
+
+> **Phase 3** replaced it with `BACKUP STAGE BLOCK_DDL` held in a session of its
+> own — see §14. The mapping below turned out to be half right: `BLOCK_DDL` is
+> indeed the analogue of `LOCK INSTANCE FOR BACKUP`, but `FTWRL` →
+> `START` + `BLOCK_COMMIT` is not implementable, because stages only move
+> forward and there is no way back from `BLOCK_COMMIT` to `BLOCK_DDL`. §14.1 has
+> the measured stage semantics.
 
 `Dumper::lock_instance()` ([dumper.cc:3488](modules/util/dump/dumper.cc#L3488)) runs
 `LOCK INSTANCE FOR BACKUP`, gated on the `BACKUP_ADMIN` privilege
@@ -329,9 +338,10 @@ utility's native-GTID rewrite for `util.dumpBinlogs`/`loadBinlogs`. Reuse that
 model rather than inventing a second one.
 
 Also note `Dumper::lock_instance()`'s fallback logic keys on `gtid_mode` being
-`ON`/`ON_PERMISSIVE` to decide whether a dump can be called consistent. With
-`BACKUP STAGE` (§4.1) available, that whole branch should become unreachable on
-MariaDB — which is the cleanest possible fix.
+`ON`/`ON_PERMISSIVE` to decide whether a dump can be called consistent. Phase 3
+made that branch unreachable for any MariaDB account with `RELOAD` — which is
+the same privilege FTWRL needs, so in practice the branch is now only reached by
+an account that could not have taken a consistent dump under any design.
 
 ### 4.5 Instance cache / `information_schema` — **mostly free, some gaps**
 
@@ -866,7 +876,7 @@ predicates without it.
 | 0 | ~~**Compile.**~~ **DONE** (§11) — `HAVE_DUMP_AND_LOAD` removed entirely; binlog split out to `HAVE_BINLOG_UTILS`; 4 defects fixed (3 crashes); round-trip verified. | MySQL build still needs compiling (§11.6). |
 | 1 | ~~**Stop the bleeding.**~~ **DONE** (§12) — §4.0 vendor detection for `copy_operation.h`, §4.3 `mysql` lock list, §4.2 roles and the `REPLICATION CLIENT` privilege name. Vendor detection now goes through the cached `ISession::get_server_vendor()`. | |
 | 2 | ~~**Vendor-aware gating**~~ **DONE** (§13) — 5.6 remap gone from the MariaDB build; `common/dump/server_features.h` holds 28 vendor-aware predicates; every `is_*` and `Version` gate converted; manifest carries `vendor`; cross-vendor load, copy and `ocimds` refused. | The foundation, and where most of §4.11 turns itself off for free. |
-| 3 | **`BACKUP STAGE`** (§4.1) — now expressible as `supports_backup_stage()`. Removes the consistency-or-error dead end. | Needs a locking-session redesign, not a statement swap. |
+| 3 | ~~**`BACKUP STAGE`**~~ **DONE** (§14) — `BACKUP STAGE START` + `BLOCK_DDL` in a dedicated session is the backup lock on MariaDB, guarded by `RELOAD`; `FLUSH TABLES WITH READ LOCK` is kept for the snapshot window. | The locking-session redesign was the work, as predicted. |
 | 4 | **GTID** (§4.4), reusing the binlog port's native-GTID model, both dump and load. | |
 | 5 | **MariaDB-native objects**: sequences (§4.5.1), check constraints, Oracle-mode packages, users/roles/grants. | Largest chunk. Sequences first — smallest and closes a silent-data-loss gap; users/roles is the long pole and unblocks `users: true`. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
@@ -1403,3 +1413,139 @@ helper):
 - MySQL → MySQL dumps are **not** byte-identical before and after, as §7.5
   suggested checking: the manifest gained the `vendor` field. That is the only
   difference, and it is the §6.3 requirement.
+- **`targetVersion` error messages lost their `Argument #N:` prefix on the MySQL
+  build** — found while running the phase-3 gate (§14.4), present before phase 3
+  and absent before phase 2. Moving the validation out of the option unpacker
+  into `on_validate()` (the trap recorded above) also moved it out of the
+  unpacker's error wrapper, so `Target MySQL version '26.9.0' is not
+  supported…` no longer carries the argument position. It fails 12 assertions in
+  `Shell_scripted/Auto_script_py.run_and_check/util_dump_instance_norecord`, and
+  those 12 are the *only* failures in that suite. Not fixed here: restoring the
+  prefix means knowing the option map's argument position, which differs per
+  entry point (`#2` for `dumpInstance`, `#4` for `dumpTables`), so it needs the
+  unpacker to carry it rather than a literal in the message.
+
+---
+
+## 14. Phase 3 — done
+
+Landed 2026-08-11. Goal was §4.1: give MariaDB a real backup lock, so that a
+consistent dump no longer means "block the whole server with FTWRL for the
+duration, or give up".
+
+Before this, `m_user_has_backup_admin` could only ever be true on MySQL 8.0, so
+every MariaDB dump printed *"Backup lock is not supported in MariaDB 12.3 and
+DDL changes will not be blocked"* and ran with DDL wide open from the moment
+`UNLOCK TABLES` released the global read lock.
+
+### 14.1 What `BACKUP STAGE` actually does
+
+Measured on MariaDB 12.3.2 with a session parked at `BACKUP STAGE BLOCK_DDL`
+while another session probed it. This is the table the design rests on, and
+three of the rows contradict what §4.1 predicted:
+
+| Operation in another session | Under `BLOCK_DDL` |
+|---|---|
+| DDL (`CREATE TABLE`) | **blocked** — the point of the exercise |
+| InnoDB DML | runs |
+| Aria DML (`transactional=1`, the default) | runs |
+| MyISAM DML | **blocked** |
+| `FLUSH TABLES WITH READ LOCK` | succeeds |
+| `LOCK TABLES … READ` | succeeds |
+| `CREATE USER` / account management | **runs — not blocked** |
+| a second `BACKUP STAGE START` | blocked |
+
+So "blocks DDL while leaving DML running" (§4.1) is true only for transactional
+tables: writes to genuinely non-transactional tables wait for the whole dump.
+That is a real behavioural cost with no MySQL counterpart —
+`LOCK INSTANCE FOR BACKUP` blocks no DML at all — so `start_backup_stage()`
+`log_info`s it rather than letting it be a surprise in the server's process
+list.
+
+Three structural constraints, all from the server source
+(`sql/backup.cc`, `sql/mdl.cc`, `sql/sql_parse.cc`):
+
+- **Stages only move forward.** `run_backup_stage()` raises
+  `ER_BACKUP_WRONG_STAGE` for any stage `<=` the current one. There is no path
+  back from `BLOCK_COMMIT` to `BLOCK_DDL`, which is what kills §4.1's
+  FTWRL → `START` + `BLOCK_COMMIT` mapping: the commit block could be taken for
+  the snapshot window but never released without ending the backup.
+- **It is a server-wide singleton.** `backup_flush_ticket` is a file-static, and
+  `MDL_BACKUP_START` is incompatible with itself. One backup per server, held by
+  the connection that started it.
+- **`SQLCOM_BACKUP` is `CF_AUTO_COMMIT_TRANS`**, and `backup_start()` refuses to
+  run in a connection with `has_read_only_protection()` — i.e. one holding
+  FTWRL. Either alone forces the stage out of the main session; together they
+  make it non-negotiable.
+
+### 14.2 The design
+
+FTWRL is kept for the snapshot window and `BACKUP STAGE` becomes the backup
+lock, which is exactly the shape MySQL already has:
+
+| Step | MySQL | MariaDB |
+|---|---|---|
+| snapshot window | `FLUSH TABLES WITH READ LOCK` | unchanged — FTWRL works and needs the same `RELOAD` |
+| backup lock, held for the dump | `LOCK INSTANCE FOR BACKUP` (main session) | `BACKUP STAGE START` + `BLOCK_DDL` (**dedicated session**) |
+| release | session close | `BACKUP STAGE END`, then close |
+| privilege probe | `BACKUP_ADMIN` | `RELOAD` |
+
+The dedicated session is `m_backup_stage_session`, created in
+`Dumper::start_backup_stage()` and torn down in `Dumper::unlock_instance()`,
+which is wired into the same `on_leave_scope` in `do_run()` that closes the main
+session — so an interrupt, an exception or a hard kill all release the
+server-wide backup. (A killed connection releases it too: `backup_end()` runs on
+THD teardown. Verified.)
+
+`m_user_has_backup_admin` became `m_backup_lock_available`, and the privilege
+name moved behind `Dumper::backup_lock_privilege()`, which returns
+`"BACKUP_ADMIN"`, `"RELOAD"` or `nullptr` (no backup lock on this server at
+all). The three message sites that used to hardcode `BACKUP_ADMIN` or gate on
+`supports_lock_instance_for_backup()` now go through it, so MySQL's output is
+byte-identical and MariaDB's says `RELOAD`.
+
+`supports_backup_stage()` is the new predicate in
+[server_features.h](modules/util/common/dump/server_features.h) — MariaDB 10.4+.
+
+### 14.3 The one place the two locks are not interchangeable
+
+`lock_all_tables()` skipped locking the `mysql` system tables when the backup
+lock was held, because MySQL's backup lock blocks account management. MariaDB's
+does not (§14.1) — the grant tables are transactional Aria and stay writable —
+so that skip is now conditional on `supports_lock_instance_for_backup()` and
+MariaDB keeps locking them.
+
+This path needs `RELOAD` present *and* FTWRL to have failed with an access
+error, which is close to unreachable, but the asymmetry is real and silently
+loses grant consistency if it is ever hit.
+
+### 14.4 Verified
+
+Live, MariaDB 12.3.2 (3312 → 3313) and MySQL 26.7.0 (3310):
+
+- `dumpInstance` on MariaDB now prints "Locking instance for backup"; the
+  "not supported in MariaDB" note is gone.
+- `--log-sql=all` shows the exact intended sequence, and shows it on a
+  *different connection* from the main session:
+  `tid=2451 FLUSH TABLES WITH READ LOCK` → `tid=2457 BACKUP STAGE START` →
+  `tid=2457 BACKUP STAGE BLOCK_DDL` → `tid=2451 UNLOCK TABLES` →
+  `tid=2457 BACKUP STAGE END`.
+- During a live throttled dump: `CREATE TABLE` from another session times out,
+  InnoDB `INSERT` succeeds. After the dump, and after killing a dump mid-flight,
+  DDL works again — nothing leaks.
+- `dumpInstance` → `loadDump`, MariaDB → MariaDB, 300k rows, no warnings.
+
+### 14.5 Not done here
+
+- The `consistent: false` path is untouched — no locks, as before.
+- Dry runs still skip the lock entirely, matching what MySQL does with
+  `LOCK INSTANCE FOR BACKUP`; the `RELOAD` privilege is checked but the stage is
+  never entered.
+- `BACKUP LOCK <table>` (§4.1) is not used. It would be the only way to give the
+  no-`RELOAD` account any DDL protection, but it is one table per connection
+  (`thd->mdl_backup_lock` is a single ticket), so covering a dump would need one
+  connection per table.
+- `lock_wait_timeout` is left at the server default while entering the stage,
+  the same as MySQL's `LOCK INSTANCE FOR BACKUP`. On MariaDB that default is
+  86400, so a long-running `ALTER` will stall the dump at "Locking instance for
+  backup" rather than failing it. Worth revisiting with the phase 6 tests.

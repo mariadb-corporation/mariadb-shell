@@ -2870,7 +2870,9 @@ void Dumper::abort() {
 
 void Dumper::do_run() {
   // helper:
-  // lock_instance():
+  // lock_instance():  (LIFB below is the backup lock: LOCK INSTANCE FOR BACKUP
+  //                    on MySQL, BACKUP STAGE BLOCK_DDL in a session of its own
+  //                    on MariaDB)
   //   1. if LIFB is available to the user
   //     1.1. LOCK INSTANCE FOR BACKUP
   //   2. if LIFB is not available to the user
@@ -2917,7 +2919,10 @@ void Dumper::do_run() {
   //       9.1.2.1. if dumpInstance(): error and abort
   //       9.1.2.2. else: warning and continue
 
-  shcore::on_leave_scope terminate_session([this]() { close_session(); });
+  shcore::on_leave_scope terminate_session([this]() {
+    unlock_instance();
+    close_session();
+  });
 
   {
     m_worker_interrupt.clear();
@@ -3160,12 +3165,25 @@ void Dumper::fetch_user_privileges() {
   m_skip_grant_tables_active = "'skip-grants user'@'skip-grants host'" ==
                                shcore::make_account(m_user_account);
 
-  if (common::supports_lock_instance_for_backup(m_server_version)) {
-    m_user_has_backup_admin =
-        !m_user_privileges->validate({"BACKUP_ADMIN"}).has_missing_privileges();
+  if (const auto privilege = backup_lock_privilege()) {
+    m_backup_lock_available =
+        !m_user_privileges->validate({privilege}).has_missing_privileges();
   }
 
   warn_about_backup_lock();
+}
+
+const char *Dumper::backup_lock_privilege() const {
+  if (common::supports_lock_instance_for_backup(m_server_version)) {
+    return "BACKUP_ADMIN";
+  }
+
+  // BACKUP STAGE is guarded by RELOAD, the same privilege FTWRL needs
+  if (common::supports_backup_stage(m_server_version)) {
+    return "RELOAD";
+  }
+
+  return nullptr;
 }
 
 void Dumper::warn_about_backup_lock() const {
@@ -3173,7 +3191,7 @@ void Dumper::warn_about_backup_lock() const {
     return;
   }
 
-  if (!m_user_has_backup_admin) {
+  if (!m_backup_lock_available) {
     current_console()->print_note(
         "Backup lock is not " + why_backup_lock_is_missing() +
         " and DDL changes will not be blocked. The dump may fail with an error "
@@ -3182,7 +3200,7 @@ void Dumper::warn_about_backup_lock() const {
 }
 
 std::string Dumper::why_backup_lock_is_missing() const {
-  return common::supports_lock_instance_for_backup(m_server_version)
+  return backup_lock_privilege()
              ? "available to the account " +
                    shcore::make_account(m_user_account)
              : "supported in " +
@@ -3244,7 +3262,11 @@ void Dumper::lock_all_tables() {
     }
   };
 
-  if (m_user_has_backup_admin) {
+  // MariaDB's BACKUP STAGE blocks DDL, but not account management - the grant
+  // tables are transactional and stay writable - so there the mysql system
+  // tables still have to be locked
+  if (m_backup_lock_available &&
+      common::supports_lock_instance_for_backup(m_server_version)) {
     current_console()->print_note(
         "Instance locked for backup, skipping mysql system tables locks");
   } else {
@@ -3522,14 +3544,18 @@ void Dumper::lock_instance() {
     return;
   }
 
-  if (m_user_has_backup_admin) {
+  if (m_backup_lock_available) {
     const auto console = current_console();
 
     console->print_info("Locking instance for backup");
 
     if (!m_options.is_dry_run()) {
       try {
-        execute("LOCK INSTANCE FOR BACKUP");
+        if (common::supports_backup_stage(m_server_version)) {
+          start_backup_stage();
+        } else {
+          execute("LOCK INSTANCE FOR BACKUP");
+        }
       } catch (const shcore::Error &e) {
         console->print_error("Could not acquire the backup lock: " +
                              e.format());
@@ -3596,8 +3622,9 @@ void Dumper::lock_instance() {
 
       msg = "In order to create a consistent dump, either:";
 
-      if (common::supports_lock_instance_for_backup(m_server_version)) {
-        msg += "\n * Use an account which has the BACKUP_ADMIN privilege.";
+      if (const auto privilege = backup_lock_privilege()) {
+        msg += shcore::str_format(
+            "\n * Use an account which has the %s privilege.", privilege);
       }
 
       if (!m_binlog_enabled) {
@@ -3632,6 +3659,64 @@ void Dumper::lock_instance() {
   }
 
   m_instance_locked = true;
+}
+
+void Dumper::start_backup_stage() {
+  // BACKUP STAGE cannot run in a session which holds a global read lock, and it
+  // implicitly commits, which would throw away the consistent snapshot the main
+  // session is holding - hence a session of its own. That session also owns the
+  // stage: MariaDB allows one backup at a time server-wide and only the
+  // connection which started it can advance or end it.
+  assert(!m_backup_stage_session);
+
+  auto s = establish_session(session()->get_connection_options(), false);
+  on_init_thread_session(s);
+
+  // START blocks concurrent backups and lets the storage engines prepare,
+  // BLOCK_DDL is the analogue of LOCK INSTANCE FOR BACKUP. Intermediate stages
+  // are entered implicitly, stages can only ever move forward.
+  execute(s, "BACKUP STAGE START");
+
+  try {
+    execute(s, "BACKUP STAGE BLOCK_DDL");
+  } catch (...) {
+    // do not leave the server-wide backup half-started
+    try {
+      execute(s, "BACKUP STAGE END");
+    } catch (const std::exception &e) {
+      log_error("Failed to end the backup stage: %s", e.what());
+    }
+
+    s->close();
+    throw;
+  }
+
+  // this is the one way the MariaDB lock is heavier than MySQL's, which blocks
+  // no DML at all - worth having in the log when a dump appears to stall
+  // someone else's writes
+  log_info(
+      "Instance locked with BACKUP STAGE BLOCK_DDL: DDL and writes to "
+      "non-transactional tables block for the length of the dump, "
+      "transactional DML and account management do not");
+
+  m_backup_stage_session = std::move(s);
+}
+
+void Dumper::unlock_instance() {
+  if (!m_backup_stage_session) {
+    return;
+  }
+
+  // closing the session would end the stage as well, but an explicit END
+  // releases the server-wide backup even if the connection lingers
+  try {
+    execute(m_backup_stage_session, "BACKUP STAGE END");
+  } catch (const std::exception &e) {
+    log_error("Failed to end the backup stage: %s", e.what());
+  }
+
+  m_backup_stage_session->close();
+  m_backup_stage_session.reset();
 }
 
 void Dumper::initialize_instance_cache_minimal() {
@@ -6460,7 +6545,7 @@ bool Dumper::dump_users() const {
 
 void Dumper::validate_dump_consistency(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
-  if (!m_options.consistent_dump() || m_ftwrl_used || m_user_has_backup_admin) {
+  if (!m_options.consistent_dump() || m_ftwrl_used || m_backup_lock_available) {
     return;
   }
 

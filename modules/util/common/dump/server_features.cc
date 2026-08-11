@@ -64,6 +64,10 @@ bool supports_lock_instance_for_backup(const Server_version &v) {
   return mysql_only(v, 80000);
 }
 
+bool supports_backup_stage(const Server_version &v) {
+  return v.is_maria_db && v.number.numeric() >= 100400;
+}
+
 bool supports_flush_tables_privilege(const Server_version &v) {
   return mysql_only(v, 80023);
 }
