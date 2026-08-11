@@ -27,6 +27,16 @@ sudo apt install build-essential git cmake ninja-build curl bison zip unzip tar 
 sudo dnf install gcc-c++ git cmake ninja-build perl-core bison zip unzip tar pkg-config ncurses-devel patchelf
 ```
 
+This is build tooling only. The libraries the shell and the bundled Python link
+against (OpenSSL, zlib, sqlite, libffi, xz, bzip2, ...) are deliberately *not*
+installed from the distribution: they come from vcpkg and are shipped inside the
+package, so it runs on a minimal install that has none of them. Installing the
+distribution's `-devel`/`-dev` packages for those libraries on a build host is
+counterproductive -- the build may link the system copy, and the dependency then
+leaves the package. The configure step verifies the built interpreter can import
+every module the package ships, so a dependency resolved the wrong way is a
+build error rather than an `ImportError` on a user's machine.
+
 **MacOS**
 ```bash
 # Install the build system

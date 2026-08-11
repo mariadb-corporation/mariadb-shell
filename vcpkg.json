@@ -17,6 +17,18 @@
     "gtest",
     "sqlite3",
     {
+      "name": "libffi",
+      "platform": "!windows"
+    },
+    {
+      "name": "liblzma",
+      "platform": "!windows"
+    },
+    {
+      "name": "bzip2",
+      "platform": "!windows"
+    },
+    {
       "name": "curl",
       "features": [
         "openssl"

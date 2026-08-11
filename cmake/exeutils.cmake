@@ -22,6 +22,52 @@
 # along with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
+# Rewrite an executable's reference to the bundled libpython so it resolves
+# through the executable's own rpath instead of the build host's filesystem.
+#
+# A CPython built with --enable-shared stamps libpython<ver>.dylib with an
+# ABSOLUTE install id (its build-tree <prefix>/lib path), and everything that
+# embeds it copies that path in verbatim as its LC_LOAD_DYLIB. The bundled copy
+# is made relocatable elsewhere (id -> @rpath), but a *reference* to it is not,
+# so a relocated package still asks dyld for a directory that only ever existed
+# on the build machine and the binary dies before main:
+#
+#   dyld: Library not loaded: /Users/runner/work/.../lib/libpython3.14.dylib
+#
+# Applied to every executable rather than a named few. It used to be a list of
+# the two obvious consumers, which is how both mysql-secret-store helpers came
+# to ship in the macOS package unable to start: they embed Python through
+# mysqlshdk and nobody thought to add them. -change is a no-op on a binary that
+# has no such reference, so there is no cost to covering everything, and the
+# rpath every add_shell_executable() target gets (below) reaches INSTALL_LIBDIR
+# in the build tree and in the installed tree alike.
+function(fix_libpython_reference target)
+  if(NOT APPLE OR NOT BUNDLED_SHARED_PYTHON OR NOT PYTHON_LIBRARIES)
+    return()
+  endif()
+
+  # otool -D prints the file name on line 1 and the id on line 2. Memoized in a
+  # global property: this runs once per executable and the answer never changes.
+  get_property(_py_id GLOBAL PROPERTY SHELL_LIBPYTHON_INSTALL_ID)
+  if(NOT _py_id)
+    execute_process(COMMAND otool -D "${PYTHON_LIBRARIES}"
+                    OUTPUT_VARIABLE _otool_out OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX REPLACE "^[^\n]*\n" "" _py_id "${_otool_out}")
+    string(STRIP "${_py_id}" _py_id)
+    set_property(GLOBAL PROPERTY SHELL_LIBPYTHON_INSTALL_ID "${_py_id}")
+  endif()
+
+  if(NOT _py_id)
+    return()
+  endif()
+
+  get_filename_component(_py_name "${PYTHON_LIBRARIES}" NAME)
+  add_custom_command(TARGET "${target}" POST_BUILD
+    COMMAND install_name_tool -change "${_py_id}" "@rpath/${_py_name}"
+            "$<TARGET_FILE:${target}>"
+    COMMENT "Rewriting ${target} libpython reference to @rpath (relocatable)")
+endfunction()
+
 function(add_shell_executable)
   # ARGV0 - name
   # ARGV1 - sources
@@ -71,6 +117,9 @@ function(add_shell_executable)
 
     set_property(TARGET "${ARGV0}" PROPERTY BUILD_WITH_INSTALL_RPATH TRUE)
 
+    # Now that the rpath is set, point any embedded-libpython reference at it.
+    fix_libpython_reference("${ARGV0}")
+
     # When Python is embedded through a static libpython (e.g. a bundled Python
     # built with --disable-shared, which only ships libpython3.x.a), the Python
     # C symbols are linked into this executable. The stdlib C extension modules
@@ -102,6 +151,24 @@ if(APPLE)
     set(multiValueArgs)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+    # apple_use_bundled_openssl.cmake matches a dependency by the versioned
+    # dylib NAME (libssl.3.dylib / libcrypto.3.dylib), so derive both names from
+    # the libraries this build resolved rather than reading OPENSSL_VERSION.
+    # ssl.cmake does set OPENSSL_VERSION to that name, but it does not survive:
+    # find_package(libssh) (and CURL) pull in vcpkg's OpenSSLConfig.cmake, whose
+    # find_package(OpenSSL) resets OPENSSL_VERSION to the numeric version
+    # ("3.6.3"). By the time this runs the libssl half of the rewrite therefore
+    # matched nothing at all, while CRYPTO_VERSION -- a name FindOpenSSL does not
+    # touch -- kept working. That asymmetry is exactly how the macOS x64 package
+    # shipped a cryptography extension whose libcrypto had been repointed at
+    # @rpath while its libssl still read /usr/local/opt/openssl@3/lib/....
+    # OPENSSL_LIBRARY/CRYPTO_LIBRARY are cache entries pointing at the unversioned
+    # symlink, so resolve them to the real file and take its name.
+    get_filename_component(_ssl_name "${OPENSSL_LIBRARY}" REALPATH)
+    get_filename_component(_ssl_name "${_ssl_name}" NAME)
+    get_filename_component(_crypto_name "${CRYPTO_LIBRARY}" REALPATH)
+    get_filename_component(_crypto_name "${_crypto_name}" NAME)
+
     # Pass each -D value UNQUOTED. These commands are spliced into
     # add_custom_command and run without a shell, so a literal -Dfoo="bar" keeps
     # the double quotes in the value -- which made the pattern below never match
@@ -110,8 +177,8 @@ if(APPLE)
     # string quoting), so values with spaces survive without embedded quotes.
     set("${ARG_OUT_COMMAND}"
         ${CMAKE_COMMAND}
-        "-DCRYPTO_VERSION=${CRYPTO_VERSION}"
-        "-DOPENSSL_VERSION=${OPENSSL_VERSION}"
+        "-DCRYPTO_VERSION=${_crypto_name}"
+        "-DOPENSSL_VERSION=${_ssl_name}"
         "-DINSTALL_LIBDIR=${INSTALL_LIBDIR}"
         "-Dpattern=${ARG_PATTERN}"
         -P "${CMAKE_SOURCE_DIR}/cmake/apple_use_bundled_openssl.cmake"
