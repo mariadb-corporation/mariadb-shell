@@ -23,6 +23,11 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 
+# Point this clone's git hooks at the tracked ones in .githooks/. Done first, and
+# cheaply, so a developer gets the commit-time checks from their very first
+# configure; it is a no-op outside a git checkout. See cmake/git_hooks.cmake.
+INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_hooks.cmake)
+
 # When the caller asks for vcpkg-managed dependencies via -DWITH_VCPKG_TRIPLET,
 # fetch and bootstrap vcpkg and derive CMAKE_TOOLCHAIN_FILE / VCPKG_TARGET_TRIPLET
 # (and VCPKG_ROOT). This must run before the first project() call (CMake reads
