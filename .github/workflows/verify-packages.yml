@@ -25,6 +25,13 @@ on:
         type: string
         required: false
 
+# Which build is being verified, in the Actions list. Only a label: the run name
+# is fixed when the run starts, so the blank-input case cannot show the id that
+# the resolve job goes on to pick. The publish gate keys off the marker artifact
+# below, never off this string.
+run-name: >-
+  Verify build ${{ inputs.run_id || github.event.workflow_run.id || '(latest)' }}
+
 jobs:
   # ==========================================================================
   # Resolve which build run's packages to verify, once, so every matrix leg
@@ -56,7 +63,10 @@ jobs:
     outputs:
       run_id: ${{ steps.pick.outputs.run_id }}
       sha: ${{ steps.pick.outputs.sha }}
-      version: ${{ steps.pick.outputs.version }}
+      # From the Export Version step, not from `pick` -- an empty EXPECT_VERSION
+      # makes verify_package.sh skip the version assertion silently, so pointing
+      # this at the wrong step disables a check rather than breaking the run.
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Resolve Build Run
@@ -240,3 +250,52 @@ jobs:
           path: _unpacked
           retention-days: 3
           if-no-files-found: ignore
+
+  # ==========================================================================
+  # Record the verdict where a later publish can find it.
+  #
+  # Nothing in the API says which build run a workflow_run-triggered run was
+  # verifying, so a passing verification leaves an artifact named after the build
+  # run id and publish-release.yml refuses any build that has no such marker.
+  #
+  # `needs` waits for the whole matrix and a single failed leg makes
+  # needs.verify.result 'failure', so a partial verification records nothing --
+  # which is what makes the marker mean "every platform passed" rather than
+  # "verification ran".
+  # ==========================================================================
+  record:
+    needs: [resolve, verify]
+    if: needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+
+    # Nothing here reads the repo or the API: artifact upload authenticates with
+    # the runtime token, not GITHUB_TOKEN.
+    permissions: {}
+
+    steps:
+      - name: Write Marker
+        env:
+          BUILD_RUN_ID: ${{ needs.resolve.outputs.run_id }}
+          BUILD_SHA: ${{ needs.resolve.outputs.sha }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          {
+            echo "build_run_id=$BUILD_RUN_ID"
+            echo "build_sha=$BUILD_SHA"
+            echo "version=$VERSION"
+            echo "verify_run_id=$GITHUB_RUN_ID"
+            echo "verify_run_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } | tee verified.txt
+
+      - name: Upload Marker
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-build-${{ needs.resolve.outputs.run_id }}
+          # The publish gate matches on the artifact's NAME, which the API keeps
+          # listing after the content expires, so verification of an old build
+          # stays recognised. Retention only governs whether a human can still
+          # read the body.
+          retention-days: 90
+          path: verified.txt
+          if-no-files-found: error

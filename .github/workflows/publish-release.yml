@@ -1,0 +1,362 @@
+name: Publish Release
+
+# Publishing is a deliberate, manual act, decoupled from building:
+# MariaDB-Shell-Release only builds and leaves its packages as run artifacts.
+# This workflow picks one of those runs and turns it into a release, so a run can
+# be inspected first, and any past run can be published (or re-published)
+# without rebuilding anything.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Build run to publish (blank = latest successful MariaDB-Shell-Release run)"
+        type: string
+        required: false
+      tag:
+        description: "Release tag (blank = v<version>, version read from MYSQL_VERSION at that run's commit)"
+        type: string
+        required: false
+      prerelease:
+        # Defaults to false on purpose. The permanent install URL
+        # (/releases/latest/download/install.sh) resolves only to the newest
+        # NON-prerelease release, so marking a release as a prerelease hides it
+        # from the very URL users are told to curl. Set this true only for a
+        # release that should deliberately stay invisible to that URL.
+        description: "Mark as prerelease (hidden from the permanent /releases/latest/ install URL)"
+        type: boolean
+        default: false
+      dry_run:
+        # Everything a real publish does except the release itself: the
+        # verification gate, the package set, the checksums, the installer and
+        # the notes are all produced, and the assembled assets are uploaded as a
+        # run artifact to be inspected. Nothing is created, tagged or uploaded to
+        # a release, so this is the way to exercise a change to this workflow
+        # without leaving a tag behind on the build commit.
+        description: "Assemble and check everything, but create no release"
+        type: boolean
+        default: false
+
+# Says which of the two this run was, in the Actions list -- a dry run should not
+# read as a publish at a glance.
+run-name: >-
+  ${{ inputs.dry_run && 'Dry run' || 'Publish' }}
+  ${{ inputs.tag || '(version from build)' }}
+  from run ${{ inputs.run_id || '(latest)' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # create/update the release
+      actions: read     # read artifacts from the build run
+
+    steps:
+      # ====================================================================
+      # 1. RESOLVE WHICH BUILD RUN TO PUBLISH
+      #
+      # Resolving the run's head SHA matters as much as its id: the version and
+      # the installer must come from the source that produced those binaries,
+      # not from whatever the default branch happens to hold now. Publishing an
+      # older run would otherwise silently mislabel it.
+      # ====================================================================
+      - name: Resolve Build Run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$RUN_ID" ]; then
+            echo "==> No run_id given; finding the latest successful build run."
+            RUN_ID=$(gh run list -R "$REPO" \
+              --workflow "shell-release.yml" \
+              --status success --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')
+            if [ -z "$RUN_ID" ]; then
+              echo "No successful MariaDB-Shell-Release run found to publish." >&2
+              exit 1
+            fi
+          fi
+
+          # Refuse a run that did not succeed, rather than assembling a release
+          # from whatever subset of platforms happened to finish.
+          CONCLUSION=$(gh run view "$RUN_ID" -R "$REPO" --json conclusion --jq .conclusion)
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "Run $RUN_ID concluded '$CONCLUSION', not 'success'; refusing to publish." >&2
+            exit 1
+          fi
+
+          SHA=$(gh run view "$RUN_ID" -R "$REPO" --json headSha --jq .headSha)
+          echo "==> Publishing run $RUN_ID (commit $SHA)"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"       >> "$GITHUB_OUTPUT"
+
+      # ====================================================================
+      # 2. REFUSE A BUILD THAT WAS NEVER VERIFIED
+      #
+      # Verify Packages unpacks a build's own packages on machines that never
+      # built them; a release must not be assembled from bits that check never
+      # passed on. Nothing in the API says which build run a workflow_run-
+      # triggered run was verifying, so verification leaves an artifact named
+      # after the build run id (the `record` job in verify-packages.yml) and this
+      # looks for it. Only successful verification runs are searched, and the
+      # marker is written only when every platform leg passed -- so a failed, a
+      # partial, an in-progress and a never-run verification all arrive here as
+      # the same refusal.
+      #
+      # Matching on the artifact NAME, which the API keeps listing after the
+      # content expires, so an older build stays publishable.
+      # ====================================================================
+      - name: Require Successful Package Verification
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        run: |
+          set -euo pipefail
+
+          MARKER="verified-build-$RUN_ID"
+          VERIFY_RUN=""
+
+          echo "==> Looking for artifact '$MARKER'"
+
+          # Assigned first, deliberately: `for id in $(gh api ...)` swallows a
+          # failed query into an empty list, which would then read as "never
+          # verified". An assignment propagates the failure under set -e, so an
+          # API outage says so instead of masquerading as a verdict.
+          CANDIDATES=$(gh api \
+            "repos/$REPO/actions/workflows/verify-packages.yml/runs?status=success&per_page=30" \
+            --jq '.workflow_runs[].id')
+
+          for id in $CANDIDATES; do
+            if gh api "repos/$REPO/actions/runs/$id/artifacts?per_page=100" \
+                 --jq '.artifacts[].name' | grep -qxF "$MARKER"; then
+              VERIFY_RUN="$id"
+              break
+            fi
+          done
+
+          if [ -z "$VERIFY_RUN" ]; then
+            echo "Build run $RUN_ID has no successful package verification." >&2
+            echo "" >&2
+            echo "No artifact named '$MARKER' on any successful Verify Packages" >&2
+            echo "run: verification failed, covered only some platforms, is still" >&2
+            echo "running, or was never started for this build." >&2
+            echo "" >&2
+            echo "Recent Verify Packages runs:" >&2
+            gh run list -R "$REPO" --workflow verify-packages.yml --limit 10 \
+              --json databaseId,conclusion,createdAt,displayTitle \
+              --template '{{range .}}  {{.databaseId}}  {{.conclusion}}  {{.createdAt}}  {{.displayTitle}}{{"\n"}}{{end}}' >&2 || true
+            echo "" >&2
+            echo "Verify this build with:" >&2
+            echo "  gh workflow run verify-packages.yml -R $REPO -f run_id=$RUN_ID" >&2
+            exit 1
+          fi
+
+          echo "==> Verified by Verify Packages run $VERIFY_RUN"
+          echo "    $GITHUB_SERVER_URL/$REPO/actions/runs/$VERIFY_RUN"
+          echo "verify_run_id=$VERIFY_RUN" >> "$GITHUB_OUTPUT"
+
+      # ====================================================================
+      # 3. CHECK OUT THE SOURCE THAT PRODUCED THOSE PACKAGES
+      # ====================================================================
+      - name: Checkout Build Commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.run.outputs.sha }}
+
+      # ====================================================================
+      # 4. COLLECT THE PACKAGES
+      # ====================================================================
+      # Cross-run download, so run-id + github-token are required. See the note
+      # in verify-packages.yml: `archive: false` uploads cannot be downloaded by
+      # anything, so the build must keep producing archived artifacts.
+      - name: Download Packages From Build Run
+        uses: actions/download-artifact@v7
+        with:
+          path: _artifacts
+          merge-multiple: true
+          run-id: ${{ steps.run.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: List Downloaded Packages
+        run: |
+          set -euo pipefail
+          echo "==> Downloaded artifact tree:"
+          find _artifacts -type f | sort
+
+      # ====================================================================
+      # 5. ASSEMBLE RELEASE ASSETS
+      # ====================================================================
+      - name: Assemble Release Assets
+        id: assets
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Version from the same file cmake reads, at the build's commit, so the
+          # tag cannot disagree with the version baked into the package names.
+          eval "$(grep -E '^MYSQL_VERSION_(MAJOR|MINOR|PATCH|EXTRA)=' MYSQL_VERSION)"
+          VERSION="${MYSQL_VERSION_MAJOR}.${MYSQL_VERSION_MINOR}.${MYSQL_VERSION_PATCH}${MYSQL_VERSION_EXTRA}"
+          TAG="${TAG_INPUT:-v${VERSION}}"
+
+          # gh run download nests one directory per artifact; flatten them into a
+          # single asset directory.
+          mkdir -p dist
+          find _artifacts -type f -name '*.tar.gz' -exec mv -t dist/ {} +
+
+          cd dist
+          shopt -s nullglob
+          pkgs=(*.tar.gz)
+          if [ ${#pkgs[@]} -eq 0 ]; then
+            echo "Run ${{ steps.run.outputs.run_id }} produced no .tar.gz packages." >&2
+            exit 1
+          fi
+
+          echo "==> Packages to publish (${#pkgs[@]}):"
+          printf '    %s\n' "${pkgs[@]}"
+
+          # Refuse a half set. Verification proves each package passed on a
+          # pristine machine; it says nothing about a package that is no longer
+          # here, and artifact retention differs per build leg (the Rocky legs
+          # keep 7 days), so an older run can hand back a subset. The globs are
+          # the ones verify-packages.yml verifies, so "verified" and "published"
+          # cover the same platforms -- rather than a user's install.sh being the
+          # thing that discovers the gap.
+          missing=()
+          for want in \
+              "*-linux-glibc*-x86-64bit.tar.gz" \
+              "*-linux-glibc*-arm-64bit.tar.gz" \
+              "*-macos*-x86-64bit.tar.gz" \
+              "*-macos*-arm-64bit.tar.gz" \
+              "*-windows-x86-64bit.tar.gz" \
+              "*-windows-arm-64bit.tar.gz"; do
+            found=($want)
+            if [ ${#found[@]} -ne 1 ]; then
+              missing+=("$want (${#found[@]} matches)")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Run ${{ steps.run.outputs.run_id }} does not offer exactly one package per platform:" >&2
+            printf '    %s\n' "${missing[@]}" >&2
+            echo "Artifacts may have expired; rebuild and re-verify rather than publishing a partial release." >&2
+            exit 1
+          fi
+
+          # SHA256SUMS is both the integrity check and the installer's manifest:
+          # install.sh reads the available platforms straight out of it, so there
+          # is no second index that can fall out of sync with the real assets.
+          sha256sum "${pkgs[@]}" > SHA256SUMS
+          echo "==> SHA256SUMS:"
+          cat SHA256SUMS
+
+          # Ship the installer as a release asset so the permanent
+          # /releases/latest/download/install.sh URL resolves to it.
+          cp ../scripts/install.sh install.sh
+          chmod +x install.sh
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+
+      # ====================================================================
+      # 6. PUBLISH
+      #
+      # The notes are built before the dry-run branch on purpose: rendering them
+      # is part of what a dry run is asked to prove. The branch sits immediately
+      # before the first mutating command, so a dry run and a real publish differ
+      # in exactly one thing.
+      # ====================================================================
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.assets.outputs.tag }}
+          VERSION: ${{ steps.assets.outputs.version }}
+          SHA: ${{ steps.run.outputs.sha }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+          VERIFY_RUN_ID: ${{ steps.verified.outputs.verify_run_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          NOTES="MariaDB Shell $VERSION, built from \`$SHA\` (build run $RUN_ID,
+          verified by run $VERIFY_RUN_ID).
+
+          ## Install
+
+          \`\`\`sh
+          curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash
+          \`\`\`
+
+          That URL is permanent and always resolves to the newest release. The
+          installer detects your OS, CPU and glibc version and picks the matching
+          package.
+
+          ## Manual download
+
+          Pick the tarball for your platform below, then verify it:
+
+          \`\`\`sh
+          sha256sum -c SHA256SUMS --ignore-missing
+          \`\`\`"
+
+          # gh release view is read-only, so a dry run can still report which of
+          # the two paths a real run would take -- create, or clobber an existing
+          # release's assets.
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            EXISTS=yes
+          else
+            EXISTS=no
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "==> DRY RUN: no release will be created, updated or tagged."
+            if [ "$EXISTS" = yes ]; then
+              echo "    Would UPDATE existing release $TAG (assets clobbered)"
+            else
+              echo "    Would CREATE release $TAG on $SHA"
+            fi
+            echo "    prerelease=$PRERELEASE"
+            echo "    Assets:"
+            ls -1 dist | sed 's/^/      /'
+            echo "    Notes:"
+            printf '%s\n' "$NOTES" | sed 's/^/      /'
+            exit 0
+          fi
+
+          if [ "$EXISTS" = yes ]; then
+            echo "==> Updating existing release $TAG"
+            gh release upload "$TAG" dist/* -R "$REPO" --clobber
+            gh release edit "$TAG" -R "$REPO" --notes "$NOTES" \
+              --prerelease="$PRERELEASE"
+          else
+            echo "==> Creating release $TAG"
+            gh release create "$TAG" dist/* -R "$REPO" \
+              --target "$SHA" \
+              --title "MariaDB Shell $VERSION" \
+              --notes "$NOTES" \
+              --prerelease="$PRERELEASE"
+          fi
+
+          echo "==> Published: https://github.com/$REPO/releases/tag/$TAG"
+
+      # The assets a dry run assembled but did not upload anywhere -- SHA256SUMS
+      # and install.sh included, so the manifest install.sh reads can be checked
+      # before a release ever exists. Excludes the tarballs: they are already in
+      # the build run, and re-uploading ~6 of them per dry run is pointless.
+      - name: Upload Assembled Assets (dry run)
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-assets-${{ steps.run.outputs.run_id }}
+          path: |
+            dist/SHA256SUMS
+            dist/install.sh
+          retention-days: 7
+          if-no-files-found: error
