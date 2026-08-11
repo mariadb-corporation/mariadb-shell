@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +62,14 @@ struct Binlog {
   std::string gtid_executed;
 };
 
+/**
+ * Version of a server, together with the vendor it belongs to.
+ *
+ * The is_5_6 / is_5_7 / is_8_0 flags describe a *MySQL* server and are all
+ * false for MariaDB, whose version numbers are not on MySQL's scale. Do not add
+ * new code which tests them directly - ask a feature question instead, using
+ * one of the vendor-aware predicates in server_features.h.
+ */
 struct Server_version {
   mysqlshdk::utils::Version number;
   bool is_5_6 = false;
@@ -112,6 +121,17 @@ Server_version server_version(
     const std::shared_ptr<mysqlshdk::db::ISession> &session);
 
 Server_version server_version(std::string_view version);
+
+/**
+ * Builds a Server_version for a version number whose vendor is already known.
+ *
+ * Unlike the string overload this performs no detection and - importantly - no
+ * remapping, so it is the right tool wherever the vendor comes from somewhere
+ * else (the session handshake, the dump manifest, a user-supplied
+ * targetVersion) rather than from the version string itself.
+ */
+Server_version server_version(const mysqlshdk::utils::Version &number,
+                              bool is_maria_db);
 
 Server_variables server_variables(
     const std::shared_ptr<mysqlshdk::db::ISession> &session);

@@ -88,6 +88,7 @@
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
 
 namespace mysqlsh {
@@ -2912,7 +2913,10 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
     return all_grants_5_6.at(u);
   };
 
-  const auto is_5_6 = m_cache.server.version.is_5_6;
+  // before SHOW CREATE USER existed the account has to be reconstructed from
+  // the first SHOW GRANTS statement
+  const auto is_5_6 =
+      !common::supports_show_create_user(m_cache.server.version);
   const auto &get_grants = is_5_6 ? get_grants_5_6 : get_grants_all;
 
   using get_create_user_t = std::function<std::string(const std::string &)>;
@@ -3037,11 +3041,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
           const auto &version_info = it->second;
 
           if (version_info.removed.has_value() &&
-              m_target_version >= *version_info.removed) {
+              m_target_version.number >= *version_info.removed) {
             handle_unsupported_plugin(plugin);
-          } else if (m_target_version >= version_info.deprecated) {
+          } else if (m_target_version.number >= version_info.deprecated) {
             const auto is_8_4 =
-                804 == m_target_version.numeric_version_series();
+                804 == m_target_version.number.numeric_version_series();
             const auto is_mysql_native_password =
                 "mysql_native_password" == plugin;
 
@@ -3726,11 +3730,14 @@ std::size_t Schema_dumper::column_count(const std::string &schema,
 
 void Schema_dumper::set_target_version(
     const mysqlshdk::utils::Version &target_version) {
-  m_target_version = target_version;
+  // under the vendor -> vendor scope the target is the same vendor as the
+  // source, which the instance cache already knows
+  m_target_version = common::server_version(target_version,
+                                            m_cache.server.version.is_maria_db);
 
   m_supports_set_any_definer_privilege =
-      compatibility::supports_set_any_definer_privilege(m_target_version);
-  m_supports_pke_as_pk = compatibility::supports_pke_as_pk(m_target_version);
+      common::supports_set_any_definer_privilege(m_target_version);
+  m_supports_pke_as_pk = common::supports_pke_as_pk(m_target_version);
 }
 
 }  // namespace dump

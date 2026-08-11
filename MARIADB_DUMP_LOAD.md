@@ -19,11 +19,12 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **phases 0 and 1 done** (§11, §12). Dump/load builds for MariaDB, a
-> dumpInstance -> loadDump round-trip works against a live server, and the
-> crashes and silently-wrong behaviour of phase 1 are fixed; the MySQL build is
-> verified unaffected (§11.7, §12.5). Phases 2-6 outstanding.
-> Last updated: 2026-08-06.
+> Status: **phases 0, 1 and 2 done** (§11, §12, §13). Dump/load builds for
+> MariaDB, a dumpInstance -> loadDump round-trip works against a live server
+> with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build and all
+> version gating is vendor-aware; the MySQL build is verified unaffected
+> (§11.7, §12.5, §13.7). Phases 3-6 outstanding.
+> Last updated: 2026-08-10.
 
 ---
 
@@ -173,17 +174,17 @@ Several of these are MySQL-shaped (`gtidExecuted`, `partialRevokes`,
 Each item: **what the code does → why it is MySQL-specific → MariaDB
 alternative**. Ordered roughly by how blocking it is.
 
-### 4.0 The load side has no MariaDB detection at all — **fixed in phase 1**
+### 4.0 The load side has no MariaDB detection at all — **fixed in phases 1 and 2**
 
 > **Phase 1:** both holes are closed. `Load_dump_options` and
 > `copy_operation.h` now carry the target's vendor, obtained from
 > `ISession::get_server_vendor()` — which is cached off the client-side
 > handshake string (`mysql_get_server_info()`), so it costs no round trip and
-> needs no `SELECT @@version`. The version *scale* is still MySQL's, which is
-> what phase 2 fixes; what phase 1 removes is the loader and the copy front-end
-> attempting MySQL-only features against a MariaDB target. The analysis below
-> is kept because §7.1 still has to replace the bare `Version` with a
-> `Server_version`.
+> needs no `SELECT @@version`.
+>
+> **Phase 2** replaced the bare `Version` with a `common::Server_version`
+> throughout (§13.4), so vendor and version travel together on both sides. The
+> analysis below is kept as the record of what the hole was.
 
 
 The dump side and the load side obtain the server version by two completely
@@ -641,7 +642,8 @@ inconsistent source of truth.
 
 ### 7.2 Full gate inventory
 
-Small enough to enumerate completely. **14 `is_5_6`/`is_5_7`/`is_8_0` sites**
+**All converted in phase 2** (§13.2); the inventory is kept as the record of
+what had to be found. Small enough to enumerate completely. **14 `is_5_6`/`is_5_7`/`is_8_0` sites**
 outside the Upgrade Checker:
 
 | File | Lines | What it gates |
@@ -863,7 +865,7 @@ predicates without it.
 |---|---|---|
 | 0 | ~~**Compile.**~~ **DONE** (§11) — `HAVE_DUMP_AND_LOAD` removed entirely; binlog split out to `HAVE_BINLOG_UTILS`; 4 defects fixed (3 crashes); round-trip verified. | MySQL build still needs compiling (§11.6). |
 | 1 | ~~**Stop the bleeding.**~~ **DONE** (§12) — §4.0 vendor detection for `copy_operation.h`, §4.3 `mysql` lock list, §4.2 roles and the `REPLICATION CLIENT` privilege name. Vendor detection now goes through the cached `ISession::get_server_vendor()`. | |
-| 2 | **Vendor-aware gating** (§7). Remove the 5.6 remap; export the build-time server version + vendor to C++ (§7.4); move the `supports_*` predicates to `common/dump/server_features.h` and make them vendor-aware (§7.3); convert all 14 `is_*` sites, ~30 `Version` comparisons and the 5 `k_shell_version` sites; add the vendor field to the manifest; refuse cross-vendor loads and cross-vendor copy. | The foundation, and where most of §4.11 turns itself off for free. Verify MySQL→MySQL dumps are byte-identical before/after. |
+| 2 | ~~**Vendor-aware gating**~~ **DONE** (§13) — 5.6 remap gone from the MariaDB build; `common/dump/server_features.h` holds 28 vendor-aware predicates; every `is_*` and `Version` gate converted; manifest carries `vendor`; cross-vendor load, copy and `ocimds` refused. | The foundation, and where most of §4.11 turns itself off for free. |
 | 3 | **`BACKUP STAGE`** (§4.1) — now expressible as `supports_backup_stage()`. Removes the consistency-or-error dead end. | Needs a locking-session redesign, not a statement swap. |
 | 4 | **GTID** (§4.4), reusing the binlog port's native-GTID model, both dump and load. | |
 | 5 | **MariaDB-native objects**: sequences (§4.5.1), check constraints, Oracle-mode packages, users/roles/grants. | Largest chunk. Sequences first — smallest and closes a silent-data-loss gap; users/roles is the long pole and unblocks `users: true`. |
@@ -887,7 +889,8 @@ tasks), `dump_reader.cc` (2768, dump directory parsing), `load_progress_log.h`
 (MySQL-only, gated).
 
 **Shared** (`modules/util/common/dump/`) — `server_info.cc` (version/GTID/binlog/
-topology probing — the MariaDB detection lives here), `checksums.cc`,
+topology probing — the MariaDB detection lives here), `server_features.cc`
+(the vendor-aware feature predicates, §7.3/§13.2), `checksums.cc`,
 `basenames.cc`, `dump_info.cc`, `dump_version.cc`, `utils.cc`,
 `resource_principals_info.cc` / `vector_store_info.cc` (MySQL-only, gated).
 
@@ -985,8 +988,8 @@ ERROR: Destination MySQL version is newer ... non-consecutive major MySQL versio
 
 The *same server*, dumped and reloaded, is rejected as a non-consecutive major
 version jump — because the dump side applies the 5.6 remap and the load side does
-not. `ignoreVersion: true` is currently required for any MariaDB→MariaDB load.
-Phase 2 removes this.
+not. `ignoreVersion: true` was required for any MariaDB→MariaDB load.
+**Phase 2 removed this** — see §13.7.
 
 ### 11.6 Known-unfixed / follow-ups
 
@@ -1205,4 +1208,198 @@ same filter on a clean tree):
   needing the `schema_dumper_t.cc` recipe from the
   `mariadb-schema-dumper-tests` note. Phase 6.
 
-Also still open: `Version::is_mds()` is vendor-blind (§7.1).
+~~Also still open: `Version::is_mds()` is vendor-blind (§7.1).~~ **Fixed in
+phase 2** (§13.4).
+
+---
+
+## 13. Phase 2 — done
+
+Landed 2026-08-10. Goal was §7: carry the vendor everywhere a version is
+carried, stop remapping, and convert every gate. §11.5 — the same server being
+rejected as a non-consecutive major-version jump when dumped and reloaded — is
+fixed; `ignoreVersion` is no longer needed for MariaDB → MariaDB.
+
+### 13.1 The 5.6 remap is gone from the MariaDB build
+
+[server_info.cc](modules/util/common/dump/server_info.cc) still detects MariaDB
+by substring, but now only sets `is_maria_db`. The `Version("5.6.0-" + …)`
+rewrite is under `#ifndef MARIADB_BUILD`, exactly as §7.1 required: a MySQL
+build keeps it, so upstream's MariaDB → MySQL migration path is untouched
+(verified live, §13.7).
+
+`Server_version`'s `is_5_6` / `is_5_7` / `is_8_0` now mean **MySQL** 5.6 / 5.7 /
+8.0 and are all false for MariaDB. That is what makes the conversion
+mechanical: every `!is_8_0` site keeps the answer it had under the remap, and
+only the three `is_5_6` sites change meaning — which is precisely where the
+remap was lying.
+
+A second overload was added:
+
+```cpp
+Server_version server_version(const Version &number, bool is_maria_db);
+```
+
+No detection, no remapping — for the places where the vendor comes from
+somewhere other than the version string (the session handshake, the manifest, a
+user-supplied `targetVersion`).
+
+### 13.2 `common/dump/server_features.h`
+
+The new home decided in §7.3. 28 predicates, all taking a `Server_version`. The
+six that moved out of `dump/compatibility.h` kept their MySQL thresholds
+unchanged, so the MySQL build sees the same answers from a different header.
+
+Most are the `mysql_only(v, since)` shape — a MySQL threshold, false for
+MariaDB. The ones that are not:
+
+| Predicate | MariaDB answer |
+|---|---|
+| `requires_explicit_select_privilege` | **true** — only MySQL 8.0's data dictionary reports what the account cannot see |
+| `supports_show_create_user` | **true** since 10.2 |
+| `requires_super_to_dump_users` | false (was true under the remap — MariaDB 10.5+ split `SUPER`) |
+| `supports_optimizer_hints` / `supports_wide_bit_xor` | false → `SQL_NO_CACHE`, sliced checksums; both correct for MariaDB |
+| `supports_role_dumping` / `supports_column_statistics` | false **for now** — MariaDB has both, but dumping them is phase 5 |
+
+Two more that are not feature questions but belong with them:
+
+- `reference_version(is_maria_db)` — §7.4's yardstick: `k_shell_version` for a
+  MySQL server, `k_build_server_version` for a MariaDB one.
+- `is_maria_db_dialect()` / `produces_maria_db_dialect()` — see §13.5.
+
+### 13.3 The build-time server version reaches C++
+
+`MYSQL_VERSION` (already computed per vendor by `GET_MYSQL_VERSION()`) is now
+exported as `-DMYSH_BUILD_SERVER_VERSION`
+([CMakeLists.txt](CMakeLists.txt)), and `mysqlshdk::utils::k_build_server_version`
+([version.h](mysqlshdk/libs/utils/version.h)) exposes it, falling back to
+`k_shell_version` when no server source tree was configured.
+
+Five `k_shell_version` sites in `Dumper::fetch_server_information()` and
+`Dump_options::current_version()` now go through `reference_version()`, and the
+"unsupported/newer server" messages name the actual vendor. The default
+`targetVersion` for a MariaDB dump is therefore the MariaDB release this Shell
+was built from (13.1.0 here), not the Shell's own 26.8.0.
+
+`Dump_options::set_target_version()` no longer validates inline — `targetVersion`
+is unpacked *before* the session is set, so the vendor is not known yet. The
+check moved to `on_validate()`, where MariaDB gets a "newer than what this Shell
+was built against" rule instead of the MDS minimum and the supported-MySQL list.
+
+### 13.4 Both sides now carry a vendor
+
+- **Dump.** `Dump_options` captures the source vendor in `on_set_session()` from
+  `ISession::get_server_vendor()` and exposes `target_server_version()`, a
+  `Server_version` pairing `targetVersion` with that vendor. `Schema_dumper`'s
+  `m_target_version` became a `Server_version` too, taking its vendor from the
+  instance cache — the setter signature is unchanged, so no test churn.
+- **Load.** `Load_dump_options::m_target_server_version` (a bare `Version`) and
+  the phase-1 `m_target_is_maria_db` collapsed into one
+  `common::Server_version m_target_server`, built from the existing
+  `SELECT @@version` plus the cached handshake vendor — no extra round trip, and
+  **no remap on the load side ever**. `Dump_reader` gained `source_server()`.
+
+Three vendor-blind reads called out in §7.1 were fixed with it:
+`Version::is_mds()` (now `!maria && …`), `ISession::get_server_version()` at
+[dump_loader.cc:2109](modules/util/load/dump_loader.cc#L2109) — which would have
+run MySQL-only `PS_CURRENT_THREAD_ID()` against MariaDB — and copy's target
+probe.
+
+### 13.5 Cross-vendor is refused — by dialect, not by source vendor
+
+`check_server_version()` refuses before any DDL runs (`SHERR_LOAD_VENDOR_MISMATCH`,
+53039), and `util.copy*` refuses between its two live sessions.
+
+The check is on the dump's **dialect**, not on where it came from, because §6.4
+("drop MariaDB → MySQL") and §7.1 ("do not disturb the MySQL build") pull in
+opposite directions otherwise. A MySQL build remaps a MariaDB source to 5.6,
+which suppresses everything MariaDB-specific and produces a MySQL-shaped dump —
+so `is_maria_db && !is_5_6` is exactly "this dump is MariaDB-dialect". The
+outcomes:
+
+| Dump produced by | Source | Target | Result |
+|---|---|---|---|
+| MariaDB build | MariaDB | MariaDB | loads |
+| MariaDB build | MariaDB | MySQL | refused |
+| MySQL build | MariaDB | MySQL | **loads** — upstream's migration path, unchanged |
+| either | MySQL | MariaDB | refused |
+
+The manifest now records `"vendor": "mariadb" \| "mysql"` inside `source`
+(§6.3), and `server_info()` lets it override the substring detection. Old dumps
+without the field still work — the version string carries the answer.
+
+`ocimds` is refused for a MariaDB source as well: every rewrite it performs
+targets MySQL DDL, and MySQL HeatWave Service is a MySQL product.
+`updateGtidSet` is refused too, pending phase 4
+(`SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR`, 53040).
+
+### 13.6 One real bug the remap had been hiding
+
+`Instance_cache_builder::fetch_view_metadata()` gates
+`information_schema.VIEW_TABLE_USAGE` on `>= 8.0.13`. Under the remap MariaDB
+looked like 5.6 and took the parse-`VIEW_DEFINITION` fallback; with the real
+version it satisfied the threshold and every dump containing a view died with
+`Unknown table 'view_table_usage' in information_schema`. Now
+`supports_view_table_usage()`.
+
+This is the whole argument for §7.3 in one example: the site was not asking
+about a version, it was asking about a table that MySQL 8.0.13 happens to have.
+
+### 13.7 Verified
+
+Live, against MariaDB 12.3.2 sandboxes (3312, 3313) and MySQL 26.7.0 (3310):
+
+- `dumpSchemas` → `loadDump`, MariaDB → MariaDB, **without `ignoreVersion`** —
+  "Target is MariaDB 12.3.2-MariaDB-debug. Dump was produced from MariaDB
+  12.3.2-MariaDB-debug". Data and view verified after reload. This is §11.5
+  closed.
+- Manifest: `vendor: mariadb`, `serverVersion: 12.3.2-MariaDB-debug` (no remap),
+  `targetVersion: 13.1.0` (the build-time server version).
+- `copySchemas` MariaDB → MariaDB.
+- Refusals fire with their own messages: MariaDB dump → MySQL target, MySQL dump
+  → MariaDB target, `copySchemas` MariaDB → MySQL, `ocimds: true` from MariaDB.
+- MySQL build: `dumpSchemas` → `loadDump` MySQL → MySQL round trip; manifest
+  `vendor: mysql`, `targetVersion: 26.8.0`.
+- MySQL build dumping **from** MariaDB: manifest still says
+  `serverVersion: 5.6.0-12.3.2-MariaDB-debug`, the dialect check passes, and it
+  loads into MySQL with `ignoreVersion` — which is what a 5.6-shaped dump has
+  always needed. Upstream's path is intact.
+
+Unit tests (`Compatibility_test`, `Dump_utils`, `Dump_scheduler`, `Load_dump`,
+`Load_dump_mocked`, `Schema_dumper_test`, `User_privileges_test`,
+`Instance_cache_test`, `Checksums_test`):
+
+- **MySQL build: 95/95 passed**, 2 pre-existing skips.
+- **MariaDB build: 86 passed, 4 failed**, all four pre-existing (verified by
+  running the same filter on a clean tree). `Schema_dumper_test.dump_grants` and
+  `dump_filtered_grants` — listed as failing in §12.6 — now **pass**, because
+  without the remap the dumper takes the `SHOW CREATE USER` path MariaDB
+  actually supports.
+
+Three tests were gated on the **active server's vendor**, the test-side
+counterpart of §7.3 (`Shell_test_env::target_server_is_maria_db()` is the new
+helper):
+
+- `Schema_dumper_test.dump_libraries` and `User_privileges_test.partial_revokes`
+  — the two §12.6 called out.
+- `Schema_dumper_test.strip_restricted_grants_set_any_definer` — sets MySQL
+  target versions on a Schema_dumper built against a MariaDB server, which no
+  longer means anything now that the target carries the source's vendor.
+
+### 13.8 Known-unfixed
+
+- Still failing on the MariaDB build, all pre-existing:
+  `Instance_cache_test.table_columns` (a column-type mapping difference),
+  `Schema_dumper_test.{opt_mysqlaas, compat_ddl, unknown_collations}` (expected
+  output, phase 6).
+- `Instance_cache_builder::fetch_view_metadata()` hands the real MariaDB version
+  to `mysqlshdk::parser::Parser_config`, so MariaDB view definitions are parsed
+  with the newest MySQL grammar rather than 5.6's. Closer than before, but
+  MariaDB-only view syntax is still not understood — relevant once §4.5's view
+  handling is revisited.
+- `dumper.cc` keeps two raw `is_8_0` reads on purpose, both on user-dumping /
+  `ocimds` paths that are unreachable on MariaDB today; they are marked with the
+  phase that owns them.
+- MySQL → MySQL dumps are **not** byte-identical before and after, as §7.5
+  suggested checking: the manifest gained the `vendor` field. That is the only
+  difference, and it is the §6.3 requirement.

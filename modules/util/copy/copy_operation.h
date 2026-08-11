@@ -40,6 +40,7 @@
 #include "mysqlshdk/libs/utils/version.h"
 
 #include "modules/mod_utils.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/ddl_dumper.h"
 #include "modules/util/load/dump_loader.h"
 #include "mysqlshdk/libs/utils/option_tracker.h"
@@ -77,7 +78,6 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
       storage, common::Storage_options::Storage_type::Memory);
   copy_options->dump_options()->set_url(output->full_path().real());
 
-  using mysqlshdk::utils::k_shell_version;
   using mysqlshdk::utils::Version;
   // everything below reasons about the target on MySQL's version scale;
   // MariaDB version numbers are not on it, so handing them to the MySQL
@@ -85,23 +85,43 @@ void copy(const mysqlshdk::db::Connection_options &connection_options,
   // feature detection - the same hole Load_dump_options used to have
   const auto target_is_maria_db = mysqlshdk::db::ServerVendor::MariaDB ==
                                   load_session->get_server_vendor();
+
+  // Copy is the one place where the two ends are two live servers rather than
+  // a dump on disk, so the cross-vendor check is a comparison between two
+  // sessions. The in-memory dump is written in one vendor's dialect, so refuse
+  // the mismatch here rather than partway through the DDL.
+  // See MARIADB_DUMP_LOAD.md sections 6.4 and 7.1.
+  const auto source_is_maria_db =
+      copy_options->dump_options()->source_is_maria_db();
+
+  if (dump::common::produces_maria_db_dialect(source_is_maria_db) !=
+      target_is_maria_db) {
+    const auto name = [](bool maria) { return maria ? "MariaDB" : "MySQL"; };
+
+    throw std::invalid_argument(
+        std::string{"The source instance is "} + name(source_is_maria_db) +
+        " and the target instance is " + name(target_is_maria_db) +
+        ". Copying across server vendors is not supported.");
+  }
+
+  // "newer than the tool" is measured against the Shell's own version for
+  // MySQL and against the server version this Shell was built from for
+  // MariaDB - see MARIADB_DUMP_LOAD.md section 7.4
   auto version = Version(
       load_session->query("SELECT @@version")->fetch_one()->get_string(0));
   auto is_mds = !target_is_maria_db && version.is_mds();
   DBUG_EXECUTE_IF("copy_utils_force_mds", { is_mds = true; });
   DBUG_EXECUTE_IF("copy_utils_unsupported_target_version", {
-    version =
-        Version(k_shell_version.get_major(), k_shell_version.get_minor() + 1,
-                k_shell_version.get_patch());
+    const auto &reference = dump::common::reference_version(target_is_maria_db);
+    version = Version(reference.get_major(), reference.get_minor() + 1,
+                      reference.get_patch());
   });
 
-  if (!target_is_maria_db) {
-    // if target is MDS, then we want to validate the version, so we won't copy
-    // to an unsupported version
-    // BUG#38107377 - but only if ignoreVersion is false
-    copy_options->dump_options()->set_target_version(
-        version, is_mds && !copy_options->load_options()->ignore_version());
-  }
+  // if target is MDS, then we want to validate the version, so we won't copy
+  // to an unsupported version
+  // BUG#38107377 - but only if ignoreVersion is false
+  copy_options->dump_options()->set_target_version(
+      version, is_mds && !copy_options->load_options()->ignore_version());
 
   // enable MDS checks if target is an MDS instance
   if (is_mds) {

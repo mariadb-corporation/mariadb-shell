@@ -85,6 +85,7 @@
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/common/utils.h"
 #include "modules/util/dump/compatibility_issue.h"
@@ -115,9 +116,17 @@ namespace {
 static constexpr const int k_mysql_server_net_write_timeout = 30 * 60;
 static constexpr const int k_mysql_server_wait_timeout = 365 * 24 * 60 * 60;
 
-bool is_unsupported_historical_dump_source_version(const Version &version) {
-  return version >= Version(8, 0, 0) && version <= k_shell_version &&
-         !mysqlshdk::utils::version::is_supported_server(version);
+bool is_unsupported_historical_dump_source_version(
+    const common::Server_version &version) {
+  // this bounds a range on MySQL's version scale (8.0 up to the Shell's own
+  // version), so it says nothing at all about a MariaDB server
+  if (version.is_maria_db) {
+    return false;
+  }
+
+  return version.number >= Version(8, 0, 0) &&
+         version.number <= k_shell_version &&
+         !mysqlshdk::utils::version::is_supported_server(version.number);
 }
 
 // 255 characters total:
@@ -2806,8 +2815,8 @@ void Dumper::initialize_dumper() {
 
   if (m_options.compatibility_options().is_set(
           Compatibility_option::STRIP_DEFINERS) &&
-      compatibility::supports_set_any_definer_privilege(
-          m_options.target_version())) {
+      common::supports_set_any_definer_privilege(
+          m_options.target_server_version())) {
     current_console()->print_note(
         "The 'targetVersion' option is set to " +
         m_options.target_version().get_base() +
@@ -3035,8 +3044,8 @@ void Dumper::do_run() {
   }
 
 #ifndef NDEBUG
-  if (m_server_version.number < Version(8, 0, 21) ||
-      m_server_version.number > Version(8, 0, 23) || !dump_users()) {
+  if (!common::show_create_user_autocommits(m_server_version) ||
+      !dump_users()) {
     // SHOW CREATE USER auto-commits transaction in some 8.0 versions, we don't
     // check if transaction is still open in such case if users were dumped
     assert_transaction_is_open(session());
@@ -3151,7 +3160,7 @@ void Dumper::fetch_user_privileges() {
   m_skip_grant_tables_active = "'skip-grants user'@'skip-grants host'" ==
                                shcore::make_account(m_user_account);
 
-  if (m_server_version.number >= Version(8, 0, 0)) {
+  if (common::supports_lock_instance_for_backup(m_server_version)) {
     m_user_has_backup_admin =
         !m_user_privileges->validate({"BACKUP_ADMIN"}).has_missing_privileges();
   }
@@ -3173,10 +3182,13 @@ void Dumper::warn_about_backup_lock() const {
 }
 
 std::string Dumper::why_backup_lock_is_missing() const {
-  return m_server_version.number >= Version(8, 0, 0)
+  return common::supports_lock_instance_for_backup(m_server_version)
              ? "available to the account " +
                    shcore::make_account(m_user_account)
-             : "supported in MySQL " + m_server_version.number.get_short();
+             : "supported in " +
+                   std::string(m_server_version.is_maria_db ? "MariaDB "
+                                                            : "MySQL ") +
+                   m_server_version.number.get_short();
 }
 
 void Dumper::lock_all_tables() {
@@ -3354,7 +3366,7 @@ void Dumper::acquire_read_locks() {
   // 8.0.23, FLUSH_TABLES privilege
   const auto execute_ftwrl =
       !m_user_privileges->validate({"RELOAD"}).has_missing_privileges() ||
-      (m_server_version.number >= Version(8, 0, 23) &&
+      (common::supports_flush_tables_privilege(m_server_version) &&
        !m_user_privileges->validate({"FLUSH_TABLES"}).has_missing_privileges());
   m_ftwrl_used = execute_ftwrl;
 
@@ -3584,7 +3596,7 @@ void Dumper::lock_instance() {
 
       msg = "In order to create a consistent dump, either:";
 
-      if (m_server_version.number >= Version(8, 0, 0)) {
+      if (common::supports_lock_instance_for_backup(m_server_version)) {
         msg += "\n * Use an account which has the BACKUP_ADMIN privilege.";
       }
 
@@ -3795,6 +3807,7 @@ void Dumper::validate_mds() {
       "Checking for compatibility with MySQL HeatWave Service " + version,
       stage_attrib("begin"));
 
+  // reachable only via 'ocimds', which is refused for a MariaDB source
   if (!m_cache.server.version.is_8_0) {
     console->print_note("MySQL Server " +
                         m_cache.server.version.number.get_short() +
@@ -3954,7 +3967,7 @@ void Dumper::validate_mds() {
          This will disable this check and the dump will be produced normally, Primary Keys will not be added automatically.
          It will not be possible to load the dump in an HA enabled DB System instance.
 )",
-        compatibility::supports_pke_as_pk(m_options.target_version())
+        common::supports_pke_as_pk(m_options.target_server_version())
             ? " or Primary Key Equivalents"
             : ""));
   }
@@ -5874,16 +5887,15 @@ void Dumper::summarize() const {
   }
 
   if (m_cache.has_library_ddl &&
-      !compatibility::supports_library_ddl(m_options.target_version())) {
+      !common::supports_library_ddl(m_options.target_server_version())) {
     console->print_warning(shcore::str_format(
         "The dump contains library DDL, however the 'targetVersion' option is "
         "set to %s, where this feature is not supported.",
         m_options.target_version().get_base().c_str()));
   }
 
-  if (uses_innodb_vector_store() &&
-      !compatibility::supports_vector_store_conversion(
-          m_options.target_version())) {
+  if (uses_innodb_vector_store() && !common::supports_vector_store_conversion(
+                                        m_options.target_server_version())) {
     console->print_warning(shcore::str_format(
         "The dump contains InnoDB-based vector store tables, however the "
         "'targetVersion' option is set to %s, where automatic conversion to "
@@ -5891,9 +5903,8 @@ void Dumper::summarize() const {
         m_options.target_version().get_base().c_str()));
   }
 
-  if (uses_dynamic_data_masking() &&
-      !compatibility::supports_dynamic_data_masking(
-          m_options.target_version())) {
+  if (uses_dynamic_data_masking() && !common::supports_dynamic_data_masking(
+                                         m_options.target_server_version())) {
     // WL17279-FR1.4.1: warn if `targetVersion` doesn't support dynamic data
     // masking
     console->print_warning(
@@ -6190,7 +6201,7 @@ void Dumper::validate_preflight_privileges() const {
     return;
   }
 
-  if (m_server_version.is_5_6) {
+  if (common::requires_super_to_dump_users(m_server_version)) {
     const auto result = m_user_privileges->validate({"SUPER"});
 
     if (result.has_missing_privileges()) {
@@ -6200,6 +6211,8 @@ void Dumper::validate_preflight_privileges() const {
     }
   }
 
+  // dumping accounts is MySQL-only for now (throw_if_cannot_dump_users), so
+  // this stays on the MySQL flag until MARIADB_DUMP_LOAD.md section 4.6 lands
   if (m_server_version.is_8_0) {
     // SHOW CREATE USER requires access to the mysql schema.
     const auto result = m_user_privileges->validate({"SELECT"}, "mysql");
@@ -6231,7 +6244,7 @@ void Dumper::validate_object_privileges() const {
     table_required.emplace(std::move(trigger));
   }
 
-  if (!m_cache.server.version.is_8_0) {
+  if (common::requires_explicit_select_privilege(m_cache.server.version)) {
     // need to explicitly check for SELECT privilege, otherwise some queries
     // will return empty results
     std::string select{"SELECT"};
@@ -6556,26 +6569,33 @@ void Dumper::fetch_server_information() {
   DBUG_EXECUTE_IF("dumper_binlog_disabled", { m_binlog_enabled = false; });
   DBUG_EXECUTE_IF("dumper_gtid_disabled", { m_gtid_enabled = false; });
 
+  // "is this server newer than the tool" is measured against the Shell's own
+  // version for MySQL and against the server version this Shell was built from
+  // for MariaDB, whose numbering is not on the Shell's scale - see
+  // MARIADB_DUMP_LOAD.md section 7.4
+  const auto &reference = common::reference_version(m_server_version);
+  const auto vendor = m_server_version.is_maria_db ? "MariaDB" : "MySQL";
+
   // BUG#37866205 disallow dumps from server with a greater major version
   DBUG_EXECUTE_IF("dumper_unsupported_server_version", {
-    m_server_version.number = Version(k_shell_version.get_major() + 1, 0, 0);
+    m_server_version.number = Version(reference.get_major() + 1, 0, 0);
   });
 
   DBUG_EXECUTE_IF("dumper_unsupported_calendar_gap_server_version",
                   { m_server_version.number = Version(26, 6, 0); });
 
-  const auto unsupported_server_error = [this]() {
+  const auto unsupported_server_error = [this, vendor]() {
     return std::runtime_error(
-        shcore::str_format("Unsupported MySQL Server %s detected, please "
+        shcore::str_format("Unsupported %s Server %s detected, please "
                            "upgrade the MySQL Shell first",
-                           m_server_version.number.get_base().c_str()));
+                           vendor, m_server_version.number.get_base().c_str()));
   };
 
-  if (m_server_version.number.get_major() > k_shell_version.get_major()) {
+  if (m_server_version.number.get_major() > reference.get_major()) {
     throw unsupported_server_error();
   }
 
-  if (is_unsupported_historical_dump_source_version(m_server_version.number)) {
+  if (is_unsupported_historical_dump_source_version(m_server_version)) {
     throw unsupported_server_error();
   }
 
@@ -6583,19 +6603,19 @@ void Dumper::fetch_server_information() {
   // warn if server has a greater minor version (8.0.x -> 8.1.0, 8.4.0 -> 8.5.0
   // -> does not exist, but handles also 9.0.0)
   const auto newer_version =
-      Version{k_shell_version.get_major(), k_shell_version.get_minor() + 1, 0};
+      Version{reference.get_major(), reference.get_minor() + 1, 0};
 
   DBUG_EXECUTE_IF("dumper_newer_server_version",
                   { m_server_version.number = newer_version; });
 
   if (m_server_version.number >= newer_version) {
     current_console()->print_warning(shcore::str_format(
-        "MySQL Server %s detected, which is newer than the MySQL Shell. Please "
+        "%s Server %s detected, which is newer than the MySQL Shell. Please "
         "upgrade the MySQL Shell if dump or load operation fails.",
-        m_server_version.number.get_base().c_str()));
+        vendor, m_server_version.number.get_base().c_str()));
   }
 
-  if (compatibility::supports_dynamic_data_masking(m_server_version.number)) {
+  if (common::supports_dynamic_data_masking(m_server_version)) {
     m_data_masking_enabled =
         mysqlsh::common::Data_masking{session()}.is_component_installed();
   }
@@ -6752,7 +6772,7 @@ common::Binlog Dumper::binlog(
 }
 
 std::string Dumper::optimizer_hints(const Instance_cache::Table *info) const {
-  if (!m_server_version.is_8_0) {
+  if (!common::supports_optimizer_hints(m_server_version)) {
     return "SQL_NO_CACHE ";
   } else if ("RAPID" == info->secondary_engine) {
     // disable off-loading to heatwave

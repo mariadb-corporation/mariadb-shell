@@ -35,6 +35,7 @@
 
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/dump/indexes.h"
 
@@ -3550,7 +3551,8 @@ TEST_F(Instance_cache_test, filter_routines) {
 
 #ifndef MARIADB_BUILD
 TEST_F(Instance_cache_test, filter_libraries) {
-  if (!compatibility::supports_library_ddl(_target_server_version)) {
+  if (!common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
     SKIP_TEST("This test requires MySQL server 9.2.0");
   }
 
@@ -4342,7 +4344,8 @@ TEST_F(Instance_cache_test, filter_triggers) {
 
 TEST_F(Instance_cache_test, stats) {
   const auto k_libraries_supported =
-      compatibility::supports_library_ddl(_target_server_version);
+      common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()));
 
   {
     // setup

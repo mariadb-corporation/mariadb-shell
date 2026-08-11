@@ -131,6 +131,22 @@ class Version {
 
 inline const Version k_shell_version = Version(MYSH_VERSION EXTRA_NAME_SUFFIX);
 
+#ifdef MYSH_BUILD_SERVER_VERSION
+/**
+ * Version of the server this Shell was built against.
+ *
+ * The Shell and MySQL Server share a version scale, so for a MySQL server
+ * k_shell_version answers "which server versions does this tool understand".
+ * MariaDB version numbers are not on that scale, so a MariaDB server has to be
+ * measured against the MariaDB version this build was made from instead.
+ */
+inline const Version k_build_server_version =
+    Version(MYSH_BUILD_SERVER_VERSION);
+#else   // !MYSH_BUILD_SERVER_VERSION
+// no server source tree was configured, fall back to the Shell's own version
+inline const Version k_build_server_version = k_shell_version;
+#endif  // !MYSH_BUILD_SERVER_VERSION
+
 namespace version {
 
 namespace legacy {

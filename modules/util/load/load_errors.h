@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -184,7 +185,14 @@
   "The dump contains dynamic data masking DDL which requires server 9.7.0 or " \
   "newer."
 
-#define SHERR_LOAD_LAST 53038
+#define SHERR_LOAD_VENDOR_MISMATCH 53039
+#define SHERR_LOAD_VENDOR_MISMATCH_MSG "Server vendor mismatch"
+
+#define SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR 53040
+#define SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR_MSG \
+  "The updateGtidSet option is not supported when loading into MariaDB."
+
+#define SHERR_LOAD_LAST 53040
 
 #define SHERR_LOAD_MAX 53999
 

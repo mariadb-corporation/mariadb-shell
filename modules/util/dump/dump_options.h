@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +44,7 @@
 #include "mysqlshdk/libs/utils/version.h"
 
 #include "modules/util/common/common_options.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/dump/compatibility_option.h"
 #include "modules/util/dump/instance_cache.h"
 #include "modules/util/dump/lakehouse_target_option.h"
@@ -71,7 +73,11 @@ class Dump_options : public mysqlsh::common::Common_options {
 
   static const shcore::Option_pack_def<Dump_options> &options();
 
-  static const mysqlshdk::utils::Version &current_version();
+  /**
+   * Default value of the targetVersion option: the newest server this Shell
+   * knows about, on the scale used by the vendor being dumped.
+   */
+  const mysqlshdk::utils::Version &current_version() const;
 
   // setters
   void set_compression(mysqlshdk::storage::Compression compression) {
@@ -134,6 +140,23 @@ class Dump_options : public mysqlsh::common::Common_options {
   }
 
   bool implicit_target_version() const { return !m_target_version.has_value(); }
+
+  /**
+   * The target version together with the vendor it belongs to.
+   *
+   * Under the vendor -> vendor scope the target is always the same vendor as
+   * the source, so the vendor comes from the session being dumped. Use this,
+   * not target_version(), whenever the question is "does the target support
+   * feature X" - see MARIADB_DUMP_LOAD.md section 7.3.
+   */
+  common::Server_version target_server_version() const {
+    return common::server_version(target_version(), m_source_is_maria_db);
+  }
+
+  /**
+   * Vendor of the server being dumped, as reported by the session handshake.
+   */
+  bool source_is_maria_db() const noexcept { return m_source_is_maria_db; }
 
   const Instance_cache_builder::Partition_filters &included_partitions() const {
     return m_partitions;
@@ -203,6 +226,9 @@ class Dump_options : public mysqlsh::common::Common_options {
  protected:
   explicit Dump_options(const char *name, bool url_is_directory = true);
 
+  void on_set_session(
+      const std::shared_ptr<mysqlshdk::db::ISession> &session) override;
+
   void on_validate() const override;
 
   void enable_mds_compatibility() { m_is_mds = true; }
@@ -213,6 +239,8 @@ class Dump_options : public mysqlsh::common::Common_options {
 
   void set_target_version(const mysqlshdk::utils::Version &version,
                           bool fatal = true);
+
+  void validate_target_version() const;
 
   void set_where_clause(const std::map<std::string, std::string> &where);
 
@@ -303,6 +331,10 @@ class Dump_options : public mysqlsh::common::Common_options {
   bool m_is_mds = false;
   Compatibility_options m_compatibility_options;
   std::optional<mysqlshdk::utils::Version> m_target_version;
+  bool m_target_version_is_fatal = true;
+  // vendor of the source, which under the vendor -> vendor scope is also the
+  // vendor of the target
+  bool m_source_is_maria_db = false;
   std::optional<Lakehouse_target_option> m_lakehouse_target;
 };
 

@@ -48,6 +48,7 @@
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/util/common/data_masking.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
 #include "modules/util/dump/schema_dumper.h"
 
@@ -252,7 +253,7 @@ Instance_cache_builder &Instance_cache_builder::routines() {
   // the total number of routines within the filtered schemas
   m_cache.total.routines = count(info);
 
-  if (compatibility::supports_library_ddl(m_cache.server.version.number)) {
+  if (common::supports_library_ddl(m_cache.server.version)) {
     // the routine_libraries view has ROUTINE_SCHEMA, ROUTINE_NAME and
     // ROUTINE_TYPE columns, so these do not need to be changed, routine filter
     // is valid as well
@@ -299,7 +300,7 @@ Instance_cache_builder &Instance_cache_builder::routines() {
 }
 
 Instance_cache_builder &Instance_cache_builder::libraries() {
-  if (!compatibility::supports_library_ddl(m_cache.server.version.number)) {
+  if (!common::supports_library_ddl(m_cache.server.version)) {
     return *this;
   }
 
@@ -570,9 +571,10 @@ void Instance_cache_builder::fetch_view_metadata() {
 
   // BUG#36509026 - we're fetching view definitions to extract table references,
   // starting with 8.0.13 we get those from I_S.VIEW_TABLE_USAGE
-  static const mysqlshdk::utils::Version k_has_view_table_usage{8, 0, 13};
+  const auto has_view_table_usage =
+      common::supports_view_table_usage(m_cache.server.version);
 
-  if (m_cache.server.version.number < k_has_view_table_usage) {
+  if (!has_view_table_usage) {
     info.extra_columns.emplace_back("VIEW_DEFINITION");  // can be NULL in 8.x
   }
 
@@ -602,7 +604,7 @@ void Instance_cache_builder::fetch_view_metadata() {
     }
   });
 
-  if (m_cache.server.version.number >= k_has_view_table_usage) {
+  if (has_view_table_usage) {
     Iterate_table usage;
     usage.schema_column = "VIEW_SCHEMA";  // NOT NULL
     usage.table_column = "VIEW_NAME";     // NOT NULL
@@ -864,7 +866,8 @@ void Instance_cache_builder::fetch_table_indexes() {
 void Instance_cache_builder::fetch_table_histograms() {
   Profiler profiler{"fetching table histograms"};
 
-  if (!has_tables() || !m_cache.server.version.is_8_0) {
+  if (!has_tables() ||
+      !common::supports_column_statistics(m_cache.server.version)) {
     return;
   }
 
@@ -1278,7 +1281,7 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_users() const {
 }
 
 std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
-  if (!m_cache.server.version.is_8_0) {
+  if (!common::supports_role_dumping(m_cache.server.version)) {
     return {};
   }
 

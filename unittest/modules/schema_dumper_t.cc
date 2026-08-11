@@ -39,6 +39,7 @@
 // needs to be included first for FRIEND_TEST
 #include "unittest/gprod_clean.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/compatibility_issue.h"
 #include "modules/util/dump/instance_cache.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -823,7 +824,8 @@ TEST_F(Schema_dumper_test, dump_libraries) {
   EXPECT_TRUE(output_handler.std_err.empty());
   wipe_all();
 
-  if (!compatibility::supports_library_ddl(_target_server_version)) {
+  if (!common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
     return;
   }
 
@@ -2152,6 +2154,14 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
 }
 
 TEST_F(Schema_dumper_test, strip_restricted_grants_set_any_definer) {
+  if (target_server_is_maria_db()) {
+    // SET_ANY_DEFINER is a MySQL privilege and restricted-grant rewriting is
+    // MySQL HeatWave Service surface. set_target_version() stamps the target
+    // with the *source* server's vendor, so the MySQL versions this test sets
+    // are not meaningful against a MariaDB server.
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   // WL#15887 - test SET_ANY_DEFINER grant
   using Status = Compatibility_issue::Status;
   using Object_type = Compatibility_issue::Object_type;
