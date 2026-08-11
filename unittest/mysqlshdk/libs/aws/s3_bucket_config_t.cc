@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2022, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -161,7 +162,8 @@ class Aws_s3_bucket_config_test : public testing::Test {
   }
 
   static std::string shell_executable() {
-    return shcore::path::join_path(shcore::get_binary_folder(), "mysqlsh");
+    return shcore::path::join_path(shcore::get_binary_folder(),
+                                   "mariadb-shell");
   }
 
   std::string invalid_config(bool with_session_token = false) const {
