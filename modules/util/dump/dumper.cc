@@ -3599,15 +3599,18 @@ void Dumper::lock_instance() {
       }
 
       if (!can_check_dump_consistency) {
-        msg +=
-            "\n * The gtid_mode system variable is set to OFF or "
-            "OFF_PERMISSIVE.";
+        // MariaDB has no gtid_mode - there, GTIDs come with the binary log,
+        // which the bullet above already reports as disabled
+        if (!m_server_version.is_maria_db) {
+          msg +=
+              "\n * The gtid_mode system variable is set to OFF or "
+              "OFF_PERMISSIVE.";
+        }
 
         msg += shcore::str_format(
             "\n * The current user does not have required privileges to "
             "execute SHOW %s STATUS.",
-            mysqlshdk::mysql::get_binary_logs_keyword(m_server_version.number,
-                                                      true));
+            common::binlog_status_keyword(m_server_version));
       }
 
       console->print_warning(msg);
@@ -3631,9 +3634,12 @@ void Dumper::lock_instance() {
         if (can_check_dump_consistency) {
           msg += "\n * Enable binary logging.";
         } else {
-          msg +=
-              "\n * Enable binary logging and set the gtid_mode system "
-              "variable to ON or ON_PERMISSIVE.";
+          // on MariaDB enabling the binary log is what enables GTIDs, so the
+          // remedy is the same one either way
+          msg += m_server_version.is_maria_db
+                     ? "\n * Enable binary logging."
+                     : "\n * Enable binary logging and set the gtid_mode "
+                       "system variable to ON or ON_PERMISSIVE.";
 
           msg += shcore::str_format(
               "\n * Enable binary logging and use an account which has the "
@@ -3641,7 +3647,10 @@ void Dumper::lock_instance() {
               replication_client);
         }
       } else {
+        // MariaDB cannot get here: the binary log being on means GTIDs are on,
+        // which is what can_check_dump_consistency asks about
         assert(!can_check_dump_consistency);
+        assert(!m_server_version.is_maria_db);
 
         msg += "\n * Set the gtid_mode system variable to ON or ON_PERMISSIVE.";
 
@@ -6573,23 +6582,33 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
+        bool verified = false;
+
 #ifdef HAVE_BINLOG_UTILS
-        // check if executed statements are safe
-        // get GTID sets which were executed since the dump has started
+        // GTID_SUBTRACT() below, and the binary log reader underneath
+        // check_if_transactions_are_ddl_safe(), are both MySQL-only
+        if (common::supports_gtid_set_functions(m_server_version)) {
+          // check if executed statements are safe
+          // get GTID sets which were executed since the dump has started
 
-        const auto set =
-            Gtid_set::from_normalized_string(gtid_executed)
-                .subtract(Gtid_set::from_normalized_string(prev_gtid_executed),
-                          instance);
+          const auto set =
+              Gtid_set::from_normalized_string(gtid_executed)
+                  .subtract(
+                      Gtid_set::from_normalized_string(prev_gtid_executed),
+                      instance);
 
-        consistent = check_if_transactions_are_ddl_safe(
-            instance, m_cache.server.binlog.file, binlog(session).file, set);
-#else
-        console->print_note(
-            "Verifying via the binary log whether the executed statements were "
-            "DDL is not supported yet against this server; treating the dump "
-            "as not verified.");
+          consistent = check_if_transactions_are_ddl_safe(
+              instance, m_cache.server.binlog.file, binlog(session).file, set);
+          verified = true;
+        }
 #endif  // HAVE_BINLOG_UTILS
+
+        if (!verified) {
+          console->print_note(
+              "Verifying via the binary log whether the executed statements "
+              "were DDL is not supported yet against this server; treating the "
+              "dump as not verified.");
+        }
       }
     }
   } else {
@@ -6606,16 +6625,23 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
+        bool verified = false;
+
 #ifdef HAVE_BINLOG_UTILS
-        // check if executed statements are safe
-        consistent = check_if_transactions_are_ddl_safe(
-            instance, m_cache.server.binlog.file, binlog);
-#else
-        console->print_note(
-            "Verifying via the binary log whether the executed statements were "
-            "DDL is not supported yet against this server; treating the dump "
-            "as not verified.");
+        if (!m_server_version.is_maria_db) {
+          // check if executed statements are safe
+          consistent = check_if_transactions_are_ddl_safe(
+              instance, m_cache.server.binlog.file, binlog);
+          verified = true;
+        }
 #endif  // HAVE_BINLOG_UTILS
+
+        if (!verified) {
+          console->print_note(
+              "Verifying via the binary log whether the executed statements "
+              "were DDL is not supported yet against this server; treating the "
+              "dump as not verified.");
+        }
       }
     }
   }
@@ -6648,8 +6674,14 @@ void Dumper::fetch_server_information() {
 
   m_server_version = common::server_version(session());
   m_binlog_enabled = instance.get_sysvar_bool("log_bin").value_or(false);
-  m_gtid_enabled = shcore::str_ibeginswith(
-      instance.get_sysvar_string("gtid_mode").value_or("OFF"), "ON");
+  // MariaDB has no gtid_mode: every transaction written to the binary log gets
+  // a GTID, so binary logging is what decides whether the GTID position is a
+  // usable record of what the server did - MARIADB_DUMP_LOAD.md section 4.4
+  m_gtid_enabled =
+      common::is_maria_db_dialect(m_server_version)
+          ? m_binlog_enabled
+          : shcore::str_ibeginswith(
+                instance.get_sysvar_string("gtid_mode").value_or("OFF"), "ON");
 
   DBUG_EXECUTE_IF("dumper_binlog_disabled", { m_binlog_enabled = false; });
   DBUG_EXECUTE_IF("dumper_gtid_disabled", { m_gtid_enabled = false; });
@@ -6848,7 +6880,7 @@ void Dumper::handle_mismatched_view_references(issues::Status_set status,
 
 std::string Dumper::gtid_executed(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
-  return common::gtid_executed(session);
+  return common::gtid_executed(session, m_server_version);
 }
 
 common::Binlog Dumper::binlog(

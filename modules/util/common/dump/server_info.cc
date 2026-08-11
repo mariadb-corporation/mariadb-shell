@@ -28,6 +28,7 @@
 
 #include <mysqld_error.h>
 
+#include <string>
 #include <utility>
 
 #include "mysqlshdk/include/shellcore/console.h"
@@ -39,6 +40,7 @@
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
 
 namespace mysqlsh {
@@ -92,30 +94,43 @@ const auto optional_uint = [](const shcore::json::Value &o, const char *n) {
 }  // namespace
 
 std::string gtid_executed(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+    const std::shared_ptr<mysqlshdk::db::ISession> &session,
+    const Server_version &version) {
+  // MariaDB has no gtid_executed. Its equivalent is gtid_current_pos, the union
+  // of what this server wrote to its own binary log and what it replicated from
+  // elsewhere - which is what mariabackup records as well, and the position a
+  // server provisioned from this dump has to resume replication from.
+  // See MARIADB_DUMP_LOAD.md section 4.4.
+  const auto variable = is_maria_db_dialect(version)
+                            ? "@@GLOBAL.gtid_current_pos"
+                            : "@@GLOBAL.GTID_EXECUTED";
+
   try {
-    const auto result = session->query("SELECT @@GLOBAL.GTID_EXECUTED");
+    const auto result = session->query(std::string{"SELECT "}.append(variable));
 
     if (const auto row = result->fetch_one()) {
       return row->get_string(0);
     }
   } catch (const mysqlshdk::db::Error &e) {
-    log_error("Failed to fetch value of @@GLOBAL.GTID_EXECUTED: %s.",
-              e.format().c_str());
+    log_error("Failed to fetch value of %s: %s.", variable, e.format().c_str());
   }
 
   return {};
 }
 
+const char *binlog_status_keyword(const Server_version &version) {
+  return version.is_maria_db
+             ? "MASTER"
+             : mysqlshdk::mysql::get_binary_logs_keyword(version.number, true);
+}
+
 Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
               const Server_version &version, bool quiet) {
   Binlog binlog;
+  bool status_unavailable = false;
 
   try {
-    auto keyword =
-        version.is_maria_db
-            ? "MASTER"
-            : mysqlshdk::mysql::get_binary_logs_keyword(version.number, true);
+    auto keyword = binlog_status_keyword(version);
 
     DBUG_EXECUTE_IF("dumper_dump_mariadb", {
       // We need the binlog query to not be affected by this dbug flag, because
@@ -145,11 +160,18 @@ Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
             "Could not fetch the binary log information: " + e.format());
       }
 
-      // try to at least get the value of gtid_executed
-      binlog.gtid_executed = gtid_executed(session);
+      status_unavailable = true;
     } else {
       throw;
     }
+  }
+
+  // A current MariaDB does report a fifth column, but it is gtid_binlog_pos,
+  // which misses everything a server replicated without log_slave_updates.
+  // Ask for gtid_current_pos instead - always, so that servers old enough to
+  // report four columns behave the same way.
+  if (status_unavailable || is_maria_db_dialect(version)) {
+    binlog.gtid_executed = gtid_executed(session, version);
   }
 
   return binlog;

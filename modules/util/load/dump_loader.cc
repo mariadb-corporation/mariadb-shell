@@ -60,6 +60,7 @@
 #include "mysqlshdk/include/shellcore/shell_init.h"
 #include "mysqlshdk/libs/db/utils_error.h"
 #include "mysqlshdk/libs/mysql/instance.h"
+#include "mysqlshdk/libs/mysql/mariadb_gtid.h"
 #include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/storage/compressed_file.h"
 #include "mysqlshdk/libs/utils/debug.h"
@@ -195,6 +196,42 @@ inline void executef(const Reconnect &reconnect, const Session_ptr &session,
 
 }  // namespace ar
 }  // namespace sql
+
+/**
+ * Whether a MariaDB server is replicating from anywhere - it refuses to change
+ * gtid_slave_pos while any replica thread is running.
+ *
+ * SHOW ALL SLAVES STATUS covers every connection of a multi-source replica,
+ * where SHOW SLAVE STATUS would report the default one only.
+ */
+bool is_replicating(const mysqlshdk::mysql::IInstance &instance) {
+  const auto result = instance.query("SHOW ALL SLAVES STATUS");
+  std::vector<uint32_t> running_columns;
+
+  {
+    const auto &metadata = result->get_metadata();
+
+    for (uint32_t i = 0; i < metadata.size(); ++i) {
+      const auto &name = metadata[i].get_column_label();
+
+      if (shcore::str_caseeq(name, "Slave_IO_Running") ||
+          shcore::str_caseeq(name, "Slave_SQL_Running")) {
+        running_columns.emplace_back(i);
+      }
+    }
+  }
+
+  while (const auto row = result->fetch_one()) {
+    for (const auto column : running_columns) {
+      // Slave_IO_Running is Yes/No/Connecting/Preparing
+      if (!shcore::str_caseeq(row->get_string(column, "No"), "No")) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
 
 bool add_invisible_pk(std::string_view sql, std::string *out_new_sql) {
   mysqlshdk::utils::SQL_iterator it(sql, 0, false);
@@ -2402,12 +2439,17 @@ void Dump_loader::on_dump_end() {
 
   const auto console = current_console();
 
-  // Update GTID_PURGED only when requested by the user
+  // Update GTID_PURGED (gtid_slave_pos on MariaDB) only when requested by the
+  // user
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
+    const auto *const gtid_variable = m_options.target_server().is_maria_db
+                                          ? "gtid_slave_pos"
+                                          : "GTID_PURGED";
     auto status = m_load_log->status(progress::Gtid_update{});
     if (status == Load_progress_log::Status::DONE) {
-      console->print_status("GTID_PURGED already updated, skipping");
-      log_info("GTID_PURGED already updated");
+      console->print_status(std::string{gtid_variable} +
+                            " already updated, skipping");
+      log_info("%s already updated", gtid_variable);
     } else if (!m_dump->gtid_executed().empty()) {
       if (m_dump->gtid_executed_inconsistent()) {
         console->print_warning(
@@ -2418,33 +2460,38 @@ void Dump_loader::on_dump_end() {
       try {
         m_load_log->log(progress::start::Gtid_update{});
 
-        const auto query = m_options.is_mds() ? "CALL sys.set_gtid_purged(?)"
-                                              : "SET GLOBAL GTID_PURGED=?";
-
-        if (m_options.update_gtid_set() ==
-            Load_dump_options::Update_gtid_set::REPLACE) {
-          console->print_status("Resetting GTID_PURGED to dumped gtid set");
-          log_info("Setting GTID_PURGED to %s",
-                   m_dump->gtid_executed().c_str());
-
-          if (!m_options.dry_run()) {
-            // statement is not idempotent - do not reconnect
-            sql::executef(m_session, query, m_dump->gtid_executed());
-          }
+        if (m_options.target_server().is_maria_db) {
+          update_maria_db_gtid_position();
         } else {
-          console->print_status("Appending dumped gtid set to GTID_PURGED");
-          log_info("Appending %s to GTID_PURGED",
-                   m_dump->gtid_executed().c_str());
+          const auto query = m_options.is_mds() ? "CALL sys.set_gtid_purged(?)"
+                                                : "SET GLOBAL GTID_PURGED=?";
 
-          if (!m_options.dry_run()) {
-            // statement is not idempotent - do not reconnect
-            sql::executef(m_session, query, "+" + m_dump->gtid_executed());
+          if (m_options.update_gtid_set() ==
+              Load_dump_options::Update_gtid_set::REPLACE) {
+            console->print_status("Resetting GTID_PURGED to dumped gtid set");
+            log_info("Setting GTID_PURGED to %s",
+                     m_dump->gtid_executed().c_str());
+
+            if (!m_options.dry_run()) {
+              // statement is not idempotent - do not reconnect
+              sql::executef(m_session, query, m_dump->gtid_executed());
+            }
+          } else {
+            console->print_status("Appending dumped gtid set to GTID_PURGED");
+            log_info("Appending %s to GTID_PURGED",
+                     m_dump->gtid_executed().c_str());
+
+            if (!m_options.dry_run()) {
+              // statement is not idempotent - do not reconnect
+              sql::executef(m_session, query, "+" + m_dump->gtid_executed());
+            }
           }
         }
+
         m_load_log->log(progress::end::Gtid_update{});
       } catch (const std::exception &e) {
-        console->print_error(std::string("Error while updating GTID_PURGED: ") +
-                             e.what());
+        console->print_error(std::string{"Error while updating "} +
+                             gtid_variable + ": " + e.what());
         throw;
       }
     } else {
@@ -3393,6 +3440,126 @@ void Dump_loader::open_dump(
   }
 }
 
+void Dump_loader::update_maria_db_gtid_position() {
+  const auto replace = m_options.update_gtid_set() ==
+                       Load_dump_options::Update_gtid_set::REPLACE;
+  auto position =
+      mysqlshdk::mysql::Mariadb_gtid_position::parse(m_dump->gtid_executed());
+
+  if (!replace) {
+    // there is no '+' form of the assignment: the union of the two positions
+    // is computed here and the result is set as a whole
+    const mysqlshdk::mysql::Instance instance{m_session};
+
+    position.merge(mysqlshdk::mysql::Mariadb_gtid_position::parse(
+        instance.get_sysvar_string("gtid_slave_pos", "")));
+  }
+
+  const auto value = position.str();
+  const auto console = current_console();
+
+  if (replace) {
+    console->print_status("Resetting gtid_slave_pos to dumped gtid position");
+  } else {
+    console->print_status("Appending dumped gtid position to gtid_slave_pos");
+  }
+
+  log_info("Setting gtid_slave_pos to %s", value.c_str());
+
+  if (!m_options.dry_run()) {
+    // statement is not idempotent - do not reconnect
+    sql::executef(m_session, "SET GLOBAL gtid_slave_pos = ?", value);
+  }
+}
+
+void Dump_loader::validate_update_gtid_set(
+    const mysqlshdk::mysql::Instance &session,
+    const dump::common::Server_version &target) {
+  // Check if group replication is running
+  bool group_replication_running = false;
+  try {
+    group_replication_running = session.queryf_one_int(
+        0, 0,
+        "select count(*) from performance_schema.replication_group_members "
+        "where MEMBER_ID = @@server_uuid AND MEMBER_STATE IS NOT NULL AND "
+        "MEMBER_STATE <> 'OFFLINE';");
+  } catch (...) {
+  }
+
+  if (group_replication_running) {
+    THROW_ERROR(SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING);
+  }
+
+  if (!target.is_8_0) {
+    if (m_options.update_gtid_set() ==
+        Load_dump_options::Update_gtid_set::APPEND) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_NOT_SUPPORTED);
+    }
+
+    if (!m_options.skip_binlog()) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REQUIRES_SKIP_BINLOG);
+    }
+
+    if (!session.queryf_one_int(0, 0,
+                                "select @@global.gtid_executed = '' and "
+                                "@@global.gtid_purged = ''")) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_EMPTY_VARIABLES);
+    }
+  } else {
+    const char *g = m_dump->gtid_executed().c_str();
+    if (m_options.update_gtid_set() ==
+        Load_dump_options::Update_gtid_set::REPLACE) {
+      if (!session.queryf_one_int(0, 0,
+                                  "select GTID_SUBTRACT(?, "
+                                  "GTID_SUBTRACT(@@global.gtid_executed, "
+                                  "@@global.gtid_purged)) = gtid_subtract(?, "
+                                  "'')",
+                                  g, g)) {
+        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_SETS_INTERSECT);
+      }
+
+      if (!session.queryf_one_int(
+              0, 0, "select GTID_SUBSET(@@global.gtid_purged, ?);", g)) {
+        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET);
+      }
+    } else if (!session.queryf_one_int(
+                   0, 0,
+                   "select GTID_SUBTRACT(@@global.gtid_executed, ?) = "
+                   "@@global.gtid_executed",
+                   g)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_SETS_INTERSECT);
+    }
+  }
+}
+
+void Dump_loader::validate_update_gtid_set_maria_db(
+    const mysqlshdk::mysql::Instance &session) {
+  if (is_replicating(session)) {
+    THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING);
+  }
+
+  const auto dumped =
+      mysqlshdk::mysql::Mariadb_gtid_position::parse(m_dump->gtid_executed());
+  const auto current = mysqlshdk::mysql::Mariadb_gtid_position::parse(
+      session.get_sysvar_string("gtid_slave_pos", ""));
+
+  if (m_options.update_gtid_set() ==
+      Load_dump_options::Update_gtid_set::REPLACE) {
+    // the whole position is overwritten, so anything the target had already
+    // replicated and the dump does not know about would be forgotten
+    if (!dumped.contains(current)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION);
+    }
+  } else {
+    // a position covers every sequence number up to the one it names, so two
+    // positions which share a replication domain share transactions - the
+    // counterpart of upstream's "the sets must not intersect"
+    if (dumped.intersects(current)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT);
+    }
+  }
+}
+
 void Dump_loader::check_server_version() {
   const auto console = current_console();
   const auto &source = m_dump->source_server();
@@ -3519,68 +3686,13 @@ void Dump_loader::check_server_version() {
     console->print_warning("Histogram creation enabled but MySQL Server " +
                            target_server.get_base() + " does not support it.");
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
-    if (!dump::common::supports_gtid_set_functions(target)) {
-      // MariaDB's GTIDs are domain-based d-s-seq triples with no GTID_SUBSET()
-      // / GTID_SUBTRACT() equivalents, and are restored with
-      // SET GLOBAL gtid_slave_pos - a different enough model that it gets its
-      // own implementation, see MARIADB_DUMP_LOAD.md section 4.4
-      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR);
-    }
-
-    // Check if group replication is running
-    bool group_replication_running = false;
-    try {
-      group_replication_running = session.queryf_one_int(
-          0, 0,
-          "select count(*) from performance_schema.replication_group_members "
-          "where MEMBER_ID = @@server_uuid AND MEMBER_STATE IS NOT NULL AND "
-          "MEMBER_STATE <> 'OFFLINE';");
-    } catch (...) {
-    }
-
-    if (group_replication_running) {
-      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING);
-    }
-
-    if (!target.is_8_0) {
-      if (m_options.update_gtid_set() ==
-          Load_dump_options::Update_gtid_set::APPEND) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_NOT_SUPPORTED);
-      }
-
-      if (!m_options.skip_binlog()) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REQUIRES_SKIP_BINLOG);
-      }
-
-      if (!session.queryf_one_int(0, 0,
-                                  "select @@global.gtid_executed = '' and "
-                                  "@@global.gtid_purged = ''")) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_EMPTY_VARIABLES);
-      }
+    if (target.is_maria_db) {
+      // MariaDB's GTIDs are domain-based d-s-seq positions with no
+      // GTID_SUBSET() / GTID_SUBTRACT() to compare them with, and are restored
+      // by assigning to gtid_slave_pos - see MARIADB_DUMP_LOAD.md section 4.4
+      validate_update_gtid_set_maria_db(session);
     } else {
-      const char *g = m_dump->gtid_executed().c_str();
-      if (m_options.update_gtid_set() ==
-          Load_dump_options::Update_gtid_set::REPLACE) {
-        if (!session.queryf_one_int(
-                0, 0,
-                "select GTID_SUBTRACT(?, "
-                "GTID_SUBTRACT(@@global.gtid_executed, "
-                "@@global.gtid_purged)) = gtid_subtract(?, '')",
-                g, g)) {
-          THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_SETS_INTERSECT);
-        }
-
-        if (!session.queryf_one_int(
-                0, 0, "select GTID_SUBSET(@@global.gtid_purged, ?);", g)) {
-          THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET);
-        }
-      } else if (!session.queryf_one_int(
-                     0, 0,
-                     "select GTID_SUBTRACT(@@global.gtid_executed, ?) = "
-                     "@@global.gtid_executed",
-                     g)) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_SETS_INTERSECT);
-      }
+      validate_update_gtid_set(session, target);
     }
   }
 

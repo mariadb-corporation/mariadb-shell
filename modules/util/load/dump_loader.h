@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +55,7 @@
 #include "modules/util/import_table/import_stats.h"
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#include "mysqlshdk/libs/mysql/instance.h"
 #include "mysqlshdk/libs/storage/ifile.h"
 #include "mysqlshdk/libs/textui/text_progress.h"
 #include "mysqlshdk/libs/utils/atomic_flag.h"
@@ -633,6 +635,23 @@ class Dump_loader {
 
   void check_server_version();
   void check_tables_without_primary_key();
+
+  /**
+   * Whether the target server can have the dumped GTID set applied to it.
+   *
+   * The two vendors carry different GTID models and validate against different
+   * variables; MARIADB_DUMP_LOAD.md section 4.4 has the details.
+   */
+  void validate_update_gtid_set(const mysqlshdk::mysql::Instance &session,
+                                const dump::common::Server_version &target);
+  void validate_update_gtid_set_maria_db(
+      const mysqlshdk::mysql::Instance &session);
+
+  /**
+   * Applies the dumped GTID position to the target's gtid_slave_pos, which is
+   * how MariaDB restores one.
+   */
+  void update_maria_db_gtid_position();
 
   void handle_schema_option();
 
