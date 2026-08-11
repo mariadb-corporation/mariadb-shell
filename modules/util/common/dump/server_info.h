@@ -104,8 +104,22 @@ struct Server_info {
   Replication_topology topology;
 };
 
+/**
+ * The set of transactions the server has executed: @@GTID_EXECUTED on MySQL,
+ * @@gtid_current_pos on MariaDB, whose GTIDs are domain-based positions
+ * instead - see MARIADB_DUMP_LOAD.md section 4.4.
+ *
+ * Returns an empty string if the value cannot be read.
+ */
 std::string gtid_executed(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session);
+    const std::shared_ptr<mysqlshdk::db::ISession> &session,
+    const Server_version &version);
+
+/**
+ * The keyword which names the binary log in SHOW ... STATUS: MySQL renamed
+ * MASTER in 8.2, MariaDB did not.
+ */
+const char *binlog_status_keyword(const Server_version &version);
 
 Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
               const Server_version &version, bool quiet = false);

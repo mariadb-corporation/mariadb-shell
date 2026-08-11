@@ -19,13 +19,14 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **phases 0, 1, 2 and 3 done** (§11, §12, §13, §14). Dump/load builds
-> for MariaDB, a dumpInstance -> loadDump round-trip works against a live server
-> with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build, all
-> version gating is vendor-aware, and a consistent dump now holds a real backup
-> lock (`BACKUP STAGE BLOCK_DDL`) instead of running with DDL wide open; the
-> MySQL build is verified unaffected (§11.7, §12.5, §13.7, §14.4). Phases 4-6
-> outstanding.
+> Status: **phases 0, 1, 2, 3 and 4 done** (§11, §12, §13, §14, §15). Dump/load
+> builds for MariaDB, a dumpInstance -> loadDump round-trip works against a live
+> server with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build,
+> all version gating is vendor-aware, a consistent dump holds a real backup lock
+> (`BACKUP STAGE BLOCK_DDL`) instead of running with DDL wide open, and a dump
+> now carries MariaDB's GTID position and can restore it into a target, so a
+> replica can be provisioned from a dump; the MySQL build is verified unaffected
+> (§11.7, §12.5, §13.7, §14.4, §15.6). Phases 5-6 outstanding.
 > Last updated: 2026-08-11.
 
 ---
@@ -312,7 +313,7 @@ statement is built from `SHOW TABLES IN mysql WHERE Tables_in_mysql IN (...)`,
 today it silently locks a *subset* on MariaDB rather than failing — a quiet
 correctness hole, not a loud one.
 
-### 4.4 GTID and binlog position — **must adapt (both directions)**
+### 4.4 GTID and binlog position — **done in phase 4** (§15)
 
 Dump side: `common::gtid_executed()` reads `@@GLOBAL.GTID_EXECUTED`
 ([server_info.cc:96](modules/util/common/dump/server_info.cc#L96)) — does not
@@ -877,7 +878,7 @@ predicates without it.
 | 1 | ~~**Stop the bleeding.**~~ **DONE** (§12) — §4.0 vendor detection for `copy_operation.h`, §4.3 `mysql` lock list, §4.2 roles and the `REPLICATION CLIENT` privilege name. Vendor detection now goes through the cached `ISession::get_server_vendor()`. | |
 | 2 | ~~**Vendor-aware gating**~~ **DONE** (§13) — 5.6 remap gone from the MariaDB build; `common/dump/server_features.h` holds 28 vendor-aware predicates; every `is_*` and `Version` gate converted; manifest carries `vendor`; cross-vendor load, copy and `ocimds` refused. | The foundation, and where most of §4.11 turns itself off for free. |
 | 3 | ~~**`BACKUP STAGE`**~~ **DONE** (§14) — `BACKUP STAGE START` + `BLOCK_DDL` in a dedicated session is the backup lock on MariaDB, guarded by `RELOAD`; `FLUSH TABLES WITH READ LOCK` is kept for the snapshot window. | The locking-session redesign was the work, as predicted. |
-| 4 | **GTID** (§4.4), reusing the binlog port's native-GTID model, both dump and load. | |
+| 4 | ~~**GTID**~~ **DONE** (§15) — the dump carries `gtid_current_pos`, `updateGtidSet` restores it into `gtid_slave_pos`, and the domain-position set algebra the loader's checks need is in `mysqlshdk/libs/mysql/mariadb_gtid.h`. | There was no binlog-port GTID model to reuse: §11.2 found that port was never written. |
 | 5 | **MariaDB-native objects**: sequences (§4.5.1), check constraints, Oracle-mode packages, users/roles/grants. | Largest chunk. Sequences first — smallest and closes a silent-data-loss gap; users/roles is the long pole and unblocks `users: true`. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
@@ -906,7 +907,9 @@ topology probing — the MariaDB detection lives here), `server_features.cc`
 
 **Reused, already built on MariaDB** — `modules/util/import_table/*`
 (`LOAD DATA LOCAL INFILE`), `mysqlshdk/libs/storage/*` (local + remote backends),
-`mysqlshdk/libs/mysql/user_privileges.cc` (§4.2).
+`mysqlshdk/libs/mysql/user_privileges.cc` (§4.2),
+`mysqlshdk/libs/mysql/mariadb_gtid.cc` (domain GTID positions, §15.2 — the
+counterpart of the MySQL-only `gtid_utils.cc`).
 
 **Formerly gated by `HAVE_DUMP_AND_LOAD`** — `modules/util/copy/*` (dump+load in
 memory) now builds for both vendors; `modules/util/binlog/*` moved to its own
@@ -1340,8 +1343,8 @@ without the field still work — the version string carries the answer.
 
 `ocimds` is refused for a MariaDB source as well: every rewrite it performs
 targets MySQL DDL, and MySQL HeatWave Service is a MySQL product.
-`updateGtidSet` is refused too, pending phase 4
-(`SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR`, 53040).
+`updateGtidSet` was refused too, pending phase 4; phase 4 implemented it and
+that refusal (`SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR`) is gone — see §15.
 
 ### 13.6 One real bug the remap had been hiding
 
@@ -1549,3 +1552,172 @@ Live, MariaDB 12.3.2 (3312 → 3313) and MySQL 26.7.0 (3310):
   the same as MySQL's `LOCK INSTANCE FOR BACKUP`. On MariaDB that default is
   86400, so a long-running `ALTER` will stall the dump at "Locking instance for
   backup" rather than failing it. Worth revisiting with the phase 6 tests.
+
+---
+
+## 15. Phase 4 — done
+
+Landed 2026-08-11. Goal was §4.4: make the dump carry a GTID position MariaDB
+understands, and make `updateGtidSet` able to put it back.
+
+§4.4 said to "reuse the binlog port's native-GTID model". There is none —
+§11.2 established that the `mariadb_rpl_*` port `MARIADB_PORT.md` §4 describes
+was never written, and `mysqlshdk/libs/mysql/gtid_utils.*` is MySQL-only both
+in model (`uuid:n-m`) and in mechanism (every comparison is a round trip to
+`GTID_SUBSET()` / `GTID_SUBTRACT()`). So the model is new here, and small.
+
+### 15.1 What MariaDB's GTIDs are, measured
+
+On MariaDB 12.3.2 with `log_bin` on, `server_id=100`, three transactions:
+
+| | value |
+|---|---|
+| `@@gtid_binlog_pos` | `0-100-3` |
+| `@@gtid_current_pos` | `0-100-3` |
+| `@@gtid_slave_pos` | *(empty)* |
+| `SHOW MASTER STATUS` | `binlog.000001`, `853`, ``, ``, **`0-100-3`** |
+
+Three things follow, all of which shaped the code:
+
+- A GTID is `domain-server-sequence`, and a *position* is a comma-separated
+  list with **at most one entry per replication domain** — the last sequence
+  seen there. `0-100-3` therefore means "every transaction of domain 0 up to
+  sequence 3", which is what makes client-side subset/intersection tractable.
+- `SHOW MASTER STATUS` on a current MariaDB **does** have a fifth column
+  (`Gtid_Binlog_Pos`, `sql/sql_repl.cc`), so the existing `size() > 4` branch
+  in `common::binlog()` was already picking something up. It picks up
+  `gtid_binlog_pos`, which is the wrong one for a server that replicates
+  without `log_slave_updates`.
+- `gtid_current_pos` is the union of the binlog and slave positions, and is
+  what mariabackup records (`extra/mariabackup/backup_mysql.cc:1657`). That is
+  the value the dump now stores, fetched explicitly rather than read off the
+  fifth column, so old and new servers behave alike.
+
+### 15.2 `Mariadb_gtid_position`
+
+[mysqlshdk/libs/mysql/mariadb_gtid.h](mysqlshdk/libs/mysql/mariadb_gtid.h) — a
+`map<domain, {server_id, sequence}>` with `parse`, `str` (canonical, domains
+ascending), `contains`, `intersects` and `merge`. It is a pure value type: no
+session, no round trips, which is the whole difference from `Gtid_set`.
+
+`intersects()` is "share a domain with a non-zero sequence", because a position
+covers every sequence below the one it names. `contains()` ignores `server_id`
+— the domain and the sequence are what say which transactions are covered.
+Built for both vendors and covered by
+[mariadb_gtid_t.cc](unittest/mysqlshdk/libs/mysql/mariadb_gtid_t.cc)
+(5 tests, run in both builds).
+
+### 15.3 Dump side
+
+- `common::gtid_executed()` takes the `Server_version` and reads
+  `@@GLOBAL.gtid_current_pos` for a MariaDB-dialect server, `@@GLOBAL.GTID_EXECUTED`
+  otherwise. `common::binlog()` calls it for every MariaDB server, not only in
+  the access-denied fallback.
+- `Dumper::fetch_server_information()` no longer asks MariaDB for `gtid_mode`,
+  which does not exist and always read as `OFF` — leaving `m_gtid_enabled`
+  false and every consistency check on the binlog-file branch. On MariaDB
+  GTIDs come with the binary log, so `m_gtid_enabled = m_binlog_enabled`.
+- The two `check_if_transactions_are_ddl_safe()` call sites in
+  `validate_dump_consistency()` are now guarded at *run time*, not only by
+  `#ifdef HAVE_BINLOG_UTILS`: a MySQL build pointed at a MariaDB server would
+  otherwise have sent it `GTID_SUBTRACT()` and read its binary log with
+  libbinlogevents. Both fall back to the "treating the dump as not verified"
+  note.
+- The no-FTWRL warning in `lock_instance()` no longer advises a MariaDB user to
+  set `gtid_mode`, and names `SHOW MASTER STATUS` rather than
+  `SHOW BINARY LOG STATUS` — `binlog_status_keyword()` in `server_info.h` now
+  holds the keyword choice that `common::binlog()` had inline.
+
+The gate is `is_maria_db_dialect()`, not `is_maria_db`: a MySQL build dumping
+*from* MariaDB remaps the source to 5.6 and produces a MySQL-shaped dump, and a
+domain position has no meaning in one. That path keeps reading
+`GTID_EXECUTED`, failing, and recording nothing — exactly as before.
+
+### 15.4 Load side
+
+`updateGtidSet` works on MariaDB. `Dump_loader::update_maria_db_gtid_position()`
+assigns to `gtid_slave_pos` — mariabackup's mechanism as well, and the one that
+makes `CHANGE MASTER TO ... master_use_gtid = slave_pos` resume correctly:
+
+| | MySQL | MariaDB |
+|---|---|---|
+| `replace` | `SET GLOBAL GTID_PURGED = <dump>` | `SET GLOBAL gtid_slave_pos = <dump>` |
+| `append` | `SET GLOBAL GTID_PURGED = '+' + <dump>` | union computed client side, then assigned whole — there is no `+` form |
+| blocked by | group replication running | any replica thread running (the server rejects the assignment) |
+
+The upstream MySQL block moved unchanged into
+`Dump_loader::validate_update_gtid_set()`; the MariaDB one is beside it. Its
+two checks are the domain-position counterparts of upstream's:
+
+- `replace` requires the dumped position to *contain* the target's current
+  `gtid_slave_pos` — nothing already replicated gets forgotten. Upstream spells
+  this `GTID_SUBSET(gtid_purged, dump)`.
+- `append` requires the two not to *intersect*, i.e. to share no domain.
+
+Three error codes replace the phase-2 refusal, which is deleted rather than
+left as a no-op: 53040 `..._REPLICATION_IS_RUNNING`, 53041
+`..._REPLACE_REQUIRES_SUPERSET_POSITION`, 53042
+`..._APPEND_POSITIONS_INTERSECT`. `SHERR_LOAD_LAST` is 53042.
+
+Replication state is read with `SHOW ALL SLAVES STATUS` (multi-source aware,
+where `SHOW SLAVE STATUS` reports the default connection only), matching
+columns by name so an absent column is a skipped check rather than a crash.
+
+`util.copy*` gets all of this for free — it shares the loader — and its help
+text, like `loadDump`'s, now documents the MariaDB behaviour.
+
+### 15.5 Verified
+
+Live, MariaDB 12.3.2 with `log_bin` on (a new sandbox on 3314; the existing
+3312/3313 pair has no binary log, which is why none of this could have been
+exercised before):
+
+- `dumpSchemas` from 3314 writes `"gtidExecuted": "0-100-3"` and
+  `"vendor": "mariadb"` into `@.json`.
+- **Full provisioning round trip.** Dump at `0-100-3`; two more transactions on
+  the source; `loadDump` into 3313 with `updateGtidSet: "replace"` sets
+  `gtid_slave_pos` to `0-100-3`; `START SLAVE` then replicates exactly the two
+  missing rows and lands on `0-100-6`. This is the thing phase 4 exists for.
+- `append` against a target sitting at `1-200-5` produces `0-100-3,1-200-5`.
+- All three refusals fire: 53042 when appending onto a position that already
+  holds domain 0, 53041 when replacing would drop `1-200-5`, and 53040 while
+  the target is replicating.
+- The `consistent: false` dump still marks `gtidExecutedInconsistent: true`,
+  and now records a real position with it.
+- Lock-less dump (an account with neither `RELOAD` nor `BINLOG MONITOR`): the
+  note is now *"The DDL consistency will be checked using the binary log"*
+  instead of the `gtid_mode` advice, and with a writer running concurrently it
+  reports the position change (`0-100-198` → `0-100-199`) and degrades to
+  "treating the dump as not verified" rather than trying MySQL's binlog reader.
+
+### 15.6 MySQL build unaffected
+
+- `Compatibility_test`, `Dump_utils`, `Dump_scheduler`, `Load_dump`,
+  `Load_dump_mocked`, `Schema_dumper_test`, `User_privileges_test`,
+  `Instance_cache_test`, `Checksums_test` plus the new parser tests:
+  **100/100 passed**, 2 pre-existing skips.
+- MariaDB build, same filter: **91 passed, 4 failed** — the same four §13.7
+  lists as pre-existing (`Instance_cache_test.table_columns`,
+  `Schema_dumper_test.opt_mysqlaas` / `compat_ddl` / `unknown_collations`).
+- `util_help_norecord`: the help-text edit is consistent in both builds. The
+  suite still fails on each for reasons that predate this phase — verified by
+  re-running the MySQL one with the change stashed: the same single
+  `copy_instance` spacing mismatch, and on MariaDB ten about `dump_binlogs` and
+  `skipUpgradeChecks` being absent from that build.
+
+### 15.7 Not done here
+
+- **`gtid_binlog_state` is never written.** Setting it needs `RESET MASTER`,
+  which would throw away the target's own binary log; `gtid_slave_pos` is the
+  documented provisioning path and is what mariabackup uses.
+- **Galera is not detected.** The MySQL branch refuses `updateGtidSet` while
+  group replication runs; the MariaDB branch checks replica threads only. On a
+  Galera node `wsrep_gtid_domain_id` makes the position cluster-wide and
+  assigning it is a node-local action — worth a check, but it needs a Galera
+  cluster to design against.
+- **`Schema_dumper::process_set_gtid_purged()` was left alone.** §4.6 lists its
+  `SET @@GLOBAL.GTID_PURGED` epilogue as MySQL-specific, and it is, but the
+  function is **dead code** — inherited from mysqldump, declared and defined,
+  called from nowhere. The shell carries the GTID set in the manifest instead.
+- `Dump_reader::show_metadata()` still labels the value `Executed_GTID_set` for
+  both vendors.

@@ -547,7 +547,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --users=<bool>
             Include users, roles and grants in the copy. Default: true.
@@ -761,7 +763,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --where=<key>[:<type>]=<value>
             A key-value pair of a table name in the format of schema.table and
@@ -936,7 +940,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --where=<key>[:<type>]=<value>
             A key-value pair of a table name in the format of schema.table and
@@ -2578,7 +2584,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the dump.
+            appending to it the gtid set present in the dump. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --waitDumpTimeout=<float>
             Loads a dump while it's still being created. Once all uploaded

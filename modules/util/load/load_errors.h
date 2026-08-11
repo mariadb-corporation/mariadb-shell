@@ -188,11 +188,27 @@
 #define SHERR_LOAD_VENDOR_MISMATCH 53039
 #define SHERR_LOAD_VENDOR_MISMATCH_MSG "Server vendor mismatch"
 
-#define SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR 53040
-#define SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR_MSG \
-  "The updateGtidSet option is not supported when loading into MariaDB."
+// MariaDB restores a GTID position by assigning it to gtid_slave_pos, which
+// the server refuses to change while it is replicating - see
+// MARIADB_DUMP_LOAD.md section 4.4
+#define SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING 53040
+#define SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING_MSG                    \
+  "The updateGtidSet option cannot be used while replication is running on " \
+  "the target server."
 
-#define SHERR_LOAD_LAST 53040
+#define SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION 53041
+#define SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION_MSG        \
+  "The updateGtidSet:'replace' option can only be used if the dumped GTID "  \
+  "position is a superset of the current value of gtid_slave_pos on target " \
+  "server."
+
+#define SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT 53042
+#define SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT_MSG                \
+  "The updateGtidSet:'append' option can only be used if gtid_slave_pos on " \
+  "target server does not contain any of the replication domains of the "    \
+  "dumped GTID position."
+
+#define SHERR_LOAD_LAST 53042
 
 #define SHERR_LOAD_MAX 53999
 

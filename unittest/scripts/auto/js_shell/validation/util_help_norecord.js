@@ -348,7 +348,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpInstance() and loadDump().
 
@@ -505,7 +507,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpSchemas() and loadDump().
 
@@ -645,7 +649,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpTables() and loadDump().
 
@@ -2899,7 +2905,9 @@ DESCRIPTION
         data.
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the dump.
+        contents or appending to it the gtid set present in the dump. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
       - waitDumpTimeout: float (default: 0) - Loads a dump while it's still
         being created. Once all uploaded tables are processed the command will
         either wait for more data, the dump is marked as completed or the given
