@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -192,6 +193,28 @@ Server_version server_version(
   return {};
 }
 
+Server_version server_version(const mysqlshdk::utils::Version &number,
+                              bool is_maria_db) {
+  using mysqlshdk::utils::Version;
+
+  Server_version version;
+
+  version.number = number;
+  version.is_maria_db = is_maria_db;
+
+  if (!is_maria_db) {
+    if (number < Version(5, 7, 0)) {
+      version.is_5_6 = true;
+    } else if (number < Version(8, 0, 0)) {
+      version.is_5_7 = true;
+    } else {
+      version.is_8_0 = true;
+    }
+  }
+
+  return version;
+}
+
 Server_version server_version(std::string_view ver) {
   using mysqlshdk::utils::Version;
 
@@ -205,11 +228,22 @@ Server_version server_version(std::string_view ver) {
 
   if (std::string::npos !=
       shcore::str_lower(version.number.get_extra()).find("mariadb")) {
-    // we don't want the numbering used by MariaDB to interfere with various
-    // conditions we have in our code, just fall-back to an old version
+    version.is_maria_db = true;
+#ifndef MARIADB_BUILD
+    // A MySQL build supports dumping *from* MariaDB as a migration path, and
+    // does so by pretending the server is an ancient MySQL: that turns off
+    // every 8.0-and-later gate at once, which is what makes the produced dump
+    // loadable into MySQL. Keep it, so that path behaves exactly as it always
+    // has.
+    //
+    // A MariaDB build must not do this - it has to carry MariaDB's own
+    // features, which the remap is precisely what suppresses. It takes the real
+    // version instead and leaves all three MySQL flags false; every gate is
+    // asked as a feature question in server_features.h.
+    // See MARIADB_DUMP_LOAD.md sections 2 and 7.1.
     version.number = Version("5.6.0-" + version.number.get_full());
     version.is_5_6 = true;
-    version.is_maria_db = true;
+#endif  // !MARIADB_BUILD
   } else if (version.number < Version(5, 7, 0)) {
     version.is_5_6 = true;
   } else if (version.number < Version(8, 0, 0)) {
@@ -304,6 +338,12 @@ void serialize(const Server_info &info, shcore::JSON_dumper *dumper,
 
   dumper->start_object();
 
+  // The vendor is recorded explicitly rather than left to be re-detected by
+  // substring-matching the version string: a MariaDB build writes the server's
+  // real version, so there is no longer a "-MariaDB" suffix to rely on in every
+  // case. See MARIADB_DUMP_LOAD.md section 6.3.
+  dumper->append("vendor", info.version.is_maria_db ? "mariadb" : "mysql");
+
   if (binlog) {
     dumper->append("binlog");
     serialize(info.binlog, dumper);
@@ -361,6 +401,14 @@ Server_info server_info(const shcore::json::Value &object) {
 
     info.sysvars.hostname = optional_string(object, "hostname");
     info.sysvars.server_uuid = optional_string(object, "serverUuid");
+  }
+
+  if (const auto vendor = optional_string(object, "vendor"); !vendor.empty()) {
+    // an explicit vendor field wins over whatever the version string suggested
+    if (const auto is_maria_db = shcore::str_caseeq(vendor, "mariadb");
+        is_maria_db != info.version.is_maria_db) {
+      info.version = server_version(info.version.number, is_maria_db);
+    }
   }
 
   if (const auto topology = shcore::json::optional_object(object, "topology");

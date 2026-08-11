@@ -38,6 +38,7 @@
 #include <utility>
 
 #include "modules/util/common/dump/constants.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/server_info.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/common/utils.h"
@@ -2441,8 +2442,8 @@ void Dump_reader::validate_vector_store_options() {
     // location of vector store data in OCI is known, convert tables to
     // lakehouse
     if (m_options.is_mds() &&
-        compatibility::supports_vector_store_conversion(
-            m_options.target_server_version()) &&
+        dump::common::supports_vector_store_conversion(
+            m_options.target_server()) &&
         (m_options.has_lakehouse_source_option() ||
          m_contents.innodb_vector_store.resource_principals.valid())) {
       mode = load::Convert_vector_store::CONVERT;
@@ -2486,8 +2487,8 @@ void Dump_reader::validate_vector_store_options() {
     }
 
     // WL16802-FR2.1.7.2: throw when MHS version is not supported
-    if (!compatibility::supports_vector_store_conversion(
-            m_options.target_server_version())) {
+    if (!dump::common::supports_vector_store_conversion(
+            m_options.target_server())) {
       THROW_ERROR(SHERR_LOAD_INNODB_VECTOR_STORE_UNSUPPORTED_MHS);
     }
 

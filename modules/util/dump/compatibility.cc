@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -2227,30 +2228,6 @@ std::string to_grant_statement(const Privilege_level_info &info) {
   }
 
   return result;
-}
-
-bool supports_set_any_definer_privilege(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 80200;
-}
-
-bool supports_library_ddl(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90200;
-}
-
-bool supports_vector_store_conversion(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90401;
-}
-
-bool supports_gipks(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 80030;
-}
-
-bool supports_pke_as_pk(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90700;
-}
-
-bool supports_dynamic_data_masking(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90700;
 }
 
 bool replace_keyword(std::string_view stmt, std::string_view from,

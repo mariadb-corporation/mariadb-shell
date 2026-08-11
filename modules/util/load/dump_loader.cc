@@ -48,6 +48,7 @@
 #include "modules/mod_utils.h"
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/capability.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -194,10 +195,6 @@ inline void executef(const Reconnect &reconnect, const Session_ptr &session,
 
 }  // namespace ar
 }  // namespace sql
-
-bool histograms_supported(const Version &version) {
-  return version > Version(8, 0, 0);
-}
 
 bool add_invisible_pk(std::string_view sql, std::string *out_new_sql) {
   mysqlshdk::utils::SQL_iterator it(sql, 0, false);
@@ -1760,7 +1757,7 @@ bool Dump_loader::Worker::Analyze_table_task::execute(Worker *worker,
             table().c_str());
 
   if (m_histograms.empty() ||
-      !histograms_supported(loader->m_options.target_server_version()))
+      !dump::common::supports_histograms(loader->m_options.target_server()))
     log_info("Analyzing table `%s`.`%s`", schema().c_str(), table().c_str());
   else
     log_info("Updating histogram for table `%s`.`%s`", schema().c_str(),
@@ -1775,8 +1772,8 @@ bool Dump_loader::Worker::Analyze_table_task::execute(Worker *worker,
       const auto &reconnect = worker->reconnect_callback();
       const auto &session = worker->session();
 
-      if (m_histograms.empty() ||
-          !histograms_supported(loader->m_options.target_server_version())) {
+      if (m_histograms.empty() || !dump::common::supports_histograms(
+                                      loader->m_options.target_server())) {
         sql::ar::executef(reconnect, session, "ANALYZE TABLE !.!", schema(),
                           table());
       } else {
@@ -1840,8 +1837,8 @@ bool Dump_loader::Worker::Index_recreation_task::execute(Worker *worker,
     if (!m_indexes->spatial.empty()) {
       // we load all indexes at once if:
       //  - server does not support parallel index creation
-      auto single_batch =
-          loader->m_options.target_server_version() < Version(8, 0, 27);
+      auto single_batch = !dump::common::supports_parallel_index_creation(
+          loader->m_options.target_server());
       //  - table has a virtual column
       single_batch |= m_indexes->has_virtual_columns;
       //  - table has a fulltext index
@@ -2107,7 +2104,10 @@ uint64_t Dump_loader::Worker::current_thread_id() const {
     }
   };
 
-  if (session()->get_server_version() >= Version(8, 0, 16)) {
+  // PS_CURRENT_THREAD_ID() is MySQL-only; MariaDB has no such function, so the
+  // thread id has to come from performance_schema.threads there
+  if (dump::common::supports_ps_current_thread_id(
+          m_owner->m_options.target_server())) {
     return query("SELECT PS_CURRENT_THREAD_ID()");
   }
 
@@ -2237,7 +2237,8 @@ Session_ptr Dump_loader::create_session() {
     }
 
     if (m_dump->force_non_standard_fks() &&
-        m_options.target_server_version() >= Version(8, 4, 0)) {
+        dump::common::supports_non_standard_fk_restriction(
+            m_options.target_server())) {
       sql::execute(session,
                    "SET @@SESSION.restrict_fk_on_non_standard_key=OFF");
     }
@@ -3394,26 +3395,52 @@ void Dump_loader::open_dump(
 
 void Dump_loader::check_server_version() {
   const auto console = current_console();
-  const auto &source_server = m_dump->server_version();
-  const auto &target_server = m_options.target_server_version();
+  const auto &source = m_dump->source_server();
+  const auto &target = m_options.target_server();
+  const auto &source_server = source.number;
+  const auto &target_server = target.number;
   const auto mds = m_options.is_mds();
+
+  const auto vendor_name = [](const dump::common::Server_version &v) {
+    return v.is_maria_db ? "MariaDB" : "MySQL";
+  };
 
   // no reconnection here - we're using the global session
   mysqlshdk::mysql::Instance session(m_options.session());
 
-  std::string msg = "Target is MySQL " + target_server.get_full();
+  std::string msg = std::string{"Target is "} + vendor_name(target) + " " +
+                    target_server.get_full();
   if (mds) msg += " (MySQL HeatWave Service)";
-  msg += ". Dump was produced from MySQL " + source_server.get_full();
+  msg += ". Dump was produced from ";
+  msg += vendor_name(source);
+  msg += " " + source_server.get_full();
 
   console->print_info(msg);
 
-  if (target_server < Version(5, 7, 0)) {
+  // A dump is written in the dialect of the server it came from, and every
+  // version rule below is on that vendor's scale, so a cross-vendor load is
+  // refused up front rather than allowed to fail partway through the DDL.
+  //
+  // The question is the dump's *dialect*, not its source vendor: a MySQL build
+  // remaps a MariaDB source to 5.6, producing a MySQL-shaped dump, and loading
+  // that into MySQL is upstream's supported MariaDB -> MySQL migration path.
+  // See MARIADB_DUMP_LOAD.md sections 6.4 and 7.1.
+  if (dump::common::is_maria_db_dialect(source) != target.is_maria_db) {
+    console->print_error(shcore::str_format(
+        "The dump was produced from %s, but the target server is %s. Loading a "
+        "dump across server vendors is not supported.",
+        vendor_name(source), vendor_name(target)));
+    THROW_ERROR(SHERR_LOAD_VENDOR_MISMATCH);
+  }
+
+  if (!target.is_maria_db && target_server < Version(5, 7, 0)) {
     THROW_ERROR(SHERR_LOAD_UNSUPPORTED_SERVER_VERSION);
   }
 
   if (m_options.ignore_version() ||
-      (Version(5, 7, 0) <= source_server && source_server < Version(8, 0, 0) &&
-       Version(8, 0, 0) <= target_server && target_server < Version(9, 0, 0))) {
+      (!source.is_maria_db && Version(5, 7, 0) <= source_server &&
+       source_server < Version(8, 0, 0) && Version(8, 0, 0) <= target_server &&
+       target_server < Version(9, 0, 0))) {
     // we implicitly enable this transformation when loading 5.7 -> 8.X
     m_default_sql_transforms.add_strip_removed_sql_modes();
   }
@@ -3488,10 +3515,18 @@ void Dump_loader::check_server_version() {
 
   if (m_options.analyze_tables() ==
           Load_dump_options::Analyze_table_mode::HISTOGRAM &&
-      !histograms_supported(target_server))
+      !dump::common::supports_histograms(m_options.target_server()))
     console->print_warning("Histogram creation enabled but MySQL Server " +
                            target_server.get_base() + " does not support it.");
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
+    if (!dump::common::supports_gtid_set_functions(target)) {
+      // MariaDB's GTIDs are domain-based d-s-seq triples with no GTID_SUBSET()
+      // / GTID_SUBTRACT() equivalents, and are restored with
+      // SET GLOBAL gtid_slave_pos - a different enough model that it gets its
+      // own implementation, see MARIADB_DUMP_LOAD.md section 4.4
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR);
+    }
+
     // Check if group replication is running
     bool group_replication_running = false;
     try {
@@ -3507,7 +3542,7 @@ void Dump_loader::check_server_version() {
       THROW_ERROR(SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING);
     }
 
-    if (target_server < Version(8, 0, 0)) {
+    if (!target.is_8_0) {
       if (m_options.update_gtid_set() ==
           Load_dump_options::Update_gtid_set::APPEND) {
         THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_NOT_SUPPORTED);
@@ -3549,7 +3584,8 @@ void Dump_loader::check_server_version() {
     }
   }
 
-  if (should_create_pks() && target_server < Version(8, 0, 24)) {
+  if (should_create_pks() &&
+      (target.is_maria_db || target_server < Version(8, 0, 24))) {
     THROW_ERROR(SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION);
   }
 
@@ -3567,7 +3603,8 @@ void Dump_loader::check_server_version() {
   }
 
   if (m_options.load_ddl() && m_dump->force_non_standard_fks() &&
-      m_options.target_server_version() >= Version(8, 4, 0)) {
+      dump::common::supports_non_standard_fk_restriction(
+          m_options.target_server())) {
     console->print_warning(
         "The dump was created with the 'force_non_standard_fks' compatibility "
         "option set, the 'restrict_fk_on_non_standard_key' session variable "
@@ -3705,7 +3742,8 @@ void Dump_loader::check_tables_without_primary_key() {
           "true, Inbound Replication into an MySQL HeatWave Service DB System "
           "instance with High Availability can";
 
-      if (m_options.target_server_version() < Version(8, 0, 32)) {
+      if (!dump::common::supports_invisible_pk_replication(
+              m_options.target_server())) {
         msg += "not";
       } else {
         warning = false;
@@ -3725,7 +3763,7 @@ void Dump_loader::check_tables_without_primary_key() {
     }
   }
 
-  if (m_options.target_server_version() < Version(8, 0, 13) ||
+  if (!dump::common::supports_require_primary_key(m_options.target_server()) ||
       should_create_pks()) {
     return;
   }

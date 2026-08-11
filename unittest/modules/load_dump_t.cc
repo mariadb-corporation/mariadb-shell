@@ -26,6 +26,7 @@
 
 #include "unittest/gprod_clean.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -541,10 +542,13 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
         .then({"version"})
         .add_row({m_version});
 
-    assert(compatibility::supports_gipks(Version(m_version)) ==
+    const auto mock_server =
+        dump::common::server_version(Version(m_version), false);
+
+    assert(dump::common::supports_gipks(mock_server) ==
            m_auto_generate_pk_value.has_value());
 
-    if (compatibility::supports_gipks(Version(m_version))) {
+    if (dump::common::supports_gipks(mock_server)) {
       mock_main_session
           ->expect_query(
               "show GLOBAL variables where `variable_name` in "

@@ -79,6 +79,7 @@ list(APPEND api_module_SOURCES
       "util/common/dump/dump_info.cc"
       "util/common/dump/dump_version.cc"
       "util/common/dump/resource_principals_info.cc"
+      "util/common/dump/server_features.cc"
       "util/common/dump/server_info.cc"
       "util/common/dump/utils.cc"
       "util/common/dump/vector_store_info.cc"

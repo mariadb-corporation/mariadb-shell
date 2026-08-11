@@ -43,6 +43,7 @@
 
 #include "modules/mod_utils.h"
 #include "modules/util/common/common_options.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/import_table/helpers.h"
 #include "modules/util/load/convert_vector_store.h"
 #include "modules/util/load/heatwave_load.h"
@@ -190,7 +191,19 @@ class Load_dump_options : public common::Common_options {
   const std::string &target_schema() const { return m_target_schema; }
 
   const mysqlshdk::utils::Version &target_server_version() const {
-    return m_target_server_version;
+    return m_target_server.number;
+  }
+
+  /**
+   * The target server's version together with its vendor. Use this for every
+   * feature question - see MARIADB_DUMP_LOAD.md section 7.3.
+   */
+  const dump::common::Server_version &target_server() const {
+    return m_target_server;
+  }
+
+  bool target_is_maria_db() const noexcept {
+    return m_target_server.is_maria_db;
   }
 
   bool is_mds() const { return m_is_mds; }
@@ -374,13 +387,12 @@ class Load_dump_options : public common::Common_options {
   std::string m_target_schema;
   bool m_disable_bulk_load = false;
 
-  mysqlshdk::utils::Version m_target_server_version;
-  // Whether the *target* server is MariaDB. m_target_server_version alone
-  // cannot answer that: MariaDB reports 11/12/13, which satisfies every
-  // ">= 8.0.x" test in the loader and makes it probe MySQL-only variables and
-  // features. Detected at run time, so a shell built against either vendor can
-  // load into either. See MARIADB_DUMP_LOAD.md section 4.0.
-  bool m_target_is_maria_db = false;
+  // Version *and* vendor of the target. The version alone cannot gate
+  // anything: MariaDB reports 11/12/13, which satisfies every ">= 8.0.x" test
+  // in the loader and makes it probe MySQL-only variables and features. The
+  // vendor is detected at run time, so a Shell built against either vendor can
+  // load into either. See MARIADB_DUMP_LOAD.md sections 4.0 and 7.1.
+  dump::common::Server_version m_target_server;
   bool m_is_mds = false;
   bool m_is_lakehouse_enabled = false;
   bool m_show_metadata = false;

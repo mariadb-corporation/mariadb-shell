@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +103,13 @@ class Dump_reader {
 
   const mysqlshdk::utils::Version &server_version() const {
     return m_contents.dump.source.version.number;
+  }
+
+  /**
+   * Version *and* vendor of the server the dump was produced from.
+   */
+  const dump::common::Server_version &source_server() const {
+    return m_contents.dump.source.version;
   }
 
   const std::optional<mysqlshdk::utils::Version> &target_version() const {
