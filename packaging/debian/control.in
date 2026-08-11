@@ -13,14 +13,12 @@ Section: database
 Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends}, @DEB_DEPS@
-# mysql-shell owns /usr/bin/mysqlsh and /usr/share/man/man1/mysqlsh.1, which
-# this package also ships as aliases for mariadb-shell -- hence the conflict.
-# Deliberately no "Provides: mysql-shell": this is not a drop-in replacement
-# (no AdminAPI, dump/load, X DevAPI or Upgrade Checker), so it must not satisfy
-# dependencies on mysql-shell.
-Conflicts: mariadb-shell@CONFLICTING_PRODUCT_SUFFIX@, mysql-shell
-Replaces: mariadb-shell@CONFLICTING_PRODUCT_SUFFIX@, mysql-shell
+# No "Provides: mysql-shell": this is not a drop-in replacement (no AdminAPI,
+# dump/load, X DevAPI or Upgrade Checker), so it must not satisfy dependencies
+# on mysql-shell.
+Conflicts: mariadb-shell@CONFLICTING_PRODUCT_SUFFIX@
+Replaces: mariadb-shell@CONFLICTING_PRODUCT_SUFFIX@
 Description: MariaDB Shell
  MariaDB query and administration shell client and framework, with SQL and
- Python scripting modes. Installs as mariadb-shell, with mysqlsh and msh
- provided as aliases.
+ Python scripting modes. Installs as mariadb-shell, with msh provided as a
+ short alias.

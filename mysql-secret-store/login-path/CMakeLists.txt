@@ -62,6 +62,6 @@ IF(BUNDLED_MYSQL_CONFIG_EDITOR)
       DESCRIPTION "mysql_config_editor binary"
       BINARIES "${BUNDLED_MYSQL_CONFIG_EDITOR}"
       DESTINATION "${INSTALL_LIBEXECDIR}"
-      TARGET mysql-secret-store-login-path
+      TARGET mariadb-secret-store-login-path
   )
 ENDIF()

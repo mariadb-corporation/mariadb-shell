@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +25,8 @@
  */
 
 #include "mysql-secret-store/include/helper.h"
+
+#include "mysqlshdk/libs/utils/shell_naming.h"
 
 namespace mysql {
 namespace secret_store {
@@ -60,7 +63,7 @@ Helper::Helper(const std::string &name, const std::string &version,
     : m_name{name}, m_version{version}, m_copyright{copyright} {}
 
 std::string Helper::name() const noexcept {
-  return std::string{"mysql-secret-store-"} + m_name;
+  return std::string{shcore::k_secret_store_helper_prefix} + m_name;
 }
 
 std::string Helper::version() const noexcept { return m_version; }

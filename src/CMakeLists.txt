@@ -103,12 +103,14 @@ if(WIN32)
   add_dependencies(mariadb-shell generate_syslog_event_files)
 endif()
 
-# Compatibility / convenience names for the shell executable. "mysqlsh" keeps
-# scripts written against the pre-rename binary working; "msh" is a short alias.
-# On Unix these are symlinks beside the real binary, both in the build tree and
-# in an install; on Windows, where a symlink needs privileges the installer may
-# not have, they are .cmd shims that forward every argument.
-set(SHELL_BINARY_ALIASES mysqlsh msh)
+# Convenience name for the shell executable: "msh" is a short alias. On Unix it
+# is a symlink beside the real binary, both in the build tree and in an install;
+# on Windows, where a symlink needs privileges the installer may not have, it is
+# a .cmd shim that forwards every argument.
+#
+# Deliberately no "mysqlsh" alias: MySQL Shell owns that name, and shipping it
+# here would collide with an installed mysqlsh binary.
+set(SHELL_BINARY_ALIASES msh)
 
 if(WIN32)
   foreach(_alias ${SHELL_BINARY_ALIASES})

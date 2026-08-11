@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +28,7 @@
 
 #include <string.h>
 
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 
@@ -39,7 +41,7 @@ namespace api {
 
 namespace {
 
-constexpr auto k_exe_prefix = "mysql-secret-store-";
+constexpr auto k_exe_prefix = shcore::k_secret_store_helper_prefix;
 
 std::string get_helper_folder() {
   static std::string folder = shcore::get_binary_folder();

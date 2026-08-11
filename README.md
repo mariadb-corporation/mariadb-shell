@@ -14,8 +14,7 @@ and attribution notices for these materials, please refer to the [LICENSE](LICEN
 Contributing information for code and non-code submissions can be found in the
 [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
-The shell installs as `mariadb-shell`; `mysqlsh` and `msh` are provided as
-aliases.
+The shell installs as `mariadb-shell`; `msh` is provided as a short alias.
 
 ```
 $ mariadb-shell root@localhost

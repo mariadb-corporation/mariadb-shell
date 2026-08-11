@@ -1083,11 +1083,12 @@ Every user-visible name derived from the product name lives in
 | `k_shell_config_dir_win_vendor` / `k_shell_config_dir_win` | `MariaDB` / `mariadb-shell` |
 | `k_shell_global_config_dir_unix` | `/etc/mysql/mariadb-shell` |
 | `k_shell_log_file_name` | `mariadb-shell.log` |
-| `k_shell_sandbox_dir_name` | `sandboxes` (leaf of the default `sandboxDir`, see §14.4) |
+| `k_shell_sandbox_dir_name` | `sandboxes` (leaf of the default `sandboxDir`, see §14.7) |
 | `k_shell_startup_script_name` | `mariadb-shellrc` |
 | `k_shell_option_group` | `mariadb-shell` (my.cnf group, syslog ident, `program_name` attribute) |
 | `k_shell_install_dir_name` | `mariadb-shell` (leaf of `share/`, `lib/`, `libexec/`, `include/`) |
 | `k_shell_env_prefix` / `k_shell_legacy_env_prefix` | `MARIADB_SHELL_` / `MYSQLSH_` |
+| `k_secret_store_helper_prefix` | `mariadb-secret-store-` (helper executables, see §14.4) |
 
 The CMake half of the same names is `INSTALL_LIBDIR` / `INSTALL_SHAREDIR` /
 `INSTALL_LIBEXECDIR` / `INSTALL_INCLUDEDIR` in the top-level
@@ -1110,20 +1111,82 @@ so existing option files keep working.
 
 ### 14.3 Compatibility aliases
 
-`bin/mysqlsh` and `bin/msh` are installed alongside the real binary — symlinks on
-Unix, `.cmd` shims on Windows (a symlink needs privileges the installer may not
+`bin/msh` is installed alongside the real binary as a short alias — a symlink on
+Unix, a `.cmd` shim on Windows (a symlink needs privileges the installer may not
 have). See `SHELL_BINARY_ALIASES` in [src/CMakeLists.txt](src/CMakeLists.txt).
 The install uses `install(CODE ...)` rather than `install(FILES ...)`: CPack's
-DESTDIR staging dereferences symlinks, which would ship two extra full copies of
-the ~12 MB binary. `man/mysqlsh.1` and `man/msh.1` are one-line `.so` stubs
-pointing at `mariadb-shell.1`.
+DESTDIR staging dereferences symlinks, which would ship an extra full copy of
+the ~12 MB binary. `man/msh.1` is a one-line `.so` stub pointing at
+`mariadb-shell.1`.
 
-The `.deb`/`.rpm` declare `Conflicts: mysql-shell` (both packages own
-`/usr/bin/mysqlsh` and `man1/mysqlsh.1`) but deliberately **not**
-`Provides: mysql-shell` — this build drops AdminAPI, dump/load, X DevAPI and the
-Upgrade Checker, so it must not satisfy dependencies on the upstream package.
+No `mysqlsh` alias is installed. MySQL Shell owns that name, and an alias would
+overwrite or collide with its binary and man page on any system that has it;
+scripts written against the old name are expected to be updated. The `MYSQLSH_*`
+environment variables and the `[mysqlsh]` my.cnf group (§14.2) remain honoured.
 
-### 14.4 Sandbox directory
+### 14.4 Secret store helpers
+
+The secret store helper executables are `mariadb-secret-store-<helper>`, renamed
+from upstream's `mysql-secret-store-<helper>` — MySQL Shell installs helpers
+under the old prefix into the same `/usr/bin`, so the names collided.
+
+The prefix is load-bearing, not cosmetic:
+`api::get_available_helpers()` ([api.cc](mysqlshdk/libs/secret-store-api/api.cc))
+finds helpers by scanning the shell's own binary folder for it and takes whatever
+follows as the helper name. Sharing the prefix with MySQL Shell in a shared
+bindir would have made *its* helpers appear as this shell's. It therefore lives
+in `shell_naming.h` as `k_secret_store_helper_prefix`, used by that scan, by
+`Helper::name()` ([helper.cc](mysql-secret-store/core/helper.cc)) for the name a
+helper reports about itself, and mirrored by `exec_name` in
+[mysql_secret_store.cmake](mysql-secret-store/cmake/mysql_secret_store.cmake),
+which every helper's `add_helper_executable()` goes through.
+
+Only the executables were renamed. The source directory `mysql-secret-store/`,
+the `mysql::secret_store` namespace, the public header path
+`mysql-secret-store/api.h` and the `mysql-secret-store-core` / `-api`
+convenience libraries keep their names, the same way §14.8 leaves the internal
+`mysqlsh` namespace alone.
+
+Nothing changes about *where* secrets live: the backend keys (login file
+records, secret-service attributes, keychain items) are derived from the secret
+ID, never from the executable name, so a helper renamed under a user's feet
+still finds what the old one stored. The user-facing
+`shell.options['credentialStore.helper']` values are the unprefixed names
+(`login-path`, `secret-service`, `keychain`, `windows-credential`) and are
+unaffected.
+
+### 14.5 Client authentication plugins
+
+The bundled client authentication plugins install into `lib/mariadb/plugins`,
+renamed from upstream's `lib/mysql/plugins` — MySQL Shell bundles its own plugins
+under that exact path (note the plural `plugins`, which is what made it a
+mysql-shell collision rather than a server-package one; MySQL and MariaDB servers
+use `lib/mysql/plugin`).
+
+`INSTALL_MYSQL_PLUGINS_DIR` in the top-level [CMakeLists.txt](CMakeLists.txt) is
+the single definition. It is both the `install_bundled_binaries()` destination
+([src/CMakeLists.txt](src/CMakeLists.txt)) and, compiled in as
+`DEFAULT_MYSQL_PLUGIN_DIR`, the default the shell resolves against its own home
+at run time in `shcore::get_default_mysql_plugin_dir()`
+([utils_file.cc](mysqlshdk/libs/utils/utils_file.cc)) — so the two packaging file
+lists are the only other places that spell the path out.
+
+The user-facing names for it are unchanged: the `mysqlPluginDir` shell option,
+`--mysql-plugin-dir` and libmysqlclient's own `LIBMYSQL_PLUGIN_DIR` all still
+mean what they meant, only the default value moved.
+
+### 14.6 Co-installable with mysql-shell
+
+The three renames above (`mysqlsh` alias, secret store helpers, plugin dir) were
+what the `.deb`/`.rpm` `Conflicts: mysql-shell` existed for. Every path this
+package owns is now namespaced to mariadb, so the declaration is gone and the two
+packages can be installed side by side.
+
+Still deliberately **not** `Provides: mysql-shell`: this build drops AdminAPI,
+dump/load, X DevAPI and the Upgrade Checker, so it must not satisfy dependencies
+on the upstream package.
+
+### 14.7 Sandbox directory
 
 Deployed sandboxes moved out of `~/mysql-sandboxes/` and under the per-user shell
 directory, so everything the shell writes to `$HOME` lives in one place:
@@ -1159,12 +1222,16 @@ The AdminAPI `dba.*Sandbox*` help text still documents `~/mysql-sandboxes`
 both are excluded from MariaDB builds by `HAVE_ADMIN_API` and were left untouched
 to keep the upstream diff small.
 
-### 14.5 Deliberately not renamed
+### 14.8 Deliberately not renamed
 
 - The scripting API module **`mysqlsh`** (`from mysqlsh import ...`) and its
   package directory `python/packages/mysqlsh` — renaming it would break every
   existing plugin and user script.
 - The C++ `mysqlsh` namespace and the `src/mysqlsh/` source directory.
+- The secret store internals — `mysql-secret-store/`, the `mysql::secret_store`
+  namespace, the `mysql-secret-store/api.h` header path and the
+  `mysql-secret-store-{core,api}` libraries. Only the installed executables were
+  renamed (§14.4).
 - Test-harness-only variables: `MYSQLSH_TEST_HOME`, `MYSQLSH_S3_*`,
   `MYSQLSH_AWS_*`.
 
@@ -1176,7 +1243,7 @@ differ from MySQL Shell's. The MSI therefore never sees an installed MySQL Shell
 as an upgradeable predecessor, the two can coexist, and uninstalling one does not
 strip the other's `PATH` entry or event-log registration.
 
-### 14.6 Test-expectation fallout
+### 14.9 Test-expectation fallout
 
 Two classes of test breakage are worth knowing about when touching these names:
 

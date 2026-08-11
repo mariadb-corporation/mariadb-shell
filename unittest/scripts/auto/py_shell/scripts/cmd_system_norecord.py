@@ -6,7 +6,7 @@ def load_text_file(path):
 import os
 import os.path
 
-shell = os.path.join(__bin_dir, "mysqlsh")
+shell = os.path.join(__bin_dir, "mariadb-shell")
 helper = os.path.join(__data_path, "py", "system_command.py")
 verification = os.path.join(__tmp_dir, "system.txt")
 command = "{0} --file {1} {2}".format(shell, helper, verification)

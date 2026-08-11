@@ -90,6 +90,18 @@ constexpr const char k_shell_install_dir_name[] = "mariadb-shell";
 constexpr const char k_shell_env_prefix[] = "MARIADB_SHELL_";
 constexpr const char k_shell_legacy_env_prefix[] = "MYSQLSH_";
 
+/**
+ * Prefix of the secret store helper executables installed beside the shell
+ * binary. get_available_helpers() discovers helpers by scanning the binary
+ * folder for this prefix and takes whatever follows it as the helper name, so
+ * the prefix is what keeps the shell from picking up MySQL Shell's identically
+ * shaped mysql-secret-store-* helpers out of a shared bindir.
+ *
+ * The CMake side that names the executables lives in
+ * mysql-secret-store/cmake/mysql_secret_store.cmake. Change both together.
+ */
+constexpr const char k_secret_store_helper_prefix[] = "mariadb-secret-store-";
+
 }  // namespace shcore
 
 #endif  // MYSQLSHDK_LIBS_UTILS_SHELL_NAMING_H_

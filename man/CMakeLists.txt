@@ -30,10 +30,10 @@ SET(MAN1_SHELL
 INSTALL(FILES ${MAN1_SHELL} DESTINATION ${INSTALL_MANDIR}/man1 COMPONENT ManPages)
 
 # One-line .so stubs for the binary aliases installed by src/CMakeLists.txt, so
-# `man mysqlsh` and `man msh` resolve to the real page. Plain files rather than
-# symlinks: they survive CPack's DESTDIR staging and the .deb/.rpm payloads
-# without being dereferenced into duplicate copies.
-FOREACH(_alias mysqlsh msh)
+# `man msh` resolves to the real page. Plain files rather than symlinks: they
+# survive CPack's DESTDIR staging and the .deb/.rpm payloads without being
+# dereferenced into duplicate copies.
+FOREACH(_alias msh)
   SET(_stub "${CMAKE_CURRENT_BINARY_DIR}/${_alias}.1")
   FILE(WRITE "${_stub}" ".so man1/mariadb-shell.1\n")
   INSTALL(FILES "${_stub}" DESTINATION ${INSTALL_MANDIR}/man1 COMPONENT ManPages)

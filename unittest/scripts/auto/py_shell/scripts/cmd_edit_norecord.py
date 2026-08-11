@@ -4,7 +4,7 @@ import os.path
 import shutil
 import tempfile
 
-shell = os.path.join(__bin_dir, "mysqlsh")
+shell = os.path.join(__bin_dir, "mariadb-shell")
 helper = os.path.join(__data_path, "py", "edit_command.py")
 command = "{0} --file {1}".format(shell, helper)
 

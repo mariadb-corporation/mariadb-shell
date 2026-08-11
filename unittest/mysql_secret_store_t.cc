@@ -43,6 +43,7 @@
 #include "mysqlshdk/libs/db/generic_uri.h"
 #include "mysqlshdk/libs/db/uri_parser.h"
 #include "mysqlshdk/libs/utils/process_launcher.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
@@ -993,7 +994,7 @@ class Helper_executable_tester : public Helper_tester {
 
   void clear_last_error() const { m_last_error.clear(); }
 
-  static constexpr auto k_exe_prefix = "mysql-secret-store-";
+  static constexpr auto k_exe_prefix = shcore::k_secret_store_helper_prefix;
   static constexpr auto k_secret = "Secret";
   static constexpr auto k_secret_type = "SecretType";
   static constexpr auto k_secret_id = "SecretID";
