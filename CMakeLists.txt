@@ -1659,11 +1659,35 @@ IF(PYTHON_DEPS_PACKAGES)
       ENDIF()
     ENDIF()
 
+    # Any package pip cannot get as a wheel is COMPILED here, on the build host,
+    # against whatever that host has -- and `cryptography` (pulled in
+    # transitively by mcp -> pyjwt[crypto]) is exactly that on two of our
+    # platforms: it publishes no macOS x86_64 wheel any more (50.0.0 ships
+    # macosx_11_0_arm64 only) and no win_arm64 wheel at all, so pip builds its
+    # Rust sources. Its openssl-sys crate then finds OpenSSL by itself, and on
+    # the Intel mac runner it finds Homebrew's (Homebrew's prefix there is
+    # /usr/local, which is on the default search path): the package shipped
+    # cryptography/hazmat/bindings/_rust.abi3.so depending on
+    # /usr/local/opt/openssl@3/lib/libssl.3.dylib, a path no user has. Point the
+    # crate at the OpenSSL this build already resolved -- the one we bundle --
+    # so the extension links what ships beside it. Setting both _LIB_DIR and
+    # _INCLUDE_DIR is what makes openssl-sys skip its own search entirely;
+    # OPENSSL_NO_VENDOR stops it quietly compiling a private copy instead. All
+    # of it is inert for a package that arrives as a wheel.
+    SET(_py_pip_env "")
+    IF(OPENSSL_LIBRARY AND OPENSSL_INCLUDE_DIR)
+      GET_FILENAME_COMPONENT(_py_openssl_libdir "${OPENSSL_LIBRARY}" DIRECTORY)
+      SET(_py_pip_env "${CMAKE_COMMAND}" -E env
+          "OPENSSL_LIB_DIR=${_py_openssl_libdir}"
+          "OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}"
+          "OPENSSL_NO_VENDOR=1")
+    ENDIF()
+
     # Install into a clean target so pip does not object to pre-existing content.
     FILE(REMOVE_RECURSE "${_py_deps_staging}")
     FILE(MAKE_DIRECTORY "${_py_deps_staging}")
     EXECUTE_PROCESS(
-      COMMAND "${PYTHON_EXECUTABLE}" -m pip install
+      COMMAND ${_py_pip_env} "${PYTHON_EXECUTABLE}" -m pip install
               --disable-pip-version-check
               --target "${_py_deps_staging}" ${_py_pkg_list}
       RESULT_VARIABLE _py_pip_rc)

@@ -76,6 +76,14 @@ IF(CMAKE_HOST_WIN32)
     "-DBUNDLED_PYTHON_DIR to an already-built Python.")
 ENDIF()
 
+# Because of the above, the vcpkg ports that exist purely to feed this build --
+# libffi, liblzma and bzip2, for _ctypes / _lzma / _bz2 -- are declared
+# "platform": "!windows" in vcpkg.json (which, being JSON, cannot say so itself).
+# A python.org install arrives with those modules already built, so on Windows
+# the ports would be dead weight; libffi's port cannot even build there, as it
+# drives an autotools configure through msys2 and mis-handles the spaces in the
+# vcpkg root under "C:\Program Files\...".
+
 # A small helper reused for the "is this interpreter already built?" probe: a
 # "make install" prefix has the interpreter at bin/python<maj.min> and headers
 # under include/python<maj.min>.
@@ -85,6 +93,55 @@ MACRO(_PY_INSTALL_IS_BUILT dir mm out_var)
     SET(${out_var} TRUE)
   ELSE()
     SET(${out_var} FALSE)
+  ENDIF()
+ENDMACRO()
+
+# Fail the build if the interpreter is missing an extension module we ship.
+#
+# CPython's build does not fail when it cannot build -- or cannot import -- an
+# optional extension module. It prints "The necessary bits to build these
+# optional modules were not found" among thousands of lines of build output and
+# installs a perfectly working interpreter without them. A dependency missing
+# from the build host therefore reaches the package intact and surfaces only
+# when someone imports the module on another machine: that is how a Linux
+# package shipped a Python with no _ctypes (no libffi-devel in the Rocky 9
+# image). Import each module here, where the fix is still a one-line change to
+# the build environment.
+#
+# Checked on the cache-reuse paths too, not just after a fresh build: the CI
+# runners keep the Python install between runs, so an interpreter built before
+# its dependency was installed would otherwise be reused indefinitely.
+#
+# The list is every stdlib module whose C extension needs a library we do not
+# write ourselves -- i.e. exactly the ones that can go missing when a dependency
+# is not where configure looked. Keep it in sync with scripts/verify_package.sh,
+# which re-checks the same modules against the finished package on a machine
+# that never built it.
+SET(_PY_REQUIRED_MODULES ssl hashlib sqlite3 zlib binascii ctypes lzma bz2 decimal)
+
+MACRO(_PY_REQUIRE_MODULES dir mm)
+  SET(_missing_mods "")
+  FOREACH(_mod ${_PY_REQUIRED_MODULES})
+    EXECUTE_PROCESS(
+      COMMAND "${dir}/bin/python${mm}" -c "import ${_mod}"
+      RESULT_VARIABLE _mod_rc
+      OUTPUT_QUIET
+      ERROR_VARIABLE _mod_err)
+    IF(NOT _mod_rc EQUAL 0)
+      LIST(APPEND _missing_mods "${_mod}")
+      MESSAGE(STATUS "  Python module '${_mod}' MISSING: ${_mod_err}")
+    ENDIF()
+  ENDFOREACH()
+  IF(_missing_mods)
+    STRING(REPLACE ";" ", " _missing_str "${_missing_mods}")
+    MESSAGE(FATAL_ERROR
+      "The bundled Python at ${dir} cannot import: ${_missing_str}.\n"
+      "CPython silently drops an extension module whose dependency is absent, "
+      "so this is a missing development package on this build host. Install "
+      "it (ctypes needs libffi, sqlite3 needs sqlite, zlib needs zlib, ssl "
+      "needs OpenSSL -- on Rocky/RHEL the -devel packages, on Debian/Ubuntu "
+      "the -dev ones), then DELETE ${dir} so the interpreter is rebuilt: an "
+      "already-installed Python is reused as-is and will stay broken.")
   ENDIF()
 ENDMACRO()
 
@@ -120,6 +177,7 @@ IF(WITH_PYTHON_SOURCE MATCHES "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
     IF(_built)
       MESSAGE(STATUS "Python ${_py_req} already built at "
         "${PYTHON_INSTALL_ROOT}/Python-${_py_req}; reusing it.")
+      _PY_REQUIRE_MODULES("${PYTHON_INSTALL_ROOT}/Python-${_py_req}" "${_mm}")
       SET(BUNDLED_PYTHON_DIR "${PYTHON_INSTALL_ROOT}/Python-${_py_req}"
         CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
       RETURN()
@@ -138,6 +196,7 @@ IF(WITH_PYTHON_SOURCE MATCHES "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
         IF(_built)
           MESSAGE(STATUS "Python ${_py_req}.x already built at ${_cand}; reusing "
             "it. Delete it to fetch/build a newer patch level.")
+          _PY_REQUIRE_MODULES("${_cand}" "${_py_req}")
           SET(BUNDLED_PYTHON_DIR "${_cand}"
             CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
           RETURN()
@@ -264,6 +323,7 @@ SET(_rpath_dirs "${_py_install}/lib")
 SET(_cppflags "")
 SET(_ldflags "")
 SET(_configure_extra "")
+SET(_pkg_config_libdir "")
 IF(_vcpkg_prefix AND EXISTS "${_vcpkg_prefix}")
   SET(_cppflags "-I${_vcpkg_prefix}/include")
   # -L is link-time search only. vcpkg's dylibs carry install-name
@@ -279,9 +339,85 @@ IF(_vcpkg_prefix AND EXISTS "${_vcpkg_prefix}")
   SET(_configure_extra "--with-openssl=${_vcpkg_prefix}"
                        "--with-openssl-rpath=${_vcpkg_prefix}/lib")
   MESSAGE(STATUS "  vcpkg prefix for Python build: ${_vcpkg_prefix}")
+
+  # Confine pkg-config to the vcpkg tree. CPython looks up several optional
+  # dependencies (libffi -> ctypes, liblzma -> lzma, libmpdec -> decimal) through
+  # PKG_CHECK_MODULES before it falls back to a plain header/library probe
+  # against CPPFLAGS/LDFLAGS, and pkg-config's default search path is the build
+  # HOST's: on the macOS runners that is Homebrew, which is how shipped packages
+  # ended up with _decimal and _lzma linked to /opt/homebrew/opt/... -- paths
+  # that exist on no user's machine. PKG_CONFIG_LIBDIR *replaces* the default
+  # directory list (PKG_CONFIG_PATH only prepends to it), so this is what stops
+  # the search escaping to the host. With nothing found there, configure falls
+  # through to the header probe and picks up the vcpkg copy via CPPFLAGS anyway;
+  # either way the dependency is one the package bundles.
+  SET(_pkg_config_libdir "${_vcpkg_prefix}/lib/pkgconfig")
+
+  # _decimal is the exception: there is no vcpkg mpdecimal port, so rather than
+  # link whatever libmpdec the host happens to have, build the copy that ships
+  # in the CPython source tree (Modules/_decimal/libmpdec). No external library
+  # at all, which is the most self-contained answer available for this one.
+  LIST(APPEND _configure_extra "--with-system-libmpdec=no")
 ELSE()
   MESSAGE(STATUS "  no vcpkg prefix found; Python will build against system libs")
 ENDIF()
+
+# Do not build the curses modules.
+#
+# They are the one part of the stdlib whose dependency cannot usefully come from
+# vcpkg: ncurses is only half of it, the other half being the terminfo database
+# the target keeps in /usr/share/terminfo, so a bundled copy would still reach
+# outside the package the moment anything called initscr(). Linking the system
+# one is what shipped, and it left the Linux package depending on
+# libncursesw/libtinfo/libpanelw -- its only non-baseline dependencies. Nothing
+# in the shell or in any bundled plugin imports curses, so the honest answer is
+# not to ship the modules at all.
+#
+# Done here rather than by keeping the headers off the build host: on Rocky 9
+# ncurses-devel arrives transitively with the toolchain, so their absence cannot
+# be relied on. 'n/a' is the only value configure's generated module gate leaves
+# alone; anything else is recomputed from whether the library was found.
+LIST(APPEND _configure_extra "py_cv_module__curses=n/a"
+                             "py_cv_module__curses_panel=n/a")
+
+# Keep the dbm modules off the host's gdbm.
+#
+# _dbm picks a backend from --with-dbmliborder, which defaults to
+# gdbm:ndbm:bdb, and _gdbm is built whenever 'gdbm' appears in that list and
+# gdbm.h/-lgdbm are found. Neither library is one we bundle. On an Intel mac
+# that is not theoretical: Homebrew's prefix there is /usr/local, whose
+# include/ and lib/ ARE on the compiler's and linker's default search paths, so
+# a gdbm installed as some other formula's dependency is found without anyone
+# asking for it -- and the x64 package shipped _dbm and _gdbm depending on
+# /usr/local/opt/gdbm/lib/libgdbm{,_compat}.dylib. The arm64 package has no
+# such modules only because /opt/homebrew is NOT a default search path.
+#
+# Restricting the order to ndbm removes both leaks with one flag: _dbm falls to
+# ndbm, whose dbm_open lives in libSystem on macOS (i.e. in the OS baseline the
+# package is allowed to depend on), and _gdbm is not built at all because
+# 'gdbm' is no longer in the list. That is exactly what the arm64 package
+# already ships. On Linux the flag changes nothing on our build hosts: there
+# ndbm.h comes from gdbm-compat rather than from libc, and the Rocky image has
+# no gdbm at all, so _dbm is skipped there with or without this -- which is why
+# the Linux packages are already clean.
+LIST(APPEND _configure_extra "--with-dbmliborder=ndbm")
+
+# Keep libintl (GNU gettext) out of the interpreter.
+#
+# configure runs a bare AC_CHECK_LIB([intl], [textdomain]) and, if it links,
+# puts -lintl in LIBS for everything it builds -- the interpreter and
+# libpython included. On the Intel runner Homebrew's gettext is on the default
+# search path (see above), so the x64 package shipped bin/python3.14 and
+# libpython3.14.dylib depending on /usr/local/opt/gettext/lib/libintl.8.dylib.
+#
+# Fail both probes instead. The header check has to go too, not just the
+# library one: HAVE_LIBINTL_H is what compiles the gettext bindings into
+# _localemodule.c (a builtin, linked into libpython), so leaving the header
+# found while denying -lintl would leave textdomain() undefined at link time.
+# With both denied the build matches the arm64 and Linux ones, where libintl is
+# simply not on any search path.
+LIST(APPEND _configure_extra "ac_cv_header_libintl_h=no"
+                             "ac_cv_lib_intl_textdomain=no")
 
 # Bake the runtime search path in. macOS's linker accepts only ONE directory per
 # -Wl,-rpath: a ':'-joined list (the GNU-ld / DT_RUNPATH convention, valid on
@@ -329,6 +465,8 @@ EXECUTE_PROCESS(
   COMMAND "${CMAKE_COMMAND}" -E env
           "CPPFLAGS=${_cppflags}"
           "LDFLAGS=${_ldflags}"
+          "PKG_CONFIG_LIBDIR=${_pkg_config_libdir}"
+          "PKG_CONFIG_PATH=${_pkg_config_libdir}"
           "${_py_src}/configure"
           "--prefix=${_py_install}"
           --enable-shared
@@ -371,6 +509,9 @@ IF(NOT EXISTS "${_py_install}/bin/python${_py_mm}")
   MESSAGE(FATAL_ERROR
     "Python install did not produce ${_py_install}/bin/python${_py_mm}")
 ENDIF()
+
+MESSAGE(STATUS "Checking the built Python for required extension modules...")
+_PY_REQUIRE_MODULES("${_py_install}" "${_py_mm}")
 
 ##############################################################################
 # 9. Export the derived BUNDLED_PYTHON_DIR for the rest of the build.

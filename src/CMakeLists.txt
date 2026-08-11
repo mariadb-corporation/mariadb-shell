@@ -289,12 +289,31 @@ IF(HAVE_PYTHON)
         TARGET mariadb-shell
     )
 
-    # Python runtime
+    # Python runtime.
+    #
+    # The Windows interpreter is a python.org / tool-cache install taken as it is
+    # found, so its site-packages contains whatever the build host had installed
+    # there -- which on the GitHub runners means pywin32. Nothing in the shell or
+    # in any bundled plugin or dependency imports it (checked: only
+    # sys.platform == "win32" string tests), and it is not small: ~22 MB across
+    # win32/win32com/win32comext/pythonwin/isapi/adodbapi plus a 2.5 MB help
+    # file. It also drags in dependencies the package would then have to carry --
+    # pythonwin needs the MFC redistributable (mfc140u.dll), win32/odbc.pyd needs
+    # odbc32.dll, win32comext needs dsound.dll and activeds.dll -- none of which
+    # a stock Windows provides. Drop the whole component.
+    #
+    # The list is pywin32's own top-level entries, from its dist-info RECORD.
+    # Anchored on a following slash or end-of-path so it cannot match a longer
+    # name that merely starts the same way. __pycache__ is deliberately left
+    # alone: it is shared with the packages we do ship, and a stale .pyc with no
+    # .py beside it is not importable anyway.
     install_bundled_directory(
         DESCRIPTION "Python library"
         DIRECTORY "${PYTHON_LIBRARY_PATH}"
         DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}"
         TARGET mariadb-shell
+        EXTRA_INSTALL_COMMANDS
+          REGEX "/site-packages/(PyWin32\\.chm|adodbapi|isapi|pythoncom\\.py|pythonwin|pywin32_system32|pywin32\\.pth|pywin32\\.version\\.txt|pywin32-[0-9.]+\\.dist-info|win32|win32com|win32comext)(/|$)" EXCLUDE
     )
     install_bundled_directory(
         DESCRIPTION "Python library dlls"
@@ -366,19 +385,12 @@ IF(HAVE_PYTHON)
         # @executable_path/.. rpath added just above).
         if(_PY_LIBPYTHON_ID)
           list(APPEND EXTRA_COPY_COMMANDS COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}")
-
-          # Same rewrite for the shell executables that embed libpython. Only
-          # mariadb-shell is shipped; mariadb-shell-rec (if built) is fixed too so a relocated
-          # test tree works. run_unit_tests runs from the build tree, where the
-          # absolute path still resolves, so it needs no fix.
-          foreach(_py_consumer mariadb-shell mariadb-shell-rec)
-            if(TARGET ${_py_consumer})
-              add_custom_command(TARGET ${_py_consumer} POST_BUILD
-                COMMAND install_name_tool -change "${_PY_LIBPYTHON_ID}" "@rpath/${_PY_SHARED_LIB_NAME}" "$<TARGET_FILE:${_py_consumer}>"
-                COMMENT "Rewriting ${_py_consumer} libpython reference to @rpath (relocatable)")
-            endif()
-          endforeach()
         endif()
+        # The same rewrite is needed on every executable that embeds libpython,
+        # not just the python<ver> launcher copied above. That is done for all of
+        # them by fix_libpython_reference() in add_shell_executable() -- see
+        # cmake/exeutils.cmake. It used to be a hard-coded list here, which left
+        # the mysql-secret-store helpers broken in the shipped package.
         # Drop the absolute vcpkg build-tree rpath baked in at build time; the
         # @executable_path/.. rpath above already reaches the bundled dylibs.
         if(_PY_VCPKG_RPATH_STRIP)
