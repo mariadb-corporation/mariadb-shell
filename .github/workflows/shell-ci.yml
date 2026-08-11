@@ -1,8 +1,6 @@
 name: MariaDB-Shell-CI
 
 on:
-  push:
-    branches: [ "workflow-test" ]
   pull_request:
       branches: [ "main" ]
   workflow_dispatch:

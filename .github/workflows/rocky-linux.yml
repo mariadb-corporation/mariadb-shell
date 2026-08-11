@@ -1,0 +1,307 @@
+name: Build Project (Rocky Linux 9)
+
+on:
+  # Called by shell-release.yml so the Rocky (Linux) packages are produced in the
+  # same run as the macOS/Windows ones and land in one artifact scope.
+  workflow_call:
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+
+jobs:
+  build-rocky9:
+
+    name: Rocky-Linux-9-Build (${{ matrix.arch }})
+
+    runs-on: ${{ matrix.os-runner }}
+
+    # One Dockerfile, one workflow: rockylinux:9 is a multi-arch manifest and
+    # nothing in the image is architecture-specific, so the only real deltas are
+    # the triplet, where the job runs, and how its cache survives.
+    #
+    # 'hosted' distinguishes the two cache strategies. The self-hosted x86 runner
+    # keeps ~/.cache/ci/docker across runs on its own disk. The GitHub-hosted arm
+    # runner is wiped after every job, so the same directory layout is hydrated
+    # by actions/cache instead -- see the restore steps below.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            os-runner: self-linux-x64
+            docker-platform: linux/amd64
+            vcpkg-triplet: x64-linux-dynamic
+            hosted: false
+            timeout: 180
+          - arch: arm
+            os-runner: ubuntu-24.04-arm
+            docker-platform: linux/arm64
+            vcpkg-triplet: arm64-linux-dynamic
+            hosted: true
+            timeout: 360
+
+    timeout-minutes: ${{ matrix.timeout }}
+
+    # Names the per-platform cache tree under ~/.cache/ci/docker/<platform>.
+    env:
+      CI_PLATFORM: rocky9-${{ matrix.arch }}
+      # Must match what the build asks for: the cache dirs are named after it.
+      PYTHON_VERSION: "3.14.6"
+
+    # The cache tree is shared mutable state on the runner: two concurrent runs
+    # would race on the same vcpkg checkout and server build dir. Queue instead.
+    # Per-arch, since each arch has its own cache tree.
+    concurrency:
+      group: docker-build-rocky9-${{ matrix.arch }}
+      cancel-in-progress: false
+
+    steps:
+      # 1. Checkout repository code onto the runner
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # 1a. Stage the external shell plugins into plugins/external/ BEFORE the
+      #     container configures, exactly as shell-release.yml does. These
+      #     tarballs are published alongside the macOS/Windows ones, so they must
+      #     carry the same plugins -- and CPack stages from configure-time
+      #     install() rules, so copying them in later would not work. The source
+      #     tree is bind-mounted into the container, so staging on the host here
+      #     is what the build sees.
+      #
+      #     mariadb-shell-plugins is a separate private repo, so this needs
+      #     DEVTOOLS_TOKEN -- reachable here because the caller passes
+      #     `secrets: inherit`.
+      - name: Checkout Shell Plugins (release/candidate)
+        uses: actions/checkout@v4
+        with:
+          repository: mariadb-corporation/mariadb-shell-plugins
+          ref: release/candidate
+          path: _shell-plugins-src
+          token: ${{ secrets.DEVTOOLS_TOKEN }}
+
+      - name: Bundle External Shell Plugins
+        run: |
+          set -euo pipefail
+          SRC="_shell-plugins-src"
+          DEST="plugins/external"
+
+          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+            if [ -d "$SRC/$plugin" ]; then
+              echo "Bundling $plugin -> $DEST/"
+              rm -rf "$DEST/$plugin"
+              cp -R "$SRC/$plugin" "$DEST/$plugin"
+            else
+              echo "Skipping $plugin (not present in plugins repo)"
+            fi
+          done
+
+          # Strip what must not ship: 'internal' folders, dotfolders (.git,
+          # .vscode) and __pycache__. -depth removes nested matches before their
+          # parents so rm never trips over an already-deleted path.
+          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+            target="$DEST/$plugin"
+            [ -d "$target" ] || continue
+            find "$target" -depth -type d \
+              \( -name internal -o -name '.*' -o -name '__pycache__' \) \
+              -exec rm -rf {} +
+          done
+
+          echo "External plugins staged for packaging:"
+          ls -la "$DEST"
+
+      # 1b. On the ephemeral hosted runner, hydrate the two caches that actually
+      #     cost time to rebuild. Deliberately NOT cached: the vcpkg checkout
+      #     (a fresh clone is cheap on a hosted runner, and its full-clone
+      #     fallback would blow through the 10 GB per-repo cache limit) and the
+      #     CPython source tree (only ever read by a run rebuilding Python).
+      #
+      #     The archives are content-addressed per port ABI, so the vcpkg.json
+      #     hash is a save trigger rather than a correctness boundary --
+      #     restore-keys fall back to the newest previous set and unaffected
+      #     ports stay warm across a bump.
+      - name: Restore vcpkg Binary Cache
+        if: matrix.hosted
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ci/docker/rocky9-${{ matrix.arch }}/vcpkg-archives
+          key: vcpkg-archives-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-archives-${{ matrix.arch }}-
+
+      #     Python links the vcpkg OpenSSL/zlib/sqlite3, so vcpkg.json is part of
+      #     the key here on purpose: a dependency bump rebuilds the interpreter
+      #     rather than reusing one linked against the previous closure. No
+      #     restore-keys, for the same reason.
+      #
+      #     The Dockerfile is in the key for the same reason. CPython links an
+      #     extension module against whatever it finds at configure time and
+      #     drops the module silently when it finds nothing, so the image's
+      #     packages decide both which modules exist and where they point. The
+      #     image deliberately ships no -devel package for anything we bundle
+      #     (see docker/linux-rocky9.Dockerfile); if that ever changes, the
+      #     interpreter has to be rebuilt rather than served from this cache.
+      - name: Restore Bundled Python
+        if: matrix.hosted
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ci/docker/rocky9-${{ matrix.arch }}/python/Python-${{ env.PYTHON_VERSION }}
+          key: python-${{ matrix.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('vcpkg.json', 'docker/linux-rocky9.Dockerfile') }}
+
+      # 2. Build the Rocky Linux 9 Docker Builder Image
+      - name: Build Rocky Linux Docker Image
+        run: |
+          docker build \
+            --platform ${{ matrix.docker-platform }} \
+            -f docker/linux-rocky9.Dockerfile \
+            -t rocky9-builder-${{ matrix.arch }}:${{ github.sha }} .
+
+      # 3. Create host output dir + the persistent per-platform build cache.
+      #
+      #    The vcpkg checkout is keyed on vcpkg.json's builtin-baseline. This is
+      #    not cosmetic: bootstrap_vcpkg.cmake reuses any checkout that has a
+      #    .git without re-fetching, so a baseline bump reusing the same
+      #    directory would keep building the OLD ports and still report success.
+      #    Keying on the baseline makes a bump land in a fresh directory.
+      #
+      #    The binary cache is deliberately NOT keyed: vcpkg addresses it by
+      #    per-port ABI hash, so it is safe to share, and ports unaffected by a
+      #    bump stay warm across it.
+      - name: Prepare Host Directories
+        run: |
+          mkdir -p "${{ github.workspace }}/out"
+
+          BASELINE=$(sed -n \
+            's/.*"builtin-baseline"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{7,\}\)".*/\1/p' \
+            "${{ github.workspace }}/vcpkg.json" | head -1)
+          if [ -z "$BASELINE" ]; then
+            echo "Could not read builtin-baseline from vcpkg.json" >&2
+            exit 1
+          fi
+          echo "==> vcpkg baseline: $BASELINE"
+
+          CACHE_ROOT="$HOME/.cache/ci/docker/${CI_PLATFORM}"
+          VCPKG_DIR="$CACHE_ROOT/vcpkg-$BASELINE"
+          ARCHIVES_DIR="$CACHE_ROOT/vcpkg-archives"
+          # Only the finished install is cached, not the CPython checkout beside
+          # it: bootstrap_python.cmake returns on the install probe before it
+          # ever resolves a source tree, so a cached checkout would only be read
+          # by a run that is rebuilding Python from scratch regardless.
+          PYTHON_DIR="$CACHE_ROOT/python"
+          PYTHON_INSTALL="$PYTHON_DIR/Python-$PYTHON_VERSION"
+          # A usable cached checkout has BOTH a .git and a bootstrapped vcpkg
+          # binary: the bootstrap only runs after the ref checks out, so the
+          # binary's presence proves the checkout completed at this baseline.
+          # Without this, a run that died between clone and checkout leaves a
+          # repo parked on the default branch tip -- and the next run happily
+          # "reuses" it and builds the wrong ports without complaining.
+          if [ -d "$VCPKG_DIR/.git" ] && [ ! -x "$VCPKG_DIR/vcpkg" ]; then
+            echo "==> Cached vcpkg checkout is incomplete; discarding it."
+            sudo rm -rf "$VCPKG_DIR"
+          fi
+
+          # The hosted runner gets a fresh disk every time and rebuilds Python
+          # whenever the actions/cache key changes. The self-hosted one keeps
+          # $PYTHON_DIR on its own disk forever with nothing keying it, so an
+          # interpreter stays until something deletes it -- including one built
+          # against the wrong libraries, or missing a module because the vcpkg
+          # closure did not have its dependency yet. Give it the same
+          # invalidation by hand: stamp the inputs that decide what CPython
+          # links, and discard the install when they move. The stamp lives
+          # beside the install, not in it, so it never reaches the package.
+          if [ "${{ matrix.hosted }}" != "true" ]; then
+            STAMP_FILE="$PYTHON_DIR/.build-inputs"
+            STAMP_NOW="$(cat "${{ github.workspace }}/vcpkg.json" \
+                             "${{ github.workspace }}/docker/linux-rocky9.Dockerfile" \
+                         | sha256sum | cut -d' ' -f1)"
+            if [ -d "$PYTHON_INSTALL" ] && \
+               [ "$(cat "$STAMP_FILE" 2>/dev/null)" != "$STAMP_NOW" ]; then
+              echo "==> Python build inputs changed; discarding $PYTHON_INSTALL."
+              sudo rm -rf "$PYTHON_INSTALL"
+            fi
+            mkdir -p "$PYTHON_DIR"
+            echo "$STAMP_NOW" > "$STAMP_FILE"
+          fi
+
+          mkdir -p "$VCPKG_DIR" "$ARCHIVES_DIR" "$PYTHON_INSTALL"
+          echo "VCPKG_DIR=$VCPKG_DIR" >> "$GITHUB_ENV"
+          echo "ARCHIVES_DIR=$ARCHIVES_DIR" >> "$GITHUB_ENV"
+          echo "PYTHON_INSTALL=$PYTHON_INSTALL" >> "$GITHUB_ENV"
+
+          # Mark this checkout as used, then retire checkouts from superseded
+          # baselines once they have gone cold. Never fatal: a full cache is a
+          # disk-space problem, not a build failure.
+          #
+          # 'vcpkg-archives' MUST stay excluded -- it matches the vcpkg-* glob
+          # and holds the binary cache, so without this it would be swept and
+          # every port would rebuild from source. Any future vcpkg-* sibling
+          # that is not a baseline checkout needs excluding here too.
+          touch "$VCPKG_DIR"
+          sudo find "$CACHE_ROOT" -maxdepth 1 -type d -name 'vcpkg-*' \
+            ! -name 'vcpkg-archives' ! -name "vcpkg-$BASELINE" \
+            -mtime +14 -exec rm -rf {} + || true
+
+          # Same treatment for the bundled Python. The install carries the
+          # version in its name, so a version bump isolates itself; this only
+          # reclaims the space afterwards.
+          touch "$PYTHON_INSTALL"
+          sudo find "$PYTHON_DIR" -maxdepth 1 -type d -name 'Python-*' \
+            ! -name "Python-$PYTHON_VERSION" \
+            -mtime +14 -exec rm -rf {} + || true
+
+          echo "==> Cache state before build:"
+          du -sh "$CACHE_ROOT"/* 2>/dev/null || echo "    (empty - first run)"
+
+      # 4. Execute build inside the Docker container
+      - name: Run Build inside Rocky Linux Container
+        run: |
+          docker run --rm \
+            --platform ${{ matrix.docker-platform }} \
+            -e WITH_VCPKG_TRIPLET=${{ matrix.vcpkg-triplet }} \
+            -e VCPKG_ROOT=/workspace/vcpkg \
+            -e VCPKG_DEFAULT_BINARY_CACHE=/workspace/vcpkg-archives \
+            -e PYTHON_VERSION="$PYTHON_VERSION" \
+            -v "${{ github.workspace }}:/workspace/src" \
+            -v "${{ github.workspace }}/out:/workspace/output" \
+            -v "$VCPKG_DIR:/workspace/vcpkg" \
+            -v "$ARCHIVES_DIR:/workspace/vcpkg-archives" \
+            -v "$PYTHON_INSTALL:/workspace/python/Python-$PYTHON_VERSION" \
+            rocky9-builder-${{ matrix.arch }}:${{ github.sha }}
+
+      # 5. Fix permissions on created artifacts (Docker runs as root by default)
+      - name: Fix Output Directory Permissions
+        if: always()
+        run: |
+          sudo chown -R $(id -u):$(id -g) ${{ github.workspace }}/out
+
+      # 5b. The container writes the cache dirs as root, but actions/cache saves
+      #     them in a post-job step running as the runner user -- which cannot
+      #     read root-owned mode-600 files and would fail or silently save an
+      #     incomplete archive. Hand them over before that runs. Only needed on
+      #     the hosted runner; the self-hosted one keeps them root-owned and
+      #     re-enters as root next time.
+      - name: Hand Cache Back to the Runner User
+        if: always() && matrix.hosted
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" \
+            "$HOME/.cache/ci/docker/rocky9-${{ matrix.arch }}"
+
+      # 6. Read the package name declared by the build container
+      - name: Identify Package
+        id: pkg
+        run: |
+          name=$(< "${{ github.workspace }}/out/package-name.txt")
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "path=${{ github.workspace }}/out/${name}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      # 7. Upload compiled package to GitHub Actions artifacts
+      - name: Upload Compiled Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: ${{ steps.pkg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+      # 8. Cleanup build image to save disk space on self-hosted VM
+      - name: Cleanup Docker Image
+        if: always()
+        run: |
+          docker rmi rocky9-builder-${{ matrix.arch }}:${{ github.sha }} || true

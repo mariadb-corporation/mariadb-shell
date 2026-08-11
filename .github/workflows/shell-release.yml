@@ -14,14 +14,15 @@ jobs:
       matrix:
         include:
           # --- LINUX ---
-          - os: linux
-            arch: x64
-            os-runner: ubuntu-latest
-            vcpkg-triplet: x64-linux-dynamic
-          - os: linux
-            arch: arm64
-            os-runner: ubuntu-24.04-arm
-            vcpkg-triplet: arm64-linux-dynamic
+          # Linux packages are NOT built here. They come from rocky-linux.yml
+          # (called as the 'rocky' job below), which builds on Rocky 9 for a
+          # glibc 2.34 floor -- covering RHEL 9+, Ubuntu 22.04+ and Debian 12+.
+          # Building on ubuntu-latest instead pinned the packages to that
+          # runner's much newer glibc, so they only ran on recent distros.
+          #
+          # The Linux-gated steps further down are kept: they still document the
+          # dependency and CMake-pin requirements, and they no-op with no Linux
+          # job in the matrix.
 
           # --- MACOS ---
           - os: macos
@@ -252,7 +253,7 @@ jobs:
           fi
 
           cmake -B ${{ env.MARIADB_SHELL_BUILD_DIR }} -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_BUILD_TYPE=Release \
             -DWITH_TESTS=0 \
             -DWITH_VCPKG_TRIPLET=${{ matrix.vcpkg-triplet }} \
             $EXTRA_CMAKE_ARGS
@@ -263,7 +264,7 @@ jobs:
       # ========================================
       - name: Build MariaDB Shell
         run: |
-          cmake --build ${{ env.MARIADB_SHELL_BUILD_DIR }} --config RelWithDebInfo --parallel
+          cmake --build ${{ env.MARIADB_SHELL_BUILD_DIR }} --config Release --parallel
 
       # ========================================
       # 6. PACKAGE (CPACK)
@@ -271,14 +272,35 @@ jobs:
       - name: Create Tarball Package
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cpack -G TGZ -C RelWithDebInfo
+          cpack -G TGZ -C Release
 
       # ========================================
       # 7. UPLOAD ARTIFACTS FOR DOWNLOAD
       # ========================================
+      # An explicit, unique name per matrix leg. publish-release.yml pulls every
+      # artifact of a chosen run, so predictable names keep that gather readable.
+      # `archive: false` is deliberately NOT used here. It stores the artifact
+      # with no zip container, and nothing downstream can retrieve one: both
+      # `gh run download` and actions/download-artifact fail on them, while the
+      # Rocky legs' ordinary archived artifacts in the same run download fine.
+      # The zip wrapper around an already-gzipped tarball costs nothing but
+      # appearance, and it is what makes these packages consumable by
+      # verify-packages.yml and publish-release.yml.
       - name: Upload Package Artifact
         uses: actions/upload-artifact@v7
         with:
+          name: pkg-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ env.MARIADB_SHELL_BUILD_DIR }}/*.tar.gz
-          archive: false
           if-no-files-found: error
+
+  # ==========================================================================
+  # LINUX PACKAGES (Rocky 9, containerised)
+  #
+  # Called here rather than left as its own workflow so that one run of this
+  # workflow produces EVERY platform's tarball in a single artifact scope --
+  # which is what lets publish-release.yml assemble a complete release from one
+  # run id. secrets: inherit passes DEVTOOLS_TOKEN through for plugin staging.
+  # ==========================================================================
+  rocky:
+    uses: ./.github/workflows/rocky-linux.yml
+    secrets: inherit

@@ -1,0 +1,242 @@
+name: Verify Packages
+
+# Verifies the packages a build produced, on machines that have never built them.
+#
+# This is a separate workflow rather than jobs inside MariaDB-Shell-Release for
+# two reasons: it must be startable by hand against any past build, and it must
+# run on pristine runners. A verification job sharing a runner with the build
+# would have the build tree, toolchain and vcpkg prefix sitting on disk, so a
+# package that only works because of them would still pass.
+#
+# It deliberately does NOT use scripts/install.sh: verification has to work on
+# packages that were never released, straight from a build run's artifacts.
+on:
+  # Fires when MariaDB-Shell-Release finishes, verifying that run's own packages.
+  # Note: GitHub only honours workflow_run for the copy of this file on the
+  # DEFAULT branch -- on a feature branch it will not fire at all.
+  workflow_run:
+    workflows: ["MariaDB-Shell-Release"]
+    types: [completed]
+
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Build run to verify (blank = latest successful MariaDB-Shell-Release run)"
+        type: string
+        required: false
+
+jobs:
+  # ==========================================================================
+  # Resolve which build run's packages to verify, once, so every matrix leg
+  # verifies the same build. Also resolves the commit, so the check scripts come
+  # from the source that produced the packages rather than from whatever the
+  # default branch holds now.
+  # ==========================================================================
+  resolve:
+    runs-on: ubuntu-latest
+    # Gate ONLY the workflow_run case: skip a build that did not succeed, since
+    # there is nothing meaningful to verify and failing would just be noise.
+    #
+    # Written as "not workflow_run OR it succeeded" rather than listing the
+    # allowed events: `github.event.workflow_run` is null for push and
+    # workflow_dispatch, so any condition that reaches into it evaluates false
+    # and silently skips the whole workflow. Every future trigger is allowed
+    # through here by default instead of having to be remembered.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    # A permissions block REPLACES the default set rather than adding to it, so
+    # contents: read has to be listed explicitly -- without it actions/checkout
+    # fails with a misleading "Repository not found" on this private repo.
+    permissions:
+      contents: read   # checkout
+      actions: read    # gh run list / gh run view
+
+    outputs:
+      run_id: ${{ steps.pick.outputs.run_id }}
+      sha: ${{ steps.pick.outputs.sha }}
+      version: ${{ steps.pick.outputs.version }}
+
+    steps:
+      - name: Resolve Build Run
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_run" ]; then
+            RUN_ID="$TRIGGER_RUN_ID"
+            echo "==> Triggered by build run $RUN_ID"
+          elif [ -n "$INPUT_RUN_ID" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+            echo "==> Verifying requested run $RUN_ID"
+          else
+            echo "==> No run_id given; finding the latest successful build run."
+            RUN_ID=$(gh run list -R "$REPO" \
+              --workflow "shell-release.yml" \
+              --status success --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$RUN_ID" ] || { echo "No successful build run found." >&2; exit 1; }
+            echo "==> Verifying latest successful run $RUN_ID"
+          fi
+
+          SHA=$(gh run view "$RUN_ID" -R "$REPO" --json headSha --jq .headSha)
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA"       >> "$GITHUB_OUTPUT"
+
+      - name: Read Version At That Commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pick.outputs.sha }}
+
+      - name: Export Version
+        id: version
+        run: |
+          set -euo pipefail
+          eval "$(grep -E '^MYSQL_VERSION_(MAJOR|MINOR|PATCH|EXTRA)=' MYSQL_VERSION)"
+          V="${MYSQL_VERSION_MAJOR}.${MYSQL_VERSION_MINOR}.${MYSQL_VERSION_PATCH}${MYSQL_VERSION_EXTRA}"
+          echo "==> Expecting packages to report version $V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+  # ==========================================================================
+  # One pristine runner per published platform. The runner images here are the
+  # verification targets, NOT the build hosts -- e.g. the Linux packages are
+  # built on Rocky 9 (glibc 2.34) and verified here on Ubuntu, which is the
+  # forward-compatibility direction that matters.
+  # ==========================================================================
+  verify:
+    needs: resolve
+    runs-on: ${{ matrix.os-runner }}
+
+    name: Verify (${{ matrix.name }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86
+            os-runner: ubuntu-latest
+            pkg-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+          - name: linux-arm
+            os-runner: ubuntu-24.04-arm
+            pkg-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+          - name: macos-x64
+            os-runner: macos-15-intel
+            pkg-glob: "*-macos*-x86-64bit.tar.gz"
+          - name: macos-arm
+            os-runner: macos-latest
+            pkg-glob: "*-macos*-arm-64bit.tar.gz"
+          - name: windows-x64
+            os-runner: windows-2022
+            pkg-glob: "*-windows-x86-64bit.tar.gz"
+          - name: windows-arm
+            os-runner: windows-11-arm
+            pkg-glob: "*-windows-arm-64bit.tar.gz"
+
+    # As above: contents: read is required for checkout, actions: read for
+    # gh run download.
+    permissions:
+      contents: read
+      actions: read
+
+    defaults:
+      run:
+        # Git Bash on Windows, so one set of steps covers all three OSes.
+        shell: bash
+
+    steps:
+      # Only the check scripts are needed from the repo -- at the build's commit,
+      # so the checks match the packages. The package itself brings everything
+      # else; nothing here builds or configures anything.
+      - name: Checkout Check Scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      # Cross-run download, so run-id + github-token are required.
+      #
+      # Both the uploads feeding this are ordinary archived artifacts. Do not
+      # reintroduce `archive: false` upstream: artifacts stored without a zip
+      # container cannot be retrieved by this action OR by `gh run download`,
+      # and the failure surfaces here rather than at the upload that caused it.
+      - name: Download Packages From Build Run
+        uses: actions/download-artifact@v7
+        with:
+          path: _artifacts
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: List Downloaded Packages
+        run: |
+          set -euo pipefail
+          echo "==> Artifacts:"
+          find _artifacts -type f -name '*.tar.gz' | sort
+
+      - name: Select And Unpack This Platform's Package
+        id: unpack
+        env:
+          PKG_GLOB: ${{ matrix.pkg-glob }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # find, not a shell glob. `merge-multiple: true` lands the artifacts
+          # flat in _artifacts/, but a nested one-dir-per-artifact layout is also
+          # possible, and matching both would need globstar -- which does not
+          # exist in bash 3.2, the /bin/bash on the macOS runners. find is
+          # layout-agnostic and needs no shell options at all.
+          matches=$(find _artifacts -type f -name "$PKG_GLOB" | sort)
+          count=$(printf '%s' "$matches" | grep -c . || true)
+
+          # Exactly one match, or fail loudly. A silent "picked the first of
+          # several" would let this leg verify the wrong architecture's package
+          # and report success.
+          if [ "$count" -ne 1 ]; then
+            echo "Expected exactly one package matching '$PKG_GLOB', found $count:" >&2
+            [ -n "$matches" ] && printf '  %s\n' "$matches" >&2
+            echo "--- all downloaded tarballs ---" >&2
+            find _artifacts -type f -name '*.tar.gz' | sort >&2
+            exit 1
+          fi
+          PKG="$matches"
+          echo "==> Package: $PKG"
+
+          mkdir -p _unpacked
+          tar -xzf "$PKG" -C _unpacked
+
+          # The tarball holds a single top-level mariadb-shell-<ver>-<platform>
+          # directory; that is the package root the checks run against.
+          roots=(_unpacked/*/)
+          if [ ${#roots[@]} -ne 1 ]; then
+            echo "Expected one top-level directory in the tarball, found ${#roots[@]}" >&2
+            printf '  %s\n' ${roots[@]+"${roots[@]}"} >&2
+            exit 1
+          fi
+          ROOT="${roots[0]%/}"
+          echo "==> Unpacked root: $ROOT"
+          echo "root=$ROOT" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Package
+        env:
+          EXPECT_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          chmod +x scripts/verify_package.sh
+          scripts/verify_package.sh "${{ steps.unpack.outputs.root }}"
+
+      # Keeps a failure diagnosable without re-running: the unpacked tree is what
+      # the checks actually saw.
+      - name: Upload Unpacked Tree On Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-verify-${{ matrix.name }}
+          path: _unpacked
+          retention-days: 3
+          if-no-files-found: ignore
