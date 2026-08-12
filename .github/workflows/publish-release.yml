@@ -255,10 +255,11 @@ jobs:
           echo "==> SHA256SUMS:"
           cat SHA256SUMS
 
-          # Users install from the copy on the default branch, not from this one.
-          # It ships anyway so each release carries the installer it was tested
+          # Users install from the copies on the default branch, not from these.
+          # They ship anyway so each release carries the installers it was tested
           # with -- an archival record, not something anyone fetches.
           cp ../install.sh install.sh
+          cp ../install.ps1 install.ps1
           chmod +x install.sh
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -298,36 +299,49 @@ jobs:
           # installed by an explicitly pinned tag. A stable release needs no pin,
           # and gets a command with no version in it at all -- one that keeps
           # working for every later release without the notes being edited.
+          # The same pin, said twice: the shell takes it as a one-shot variable
+          # assignment, PowerShell needs it set as its own statement first.
           if [ "$PRERELEASE" = "true" ]; then
             RUN_INSTALLER="MARIADB_SHELL_TAG=$TAG bash"
+            PS_PIN="\$env:MARIADB_SHELL_TAG = '$TAG'"
           else
             RUN_INSTALLER="bash"
+            PS_PIN=""
           fi
 
           if [ "$PRIVATE" = "false" ]; then
-            INSTALL="\`\`\`sh
-          curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER
-          \`\`\`"
+            SH_CMD="curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER"
+            PS_CMD="irm https://github.com/$REPO/raw/$INSTALLER_REF/install.ps1 | iex"
+            PRIVATE_NOTE=""
           else
             # Two credentialed hops, and only the first needs saying: the script
             # has to be fetched by hand, from raw.githubusercontent.com because
             # github.com/<owner>/<repo>/raw/ answers 404 to a bearer token. The
-            # packages need no flag -- install.sh finds gh's login by itself.
-            INSTALL="This repository is private, so the installer has to be
-          fetched with credentials. With the GitHub CLI logged in
-          (\`gh auth login\`):
-
-          \`\`\`sh
-          curl -fsSL -H \"Authorization: Bearer \$(gh auth token)\" \\
+            # packages need no flag -- the installer finds gh's login by itself.
+            SH_CMD="curl -fsSL -H \"Authorization: Bearer \$(gh auth token)\" \\
                https://raw.githubusercontent.com/$REPO/$INSTALLER_REF/install.sh \\
-            | $RUN_INSTALLER
-          \`\`\`
+            | $RUN_INSTALLER"
+            PS_CMD="\$h = @{ Authorization = \"Bearer \$(gh auth token)\" }
+          irm https://raw.githubusercontent.com/$REPO/$INSTALLER_REF/install.ps1 -Headers \$h | iex"
+            PRIVATE_NOTE="This repository is private, so the installer itself has
+          to be fetched with credentials -- the commands below assume the GitHub
+          CLI is logged in (\`gh auth login\`). They name raw.githubusercontent.com
+          rather than github.com because only that host honours a token. The
+          packages need no extra flag: the installer picks up the same login on
+          its own. Without gh, set \`MARIADB_SHELL_TOKEN\` to a token with read
+          access and send that same token in the header.
 
-          That is raw.githubusercontent.com rather than github.com because only
-          that host honours a token. The packages need no extra flag: the
-          installer picks up the same login on its own. Without gh, set
-          \`MARIADB_SHELL_TOKEN\` to a token with read access and send that token
-          in the header instead."
+          "
+          fi
+
+          # PowerShell needs the tag pinned on its own line, so the block is
+          # assembled rather than interpolated -- an always-present pin would
+          # leave a blank first line in every stable release's snippet.
+          if [ -n "$PS_PIN" ]; then
+            PS_BLOCK="$PS_PIN
+          $PS_CMD"
+          else
+            PS_BLOCK="$PS_CMD"
           fi
 
           NOTES="MariaDB Shell $VERSION, built from \`$SHA\` (build run $RUN_ID,
@@ -335,22 +349,57 @@ jobs:
 
           ## Install
 
-          $INSTALL
+          ${PRIVATE_NOTE}### Linux and macOS
 
-          The installer detects your OS, CPU and glibc version, picks the matching
-          package and verifies its checksum before unpacking it. It installs into
-          \`~/.local/share/mariadb-shell/<version>\` and links both
+          \`\`\`sh
+          $SH_CMD
+          \`\`\`
+
+          Installs into \`~/.local/share/mariadb-shell/<version>\` and links both
           \`mariadb-shell\` and its short alias \`msh\` into \`~/.local/bin\`.
-          Only the two newest versions are kept -- installing a new one removes
-          anything older than the pair.
+
+          ### Windows (PowerShell)
+
+          \`\`\`powershell
+          $PS_BLOCK
+          \`\`\`
+
+          Installs into \`%LOCALAPPDATA%\\Programs\\mariadb-shell\\<version>\` and
+          writes \`mariadb-shell.cmd\` and \`msh.cmd\` into its \`bin\` folder.
+          That folder is not added to PATH unless you re-run with \`-AddToPath\`.
+
+          Both installers detect your CPU (and on Linux your glibc version), pick
+          the matching package and verify its checksum before unpacking. Only the
+          two newest versions are kept -- installing a new one removes anything
+          older than the pair.
 
           ## Manual download
 
-          Pick the tarball for your platform below, then verify it:
+          Pick the tarball for your platform below, download SHA256SUMS beside
+          it, then check one against the other.
+
+          Linux:
 
           \`\`\`sh
           sha256sum -c SHA256SUMS --ignore-missing
-          \`\`\`"
+          \`\`\`
+
+          macOS, which ships \`shasum\` rather than \`sha256sum\`:
+
+          \`\`\`sh
+          shasum -a 256 -c SHA256SUMS --ignore-missing
+          \`\`\`
+
+          Windows, where neither exists -- PowerShell compares the hash itself:
+
+          \`\`\`powershell
+          \$file = 'mariadb-shell-$VERSION-windows-x86-64bit.tar.gz'
+          \$want = (Select-String -Path SHA256SUMS -Pattern ([regex]::Escape(\$file))).Line.Split(' ')[0]
+          if ((Get-FileHash \$file -Algorithm SHA256).Hash -eq \$want) { 'OK' } else { 'MISMATCH' }
+          \`\`\`
+
+          \`--ignore-missing\` is what lets the check pass with only the one
+          tarball you downloaded present, rather than all of them."
 
           # gh release view is read-only, so a dry run can still report which of
           # the two paths a real run would take -- create, or clobber an existing
@@ -393,7 +442,7 @@ jobs:
           echo "==> Published: https://github.com/$REPO/releases/tag/$TAG"
 
       # The assets a dry run assembled but did not upload anywhere -- SHA256SUMS
-      # and install.sh included, so the manifest install.sh reads can be checked
+      # and both installers included, so the manifest they read can be checked
       # before a release ever exists. Excludes the tarballs: they are already in
       # the build run, and re-uploading ~6 of them per dry run is pointless.
       - name: Upload Assembled Assets (dry run)
@@ -404,5 +453,6 @@ jobs:
           path: |
             dist/SHA256SUMS
             dist/install.sh
+            dist/install.ps1
           retention-days: 7
           if-no-files-found: error
