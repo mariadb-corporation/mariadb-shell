@@ -289,10 +289,9 @@ jobs:
 
           # The install command is derived from the repo's own visibility rather
           # than hardcoded, so the notes can never advertise a command the reader
-          # cannot run: while the repo is private neither the installer nor the
-          # packages can be fetched anonymously, and no credential fixes that --
-          # the packages come from release assets either way. The day the repo
-          # goes public this flips on its own.
+          # cannot run: while the repo is private, nothing can be fetched from it
+          # anonymously, and the command has to carry credentials. The day the
+          # repo goes public this flips to the plain one on its own.
           PRIVATE=$(gh api "repos/$REPO" --jq .private)
 
           # /releases/latest/ skips prereleases, so a prerelease has to be
@@ -308,14 +307,27 @@ jobs:
           if [ "$PRIVATE" = "false" ]; then
             INSTALL="\`\`\`sh
           curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER
+          \`\`\`"
+          else
+            # Two credentialed hops, and only the first needs saying: the script
+            # has to be fetched by hand, from raw.githubusercontent.com because
+            # github.com/<owner>/<repo>/raw/ answers 404 to a bearer token. The
+            # packages need no flag -- install.sh finds gh's login by itself.
+            INSTALL="This repository is private, so the installer has to be
+          fetched with credentials. With the GitHub CLI logged in
+          (\`gh auth login\`):
+
+          \`\`\`sh
+          curl -fsSL -H \"Authorization: Bearer \$(gh auth token)\" \\
+               https://raw.githubusercontent.com/$REPO/$INSTALLER_REF/install.sh \\
+            | $RUN_INSTALLER
           \`\`\`
 
-          The installer detects your OS, CPU and glibc version, picks the matching
-          package and verifies its checksum before unpacking it."
-          else
-            INSTALL="This repository is private, so there is no anonymous install
-          command -- neither the installer nor the packages can be fetched without
-          credentials. Use the manual download below."
+          That is raw.githubusercontent.com rather than github.com because only
+          that host honours a token. The packages need no extra flag: the
+          installer picks up the same login on its own. Without gh, set
+          \`MARIADB_SHELL_TOKEN\` to a token with read access and send that token
+          in the header instead."
           fi
 
           NOTES="MariaDB Shell $VERSION, built from \`$SHA\` (build run $RUN_ID,
@@ -324,6 +336,13 @@ jobs:
           ## Install
 
           $INSTALL
+
+          The installer detects your OS, CPU and glibc version, picks the matching
+          package and verifies its checksum before unpacking it. It installs into
+          \`~/.local/share/mariadb-shell/<version>\` and links both
+          \`mariadb-shell\` and its short alias \`msh\` into \`~/.local/bin\`.
+          Only the two newest versions are kept -- installing a new one removes
+          anything older than the pair.
 
           ## Manual download
 

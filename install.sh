@@ -35,7 +35,7 @@
 #                         consulted, in that order)
 #
 # Options:
-#   --enable-pre-release  install the newest release even if it is a prerelease
+#   --pre-release  install the newest release even if it is a prerelease
 #
 set -eu
 
@@ -60,26 +60,26 @@ need() {
 
 # ---------------------------------------------------------------------------
 # Options. Piped into a shell, these arrive via bash's -s:
-#   curl -fsSL <url> | bash -s -- --enable-pre-release
+#   curl -fsSL <url> | bash -s -- --pre-release
 # ---------------------------------------------------------------------------
 ENABLE_PRERELEASE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --enable-pre-release) ENABLE_PRERELEASE=1 ;;
+    --pre-release) ENABLE_PRERELEASE=1 ;;
     -h|--help)
       cat <<'USAGE'
 MariaDB Shell installer.
 
-  install.sh [--enable-pre-release]
-  curl -fsSL <url> | bash -s -- [--enable-pre-release]
+  install.sh [--pre-release]
+  curl -fsSL <url> | bash -s -- [--pre-release]
 
-  --enable-pre-release  install the newest release even if it is a prerelease.
-                        Without it, prereleases are skipped, exactly as
-                        /releases/latest/ skips them.
+  --pre-release  install the newest release even if it is a prerelease.
+                 Without it, prereleases are skipped, exactly as
+                 /releases/latest/ skips them.
 
 Environment: MARIADB_SHELL_TAG, MARIADB_SHELL_PREFIX, MARIADB_SHELL_BINDIR,
 MARIADB_SHELL_REPO, MARIADB_SHELL_TOKEN. A pinned tag wins over
---enable-pre-release, since it already names the release to install.
+--pre-release, since it already names the release to install.
 USAGE
       exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -126,7 +126,7 @@ if [ "$ENABLE_PRERELEASE" = 1 ]; then
       export MARIADB_SHELL_TAG=<tag>"
 else
   PRERELEASE_HINT="A prerelease is never 'latest'. Reach the newest one with
-  --enable-pre-release, or name a release outright:
+  --pre-release, or name a release outright:
 
       export MARIADB_SHELL_TAG=<tag>"
 fi
@@ -219,7 +219,7 @@ cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
 # The API, with credentials when there are any. Anonymous works too, which is
-# what --enable-pre-release relies on against a public repository.
+# what --pre-release relies on against a public repository.
 api_get() {
   if [ -n "$TOKEN" ]; then
     curl -fsSL --retry 3 -H "Authorization: Bearer $TOKEN" \
@@ -439,8 +439,8 @@ fi
 # Unpack. The tarball holds a single top-level mariadb-shell-<ver>-<platform>
 # directory, which is renamed to just the version: the platform is a property of
 # the machine that unpacked it, not something worth repeating in every path a
-# user types. Versions sit side by side, so the previous one stays on disk and
-# an install can be undone by re-pointing the links below.
+# user types. Versions sit side by side, so an install can be undone by
+# re-pointing the links below -- but only two are kept, see the prune at the end.
 # ---------------------------------------------------------------------------
 info "Unpacking into $PREFIX"
 mkdir -p "$PREFIX"
@@ -480,6 +480,47 @@ ln -sfn "$MSH_BIN" "$BINDIR/msh"
 info "Installed $("$SHELL_BIN" --version 2>/dev/null || echo "$VERSION")"
 info "Binary: $BINDIR/mariadb-shell -> $SHELL_BIN"
 info "        $BINDIR/msh -> $MSH_BIN"
+
+# ---------------------------------------------------------------------------
+# Prune. Only the version just installed and the highest of the rest survive:
+# one way back is worth keeping, a museum is not. Deliberately narrow about what
+# it will delete -- a name has to be purely digits and dots to be considered
+# ours, so anything else under PREFIX, including directories left by an older
+# layout, is left alone rather than guessed at.
+# ---------------------------------------------------------------------------
+is_version_dir() {
+  [ -d "$1" ] || return 1
+  [ -L "$1" ] && return 1
+  case "${1##*/}" in
+    [0-9]*) ;;
+    *) return 1 ;;
+  esac
+  case "${1##*/}" in
+    *[!0-9.]*) return 1 ;;
+  esac
+  return 0
+}
+
+KEEP_OTHER=""
+for d in "$PREFIX"/*; do
+  is_version_dir "$d" || continue
+  name=${d##*/}
+  [ "$name" = "$VERSION" ] && continue
+  if [ -z "$KEEP_OTHER" ] || ver_le "$KEEP_OTHER" "$name"; then
+    KEEP_OTHER="$name"
+  fi
+done
+
+for d in "$PREFIX"/*; do
+  is_version_dir "$d" || continue
+  name=${d##*/}
+  [ "$name" = "$VERSION" ] && continue
+  [ "$name" = "$KEEP_OTHER" ] && continue
+  info "Removing superseded version $name"
+  rm -rf "$PREFIX/$name"
+done
+
+[ -z "$KEEP_OTHER" ] || info "Kept previous version $KEEP_OTHER"
 
 # Only a hint, never an edit: rewriting a user's shell rc from a piped installer
 # is not this script's call to make.
