@@ -8,7 +8,7 @@ name: Verify Packages
 # would have the build tree, toolchain and vcpkg prefix sitting on disk, so a
 # package that only works because of them would still pass.
 #
-# It deliberately does NOT use scripts/install.sh: verification has to work on
+# It deliberately does NOT use install.sh: verification has to work on
 # packages that were never released, straight from a build run's artifacts.
 on:
   # Fires when MariaDB-Shell-Release finishes, verifying that run's own packages.

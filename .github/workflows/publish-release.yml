@@ -17,12 +17,12 @@ on:
         type: string
         required: false
       prerelease:
-        # Defaults to false on purpose. The permanent install URL
-        # (/releases/latest/download/install.sh) resolves only to the newest
-        # NON-prerelease release, so marking a release as a prerelease hides it
-        # from the very URL users are told to curl. Set this true only for a
-        # release that should deliberately stay invisible to that URL.
-        description: "Mark as prerelease (hidden from the permanent /releases/latest/ install URL)"
+        # A prerelease is invisible to /releases/latest/, which is where the
+        # installer looks for packages when no tag is pinned. The notes below
+        # compensate by generating an install command that pins this tag, so a
+        # prerelease stays installable -- but only by that command, not by the
+        # version-free one published for stable releases.
+        description: "Mark as prerelease (invisible to /releases/latest/; notes get a tag-pinned install command)"
         type: boolean
         default: false
       dry_run:
@@ -255,9 +255,10 @@ jobs:
           echo "==> SHA256SUMS:"
           cat SHA256SUMS
 
-          # Ship the installer as a release asset so the permanent
-          # /releases/latest/download/install.sh URL resolves to it.
-          cp ../scripts/install.sh install.sh
+          # Users install from the copy on the default branch, not from this one.
+          # It ships anyway so each release carries the installer it was tested
+          # with -- an archival record, not something anyone fetches.
+          cp ../install.sh install.sh
           chmod +x install.sh
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -282,21 +283,47 @@ jobs:
           RUN_ID: ${{ steps.run.outputs.run_id }}
           VERIFY_RUN_ID: ${{ steps.verified.outputs.verify_run_id }}
           DRY_RUN: ${{ inputs.dry_run }}
+          INSTALLER_REF: ${{ github.event.repository.default_branch || 'main' }}
         run: |
           set -euo pipefail
+
+          # The install command is derived from the repo's own visibility rather
+          # than hardcoded, so the notes can never advertise a command the reader
+          # cannot run: while the repo is private neither the installer nor the
+          # packages can be fetched anonymously, and no credential fixes that --
+          # the packages come from release assets either way. The day the repo
+          # goes public this flips on its own.
+          PRIVATE=$(gh api "repos/$REPO" --jq .private)
+
+          # /releases/latest/ skips prereleases, so a prerelease has to be
+          # installed by an explicitly pinned tag. A stable release needs no pin,
+          # and gets a command with no version in it at all -- one that keeps
+          # working for every later release without the notes being edited.
+          if [ "$PRERELEASE" = "true" ]; then
+            RUN_INSTALLER="MARIADB_SHELL_TAG=$TAG bash"
+          else
+            RUN_INSTALLER="bash"
+          fi
+
+          if [ "$PRIVATE" = "false" ]; then
+            INSTALL="\`\`\`sh
+          curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER
+          \`\`\`
+
+          The installer detects your OS, CPU and glibc version, picks the matching
+          package and verifies its checksum before unpacking it."
+          else
+            INSTALL="This repository is private, so there is no anonymous install
+          command -- neither the installer nor the packages can be fetched without
+          credentials. Use the manual download below."
+          fi
 
           NOTES="MariaDB Shell $VERSION, built from \`$SHA\` (build run $RUN_ID,
           verified by run $VERIFY_RUN_ID).
 
           ## Install
 
-          \`\`\`sh
-          curl -fsSL https://github.com/$REPO/releases/latest/download/install.sh | bash
-          \`\`\`
-
-          That URL is permanent and always resolves to the newest release. The
-          installer detects your OS, CPU and glibc version and picks the matching
-          package.
+          $INSTALL
 
           ## Manual download
 

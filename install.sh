@@ -17,7 +17,7 @@
 #
 # MariaDB Shell installer.
 #
-#   curl -fsSL https://github.com/mariadb-corporation/mariadb-shell/releases/latest/download/install.sh | bash
+#   curl -fsSL https://github.com/mariadb-corporation/mariadb-shell/raw/main/install.sh | bash
 #
 # Detects the local OS, CPU and (on Linux) glibc version, picks the matching
 # package from the release, verifies its checksum and unpacks it.
