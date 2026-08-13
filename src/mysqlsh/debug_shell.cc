@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -139,7 +141,8 @@ tests::Test_net_utilities test_net_utilities;
 
 void handle_debug_options(int *argc, char ***argv) {
   if (const char *mode = shcore::getenv_shell("MARIADB_SHELL_RECORDER_MODE")) {
-    const auto quiet = nullptr != shcore::getenv_shell("MARIADB_SHELL_RECORDER_QUIET");
+    const auto quiet =
+        nullptr != shcore::getenv_shell("MARIADB_SHELL_RECORDER_QUIET");
 
     if (shcore::str_caseeq(mode, "direct") || !*mode) {
       mysqlshdk::db::replay::set_mode(Mode::Direct);

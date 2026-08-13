@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -87,11 +89,11 @@ void parse_list(const std::string &list,
         auto option = shcore::str_split(line, "=", 1, true);
 
         // A value that itself contains a newline (e.g. a secret id with an
-        // embedded '\n', which store() accepts as valid UTF-8) makes secret-tool
-        // wrap it onto a following line that has no '=' separator. Skip such
-        // continuation lines instead of indexing a missing field -- the latter is
-        // out-of-bounds and crashed the helper (SIGSEGV), surfacing to the shell
-        // as an empty "Failed to list secrets:" error.
+        // embedded '\n', which store() accepts as valid UTF-8) makes
+        // secret-tool wrap it onto a following line that has no '=' separator.
+        // Skip such continuation lines instead of indexing a missing field --
+        // the latter is out-of-bounds and crashed the helper (SIGSEGV),
+        // surfacing to the shell as an empty "Failed to list secrets:" error.
         if (option.size() < 2) {
           continue;
         }

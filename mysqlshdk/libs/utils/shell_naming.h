@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +50,8 @@ constexpr const char k_shell_config_dir_win_vendor[] = "MariaDB";
 constexpr const char k_shell_config_dir_win[] = "mariadb-shell";
 
 /** Unix global (system-wide) configuration directory. */
-constexpr const char k_shell_global_config_dir_unix[] = "/etc/mysql/mariadb-shell";
+constexpr const char k_shell_global_config_dir_unix[] =
+    "/etc/mysql/mariadb-shell";
 
 /** Leaf name of the shell's own log file, inside the user config directory. */
 constexpr const char k_shell_log_file_name[] = "mariadb-shell.log";

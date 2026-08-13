@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -171,9 +173,8 @@ void Base_shell::init_scripts(shcore::Shell_core::Mode mode) {
       std::string path;
 
       if (!home.empty()) {
-        path =
-            shcore::path::join_path(home, "share", shcore::k_shell_install_dir_name,
-                                    startup_script);
+        path = shcore::path::join_path(
+            home, "share", shcore::k_shell_install_dir_name, startup_script);
       } else {
         path = shcore::path::join_path(shcore::get_binary_folder(),
                                        startup_script);

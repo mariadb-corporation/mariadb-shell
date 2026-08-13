@@ -1,5 +1,7 @@
 /* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
-   Copyright (c) 2026, MariaDB Corporation.
+   Copyright (c) 2026, MariaDB plc.
+
+   SPDX-License-Identifier: GPL-2.0-only
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -397,9 +399,9 @@ void Shell_test_env::teardown_recorder() {
 std::string Shell_test_env::get_path_to_mysqlsh() {
 // MARIADB_SHELL_HOME will be honored during execution of the tests
 #ifdef _WIN32
-  return shcore::path::join_path(shcore::get_mysqlx_home_path(), "bin",
-                                 std::string{shcore::k_shell_binary_name} +
-                                     ".exe");
+  return shcore::path::join_path(
+      shcore::get_mysqlx_home_path(), "bin",
+      std::string{shcore::k_shell_binary_name} + ".exe");
 #else
   return shcore::path::join_path(shcore::get_mysqlx_home_path(), "bin",
                                  shcore::k_shell_binary_name);

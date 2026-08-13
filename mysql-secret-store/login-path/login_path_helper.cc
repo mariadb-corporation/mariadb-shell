@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -529,7 +531,7 @@ std::string Login_path_helper::load(const Entry &entry) {
   // libmariadb does not implement .mylogin.cnf, my_load_defaults() would
   // return an argv without the password
   return m_invoker.get_secret(entry);
-#else   // !MARIADB_BUILD
+#else  // !MARIADB_BUILD
   static constexpr auto password = "--password=";
   // call to mysql_init() is required to initialize mutexes
   std::unique_ptr<MYSQL, decltype(&mysql_close)> deleter{mysql_init(nullptr),

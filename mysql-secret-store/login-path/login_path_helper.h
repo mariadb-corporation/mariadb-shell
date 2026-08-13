@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +37,7 @@
 #ifdef MARIADB_BUILD
 // MariaDB ships no mysql_config_editor, the login file is handled in-tree
 #include "mysql-secret-store/login-path/login_file.h"
-#else   // !MARIADB_BUILD
+#else  // !MARIADB_BUILD
 #include "mysql-secret-store/login-path/config_editor_invoker.h"
 #endif  // !MARIADB_BUILD
 #include "mysql-secret-store/login-path/entry.h"

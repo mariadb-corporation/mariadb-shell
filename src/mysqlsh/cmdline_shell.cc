@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1200,10 +1202,8 @@ void Command_line_shell::print_banner() {
   std::string welcome_msg("Welcome to the MariaDB Shell ");
   welcome_msg += mysqlshdk::utils::k_shell_version.get_full();
   welcome_msg += ".\n\n";
-  welcome_msg += "Copyright (c) " PACKAGE_YEAR
-                 ", MariaDB Corporation Ab and others.\n"
-                 "Portions Copyright (c) 2016, " PACKAGE_YEAR
-                 ", Oracle and/or its affiliates.";
+  welcome_msg +=
+      "Copyright (c) 2016, " PACKAGE_YEAR ", Oracle, MariaDB plc and others.";
   println(welcome_msg);
   println();
   println("Type '\\help' or '\\?' for help; '\\quit' to exit.");
@@ -1249,7 +1249,8 @@ void Command_line_shell::print_cmd_line_helper() {
   {
     std::string groups;
     if (my_defaults_group_suffix) {
-      for (const auto *g : {shcore::k_shell_option_group, "mysqlsh", "client"}) {
+      for (const auto *g :
+           {shcore::k_shell_option_group, "mysqlsh", "client"}) {
         groups.append(" ").append(g).append(my_defaults_group_suffix);
       }
     }

@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1369,7 +1371,7 @@ void test_available_helpers() {
     op("user@host:33060", "six");                                           \
     op("ssh://user@host.com:22", "test");                                   \
     op("file:/user/host/com", "test");                                      \
-    if (is_login_path() && k_login_path_limits_secret_length) {              \
+    if (is_login_path() && k_login_path_limits_secret_length) {             \
       op("user@host:55555",                                                 \
          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"   \
          "abcdefghijklm");                                                  \

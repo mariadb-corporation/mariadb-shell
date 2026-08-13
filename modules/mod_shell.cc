@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1820,12 +1822,12 @@ REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL35,
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL36,
               "The registered report is also going to be available as a method "
               "of the <b>shell.reports</b> object.");
-
-REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL37,
-              "Users may create custom report files in the <b>init.d</b> "
-              "folder located in the Shell configuration path (by default it "
-              "is <b>~/.mariadb-shell/init.d</b> in Unix and "
-              "<b>@%AppData@%\\MariaDB\\mariadb-shell\\init.d</b> in Windows).");
+REGISTER_HELP(
+    SHELL_REGISTERREPORT_DETAIL37,
+    "Users may create custom report files in the <b>init.d</b> "
+    "folder located in the Shell configuration path (by default it "
+    "is <b>~/.mariadb-shell/init.d</b> in Unix and "
+    "<b>@%AppData@%\\MariaDB\\mariadb-shell\\init.d</b> in Windows).");
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL38,
               "Custom reports may be written in either JavaScript or Python. "
               "The standard file extension for each case should be used to get "

@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -52,9 +54,8 @@ class Shell_application_log_tests : public Shell_core_test_wrapper {
     Shell_core_test_wrapper::SetUp();
     Shell_application_log_tests::i = 0;
 
-    const auto log_path =
-        shcore::path::join_path(shcore::get_user_config_path(),
-                                shcore::k_shell_log_file_name);
+    const auto log_path = shcore::path::join_path(
+        shcore::get_user_config_path(), shcore::k_shell_log_file_name);
     m_logger = shcore::Logger::create_instance(log_path.c_str(), false,
                                                shcore::Logger::LOG_DEBUG);
     m_logger->attach_log_hook(my_hook);

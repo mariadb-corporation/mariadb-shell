@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2015, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -909,14 +911,14 @@ std::shared_ptr<shcore::Logger> setup_logger() {
     // Override the configuration home for tests, to not mess with custom data
     if (!shcore::setenv("MARIADB_SHELL_USER_CONFIG_HOME",
                         shcore::get_binary_folder())) {
-      std::cerr << "MARIADB_SHELL_USER_CONFIG_HOME could not be set with putenv\n";
+      std::cerr
+          << "MARIADB_SHELL_USER_CONFIG_HOME could not be set with putenv\n";
     }
   }
 
   // Setup logger with default configs
-  std::string log_path =
-      shcore::path::join_path(shcore::get_user_config_path(),
-                                shcore::k_shell_log_file_name);
+  std::string log_path = shcore::path::join_path(shcore::get_user_config_path(),
+                                                 shcore::k_shell_log_file_name);
   if (shcore::path_exists(log_path)) {
     std::cerr << "Deleting old " << log_path << " file\n";
     shcore::delete_file(log_path);
@@ -1279,8 +1281,7 @@ int main(int argc, char **argv) {
   std::string mysqlsh_path;
   // The recording shell is supposed to be in the same dir as run_unit_tests
   mysqlsh_path =
-      shcore::path::join_path(shcore::get_binary_folder(),
-                              "mariadb-shell-rec");
+      shcore::path::join_path(shcore::get_binary_folder(), "mariadb-shell-rec");
 #ifdef _WIN32
   mysqlsh_path.append(".exe");
 #endif

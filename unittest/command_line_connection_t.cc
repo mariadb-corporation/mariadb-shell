@@ -1,5 +1,7 @@
 /* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
-   Copyright (c) 2026, MariaDB Corporation.
+   Copyright (c) 2026, MariaDB plc.
+
+   SPDX-License-Identifier: GPL-2.0-only
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -110,7 +112,8 @@ TEST_F(Command_line_connection_test, classic_no_socket_no_port) {
   // On windows a tcp connection is expected
   // If the UT port is the default port, the connection will suceed
   if (_mysql_port == "3306") {
-    MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("Your %vendor% connection id is"));
+    MY_EXPECT_CMD_OUTPUT_CONTAINS(
+        format_vendor("Your %vendor% connection id is"));
     MY_EXPECT_CMD_OUTPUT_CONTAINS(
         "No default schema selected; type \\use <schema> to set one.");
     MY_EXPECT_CMD_OUTPUT_CONTAINS("localhost via TCP/IP");
@@ -135,7 +138,8 @@ TEST_F(Command_line_connection_test, classic_port) {
 
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Creating a Classic session to '" + _user +
                                 "@localhost:" + _mysql_port + "'");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("Your %vendor% connection id is"));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      format_vendor("Your %vendor% connection id is"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "No default schema selected; type \\use <schema> to set one.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("localhost via TCP/IP");

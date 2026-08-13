@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -50,8 +52,8 @@ void Sys::init() {
     auto path = shcore::get_mysqlx_home_path();
 
     if (!path.empty()) {
-      path = shcore::path::join_path(path, "share", shcore::k_shell_install_dir_name,
-                                    "modules", "js");
+      path = shcore::path::join_path(
+          path, "share", shcore::k_shell_install_dir_name, "modules", "js");
     } else {
       // If MYSQLX_HOME not found, sets the current directory as a module path
       path = shcore::get_binary_folder();
@@ -66,7 +68,8 @@ void Sys::init() {
   }
 
   // Finally sees if there are additional configured paths
-  if (const auto custom_paths = shcore::getenv_shell("MARIADB_SHELL_JS_MODULE_PATH")) {
+  if (const auto custom_paths =
+          shcore::getenv_shell("MARIADB_SHELL_JS_MODULE_PATH")) {
     for (const auto &path : shcore::split_string(custom_paths, ";")) {
       if (!path.empty()) {
         _path->emplace_back(path);

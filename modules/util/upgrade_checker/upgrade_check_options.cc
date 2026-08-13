@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -74,8 +76,8 @@ Upgrade_check_options::Upgrade_check_options() {
   filters.schemas().exclude("sys");
 }
 
-const shcore::Option_pack_def<Upgrade_check_options>
-    &Upgrade_check_options::options() {
+const shcore::Option_pack_def<Upgrade_check_options> &
+Upgrade_check_options::options() {
   static const auto opts =
       shcore::Option_pack_def<Upgrade_check_options>()
           .optional("outputFormat", &Upgrade_check_options::output_format)

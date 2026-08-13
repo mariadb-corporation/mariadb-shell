@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2022, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,8 +58,8 @@ Version normalize_auto_completion_server_version(
   return k_current_version;
 }
 
-const shcore::Option_pack_def<Auto_complete_sql_options>
-    &Auto_complete_sql_options::options() {
+const shcore::Option_pack_def<Auto_complete_sql_options> &
+Auto_complete_sql_options::options() {
   static const auto opts =
       shcore::Option_pack_def<Auto_complete_sql_options>()
           .required(server_version_option(),

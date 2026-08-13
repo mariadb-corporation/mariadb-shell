@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -50,8 +52,8 @@ class Ssh_session_options_t : public tests::Shell_base_test {
     // default identity (e.g. %d/.ssh/id_ed25519), whose %d is expanded by
     // Ssh_session_options using shcore::path::home(). If HOME resolved to the
     // real user profile (as it can on Windows, where the test harness leaves it
-    // pointing at USERPROFILE), an existing default key there would be picked up
-    // and get_identity_file() would wrongly return it instead of "".
+    // pointing at USERPROFILE), an existing default key there would be picked
+    // up and get_identity_file() would wrongly return it instead of "".
     const char *orig_home = getenv("HOME");
     m_had_home = orig_home != nullptr;
     if (m_had_home) m_orig_home.assign(orig_home);

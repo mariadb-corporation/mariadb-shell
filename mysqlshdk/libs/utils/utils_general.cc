@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -908,8 +910,9 @@ std::optional<std::string> unescape_glob(const std::string_view pattern) {
 const char *get_long_version() {
 #ifdef MARIADB_BUILD
   // libmariadb's LIBMYSQL_VERSION expands to MARIADB_CLIENT_VERSION_STR, which
-  // is not reachable through the server's <mysql_version.h>; MYSQL_SERVER_VERSION
-  // (e.g. "X.Y.Z-MariaDB") is, and is a proper string literal.
+  // is not reachable through the server's <mysql_version.h>;
+  // MYSQL_SERVER_VERSION (e.g. "X.Y.Z-MariaDB") is, and is a proper string
+  // literal.
   return "Ver " MYSH_VERSION EXTRA_NAME_SUFFIX " for " SYSTEM_TYPE
          " on " MACHINE_TYPE " - for MariaDB " MYSQL_SERVER_VERSION
          " (" MYSQL_COMPILATION_COMMENT ")";
@@ -1074,9 +1077,8 @@ const char *getenv_shell(const char *name) {
     return nullptr;
   }
 
-  const std::string legacy =
-      std::string{k_shell_legacy_env_prefix} +
-      std::string{full.substr(prefix.size())};
+  const std::string legacy = std::string{k_shell_legacy_env_prefix} +
+                             std::string{full.substr(prefix.size())};
 
   return ::getenv(legacy.c_str());
 }

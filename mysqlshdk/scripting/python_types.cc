@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -307,8 +309,8 @@ bool Python_callable::matches_kwargs_arity(size_t argc) const {
   return argc == (m_arg_count + 1);
 }
 
-const std::vector<std::pair<std::string, Value_type>>
-    &Python_callable::signature() const {
+const std::vector<std::pair<std::string, Value_type>> &
+Python_callable::signature() const {
   // TODO:
   static std::vector<std::pair<std::string, Value_type>> tmp;
   return tmp;

@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -116,9 +118,8 @@ bool Test_server::start_server(int start_port, bool use_env_var, bool https) {
     return false;
   }
 
-  const auto shell_executable =
-      shcore::path::join_path(shcore::get_binary_folder(),
-                              shcore::k_shell_binary_name);
+  const auto shell_executable = shcore::path::join_path(
+      shcore::get_binary_folder(), shcore::k_shell_binary_name);
   const auto script =
       shcore::path::join_path(g_test_home, "data", "rest", "test-server.py");
   const auto port_number = std::to_string(m_port);

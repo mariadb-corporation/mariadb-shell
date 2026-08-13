@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,8 +56,8 @@ class Shell_history : public ::testing::Test {
   Shell_history()
       : m_handler(&m_capture, print_capture, print_capture, print_capture) {
     m_config_home = shcore::path::join_path(::getenv("TMPDIR"), "history_test");
-    m_cleanup =
-        tests::Cleanup::set_env_var("MARIADB_SHELL_USER_CONFIG_HOME", m_config_home);
+    m_cleanup = tests::Cleanup::set_env_var("MARIADB_SHELL_USER_CONFIG_HOME",
+                                            m_config_home);
     m_options_file =
         Shell_core_test_wrapper::get_options_file_name("test-options.json");
   }

@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,7 +65,7 @@ constexpr size_t k_login_key_len = 20;        // LOGIN_KEY_LEN
 constexpr size_t k_max_cipher_store_len = 4;  // MAX_CIPHER_STORE_LEN
 constexpr size_t k_unused_len = 4;            // "reserved for future use"
 constexpr size_t k_header_len = k_unused_len + k_login_key_len;  // 24
-constexpr size_t k_line_max = 4096;  // MY_LINE_MAX
+constexpr size_t k_line_max = 4096;                              // MY_LINE_MAX
 constexpr size_t k_aes_block_len = 16;
 
 /*
@@ -134,10 +136,10 @@ std::string aes_encrypt(const Login_key &key, const std::string &plain) {
 
   if (1 != EVP_EncryptInit_ex(ctx.get(), EVP_aes_128_ecb(), nullptr, rkey,
                               nullptr) ||
-      1 != EVP_EncryptUpdate(ctx.get(), out, &update_len,
-                             reinterpret_cast<const unsigned char *>(
-                                 plain.data()),
-                             static_cast<int>(plain.length())) ||
+      1 != EVP_EncryptUpdate(
+               ctx.get(), out, &update_len,
+               reinterpret_cast<const unsigned char *>(plain.data()),
+               static_cast<int>(plain.length())) ||
       1 != EVP_EncryptFinal_ex(ctx.get(), out + update_len, &final_len)) {
     ERR_clear_error();
     throw Helper_exception{"Failed to encrypt the login file"};
@@ -173,7 +175,8 @@ std::string aes_decrypt(const Login_key &key, const char *cipher,
         "Failed to decrypt the login file, it may be corrupted"};
   }
 
-  plain.resize(static_cast<size_t>(update_len) + static_cast<size_t>(final_len));
+  plain.resize(static_cast<size_t>(update_len) +
+               static_cast<size_t>(final_len));
 
   return plain;
 }
@@ -252,7 +255,8 @@ class Login_file_lock final {
     // bounded, so a pathologically busy store cannot spin here forever - the
     // lock is advisory, losing it only costs us the guarantee
     for (int attempt = 0; attempt < 10; ++attempt) {
-      m_fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+      m_fd =
+          ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
 
       if (m_fd < 0) {
         // the file cannot be opened for writing - let the operation itself
@@ -388,9 +392,8 @@ Contents read_contents(const std::string &path) {
                              "\" is corrupted, invalid record length"};
     }
 
-    contents.plain +=
-        aes_decrypt(contents.key, data.data() + pos,
-                    static_cast<size_t>(cipher_len));
+    contents.plain += aes_decrypt(contents.key, data.data() + pos,
+                                  static_cast<size_t>(cipher_len));
     pos += static_cast<size_t>(cipher_len);
   }
 
@@ -499,7 +502,7 @@ void write_contents(const std::string &path, const Contents &contents) {
 
     if (!f.is_open()) {
       throw Helper_exception{"Failed to create a temporary file next to \"" +
-                            path + "\""};
+                             path + "\""};
     }
 
     f.write(data.data(), data.length());

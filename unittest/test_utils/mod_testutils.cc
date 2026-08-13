@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -4438,16 +4440,14 @@ std::vector<const char *> prepare_mysqlsh_cmdline(
   setup_recorder_environment();
 
   if (executable_path == k_shell_recorder_binary_name) {
-    mysqlsh_found_path->assign(
-        shcore::path::join_path(shcore::get_binary_folder(),
-                                k_shell_recorder_binary_name));
+    mysqlsh_found_path->assign(shcore::path::join_path(
+        shcore::get_binary_folder(), k_shell_recorder_binary_name));
   } else if (executable_path.empty()) {
     if (mysqlshdk::db::replay::g_replay_mode !=
         mysqlshdk::db::replay::Mode::Direct) {
       // use the recording binary unless in direct mode
-      mysqlsh_found_path->assign(
-          shcore::path::join_path(shcore::get_binary_folder(),
-                                k_shell_recorder_binary_name));
+      mysqlsh_found_path->assign(shcore::path::join_path(
+          shcore::get_binary_folder(), k_shell_recorder_binary_name));
     } else {
       mysqlsh_found_path->assign(mysqlsh_path);
     }

@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -200,9 +202,8 @@ TEST(Cmdline_shell, help) {
       "Welcome to the MariaDB Shell " +
       mysqlshdk::utils::k_shell_version.get_full() +
       ".\n\n"
-      "Copyright (c) " PACKAGE_YEAR
-      ", MariaDB Corporation Ab and others.\n"
-      "Portions Copyright (c) 2016, 2026, Oracle and/or its affiliates.\n\n\n\n"
+      "Copyright (c) 2016, " PACKAGE_YEAR
+      ", Oracle, MariaDB plc and others.\n\n\n\n"
       "Type '\\help' or '\\?' for help; '\\quit' to exit.\n\n";
   EXPECT_EQ(expected, capture);
 
@@ -212,13 +213,12 @@ TEST(Cmdline_shell, help) {
 // PORT-TODO: Disabling this test, not critical
 #ifndef MARIADB_BUILD
 TEST(Cmdline_shell, cmd_edit_with_history) {
-  shcore::setenv(
-      "EDITOR",
-      shcore::path::join_path(shcore::get_binary_folder(),
-                              shcore::k_shell_binary_name) +
-          " --file " +
-          shcore::path::join_path(g_test_home, "data", "py",
-                                  "edit_command.py"));
+  shcore::setenv("EDITOR",
+                 shcore::path::join_path(shcore::get_binary_folder(),
+                                         shcore::k_shell_binary_name) +
+                     " --file " +
+                     shcore::path::join_path(g_test_home, "data", "py",
+                                             "edit_command.py"));
 
   mysqlsh::Command_line_shell shell(std::make_shared<Shell_options>());
 

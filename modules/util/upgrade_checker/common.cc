@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -276,8 +278,8 @@ void Checker_cache::cache_tables_and_views(mysqlshdk::db::ISession *session) {
   }
 }
 
-const std::unordered_map<std::string, Checker_cache::Table_info>
-    &Checker_cache::cache_tables(mysqlshdk::db::ISession *session) {
+const std::unordered_map<std::string, Checker_cache::Table_info> &
+Checker_cache::cache_tables(mysqlshdk::db::ISession *session) {
   if (!m_views.empty() || !m_tables.empty()) {
     return m_tables;
   }
@@ -287,8 +289,8 @@ const std::unordered_map<std::string, Checker_cache::Table_info>
   return m_tables;
 }
 
-const std::unordered_map<std::string, Checker_cache::Table_info>
-    &Checker_cache::cache_views(mysqlshdk::db::ISession *session) {
+const std::unordered_map<std::string, Checker_cache::Table_info> &
+Checker_cache::cache_views(mysqlshdk::db::ISession *session) {
   if (!m_views.empty() || !m_tables.empty()) {
     return m_views;
   }

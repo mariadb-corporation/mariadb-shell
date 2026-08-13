@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +42,7 @@
 #pragma clang diagnostic ignored "-Wmacro-redefined"
 #endif
 #include <mysql.h>
+
 #include <my_global.h>
 #if defined(__clang__)
 #pragma clang diagnostic pop
@@ -51,8 +54,8 @@
 // depends on them), but must not leak their unguarded Windows POSIX-compat
 // macros (sleep/setenv/strtok_r) to the many TUs that include debug.h and call
 // shcore::sleep / shcore::setenv. Undo them here at the gateway. Inert off
-// Windows/MySQL. (Direct includers of my_config.h still need their own cleanup.)
-#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
+// Windows/MySQL. (Direct includers of my_config.h still need their own
+// cleanup.)
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -60,6 +63,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include "mysqlshdk/libs/utils/mariadb_win_undef.h"
 
 namespace shcore {
 namespace debug {

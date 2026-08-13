@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -445,7 +447,7 @@ inline bool is_off_cycle_release(const Version &v) {
     return v.get_patch();
   }
 
-  if (const off_cycle_releases_t * patch_versions;
+  if (const off_cycle_releases_t *patch_versions;
       off_cycle_releases(v, &patch_versions)) {
     return std::binary_search(patch_versions->begin(), patch_versions->end(),
                               v.get_patch());
@@ -481,7 +483,7 @@ inline int count_planned_releases(const Version &v) {
 inline int count_off_cycle_releases(const Version &v) {
   assert(is_lts(v));
 
-  if (const off_cycle_releases_t * patch_versions;
+  if (const off_cycle_releases_t *patch_versions;
       off_cycle_releases(v, &patch_versions)) {
     int count = patch_versions->size();
 
@@ -547,7 +549,7 @@ std::vector<Version> corresponding_versions(const Version &version) {
                                            bool allow_off_cycle) {
     // we have the number of planned releases, but we need to adjust this
     // number by the number of off-cycle releases that happened in between
-    if (const off_cycle_releases_t * patch_versions;
+    if (const off_cycle_releases_t *patch_versions;
         detail::off_cycle_releases(major, &patch_versions)) {
       // add all off-cycle releases
       releases += patch_versions->size();
