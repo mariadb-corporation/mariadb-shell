@@ -13,8 +13,7 @@ License information can be found in the [LICENSE](LICENSE) file.
 This distribution may include materials developed by third parties. For license
 and attribution notices for these materials, please refer to the [LICENSE](LICENSE) file.
 
-Contributing information for code and non-code submissions can be found in the
-[CONTRIBUTING.md](CONTRIBUTING.md) file.
+Contributing information  be found in the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 The shell installs as `mariadb-shell`; `msh` is provided as a short alias.
 
