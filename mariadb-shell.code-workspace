@@ -5,7 +5,25 @@
 		}
 	],
 	"settings": {
-		"terminal.integrated.scrollback": 1000000
+		"terminal.integrated.scrollback": 1000000,
+		// LICENSE, COPYING and friends have no file extension, so VSCode's
+		// content-based language detection classifies them as Markdown. The
+		// markdown extensions then "fix" the text: Markdown All in One
+		// renumbers ordered lists to start at 1, rewriting the GPLv2 "0. This
+		// License applies to..." clause into "1.". Pinning the language to
+		// plaintext keeps every markdown tool away from these files.
+		"files.associations": {
+			"LICENSE": "plaintext",
+			"LICENSE.*": "plaintext",
+			"COPYING": "plaintext",
+			"COPYING.*": "plaintext",
+			"NOTICE": "plaintext"
+		},
+		// Legal texts are reproduced verbatim; never let a save reformat them.
+		"[plaintext]": {
+			"editor.formatOnSave": false,
+			"files.trimTrailingWhitespace": false
+		}
 	},
 	"launch": {
 		"version": "0.2.0",
