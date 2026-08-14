@@ -382,5 +382,3 @@ $ ./run_unit_tests
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
 
-SPDX-License-Identifier: GPL-2.0-only
-

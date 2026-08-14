@@ -3,8 +3,6 @@
 Copyright (c) 2016, 2026, Oracle and/or its affiliates.
 Copyright (c) 2026, MariaDB plc.
 
-SPDX-License-Identifier: GPL-2.0-only
-
 MariaDB Shell is an advanced client and code editor for MariaDB. It is derived
 from MySQL Shell and adapted to build and run against MariaDB server sources and
 the MariaDB Connector/C.
@@ -13,8 +11,7 @@ License information can be found in the [LICENSE](LICENSE) file.
 This distribution may include materials developed by third parties. For license
 and attribution notices for these materials, please refer to the [LICENSE](LICENSE) file.
 
-Contributing information for code and non-code submissions can be found in the
-[CONTRIBUTING.md](CONTRIBUTING.md) file.
+Contributing information  be found in the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 The shell installs as `mariadb-shell`; `msh` is provided as a short alias.
 
