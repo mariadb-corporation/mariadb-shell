@@ -3813,6 +3813,140 @@ TEST_F(Instance_cache_test, filter_libraries) {
 }
 #endif
 
+// MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
+// share the table namespace, so they are enumerated and filtered as tables but
+// kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md
+// section 4.5.1
+TEST_F(Instance_cache_test, filter_sequences) {
+  if (!common::supports_sequences(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  {
+    // setup
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE SEQUENCE first.one;");
+    m_session->execute("CREATE SEQUENCE first.two;");
+    // a table and a view in the same schema, to show the three are told apart
+    m_session->execute("CREATE TABLE first.three (id INT);");
+    m_session->execute("CREATE VIEW first.four AS SELECT * FROM first.three;");
+    m_session->execute("CREATE SCHEMA second;");
+    m_session->execute("CREATE SEQUENCE second.one;");
+    m_session->execute("CREATE SEQUENCE second.two;");
+    m_session->execute("CREATE SCHEMA third;");
+    m_session->execute("CREATE SEQUENCE third.one;");
+    m_session->execute("CREATE SEQUENCE third.two;");
+  }
+
+  const auto EXPECT_SEQUENCES =
+      [](const Instance_cache &cache, const std::string &schema,
+         const std::unordered_set<std::string> &expected) {
+        SCOPED_TRACE("schema: " + schema);
+
+        const auto it = cache.schemas.find(schema);
+        ASSERT_TRUE(cache.schemas.end() != it)
+            << "cache does not contain schema `" << schema << "`";
+        EXPECT_EQ(expected, it->second.sequences);
+      };
+
+  const auto only_test_schemas = [](Filtering_options *filters) {
+    // makes the counts independent of whatever else the instance holds
+    filters->schemas().include(std::array{"first", "second", "third"});
+  };
+
+  {
+    SCOPED_TRACE("all filters are empty");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one", "two"});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(6, cache.filtered.sequences);
+
+    // a sequence is neither a table nor a view, and does not inflate either
+    // count - which it did before it had a map of its own
+    Instance_cache::Schema expected;
+    expected.tables["three"];
+    expected.views["four"];
+    verify(cache, "first", expected);
+
+    EXPECT_EQ(1, cache.total.tables);
+    EXPECT_EQ(1, cache.filtered.tables);
+    EXPECT_EQ(1, cache.total.views);
+    EXPECT_EQ(1, cache.filtered.views);
+  }
+
+  {
+    SCOPED_TRACE("exclude a sequence in one schema");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().exclude("third", "two");
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one"});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(5, cache.filtered.sequences);
+  }
+
+  {
+    SCOPED_TRACE("exclude all sequences in one schema, and a table");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().exclude("first", std::array{"one", "two", "three"});
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one", "two"});
+
+    EXPECT_EQ(4, cache.filtered.sequences);
+    EXPECT_EQ(0, cache.filtered.tables);
+  }
+
+  {
+    SCOPED_TRACE("include one sequence - everything else is excluded");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().include("second", "one");
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {});
+    EXPECT_SEQUENCES(cache, "second", {"one"});
+    EXPECT_SEQUENCES(cache, "third", {});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(1, cache.filtered.sequences);
+    EXPECT_EQ(0, cache.filtered.tables);
+  }
+
+  {
+    SCOPED_TRACE("exclude the schema a sequence lives in");
+
+    Filtering_options filters;
+    filters.schemas().include(std::array{"first", "second"});
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_TRUE(cache.schemas.end() == cache.schemas.find("third"));
+
+    EXPECT_EQ(4, cache.total.sequences);
+    EXPECT_EQ(4, cache.filtered.sequences);
+  }
+}
+
 TEST_F(Instance_cache_test, filter_triggers) {
   {
     // setup
@@ -4799,7 +4933,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 6, 3, 0, 0, 0, 12}, cache.filtered);
+    EXPECT_STATS({3, 6, 3, 0, 0, 0, 0, 12}, cache.filtered);
   }
 
   {
@@ -4822,7 +4956,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 6, 3, 0, 0, 0, 4}, cache.filtered);
+    EXPECT_STATS({3, 6, 3, 0, 0, 0, 0, 4}, cache.filtered);
   }
 
   {
@@ -4844,7 +4978,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 2, 1, 0, 0, 0, 4}, cache.filtered);
+    EXPECT_STATS({3, 2, 1, 0, 0, 0, 0, 4}, cache.filtered);
   }
 
   {
@@ -4868,7 +5002,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 2, 1, 0, 0, 0, 2}, cache.filtered);
+    EXPECT_STATS({3, 2, 1, 0, 0, 0, 0, 2}, cache.filtered);
   }
 }
 

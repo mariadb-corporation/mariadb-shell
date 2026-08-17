@@ -2394,6 +2394,8 @@ Dump_loader::filter_schema_objects(const std::string &schema) const {
           execute = m_dump->include_routine(schema, name);
         } else if (shcore::str_caseeq(type, "LIBRARY")) {
           execute = m_dump->include_library(schema, name);
+        } else if (shcore::str_caseeq(type, "SEQUENCE")) {
+          execute = m_dump->include_sequence(schema, name);
         }
 
         return execute;
@@ -4155,6 +4157,7 @@ bool Dump_loader::check_existing_schema_objects() {
     std::list<Dump_reader::Object_info *> procedures;
     std::list<Dump_reader::Object_info *> libraries;
     std::list<Dump_reader::Object_info *> events;
+    std::list<Dump_reader::Object_info *> sequences;
 
     if (!set_object_exists(schema, &schemas)) {
       log_info(
@@ -4164,7 +4167,7 @@ bool Dump_loader::check_existing_schema_objects() {
     }
 
     if (!m_dump->schema_objects(schema, &tables, &views, &triggers, &functions,
-                                &procedures, &libraries, &events))
+                                &procedures, &libraries, &events, &sequences))
       continue;
 
     result = query_names(m_reconnect_callback, m_session, schema, tables,
@@ -4219,6 +4222,17 @@ bool Dump_loader::check_existing_schema_objects() {
     if (result)
       has_duplicates |= report_duplicate_schema_objects("an event", schema,
                                                         &events, result.get());
+
+    // I_S.TABLES reports a sequence as well, but only I_S.SEQUENCES says it is
+    // one - and the tables query above cannot see them, because a dumped
+    // sequence is never in the list of tables
+    result =
+        query_names(m_reconnect_callback, m_session, schema, sequences,
+                    "SELECT sequence_name FROM information_schema.sequences"
+                    " WHERE sequence_schema = ? AND sequence_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a sequence", schema, &sequences, result.get());
   }
 
   // mark the remaining schemas as non-existing
@@ -4316,12 +4330,15 @@ void Dump_loader::execute_drop_ddl_tasks() {
   list_t procedures;  // progress::Schema_ddl
   list_t libraries;   // progress::Schema_ddl
   list_t events;      // progress::Schema_ddl
+  list_t sequences;   // progress::Schema_ddl
 
+  // sequences go last: a table can default to NEXT VALUE FOR one of them, so
+  // the tables are dropped first
   std::vector<Objects> all_objects{
       {&tables, "TABLE"},         {&views, "VIEW"},
       {&triggers, "TRIGGER"},     {&functions, "FUNCTION"},
       {&procedures, "PROCEDURE"}, {&libraries, "LIBRARY"},
-      {&events, "EVENT"},
+      {&events, "EVENT"},         {&sequences, "SEQUENCE"},
   };
 
   const Dump_reader::Object_info *schema;
@@ -4390,11 +4407,12 @@ void Dump_loader::execute_drop_ddl_tasks() {
         // table progress is tracked separately, but once schema DDL is done
         // all tables are also done, only triggers may be pending
         m_dump->schema_objects(schema->name, nullptr, nullptr, &triggers,
-                               nullptr, nullptr, nullptr, nullptr);
+                               nullptr, nullptr, nullptr, nullptr, nullptr);
       } else {
         // fetch all objects
         m_dump->schema_objects(schema->name, &tables, &views, &triggers,
-                               &functions, &procedures, &libraries, &events);
+                               &functions, &procedures, &libraries, &events,
+                               &sequences);
         // some of the tables may be completed
         remove_completed(&tables, table_status);
         // just in case drop both views and tables with these names
@@ -5572,6 +5590,22 @@ void Dump_loader::Sql_transform::add_execution_condition(
     while (it.valid()) {
       auto token = it.next_token();
 
+      // the position of a MariaDB sequence is restored with DO SETVAL(seq,...),
+      // which is neither a CREATE nor a DROP, but has to be filtered out
+      // together with the sequence it belongs to
+      if (shcore::str_caseeq(token, "DO")) {
+        if (!shcore::str_caseeq(it.next_token(), "SETVAL")) break;
+        // (
+        if (!shcore::str_caseeq(it.next_token(), "(")) break;
+
+        std::string object_name;
+        shcore::split_schema_and_table(std::string{it.next_token()}, nullptr,
+                                       &object_name, true);
+
+        execute = f("SEQUENCE", object_name);
+        break;
+      }
+
       if (!shcore::str_caseeq(token, "CREATE", "ALTER", "DROP")) continue;
 
       auto type = it.next_token();
@@ -5593,7 +5627,7 @@ void Dump_loader::Sql_transform::add_execution_condition(
       }
 
       if (shcore::str_caseeq(type, "EVENT", "FUNCTION", "PROCEDURE", "LIBRARY",
-                             "TRIGGER")) {
+                             "TRIGGER", "SEQUENCE")) {
         auto name = it.next_token();
 
         if (shcore::str_caseeq(name, "IF")) {

@@ -4962,6 +4962,10 @@ std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_complete_schema(
     m->dump(&Schema_dumper::write_comment, schema, std::string{});
     m->dump(&Schema_dumper::dump_schema_ddl, schema);
 
+    if (m_options.dump_sequences()) {
+      m->dump(&Schema_dumper::dump_sequences_ddl, schema);
+    }
+
     if (m_options.dump_events()) {
       m->dump(&Schema_dumper::dump_events_ddl, schema);
     }
@@ -4978,9 +4982,16 @@ std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_complete_schema(
 
 std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_schema(
     Schema_dumper *dumper, const std::string &schema) const {
-  return dump_ddl(dumper, [&schema](Memory_dumper *m) {
+  return dump_ddl(dumper, [&schema, this](Memory_dumper *m) {
     m->dump(&Schema_dumper::write_comment, schema, std::string{});
     m->dump(&Schema_dumper::dump_schema_ddl, schema);
+
+    // sequences travel with the schema itself rather than in a file of their
+    // own: they have to exist before any table which defaults to NEXT VALUE FOR
+    // one of them, and the schema script is the first thing the loader runs
+    if (m_options.dump_sequences()) {
+      m->dump(&Schema_dumper::dump_sequences_ddl, schema);
+    }
   });
 }
 
@@ -5779,6 +5790,22 @@ void Dumper::write_schema_metadata(
       }
 
       doc.AddMember(StringRef("libraries"), std::move(libraries), a);
+    }
+
+    // written only when there is something to write, so that a dump taken from
+    // a server which has no sequences at all looks exactly as it did before
+    if (m_options.dump_sequences()) {
+      if (const auto &names = dumper->get_sequences(schema.name);
+          !names.empty()) {
+        // list of sequences
+        Value sequences{Type::kArrayType};
+
+        for (const auto &sequence : names) {
+          sequences.PushBack({sequence.c_str(), a}, a);
+        }
+
+        doc.AddMember(StringRef("sequences"), std::move(sequences), a);
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2000, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1428,6 +1428,89 @@ std::vector<Compatibility_issue> Schema_dumper::dump_libraries_for_db(
   return {};
 }
 
+/*
+  dump_sequences_for_db
+  -- retrieves the list of sequences for a given db and prints out both the
+  CREATE SEQUENCE statement and the statement which restores the position the
+  sequence was at.
+
+  Follows get_sequence_structure() in client/mysqldump.cc: the definition comes
+  from SHOW CREATE SEQUENCE, but the position does not - I_S.SEQUENCES only
+  describes the sequence, so the current value has to be read from the sequence
+  read as a table. SETVAL() with is_used = 0 makes the next NEXT VALUE FOR
+  return exactly that value.
+
+  See MARIADB_DUMP_LOAD.md section 4.5.1.
+*/
+std::vector<Compatibility_issue> Schema_dumper::dump_sequences_for_db(
+    IFile *sql_file, const std::string &db) {
+  print_comment(sql_file, false,
+                "\n--\n-- Dumping sequences for database '%s'\n--\n\n",
+                fix_identifier_with_newline(db).c_str());
+
+  const auto &sequences = get_sequences(db);
+
+  if (sequences.empty()) {
+    return {};
+  }
+
+  for (const auto &sequence : sequences) {
+    const auto qualified_name = quote(db, sequence);
+    const auto sequence_name = shcore::quote_identifier(sequence);
+
+    log_debug("retrieving CREATE SEQUENCE for %s", qualified_name.c_str());
+
+    // each result has to be consumed before the next query is sent, the row it
+    // handed out does not outlive it
+    std::string ddl;
+
+    {
+      const auto res =
+          query_log_and_throw("SHOW CREATE SEQUENCE " + qualified_name);
+      const auto row = res->fetch_one();
+
+      if (!row || row->is_null(1)) {
+        // dump_sequences_ddl() adds the schema this happened in
+        throw std::runtime_error("No create sequence statement for " +
+                                 qualified_name);
+      }
+
+      ddl = row->get_string(1);
+    }
+
+    // the cached values are gone the moment the sequence is dumped, exactly as
+    // they are on a server restart, so this is the next value which was not
+    // handed out yet - never one which was
+    std::string position;
+
+    {
+      const auto res = query_log_and_throw(
+          "SELECT next_not_cached_value FROM " + qualified_name);
+
+      if (const auto row = res->fetch_one(); row && !row->is_null(0)) {
+        // read as a string, the column is a 64 bit integer whose signedness
+        // follows the type the sequence was declared with
+        position = row->get_as_string(0);
+      }
+    }
+
+    Object_guard_msg guard{sql_file, "sequence", db, sequence_name};
+
+    if (opt_drop_sequence || opt_reexecutable) {
+      fprintf(sql_file, "DROP SEQUENCE IF EXISTS %s;\n", sequence_name.c_str());
+    }
+
+    fprintf(sql_file, "%s;\n", ddl.c_str());
+
+    if (!position.empty()) {
+      fprintf(sql_file, "DO SETVAL(%s, %s, 0);\n", sequence_name.c_str(),
+              position.c_str());
+    }
+  }
+
+  return {};
+}
+
 std::vector<Compatibility_issue> Schema_dumper::check_ct_for_mysqlaas(
     const std::string &db, const std::string &table,
     std::string *create_table) {
@@ -2810,6 +2893,26 @@ std::vector<Compatibility_issue> Schema_dumper::dump_libraries_ddl(
 const std::unordered_set<std::string> &Schema_dumper::get_libraries(
     const std::string &db) {
   return m_cache.schemas.at(db).libraries;
+}
+
+std::vector<Compatibility_issue> Schema_dumper::dump_sequences_ddl(
+    IFile *file, const std::string &db) {
+  if (!common::supports_sequences(m_cache.server.version)) {
+    return {};
+  }
+
+  try {
+    log_debug("Dumping sequences for database %s", db.c_str());
+    init_dumping(file, db, nullptr);
+    return dump_sequences_for_db(file, db);
+  } catch (const std::exception &e) {
+    THROW_ERROR(SHERR_DUMP_SD_SEQUENCE_DDL_ERROR, db.c_str(), e.what());
+  }
+}
+
+const std::unordered_set<std::string> &Schema_dumper::get_sequences(
+    const std::string &db) {
+  return m_cache.schemas.at(db).sequences;
 }
 
 namespace {

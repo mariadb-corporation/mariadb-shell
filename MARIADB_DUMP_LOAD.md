@@ -364,9 +364,9 @@ TABLESPACES, CHECK_CONSTRAINTS, SEQUENCES`.
 
 **Missing object types MariaDB has and the dumper does not know about** — all
 **in scope** (decided), since under vendor→vendor fidelity a MariaDB dump that
-silently omits objects is data loss, not a limitation: `SEQUENCES` (10.3+),
-`CHECK_CONSTRAINTS` as first-class I_S rows, and Oracle-mode `PACKAGE` /
-`PACKAGE BODY` routines. These are net-new work, not substitutions.
+silently omits objects is data loss, not a limitation: ~~`SEQUENCES` (10.3+)~~
+**done, §16**, `CHECK_CONSTRAINTS` as first-class I_S rows, and Oracle-mode
+`PACKAGE` / `PACKAGE BODY` routines. These are net-new work, not substitutions.
 
 #### 4.5.1 Sequences — the recipe MariaDB's own `mysqldump` uses
 
@@ -374,11 +374,15 @@ Worth following exactly, because the reference implementation is right there in
 `client/mysqldump.cc` and it settles the awkward questions (ordering, state,
 exclusion from the table path).
 
-**The bug today:** sequences are silently dropped. `I_S.TABLES` reports them with
-`TABLE_TYPE='SEQUENCE'`, and the table loop
-([instance_cache.cc:455](modules/util/dump/instance_cache.cc#L455)) only routes
-`BASE TABLE` and `VIEW` — anything else falls through to the `views` map or is
-ignored. No warning, no error; the sequence simply is not in the dump.
+**The bug today** — measured, and worse than "silently dropped": a schema
+containing a sequence **cannot be dumped at all**. `I_S.TABLES` reports sequences
+with `TABLE_TYPE='SEQUENCE'`, and the table loop
+([instance_cache.cc:455](modules/util/dump/instance_cache.cc#L455)) routes
+`BASE TABLE` to `tables` and *everything else* to `views`. So a sequence is
+cached as a view, counted as one (`1 table, 2 out of 0 views` for a schema with
+two sequences — the totals query does filter on `TABLE_TYPE`, the routing does
+not), and then `dump_view_ddl` looks it up in `I_S.VIEWS`, finds nothing and
+throws `unordered_map::at: key not found`, which aborts the dump. Fixed in §16.
 
 **What `mysqldump` does** (`get_sequence_structure`,
 `client/mysqldump.cc:3155-3198`), gated on server ≥ 10.3.0
@@ -400,12 +404,18 @@ ignored. No warning, no error; the sequence simply is not in the dump.
    no chunking and no locks.
 
 Mapping onto the shell: sequences want their own `Instance_cache::Schema` map
-(alongside `tables` / `views` / `events` / `routines`), their own filter options
-(`excludeSequences` / `includeSequences`, for symmetry with the other object
-types), a `Schema_dumper::dump_sequences`, a `sequences` count in the per-schema
-metadata, and a `supports_sequences()` predicate per §7.3. Because they carry
-state but no bulk data, they belong in the DDL pass — not the chunked-data
-machinery — which keeps them well clear of §4.7.
+(alongside `tables` / `views` / `events` / `routines`), a
+`Schema_dumper::dump_sequences`, a `sequences` list in the per-schema metadata,
+and a `supports_sequences()` predicate per §7.3. Because they carry state but no
+bulk data, they belong in the DDL pass — not the chunked-data machinery — which
+keeps them well clear of §4.7.
+
+They do **not** want filter options of their own (`excludeSequences` /
+`includeSequences`), which is what this section originally proposed: a sequence
+shares the *table* namespace — `CREATE TABLE s` fails if sequence `s` exists — so
+the table filters are the ones that have to select it, which is also what
+`mysqldump` does (`include_table()` is applied to the sequence list at
+`mysqldump.cc:5949`). See §16.2.
 
 ### 4.6 DDL generation (`Schema_dumper`) — **partly done already**
 
@@ -718,7 +728,7 @@ needs that do not exist yet:
 `supports_backup_stage` (MariaDB ≥ 10.4 · MySQL false) ·
 `supports_lock_instance_for_backup` (MySQL ≥ 8.0 · MariaDB false) ·
 `supports_roles` (MariaDB ≥ 10.0.5 · MySQL ≥ 8.0) ·
-`supports_sequences` (MariaDB ≥ 10.3 · MySQL false) ·
+~~`supports_sequences` (MariaDB ≥ 10.3 · MySQL false)~~ **added in §16** ·
 `supports_check_constraints` · `supports_packages` (MariaDB Oracle mode) ·
 `supports_histograms` (MySQL ≥ 8.0 · MariaDB via `mysql.column_stats`) ·
 `supports_invisible_pk` (MySQL ≥ 8.0.30 · MariaDB false) ·
@@ -831,6 +841,7 @@ mechanical enough to check by diffing dumps of the same MySQL instance.
 - **`util.copy*` is in scope** — see the note below.
 - **Sequences, check constraints and Oracle-mode packages are in scope** (§4.5.1).
   A MariaDB dump that silently omits a sequence is data loss, not a limitation.
+  Sequences are **done** (§16).
 - **Nothing is removed.** MySQL-only features are gated or predicated off for
   MariaDB, keeping MySQL→MySQL fully supported (§4.11).
 - **The vendor-aware predicates live in a new
@@ -879,7 +890,11 @@ predicates without it.
 | 2 | ~~**Vendor-aware gating**~~ **DONE** (§13) — 5.6 remap gone from the MariaDB build; `common/dump/server_features.h` holds 28 vendor-aware predicates; every `is_*` and `Version` gate converted; manifest carries `vendor`; cross-vendor load, copy and `ocimds` refused. | The foundation, and where most of §4.11 turns itself off for free. |
 | 3 | ~~**`BACKUP STAGE`**~~ **DONE** (§14) — `BACKUP STAGE START` + `BLOCK_DDL` in a dedicated session is the backup lock on MariaDB, guarded by `RELOAD`; `FLUSH TABLES WITH READ LOCK` is kept for the snapshot window. | The locking-session redesign was the work, as predicted. |
 | 4 | ~~**GTID**~~ **DONE** (§15) — the dump carries `gtid_current_pos`, `updateGtidSet` restores it into `gtid_slave_pos`, and the domain-position set algebra the loader's checks need is in `mysqlshdk/libs/mysql/mariadb_gtid.h`. | There was no binlog-port GTID model to reuse: §11.2 found that port was never written. |
-| 5 | **MariaDB-native objects**: sequences (§4.5.1), check constraints, Oracle-mode packages, users/roles/grants. | Largest chunk. Sequences first — smallest and closes a silent-data-loss gap; users/roles is the long pole and unblocks `users: true`. |
+| 5 | **MariaDB-native objects.** Largest chunk, so it is split by object type — each part is independent and ships on its own. | Sequences first, they are the smallest; users/roles/grants is the long pole and unblocks `users: true`. |
+| 5a | ~~**Sequences** (§4.5.1)~~ **DONE** (§16) — enumerated and filtered as tables, dumped as DDL with the position restored by `DO SETVAL`, dropped and duplicate-checked on load. | The gap turned out to abort the dump, not merely lose data. |
+| 5b | **Check constraints** — `I_S.CHECK_CONSTRAINTS` as first-class rows (§4.5). | Carried inside `SHOW CREATE TABLE` today, so this is about the checks and filters around them, not about the DDL text. |
+| 5c | **Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5). | Needs `sql_mode=ORACLE` to exist at all; smallest surface after sequences. |
+| 5d | **Users, roles and grants** (§4.2, §4.6) — removes `throw_if_cannot_dump_users()` and 52037. | The long pole: `SHOW CREATE USER` omits roles, `IDENTIFIED VIA x OR y` has no MySQL form, and the auth plugins differ. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
 ---
@@ -1721,3 +1736,179 @@ exercised before):
   called from nowhere. The shell carries the GTID set in the manifest instead.
 - `Dump_reader::show_metadata()` still labels the value `Executed_GTID_set` for
   both vendors.
+
+---
+
+## 16. Phase 5a — done
+
+Landed 2026-08-17. Goal was §4.5.1: make the dump carry MariaDB sequences, and
+make the load put them back where they were.
+
+**Are sequences supported now? Yes** — on the vendor → vendor path this port is
+for (MariaDB build, MariaDB source, MariaDB target) they are a first-class object
+type: dumped with both their definition and their current position, restored to
+that position, selected by the table filters, dropped by `dropExistingObjects`,
+and reported by the pre-existing-object check. There is one case that still
+leaves them out, and it is out of scope by §6 rather than unfinished: a **MySQL
+build** reading a MariaDB server, which by design writes MySQL-shaped dumps and
+cannot express a sequence at all (§16.4).
+
+The gap this closes was worse than §4.5.1 described. Sequences were not silently
+dropped — they were cached as **views**, and `dumpSchemas` of any schema holding
+one died with `unordered_map::at: key not found`, aborting the whole dump.
+§4.5.1 now records what was measured.
+
+### 16.1 What a sequence is, measured
+
+On MariaDB 12.3.2. A sequence is a one-row table wrapped in sequence semantics,
+so it is visible in three places at once, and each one tells a different part of
+the story:
+
+| Source | What it gives | What it does not |
+|---|---|---|
+| `I_S.TABLES` | the sequence exists (`TABLE_TYPE='SEQUENCE'`, `ENGINE`, `TABLE_ROWS=1`) | anything about the sequence itself |
+| `I_S.SEQUENCES` | the static definition — `START_VALUE`, `MINIMUM_VALUE`, `MAXIMUM_VALUE`, `INCREMENT`, `CYCLE_OPTION` | **the current position**, and `CACHE` |
+| the sequence read as a table | `next_not_cached_value`, `cycle_count`, and the definition | — |
+
+So the dump needs two queries, which is exactly what `mysqldump` does: `SHOW
+CREATE SEQUENCE` for the definition (it prints `cache`/`nocache` and
+`cycle`/`nocycle`, which `I_S.SEQUENCES` does not), and `SELECT
+next_not_cached_value FROM <seq>` for the position.
+
+**`next_not_cached_value` is ahead of the value last handed out, by design.** A
+sequence with `CACHE 1000 INCREMENT BY 5` that has produced exactly one value
+(`100`) reports `5100`: the cache reserved a thousand values up front. Restoring
+`5100` is therefore correct rather than lossy — it is the same value the server
+itself would resume from after a restart, and it can only skip values, never
+repeat one. Fixtures that want a predictable number use `NOCACHE`.
+
+`DO SETVAL(<seq>, <value>, 0)` is what `mysqldump` emits and what this port
+emits. `ALTER SEQUENCE <seq> RESTART WITH <value>` was measured to be
+equivalent here (both leave `START_VALUE` alone and make the next `NEXT VALUE
+FOR` return `<value>` exactly), and it would have needed no loader-side parsing
+at all — but `SETVAL` only ever moves a sequence **forward**, while `RESTART
+WITH` also moves it back. Loading into a target whose sequence has run further
+should not rewind it, so `SETVAL` is the safer primitive as well as the
+compatible one.
+
+### 16.2 Design
+
+**Sequences are enumerated and filtered as tables.** They are already in
+`I_S.TABLES`, they share the table namespace, and `mysqldump` filters them with
+its table list — so `filter_tables()` routes `TABLE_TYPE='SEQUENCE'` into a new
+`Instance_cache::Schema::sequences`, and `excludeTables` / `includeTables`
+select them. No new user-facing option, and therefore no new help text. What
+they never do again is land in `views`.
+
+**They are DDL, and they travel with the schema.**
+`Schema_dumper::dump_sequences_ddl()` writes them from the DDL pass, into the
+schema's own script rather than a file of their own. That is not a shortcut: a
+table can carry `DEFAULT NEXT VALUE FOR <seq>`, so the sequences have to exist
+before any `CREATE TABLE` runs, and the schema script is the first thing the
+loader executes — before table DDL, in the first of the three schema-DDL waves.
+It also means the multifile-DDL layout (`Capability::MULTIFILE_SCHEMA_DDL`, which
+only libraries trigger and which therefore can never happen on MariaDB) needs no
+new member. They take no `INSERT`, no chunk and no lock, matching
+`IGNORE_SEQUENCE_TABLE`.
+
+**`dump_sequences()` on `Dump_options` says who dumps them**, not whether the
+user wants them: `true` for `dumpSchemas` / `dumpInstance` / `dumpTables`,
+`false` for `exportTable`. There is deliberately no `sequences: false` toggle
+next to `events` / `routines` / `libraries` — a sequence is part of the
+structure of a schema the way a view is, and a table that defaults to one cannot
+be restored without it. `dumpTables` dumps a sequence named on its command line,
+which is what `mysqldump db seq` does.
+
+**Load side needs the name list, not a script.** The per-schema metadata gains a
+`sequences` array — written only when it is non-empty, so a dump from a server
+with no sequences is byte-identical to before. From it the loader gets `DROP
+SEQUENCE IF EXISTS` for `dropExistingObjects` (scheduled after tables, which may
+depend on a sequence) and the pre-existing-object check, which has to go to
+`I_S.SEQUENCES`: the existing tables query cannot see them, because a dumped
+sequence is never in the list of tables.
+
+**One parser extension.** `Sql_transform::add_execution_condition()` recognises
+`CREATE|ALTER|DROP SEQUENCE` for free once `SEQUENCE` joins its type list, but
+`DO SETVAL(...)` is neither a CREATE nor a DROP. Left alone, excluding a
+sequence on load would drop its `CREATE` and then run its `SETVAL` against a
+sequence that does not exist. So a `DO` + `SETVAL` statement is now reported as
+a `SEQUENCE` statement carrying the name inside the parentheses, and the two are
+filtered together.
+
+### 16.3 Verified
+
+Live, MariaDB 12.3.2 (sandbox on 3313) and MySQL 9.7.1 (3314):
+
+- **Round trip with the position intact.** A schema with `s1` (`START WITH 100
+  INCREMENT BY 5 NOCACHE`, three rows inserted through `DEFAULT (NEXT VALUE FOR
+  s1)`), a cycling `s2`, and the table: dump, `DROP DATABASE`, load. `s1` comes
+  back at `115` and the next insert takes `115` — no gap, no duplicate. The
+  table's `DEFAULT nextval(seqtest.s1)` resolves at `CREATE TABLE` time, which
+  is the ordering claim above being exercised.
+- Definitions survive exactly: `START_VALUE`, `MINIMUM_VALUE`, `MAXIMUM_VALUE`,
+  `INCREMENT`, `CYCLE_OPTION` and `CACHE` all match across seven sequences.
+- A cycling sequence sitting past its maximum (`next_not_cached_value` 1001 with
+  `MAXVALUE 1000`) restores to 1001 rather than erroring.
+- `dropExistingObjects` drops and recreates them; a second load without it
+  reports ``Schema `seqtest` already contains a sequence named `s1` ``.
+- Filtering works from both ends: `--exclude-tables=seqtest.q1,seqtest.q2` on
+  the dump reports `3 out of 5 sequences` and writes neither; on the load it
+  suppresses the `CREATE` **and** the `DO SETVAL`, with no error from the
+  orphaned statement.
+- `dumpTables seqtest s1` dumps the sequence (`0 tables and 0 views and 1
+  sequences`); `dumpTables seqtest t1` is unchanged.
+- Unit tests: `Instance_cache_test.filter_sequences` (routing, table filters,
+  counts), `Schema_dumper_test.dump_sequences` (expected output, including a
+  name created under `sql_mode=ANSI` that needs quoting) and eight new
+  `Load_dump.add_execution_condition` cases. `Schema_dumper_test.dump_and_load`
+  now round-trips sequences too — it enumerates with `SHOW FULL TABLES` and
+  hands the `SEQUENCE` rows to `dump_sequences_ddl`.
+- MariaDB build, all dump/load suites: **43 passed, 4 failed** — the same four
+  §13.7 lists as pre-existing (`Instance_cache_test.table_columns`,
+  `Schema_dumper_test.opt_mysqlaas` / `compat_ddl` / `unknown_collations`),
+  confirmed by re-running the same filter with the change stashed. The suites
+  need a *clean* server: the 3313 sandbox holds an unrelated schema that trips
+  the parser bug below, which fails every `Schema_dumper_test` before this
+  phase as well.
+
+### 16.4 MySQL build unaffected
+
+- MySQL build against MySQL, same filter: **49 passed, 0 failed**, with the two
+  sequence tests skipped (they require MariaDB ≥ 10.3).
+- A MySQL-server dump is unchanged in shape: no `sequences` key in the
+  per-schema metadata, no `Dumping sequences` comment block
+  (`dump_sequences_ddl()` returns before writing anything), and no change to the
+  object counts.
+- A **MySQL build reading a MariaDB server** keeps producing MySQL-shaped dumps:
+  the 5.6 remap makes `supports_sequences()` false, so `filter_tables()` records
+  no sequence and nothing about them reaches the dump. That path used to abort;
+  it now completes and omits them, which is upstream's lossy MariaDB → MySQL
+  migration path behaving as documented.
+
+### 16.5 Not done here
+
+Nothing outstanding on the MariaDB → MariaDB path; these are the edges around it.
+
+- **A MySQL build omits sequences without saying so.** Correct for MariaDB →
+  MySQL, which cannot express one — but it deserves a `Compatibility_issue`
+  rather than silence. That needs the compatibility machinery, which is
+  MySQL-only surface (§4.11), and the migration direction is outside the port's
+  vendor → vendor scope (§6).
+- **No dump capability is claimed.** Sequence DDL is ordinary SQL inside the
+  schema script, so an older shell loading such a dump still creates them; it
+  only misses the drop and duplicate-object handling the `sequences` metadata
+  drives. Nothing in the layout requires a `Capability` entry.
+- **`cycle_count` is not carried.** It records how many times a cycling sequence
+  has wrapped; `mysqldump` does not restore it either, and `SETVAL` cannot set
+  it.
+- **`dumpTables` of a table whose `DEFAULT` names a sequence does not pull the
+  sequence in.** The table filters select exactly what was asked for, as they do
+  for every other dependency; the resulting dump fails to load unless the
+  sequence is named too.
+- **Unrelated bug found while testing (pre-existing, not sequences).** A view
+  whose column alias contains embedded backticks — `` `format_name`(t1.f_name,
+  t1.l_name) ``, which the server stores as an alias containing doubled
+  backticks — makes `dumpSchemas` of that schema throw ``mismatched input
+  '`format_name`'``. This is the §7.3 `supports_view_table_usage` fallback:
+  MariaDB has no `I_S.VIEW_TABLE_USAGE`, so the shell parses `VIEW_DEFINITION`
+  itself and its parser rejects that alias. Reproduces with this phase stashed.

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -119,11 +119,14 @@ class Dump_loader {
 
     /**
      * Adds a callback which is going to be called whenever a CREATE|ALTER|DROP
-     * statement for an EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER object is about
-     * to be executed. Callback is called with two arguments:
-     *  - type - EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER
+     * statement for an EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER|SEQUENCE object
+     * is about to be executed. Callback is called with two arguments:
+     *  - type - EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER|SEQUENCE
      *  - name - name of the object
      * Callback should return true if this statement should be executed.
+     *
+     * DO SETVAL(sequence, ...), which restores the position of a MariaDB
+     * sequence, is reported as a SEQUENCE statement as well.
      */
     void add_execution_condition(
         std::function<bool(std::string_view, const std::string &)> f);

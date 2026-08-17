@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -184,6 +184,16 @@ bool supports_role_dumping(const Server_version &v);
  * JavaScript libraries (SHOW CREATE LIBRARY, I_S.LIBRARIES). MySQL 9.2+ only.
  */
 bool supports_library_ddl(const Server_version &v);
+
+/**
+ * Sequences (CREATE SEQUENCE, I_S.SEQUENCES, TABLE_TYPE='SEQUENCE'). A MariaDB
+ * 10.3+ object type with no MySQL counterpart.
+ *
+ * Sequences share the table namespace and are reported by I_S.TABLES, so they
+ * are enumerated and filtered as tables, but they are dumped as DDL only - see
+ * MARIADB_DUMP_LOAD.md section 4.5.1.
+ */
+bool supports_sequences(const Server_version &v);
 
 /**
  * information_schema.VIEW_TABLE_USAGE, which lists the tables a view reads.

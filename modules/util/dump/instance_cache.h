@@ -169,6 +169,9 @@ struct Instance_cache {
     std::unordered_map<std::string, Routine> functions;
     std::unordered_map<std::string, Routine> procedures;
     std::unordered_set<std::string> libraries;
+    // MariaDB only, sequences share the table namespace and are filtered as
+    // tables, but they hold no data of their own
+    std::unordered_set<std::string> sequences;
   };
 
   struct Stats {
@@ -178,6 +181,7 @@ struct Instance_cache {
     uint64_t events = 0;
     uint64_t routines = 0;
     uint64_t libraries = 0;
+    uint64_t sequences = 0;
     uint64_t triggers = 0;
     uint64_t users = 0;
   };
