@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -208,6 +208,13 @@ class Dump_options : public mysqlsh::common::Common_options {
   virtual bool dump_routines() const = 0;
 
   virtual bool dump_libraries() const = 0;
+
+  /**
+   * MariaDB sequences. Not a user-facing option: sequences live in the table
+   * namespace and are selected with the table filters (as in mysqldump), this
+   * only says whether the utility dumps whole schemas or just a set of tables.
+   */
+  virtual bool dump_sequences() const = 0;
 
   virtual bool dump_triggers() const = 0;
 

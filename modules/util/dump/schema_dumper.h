@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -116,6 +116,10 @@ class Schema_dumper {
                                                       const std::string &db);
   const std::unordered_set<std::string> &get_libraries(const std::string &db);
 
+  std::vector<Compatibility_issue> dump_sequences_ddl(IFile *file,
+                                                      const std::string &db);
+  const std::unordered_set<std::string> &get_sequences(const std::string &db);
+
   std::vector<Compatibility_issue> dump_grants(IFile *file);
 
   void dump_data_masking_policies(IFile *file);
@@ -149,6 +153,7 @@ class Schema_dumper {
   bool opt_drop_event = true;
   bool opt_drop_routine = true;
   bool opt_drop_library = true;
+  bool opt_drop_sequence = true;
   bool opt_drop_trigger = true;
   bool opt_reexecutable = true;
   bool opt_create_options = true;
@@ -253,6 +258,9 @@ class Schema_dumper {
                                                         const std::string &db);
 
   std::vector<Compatibility_issue> dump_libraries_for_db(IFile *sql_file,
+                                                         const std::string &db);
+
+  std::vector<Compatibility_issue> dump_sequences_for_db(IFile *sql_file,
                                                          const std::string &db);
 
   std::vector<Compatibility_issue> check_ct_for_mysqlaas(

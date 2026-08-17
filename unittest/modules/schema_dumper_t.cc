@@ -869,6 +869,60 @@ DELIMITER ;
   wipe_all();
 }
 
+// MariaDB sequences: the definition comes from SHOW CREATE SEQUENCE, the
+// position from the sequence read as a table, and DO SETVAL() restores it - see
+// MARIADB_DUMP_LOAD.md section 4.5.1
+TEST_F(Schema_dumper_test, dump_sequences) {
+  if (!common::supports_sequences(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_sequences_ddl(file.get(), db_name));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  expect_output_contains({
+      R"(
+--
+-- Dumping sequences for database 'mysqldump_test_db'
+--
+)",
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq1`
+DROP SEQUENCE IF EXISTS `seq1`;
+CREATE SEQUENCE `seq1` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB;
+DO SETVAL(`seq1`, 1, 0);
+-- end sequence `mysqldump_test_db`.`seq1`
+)",
+      // the position which was reached, not the one the sequence starts at
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq2`
+DROP SEQUENCE IF EXISTS `seq2`;
+CREATE SEQUENCE `seq2` start with 100 minvalue 1 maxvalue 9223372036854775806 increment by 5 nocache nocycle ENGINE=InnoDB;
+DO SETVAL(`seq2`, 105, 0);
+-- end sequence `mysqldump_test_db`.`seq2`
+)",
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq3`
+DROP SEQUENCE IF EXISTS `seq3`;
+CREATE SEQUENCE `seq3` start with 1 minvalue 1 maxvalue 1000 increment by 1 cache 1000 cycle ENGINE=InnoDB;
+DO SETVAL(`seq3`, 1, 0);
+-- end sequence `mysqldump_test_db`.`seq3`
+)",
+      // a name which needs quoting, created while sql_mode was ANSI
+      R"(
+-- begin sequence `mysqldump_test_db`.`a'b seq`
+DROP SEQUENCE IF EXISTS `a'b seq`;
+CREATE SEQUENCE `a'b seq` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB;
+DO SETVAL(`a'b seq`, 1, 0);
+-- end sequence `mysqldump_test_db`.`a'b seq`
+)",
+  });
+  wipe_all();
+}
+
 TEST_F(Schema_dumper_test, dump_tablespaces) {
   auto sd = schema_dumper();
   EXPECT_NO_THROW(sd.dump_tablespaces_ddl_for_dbs(file.get(), {db_name}));
@@ -1732,10 +1786,19 @@ TEST_F(Schema_dumper_test, dump_and_load) {
     session->executef("USE !", db);
 
     std::vector<std::string> tables;
+    std::vector<std::string> sequences;
 
-    if (const auto res = session->query("show tables")) {
+    if (const auto res = session->query("show full tables")) {
       while (const auto row = res->fetch_one()) {
-        tables.emplace_back(row->get_string(0));
+        auto name = row->get_string(0);
+
+        // a MariaDB sequence lives in the table namespace, so SHOW TABLES lists
+        // it - but it is dumped as a sequence, not as a table
+        if ("SEQUENCE" == row->get_string(1)) {
+          sequences.emplace_back(name);
+        }
+
+        tables.emplace_back(std::move(name));
       }
     }
 
@@ -1750,8 +1813,16 @@ TEST_F(Schema_dumper_test, dump_and_load) {
       }
     }
 
+    // sequences go first, a table can default to NEXT VALUE FOR one of them
+    EXPECT_NO_THROW(sd.dump_sequences_ddl(file.get(), db));
+
     for (const auto &table : tables) {
       SCOPED_TRACE(std::string{"`"} + db + "`.`" + table + "`");
+
+      if (sequences.end() !=
+          std::find(sequences.begin(), sequences.end(), table)) {
+        continue;
+      }
 
       EXPECT_NO_THROW(sd.dump_table_ddl(file.get(), db, table));
 

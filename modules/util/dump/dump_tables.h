@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -59,8 +60,17 @@ class Dump_tables : public Ddl_dumper {
       const Instance_cache::Stats &) const override {
     std::vector<std::string> stats;
 
-    stats.emplace_back(std::to_string(filtered.tables) + " tables and " +
-                       std::to_string(filtered.views) + " views");
+    auto msg = std::to_string(filtered.tables) + " tables and " +
+               std::to_string(filtered.views) + " views";
+
+    // a MariaDB sequence can be named in the same list as a table, but it is
+    // neither a table nor a view - and it is not something a table contains, so
+    // it cannot go into the "and within them" part of the message either
+    if (0 != filtered.sequences) {
+      msg += " and " + std::to_string(filtered.sequences) + " sequences";
+    }
+
+    stats.emplace_back(std::move(msg));
 
     return stats;
   }

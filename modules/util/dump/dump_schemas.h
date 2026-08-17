@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -59,6 +60,13 @@ class Dump_schemas : public Ddl_dumper {
 
     FORMAT_OBJECT_STATS(tables);
     FORMAT_OBJECT_STATS(views);
+
+    // MariaDB sequences are peers of tables and views rather than objects
+    // living inside them, so they are reported here instead of alongside
+    // events and routines. The count is zero wherever sequences do not exist.
+    if (0 != total.sequences) {
+      FORMAT_OBJECT_STATS(sequences);
+    }
 
 #undef FORMAT_OBJECT_STATS
 

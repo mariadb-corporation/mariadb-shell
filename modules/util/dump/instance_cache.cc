@@ -460,6 +460,27 @@ void Instance_cache_builder::filter_tables() {
     }
 
     const auto table_name = row->get_string(1);  // TABLE_NAME
+
+    // MariaDB sequences are reported here as well, but none of the table
+    // metadata below applies to them: they carry no rows to dump, they take no
+    // lock and they are never chunked. They are DDL only, so they get their own
+    // map and are left out of both the table and the view path - which is also
+    // what mysqldump does with IGNORE_SEQUENCE_TABLE. See
+    // MARIADB_DUMP_LOAD.md section 4.5.1.
+    if ("SEQUENCE" == table_type) {
+      // A MySQL build remaps a MariaDB source to 5.6 and writes a MySQL-shaped
+      // dump, which cannot carry a sequence - so there they are left out
+      // entirely, as they always were. What they must never be is mistaken for
+      // a view, which is what used to abort the whole dump.
+      if (common::supports_sequences(m_cache.server.version)) {
+        schema->sequences.emplace(table_name);
+
+        ++m_cache.filtered.sequences;
+      }
+
+      return;
+    }
+
     const auto is_table = "BASE TABLE" == table_type;
     Instance_cache::Table &target =
         is_table ? schema->tables[table_name] : schema->views[table_name];
@@ -504,9 +525,13 @@ void Instance_cache_builder::filter_tables() {
     }
   });
 
-  // the total number of tables and views within the filtered schemas
+  // the total number of tables, views and sequences within the filtered schemas
   m_cache.total.tables = count(info, "'BASE TABLE'=TABLE_TYPE");
   m_cache.total.views = count(info, "'VIEW'=TABLE_TYPE");
+
+  if (common::supports_sequences(m_cache.server.version)) {
+    m_cache.total.sequences = count(info, "'SEQUENCE'=TABLE_TYPE");
+  }
 }
 
 void Instance_cache_builder::fetch_metadata(

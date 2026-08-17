@@ -208,6 +208,33 @@ TEST(Load_dump, add_execution_condition) {
       "ON `bar` FOR EACH ROW BEGIN END */",
       "TRIGGER", "foo");
 
+  // MariaDB sequences: the CREATE and DROP look like any other object, but the
+  // statement which restores the position does not - see MARIADB_DUMP_LOAD.md
+  // section 4.5.1
+  EXPECT_TYPE_NAME("CREATE SEQUENCE `foo` start with 1", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DROP SEQUENCE IF EXISTS `foo`;", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("ALTER SEQUENCE `bar`.`foo` RESTART", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(`foo`, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(foo, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(`bar`.`foo`, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("do setval(`foo`, 105, 0);", "SEQUENCE", "foo");
+  // any other DO statement is none of our business
+  EXPECT_TYPE_NAME("DO SLEEP(1);", "", "", false);
+  EXPECT_TYPE_NAME("DO 1;", "", "", false);
+
+  {
+    // a filtered out sequence takes its DO SETVAL with it, otherwise the load
+    // would fail on a sequence which was never created
+    Dump_loader::Sql_transform tx;
+    tx.add_execution_condition([](std::string_view type, std::string_view) {
+      return !shcore::str_caseeq(type, "SEQUENCE");
+    });
+
+    EXPECT_EQ("", call(tx, "CREATE SEQUENCE `foo` start with 1", true));
+    EXPECT_EQ("", call(tx, "DO SETVAL(`foo`, 105, 0)", true));
+    EXPECT_EQ("", call(tx, "DO SLEEP(1)", false));
+  }
+
   EXPECT_TYPE_NAME("/*!50001 CREATE VIEW `foo` AS */", "", "", false);
   EXPECT_TYPE_NAME("/*!50001 CREATE SQL SECURITY DEFINER VIEW `foo` AS */", "",
                    "", false);

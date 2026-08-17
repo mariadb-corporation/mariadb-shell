@@ -142,3 +142,18 @@ AS  $$
     $$
 */;
 set sql_mode=default;
+
+# Sequences (MariaDB only - MySQL skips /*M! and MariaDB skips /*!90200 above)
+
+/*M!100300 CREATE SEQUENCE seq1 */;
+
+# advanced by one value, with the cache off so the position is predictable:
+# with a cache the sequence hands out a whole cache worth of values at once
+/*M!100300 CREATE SEQUENCE seq2 START WITH 100 INCREMENT BY 5 NOCACHE */;
+/*M!100300 DO NEXTVAL(seq2) */;
+
+/*M!100300 CREATE SEQUENCE seq3 MINVALUE 1 MAXVALUE 1000 CYCLE */;
+
+set sql_mode='ansi';
+/*M!100300 CREATE SEQUENCE `a'b seq` */;
+set sql_mode=default;

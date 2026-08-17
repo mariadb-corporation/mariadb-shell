@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -175,7 +175,8 @@ class Dump_reader {
                       std::list<Object_info *> *out_functions,
                       std::list<Object_info *> *out_procedures,
                       std::list<Object_info *> *out_libraries,
-                      std::list<Object_info *> *out_events);
+                      std::list<Object_info *> *out_events,
+                      std::list<Object_info *> *out_sequences);
 
   std::string fetch_schema_script(const std::string &schema) const;
   std::string fetch_events_script(const std::string &schema) const;
@@ -329,6 +330,8 @@ class Dump_reader {
   bool include_event(const std::string &schema, const std::string &event) const;
   bool include_routine(const std::string &schema,
                        const std::string &routine) const;
+  bool include_sequence(const std::string &schema,
+                        const std::string &sequence) const;
   bool include_library(const std::string &schema,
                        const std::string &library) const;
   bool include_trigger(const std::string &schema, const std::string &table,
@@ -592,6 +595,11 @@ class Dump_reader {
     std::list<Routine_info> procedures;
     std::vector<Object_info> libraries;
     std::vector<Object_info> events;
+    // MariaDB sequences. Unlike the object types above they have no script of
+    // their own - their DDL is part of the schema script, because a table can
+    // default to NEXT VALUE FOR a sequence. This list is what lets them be
+    // dropped and reported as already existing.
+    std::vector<Object_info> sequences;
 
    private:
     friend class Dump_reader;

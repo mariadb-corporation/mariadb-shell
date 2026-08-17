@@ -370,7 +370,8 @@ bool Dump_reader::schema_objects(std::string_view schema,
                                  std::list<Object_info *> *out_functions,
                                  std::list<Object_info *> *out_procedures,
                                  std::list<Object_info *> *out_libraries,
-                                 std::list<Object_info *> *out_events) {
+                                 std::list<Object_info *> *out_events,
+                                 std::list<Object_info *> *out_sequences) {
   const auto schema_info = find_schema(schema, nullptr);
 
   if (!schema_info) return false;
@@ -388,6 +389,7 @@ bool Dump_reader::schema_objects(std::string_view schema,
     clear_out(out_procedures);
     clear_out(out_libraries);
     clear_out(out_events);
+    clear_out(out_sequences);
   }
 
   const auto add_objects = [](auto *src, std::list<Object_info *> *tgt) {
@@ -411,6 +413,7 @@ bool Dump_reader::schema_objects(std::string_view schema,
   add_objects(&schema_info->procedures, out_procedures);
   add_objects(&schema_info->libraries, out_libraries);
   add_objects(&schema_info->events, out_events);
+  add_objects(&schema_info->sequences, out_sequences);
 
   return true;
 }
@@ -1547,6 +1550,18 @@ void Dump_reader::Schema_info::update_metadata(const std::string &data,
     log_debug("%s has %zi libraries", name.c_str(), libraries.size());
   }
 
+  if (const auto sequence_list = md->get_array("sequences")) {
+    for (const auto &s : *sequence_list) {
+      auto sequence_name = s.as_string();
+
+      if (reader->include_sequence(name, sequence_name)) {
+        sequences.emplace_back(Object_info{this, std::move(sequence_name)});
+      }
+    }
+
+    log_debug("%s has %zi sequences", name.c_str(), sequences.size());
+  }
+
   if (const auto event_list = md->get_array("events")) {
     for (const auto &e : *event_list) {
       auto event_name = e.as_string();
@@ -1962,6 +1977,14 @@ bool Dump_reader::include_routine(const std::string &schema,
                                   const std::string &routine) const {
   return m_options.filters().routines().is_included(override_schema(schema),
                                                     routine);
+}
+
+bool Dump_reader::include_sequence(const std::string &schema,
+                                   const std::string &sequence) const {
+  // sequences share the table namespace, so they use the table filters - see
+  // MARIADB_DUMP_LOAD.md section 4.5.1
+  return m_options.filters().tables().is_included(override_schema(schema),
+                                                  sequence);
 }
 
 bool Dump_reader::include_library(const std::string &schema,

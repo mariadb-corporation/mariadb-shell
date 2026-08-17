@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2026, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -100,6 +100,11 @@ bool supports_role_dumping(const Server_version &v) { return v.is_8_0; }
 
 bool supports_library_ddl(const Server_version &v) {
   return mysql_only(v, 90200);
+}
+
+bool supports_sequences(const Server_version &v) {
+  // FIRST_SEQUENCE_VERSION in client/mysqldump.cc
+  return v.is_maria_db && v.number.numeric() >= 100300;
 }
 
 bool supports_view_table_usage(const Server_version &v) {
