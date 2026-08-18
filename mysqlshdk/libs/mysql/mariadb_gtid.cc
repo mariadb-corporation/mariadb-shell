@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -123,8 +123,7 @@ std::string Mariadb_gtid_position::str() const {
   return result;
 }
 
-bool Mariadb_gtid_position::contains(
-    const Mariadb_gtid_position &other) const {
+bool Mariadb_gtid_position::contains(const Mariadb_gtid_position &other) const {
   for (const auto &[domain, entry] : other.m_domains) {
     const auto it = m_domains.find(domain);
 
