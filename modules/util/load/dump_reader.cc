@@ -353,6 +353,20 @@ std::vector<shcore::Account> Dump_reader::accounts() const {
   return account_list;
 }
 
+std::vector<shcore::Account> Dump_reader::roles() const {
+  using Type = dump::Schema_dumper::User_statements::Type;
+  std::vector<shcore::Account> role_list;
+
+  for (const auto &group : dump::Schema_dumper::preprocess_users_script(
+           users_script(), [](const std::string &) { return true; })) {
+    if (Type::CREATE_ROLE == group.type) {
+      role_list.emplace_back(shcore::split_account(group.account));
+    }
+  }
+
+  return role_list;
+}
+
 std::list<Dump_reader::Object_info *> Dump_reader::schemas() {
   std::list<Dump_reader::Object_info *> slist;
 

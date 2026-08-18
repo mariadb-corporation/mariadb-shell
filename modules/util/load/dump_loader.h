@@ -742,7 +742,8 @@ class Dump_loader {
   bool is_dump_complete() const noexcept;
 
   void execute_grant_and_drop_account_on_error(std::string_view grant,
-                                               const std::string &account);
+                                               const std::string &account,
+                                               bool is_role);
 
   void execute_grant_and_ignore_errors(std::string_view grant);
 
@@ -803,6 +804,9 @@ class Dump_loader {
     std::vector<dump::Schema_dumper::User_statements> statements;
     std::unordered_set<std::string> all_accounts;
     std::unordered_set<std::string> ignored_accounts;
+    // the subset of all_accounts which are MariaDB roles - they need DROP ROLE,
+    // see common::roles_are_hostless()
+    std::unordered_set<std::string> role_accounts;
 
     // stats
     std::size_t dropped_accounts = 0;

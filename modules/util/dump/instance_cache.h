@@ -369,6 +369,8 @@ class Instance_cache_builder final {
   std::vector<shcore::Account> fetch_users(const std::string &select,
                                            const std::string &where) const;
 
+  uint64_t count_users() const;
+
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
 
   Instance_cache m_cache;

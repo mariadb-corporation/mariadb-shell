@@ -136,11 +136,22 @@ bool supports_flush_tables_privilege(const Server_version &v);
 bool requires_explicit_select_privilege(const Server_version &v);
 
 /**
- * Whether dumping accounts requires the SUPER privilege. MySQL 5.6 only;
- * MariaDB 10.5+ split SUPER into granular privileges and needs its own handling
- * (MARIADB_DUMP_LOAD.md section 4.2, phase 5).
+ * Whether dumping accounts requires the SUPER privilege. MySQL 5.6 only -
+ * MariaDB 10.5+ split SUPER into granular privileges, and what dumping accounts
+ * actually needs there is SELECT on the mysql schema, which
+ * requires_select_on_mysql_to_dump_users() covers.
  */
 bool requires_super_to_dump_users(const Server_version &v);
+
+/**
+ * Whether SELECT on the mysql schema has to be checked before dumping accounts.
+ *
+ * SHOW CREATE USER and SHOW GRANTS FOR another account both read the grant
+ * tables. MySQL 5.6/5.7 let a SUPER account do it (see
+ * requires_super_to_dump_users()); MySQL 8.0 and every MariaDB want the
+ * privilege on the schema itself.
+ */
+bool requires_select_on_mysql_to_dump_users(const Server_version &v);
 
 /**
  * SHOW CREATE USER. MySQL grew it in 5.7, MariaDB in 10.2; before that the
@@ -170,15 +181,61 @@ bool supports_partial_revokes(const Server_version &v);
 bool supports_column_statistics(const Server_version &v);
 
 /**
- * Whether roles can be enumerated for dumping.
+ * Whether roles can be enumerated for dumping. MySQL 8.0+, MariaDB 10.0.5+.
  *
- * MariaDB has roles since 10.0.5, but with a different model (hostless, one
- * active role, no activate_all_roles_on_login) - dumping them is
- * MARIADB_DUMP_LOAD.md section 4.5/4.6 (phase 5), so this is false for MariaDB
- * until then. Note this is *not* the same question as whether role-granted
- * privileges are resolved, which User_privileges already does for both vendors.
+ * Note this is *not* the same question as whether role-granted privileges are
+ * resolved, which User_privileges already does for both vendors.
  */
 bool supports_role_dumping(const Server_version &v);
+
+/**
+ * Whether a role is a hostless object of its own rather than an ordinary
+ * account, which is what MariaDB made it (10.0.5+).
+ *
+ * MySQL implements a role as a locked, passwordless user: it has a host, SHOW
+ * CREATE USER describes it, CREATE USER makes one and DROP USER removes one.
+ * Every MariaDB difference below was measured on 12.3.2 - see
+ * MARIADB_DUMP_LOAD.md section 20.1:
+ *
+ * - a role lives in mysql.user with is_role='Y' and an *empty* host, and its
+ *   own namespace: `r`@`` the role and `r`@`%` the user coexist;
+ * - it must be addressed without a host. SHOW CREATE USER fails for it
+ *   outright (error 1133, in either spelling), and SHOW GRANTS FOR 'r'@''
+ *   fails with 1141 where SHOW GRANTS FOR `r` works;
+ * - CREATE ROLE is the only way to make one, and DROP ROLE the only way to
+ *   remove one - DROP USER reports success and silently leaves the role in
+ *   place;
+ * - the implicit PUBLIC role appears in mysql.user like any other role once it
+ *   holds a grant, but CREATE ROLE PUBLIC is rejected with error 1959.
+ *
+ * So on MariaDB an account list has to carry which entries are roles, and the
+ * DDL for one has to be synthesized rather than read from the server.
+ */
+bool roles_are_hostless(const Server_version &v);
+
+/**
+ * Whether SHOW GRANTS FOR a role walks the role graph downwards, reporting the
+ * grants of every role granted to it *under their own grantee*.
+ *
+ * MariaDB does (traverse_role_graph_down, sql/sql_acl.cc), which is why phase 1
+ * could use the bare SHOW GRANTS in place of MySQL's USING clause - but it also
+ * means the output is not a description of the one account asked about, so a
+ * dumper has to drop the statements belonging to somebody else. Verified not to
+ * happen for a plain user: SHOW GRANTS FOR a user lists its role *grants*, not
+ * the privileges those roles carry.
+ */
+bool show_grants_expands_roles(const Server_version &v);
+
+/**
+ * Whether the default role of an account is reported by SHOW GRANTS rather than
+ * by SHOW CREATE USER, and set with FOR rather than TO.
+ *
+ * MySQL 8.0 puts a DEFAULT ROLE clause inside SHOW CREATE USER and takes
+ * SET DEFAULT ROLE ... TO <account>. MariaDB emits a whole
+ * SET DEFAULT ROLE ... FOR <account> statement as the last line of SHOW GRANTS
+ * and rejects the TO spelling.
+ */
+bool default_role_in_show_grants(const Server_version &v);
 
 /**
  * JavaScript libraries (SHOW CREATE LIBRARY, I_S.LIBRARIES). MySQL 9.2+ only.

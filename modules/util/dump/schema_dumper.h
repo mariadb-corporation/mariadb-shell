@@ -60,6 +60,10 @@ class Schema_dumper {
     enum class Type {
       UNKNOWN,
       CREATE_USER,
+      // a MariaDB role, which is not an account and needs CREATE ROLE /
+      // DROP ROLE rather than CREATE USER / DROP USER - see
+      // common::roles_are_hostless()
+      CREATE_ROLE,
       GRANT,
       DEFAULT_ROLE,
     };

@@ -339,8 +339,13 @@ void execute_script(
   });
 }
 
-void drop_account(const Session_ptr &session, const std::string &account) {
-  const auto drop = "DROP USER IF EXISTS " + account;
+void drop_account(const Session_ptr &session, const std::string &account,
+                  bool is_role = false) {
+  // DROP USER does not remove a MariaDB role - it reports success and leaves it
+  // in place, because a role and an account of the same name are two different
+  // objects there. See common::roles_are_hostless().
+  const auto drop =
+      (is_role ? "DROP ROLE IF EXISTS " : "DROP USER IF EXISTS ") + account;
   execute_statement(session, drop, "While dropping the account " + account);
 }
 
@@ -4114,6 +4119,37 @@ bool Dump_loader::check_existing_users() const {
     }
   }
 
+  if (m_options.target_is_maria_db()) {
+    // a MariaDB role holds nothing but USAGE, and information_schema does not
+    // report an account which holds only that - so the query above sees every
+    // user on the target and not one role. mysql.user does, and it is where the
+    // role and the account of the same name are told apart.
+    std::set<std::string> roles;
+
+    for (const auto &r : m_dump->roles()) {
+      if (m_options.filters().users().is_included(r)) {
+        roles.emplace(shcore::str_lower(r.user));
+      }
+    }
+
+    if (!roles.empty()) {
+      const auto existing =
+          sql::ar::query(m_reconnect_callback, m_session,
+                         "SELECT DISTINCT user FROM mysql.user WHERE "
+                         "is_role='Y'");
+
+      while (const auto row = existing->fetch_one()) {
+        const auto role = row->get_string(0);
+
+        if (roles.count(shcore::str_lower(role))) {
+          report_duplicate_object("Role " + shcore::quote_identifier(role) +
+                                  " already exists");
+          has_duplicates = true;
+        }
+      }
+    }
+  }
+
   return has_duplicates;
 }
 
@@ -6231,6 +6267,10 @@ void Dump_loader::read_users_sql() {
   for (auto &group : m_users.statements) {
     if (!group.account.empty()) {
       m_users.all_accounts.emplace(group.account);
+
+      if (Schema_dumper::User_statements::Type::CREATE_ROLE == group.type) {
+        m_users.role_accounts.emplace(group.account);
+      }
     }
 
     for (auto &stmt : group.statements) {
@@ -6256,8 +6296,10 @@ void Dump_loader::drop_existing_accounts() {
 
   sql::ar::run(m_reconnect_callback, [this]() {
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER == group.type) {
-        drop_account(m_session, group.account);
+      using Type = Schema_dumper::User_statements::Type;
+
+      if (Type::CREATE_USER == group.type || Type::CREATE_ROLE == group.type) {
+        drop_account(m_session, group.account, Type::CREATE_ROLE == group.type);
       }
     }
   });
@@ -6285,7 +6327,10 @@ void Dump_loader::create_accounts() {
 
   sql::ar::run(m_reconnect_callback, [this]() {
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER != group.type ||
+      using Type = Schema_dumper::User_statements::Type;
+
+      if ((Type::CREATE_USER != group.type &&
+           Type::CREATE_ROLE != group.type) ||
           m_users.ignored_accounts.count(group.account) > 0) {
         continue;
       }
@@ -6344,7 +6389,9 @@ void Dump_loader::apply_grants() {
     const auto handle_grant_errors = m_options.on_grant_errors();
 
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER == group.type ||
+      using Type = Schema_dumper::User_statements::Type;
+
+      if (Type::CREATE_USER == group.type || Type::CREATE_ROLE == group.type ||
           m_users.ignored_accounts.count(group.account) > 0) {
         continue;
       }
@@ -6360,7 +6407,9 @@ void Dump_loader::apply_grants() {
             Handle_grant_errors::ABORT == handle_grant_errors) {
           execute_statement(m_session, stmt, k_applying_grants_context);
         } else if (Handle_grant_errors::DROP_ACCOUNT == handle_grant_errors) {
-          execute_grant_and_drop_account_on_error(stmt, group.account);
+          execute_grant_and_drop_account_on_error(
+              stmt, group.account,
+              m_users.role_accounts.count(group.account) > 0);
         } else if (Handle_grant_errors::IGNORE == handle_grant_errors) {
           execute_grant_and_ignore_errors(stmt);
         } else {
@@ -6753,14 +6802,14 @@ bool Dump_loader::is_dump_complete() const noexcept {
 }
 
 void Dump_loader::execute_grant_and_drop_account_on_error(
-    std::string_view grant, const std::string &account) {
+    std::string_view grant, const std::string &account, bool is_role) {
   try {
     execute_statement(m_session, grant, k_applying_grants_context);
   } catch (const mysqlshdk::db::Error &e) {
     current_console()->print_note(
         "Due to the above error the account " + account +
         " was dropped, the load operation will continue.");
-    drop_account(m_session, account);
+    drop_account(m_session, account, is_role);
     m_users.ignored_accounts.emplace(account);
     ++m_users.dropped_accounts;
   }

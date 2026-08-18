@@ -5372,6 +5372,96 @@ TEST_F(Instance_cache_test, users) {
   }
 }
 
+TEST_F(Instance_cache_test, maria_db_roles) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  {
+    // setup - a role and an account of the same name are two different objects,
+    // and the role is hostless
+    m_session->execute("CREATE ROLE IF NOT EXISTS 'both'");
+    m_session->execute(
+        "CREATE USER IF NOT EXISTS 'both'@'localhost' IDENTIFIED BY 'pwd'");
+    m_session->execute("CREATE ROLE IF NOT EXISTS 'roleonly'");
+    m_session->execute(
+        "CREATE USER IF NOT EXISTS 'useronly'@'localhost' IDENTIFIED BY 'pwd'");
+  }
+
+  shcore::on_leave_scope cleanup{[this]() {
+    m_session->execute("DROP ROLE 'both';");
+    m_session->execute("DROP USER 'both'@'localhost';");
+    m_session->execute("DROP ROLE 'roleonly';");
+    m_session->execute("DROP USER 'useronly'@'localhost';");
+  }};
+
+  const auto accounts_of = [](const std::vector<shcore::Account> &list) {
+    std::set<std::string> accounts;
+
+    for (const auto &a : list) {
+      accounts.emplace(shcore::make_account(a));
+    }
+
+    return accounts;
+  };
+
+  {
+    SCOPED_TRACE("roles are enumerated, and separately from accounts");
+
+    Filtering_options filters;
+    filters.users().include(
+        std::array{"both", "roleonly", "useronly", "nosuchaccount"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+    const auto users = accounts_of(cache.users);
+    const auto roles = accounts_of(cache.roles);
+
+    // mysql.user holds a row for each, and a role has an empty host
+    EXPECT_EQ(
+        std::set<std::string>({"'both'@''", "'both'@'localhost'",
+                               "'roleonly'@''", "'useronly'@'localhost'"}),
+        users);
+    // only the is_role='Y' rows are roles - not the account named `both`
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'roleonly'@''"}), roles);
+
+    // every account is reported, roles included - information_schema
+    // .USER_PRIVILEGES has no row for one, so it cannot be the source of this
+    EXPECT_LE(4, cache.total.users);
+    EXPECT_EQ(4, cache.filtered.users);
+  }
+
+  {
+    SCOPED_TRACE("a user filter is by name, so it takes the role with it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"both"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'both'@'localhost'"}),
+              accounts_of(cache.users));
+    EXPECT_EQ(std::set<std::string>({"'both'@''"}), accounts_of(cache.roles));
+  }
+
+  {
+    SCOPED_TRACE("a role can be excluded on its own");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"both", "roleonly"});
+    filters.users().exclude(std::array{"roleonly"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'both'@'localhost'"}),
+              accounts_of(cache.users));
+    EXPECT_EQ(std::set<std::string>({"'both'@''"}), accounts_of(cache.roles));
+  }
+}
+
 }  // namespace tests
 }  // namespace dump
 }  // namespace mysqlsh

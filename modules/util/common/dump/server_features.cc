@@ -42,6 +42,16 @@ inline bool mysql_only(const Server_version &v, uint32_t since) {
   return !v.is_maria_db && v.number.numeric() >= since;
 }
 
+/**
+ * A feature only MariaDB has, from the given version on.
+ */
+inline bool maria_db_only(const Server_version &v, uint32_t since) {
+  return v.is_maria_db && v.number.numeric() >= since;
+}
+
+// MariaDB grew roles in 10.0.5
+constexpr uint32_t k_maria_db_roles = 100005;
+
 }  // namespace
 
 const Version &reference_version(bool is_maria_db) {
@@ -80,6 +90,10 @@ bool requires_explicit_select_privilege(const Server_version &v) {
 
 bool requires_super_to_dump_users(const Server_version &v) { return v.is_5_6; }
 
+bool requires_select_on_mysql_to_dump_users(const Server_version &v) {
+  return v.is_maria_db || v.is_8_0;
+}
+
 bool supports_show_create_user(const Server_version &v) {
   return v.is_maria_db ? v.number.numeric() >= 100200 : !v.is_5_6;
 }
@@ -96,7 +110,21 @@ bool supports_partial_revokes(const Server_version &v) {
 
 bool supports_column_statistics(const Server_version &v) { return v.is_8_0; }
 
-bool supports_role_dumping(const Server_version &v) { return v.is_8_0; }
+bool supports_role_dumping(const Server_version &v) {
+  return v.is_maria_db ? v.number.numeric() >= k_maria_db_roles : v.is_8_0;
+}
+
+bool roles_are_hostless(const Server_version &v) {
+  return maria_db_only(v, k_maria_db_roles);
+}
+
+bool show_grants_expands_roles(const Server_version &v) {
+  return maria_db_only(v, k_maria_db_roles);
+}
+
+bool default_role_in_show_grants(const Server_version &v) {
+  return maria_db_only(v, k_maria_db_roles);
+}
 
 bool supports_library_ddl(const Server_version &v) {
   return mysql_only(v, 90200);

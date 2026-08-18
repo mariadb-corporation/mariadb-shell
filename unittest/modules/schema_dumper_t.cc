@@ -1072,6 +1072,133 @@ TEST_F(Schema_dumper_test, dump_grants) {
   session->execute("DROP USER 'second'@'10.11.12.14';");
 }
 
+// MariaDB roles are not accounts: SHOW CREATE USER fails for one, they are
+// addressed without a host, SHOW GRANTS walks the role graph downwards and the
+// default role arrives as a statement rather than a clause. See
+// MARIADB_DUMP_LOAD.md section 20.
+TEST_F(Schema_dumper_test, dump_maria_db_roles) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  // setup - a three level role chain, an account which has one as its default
+  // role, and an account of the same name as one of the roles
+  session->execute("CREATE ROLE IF NOT EXISTS `sdbase`;");
+  session->execute("CREATE ROLE IF NOT EXISTS `sdmid`;");
+  session->execute("CREATE ROLE IF NOT EXISTS `sdtop`;");
+  session->execute(
+      "CREATE USER IF NOT EXISTS 'sdbase'@'localhost' IDENTIFIED BY 'pwd';");
+  session->execute(
+      "CREATE USER IF NOT EXISTS 'sduser'@'localhost' IDENTIFIED BY 'pwd';");
+  const std::string schema{db_name};
+
+  session->execute("GRANT SELECT ON `" + schema + "`.* TO `sdbase`;");
+  session->execute("GRANT INSERT ON `" + schema + "`.* TO `sdmid`;");
+  session->execute("GRANT `sdbase` TO `sdmid`;");
+  session->execute("GRANT `sdmid` TO `sdtop`;");
+  session->execute("GRANT `sdtop` TO 'sduser'@'localhost';");
+  session->execute("SET DEFAULT ROLE `sdtop` FOR 'sduser'@'localhost';");
+
+  shcore::on_leave_scope cleanup{[this]() {
+    session->execute("DROP ROLE `sdtop`;");
+    session->execute("DROP ROLE `sdmid`;");
+    session->execute("DROP ROLE `sdbase`;");
+    session->execute("DROP USER 'sdbase'@'localhost';");
+    session->execute("DROP USER 'sduser'@'localhost';");
+  }};
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_grants(file.get()));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  std::string out;
+  expect_output_contains(
+      {
+          // a role is created with CREATE ROLE, under its own marker, and is
+          // named without a host
+          R"(
+-- begin role `sdbase`
+CREATE ROLE IF NOT EXISTS `sdbase`;
+-- end role `sdbase`)",
+          // the account of the same name is a separate object and still gets a
+          // CREATE USER
+          R"(
+-- begin user 'sdbase'@'localhost'
+CREATE USER IF NOT EXISTS `sdbase`@`localhost` IDENTIFIED BY PASSWORD)",
+          // two levels down the chain, and still only its own grants - SHOW
+          // GRANTS FOR sdtop reports sdmid's and sdbase's as well
+          R"(
+-- begin grants `sdtop`
+GRANT `sdmid` TO `sdtop`;
+GRANT USAGE ON *.* TO `sdtop`;
+-- end grants `sdtop`)",
+          // the default role moves out of the grants block and keeps MariaDB's
+          // FOR spelling, which is the only one the server accepts
+          R"(
+-- begin default role 'sduser'@'localhost'
+SET DEFAULT ROLE `sdtop` FOR `sduser`@`localhost`;
+-- end default role 'sduser'@'localhost')",
+      },
+      &out);
+
+  // the role's own grants, and nothing else
+  EXPECT_THAT(out, HasSubstr("\n-- begin grants `sdbase`\n"
+                             "GRANT USAGE ON *.* TO `sdbase`;\n"
+                             "GRANT SELECT ON `" +
+                             schema +
+                             "`.* TO `sdbase`;\n"
+                             "-- end grants `sdbase`"));
+  // sdmid keeps the role it was granted, but not the privileges that role
+  // carries
+  EXPECT_THAT(out, HasSubstr("\n-- begin grants `sdmid`\n"
+                             "GRANT `sdbase` TO `sdmid`;\n"
+                             "GRANT USAGE ON *.* TO `sdmid`;\n"
+                             "GRANT INSERT ON `" +
+                             schema +
+                             "`.* TO `sdmid`;\n"
+                             "-- end grants `sdmid`"));
+
+  {
+    SCOPED_TRACE("the loader reads a role back as a role");
+
+    using Type = Schema_dumper::User_statements::Type;
+    // an account has more than one block, so collect every type per account
+    std::map<std::string, std::set<Type>> types;
+
+    for (const auto &group : Schema_dumper::preprocess_users_script(
+             out, [](const std::string &) { return true; })) {
+      types[group.account].emplace(group.type);
+    }
+
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdbase`"));
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdmid`"));
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdtop`"));
+    // the account of the same name as a role is still a user
+    EXPECT_EQ(std::set<Type>({Type::CREATE_USER, Type::GRANT}),
+              types.at("'sdbase'@'localhost'"));
+    EXPECT_EQ(
+        std::set<Type>({Type::CREATE_USER, Type::GRANT, Type::DEFAULT_ROLE}),
+        types.at("'sduser'@'localhost'"));
+  }
+
+  {
+    SCOPED_TRACE("a role can be filtered out on the load side");
+
+    for (const auto &group : Schema_dumper::preprocess_users_script(
+             out,
+             [](const std::string &account) { return "`sdmid`" != account; })) {
+      EXPECT_NE("`sdmid`", group.account);
+    }
+  }
+
+  wipe_all();
+}
+
 TEST_F(Schema_dumper_test, dump_filtered_grants) {
   session->execute(
       "CREATE USER IF NOT EXISTS 'admin'@'localhost' IDENTIFIED BY 'pwd';");

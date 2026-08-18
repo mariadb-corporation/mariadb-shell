@@ -195,7 +195,7 @@ Instance_cache_builder &Instance_cache_builder::users() {
   m_cache.roles = fetch_roles();
 
   m_cache.filtered.users = m_cache.users.size();
-  m_cache.total.users = count("user_privileges", {}, "DISTINCT grantee");
+  m_cache.total.users = count_users();
 
   return *this;
 }
@@ -1335,6 +1335,14 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
     return {};
   }
 
+  if (common::roles_are_hostless(m_cache.server.version)) {
+    // MariaDB says so outright, and it has to: a role is not an account there,
+    // so the MySQL heuristic below cannot describe one - mysql.user does not
+    // even have an account_locked column
+    return fetch_users("SELECT DISTINCT user, host FROM mysql.user",
+                       "is_role='Y'");
+  }
+
   try {
     // check if server supports roles
     query("SELECT @@GLOBAL.activate_all_roles_on_login");
@@ -1352,6 +1360,29 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
   return fetch_users("SELECT DISTINCT user, host FROM mysql.user",
                      "authentication_string='' AND account_locked='Y' AND "
                      "password_expired='Y'");
+}
+
+uint64_t Instance_cache_builder::count_users() const {
+  if (common::roles_are_hostless(m_cache.server.version)) {
+    // information_schema.USER_PRIVILEGES has no row for an account holding
+    // nothing but USAGE, which is every MariaDB role, so counting grantees
+    // there reports fewer accounts than fetch_users() found - and the dump then
+    // announced "23 out of 12 users"
+    try {
+      return query(
+                 "SELECT COUNT(*) FROM (SELECT DISTINCT user, host FROM "
+                 "mysql.user) AS user")
+          ->fetch_one_or_throw()
+          ->get_uint(0);
+    } catch (const mysqlshdk::db::Error &e) {
+      log_warning(
+          "Failed to count accounts in the mysql.user table: %s. Falling back "
+          "to information_schema.user_privileges.",
+          e.format().c_str());
+    }
+  }
+
+  return count("user_privileges", {}, "DISTINCT grantee");
 }
 
 }  // namespace dump
