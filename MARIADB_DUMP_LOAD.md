@@ -862,12 +862,12 @@ Still open — does not block any phase:
    (`wsrep_sync_wait`, desync on donor). Out of scope for v1, but the
    `BACKUP STAGE` design should not preclude it — note that `sql/backup.cc`
    already carries `#ifdef WITH_WSREP` handling.
-2. **`deferTableIndexes` never finishes on MariaDB — a defect, not a
-   limitation.** Found while testing §17; diagnosed in §17.5. `loadDump` with
-   `deferTableIndexes: "all"` builds the indexes correctly and then hangs
-   forever, because the progress monitoring thread dies on
-   `Innodb_rows_inserted`, a status variable MariaDB does not have. Independent
-   of check constraints and of every phase so far.
+2. ~~**`deferTableIndexes` never finishes on MariaDB.**~~ **FIXED (§18)** —
+   found while testing §17, diagnosed in §17.5, fixed in §18. It was three
+   defects stacked: a MySQL-only status variable read with
+   `fetch_one_or_throw()`, a monitoring thread that a single throwing monitor
+   ended for good, and an index stage whose completion depended on that thread
+   staying alive.
 
 ### On `util.copy*` being in scope
 
@@ -2033,8 +2033,8 @@ Live, MariaDB 12.3.2 (3313) and MySQL 9.7.1 (3314):
 ### 17.5 Not done here
 
 - **`deferTableIndexes` hangs on MariaDB, and it is unrelated to this phase.**
-  Found while checking whether deferred index rebuilding mangles check
-  constraints. It does not — but `loadDump ... --defer-table-indexes=all` never
+  **Fixed straight after this phase — see §18.** Found while checking whether
+  deferred index rebuilding mangles check constraints. It does not — but `loadDump ... --defer-table-indexes=all` never
   returns on MariaDB, while the same dump loads in ~5s on MySQL. Diagnosed:
   every server connection is idle, so the wait is client side, and the debug log
   ends with `Monitoring thread: Query returned fewer rows than expected`. The
@@ -2057,3 +2057,108 @@ Live, MariaDB 12.3.2 (3313) and MySQL 9.7.1 (3314):
   `/*!80016 NOT ENFORCED */` cannot load into MariaDB, which has no such syntax
   — cross-vendor, refused up front since phase 2 (§13.5), so no rewriting is
   attempted.
+
+---
+
+## 18. `deferTableIndexes` hung the load — fixed
+
+Landed 2026-08-18, between phases 5b and 5c. Not an object-type phase: a defect
+§17 tripped over, fixed on its own because the symptom is a hang.
+
+`util.loadDump` with `deferTableIndexes: "all"` never returned on MariaDB. It
+did all the work first — schema DDL, table DDL, data, and the indexes
+themselves, all correct — printed `Building indexes...`, and then sat forever.
+The same dump loaded in about five seconds on MySQL.
+
+### 18.1 Three defects stacked
+
+A `sample` of the hung process shows the deadlock rather than a slow query, and
+naming all three parts matters because only the first is MariaDB-specific:
+
+1. **A MySQL-only status variable, read with `fetch_one_or_throw()`.** The
+   "Loading data" stage registers a monitor which reads
+   `Innodb_rows_inserted` from `performance_schema.global_status` to compute
+   rows/s. **No MariaDB has that status variable** — 12.3.2 exposes
+   `Rows_read`, `Rows_sent`, `Rows_tmp_read` and the `Innodb_row_lock_*` family,
+   but no InnoDB DML row counters anywhere: not in `I_S.GLOBAL_STATUS` (560
+   rows), not in `performance_schema.global_status` (384 rows, so the table is
+   populated), not in `SHOW GLOBAL STATUS`, and there is no `INNODB_METRICS`
+   counter either. The query therefore returns no row and
+   `fetch_one_or_throw()` throws. Same class as the phase 0 crashes: a
+   MySQL-shaped probe for something MariaDB does not have.
+2. **One throwing monitor ended the monitoring thread for good.**
+   `Monitoring::monitoring_thread()` wrapped its whole `while (!m_terminating)`
+   loop in a single `try`, so the first throw escaped the loop, was logged once
+   as `Monitoring thread: ...`, and the thread returned. That also silently
+   disabled `kill_queries()` — the mechanism a hard interrupt uses to cancel
+   worker queries — for the rest of the load.
+3. **The index stage's completion depended on that thread.** A numeric progress
+   stage finishes *itself* when `current >= total`
+   (`Spinner_progress::on_update()` → `finish(false)`), and "Building indexes"
+   had `current` reading `m_indexes_recreated` — a mirror of the real counter
+   which only the monitoring thread published. With the thread dead the mirror
+   stayed at 0 while `total` was 2, so the stage never finished. The progress
+   thread runs stages **serially from a queue**, so it stayed inside that
+   stage's `display()` loop and never reached the "Executing view DDL" stage
+   queued behind it, while the main thread blocked in that stage's `finish()` →
+   `wait_for_display_done()`. Deadlock, with every server connection idle.
+
+### 18.2 The fixes, and why none of them is vendor-gated
+
+- **Fall back to counting rows on the client** when `Innodb_rows_inserted`
+  cannot be read — which is exactly what the `BULK LOAD` branch beside it
+  already does for its own reason (that path does not update the variable
+  either). The source is chosen on the first tick and then left alone: a
+  *transient* failure after a successful sample skips one sample instead of
+  switching source mid-load, so the rate is never computed from two different
+  scales. MariaDB now reports a real throughput figure rather than none.
+- **Drop a monitor which throws, do not end the thread.** Per-monitor
+  `try`/`catch` in `Monitoring::monitor()`, logging once and erasing the
+  offender, so one unreadable variable cannot take progress reporting *and*
+  interrupt handling down with it.
+- **Finish the index stage from the counter the workers keep.** `current` now
+  reads `m_indexes_completed` under its own mutex, and `m_indexes_recreated` is
+  deleted — it was only ever a lagged copy of that counter, and `config.current`
+  was its only reader (the summary line already used `m_indexes_completed`).
+
+**All three are vendor-neutral, and two of them fix MySQL too.** Only defect 1
+is about MariaDB; 2 and 3 are shared-code fragility. Under MySQL's own defaults
+nothing changes — verified below — but:
+
+- a MySQL server running with `performance_schema` **off** has no such table, so
+  defect 1's `fetch_one_or_throw()` throws there as well and MySQL hangs in the
+  identical way;
+- the mirror in defect 3 was only advanced when the *percentage* increased
+  (`if (updated_progress > m_indexes_progress)`), and that percentage includes a
+  server-side estimate for in-flight statements. If the estimate ever reaches
+  100.0 before the last statement completes, the final update is
+  `100.0 > 100.0` — false — and MySQL deadlocks exactly as MariaDB did.
+
+Gating either behind a vendor check would have left MySQL holding those, which
+is why the fix is in the shared path.
+
+### 18.3 Verified
+
+- **MariaDB 12.3.2**: `loadDump --defer-table-indexes=all` now finishes.
+  `Building indexes - done`, `2 indexes were built in 0 sec.`, indexes and rows
+  correct. With 200k rows: completes in 13s and reports `17.17K rows/s` from the
+  new client-side counting. The log carries exactly one
+  `The server does not expose Innodb_rows_inserted, row throughput will be
+  counted on the client side.` and **no** `Monitoring thread:` failure.
+- **MySQL 9.7.1 is unchanged**: the same deferred load finishes in ~4s with
+  `Building indexes - done`, 200k rows report `200.00K rows/s`, and the fallback
+  message never appears — it is still reading `Innodb_rows_inserted`. The
+  default (non-deferred) load path reports throughput on both vendors.
+- MariaDB build, all dump/load suites: **59 passed, 4 failed** — the same four
+  §13.7 pre-existing. MySQL build: **65 passed, 0 failed**. Unchanged from §17.
+
+### 18.4 Not done here
+
+- **No regression test.** Reproducing it needs a load that defers indexes
+  against a server without `Innodb_rows_inserted` — an end-to-end scenario, and
+  those suites are deferred on MariaDB until phase 6, which is where it belongs.
+  The `deferTableIndexes` case should be in that set explicitly, since a hang is
+  invisible to a suite that only checks results.
+- **The index progress *percentage* is still monitor-driven** and still
+  disables itself on error (`m_query_index_progress`), which is pre-existing and
+  correct: it is a label, and now nothing else depends on it.
