@@ -3947,6 +3947,132 @@ TEST_F(Instance_cache_test, filter_sequences) {
   }
 }
 
+TEST_F(Instance_cache_test, filter_packages) {
+  if (!common::supports_packages(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  {
+    // setup - a package only comes into existence under sql_mode=ORACLE
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("SET sql_mode=ORACLE;");
+    m_session->execute(
+        "CREATE PACKAGE first.one AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute(
+        "CREATE PACKAGE BODY first.one AS FUNCTION f() RETURN "
+        "INT AS BEGIN RETURN 1; END; END;");
+    // a specification with no body of its own
+    m_session->execute(
+        "CREATE PACKAGE first.two AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute("CREATE SCHEMA second;");
+    m_session->execute(
+        "CREATE PACKAGE second.one AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute(
+        "CREATE PACKAGE BODY second.one AS FUNCTION f() RETURN "
+        "INT AS BEGIN RETURN 1; END; END;");
+    m_session->execute("SET sql_mode=DEFAULT;");
+    // packages have a namespace of their own, so this function does not
+    // collide with the package of the same name
+    m_session->execute(
+        "CREATE FUNCTION first.one() RETURNS INT DETERMINISTIC RETURN 1;");
+  }
+
+  const auto EXPECT_PACKAGES =
+      [](const Instance_cache &cache, const std::string &schema,
+         const std::unordered_set<std::string> &expected_packages,
+         const std::unordered_set<std::string> &expected_bodies,
+         const std::unordered_set<std::string> &expected_functions) {
+        SCOPED_TRACE("schema: " + schema);
+
+        const auto it = cache.schemas.find(schema);
+        ASSERT_TRUE(cache.schemas.end() != it)
+            << "cache does not contain schema `" << schema << "`";
+
+        EXPECT_EQ(expected_packages, it->second.packages);
+        EXPECT_EQ(expected_bodies, it->second.package_bodies);
+
+        std::unordered_set<std::string> functions;
+
+        for (const auto &pair : it->second.functions) {
+          functions.emplace(pair.first);
+        }
+
+        EXPECT_EQ(expected_functions, functions);
+      };
+
+  const auto only_test_schemas = [](Filtering_options *filters) {
+    // makes the counts independent of whatever else the instance holds
+    filters->schemas().include(std::array{"first", "second"});
+  };
+
+  {
+    SCOPED_TRACE("all filters are empty");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {"one", "two"}, {"one"}, {"one"});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    // 3 packages, 2 bodies and a function
+    EXPECT_EQ(6, cache.total.routines);
+    EXPECT_EQ(6, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE("exclude a package - the routine filters select it");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().exclude("first", "two");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {"one"}, {"one"}, {"one"});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(5, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE(
+        "a filter is by name, so it takes the whole namespace with it");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().exclude("first", "one");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    // the package, its body and the function share the name `one`
+    EXPECT_PACKAGES(cache, "first", {"two"}, {}, {});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(3, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE("include one package - everything else is excluded");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().include("second", "one");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {}, {}, {});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(2, cache.filtered.routines);
+  }
+}
+
 TEST_F(Instance_cache_test, filter_triggers) {
   {
     // setup

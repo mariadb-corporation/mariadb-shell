@@ -923,6 +923,69 @@ DO SETVAL(`a'b seq`, 1, 0);
   wipe_all();
 }
 
+// MariaDB Oracle-mode packages are dumped by the routine pass, in the order
+// mysqldump uses - see MARIADB_DUMP_LOAD.md section 19.
+TEST_F(Schema_dumper_test, dump_packages) {
+  if (!common::supports_packages(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_routines_ddl(file.get(), db_name));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  std::string contents;
+
+  expect_output_contains(
+      {
+          R"(
+-- begin package `mysqldump_test_db`.`pkg1`
+DROP PACKAGE IF EXISTS `pkg1`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE "pkg1" AS
+  PROCEDURE p1(a INT);
+  FUNCTION f1(b INT) RETURN INT;
+END ;;)",
+          // a specification with no body, under a name which needs quoting
+          R"(
+-- begin package `mysqldump_test_db`.`a'b pkg`
+DROP PACKAGE IF EXISTS `a'b pkg`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE "a'b pkg" AS FUNCTION g() RETURN INT; END ;;)",
+          R"(
+-- begin package body `mysqldump_test_db`.`pkg1`
+DROP PACKAGE BODY IF EXISTS `pkg1`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE BODY "pkg1" AS
+  vc INT := 10;)",
+          // the function of the same name is a different object, and it is
+          // still dumped as a function
+          R"(
+-- begin function `mysqldump_test_db`.`pkg1`
+/*!50003 DROP FUNCTION IF EXISTS `pkg1` */;)",
+      },
+      &contents);
+
+  {
+    // specifications come before the standalone routines and bodies after
+    // them, because a specification may declare types the routines use and a
+    // body may call those routines
+    const auto spec = contents.find("-- begin package `mysqldump_test_db`");
+    const auto function =
+        contents.find("-- begin function `mysqldump_test_db`");
+    const auto body =
+        contents.find("-- begin package body `mysqldump_test_db`");
+
+    ASSERT_NE(std::string::npos, spec);
+    ASSERT_NE(std::string::npos, function);
+    ASSERT_NE(std::string::npos, body);
+
+    EXPECT_LT(spec, function);
+    EXPECT_LT(function, body);
+  }
+
+  wipe_all();
+}
+
 // MariaDB CHECK constraints need no DDL work of their own - SHOW CREATE TABLE
 // carries them, and this pins that the dumper does not rewrite them away. What
 // MariaDB does need is the load-side session switch, see MARIADB_DUMP_LOAD.md

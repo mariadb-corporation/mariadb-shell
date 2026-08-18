@@ -112,6 +112,12 @@ bool supports_sequences(const Server_version &v) {
   return v.is_maria_db && v.number.numeric() >= 100300;
 }
 
+bool supports_packages(const Server_version &v) {
+  // the version routine_dump_param_array in client/mysqldump.cc gates the
+  // PACKAGE and PACKAGE BODY entries on
+  return v.is_maria_db && v.number.numeric() >= 100300;
+}
+
 bool supports_view_table_usage(const Server_version &v) {
   return mysql_only(v, 80013);
 }

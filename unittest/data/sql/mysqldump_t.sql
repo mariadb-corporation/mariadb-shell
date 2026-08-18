@@ -171,3 +171,33 @@ set sql_mode=default;
   KEY idx_b (b)
 ) */;
 /*M!100201 INSERT INTO ck1 VALUES (1, 50, 'ok') */;
+
+# Oracle-mode packages (MariaDB only: MySQL has no PACKAGE routine type and no
+# ORACLE sql_mode - see MARIADB_DUMP_LOAD.md section 19). The bodies contain
+# semicolons, which survive the client-side splitter only because it treats
+# /*M! ... */ as one comment span.
+
+/*M!100300 set sql_mode=oracle */;
+/*M!100300 CREATE PACKAGE pkg1 AS
+  PROCEDURE p1(a INT);
+  FUNCTION f1(b INT) RETURN INT;
+END */;
+/*M!100300 CREATE PACKAGE BODY pkg1 AS
+  vc INT := 10;
+  PROCEDURE p1(a INT) AS
+  BEGIN
+    SELECT a FROM DUAL;
+  END;
+  FUNCTION f1(b INT) RETURN INT AS
+  BEGIN
+    RETURN b + vc;
+  END;
+END */;
+
+# a specification with no body of its own, and a name which needs quoting
+/*M!100300 CREATE PACKAGE "a'b pkg" AS FUNCTION g() RETURN INT; END */;
+/*M!100300 set sql_mode=default */;
+
+# a standalone function of the same name as pkg1, to show the two namespaces
+# do not collide
+/*M!100300 CREATE FUNCTION pkg1(x INT) RETURNS INT DETERMINISTIC RETURN x */;

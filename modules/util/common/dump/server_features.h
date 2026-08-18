@@ -213,6 +213,17 @@ bool supports_check_constraint_checks(const Server_version &v);
 bool supports_sequences(const Server_version &v);
 
 /**
+ * Oracle-mode packages (CREATE PACKAGE / CREATE PACKAGE BODY). A MariaDB 10.3+
+ * routine type with no MySQL counterpart.
+ *
+ * A package only ever comes into existence under sql_mode=ORACLE, but the
+ * server exposes it like any other routine afterwards: I_S.ROUTINES reports it
+ * with ROUTINE_TYPE 'PACKAGE' or 'PACKAGE BODY', and SHOW CREATE PACKAGE [BODY]
+ * works in any sql_mode - see MARIADB_DUMP_LOAD.md section 19.
+ */
+bool supports_packages(const Server_version &v);
+
+/**
  * information_schema.VIEW_TABLE_USAGE, which lists the tables a view reads.
  *
  * MySQL 8.0.13+ only - MariaDB has no such table, so the tables have to be

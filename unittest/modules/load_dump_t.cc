@@ -263,6 +263,35 @@ TEST(Load_dump, add_execution_condition) {
     EXPECT_EQ("", call(tx, "DO SLEEP(1)", false));
   }
 
+  // MariaDB Oracle-mode packages: the type is spelled in two tokens, and the
+  // DDL always arrives under ANSI_QUOTES - see MARIADB_DUMP_LOAD.md section 19
+  EXPECT_TYPE_NAME("DROP PACKAGE IF EXISTS `foo`;", "PACKAGE", "foo");
+  EXPECT_TYPE_NAME("DROP PACKAGE BODY IF EXISTS `foo`;", "PACKAGE BODY", "foo");
+  EXPECT_TYPE_NAME("CREATE DEFINER=\"root\"@\"localhost\" PACKAGE \"foo\" AS",
+                   "PACKAGE", "foo");
+  EXPECT_TYPE_NAME(
+      "CREATE DEFINER=\"root\"@\"localhost\" PACKAGE BODY \"foo\" AS",
+      "PACKAGE BODY", "foo");
+  EXPECT_TYPE_NAME("CREATE PACKAGE bar.foo AS", "PACKAGE", "foo");
+  EXPECT_TYPE_NAME("create package body `bar`.`foo` as", "PACKAGE BODY", "foo");
+  // a package named `body` is written quoted, so it is not the keyword
+  EXPECT_TYPE_NAME("DROP PACKAGE IF EXISTS `body`;", "PACKAGE", "body");
+  EXPECT_TYPE_NAME("CREATE PACKAGE `body` AS", "PACKAGE", "body");
+
+  {
+    // both halves of a package are filtered by the routine filters, so
+    // excluding one excludes the other
+    Dump_loader::Sql_transform tx;
+    tx.add_execution_condition([](std::string_view type, std::string_view) {
+      return !shcore::str_caseeq(type, "PACKAGE", "PACKAGE BODY");
+    });
+
+    EXPECT_EQ("", call(tx, "DROP PACKAGE IF EXISTS `foo`", true));
+    EXPECT_EQ("", call(tx, "DROP PACKAGE BODY IF EXISTS `foo`", true));
+    EXPECT_EQ("", call(tx, "CREATE PACKAGE \"foo\" AS", true));
+    EXPECT_EQ("", call(tx, "CREATE PACKAGE BODY \"foo\" AS", true));
+  }
+
   EXPECT_TYPE_NAME("/*!50001 CREATE VIEW `foo` AS */", "", "", false);
   EXPECT_TYPE_NAME("/*!50001 CREATE SQL SECURITY DEFINER VIEW `foo` AS */", "",
                    "", false);

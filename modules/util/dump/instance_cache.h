@@ -169,6 +169,12 @@ struct Instance_cache {
     std::unordered_map<std::string, Routine> functions;
     std::unordered_map<std::string, Routine> procedures;
     std::unordered_set<std::string> libraries;
+    // MariaDB only, Oracle-mode packages. They are routines - I_S.ROUTINES
+    // reports them and the routine filters select them - but they have their
+    // own namespace, so a package and a function may share a name, and they
+    // take no parameters of their own
+    std::unordered_set<std::string> packages;
+    std::unordered_set<std::string> package_bodies;
     // MariaDB only, sequences share the table namespace and are filtered as
     // tables, but they hold no data of their own
     std::unordered_set<std::string> sequences;

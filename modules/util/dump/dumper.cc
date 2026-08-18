@@ -5779,6 +5779,27 @@ void Dumper::write_schema_metadata(
         doc.AddMember({(shcore::str_lower(type) + "Dependencies").c_str(), a},
                       std::move(routine_dependencies), a);
       }
+
+      // MariaDB Oracle-mode packages, written only when there is something to
+      // write, so that a dump taken from a server which has none looks exactly
+      // as it did before
+      for (const auto &[type, key] :
+           {std::pair{"PACKAGE", "packages"},
+            std::pair{"PACKAGE BODY", "packageBodies"}}) {
+        const auto names = dumper->get_routines(schema.name, type);
+
+        if (names.empty()) {
+          continue;
+        }
+
+        Value packages{Type::kArrayType};
+
+        for (const auto &package : names) {
+          packages.PushBack({package.c_str(), a}, a);
+        }
+
+        doc.AddMember(StringRef(key), std::move(packages), a);
+      }
     }
 
     if (m_options.dump_libraries()) {

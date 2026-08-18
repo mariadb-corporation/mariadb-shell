@@ -58,6 +58,8 @@ namespace dump {
 namespace {
 
 constexpr std::string_view k_procedure_type = "PROCEDURE";
+constexpr std::string_view k_package_type = "PACKAGE";
+constexpr std::string_view k_package_body_type = "PACKAGE BODY";
 
 bool has_vector_store_comment(std::string_view comment) {
   static constexpr std::string_view k_genai_options = "GENAI_OPTIONS=";
@@ -237,18 +239,41 @@ Instance_cache_builder &Instance_cache_builder::routines() {
   // routine names are case insensitive
   info.where = m_query_helper.routine_filter(info);
 
-  iterate_schemas(info,
-                  [this](const std::string &, Instance_cache::Schema *schema,
-                         const mysqlshdk::db::IRow *row) {
-                    auto &target = row->get_string(2) == k_procedure_type
-                                       ? schema->procedures
-                                       : schema->functions;  // ROUTINE_TYPE
+  iterate_schemas(
+      info, [this](const std::string &, Instance_cache::Schema *schema,
+                   const mysqlshdk::db::IRow *row) {
+        const auto type = row->get_string(2);  // ROUTINE_TYPE
 
-                    target.emplace(row->get_string(1),
-                                   Instance_cache::Routine{});  // ROUTINE_NAME
+        // MariaDB reports Oracle-mode packages here as well; they have their
+        // own namespace, so they cannot share a map with the functions - a
+        // package and a function may both be named `pkg`. A MySQL build remaps
+        // a MariaDB source to 5.6 and writes a MySQL-shaped dump, which cannot
+        // carry a package, so there they are left out entirely - what they
+        // must never be is mistaken for a function, which is what used to
+        // abort the whole dump
+        if (k_package_type == type || k_package_body_type == type) {
+          if (common::supports_packages(m_cache.server.version)) {
+            auto &target = k_package_type == type ? schema->packages
+                                                  : schema->package_bodies;
 
-                    ++m_cache.filtered.routines;
-                  });
+            target.emplace(row->get_string(1));  // ROUTINE_NAME
+
+            ++m_cache.filtered.routines;
+          }
+
+          return;
+        }
+
+        {
+          auto &target =
+              k_procedure_type == type ? schema->procedures : schema->functions;
+
+          target.emplace(row->get_string(1),
+                         Instance_cache::Routine{});  // ROUTINE_NAME
+        }
+
+        ++m_cache.filtered.routines;
+      });
 
   // the total number of routines within the filtered schemas
   m_cache.total.routines = count(info);
