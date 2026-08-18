@@ -867,7 +867,6 @@ class Dump_loader {
   // these variables are used to display the progress
   std::mutex m_indexes_display_mutex;
   double m_indexes_progress = 0.0;
-  uint64_t m_indexes_recreated;
   // (this variable does not change once DDL finishes loading)
   uint64_t m_indexes_to_recreate = 0;
   // whether to query for partial index progress

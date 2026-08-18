@@ -634,8 +634,20 @@ class Dump_loader::Monitoring final {
 
   void monitor(const Session_ptr &session) {
     std::lock_guard lock{m_monitors_mutex};
-    for (const auto &m : m_monitors) {
-      m(session);
+
+    // A monitor which throws is dropped, it does not end the thread: this used
+    // to stop monitoring for the rest of the load, and with it the ability to
+    // cancel worker queries on a hard interrupt. See MARIADB_DUMP_LOAD.md
+    // section 18.
+    for (auto it = m_monitors.begin(); it != m_monitors.end();) {
+      try {
+        (*it)(session);
+        ++it;
+      } catch (const std::exception &e) {
+        log_warning("Monitoring thread: disabling a monitor which failed: %s",
+                    e.what());
+        it = m_monitors.erase(it);
+      }
     }
   }
 
@@ -5851,15 +5863,61 @@ void Dump_loader::setup_load_data_progress() {
           }
         });
   } else {
-    m_monitoring->add([this](const Session_ptr &session) {
-      // no reconnection - we're using the monitoring session
-      update_rows_throughput(
-          sql::query(session,
-                     "SELECT CAST(VARIABLE_VALUE AS UNSIGNED) FROM "
-                     "performance_schema.global_status WHERE "
-                     "VARIABLE_NAME='Innodb_rows_inserted'")
-              ->fetch_one_or_throw()
-              ->get_uint(0));
+    // Innodb_rows_inserted is the cheapest source, but it is not everywhere: no
+    // MariaDB has that status variable at all, and no server running with
+    // performance_schema off has that table. Falling back to counting rows on
+    // the client side keeps a throughput figure in both cases - and, more
+    // importantly, stops one unreadable status variable from taking the
+    // monitoring thread down with it. See MARIADB_DUMP_LOAD.md section 18.
+    m_monitoring->add([this, use_server = true, had_sample = false,
+                       prev = m_rows_previously_loaded](
+                          const Session_ptr &session) mutable {
+      if (use_server) {
+        try {
+          // no reconnection - we're using the monitoring session
+          const auto result =
+              sql::query(session,
+                         "SELECT CAST(VARIABLE_VALUE AS UNSIGNED) FROM "
+                         "performance_schema.global_status WHERE "
+                         "VARIABLE_NAME='Innodb_rows_inserted'");
+
+          if (const auto row = result->fetch_one()) {
+            had_sample = true;
+            update_rows_throughput(row->get_uint(0));
+            return;
+          }
+
+          // the query itself ran, so this server simply does not have the
+          // status variable
+          log_info(
+              "The server does not expose Innodb_rows_inserted, row throughput "
+              "will be counted on the client side.");
+        } catch (const std::exception &e) {
+          if (had_sample) {
+            // it was readable before, so this is a transient failure - skipping
+            // one sample beats switching source mid-load and reporting a
+            // nonsense rate
+            log_debug("Failed to read Innodb_rows_inserted: %s", e.what());
+            return;
+          }
+
+          log_info(
+              "Unable to read Innodb_rows_inserted (%s), row throughput will "
+              "be counted on the client side.",
+              e.what());
+        }
+
+        use_server = false;
+      }
+
+      // the same client-side counting the BULK LOAD branch above uses: the
+      // total is updated whenever a data load task finishes
+      const auto rows = m_load_stats.records.load();
+
+      if (rows > prev) {
+        prev = rows;
+        update_rows_throughput(rows);
+      }
     });
   }
 
@@ -5886,13 +5944,7 @@ void Dump_loader::setup_create_indexes_progress() {
     return;
   }
 
-  m_indexes_recreated = 0;
-
   m_monitoring->add([this](const Session_ptr &session) {
-    if (m_indexes_to_recreate == m_indexes_recreated) {
-      return;
-    }
-
     uint64_t indexes_completed = 0;
     uint64_t indexes_in_progress = 0;
     uint64_t index_statements_in_progress = 0;
@@ -5902,6 +5954,10 @@ void Dump_loader::setup_create_indexes_progress() {
       indexes_completed = m_indexes_completed;
       indexes_in_progress = m_indexes_in_progress;
       index_statements_in_progress = m_index_statements_in_progress;
+    }
+
+    if (m_indexes_to_recreate == indexes_completed) {
+      return;
     }
 
     double updated_progress = 100.0 * indexes_completed / m_indexes_to_recreate;
@@ -5924,14 +5980,19 @@ void Dump_loader::setup_create_indexes_progress() {
     if (updated_progress > m_indexes_progress) {
       std::lock_guard lock{m_indexes_display_mutex};
       m_indexes_progress = updated_progress;
-      m_indexes_recreated = indexes_completed;
     }
   });
 
   dump::Progress_thread::Progress_config config;
   config.current = [this]() -> uint64_t {
-    std::lock_guard lock{m_indexes_display_mutex};
-    return m_indexes_recreated;
+    // the count the workers keep, rather than a copy of it the monitoring
+    // thread has to publish. A numeric stage finishes itself once current
+    // reaches total, so mirroring the count made the whole progress queue - and
+    // with it the end of the load - depend on the monitoring thread being alive
+    // and on the percentage below having increased. See
+    // MARIADB_DUMP_LOAD.md section 18.
+    std::lock_guard lock{m_indexes_progress_mutex};
+    return m_indexes_completed;
   };
   config.total = [this]() { return m_indexes_to_recreate; };
   config.right_label = [this]() {
