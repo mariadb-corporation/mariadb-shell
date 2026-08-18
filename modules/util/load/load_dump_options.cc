@@ -249,6 +249,10 @@ void Load_dump_options::on_set_session(
     // some users are always excluded
     filters().users().exclude(dump::common::k_excluded_users);
 
+    if (target_is_maria_db()) {
+      filters().users().exclude(dump::common::k_maria_db_excluded_users);
+    }
+
     if (is_mds()) {
       filters().users().exclude(dump::common::k_mhs_excluded_users);
     }

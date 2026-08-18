@@ -6353,10 +6353,8 @@ void Dumper::validate_preflight_privileges() const {
     }
   }
 
-  // dumping accounts is MySQL-only for now (throw_if_cannot_dump_users), so
-  // this stays on the MySQL flag until MARIADB_DUMP_LOAD.md section 4.6 lands
-  if (m_server_version.is_8_0) {
-    // SHOW CREATE USER requires access to the mysql schema.
+  if (common::requires_select_on_mysql_to_dump_users(m_server_version)) {
+    // SHOW CREATE USER and SHOW GRANTS FOR read the grant tables.
     const auto result = m_user_privileges->validate({"SELECT"}, "mysql");
 
     if (result.has_missing_privileges()) {
@@ -6888,7 +6886,14 @@ issues::Status_set Dumper::check_for_upgrade_errors() const { return {}; }
 #endif  // HAVE_UPGRADE_CHECKER
 
 void Dumper::throw_if_cannot_dump_users() const {
-  if (m_server_version.is_maria_db && dump_users()) {
+  // BUG#34049624 refused this for every MariaDB source, and a MySQL-shaped dump
+  // still cannot carry a MariaDB account: roles are not accounts there, the
+  // authentication plugins have no MySQL counterpart and IDENTIFIED VIA x OR y
+  // has no MySQL form at all. A MariaDB-dialect dump can - see
+  // MARIADB_DUMP_LOAD.md section 20 - so the refusal now keys on the dialect
+  // the dump is being written in rather than on the vendor of the source.
+  if (m_server_version.is_maria_db &&
+      !common::is_maria_db_dialect(m_server_version) && dump_users()) {
     THROW_ERROR(SHERR_DUMP_USERS_MARIA_DB_NOT_SUPPORTED);
   }
 }

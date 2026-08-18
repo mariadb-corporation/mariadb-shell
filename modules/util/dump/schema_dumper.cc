@@ -2961,6 +2961,57 @@ const std::unordered_set<std::string> &Schema_dumper::get_sequences(
 }
 
 namespace {
+
+// the implicit MariaDB role: it turns up in mysql.user like any other role once
+// it holds a grant, but CREATE ROLE PUBLIC is rejected with error 1959
+constexpr std::string_view k_public_role = "PUBLIC";
+
+/**
+ * How dump_grants() has to address one account. The three forms coincide for
+ * every account MySQL has, and for a MariaDB user; they differ for a MariaDB
+ * role, which is hostless - see common::roles_are_hostless().
+ */
+struct Dumped_account {
+  shcore::Account account;
+  // written into the -- begin/-- end markers, and hence what the loader filters
+  // by and drops
+  std::string label;
+  // SHOW CREATE USER / SHOW GRANTS FOR this
+  std::string show_target;
+  // the information_schema.*_PRIVILEGES grantee, 'user'@'host'
+  std::string grantee;
+  bool is_role = false;
+};
+
+/**
+ * MariaDB's SHOW GRANTS FOR a role reports the grants of every role granted to
+ * it as well, each under its own grantee - see
+ * common::show_grants_expands_roles(). Keeps only the statements which are
+ * about the account that was asked about; the rest are dumped with the role
+ * they belong to, and executing them here would fail on a target where that
+ * role was filtered out.
+ */
+void keep_own_grants(std::vector<std::string> *grants,
+                     const shcore::Account &account) {
+  const auto belongs_to_someone_else = [&account](const std::string &grant) {
+    compatibility::Privilege_level_info info;
+
+    try {
+      if (!compatibility::parse_grant_statement(grant, &info)) return false;
+    } catch (const std::runtime_error &) {
+      // not a grant statement at all, leave it for the caller to deal with
+      return false;
+    }
+
+    // roles are hostless, so the name alone identifies the grantee
+    return shcore::split_account(info.account).user != account.user;
+  };
+
+  grants->erase(
+      std::remove_if(grants->begin(), grants->end(), belongs_to_someone_else),
+      grants->end());
+}
+
 enum class Priv_level_type { GLOBAL, SCHEMA, TABLE };
 
 Priv_level_type check_priv_level(const std::string &s, std::string *out_schema,
@@ -3041,6 +3092,32 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
     return roles.end() != std::find(roles.begin(), roles.end(), a);
   };
 
+  // MariaDB roles are objects of their own - see the three predicates for what
+  // that changes
+  const auto hostless_roles =
+      common::roles_are_hostless(m_cache.server.version);
+  const auto transitive_role_grants =
+      common::show_grants_expands_roles(m_cache.server.version);
+  const auto default_role_from_grants =
+      common::default_role_in_show_grants(m_cache.server.version);
+
+  const auto describe_account = [hostless_roles,
+                                 &is_role](const shcore::Account &a) {
+    Dumped_account info;
+
+    info.account = a;
+    info.grantee = shcore::make_account(a);
+    info.is_role = is_role(a);
+
+    if (info.is_role && hostless_roles) {
+      info.label = info.show_target = shcore::quote_identifier(a.user);
+    } else {
+      info.label = info.show_target = info.grantee;
+    }
+
+    return info;
+  };
+
   using get_grants_t =
       std::function<std::vector<std::string>(const std::string &)>;
 
@@ -3111,19 +3188,35 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
   const auto &get_create_user =
       is_5_6 ? get_create_user_5_6 : get_create_user_5_7_or_8_0;
 
-  std::vector<std::string> users;
+  std::vector<Dumped_account> users;
 
   for (const auto &u : m_cache.users) {
-    const auto user = shcore::make_account(u);
+    auto info = describe_account(u);
+    const auto &user = info.label;
 
     if (u.user.find('\'') != std::string::npos) {
       // we don't allow accounts with 's in them because they're incorrectly
       // escaped in the output of SHOW GRANTS, which would generate invalid
       // or dangerous SQL.
-      THROW_ERROR(SHERR_DUMP_ACCOUNT_WITH_APOSTROPHE, user.c_str());
+      THROW_ERROR(SHERR_DUMP_ACCOUNT_WITH_APOSTROPHE, info.grantee.c_str());
     }
 
-    auto create_user = get_create_user(user);
+    if (info.is_role && hostless_roles) {
+      // there is nothing to read from the server: SHOW CREATE USER fails for a
+      // MariaDB role, and a role has no attribute a CREATE ROLE could carry
+      // anyway - even its administrator comes back from SHOW GRANTS, as
+      // GRANT <role> TO <admin> WITH ADMIN OPTION
+      if (!shcore::str_caseeq(u.user, k_public_role)) {
+        fputs("-- begin role " + user + "\n", file);
+        fputs("CREATE ROLE IF NOT EXISTS " + user + ";\n", file);
+        fputs("-- end role " + user + "\n\n", file);
+      }
+
+      users.emplace_back(std::move(info));
+      continue;
+    }
+
+    auto create_user = get_create_user(info.show_target);
 
     if (create_user.empty()) {
       current_console()->print_error("No create user statement for user " +
@@ -3270,11 +3363,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
       auto default_role =
           compatibility::strip_default_role(create_user, &create_user);
       if (!default_role.empty())
-        default_roles.emplace(user, std::move(default_role));
+        default_roles.emplace(user, "SET " + default_role + " TO " + user);
       fputs(create_user + ";\n", file);
       fputs("-- end user " + user + "\n\n", file);
 
-      users.emplace_back(std::move(user));
+      users.emplace_back(std::move(info));
     }
   }
 
@@ -3285,11 +3378,33 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
   // going to be reported as a warning
   mhs_roles.include(common::k_mhs_excluded_users);
 
-  for (const auto &user : users) {
+  for (const auto &info : users) {
+    const auto &user = info.label;
     std::set<std::string> restricted;
-    auto grants = get_grants(user);
+    auto grants = get_grants(info.show_target);
+
+    if (transitive_role_grants && info.is_role) {
+      keep_own_grants(&grants, info.account);
+    }
+
+    if (default_role_from_grants) {
+      // MariaDB reports the default role as a complete statement at the end of
+      // SHOW GRANTS instead of as a clause of SHOW CREATE USER. Move it to its
+      // own block, both because it has to run after every role exists and
+      // because the loader gives it its own statement type.
+      for (auto &grant : grants) {
+        if (shcore::str_ibeginswith(grant, "SET DEFAULT ROLE")) {
+          default_roles.emplace(user, grant);
+          grant.clear();
+        }
+      }
+    }
 
     for (auto &grant : grants) {
+      if (grant.empty()) {
+        continue;
+      }
+
       if (opt_mysqlaas || opt_strip_restricted_grants) {
         if (const auto mysql_table_grant =
                 compatibility::is_grant_on_object_from_mysql_schema(grant);
@@ -3311,7 +3426,7 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
         // ALL PRIVILEGES, which isn't helpful for filtering out grants.
         // Also, ALL PRIVILEGES can appear even in 8.0 for DB grants
         std::string schema;
-        grant = expand_all_privileges(grant, user, &schema);
+        grant = expand_all_privileges(grant, info.grantee, &schema);
 
         // grants on specific user schemas don't need to be filtered
         if (schema.empty() || is_system_schema_or_ndb(schema) ||
@@ -3532,7 +3647,7 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
 
   for (const auto &df : default_roles) {
     fputs("-- begin default role " + df.first + "\n", file);
-    fprintf(file, "SET %s TO %s;\n", df.second.c_str(), df.first.c_str());
+    fputs(df.second + ";\n", file);
     fputs("-- end default role " + df.first + "\n\n", file);
   }
 
@@ -3548,6 +3663,7 @@ Schema_dumper::preprocess_users_script(
         &strip_privilege_cb) {
   static constexpr const char *k_begin_cmt = "-- begin ";
   static constexpr const char *k_create_user_cmt = "-- begin user ";
+  static constexpr const char *k_create_role_cmt = "-- begin role ";
   static constexpr const char *k_grant_cmt = "-- begin grants ";
   static constexpr auto k_default_role_cmt = "-- begin default role ";
   static constexpr const char *k_end_cmt = "-- end ";
@@ -3582,6 +3698,9 @@ Schema_dumper::preprocess_users_script(
       if (shcore::str_beginswith(line, k_create_user_cmt)) {
         current->type = Type::CREATE_USER;
         account_pos = strlen(k_create_user_cmt);
+      } else if (shcore::str_beginswith(line, k_create_role_cmt)) {
+        current->type = Type::CREATE_ROLE;
+        account_pos = strlen(k_create_role_cmt);
       } else if (shcore::str_beginswith(line, k_default_role_cmt)) {
         current->type = Type::DEFAULT_ROLE;
         account_pos = strlen(k_default_role_cmt);
@@ -3606,6 +3725,10 @@ Schema_dumper::preprocess_users_script(
           switch (current->type) {
             case Type::CREATE_USER:
               what = "CREATE/ALTER USER";
+              break;
+
+            case Type::CREATE_ROLE:
+              what = "CREATE ROLE";
               break;
 
             case Type::DEFAULT_ROLE:

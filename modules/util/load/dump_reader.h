@@ -166,6 +166,13 @@ class Dump_reader {
 
   std::vector<shcore::Account> accounts() const;
 
+  /**
+   * The subset of accounts() which the dump describes as MariaDB roles. They
+   * are hostless, and information_schema does not report them the way it
+   * reports an account - see common::roles_are_hostless().
+   */
+  std::vector<shcore::Account> roles() const;
+
   std::list<Dump_reader::Object_info *> schemas();
 
   bool schema_objects(std::string_view schema,

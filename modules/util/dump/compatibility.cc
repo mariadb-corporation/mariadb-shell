@@ -2170,6 +2170,18 @@ bool parse_grant_statement(std::string_view statement,
       object_level = Privilege_level_info::Level::ROUTINE;
       // priv_level follows
       priv_level = it.next_token();
+    } else if (shcore::str_caseeq(priv_level, "PACKAGE")) {
+      // MariaDB's Oracle-mode packages, which SHOW GRANTS reports as
+      // GRANT EXECUTE ON PACKAGE [BODY] `db`.`pkg` - the BODY is a second
+      // token, as in add_execution_condition(), and an unquoted one can only be
+      // the keyword. Both halves are routines to information_schema.ROUTINES
+      // and to the routine filters, so they need no level of their own.
+      object_level = Privilege_level_info::Level::ROUTINE;
+      priv_level = it.next_token();
+
+      if (shcore::str_caseeq(priv_level, "BODY")) {
+        priv_level = it.next_token();
+      }
     } else if (shcore::str_caseeq(priv_level, "LIBRARY")) {
       object_level = Privilege_level_info::Level::LIBRARY;
       // priv_level follows

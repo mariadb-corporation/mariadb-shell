@@ -19,15 +19,18 @@
 > code, options and tests and are gated or predicated off for MariaDB builds, so
 > MySQL→MySQL stays fully supported.
 >
-> Status: **phases 0, 1, 2, 3 and 4 done** (§11, §12, §13, §14, §15). Dump/load
-> builds for MariaDB, a dumpInstance -> loadDump round-trip works against a live
-> server with no `ignoreVersion`, the 5.6 remap is gone from the MariaDB build,
-> all version gating is vendor-aware, a consistent dump holds a real backup lock
-> (`BACKUP STAGE BLOCK_DDL`) instead of running with DDL wide open, and a dump
-> now carries MariaDB's GTID position and can restore it into a target, so a
-> replica can be provisioned from a dump; the MySQL build is verified unaffected
-> (§11.7, §12.5, §13.7, §14.4, §15.6). Phases 5-6 outstanding.
-> Last updated: 2026-08-11.
+> Status: **phases 0-4 and 5a-5d done** (§11-§20). Dump/load builds for MariaDB,
+> a dumpInstance -> loadDump round-trip works against a live server with no
+> `ignoreVersion`, the 5.6 remap is gone from the MariaDB build, all version
+> gating is vendor-aware, a consistent dump holds a real backup lock
+> (`BACKUP STAGE BLOCK_DDL`) instead of running with DDL wide open, a dump
+> carries MariaDB's GTID position and can restore it into a target so a replica
+> can be provisioned from a dump, and MariaDB's own object types - sequences,
+> CHECK constraint enforcement, Oracle-mode packages, and users, roles and
+> grants - all round-trip; the MySQL build is verified unaffected (§11.7, §12.5,
+> §13.7, §14.4, §15.6, §16.4, §19.4, §20.5). Phase 6 (the end-to-end suites)
+> outstanding, and §4.5's `mysql.column_stats` is the last unported object.
+> Last updated: 2026-08-18.
 
 ---
 
@@ -271,21 +274,22 @@ non-nestable* — one backup stage at a time per server, and the session that
 started it must end it. The current code holds locks in a set of side sessions
 (`m_lock_sessions`); that model needs rethinking, not just a statement swap.
 
-### 4.2 Privileges & roles — **fixed in phase 1**
+### 4.2 Privileges & roles — **fixed in phases 1 and 5d**
 
-- `validate_preflight_privileges` ([dumper.cc:6162](modules/util/dump/dumper.cc#L6162))
-  branches on `is_5_6` → demands `SUPER`. On MariaDB (remapped to 5.6) this is
-  wrong: MariaDB 10.5+ split `SUPER` into granular privileges. It only fires when
-  `dump_users()` is on, which currently throws on MariaDB anyway — but it becomes
-  live the moment user dumping is implemented.
+- ~~`validate_preflight_privileges` branches on `is_5_6` → demands `SUPER`.~~
+  **Done in phase 5d** (§20.3): the `SUPER` check stays MySQL-5.6-only, and the
+  `SELECT`-on-`mysql` check it sits beside is now asked for every MariaDB too,
+  which is what `SHOW CREATE USER` / `SHOW GRANTS FOR` need there.
 - `validate_object_privileges` ([dumper.cc:6190](modules/util/dump/dumper.cc#L6190))
   requires explicit `SELECT` on `!is_8_0` — correct and harmless for MariaDB.
-- ~~**Roles are silently dropped.**~~ **Fixed in phase 1** — see §12.2.
+- ~~**Roles are silently dropped.**~~ **Fixed in phase 1** — see §12.2 for
+  reading role-granted privileges, §20 for dumping the roles themselves.
 - Privilege-name mapping for the consistency checks:
   `REPLICATION CLIENT` → **`BINLOG MONITOR`** — **done in phase 1** (§12.3).
-  Still outstanding for the user-dumping work of phase 5: `SLAVE MONITOR`, and
-  the `SUPER`-implied checks → `BINLOG ADMIN` / `READ_ONLY ADMIN` /
-  `FEDERATED ADMIN`. Confirmed present in `sql/sql_acl.cc`.
+  The `SUPER`-implied checks (`BINLOG ADMIN` / `READ_ONLY ADMIN` /
+  `FEDERATED ADMIN`) and `SLAVE MONITOR` were expected to matter for the
+  user-dumping work; §20 found they do not — they belong to the MDS
+  restricted-grant machinery, which is MySQL-only by §4.11.
 
 ### 4.3 `mysql` system-table lock list — **fixed in phase 1** (§12.1)
 
@@ -443,7 +447,7 @@ Remaining MySQL-specific pieces:
 - `SHOW CREATE LIBRARY` ([schema_dumper.cc:1333](modules/util/dump/schema_dumper.cc#L1333)) — unreachable once `supports_library_ddl()` is vendor-aware; leave the code in place.
 - `ANALYZE TABLE ... UPDATE HISTOGRAM` emission ([schema_dumper.cc:1962](modules/util/dump/schema_dumper.cc#L1962)) — remap to `ANALYZE TABLE ... PERSISTENT FOR ALL` for MariaDB (see §4.5).
 - `SET @@GLOBAL.GTID_PURGED` epilogue ([schema_dumper.cc:2375](modules/util/dump/schema_dumper.cc#L2375)) — see §4.4.
-- Account dumping (`dump_grants`, [schema_dumper.cc:2840](modules/util/dump/schema_dumper.cc#L2840)): `SHOW CREATE USER` + `SHOW GRANTS` + `SELECT plugin FROM mysql.user` + `SET DEFAULT ROLE`. MariaDB has `SHOW CREATE USER` (10.2+) but roles are not emitted by it, auth plugins differ (`mysql_native_password` is still first-class; `ed25519`, `unix_socket`, `gssapi` have no MySQL analogue), and `IDENTIFIED VIA x OR y` multi-auth has no MySQL form. This is why `throw_if_cannot_dump_users()` exists; it is the largest single chunk of net-new DDL work.
+- ~~Account dumping (`dump_grants`)~~ — **done in phase 5d** (§20). The prediction here was wrong in every particular worth noting: `SHOW CREATE USER` does not merely omit a role, it **fails** for one (error 1133); the differing auth plugins and `IDENTIFIED VIA x OR y` round-trip **verbatim** with no rewriting at all; and what actually needed designing was that `SHOW GRANTS FOR` a role is transitive, that a role needs `CREATE ROLE`/`DROP ROLE` and a hostless name, and that the default role arrives as a statement rather than a clause. `throw_if_cannot_dump_users()` survives, narrowed to the MySQL-shaped dump BUG#34049624 wrote it for.
 - The `/*!NNNNN ... */` version-comment prologue/epilogue: MariaDB honours `/*!` with MySQL version numbers, so these mostly work, but anything above `50700` is silently skipped by MariaDB. Anything MariaDB-only must be written as `/*M!NNNNNN ... */`. There is precedent for this pattern in the port already — see the `mariadb-sql-fixture-overrides` note on `/*M! ... */` fixtures. **One caveat, found in §19:** the shell's own `SQL_iterator` knows `/*!` and `/*+` but *not* `/*M!`, which it spans as an ordinary comment — so a statement written inside one is invisible to the loader's statement filters. Emit MariaDB-only DDL bare unless a MySQL reader actually has to skip it.
 
 ### 4.7 Data chunking & extraction — **should work unchanged**
@@ -918,7 +922,7 @@ predicates without it.
 | 5a | ~~**Sequences** (§4.5.1)~~ **DONE** (§16) — enumerated and filtered as tables, dumped as DDL with the position restored by `DO SETVAL`, dropped and duplicate-checked on load. | The gap turned out to abort the dump, not merely lose data. |
 | 5b | ~~**Check constraints** (§4.5)~~ **DONE** (§17) — the DDL already round-tripped; the load now switches `check_constraint_checks` off, so a table holding rows its own constraints reject can be restored. | Not an object-metadata problem at all: MySQL's non-enforcement is per-constraint DDL, MariaDB's is a session variable, so only the restoring side had a gap. |
 | 5c | ~~**Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5).~~ **DONE** (§19) — dumped by the routine pass in mysqldump's order, filtered as routines, dropped and duplicate-checked on load. | Same failure as sequences, not the predicted one: a package was cached as a *function*, so the dump aborted on `SHOW CREATE FUNCTION`. |
-| 5d | **Users, roles and grants** (§4.2, §4.6) — removes `throw_if_cannot_dump_users()` and 52037. | The long pole: `SHOW CREATE USER` omits roles, `IDENTIFIED VIA x OR y` has no MySQL form, and the auth plugins differ. |
+| 5d | ~~**Users, roles and grants** (§4.2, §4.6)~~ **DONE** (§20) — `users: true` works on a MariaDB-dialect dump; roles get `CREATE ROLE` / `DROP ROLE` of their own, `SHOW GRANTS` output is trimmed to its own grantee and the default role moves to its own block. 52037 stays, narrowed to the MySQL-shaped dump it was written for. | Nothing predicted here was the problem. `SHOW CREATE USER` does not *omit* a role, it **fails** for one; `IDENTIFIED VIA x OR y` round-trips verbatim; and the auth plugins only matter if the target lacks one. What did bite: `SHOW GRANTS FOR` a role is *transitive*. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
 ---
@@ -2338,9 +2342,275 @@ Live, MariaDB 12.3.2 (sandboxes on 3313 and 3315) and MySQL 9.7.1 (3314):
   bare. Teaching the lexer would be the deeper fix, but `/*M! ... */` really *is*
   an ordinary comment to a MySQL server, so the change cannot simply be made in
   the shared path — it would need the same vendor plumbing §7.1 gave the dumper.
-- **`GRANT EXECUTE ON PACKAGE` is not carried**, because no grant is: users,
-  roles and grants are phase 5d.
+- ~~**`GRANT EXECUTE ON PACKAGE` is not carried**, because no grant is~~ —
+  **done in §20**, and it needed a parser fix of its own (§20.3).
 - **A package with no body is restored with no body**, which is faithful. But
   the target then has a specification nothing implements, and neither the dump
   nor the load says so — the same silence §17.5 notes for a table holding rows
   its constraints reject.
+
+---
+
+## 20. Phase 5d — done
+
+Landed 2026-08-18. §4.2's and §4.6's users, roles and grants: `users: true` on a
+MariaDB source used to be refused outright with 52037.
+
+**Are accounts supported now? Yes** — on the vendor → vendor path, the whole ACL
+state round-trips: every `SHOW CREATE USER` attribute (password hashes, `IDENTIFIED
+VIA … OR …` multi-auth, `ed25519`, `unix_socket`, `REQUIRE SSL`, resource limits,
+`ACCOUNT LOCK`, `PASSWORD EXPIRE`), roles with their own DDL, the role graph,
+`WITH ADMIN OPTION`, default roles, `GRANT EXECUTE ON PACKAGE [BODY]` and the
+implicit `PUBLIC` role. `dumpInstance` → `loadDump` and `copyInstance` both
+reproduce a source instance's accounts so that `SHOW CREATE USER` + `SHOW GRANTS`
+for every account is byte-identical on the target.
+
+**52037 stays.** It was upstream's (BUG#34049624), not the port's, and it still
+answers a real question: a **MySQL-shaped** dump cannot express a MariaDB
+account. Its condition moved from "the source is MariaDB" to "the dump is not in
+MariaDB's dialect" — `is_maria_db && !is_maria_db_dialect(v)`, which on a MySQL
+build is the same thing (the 5.6 remap of §13.1 is unconditional there) and on a
+MariaDB build is never true. The message and the test asserting it are untouched.
+
+### 20.1 What a MariaDB role is, measured
+
+On MariaDB 12.3.2. Everything predicted about `SHOW CREATE USER` and the auth
+plugins turned out either wrong or harmless; the role model is where the work is.
+
+| | Measured |
+|---|---|
+| Where a role lives | `mysql.user`, `is_role='Y'`, with an **empty host** — so `SELECT DISTINCT user, host FROM mysql.user` already returns roles alongside accounts |
+| Namespace | its **own**: `` `r` `` the role and `` `r`@`%` `` the user coexist, and `DROP USER 'r'@'%'` leaves the role standing |
+| `SHOW CREATE USER` for a role | **error 1133**, "Can't find any matching row in the user table" — in *every* spelling: `` `r` ``, `'r'@'%'`, `` `r`@`` `` |
+| `SHOW GRANTS FOR` a role | works only **hostless**: `` SHOW GRANTS FOR `r` `` yes, `SHOW GRANTS FOR 'r'@''` → error 1141 |
+| `DROP USER` on a role | reports **success** and does nothing. Only `DROP ROLE` removes one |
+| `CREATE ROLE IF NOT EXISTS` / `DROP ROLE IF EXISTS` | both exist |
+| `WITH ADMIN` | not in any `CREATE ROLE` output — it comes back as `` GRANT `r` TO <admin> WITH ADMIN OPTION `` in the *administrator's* `SHOW GRANTS` |
+| `PUBLIC` | a real `mysql.user` row with `is_role='Y'`, appearing once it holds a grant — but `CREATE ROLE PUBLIC` is **error 1959** |
+| `information_schema.USER_PRIVILEGES` | lists every user and **not one role**: a role holds only `USAGE`, and I_S has no row for that |
+| `DENY` (§12.2) | **not in 12.3.2** — `DENY DELETE ON db.* TO u` is a syntax error, so the `parse_grant` handling phase 1 added is still future-proofing |
+| `activate_all_roles_on_login`, `mandatory_roles`, `partial_revokes` | none exist |
+| `mysql.user.account_locked` | **does not exist** — the lock state lives in the `global_priv` JSON and surfaces only through `SHOW CREATE USER` |
+
+Two more, about the statements rather than the objects:
+
+- **`SHOW GRANTS FOR` a role is transitive.** It walks the role graph down and
+  emits the grants of every role granted to it, *under their own grantee*. With
+  a `baserole → midrole → toprole` chain, `` SHOW GRANTS FOR `toprole` `` returns
+  eleven statements, eight of which grant to `midrole` or `baserole`. Verified
+  **not** to happen for a plain user: a user's `SHOW GRANTS` lists the roles it
+  was granted, not what those roles carry.
+- **The default role arrives as a statement, not a clause.** MySQL 8.0 puts
+  `DEFAULT ROLE` inside `SHOW CREATE USER`; MariaDB emits a whole
+  `` SET DEFAULT ROLE `r` FOR `u`@`h` `` as the last line of `SHOW GRANTS`, and
+  **rejects the `TO` spelling** MySQL uses.
+
+And the good news, all measured by replaying the dumped text into a second
+server: **every statement MariaDB's `SHOW CREATE USER` and `SHOW GRANTS` produce
+re-executes verbatim**, including `IDENTIFIED BY PASSWORD '*hash'`,
+`IDENTIFIED VIA mysql_native_password USING '…' OR unix_socket`,
+`REQUIRE SSL WITH MAX_QUERIES_PER_HOUR 10`, `ACCOUNT LOCK PASSWORD EXPIRE` and
+`GRANT SELECT ON db.* TO PUBLIC`. There is no DDL to synthesize for an account —
+only for a role, which has none to read.
+
+### 20.2 The failure was the §16 shape again
+
+As with sequences and packages, the gap aborted the dump rather than losing
+anything quietly, and for the same reason: an object was addressed as something
+it is not.
+
+```
+Writing users DDL
+ERROR: MySQL Error (1133): Can't find any matching row in the user table
+```
+
+`fetch_users()` reads `mysql.user`, which on MariaDB includes the roles, so
+`dump_grants` reached `SHOW CREATE USER 'baserole'@''` for the first role on the
+instance and died. Any MariaDB instance with a role — which includes every
+instance with MRS installed — could not be dumped with `users: true` the moment
+52037 stopped guarding the path.
+
+Visible alongside it: **"23 out of 12 users will be dumped"**, because the
+*filtered* count came from `mysql.user` and the *total* from
+`I_S.USER_PRIVILEGES`, which sees no role.
+
+### 20.3 Design
+
+**A role is an account entry which knows it is a role.** `Instance_cache::users`
+keeps holding every row of `mysql.user`, roles included — that is what MySQL does
+too, and it means the user filters, the counts and the per-account loop need no
+special case. Only `fetch_roles()` changes: on MariaDB it asks `is_role='Y'`
+rather than applying MySQL's `authentication_string='' AND account_locked='Y' AND
+password_expired='Y'` heuristic, which cannot describe a MariaDB role and would
+fail on the missing `account_locked` column anyway.
+
+**Three names per account, not one.** `dump_grants` used to carry one string per
+account, `shcore::make_account()`'s `'user'@'host'`. A MariaDB role needs three
+different forms, so `Dumped_account` carries them:
+
+| | User | MariaDB role |
+|---|---|---|
+| `label` — the `-- begin`/`-- end` marker, and hence what the loader filters and drops by | `'u'@'h'` | `` `r` `` |
+| `show_target` — after `SHOW CREATE USER` / `SHOW GRANTS FOR` | `'u'@'h'` | `` `r` `` |
+| `grantee` — the `I_S.*_PRIVILEGES` grantee, for `expand_all_privileges()` | `'u'@'h'` | `'r'@''` |
+
+The label being hostless is what makes `DROP ROLE IF EXISTS` on the load side a
+valid statement — `DROP ROLE IF EXISTS 'r'@''` is a syntax error — and
+`shcore::split_account()` still parses it, so `excludeUsers` keeps working
+against a role by name.
+
+**A role's DDL is synthesized, because there is none to read.** `CREATE ROLE IF
+NOT EXISTS <label>`, and that is the whole statement: a role has no attribute a
+`CREATE ROLE` could carry, and even its administrator comes back through
+`SHOW GRANTS`. `PUBLIC` gets no create block at all — it cannot be created — but
+its grants are still dumped, and they load into a target which has never heard of
+it.
+
+**A role's own marker, and a statement type to match.** The block is
+`-- begin role` / `-- end role`, and `preprocess_users_script()` maps it to a new
+`User_statements::Type::CREATE_ROLE`. The loader treats that type like
+`CREATE_USER` when creating and applying grants, and reaches for `DROP ROLE IF
+EXISTS` when `dropExistingObjects` drops it. Distinguishing it in the file rather
+than sniffing the statement text is what lets `execute_grant_and_drop_account_on_error`
+drop the right kind of object too.
+
+**Transitive grants are dropped by grantee, not by position.** `keep_own_grants()`
+parses each statement `SHOW GRANTS FOR` a role returned and keeps only the ones
+whose grantee is that role. Doing it any other way would be wrong twice over: the
+same privilege would be granted several times over a deep role graph, and a
+statement granting to a role the user *excluded* would run under a block the
+filters had let through — which fails on a target that does not have that role.
+
+**The default role moves to its own block.** MySQL's arrives as a clause of
+`SHOW CREATE USER` and `strip_default_role()` lifts it out; MariaDB's arrives as
+a finished statement in `SHOW GRANTS` and is moved out of the grants block by
+name. `default_roles` therefore holds the **whole statement** now instead of the
+clause, which is what lets the two vendors' spellings (`TO` and `FOR`) coexist
+without a second code path at the point of writing. It has to leave the grants
+block for two reasons: the block must not contain a non-`GRANT` statement, which
+`parse_grant_statement()` throws on, and the statement has to run after every
+role exists.
+
+**Two privilege checks were on the wrong gate.**
+`validate_preflight_privileges()` asked for `SELECT` on `mysql` only when
+`is_8_0`, with a comment saying it stays that way until §4.6 lands. It is now
+`requires_select_on_mysql_to_dump_users()`, true for MySQL 8.0 and every MariaDB —
+which is what `SHOW CREATE USER` and `SHOW GRANTS FOR` another account actually
+need there. `requires_super_to_dump_users()` stays MySQL-5.6-only; MariaDB split
+`SUPER` up in 10.5 and never wanted it for this.
+
+**`GRANT EXECUTE ON PACKAGE [BODY]` needed the §19 parser fix again.**
+`parse_grant_statement()` reads the object type as one token and knew
+`TABLE`/`FUNCTION`/`PROCEDURE`/`LIBRARY`. `PACKAGE` fell through to
+`split_priv_level("PACKAGE")`, which produced a table-level grant on a schema
+called `PACKAGE` — so the grant was reported as invalid, and
+`strip_invalid_grants` would have commented it out. It now consumes `PACKAGE`, and
+the second `BODY` token when it follows, and reports both as `Level::ROUTINE`:
+both halves are routines to `I_S.ROUTINES` and to the routine filters, exactly as
+§19.2 arranged.
+
+**`mariadb.sys` joins the always-excluded accounts.** It is the counterpart of
+`mysql.infoschema` / `mysql.session` / `mysql.sys` — the internal account owning
+the `mysql.user` view over `mysql.global_priv`, locked, and holding grants on
+`mysql.global_priv`. The dump side can only exclude it once the vendor is known,
+so `Dump_instance_options` gained an `on_set_session()` override; options are
+unpacked before the session is set (§8), so this does not disturb the
+`excludeUsers` conflict check that counts the constructor's exclusions.
+
+**The pre-existing-object check learned about roles.** `check_existing_users()`
+matches the dump's accounts against `I_S.USER_PRIVILEGES` grantees, which on
+MariaDB sees every user and no role at all. On a MariaDB target it now also asks
+`mysql.user` for `is_role='Y'` and reports `` Role `r` already exists `` — the
+same shape §16 and §19 needed, and for the same reason: a role and an account of
+one name are two objects, so the query has to say which it means.
+
+### 20.4 Verified
+
+Live, MariaDB 12.3.2 (sandboxes on 3313 and 3315) and MySQL 26.7.0 (3310).
+
+The fixture: users authenticating by password hash, `ed25519`, `unix_socket` and
+`mysql_native_password OR unix_socket`; a user with `REQUIRE SSL` and two resource
+limits; a user with `ACCOUNT LOCK PASSWORD EXPIRE` and no password; a
+`baserole → midrole → toprole` chain with a fourth role whose administrator is a
+user; a role and a user of the same name; grants at global, schema, table,
+column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
+`WITH ADMIN OPTION`, a default role, and a grant to `PUBLIC`.
+
+- **The failing case now passes.** `dumpInstance` with `users: true` completes
+  where it aborted on 1133, and reports `16 out of 24 users` — the two counts on
+  the same footing at last.
+- **The ACL state round-trips exactly.** `SHOW CREATE USER` plus `SHOW GRANTS`
+  for every account, dumped from source and target and diffed, is **identical**
+  after `dumpInstance` + `loadDump`, after a second load with
+  `dropExistingObjects`, and after `copyInstance`.
+- **Live, not just textually.** Connecting as the restored user with its original
+  password works, `SELECT current_role()` returns the default role, and a
+  `SELECT` reachable only through `toprole → midrole → baserole` succeeds — so
+  the whole chain came back, not just its DDL.
+- **`dropExistingObjects` really drops a role.** Proved by planting an extra
+  `GRANT DELETE` on a target role first: after the load it is gone, which a
+  `DROP USER` could not have achieved (it is a no-op on a role, §20.1).
+- **`excludeUsers` works on a role from both ends.** On the load it prints
+  `Skipping CREATE ROLE statements for user` and `Skipping GRANT/REVOKE`, and a
+  role planted on the target keeps its unrelated grant — nothing was dropped or
+  recreated. On the dump the role is omitted and the dangling role grants are
+  reported: ``User `midrole` has a grant statement on a role `baserole` which is
+  not included in the dump``.
+- **The duplicate-object check reports a pre-existing role**, found for real: an
+  earlier run had aborted partway and left two roles behind, and the next load
+  named both.
+- Unit tests: `Instance_cache_test.maria_db_roles` (role enumeration, the
+  role/user name collision, the counts, filtering a role on its own),
+  `Schema_dumper_test.dump_maria_db_roles` (expected output for the create
+  blocks, the transitive trimming at two depths, the `FOR` spelling of the
+  default role, and the statement types the loader reads back), and three
+  `Compatibility_test.parse_grant_statement` cases for
+  `GRANT EXECUTE ON PACKAGE [BODY]`.
+- MariaDB build, all dump/load suites: **94 passed, 4 failed** — the same four
+  §13.7 lists as pre-existing (`Instance_cache_test.table_columns`,
+  `Schema_dumper_test.opt_mysqlaas` / `compat_ddl` / `unknown_collations`).
+
+### 20.5 MySQL build unaffected
+
+- MySQL build against MySQL 26.7.0, same filter: **103 passed, 0 failed**, with
+  the four MariaDB-only tests skipped.
+- A MySQL-server dump is unchanged in shape: same `-- begin user` blocks, same
+  `SHOW CREATE USER` text, and the default role still written as
+  ``SET DEFAULT ROLE `r`@`%` TO 'u'@'h'`` — verified against a MySQL role and a
+  MySQL account with a default role. Every MariaDB branch in `dump_grants` is
+  behind a predicate that is false for a MySQL server, and for a MySQL build even
+  a MariaDB server is remapped to 5.6 (§13.1), so none of them can be reached.
+- **52037 still fires on the MySQL build** for a simulated MariaDB source, so
+  BUG#34049624's test is untouched: `!is_maria_db_dialect(v)` is always true
+  there.
+
+### 20.6 Not done here
+
+- **An auth plugin missing on the target aborts the load.** MariaDB's `ed25519`,
+  `gssapi` and `pam` are loadable plugins, and `CREATE USER … IDENTIFIED VIA
+  ed25519` fails with 1524 on a server that has not installed one — measured, and
+  the fix is `INSTALL SONAME 'auth_ed25519'` on the target. The loader has
+  exactly this handling already (warn, skip the account, continue) but only for
+  MHS, where a plugin *cannot* be installed. Aborting is the safer default —
+  silently skipping an account is a privilege change nobody asked for — but the
+  error should say what to install, and the load has by then created some of the
+  accounts.
+- **`PUBLIC`'s grants are not dropped by `dropExistingObjects`,** because there
+  is no account to drop. A target's pre-existing `GRANT … TO PUBLIC` therefore
+  survives a load that was asked to replace everything. Correct in the narrow
+  sense — `DROP ROLE PUBLIC` is not a statement — but it is the one account whose
+  grants are additive.
+- **The skip notes say "user" for a role**: `Skipping CREATE ROLE statements for
+  user \`r\``. The wording comes from the shared path in
+  `preprocess_users_script()`, which is also what makes it worth leaving alone.
+- **`I_S.USER_PRIVILEGES` is still the fallback** when `mysql.user` is
+  unreadable, in both `fetch_users()` and `count_users()`. An account without
+  `SELECT` on `mysql` cannot dump users at all now (§20.3), so the fallback is
+  reached only for the count — where it undercounts by the number of roles, as
+  before. Not worth a second query path.
+- **A DENY is not carried**, because 12.3.2 cannot produce one (§20.1). When it
+  can, `parse_grant`'s handling from §12.2 is on the privilege-*reading* side
+  only; `dump_grants` has never seen one.
+- **Column statistics (`mysql.column_stats`) are still not dumped** — §4.5's last
+  open item, and the only remaining piece of §4.5/§4.6. It is data, not ACL, so
+  it did not belong here.

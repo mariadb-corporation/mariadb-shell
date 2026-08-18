@@ -2858,6 +2858,16 @@ TEST_F(Compatibility_test, parse_grant_statement) {
   EXPECT("GRANT ALTER rOUTINE ON library s.l TO u@h", true,
          {true, Level::LIBRARY, "s", "l", {{"ALTER ROUTINE", {}}}, "u@h"});
 
+  // MariaDB's Oracle-mode packages are routines - PACKAGE BODY is two tokens,
+  // and without them the object type used to be read as the schema name, which
+  // turned the grant into a table-level one on a schema called `PACKAGE`
+  EXPECT("GRANT EXECUTE ON PACKAGE `s`.`pkg` TO `r`", true,
+         {true, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "`r`"});
+  EXPECT("GRANT EXECUTE ON PACKAGE BODY `s`.`pkg` TO `r`", true,
+         {true, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "`r`"});
+  EXPECT("REVOKE EXECUTE ON package body s.pkg FROM u@h", true,
+         {false, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "u@h"});
+
   EXPECT("GRANT PROXY ON r TO u@h", false, {});
   EXPECT("GRANT PROXY ON ''@'' TO u@h", false, {});
 
