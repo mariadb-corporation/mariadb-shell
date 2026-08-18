@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, MariaDB Corporation.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -58,14 +58,15 @@ TEST(Mariadb_gtid_position_test, parse_and_normalize) {
   EXPECT_EQ("0-2-99", parse("0-2-99,0-1-42").str());
 
   // sequence numbers are 64-bit
-  EXPECT_EQ("0-1-18446744073709551615", parse("0-1-18446744073709551615").str());
+  EXPECT_EQ("0-1-18446744073709551615",
+            parse("0-1-18446744073709551615").str());
 }
 
 TEST(Mariadb_gtid_position_test, parse_rejects_garbage) {
-  for (const auto *position : {"0", "0-1", "0-1-2-3", "0--1", "-1-2", "0-1-",
-                               "x-1-2", "0-1-x", "0-1-2,", ",0-1-2", "0 -1-2",
-                               "0-1-+2", "0-1--2", "4294967296-1-2",
-                               "0-4294967296-2", "0-1-18446744073709551616"}) {
+  for (const auto *position :
+       {"0", "0-1", "0-1-2-3", "0--1", "-1-2", "0-1-", "x-1-2", "0-1-x",
+        "0-1-2,", ",0-1-2", "0 -1-2", "0-1-+2", "0-1--2", "4294967296-1-2",
+        "0-4294967296-2", "0-1-18446744073709551616"}) {
     EXPECT_THROW(parse(position), std::invalid_argument) << position;
   }
 }
