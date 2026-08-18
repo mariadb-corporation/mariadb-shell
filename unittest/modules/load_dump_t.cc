@@ -123,6 +123,34 @@ TEST(Load_dump, sql_transforms_strip_sql_mode) {
             "sql_mode='ANSI_QUOTES,NO_AUTO_CREATE_USER,NO_ZERO_DATE' */"));
 }
 
+// The loader switches CHECK enforcement off while restoring, because MariaDB
+// lets a table hold rows its own DDL rejects. MySQL says the same thing with a
+// per-constraint NOT ENFORCED flag which travels inside the dumped DDL, so it
+// has no such variable and must never be sent one.
+// See MARIADB_DUMP_LOAD.md section 17.
+TEST(Load_dump, supports_check_constraint_checks) {
+  using dump::common::server_version;
+  using dump::common::supports_check_constraint_checks;
+
+  const auto EXPECT_SUPPORTED = [](bool expected, const Version &version,
+                                   bool is_maria_db) {
+    SCOPED_TRACE((is_maria_db ? "MariaDB " : "MySQL ") + version.get_full());
+    EXPECT_EQ(expected, supports_check_constraint_checks(
+                            server_version(version, is_maria_db)));
+  };
+
+  // no MySQL version has the variable, not even those which have CHECK
+  // constraints (8.0.16+)
+  EXPECT_SUPPORTED(false, Version(5, 7, 44), false);
+  EXPECT_SUPPORTED(false, Version(8, 0, 16), false);
+  EXPECT_SUPPORTED(false, Version(9, 7, 0), false);
+
+  // MariaDB got CHECK constraints and the variable together, in 10.2
+  EXPECT_SUPPORTED(false, Version(10, 1, 48), true);
+  EXPECT_SUPPORTED(true, Version(10, 2, 1), true);
+  EXPECT_SUPPORTED(true, Version(12, 3, 2), true);
+}
+
 TEST(Load_dump, add_execution_condition) {
   const auto call = [](const Dump_loader::Sql_transform &tx, std::string_view s,
                        bool result) {

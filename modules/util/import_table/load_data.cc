@@ -53,6 +53,8 @@ using off64_t = off_t;
 #include <type_traits>
 #include <utility>
 
+#include "modules/util/common/dump/server_features.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/import_table/helpers.h"
 #include "mysqlshdk/include/scripting/types.h"
 #include "mysqlshdk/include/shellcore/console.h"
@@ -679,6 +681,19 @@ void Load_data_worker::init_session(
   // set session variables
   execute("SET unique_checks = 0");
   execute("SET foreign_key_checks = 0");
+
+  // MariaDB expresses "this CHECK constraint is not enforced" as a session
+  // variable rather than as part of the constraint, so imported data which the
+  // table's own DDL rejects needs it off - which is what mariadb-import does
+  // for every import. Both accessors read cached handshake data, so this costs
+  // no round trip. See MARIADB_DUMP_LOAD.md section 17.
+  if (dump::common::supports_check_constraint_checks(
+          dump::common::server_version(session->get_server_version(),
+                                       mysqlshdk::db::ServerVendor::MariaDB ==
+                                           session->get_server_vendor()))) {
+    execute("SET check_constraint_checks = 0");
+  }
+
   execute("SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
 
   try {

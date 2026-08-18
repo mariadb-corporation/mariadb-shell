@@ -102,6 +102,11 @@ bool supports_library_ddl(const Server_version &v) {
   return mysql_only(v, 90200);
 }
 
+bool supports_check_constraint_checks(const Server_version &v) {
+  // the version mariadb-import gates the same statement on
+  return v.is_maria_db && v.number.numeric() >= 100200;
+}
+
 bool supports_sequences(const Server_version &v) {
   // FIRST_SEQUENCE_VERSION in client/mysqldump.cc
   return v.is_maria_db && v.number.numeric() >= 100300;

@@ -923,6 +923,36 @@ DO SETVAL(`a'b seq`, 1, 0);
   wipe_all();
 }
 
+// MariaDB CHECK constraints need no DDL work of their own - SHOW CREATE TABLE
+// carries them, and this pins that the dumper does not rewrite them away. What
+// MariaDB does need is the load-side session switch, see MARIADB_DUMP_LOAD.md
+// section 17.
+TEST_F(Schema_dumper_test, dump_table_check_constraints) {
+  if (!common::supports_check_constraint_checks(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.2.0");
+  }
+
+  auto sd = schema_dumper();
+  // the compatibility rewriting is the thing which could plausibly drop them
+  sd.opt_mysqlaas = true;
+  sd.opt_force_innodb = true;
+
+  EXPECT_NO_THROW(sd.dump_table_ddl(file.get(), db_name, "ck1"));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  expect_output_contains({
+      // a column-level check stays on its column
+      R"(  `a` int(11) DEFAULT NULL CHECK (`a` > 0),)",
+      // and a table-level one keeps its name and its expression verbatim,
+      // parentheses, commas and quoted keywords included
+      R"(  CONSTRAINT `b_range` CHECK (`b` between 1 and 100),)",
+      R"(  CONSTRAINT `c_ck` CHECK (`c` <> 'KEY' and `c` not in ('a,b','(x)')))",
+  });
+  wipe_all();
+}
+
 TEST_F(Schema_dumper_test, dump_tablespaces) {
   auto sd = schema_dumper();
   EXPECT_NO_THROW(sd.dump_tablespaces_ddl_for_dbs(file.get(), {db_name}));
