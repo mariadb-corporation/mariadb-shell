@@ -157,3 +157,17 @@ set sql_mode=default;
 set sql_mode='ansi';
 /*M!100300 CREATE SEQUENCE `a'b seq` */;
 set sql_mode=default;
+
+# Check constraints (MariaDB only here: MySQL spells non-enforcement as a
+# per-constraint NOT ENFORCED flag, MariaDB as a session variable, so the two
+# are not the same fixture - see MARIADB_DUMP_LOAD.md section 17)
+
+/*M!100201 CREATE TABLE ck1 (
+  a INT CHECK (a > 0),
+  b INT,
+  c VARCHAR(20),
+  CONSTRAINT b_range CHECK (b BETWEEN 1 AND 100),
+  CONSTRAINT c_ck CHECK (c <> 'KEY' AND c NOT IN ('a,b','(x)')),
+  KEY idx_b (b)
+) */;
+/*M!100201 INSERT INTO ck1 VALUES (1, 50, 'ok') */;

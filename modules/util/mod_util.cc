@@ -1067,6 +1067,8 @@ Each parallel connection sets the following session variables:
 @li SET NAMES ?; -- Set to characterSet option if provided by user.
 @li SET unique_checks = 0
 @li SET foreign_key_checks = 0
+@li SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
+constraints per session rather than per constraint.
 @li SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
 Note: because of storage engine limitations, table locks held by MyISAM will

@@ -2577,6 +2577,8 @@ DESCRIPTION
       - SET NAMES ?; -- Set to characterSet option if provided by user.
       - SET unique_checks = 0
       - SET foreign_key_checks = 0
+      - SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
+        constraints per session rather than per constraint.
       - SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
       Note: because of storage engine limitations, table locks held by MyISAM

@@ -365,8 +365,14 @@ TABLESPACES, CHECK_CONSTRAINTS, SEQUENCES`.
 **Missing object types MariaDB has and the dumper does not know about** — all
 **in scope** (decided), since under vendor→vendor fidelity a MariaDB dump that
 silently omits objects is data loss, not a limitation: ~~`SEQUENCES` (10.3+)~~
-**done, §16**, `CHECK_CONSTRAINTS` as first-class I_S rows, and Oracle-mode
-`PACKAGE` / `PACKAGE BODY` routines. These are net-new work, not substitutions.
+**done, §16**, ~~`CHECK_CONSTRAINTS` as first-class I_S rows~~ **see §17 — this
+one was wrong**, and Oracle-mode `PACKAGE` / `PACKAGE BODY` routines.
+
+On check constraints specifically: they are *not* a missing object type and the
+dumper needs no `I_S.CHECK_CONSTRAINTS` at all. `SHOW CREATE TABLE` already
+carries them, and §17 verifies the DDL round trips byte-identically. What MariaDB
+does need is a load-side session switch, for a reason that has nothing to do with
+metadata.
 
 #### 4.5.1 Sequences — the recipe MariaDB's own `mysqldump` uses
 
@@ -729,7 +735,10 @@ needs that do not exist yet:
 `supports_lock_instance_for_backup` (MySQL ≥ 8.0 · MariaDB false) ·
 `supports_roles` (MariaDB ≥ 10.0.5 · MySQL ≥ 8.0) ·
 ~~`supports_sequences` (MariaDB ≥ 10.3 · MySQL false)~~ **added in §16** ·
-`supports_check_constraints` · `supports_packages` (MariaDB Oracle mode) ·
+~~`supports_check_constraints`~~ **added in §17 as
+`supports_check_constraint_checks` (MariaDB ≥ 10.2 · MySQL false) — the question
+worth asking turned out to be about the session variable, not the object** ·
+`supports_packages` (MariaDB Oracle mode) ·
 `supports_histograms` (MySQL ≥ 8.0 · MariaDB via `mysql.column_stats`) ·
 `supports_invisible_pk` (MySQL ≥ 8.0.30 · MariaDB false) ·
 `supports_gtid` (different model per vendor — see §4.4) ·
@@ -853,6 +862,12 @@ Still open — does not block any phase:
    (`wsrep_sync_wait`, desync on donor). Out of scope for v1, but the
    `BACKUP STAGE` design should not preclude it — note that `sql/backup.cc`
    already carries `#ifdef WITH_WSREP` handling.
+2. **`deferTableIndexes` never finishes on MariaDB — a defect, not a
+   limitation.** Found while testing §17; diagnosed in §17.5. `loadDump` with
+   `deferTableIndexes: "all"` builds the indexes correctly and then hangs
+   forever, because the progress monitoring thread dies on
+   `Innodb_rows_inserted`, a status variable MariaDB does not have. Independent
+   of check constraints and of every phase so far.
 
 ### On `util.copy*` being in scope
 
@@ -892,7 +907,7 @@ predicates without it.
 | 4 | ~~**GTID**~~ **DONE** (§15) — the dump carries `gtid_current_pos`, `updateGtidSet` restores it into `gtid_slave_pos`, and the domain-position set algebra the loader's checks need is in `mysqlshdk/libs/mysql/mariadb_gtid.h`. | There was no binlog-port GTID model to reuse: §11.2 found that port was never written. |
 | 5 | **MariaDB-native objects.** Largest chunk, so it is split by object type — each part is independent and ships on its own. | Sequences first, they are the smallest; users/roles/grants is the long pole and unblocks `users: true`. |
 | 5a | ~~**Sequences** (§4.5.1)~~ **DONE** (§16) — enumerated and filtered as tables, dumped as DDL with the position restored by `DO SETVAL`, dropped and duplicate-checked on load. | The gap turned out to abort the dump, not merely lose data. |
-| 5b | **Check constraints** — `I_S.CHECK_CONSTRAINTS` as first-class rows (§4.5). | Carried inside `SHOW CREATE TABLE` today, so this is about the checks and filters around them, not about the DDL text. |
+| 5b | ~~**Check constraints** (§4.5)~~ **DONE** (§17) — the DDL already round-tripped; the load now switches `check_constraint_checks` off, so a table holding rows its own constraints reject can be restored. | Not an object-metadata problem at all: MySQL's non-enforcement is per-constraint DDL, MariaDB's is a session variable, so only the restoring side had a gap. |
 | 5c | **Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5). | Needs `sql_mode=ORACLE` to exist at all; smallest surface after sequences. |
 | 5d | **Users, roles and grants** (§4.2, §4.6) — removes `throw_if_cannot_dump_users()` and 52037. | The long pole: `SHOW CREATE USER` omits roles, `IDENTIFIED VIA x OR y` has no MySQL form, and the auth plugins differ. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
@@ -1912,3 +1927,133 @@ Nothing outstanding on the MariaDB → MariaDB path; these are the edges around 
   '`format_name`'``. This is the §7.3 `supports_view_table_usage` fallback:
   MariaDB has no `I_S.VIEW_TABLE_USAGE`, so the shell parses `VIEW_DEFINITION`
   itself and its parser rejects that alias. Reproduces with this phase stashed.
+
+---
+
+## 17. Phase 5b — done
+
+Landed 2026-08-18. Goal was check constraints, which §4.5 listed as a missing
+object type needing "net-new work" on `I_S.CHECK_CONSTRAINTS`.
+
+**That framing was wrong, and the real gap is on the other side of the port.**
+Check-constraint DDL already round trips byte-identically (§17.2), so the dumper
+needs nothing — no cache map, no metadata, no filters, no `I_S.CHECK_CONSTRAINTS`
+query. What was broken is the **load**: `util.loadDump` failed with
+`MySQL Error 4025 (23000): CONSTRAINT 't1.a' failed` on a dump it had produced
+itself, minutes earlier, from a perfectly legal MariaDB table.
+
+### 17.1 Why MySQL never needed this, and MariaDB does
+
+Both vendors have CHECK constraints. What differs is the shape of the escape
+hatch — measured on MySQL 9.7.1 and MariaDB 12.3.2:
+
+| | MySQL 9.7.1 | MariaDB 12.3.2 |
+|---|---|---|
+| Session switch for enforcement | **none** — no `%check%constraint%` variable exists | `check_constraint_checks` |
+| `INSERT` of a row violating an enforced constraint | refused, error 3819 | **accepted** while the switch is off |
+| `ALTER TABLE ... ADD CONSTRAINT` over violating rows | refused, error 3819 | **accepted** while the switch is off |
+| Per-constraint escape hatch | `[NOT] ENFORCED`, emitted by `SHOW CREATE TABLE` as `/*!80016 NOT ENFORCED */` | **no such syntax** (error 1064) |
+| Turning enforcement back on | validates existing rows, refuses if any violate | n/a |
+
+**MySQL's escape hatch is DDL.** Non-enforcement lives in the constraint itself,
+so it travels inside the dumped `CREATE TABLE` and a reload reproduces the exact
+enforcement state for free. And since an enforced constraint can never be
+violated, MySQL guarantees the invariant *every row in a dump satisfies every
+enforced constraint in that same dump*. There is nothing for a dump tool to do,
+which is why there is no upstream code here to port.
+
+**MariaDB's escape hatch is a session variable**, and there is no way to say "this
+constraint is not enforced" in DDL at all. So a MariaDB table can sit,
+legitimately and indefinitely, holding rows that its own `SHOW CREATE TABLE`
+rejects — and nothing in the dump can record that. The only place the state can
+be restored is the loading session. MariaDB's own `mariadb-import` does exactly
+this, unconditionally, for every import
+(`client/mysqlimport.cc:938`: `/*M!100200 set check_constraint_checks=0*/`),
+right beside the `foreign_key_checks` and `unique_checks` the Shell already
+mirrors.
+
+### 17.2 What already worked — verified, not assumed
+
+Round-tripped a table carrying every check-constraint shape MariaDB emits:
+column-level (`` `a` int(11) DEFAULT NULL CHECK (`a` > 0) ``), named table-level,
+an anonymous one (which the server names `CONSTRAINT_1`), a clause containing a
+function call (`json_valid`), and a clause containing commas, nested parentheses
+and the quoted keyword `'KEY'` — alongside a virtual generated column, a
+`UNIQUE KEY` and a secondary index. `SHOW CREATE TABLE` before and after
+`dumpSchemas` + `loadDump` is **byte-identical**, so:
+
+- no `I_S.CHECK_CONSTRAINTS` is needed, and MariaDB's `LEVEL` column
+  (`'Column'` / `'Table'`, which MySQL's copy of that table lacks) is not needed
+  either;
+- `compatibility::check_create_table_for_indexes()` — the one place the Shell
+  re-parses `CREATE TABLE` text — leaves check constraints alone, deferring only
+  real indexes;
+- the `opt_mysqlaas` / `opt_force_innodb` DDL rewriting does not strip them.
+
+### 17.3 The change
+
+`supports_check_constraint_checks()` (MariaDB ≥ 10.2 · MySQL false — the same
+threshold `mariadb-import` gates on) joins §7.3, and two sessions act on it:
+
+- **`Dump_loader::create_session()`** — the single factory for the loader's main
+  and worker sessions, so the switch covers the data load and any `ALTER TABLE`
+  the loader issues. Sent only to a MariaDB target: verified with `--log-sql=all`
+  that a MariaDB target receives it six times (once per session, matching
+  `unique_checks = 0`) and a MySQL target receives it zero times while still
+  getting `unique_checks = 0` six times.
+- **`import_table::Load_data_worker::init_session()`** — `util.importTable` is
+  the Shell's `mariadb-import`, and imported data has the same problem. This is
+  also the session the loader's MySQL-only `BULK LOAD` path uses. The vendor and
+  version come from the session handshake, which is cached client side, so the
+  gate costs no round trip.
+
+Documented in `importTable`'s help next to the other two switches, following the
+§15 precedent of stating MariaDB behaviour inline rather than forking the text.
+
+### 17.4 Verified
+
+Live, MariaDB 12.3.2 (3313) and MySQL 9.7.1 (3314):
+
+- **The failing case now passes.** A table with a column-level and two
+  table-level constraints plus one row inserted under
+  `check_constraint_checks=0`: `dumpSchemas` then `loadDump` completes with zero
+  errors, both rows are back — the violating one included — and the DDL is
+  intact. Before the change this was `ERROR 4025` and an aborted load.
+- `util.importTable` of a row that violates two constraints now succeeds
+  (`Records: 1 ... Warnings: 0`) instead of failing.
+- MariaDB build, all dump/load suites: **59 passed, 4 failed** — the same four
+  §13.7 lists as pre-existing. MySQL build: **65 passed, 0 failed**, with the
+  MariaDB-only tests skipped.
+- New tests: `Load_dump.supports_check_constraint_checks` pins both halves of the
+  predicate (no MySQL version, including 8.0.16 which does have CHECK
+  constraints, may be sent the variable) and
+  `Schema_dumper_test.dump_table_check_constraints` pins that the dumper emits
+  the clauses verbatim even with the compatibility rewriting on.
+
+### 17.5 Not done here
+
+- **`deferTableIndexes` hangs on MariaDB, and it is unrelated to this phase.**
+  Found while checking whether deferred index rebuilding mangles check
+  constraints. It does not — but `loadDump ... --defer-table-indexes=all` never
+  returns on MariaDB, while the same dump loads in ~5s on MySQL. Diagnosed:
+  every server connection is idle, so the wait is client side, and the debug log
+  ends with `Monitoring thread: Query returned fewer rows than expected`. The
+  monitoring thread runs
+  `SELECT CAST(VARIABLE_VALUE AS UNSIGNED) FROM performance_schema.global_status
+  WHERE VARIABLE_NAME='Innodb_rows_inserted'` through `fetch_one_or_throw()`, and
+  **MariaDB has no `Innodb_rows_inserted` status variable at all** — not in
+  `I_S.GLOBAL_STATUS`, not in `performance_schema.global_status` (which is
+  populated: 384 rows), not in `SHOW GLOBAL STATUS`, and there is no
+  `INNODB_METRICS` counter for it either. So the throw kills the monitoring
+  thread and the load never completes. This is the same
+  `fetch_one_or_throw`-on-a-variable-MariaDB-lacks class as the phase 0 crashes:
+  the fix is to tolerate the absent row and let the throughput label degrade,
+  not to find an equivalent counter. Recorded as §8 "still open" item 2.
+- **No warning when a restored table holds violating rows.** The load reproduces
+  the source faithfully and silently, which is the §6 fidelity goal and matches
+  `foreign_key_checks`; but unlike a foreign key, nothing will ever re-validate
+  it. A note listing such tables would be an improvement.
+- **`NOT ENFORCED` is untranslated**, deliberately. A MySQL dump carrying
+  `/*!80016 NOT ENFORCED */` cannot load into MariaDB, which has no such syntax
+  — cross-vendor, refused up front since phase 2 (§13.5), so no rewriting is
+  attempted.

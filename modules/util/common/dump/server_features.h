@@ -186,6 +186,23 @@ bool supports_role_dumping(const Server_version &v);
 bool supports_library_ddl(const Server_version &v);
 
 /**
+ * The check_constraint_checks session variable, MariaDB 10.2+.
+ *
+ * Both vendors have CHECK constraints; what differs is the shape of the escape
+ * hatch. MySQL's is DDL - a constraint is [NOT] ENFORCED, SHOW CREATE TABLE
+ * emits it, so the state travels inside the dump - and an enforced constraint
+ * can never be violated, so the data in a dump always satisfies the DDL in that
+ * same dump. MariaDB has no NOT ENFORCED syntax at all; instead this variable
+ * switches enforcement off for both DML and ALTER TABLE ... ADD CONSTRAINT, so
+ * a table can legitimately hold rows its own DDL rejects. Restoring one
+ * therefore needs the variable, which is why mariadb-import turns it off for
+ * every import (client/mysqlimport.cc).
+ *
+ * See MARIADB_DUMP_LOAD.md section 17.
+ */
+bool supports_check_constraint_checks(const Server_version &v);
+
+/**
  * Sequences (CREATE SEQUENCE, I_S.SEQUENCES, TABLE_TYPE='SEQUENCE'). A MariaDB
  * 10.3+ object type with no MySQL counterpart.
  *

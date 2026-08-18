@@ -2252,6 +2252,15 @@ Session_ptr Dump_loader::create_session() {
   sql::execute(session, "SET foreign_key_checks = 0");
   sql::execute(session, "SET unique_checks = 0");
 
+  // MariaDB has no NOT ENFORCED constraints, it has a session switch instead -
+  // so a dumped table may hold rows which its own DDL rejects, and restoring it
+  // needs the switch off. Same reasoning as the two above, and the same thing
+  // mariadb-import does for every import. See MARIADB_DUMP_LOAD.md section 17.
+  if (dump::common::supports_check_constraint_checks(
+          m_options.target_server())) {
+    sql::execute(session, "SET check_constraint_checks = 0");
+  }
+
   if (!m_character_set.empty())
     sql::executef(session, "SET NAMES ?", m_character_set);
 
