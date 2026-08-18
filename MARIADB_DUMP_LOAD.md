@@ -366,7 +366,13 @@ TABLESPACES, CHECK_CONSTRAINTS, SEQUENCES`.
 **in scope** (decided), since under vendor→vendor fidelity a MariaDB dump that
 silently omits objects is data loss, not a limitation: ~~`SEQUENCES` (10.3+)~~
 **done, §16**, ~~`CHECK_CONSTRAINTS` as first-class I_S rows~~ **see §17 — this
-one was wrong**, and Oracle-mode `PACKAGE` / `PACKAGE BODY` routines.
+one was wrong**, and ~~Oracle-mode `PACKAGE` / `PACKAGE BODY` routines~~
+**done, §19**.
+
+On packages specifically: they were not omitted either. `I_S.ROUTINES` reports
+them, so the routine loop cached them as *functions* — losing one of two objects
+of the same name, since packages have their own namespace — and then aborted the
+whole dump on `SHOW CREATE FUNCTION`. §19 records what was measured.
 
 On check constraints specifically: they are *not* a missing object type and the
 dumper needs no `I_S.CHECK_CONSTRAINTS` at all. `SHOW CREATE TABLE` already
@@ -438,7 +444,7 @@ Remaining MySQL-specific pieces:
 - `ANALYZE TABLE ... UPDATE HISTOGRAM` emission ([schema_dumper.cc:1962](modules/util/dump/schema_dumper.cc#L1962)) — remap to `ANALYZE TABLE ... PERSISTENT FOR ALL` for MariaDB (see §4.5).
 - `SET @@GLOBAL.GTID_PURGED` epilogue ([schema_dumper.cc:2375](modules/util/dump/schema_dumper.cc#L2375)) — see §4.4.
 - Account dumping (`dump_grants`, [schema_dumper.cc:2840](modules/util/dump/schema_dumper.cc#L2840)): `SHOW CREATE USER` + `SHOW GRANTS` + `SELECT plugin FROM mysql.user` + `SET DEFAULT ROLE`. MariaDB has `SHOW CREATE USER` (10.2+) but roles are not emitted by it, auth plugins differ (`mysql_native_password` is still first-class; `ed25519`, `unix_socket`, `gssapi` have no MySQL analogue), and `IDENTIFIED VIA x OR y` multi-auth has no MySQL form. This is why `throw_if_cannot_dump_users()` exists; it is the largest single chunk of net-new DDL work.
-- The `/*!NNNNN ... */` version-comment prologue/epilogue: MariaDB honours `/*!` with MySQL version numbers, so these mostly work, but anything above `50700` is silently skipped by MariaDB. Anything MariaDB-only must be written as `/*M!NNNNNN ... */`. There is precedent for this pattern in the port already — see the `mariadb-sql-fixture-overrides` note on `/*M! ... */` fixtures.
+- The `/*!NNNNN ... */` version-comment prologue/epilogue: MariaDB honours `/*!` with MySQL version numbers, so these mostly work, but anything above `50700` is silently skipped by MariaDB. Anything MariaDB-only must be written as `/*M!NNNNNN ... */`. There is precedent for this pattern in the port already — see the `mariadb-sql-fixture-overrides` note on `/*M! ... */` fixtures. **One caveat, found in §19:** the shell's own `SQL_iterator` knows `/*!` and `/*+` but *not* `/*M!`, which it spans as an ordinary comment — so a statement written inside one is invisible to the loader's statement filters. Emit MariaDB-only DDL bare unless a MySQL reader actually has to skip it.
 
 ### 4.7 Data chunking & extraction — **should work unchanged**
 
@@ -738,7 +744,9 @@ needs that do not exist yet:
 ~~`supports_check_constraints`~~ **added in §17 as
 `supports_check_constraint_checks` (MariaDB ≥ 10.2 · MySQL false) — the question
 worth asking turned out to be about the session variable, not the object** ·
-`supports_packages` (MariaDB Oracle mode) ·
+~~`supports_packages` (MariaDB Oracle mode)~~ **added in §19 as MariaDB ≥ 10.3 ·
+MySQL false — the question is whether the server *has* the routine type, not
+which `sql_mode` created it** ·
 `supports_histograms` (MySQL ≥ 8.0 · MariaDB via `mysql.column_stats`) ·
 `supports_invisible_pk` (MySQL ≥ 8.0.30 · MariaDB false) ·
 `supports_gtid` (different model per vendor — see §4.4) ·
@@ -850,7 +858,8 @@ mechanical enough to check by diffing dumps of the same MySQL instance.
 - **`util.copy*` is in scope** — see the note below.
 - **Sequences, check constraints and Oracle-mode packages are in scope** (§4.5.1).
   A MariaDB dump that silently omits a sequence is data loss, not a limitation.
-  Sequences are **done** (§16).
+  All three are **done** — sequences (§16), check constraints (§17), packages
+  (§19).
 - **Nothing is removed.** MySQL-only features are gated or predicated off for
   MariaDB, keeping MySQL→MySQL fully supported (§4.11).
 - **The vendor-aware predicates live in a new
@@ -908,7 +917,7 @@ predicates without it.
 | 5 | **MariaDB-native objects.** Largest chunk, so it is split by object type — each part is independent and ships on its own. | Sequences first, they are the smallest; users/roles/grants is the long pole and unblocks `users: true`. |
 | 5a | ~~**Sequences** (§4.5.1)~~ **DONE** (§16) — enumerated and filtered as tables, dumped as DDL with the position restored by `DO SETVAL`, dropped and duplicate-checked on load. | The gap turned out to abort the dump, not merely lose data. |
 | 5b | ~~**Check constraints** (§4.5)~~ **DONE** (§17) — the DDL already round-tripped; the load now switches `check_constraint_checks` off, so a table holding rows its own constraints reject can be restored. | Not an object-metadata problem at all: MySQL's non-enforcement is per-constraint DDL, MariaDB's is a session variable, so only the restoring side had a gap. |
-| 5c | **Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5). | Needs `sql_mode=ORACLE` to exist at all; smallest surface after sequences. |
+| 5c | ~~**Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5).~~ **DONE** (§19) — dumped by the routine pass in mysqldump's order, filtered as routines, dropped and duplicate-checked on load. | Same failure as sequences, not the predicted one: a package was cached as a *function*, so the dump aborted on `SHOW CREATE FUNCTION`. |
 | 5d | **Users, roles and grants** (§4.2, §4.6) — removes `throw_if_cannot_dump_users()` and 52037. | The long pole: `SHOW CREATE USER` omits roles, `IDENTIFIED VIA x OR y` has no MySQL form, and the auth plugins differ. |
 | 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
@@ -2162,3 +2171,176 @@ is why the fix is in the shared path.
 - **The index progress *percentage* is still monitor-driven** and still
   disables itself on error (`m_query_index_progress`), which is pre-existing and
   correct: it is a label, and now nothing else depends on it.
+
+---
+
+## 19. Phase 5c — done
+
+Landed 2026-08-18. Goal was §4.5's last missing MariaDB object type:
+Oracle-mode `PACKAGE` / `PACKAGE BODY` routines.
+
+**The gap was the same shape as §16's, not the "silently omitted" one §4.5
+described: a schema holding a package could not be dumped at all.**
+`I_S.ROUTINES` reports a package with `ROUTINE_TYPE='PACKAGE'`, and the routine
+loop routed `PROCEDURE` to `procedures` and *everything else* to `functions`. So
+a package was cached as a function and `dump_routines_for_db` then ran
+`SHOW CREATE FUNCTION` against it:
+
+```
+ERROR: Could not execute 'SHOW CREATE FUNCTION `pkgtest`.`pkg1`':
+       MySQL Error 1305 (42000): FUNCTION pkg1 does not exist
+ERROR: MYSQLSH 52006: While 'Writing schema metadata': Fatal error during dump
+```
+
+**Are packages supported now? Yes** — on the vendor → vendor path, both halves
+are dumped with their `sql_mode`, character set and definer, restored in an
+order that works, selected by the routine filters, dropped by
+`dropExistingObjects` and reported by the pre-existing-object check. A **MySQL
+build** reading a MariaDB server omits them, which is §16.4's behaviour and out
+of scope by §6.
+
+### 19.1 What a package is, measured
+
+On MariaDB 12.3.2. A package has two halves — a specification and an optional
+body — and the pair behaves less like one object than it first looks:
+
+| | Measured |
+|---|---|
+| Where they show up | `I_S.ROUTINES`, `ROUTINE_TYPE` `'PACKAGE'` and `'PACKAGE BODY'`, with the same `SQL_MODE` / `DEFINER` / `CHARACTER_SET_CLIENT` / `COLLATION_CONNECTION` / `DATABASE_COLLATION` columns every routine has |
+| `I_S.PARAMETERS` | **no rows** — a package declares no parameters of its own |
+| `SHOW CREATE PACKAGE [BODY]` | works in **any** `sql_mode`, and returns the same six columns, in the same order, as `SHOW CREATE PROCEDURE` |
+| `CREATE PACKAGE [BODY]` | needs `sql_mode=ORACLE` — error 1064 otherwise |
+| `DROP PACKAGE [BODY] IF EXISTS` | works in **any** `sql_mode`; a missing one is a *note*, not an error |
+| `DROP PACKAGE` with a body present | drops **both** — the body does not survive its specification |
+| Namespace | its **own**: `CREATE FUNCTION pkg1` and `CREATE PACKAGE pkg1` coexist in one schema |
+| A specification without a body | legal, and `SHOW CREATE PACKAGE` still returns it |
+
+The two that shaped the design are the last three. Because the namespaces are
+separate, a package cannot share the `functions` map keyed by name — which is
+what the old routing did, and why one of two objects named `pkg1` was silently
+lost even before `SHOW CREATE FUNCTION` failed. And because `SHOW CREATE` and
+`DROP` both work outside Oracle mode, only the `CREATE` needs the `sql_mode`
+switch the routine dumper already emits.
+
+### 19.2 Design
+
+**Packages are routines, and are dumped by the routine pass.** They are in
+`I_S.ROUTINES`, the routine filters select them, and they are counted as
+routines. `Schema_dumper::dump_routines_for_db()` gains two entries in its type
+list rather than a dump function of its own.
+
+**The order is mysqldump's, and it is not alphabetical.** Following
+`routine_dump_param_array` (`client/mysqldump.cc:2950`), the four types are
+emitted **PACKAGE, FUNCTION, PROCEDURE, PACKAGE BODY**: a specification may
+declare public data types the standalone routines use, so it goes first, and a
+body may call those routines, so it goes last. Verified in the dump output and
+pinned by a test.
+
+**No `excludePackages` / `includePackages`.** A package is a routine and
+`excludeRoutines` selects it, which is also what `mysqldump` does — it has no
+package option either. The consequence is that a filter is by *name*, so
+excluding `db.pkg1` excludes the package, its body **and** a standalone function
+of that name. That is the §16.2 trade again: one filter per namespace collision,
+not one option per object type.
+
+**Two name sets in the cache, not `Routine` maps.** `Instance_cache::Schema`
+gains `packages` and `package_bodies` as `unordered_set<string>`, because a
+package has no parameters and no library references — the two things
+`Instance_cache::Routine` exists to carry. `dump_routines_for_db` therefore
+skips the parameter/return-value collation handling and the library-dependency
+check for them, which is also the only reason `is_package` exists in that loop.
+
+**The DROP is written bare**, `DROP PACKAGE IF EXISTS x;`, not wrapped in a
+version comment the way `/*!50003 DROP FUNCTION ... */` is. Three reasons, and
+the third is the one that matters: the `CREATE` beside it is written bare too,
+so a MySQL server could not read the dump either way; a cross-vendor load has
+been refused up front since phase 2 (§13.5); and the shell's own `SQL_iterator`
+does not know `/*M!` — it spans it as an ordinary comment — so a `/*M! ... */`
+wrapper would hide the statement from `add_execution_condition`, and an excluded
+package would have been dropped from the target anyway. (`mysqldump` writes
+`/*!50003 DROP PACKAGE ... */`, which a MySQL server would try to execute and
+fail on, so there was no correct precedent to copy.)
+
+**Load side takes the name lists.** The per-schema metadata gains `packages` and
+`packageBodies`, written only when non-empty, so a dump from a server with no
+package is byte-identical to before. From them the loader gets the
+pre-existing-object check — which has to ask `I_S.ROUTINES` for the type
+explicitly, since a package and a function may share a name and the function
+query would report the wrong object — and `DROP PACKAGE [BODY] IF EXISTS` for
+`dropExistingObjects`, with the bodies scheduled *before* the specifications so
+the cascade does not make the second statement a no-op.
+
+**One parser extension.** `Sql_transform::add_execution_condition()` reads the
+object type as a single token, and `PACKAGE BODY` is two. It now consumes the
+`BODY` when it follows `PACKAGE` and reports the type as `PACKAGE BODY`; an
+unquoted `BODY` can only be the keyword, because a package actually named `body`
+is written quoted. Both types map to `include_routine`.
+
+### 19.3 Verified
+
+Live, MariaDB 12.3.2 (sandboxes on 3313 and 3315) and MySQL 9.7.1 (3314):
+
+- **The failing case now passes.** The schema that aborted the dump — `pkg1`
+  specification + body, a `specOnly` specification with no body, a standalone
+  function *also* named `pkg1`, plus a plain function, procedure and table —
+  dumps, and after `DROP DATABASE` + `loadDump` all six routines are back.
+  `pkgtest.pkg1.f1(5)` returns `15` (the body's package variable survived) and
+  `pkgtest.pkg1(7)` returns `7`, so the two namespaces came back separate.
+- `dropExistingObjects` drops and recreates them; a second load without it
+  reports ``already contains a package named `pkg1` ``, ``a package named
+  `specOnly` `` and ``a package body named `pkg1` `` alongside the table,
+  function and procedure.
+- Filtering works from both ends. On the dump, `--exclude-routines=pkgtest.pkg1`
+  reports `3 out of 6 routines` and writes neither the package, its body, nor
+  the function. On the load it suppresses the `CREATE` **and** the `DROP`:
+  verified by planting an unrelated `pkg1` package in the target first and
+  confirming it was still callable afterwards.
+- `util.copySchemas` carries them: 3313 → 3315 with a schema rename reproduces
+  all six routines and the package call still returns `15`.
+- Unit tests: `Instance_cache_test.filter_packages` (routing, the shared routine
+  filter, the function/package name collision, counts),
+  `Schema_dumper_test.dump_packages` (expected output for a specification, a
+  body, a specification-only package under a name needing quoting, and the
+  PACKAGE → routines → PACKAGE BODY ordering), eight new
+  `Load_dump.add_execution_condition` cases and a filtering block beside them.
+  `Schema_dumper_test.dump_and_load` now replays the package DDL through
+  `mysqlsh --sql -f` as well — it asserts nothing about packages specifically
+  (it only checks tables), but it does catch DDL that will not reload. The
+  fixture itself survives the client-side splitter only because that splitter
+  spans `/*M! ... */` as one comment, semicolons and all.
+- MariaDB build, all dump/load suites: **78 passed, 4 failed** — the same four
+  §13.7 lists as pre-existing (`Instance_cache_test.table_columns`,
+  `Schema_dumper_test.opt_mysqlaas` / `compat_ddl` / `unknown_collations`).
+
+### 19.4 MySQL build unaffected
+
+- MySQL build against MySQL, same filter: **87 passed, 0 failed**, with the two
+  package tests skipped (they require MariaDB ≥ 10.3).
+- A MySQL-server dump is unchanged in shape: no `packages` or `packageBodies`
+  key in the per-schema metadata, no change to the routine section, no change to
+  the object counts.
+- A **MySQL build reading a MariaDB server** keeps producing MySQL-shaped dumps:
+  the 5.6 remap makes `supports_packages()` false, so `routines()` records no
+  package and nothing about them reaches the dump. That path used to abort; it
+  now completes and reports `1 out of 4 routines`, which is upstream's lossy
+  MariaDB → MySQL migration path behaving as documented.
+
+### 19.5 Not done here
+
+- **A MySQL build omits packages without saying so**, and its routine count goes
+  from `4 routines` to `1 out of 4 routines` without naming what the other three
+  were. Correct for MariaDB → MySQL, which cannot express a package, but it
+  deserves a `Compatibility_issue` — the same §16.5 item, and blocked on the same
+  MySQL-only compatibility machinery (§4.11).
+- **`SQL_iterator` still does not know `/*M!`.** It spans one as an ordinary
+  comment, so anything the port writes inside a MariaDB version comment is
+  invisible to the statement filters. That is why §19.2 writes the package DROP
+  bare. Teaching the lexer would be the deeper fix, but `/*M! ... */` really *is*
+  an ordinary comment to a MySQL server, so the change cannot simply be made in
+  the shared path — it would need the same vendor plumbing §7.1 gave the dumper.
+- **`GRANT EXECUTE ON PACKAGE` is not carried**, because no grant is: users,
+  roles and grants are phase 5d.
+- **A package with no body is restored with no body**, which is faithful. But
+  the target then has a specification nothing implements, and neither the dump
+  nor the load says so — the same silence §17.5 notes for a table holding rows
+  its constraints reject.

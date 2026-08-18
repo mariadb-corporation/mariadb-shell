@@ -176,6 +176,8 @@ class Dump_reader {
                       std::list<Object_info *> *out_procedures,
                       std::list<Object_info *> *out_libraries,
                       std::list<Object_info *> *out_events,
+                      std::list<Object_info *> *out_packages,
+                      std::list<Object_info *> *out_package_bodies,
                       std::list<Object_info *> *out_sequences);
 
   std::string fetch_schema_script(const std::string &schema) const;
@@ -595,6 +597,10 @@ class Dump_reader {
     std::list<Routine_info> procedures;
     std::vector<Object_info> libraries;
     std::vector<Object_info> events;
+    // MariaDB Oracle-mode packages. Their DDL is part of the routines, this
+    // list is what lets them be dropped and reported as already existing.
+    std::vector<Object_info> packages;
+    std::vector<Object_info> package_bodies;
     // MariaDB sequences. Unlike the object types above they have no script of
     // their own - their DDL is part of the schema script, because a table can
     // default to NEXT VALUE FOR a sequence. This list is what lets them be

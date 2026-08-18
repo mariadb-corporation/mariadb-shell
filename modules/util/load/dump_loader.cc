@@ -2411,7 +2411,9 @@ Dump_loader::filter_schema_objects(const std::string &schema) const {
 
         if (shcore::str_caseeq(type, "EVENT")) {
           execute = m_dump->include_event(schema, name);
-        } else if (shcore::str_caseeq(type, "FUNCTION", "PROCEDURE")) {
+        } else if (shcore::str_caseeq(type, "FUNCTION", "PROCEDURE", "PACKAGE",
+                                      "PACKAGE BODY")) {
+          // MariaDB Oracle-mode packages are routines and share their filters
           execute = m_dump->include_routine(schema, name);
         } else if (shcore::str_caseeq(type, "LIBRARY")) {
           execute = m_dump->include_library(schema, name);
@@ -4178,6 +4180,8 @@ bool Dump_loader::check_existing_schema_objects() {
     std::list<Dump_reader::Object_info *> procedures;
     std::list<Dump_reader::Object_info *> libraries;
     std::list<Dump_reader::Object_info *> events;
+    std::list<Dump_reader::Object_info *> packages;
+    std::list<Dump_reader::Object_info *> package_bodies;
     std::list<Dump_reader::Object_info *> sequences;
 
     if (!set_object_exists(schema, &schemas)) {
@@ -4188,7 +4192,8 @@ bool Dump_loader::check_existing_schema_objects() {
     }
 
     if (!m_dump->schema_objects(schema, &tables, &views, &triggers, &functions,
-                                &procedures, &libraries, &events, &sequences))
+                                &procedures, &libraries, &events, &packages,
+                                &package_bodies, &sequences))
       continue;
 
     result = query_names(m_reconnect_callback, m_session, schema, tables,
@@ -4229,6 +4234,26 @@ bool Dump_loader::check_existing_schema_objects() {
     if (result)
       has_duplicates |= report_duplicate_schema_objects(
           "a procedure", schema, &procedures, result.get());
+
+    // a package and a function may share a name, so the routine queries above
+    // cannot see these - I_S.ROUTINES has to be asked for the type explicitly
+    result =
+        query_names(m_reconnect_callback, m_session, schema, packages,
+                    "SELECT routine_name FROM information_schema.routines"
+                    " WHERE routine_schema = ? AND routine_type = 'PACKAGE'"
+                    " AND routine_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a package", schema, &packages, result.get());
+
+    result = query_names(
+        m_reconnect_callback, m_session, schema, package_bodies,
+        "SELECT routine_name FROM information_schema.routines"
+        " WHERE routine_schema = ? AND routine_type = 'PACKAGE BODY'"
+        " AND routine_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a package body", schema, &package_bodies, result.get());
 
     result = query_names(m_reconnect_callback, m_session, schema, libraries,
                          "SELECT library_name FROM information_schema.libraries"
@@ -4344,21 +4369,26 @@ void Dump_loader::execute_drop_ddl_tasks() {
     const char *type;
   };
 
-  list_t tables;      // progress::Table_ddl
-  list_t views;       // progress::Schema_ddl
-  list_t triggers;    // progress::Triggers_ddl
-  list_t functions;   // progress::Schema_ddl
-  list_t procedures;  // progress::Schema_ddl
-  list_t libraries;   // progress::Schema_ddl
-  list_t events;      // progress::Schema_ddl
-  list_t sequences;   // progress::Schema_ddl
+  list_t tables;          // progress::Table_ddl
+  list_t views;           // progress::Schema_ddl
+  list_t triggers;        // progress::Triggers_ddl
+  list_t functions;       // progress::Schema_ddl
+  list_t procedures;      // progress::Schema_ddl
+  list_t libraries;       // progress::Schema_ddl
+  list_t events;          // progress::Schema_ddl
+  list_t packages;        // progress::Schema_ddl
+  list_t package_bodies;  // progress::Schema_ddl
+  list_t sequences;       // progress::Schema_ddl
 
-  // sequences go last: a table can default to NEXT VALUE FOR one of them, so
-  // the tables are dropped first
+  // package bodies go before the specifications: DROP PACKAGE takes the body
+  // with it, so dropping the other way round leaves a statement with nothing
+  // to do. sequences go last: a table can default to NEXT VALUE FOR one of
+  // them, so the tables are dropped first
   std::vector<Objects> all_objects{
       {&tables, "TABLE"},         {&views, "VIEW"},
       {&triggers, "TRIGGER"},     {&functions, "FUNCTION"},
-      {&procedures, "PROCEDURE"}, {&libraries, "LIBRARY"},
+      {&procedures, "PROCEDURE"}, {&package_bodies, "PACKAGE BODY"},
+      {&packages, "PACKAGE"},     {&libraries, "LIBRARY"},
       {&events, "EVENT"},         {&sequences, "SEQUENCE"},
   };
 
@@ -4428,12 +4458,13 @@ void Dump_loader::execute_drop_ddl_tasks() {
         // table progress is tracked separately, but once schema DDL is done
         // all tables are also done, only triggers may be pending
         m_dump->schema_objects(schema->name, nullptr, nullptr, &triggers,
-                               nullptr, nullptr, nullptr, nullptr, nullptr);
+                               nullptr, nullptr, nullptr, nullptr, nullptr,
+                               nullptr, nullptr);
       } else {
         // fetch all objects
         m_dump->schema_objects(schema->name, &tables, &views, &triggers,
                                &functions, &procedures, &libraries, &events,
-                               &sequences);
+                               &packages, &package_bodies, &sequences);
         // some of the tables may be completed
         remove_completed(&tables, table_status);
         // just in case drop both views and tables with these names
@@ -5647,9 +5678,26 @@ void Dump_loader::Sql_transform::add_execution_condition(
         }
       }
 
-      if (shcore::str_caseeq(type, "EVENT", "FUNCTION", "PROCEDURE", "LIBRARY",
-                             "TRIGGER", "SEQUENCE")) {
-        auto name = it.next_token();
+      std::string object_type{type};
+      std::string_view name;
+
+      // a MariaDB Oracle-mode package spells its type in two tokens, CREATE or
+      // DROP PACKAGE BODY. A package actually named `body` is written quoted,
+      // so an unquoted BODY here can only be the keyword
+      if (shcore::str_caseeq(type, "PACKAGE")) {
+        // either BODY, or the name of the package
+        name = it.next_token();
+
+        if (shcore::str_caseeq(name, "BODY")) {
+          object_type = "PACKAGE BODY";
+          name = it.next_token();
+        }
+      }
+
+      if (shcore::str_caseeq(object_type, "EVENT", "FUNCTION", "PROCEDURE",
+                             "LIBRARY", "TRIGGER", "SEQUENCE", "PACKAGE",
+                             "PACKAGE BODY")) {
+        if (name.empty()) name = it.next_token();
 
         if (shcore::str_caseeq(name, "IF")) {
           // NOT or EXISTS
@@ -5671,7 +5719,7 @@ void Dump_loader::Sql_transform::add_execution_condition(
         shcore::split_schema_and_table(std::string{name}, nullptr, &object_name,
                                        true);
 
-        execute = f(type, object_name);
+        execute = f(object_type, object_name);
       }
 
       break;

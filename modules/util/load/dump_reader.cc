@@ -371,6 +371,8 @@ bool Dump_reader::schema_objects(std::string_view schema,
                                  std::list<Object_info *> *out_procedures,
                                  std::list<Object_info *> *out_libraries,
                                  std::list<Object_info *> *out_events,
+                                 std::list<Object_info *> *out_packages,
+                                 std::list<Object_info *> *out_package_bodies,
                                  std::list<Object_info *> *out_sequences) {
   const auto schema_info = find_schema(schema, nullptr);
 
@@ -389,6 +391,8 @@ bool Dump_reader::schema_objects(std::string_view schema,
     clear_out(out_procedures);
     clear_out(out_libraries);
     clear_out(out_events);
+    clear_out(out_packages);
+    clear_out(out_package_bodies);
     clear_out(out_sequences);
   }
 
@@ -413,6 +417,8 @@ bool Dump_reader::schema_objects(std::string_view schema,
   add_objects(&schema_info->procedures, out_procedures);
   add_objects(&schema_info->libraries, out_libraries);
   add_objects(&schema_info->events, out_events);
+  add_objects(&schema_info->packages, out_packages);
+  add_objects(&schema_info->package_bodies, out_package_bodies);
   add_objects(&schema_info->sequences, out_sequences);
 
   return true;
@@ -1535,6 +1541,24 @@ void Dump_reader::Schema_info::update_metadata(const std::string &data,
 
       log_debug("%s has %zi %ss", name.c_str(), target.size(),
                 routine_type.c_str());
+    }
+  }
+
+  // MariaDB Oracle-mode packages are routines, so the routine filters select
+  // them - see MARIADB_DUMP_LOAD.md section 19
+  for (const auto &[key, target] :
+       {std::pair{"packages", &packages},
+        std::pair{"packageBodies", &package_bodies}}) {
+    if (const auto package_list = md->get_array(key)) {
+      for (const auto &p : *package_list) {
+        auto package_name = p.as_string();
+
+        if (reader->include_routine(name, package_name)) {
+          target->emplace_back(Object_info{this, std::move(package_name)});
+        }
+      }
+
+      log_debug("%s has %zi %s", name.c_str(), target->size(), key);
     }
   }
 

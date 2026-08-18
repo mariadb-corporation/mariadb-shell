@@ -158,6 +158,12 @@ inline const char *collation_name(const CHARSET_INFO *cs) {
 constexpr std::size_t k_max_innodb_columns = 1017;
 constexpr std::string_view k_innodb_engine = "InnoDB";
 
+constexpr std::string_view k_function_type = "FUNCTION";
+constexpr std::string_view k_procedure_type = "PROCEDURE";
+// MariaDB only, Oracle-mode packages - MARIADB_DUMP_LOAD.md section 19
+constexpr std::string_view k_package_type = "PACKAGE";
+constexpr std::string_view k_package_body_type = "PACKAGE BODY";
+
 using mysqlshdk::utils::Version;
 
 const std::unordered_set<std::string> k_system_schemas = {
@@ -1189,10 +1195,23 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
     IFile *sql_file, const std::string &db) {
   std::vector<Compatibility_issue> res;
   char query_buff[QUERY_LENGTH];
-  const std::array<std::pair<std::string, Compatibility_issue::Object_type>, 2>
-      routine_types{
-          {{"FUNCTION", Compatibility_issue::Object_type::FUNCTION},
-           {"PROCEDURE", Compatibility_issue::Object_type::PROCEDURE}}};
+  // MariaDB Oracle-mode packages bracket the standalone routines, following
+  // routine_dump_param_array in client/mysqldump.cc: a package specification
+  // may declare public data types the routines below it use, so it goes first,
+  // and a package body may call those routines, so it goes last
+  std::vector<std::pair<std::string, Compatibility_issue::Object_type>>
+      routine_types{{std::string{k_function_type},
+                     Compatibility_issue::Object_type::FUNCTION},
+                    {std::string{k_procedure_type},
+                     Compatibility_issue::Object_type::PROCEDURE}};
+
+  if (common::supports_packages(m_cache.server.version)) {
+    routine_types.emplace(routine_types.begin(), std::string{k_package_type},
+                          Compatibility_issue::Object_type::PACKAGE_SPEC);
+    routine_types.emplace_back(std::string{k_package_body_type},
+                               Compatibility_issue::Object_type::PACKAGE_BODY);
+  }
+
   std::string db_name;
 
   std::string db_cl_name;
@@ -1214,6 +1233,10 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
 
   /* 0, retrieve and dump functions, 1, procedures */
   for (const auto &routine_type : routine_types) {
+    // a package holds no parameters of its own and cannot reference a library
+    const auto is_package =
+        Compatibility_issue::Object_type::PACKAGE_SPEC == routine_type.second ||
+        Compatibility_issue::Object_type::PACKAGE_BODY == routine_type.second;
     const auto routine_list = get_routines(db, routine_type.first);
     for (const auto &routine : routine_list) {
       const auto qualified_name = quote(db, routine);
@@ -1249,9 +1272,20 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
         } else if (body.length() > 0) {
           Object_guard_msg guard(sql_file, routine_type.first, db,
                                  routine_name);
-          if (opt_drop_routine || opt_reexecutable)
-            fprintf(sql_file, "/*!50003 DROP %s IF EXISTS %s */;\n",
-                    routine_type.first.c_str(), routine_name.c_str());
+          if (opt_drop_routine || opt_reexecutable) {
+            if (is_package) {
+              // no version comment: the CREATE below is written bare as well,
+              // so a MySQL server could not read this dump either way (a
+              // cross-vendor load is refused up front), and a /*M! ... */
+              // wrapper would additionally hide the statement from the
+              // loader's own object filter
+              fprintf(sql_file, "DROP %s IF EXISTS %s;\n",
+                      routine_type.first.c_str(), routine_name.c_str());
+            } else {
+              fprintf(sql_file, "/*!50003 DROP %s IF EXISTS %s */;\n",
+                      routine_type.first.c_str(), routine_name.c_str());
+            }
+          }
 
           if (routine_res->get_metadata().size() >= 6) {
             auto routine_db_col = row->get_string(5);
@@ -1299,10 +1333,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
 
           check_object_for_definer(routine_type.second, qualified_name, &body,
                                    &res);
-          check_routine_for_dependencies(db, routine, routine_type.second,
-                                         &res);
 
-          {
+          if (!is_package) {
+            check_routine_for_dependencies(db, routine, routine_type.second,
+                                           &res);
+
             // BUG#38089433 - handle unsupported collations
             const auto &s = m_cache.schemas.at(db);
             const auto &r = (Compatibility_issue::Object_type::FUNCTION ==
@@ -2858,11 +2893,21 @@ std::vector<std::string> Schema_dumper::get_routines(const std::string &db,
   std::vector<std::string> routine_list;
 
   const auto &schema = m_cache.schemas.at(db);
-  const auto &routines =
-      "PROCEDURE" == type ? schema.procedures : schema.functions;
 
-  for (const auto &routine : routines) {
-    routine_list.emplace_back(routine.first);
+  // MariaDB Oracle-mode packages take no parameters and reference no
+  // libraries, so they are cached as plain sets of names
+  if (k_package_type == type || k_package_body_type == type) {
+    const auto &packages =
+        k_package_type == type ? schema.packages : schema.package_bodies;
+
+    routine_list.assign(packages.begin(), packages.end());
+  } else {
+    const auto &routines =
+        k_procedure_type == type ? schema.procedures : schema.functions;
+
+    for (const auto &routine : routines) {
+      routine_list.emplace_back(routine.first);
+    }
   }
 
   return routine_list;
@@ -2874,7 +2919,7 @@ const std::vector<Instance_cache::Routine::Library_reference>
                                              const std::string_view type) {
   const auto &schema = m_cache.schemas.at(db);
   const auto &routines =
-      "PROCEDURE" == type ? schema.procedures : schema.functions;
+      k_procedure_type == type ? schema.procedures : schema.functions;
 
   return routines.at(routine).library_references;
 }
