@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -105,6 +106,22 @@ class Transaction_buffer {
 
   void set_trx_end_offset(uint64_t end) { m_trx_end_offset = m_trx_size + end; }
 
+  // Records that the row currently being sent is longer than the transaction
+  // limit, once per row. Called where read() finds that out, rather than by
+  // comparing a single read against the limit: the size of a read is chosen by
+  // the client library, and libmariadb always asks for 4096 bytes, so on that
+  // build no read could ever be larger than a useful maxBytesPerTransaction.
+  void mark_oversized_row() {
+    if (m_oversized_row_counted) return;
+
+    m_oversized_row_counted = true;
+    ++m_oversized_rows;
+
+    if (m_on_oversized_row) {
+      m_on_oversized_row(m_oversized_rows);
+    }
+  }
+
   Dialect m_dialect;
   mysqlshdk::storage::IFile *m_file = nullptr;
   Transaction_options m_options;
@@ -113,6 +130,8 @@ class Transaction_buffer {
   uint64_t m_trx_end_offset =
       0;  // offset of the end of the trx once we know it
   bool m_partial_row_sent = false;
+  // whether the row currently being sent has already been reported as oversized
+  bool m_oversized_row_counted = false;
   bool m_eof = false;
 
   std::string m_data;

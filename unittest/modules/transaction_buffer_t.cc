@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -190,6 +191,62 @@ void test_subchunking(int max_trx_size, int net_buffer_size, int first_row_size,
   EXPECT_EQ(data, full_reassembled_data);
 
   // if (debug) throw std::logic_error("debug stop");
+}
+
+// Feeds the whole file through the buffer using reads of 'read_size' bytes and
+// returns how many rows it reported as longer than the transaction limit.
+uint64_t count_oversized_rows(const std::string &data, int max_trx_size,
+                              int read_size) {
+  mysqlshdk::storage::backend::Memory_file mfile("-");
+  mfile.set_content(data);
+  mfile.open(mysqlshdk::storage::Mode::READ);
+
+  Transaction_options options;
+  options.max_trx_size = max_trx_size;
+  Transaction_buffer buffer(Dialect::default_(), &mfile, options);
+
+  uint64_t reported = 0;
+  buffer.on_oversized_row([&reported](uint64_t i) { reported = i; });
+
+  std::string net_buffer;
+  net_buffer.resize(read_size);
+
+  for (;;) {
+    for (;;) {
+      const auto bytes = buffer.read(&net_buffer[0], net_buffer.size());
+      if (bytes <= 0 || buffer.flush_pending()) break;
+    }
+
+    bool has_more = false;
+    buffer.flush_done(&has_more);
+    if (!has_more) break;
+  }
+
+  return reported;
+}
+
+// A row longer than maxBytesPerTransaction has to be reported whatever size the
+// client library asks the local-infile callback for: libmysqlclient sizes that
+// from the connection's net buffer, libmariadb always asks for 4096 bytes - see
+// MARIADB_DUMP_LOAD.md section 21.
+TEST(Transaction_buffer, oversized_row_detection_does_not_depend_on_read_size) {
+  constexpr int k_max_trx_size = 32;
+
+  std::string with_oversized_row;
+  append_row(&with_oversized_row, 4);
+  append_row(&with_oversized_row, 3 * k_max_trx_size);
+  append_row(&with_oversized_row, 4);
+
+  std::string rows_that_fit;
+  for (int i = 0; i < 6; ++i) append_row(&rows_that_fit, 4);
+
+  for (const int read_size : {4, 7, 16, k_max_trx_size, 4 * k_max_trx_size}) {
+    SCOPED_TRACE("read size " + std::to_string(read_size));
+
+    EXPECT_EQ(1, count_oversized_rows(with_oversized_row, k_max_trx_size,
+                                      read_size));
+    EXPECT_EQ(0, count_oversized_rows(rows_that_fit, k_max_trx_size, read_size));
+  }
 }
 
 TEST(Transaction_buffer, test_subchunking) {
