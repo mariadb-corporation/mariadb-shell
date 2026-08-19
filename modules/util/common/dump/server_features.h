@@ -281,6 +281,24 @@ bool supports_sequences(const Server_version &v);
 bool supports_packages(const Server_version &v);
 
 /**
+ * Whether a JSON column is a text column carrying a json_valid() CHECK
+ * constraint, rather than a column type of its own.
+ *
+ * MariaDB has no JSON type: 'JSON' is an alias for 'LONGTEXT CHARACTER SET
+ * utf8mb4 COLLATE utf8mb4_bin' plus an automatic column-level CHECK constraint,
+ * so information_schema.COLUMNS reports DATA_TYPE 'longtext' and only
+ * information_schema.CHECK_CONSTRAINTS still says the column is JSON.
+ *
+ * The wire protocol does know: since 10.5.0 (MDEV-20016) the server sends
+ * 'format=json' in the extended column metadata of any text column whose
+ * column-level CHECK constraint has a json_valid() call at its top level, and
+ * mysqlshdk/libs/db/mysql/result.cc reports such a column as Type::Json. This
+ * predicate is what lets the types read out of information_schema agree with
+ * the types the same columns arrive with - see MARIADB_DUMP_LOAD.md section 21.
+ */
+bool json_columns_use_check_constraints(const Server_version &v);
+
+/**
  * information_schema.VIEW_TABLE_USAGE, which lists the tables a view reads.
  *
  * MySQL 8.0.13+ only - MariaDB has no such table, so the tables have to be
