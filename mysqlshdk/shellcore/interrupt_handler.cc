@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -215,7 +216,9 @@ Interrupts::Interrupts(Interrupt_helper *helper) : m_helper(helper) {
   m_creator_thread_id = std::this_thread::get_id();
 }
 
-Interrupts::~Interrupts() {
+Interrupts::~Interrupts() { stop_background_thread(); }
+
+void Interrupts::stop_background_thread() {
   if (m_thread.joinable()) {
     terminate_thread();
   }
@@ -310,8 +313,11 @@ void Interrupts::interrupt() {
         }
       }
 
-      write_to_thread(stop_at);
-      return;
+      // the helper thread unlocks this object once it has run the unsafe
+      // handlers; if it is already gone - shutdown stops it before mysys is
+      // torn down, see stop_background_thread() - nobody would, so fall through
+      // to the unlock below
+      if (write_to_thread(stop_at)) return;
     } catch (const std::exception &e) {
       // logging is not signal safe, but this is an extraordinary situation
       log_error("Unexpected exception in safe interrupt handler: %s", e.what());
