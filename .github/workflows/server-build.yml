@@ -22,7 +22,7 @@ jobs:
   build-mariadb:
     name: Build MariaDB Server
     # Ensure this runs on your self-hosted runner
-    runs-on: self-linux-x64
+    runs-on: self-hosted
 
     steps:
       - name: Checkout MariaDB Source

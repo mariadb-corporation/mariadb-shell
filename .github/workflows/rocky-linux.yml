@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - arch: x86
-            os-runner: self-linux-x64
+            os-runner: self-hosted
             docker-platform: linux/amd64
             vcpkg-triplet: x64-linux-dynamic
             hosted: false
