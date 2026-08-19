@@ -145,6 +145,10 @@ void Transaction_buffer::flush_done(bool *out_has_more_data) {
   m_trx_end_offset = 0;
   m_partial_row_sent = false;
   m_oversized_rows = 0;
+  // the counters are per transaction, so an oversized row spanning two of them is
+  // reported in each - as it was before, when the report came from the size of a
+  // single read
+  m_oversized_row_counted = false;
 
   *out_has_more_data =
       m_options.max_trx_size > 0 && (!m_eof || !m_data.empty());
@@ -175,17 +179,6 @@ int Transaction_buffer::consume(char *buffer, unsigned int length) {
     }
 
     m_trx_size += length;
-
-    if (length > m_options.max_trx_size) {
-      // in a single read, we got more bytes than the transaction limit, either
-      // we have the whole row in the buffer and its end is past the limit or
-      // end was not found in the buffer
-      ++m_oversized_rows;
-
-      if (m_on_oversized_row) {
-        m_on_oversized_row(m_oversized_rows);
-      }
-    }
   }
 
   return length;
@@ -269,6 +262,10 @@ retry:
         }
       }
 
+      // whichever way this ends, the row being sent reaches past the transaction
+      // limit while no earlier row is left to flush: it is longer than the limit
+      mark_oversized_row();
+
       auto row_end = (this->*find_first_row_boundary_after)();
       if (row_end > 0) {
         // we found EOR, send the rest of the row and flush
@@ -288,6 +285,7 @@ retry:
       if (last_row_end > 0) {
         // EOR found, if we sent a partial row, it's complete now
         m_partial_row_sent = false;
+        m_oversized_row_counted = false;
 
         return consume(buffer, last_row_end);
       }
