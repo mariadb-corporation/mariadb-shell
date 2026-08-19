@@ -61,6 +61,86 @@ constexpr std::string_view k_procedure_type = "PROCEDURE";
 constexpr std::string_view k_package_type = "PACKAGE";
 constexpr std::string_view k_package_body_type = "PACKAGE BODY";
 
+/**
+ * Whether a CHECK constraint clause has a json_valid() call at the top level of
+ * its expression - either alone, or as one conjunct of an AND.
+ *
+ * That is exactly when MariaDB reports the constrained column as JSON on the
+ * wire: Field_longstr::make_send_field() asks the constraint expression for a
+ * format name, Item_func_json_valid answers "json", and only Item_cond_and
+ * forwards the question to its arguments. So an OR, a NOT, or a json_valid()
+ * nested inside another call does not make the column JSON.
+ *
+ * The server stores the clause normalized - function and operator names in
+ * lowercase, identifiers quoted, single spaces around the operators - so the
+ * top-level conjuncts can be found by scanning outside of parentheses and
+ * quotes, without parsing the expression. The one shape that scan does not
+ * recognize is a redundantly parenthesized clause, 'CHECK ((json_valid(a)))',
+ * which the server does call JSON; neither the JSON alias nor a hand-written
+ * constraint produces it.
+ */
+bool has_top_level_json_valid(const std::string &clause) {
+  constexpr std::string_view k_json_valid = "json_valid(";
+  constexpr std::string_view k_and = " and ";
+  constexpr std::string_view k_or = " or ";
+
+  std::size_t depth = 0;
+  char quote = '\0';
+  bool conjunct_start = true;
+  bool found = false;
+
+  for (std::size_t i = 0; i < clause.length(); ++i) {
+    const auto c = clause[i];
+
+    if ('\0' != quote) {
+      if (c == quote) quote = '\0';
+      continue;
+    }
+
+    if ('`' == c || '\'' == c || '"' == c) {
+      quote = c;
+      conjunct_start = false;
+      continue;
+    }
+
+    if ('(' == c) {
+      ++depth;
+      conjunct_start = false;
+      continue;
+    }
+
+    if (')' == c) {
+      if (depth) --depth;
+      conjunct_start = false;
+      continue;
+    }
+
+    if (depth) continue;
+
+    if (0 == clause.compare(i, k_or.length(), k_or)) {
+      // the expression as a whole is an alternative, so it has no top-level
+      // conjuncts at all
+      return false;
+    }
+
+    if (0 == clause.compare(i, k_and.length(), k_and)) {
+      i += k_and.length() - 1;
+      conjunct_start = true;
+      continue;
+    }
+
+    if (conjunct_start) {
+      if (0 == clause.compare(i, k_json_valid.length(), k_json_valid)) {
+        found = true;
+      }
+
+      conjunct_start = false;
+    }
+  }
+
+  return found;
+}
+
 bool has_vector_store_comment(std::string_view comment) {
   static constexpr std::string_view k_genai_options = "GENAI_OPTIONS=";
   static constexpr std::string_view k_embed_model_id = "EMBED_MODEL_ID=";
@@ -697,15 +777,9 @@ void Instance_cache_builder::fetch_columns() {
   info.table_name = "columns";
 
   // schema -> table -> columns
-  std::unordered_map<
-      std::string, std::unordered_map<
-                       std::string, std::map<uint64_t, Instance_cache::Column>>>
-      table_columns;
+  Column_map table_columns;
   // schema -> view -> columns
-  std::unordered_map<
-      std::string, std::unordered_map<
-                       std::string, std::map<uint64_t, Instance_cache::Column>>>
-      view_columns;
+  Column_map view_columns;
 
   const auto create_column = [](const mysqlshdk::db::IRow *row) {
     Instance_cache::Column column;
@@ -754,6 +828,10 @@ void Instance_cache_builder::fetch_columns() {
             row->get_uint(4),  // ORDINAL_POSITION
             create_column(row));
       });
+
+  if (common::json_columns_use_check_constraints(m_cache.server.version)) {
+    fetch_json_check_constraints(&table_columns);
+  }
 
   for (auto &schema : table_columns) {
     auto &s = m_cache.schemas.at(schema.first);
@@ -807,6 +885,52 @@ void Instance_cache_builder::fetch_columns() {
       }
     }
   }
+}
+
+void Instance_cache_builder::fetch_json_check_constraints(
+    Column_map *table_columns) {
+  Profiler profiler{"fetching JSON check constraints"};
+
+  // A MariaDB JSON column is a text column with a json_valid() CHECK constraint
+  // on it, so information_schema.COLUMNS - all fetch_columns() has to go on -
+  // cannot tell one from a plain LONGTEXT. The constraint can: the server
+  // reports a column as JSON on the wire exactly when its column-level
+  // constraint has a json_valid() call at the top level of its expression - see
+  // has_top_level_json_valid(). A table-level constraint does not count, and
+  // json_valid()'s argument is not looked at: a constraint naming another column
+  // still makes this one JSON. See MARIADB_DUMP_LOAD.md section 21.
+  Iterate_table info;
+  info.schema_column = "CONSTRAINT_SCHEMA";  // NOT NULL
+  info.table_column = "TABLE_NAME";          // NOT NULL
+  info.extra_columns = {
+      "CONSTRAINT_NAME",  // NOT NULL, at column level it is the column name
+      "CHECK_CLAUSE"      // NOT NULL
+  };
+  info.table_name = "check_constraints";
+  info.where = "LEVEL='Column'";
+
+  iterate_tables(info, [table_columns](const std::string &schema_name,
+                                       const std::string &table_name,
+                                       Instance_cache::Table *,
+                                       const mysqlshdk::db::IRow *row) {
+    if (!has_top_level_json_valid(row->get_string(3))) {  // CHECK_CLAUSE
+      return;
+    }
+
+    const auto schema = table_columns->find(schema_name);
+    if (table_columns->end() == schema) return;
+
+    const auto table = schema->second.find(table_name);
+    if (schema->second.end() == table) return;
+
+    const auto column_name = row->get_string(2);  // CONSTRAINT_NAME
+    const auto column = std::find_if(
+        table->second.begin(), table->second.end(),
+        [&column_name](const auto &c) { return column_name == c.second.name; });
+    if (table->second.end() == column) return;
+
+    column->second.type = mysqlshdk::db::Type::Json;
+  });
 }
 
 void Instance_cache_builder::fetch_table_indexes() {

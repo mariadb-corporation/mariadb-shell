@@ -5462,6 +5462,73 @@ TEST_F(Instance_cache_test, maria_db_roles) {
   }
 }
 
+// A MariaDB JSON column is a text column with a json_valid() CHECK constraint,
+// so the cache has to read the constraint to type it the way the column arrives
+// on the wire - see MARIADB_DUMP_LOAD.md section 21.
+TEST_F(Instance_cache_test, maria_db_json_columns) {
+  if (!common::json_columns_use_check_constraints(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.5.0");
+  }
+
+  m_session->execute("DROP SCHEMA IF EXISTS json_cols;");
+  m_session->execute("CREATE SCHEMA json_cols;");
+
+  shcore::on_leave_scope cleanup{
+      [this]() { m_session->execute("DROP SCHEMA IF EXISTS json_cols;"); }};
+
+  m_session->execute(
+      "CREATE TABLE json_cols.t ("
+      // the JSON alias, which the server expands to the constraint below
+      "c0 JSON, "
+      // spelled out by hand, in a type the alias never uses
+      "c1 TEXT CHECK (json_valid(c1)), "
+      // json_valid() as a conjunct still marks the column
+      "c2 LONGTEXT CHECK (LENGTH(c2) > 2 AND json_valid(c2)), "
+      // ... but as an alternative it does not
+      "c3 LONGTEXT CHECK (json_valid(c3) OR c3 IS NULL), "
+      // the collation the alias uses is not what makes a column JSON
+      "c4 LONGTEXT COLLATE utf8mb4_bin, "
+      // a table-level constraint does not mark a column either
+      "c5 LONGTEXT, CONSTRAINT c5 CHECK (json_valid(c5))"
+      ");");
+
+  Filtering_options filters;
+  const auto cache =
+      Instance_cache_builder(m_session, filters).metadata({}).build();
+  const auto &columns =
+      cache.schemas.at("json_cols").tables.at("t").all_columns;
+
+  const auto type_of = [&columns](const std::string &name) {
+    const auto column =
+        std::find_if(columns.begin(), columns.end(),
+                     [&name](const auto &c) { return name == c.name; });
+    return columns.end() == column ? mysqlshdk::db::Type::Null : column->type;
+  };
+
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c0"));
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c1"));
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c2"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c3"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c4"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c5"));
+
+  {
+    SCOPED_TRACE("the cache agrees with the metadata the columns arrive with");
+
+    const auto result = m_session->query(
+        "SELECT c0, c1, c2, c3, c4, c5 FROM json_cols.t LIMIT 0;");
+    const auto &metadata = result->get_metadata();
+
+    ASSERT_EQ(columns.size(), metadata.size());
+
+    for (std::size_t i = 0; i < metadata.size(); ++i) {
+      SCOPED_TRACE("checking column " + columns[i].name);
+      EXPECT_EQ(metadata[i].get_type(), columns[i].type);
+    }
+  }
+}
+
 }  // namespace tests
 }  // namespace dump
 }  // namespace mysqlsh

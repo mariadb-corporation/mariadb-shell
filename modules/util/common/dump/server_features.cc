@@ -146,6 +146,14 @@ bool supports_packages(const Server_version &v) {
   return v.is_maria_db && v.number.numeric() >= 100300;
 }
 
+bool json_columns_use_check_constraints(const Server_version &v) {
+  // JSON became an alias for LONGTEXT + json_valid() in 10.2.7, but the
+  // extended column metadata which reports such a column as JSON came with
+  // 10.5.0 (MDEV-20016). Below that the server calls the column a string on
+  // both paths, so there is nothing to reconcile.
+  return v.is_maria_db && v.number.numeric() >= 100500;
+}
+
 bool supports_view_table_usage(const Server_version &v) {
   return mysql_only(v, 80013);
 }

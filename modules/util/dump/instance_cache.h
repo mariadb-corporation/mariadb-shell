@@ -260,6 +260,12 @@ class Instance_cache_builder final {
   using Iterate_schema = mysqlshdk::db::Iterate_schema;
   using Iterate_table = mysqlshdk::db::Iterate_table;
 
+  // schema -> table (or view) -> ordinal position -> column
+  using Column_map = std::unordered_map<
+      std::string,
+      std::unordered_map<std::string,
+                         std::map<uint64_t, Instance_cache::Column>>>;
+
   void filter_schemas();
 
   void filter_tables();
@@ -275,6 +281,8 @@ class Instance_cache_builder final {
   void fetch_view_metadata();
 
   void fetch_columns();
+
+  void fetch_json_check_constraints(Column_map *table_columns);
 
   void fetch_table_indexes();
 
