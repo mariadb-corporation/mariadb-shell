@@ -1,5 +1,12 @@
 #@<> INCLUDE dump_utils.inc
 
+#@<> backup lock privilege
+# The privilege which guards the backup lock, as the dumper names it: MySQL's
+# LOCK INSTANCE FOR BACKUP needs BACKUP_ADMIN, MariaDB's BACKUP STAGE needs
+# RELOAD (Dumper::backup_lock_privilege()).
+backup_lock_privilege = "RELOAD" if __server_is_maria_db else ("BACKUP_ADMIN" if __version_num >= 80000 else "")
+
+
 #@<> entry point
 
 # imports
@@ -624,7 +631,8 @@ for table in session.run_sql("SELECT TABLE_NAME, TABLE_TYPE FROM information_sch
     else:
         types_schema_views.append(table[0])
 
-#@<> Create roles {VER(>=8.0.0)}
+#@<> Create roles {__server_is_maria_db or VER(>=8.0.0)}
+#BREAK
 session.run_sql("DROP ROLE IF EXISTS ?;", [ test_role ])
 session.run_sql("CREATE ROLE ?;", [ test_role ])
 
@@ -2221,14 +2229,16 @@ required_privileges = {
     ),
     "REPLICATION CLIENT": PrivilegeError(  # global privilege
         "NO EXCEPTION!",
-        "WARNING: Could not fetch the binary log information: MySQL Error 1227 (42000): Access denied; you need (at least one of) the SUPER, REPLICATION CLIENT privilege(s) for this operation",
+        f"WARNING: Could not fetch the binary log information: MySQL Error 1227 (42000): Access denied; you need (at least one of) the {'BINLOG MONITOR' if __server_is_maria_db else 'SUPER, REPLICATION CLIENT'} privilege(s) for this operation",
         fatal=False
     ),
 }
 
-if __version_num >= 80000:
+if not __server_is_maria_db and __version_num >= 80000:
     # when running a consistent dump on 8.0, LOCK INSTANCE FOR BACKUP is executed, which requires BACKUP_ADMIN privilege
     # BUG#33697289 - this is no longer an error, consistency is checked instead
+    # MariaDB has no BACKUP_ADMIN privilege - GRANT does not even parse it - and
+    # its backup lock (BACKUP STAGE) is guarded by RELOAD, already in this list
     required_privileges["BACKUP_ADMIN"] = PrivilegeError(  # global privilege
         "NO EXCEPTION!",
         f"NOTE: Backup lock is not available to the account {test_user_account} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.",
@@ -2532,7 +2542,7 @@ ERROR: The consistency of the dump cannot be guaranteed.
 
 # BUG#38452568 - add an explanation on how to achieve a consistent dump
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Enable binary logging.
 """)
 
@@ -2551,7 +2561,7 @@ ERROR: The consistency of the dump cannot be guaranteed.
 """)
 
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Enable binary logging.
 """)
 
@@ -2572,7 +2582,7 @@ ERROR: The consistency of the dump cannot be guaranteed.
 """)
 
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Enable binary logging and set the gtid_mode system variable to ON or ON_PERMISSIVE.
  * Enable binary logging and use an account which has the REPLICATION CLIENT or SUPER privileges.
 """)
@@ -2593,7 +2603,7 @@ ERROR: The consistency of the dump cannot be guaranteed.
 """)
 
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Set the gtid_mode system variable to ON or ON_PERMISSIVE.
  * Use an account which has the REPLICATION CLIENT or SUPER privileges.
 """)
@@ -4220,6 +4230,11 @@ EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' opt
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' option: empty", test_output_absolute, { "targetVersion": "", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_2_1 - wrong values - greater
+# These no longer carry the 'Argument #N:' prefix, on either vendor: the version
+# policy check needs the session to know the source vendor, so it moved out of
+# the option unpacker - which is what knows the argument position - and into
+# Dump_options::on_validate(). The parse errors above still come from the
+# unpacker and still carry it. See MARIADB_DUMP_LOAD.md section 21.9.
 for i in range(3):
     version = newest_target_version.split(".")
     version[i] = str(int(version[i]) + 1)
@@ -4227,7 +4242,7 @@ for i in range(3):
     # MariaDB rejects anything newer than the version this Shell was built
     # from, patch included; MySQL does not check the patch (BUG#38107377)
     if i < 2 or __server_is_maria_db:
-        EXPECT_FAIL("ValueError", f"Argument #2: {target_version_rejected_msg(version)}", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+        EXPECT_FAIL("ValueError", target_version_rejected_msg(version), test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "users": False, "showProgress": False })
@@ -4235,12 +4250,12 @@ for i in range(3):
 if not __server_is_maria_db:
     # older than the MariaDB version this Shell was built from, so a MariaDB
     # target accepts it; for MySQL it is not a supported server
-    EXPECT_FAIL("ValueError", f"Argument #2: {unsupported_target_version_msg('10.0.0')}", test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
-EXPECT_FAIL("ValueError", f"Argument #2: {target_version_rejected_msg('26.6.0')}", test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+    EXPECT_FAIL("ValueError", unsupported_target_version_msg('10.0.0'), test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", target_version_rejected_msg('26.6.0'), test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db}
-EXPECT_FAIL("ValueError", "Argument #2: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
-EXPECT_FAIL("ValueError", "Argument #2: Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "7.9.26", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", "Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", "Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "7.9.26", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887 - valid values
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": "8.0.25", "dryRun": True, "users": False, "showProgress": False })

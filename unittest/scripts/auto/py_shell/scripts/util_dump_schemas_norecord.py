@@ -1,5 +1,12 @@
 #@<> INCLUDE dump_utils.inc
 
+#@<> backup lock privilege
+# The privilege which guards the backup lock, as the dumper names it: MySQL's
+# LOCK INSTANCE FOR BACKUP needs BACKUP_ADMIN, MariaDB's BACKUP STAGE needs
+# RELOAD (Dumper::backup_lock_privilege()).
+backup_lock_privilege = "RELOAD" if __server_is_maria_db else ("BACKUP_ADMIN" if __version_num >= 80000 else "")
+
+
 #@<> entry point
 
 # imports
@@ -1799,7 +1806,7 @@ WARNING: The consistency of the dump cannot be guaranteed.
 
 # BUG#38452568 - add an explanation on how to achieve a consistent dump
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Enable binary logging.
 """)
 
@@ -2877,6 +2884,11 @@ EXPECT_FAIL("ValueError", "Argument #3: Invalid value of the 'targetVersion' opt
 EXPECT_FAIL("ValueError", "Argument #3: Invalid value of the 'targetVersion' option: empty", [ schema_name ], test_output_absolute, { "targetVersion": "", "showProgress": False })
 
 #@<> WL15887-TSFR_1_2_1 - wrong values - greater
+# These no longer carry the 'Argument #N:' prefix, on either vendor: the version
+# policy check needs the session to know the source vendor, so it moved out of
+# the option unpacker - which is what knows the argument position - and into
+# Dump_options::on_validate(). The parse errors above still come from the
+# unpacker and still carry it. See MARIADB_DUMP_LOAD.md section 21.9.
 for i in range(3):
     version = newest_target_version.split(".")
     version[i] = str(int(version[i]) + 1)
@@ -2884,7 +2896,7 @@ for i in range(3):
     # MariaDB rejects anything newer than the version this Shell was built
     # from, patch included; MySQL does not check the patch (BUG#38107377)
     if i < 2 or __server_is_maria_db:
-        EXPECT_FAIL("ValueError", f"Argument #3: {target_version_rejected_msg(version)}", [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
+        EXPECT_FAIL("ValueError", target_version_rejected_msg(version), [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "showProgress": False })
@@ -2892,12 +2904,12 @@ for i in range(3):
 if not __server_is_maria_db:
     # older than the MariaDB version this Shell was built from, so a MariaDB
     # target accepts it; for MySQL it is not a supported server
-    EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg('10.0.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
-EXPECT_FAIL("ValueError", f"Argument #3: {target_version_rejected_msg('26.6.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
+    EXPECT_FAIL("ValueError", unsupported_target_version_msg('10.0.0'), [ schema_name ], test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
+EXPECT_FAIL("ValueError", target_version_rejected_msg('26.6.0'), [ schema_name ], test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db}
-EXPECT_FAIL("ValueError", "Argument #3: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })
-EXPECT_FAIL("ValueError", "Argument #3: Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "7.9.26", "showProgress": False })
+EXPECT_FAIL("ValueError", "Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })
+EXPECT_FAIL("ValueError", "Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "7.9.26", "showProgress": False })
 
 #@<> WL15887 - valid values
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": "8.0.25", "dryRun": True, "showProgress": False })
