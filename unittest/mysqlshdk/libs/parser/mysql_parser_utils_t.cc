@@ -385,6 +385,51 @@ TEST(MysqlParserUtils, extract_table_references_respects_ansi_quotes_mode) {
   EXPECT_EQ(expected, actual);
 }
 
+TEST(MysqlParserUtils, quoted_identifier_escapes) {
+  // An identifier escapes its quote character by doubling it, and gives a back
+  // slash no special meaning - unlike a string literal. The view definitions
+  // below are what the server itself prints for such names, and a dump of a
+  // schema holding one used to fail on them.
+  const auto EXPECT = [](const std::string &stmt,
+                         const std::vector<Table_reference> &expected,
+                         bool ansi_quotes = false) {
+    SCOPED_TRACE(stmt);
+
+    Parser_config config;
+    config.mysql_version = mysqlshdk::utils::k_shell_version;
+    config.ansi_quotes = ansi_quotes;
+
+    std::vector<Table_reference> actual;
+    EXPECT_NO_THROW(actual = extract_table_references(stmt, config));
+    EXPECT_EQ(expected, actual);
+  };
+
+  // a doubled quote is one character of the name
+  EXPECT("SELECT * FROM `a``b`", {{"", "a`b"}});
+  EXPECT("SELECT * FROM `s``1`.`t``2`", {{"s`1", "t`2"}});
+  EXPECT(R"*(SELECT * FROM "a""b")*", {{"", "a\"b"}}, true);
+
+  // a back slash is not an escape, so this name ends at the next quote
+  EXPECT(R"*(SELECT * FROM `a\`)*", {{"", "a\\"}});
+  EXPECT(R"*(SELECT * FROM `a\`.`b\`)*", {{"a\\", "b\\"}});
+
+  // the whole name may be nothing but quotes
+  EXPECT("SELECT * FROM ````", {{"", "`"}});
+  EXPECT("SELECT * FROM ``````", {{"", "``"}});
+
+  // the shape which found this: a column alias holding the back ticks the query
+  // was written with, which the server prints doubled
+  EXPECT(
+      "select `format_name`(`s`.`t`.`f_name`,`s`.`t`.`l_name`) AS "
+      "```format_name``(t.f_name, t.l_name)` from `s`.`t`",
+      {{"s", "t"}});
+
+  // an unterminated identifier is still a syntax error
+  EXPECT_THROW(extract_table_references("SELECT * FROM `t",
+                                        mysqlshdk::utils::k_shell_version),
+               Sql_syntax_error);
+}
+
 TEST(MysqlParserUtils, extract_table_references_class) {
   Extract_table_references etr{mysqlshdk::utils::k_shell_version};
 

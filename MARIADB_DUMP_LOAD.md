@@ -1940,13 +1940,15 @@ Nothing outstanding on the MariaDB → MariaDB path; these are the edges around 
   sequence in.** The table filters select exactly what was asked for, as they do
   for every other dependency; the resulting dump fails to load unless the
   sequence is named too.
-- **Unrelated bug found while testing (pre-existing, not sequences).** A view
+- ~~**Unrelated bug found while testing (pre-existing, not sequences).** A view
   whose column alias contains embedded backticks — `` `format_name`(t1.f_name,
   t1.l_name) ``, which the server stores as an alias containing doubled
   backticks — makes `dumpSchemas` of that schema throw ``mismatched input
   '`format_name`'``. This is the §7.3 `supports_view_table_usage` fallback:
   MariaDB has no `I_S.VIEW_TABLE_USAGE`, so the shell parses `VIEW_DEFINITION`
-  itself and its parser rejects that alias. Reproduces with this phase stashed.
+  itself and its parser rejects that alias. Reproduces with this phase
+  stashed.~~ **FIXED (§22)** — the lexer, not the fallback: its quoted-identifier
+  rule was written from the string-literal rules.
 
 ---
 
@@ -2879,3 +2881,83 @@ note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so th
   `FUNCTION`**, so a MariaDB package is not part of an instance snapshot. The
   package round-trip has its own coverage (§19), and widening the helper would
   change every snapshot comparison at once.
+
+---
+
+## 22. A quoted identifier is not a string literal — fixed
+
+The §16.5 view bug, diagnosed. It is not the `supports_view_table_usage`
+fallback being wrong; the fallback is the only reason anyone noticed. The lexer
+cannot read a quoted identifier the server itself printed.
+
+`MySQLLexer.g4`'s rule was written from the string-literal rules next to it:
+
+```
+BACK_TICK_QUOTED_ID:
+    BACK_TICK (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? BACK_TICK;
+```
+
+An identifier is not a string. It escapes the quote character by **doubling**
+it, which this rule does not know, and it gives a **backslash no special
+meaning**, which this rule gets backwards. Both were measured on 12.3.2 — the
+name is what the server reports, not what the shell guesses:
+
+| Written | Name | Old lexer |
+|---|---|---|
+| `` `a``b` `` | `` a`b `` | two adjacent identifiers → `mismatched input` |
+| `` `a\` `` | `a\` | consumes the closing quote, runs on into the next statement |
+| ```` ```` ```` | `` ` `` | as above |
+| `` `a\\` `` | `a\\` | correct |
+
+Only the second and third shapes are new information; the first is what §16.5
+recorded. Both reach a dump the same way: a view's column alias keeps the text
+the query was written with, and `SHOW CREATE VIEW` / `I_S.VIEWS` print it back
+properly escaped.
+
+### 22.1 The fix
+
+`MySQLBaseLexer::nextToken()` scans quoted identifiers itself, which is
+**already how ANSI_QUOTES double quotes were handled** — `scan_ansi_quotes_identifier()`
+existed for exactly this reason, doubling included. It is now
+`scan_quoted_identifier(quote)` and both quote characters go through it: `"` when
+`ANSI_QUOTES` is active, `` ` `` always. An unterminated identifier still falls
+through to the generated lexer, so the syntax error is unchanged.
+
+The grammar was **not** regenerated. Fixing the rule means an ANTLR run, and the
+checked-in output is from 4.10.1 while the linked runtime is 4.13.2, so
+regenerating would rewrite the whole lexer *and* parser for a one-line change and
+conflict with every upstream merge. The rule carries a comment saying it is
+overridden and that the two must be fixed together.
+
+Nothing else moved: `span_quotable_sql_identifier()`, which unquotes what the
+parser returns, already handled doubling and treated a backslash as an ordinary
+character.
+
+### 22.2 Verified
+
+Only two things outside `libs/parser/` use this lexer: `instance_cache.cc`'s view
+parsing and `provider_sql.cc`'s autocompletion. On the MariaDB build, against
+12.3.2:
+
+- `MysqlParserUtils` — 14 passed, including a new `quoted_identifier_escapes`
+  covering each shape above, both quote characters, and the alias from §16.5.
+- `Completer_frontend*`, `Completion_cache_refresh`, `Instance_cache_test`,
+  `Schema_dumper_test` — 104 passed, 0 failed.
+- End to end: a schema holding all three alias shapes now dumps, loads into a new
+  schema, and every column name comes back byte-identical. It failed before the
+  fix on the same schema, with `mismatched input 'b'` — the `` `a\` `` shape, not
+  the one §16.5 reported.
+
+### 22.3 Not done here
+
+- **The MySQL build is unverified.** For any identifier without a doubled quote
+  or a backslash the scanner consumes the same bytes and emits the same token, so
+  the only inputs that change are ones which used to fail — but that is an
+  argument, not a test run.
+- **MySQL 8.0.13+ never reached this code**, since `I_S.VIEW_TABLE_USAGE` gives
+  it the references without parsing. 5.7 and 8.0.0-8.0.12 dumps do, and so does
+  autocompletion on every version.
+- **`fetch_view_metadata()` still parses MariaDB view definitions with the MySQL
+  grammar** (§13.8). This fixes a rule that was wrong for *both* vendors;
+  MariaDB-only view syntax is still not understood.
+
