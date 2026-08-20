@@ -1473,10 +1473,11 @@ helper):
   unpacker's error wrapper, so `Target MySQL version '26.9.0' is not
   supported…` no longer carries the argument position. It fails 12 assertions in
   `Shell_scripted/Auto_script_py.run_and_check/util_dump_instance_norecord`, and
-  those 12 are the *only* failures in that suite. Not fixed here: restoring the
-  prefix means knowing the option map's argument position, which differs per
-  entry point (`#2` for `dumpInstance`, `#4` for `dumpTables`), so it needs the
-  unpacker to carry it rather than a literal in the message.
+  those 12 are the *only* failures in that suite. Not restored: the check is
+  vendor-dependent and the vendor comes with the session, so it cannot go back
+  into the unpacker, and carrying the argument position into `on_validate()` would
+  mean threading it through 10 call sites for a message decoration. The
+  expectations were pinned to the prefix-less output instead — §21.9.
 
 ---
 
@@ -2827,7 +2828,7 @@ rather than unknown. Counting the distinct first causes across all four:
   Shell was built against (13.1.0)".** The suites synthesize `targetVersion`
   values from the *Shell's* version (26.x), which is the right yardstick only for
   MySQL: §7.4 made the reference version vendor-dependent, so the helpers that
-  build those values have to follow.
+  build those values now follow it (§21.9).
 - **22 × `Unknown system variable`** - `partial_revokes`,
   `sql_generate_invisible_primary_key`, `show_gipk_in_create_table_and_information_schema`
   and friends, the same shape §21.3 fixed centrally for the shared helpers.
@@ -2842,31 +2843,31 @@ note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so th
 ### 21.9 Not done here
 
 - **The four big dump suites** (§21.8). They are the bulk of what is left of this
-  phase. Their `targetVersion` sections need one thing the scripts do not have
-  yet: the version the Shell was *built against* per §7.4, since on a MariaDB
-  build that - not `__mysh_version` - is the yardstick the option is validated
-  against. A `__build_server_version` script variable fed from
-  `mysqlshdk::utils::k_build_server_version` would cover the ~28 failures that
-  currently read "Target MariaDB version 'x' is newer than the MariaDB version
-  this MySQL Shell was built against".
-- **The `Argument #N:` prefix is missing from `targetVersion` errors, on both
-  vendors.** Four assertions per big suite fail on it here, and it is what makes
-  `util_dump_instance` known-red on the MySQL build. Diagnosed: the prefix comes
-  from `Arg_handler::get()` (`scripting/type_info.h`), which wraps the conversion
-  of one argument, so an option setter which throws during unpacking gets it -
-  `set_target_version_str()` still does. Phase 2 moved the *version policy* checks
-  out of unpacking and into `on_validate()`, where nothing knows which argument
-  the options came from. The fix is to let `validate_and_configure()` take the
-  position (10 call sites, all in `mod_util.cc` and `copy_operation.h`, each entry
-  point knowing its own number) and have `validate_target_version()` prefix with
-  it. Phase 2 debt rather than phase 6 work, and it is the reason those four
-  assertions are left failing rather than pinned to the current output.
+  phase. Their `targetVersion` sections are done: `__build_server_version` /
+  `__build_server_version_num` carry `mysqlshdk::utils::k_build_server_version`
+  into the scripts, and `dump_utils.inc` picks the yardstick off the server's
+  vendor per §7.4 (`newest_target_version`, `target_version_rejected_msg()`),
+  which is what the ~28 "newer than the MariaDB version this MySQL Shell was
+  built against" failures were.
+- **`targetVersion` policy errors carry no `Argument #N:` prefix, on either
+  vendor, and the suites now expect none.** The prefix comes from
+  `Arg_handler::get()` (`scripting/type_info.h`), which wraps the conversion of
+  one argument, so an option setter which throws during unpacking gets it -
+  `set_target_version_str()` still does, and the three "Invalid value of the
+  'targetVersion' option" assertions still assert it. The *version policy* check
+  cannot live there: it is vendor-dependent since §7.4, and the vendor arrives
+  with the session, which `on_validate()` is the first hook to have. Restoring the
+  prefix would mean letting `validate_and_configure()` take the argument position
+  (10 call sites in `mod_util.cc` and `copy_operation.h`, each entry point knowing
+  its own number, and `copy_operation.h` having none to give - it sets
+  `targetVersion` from the target's `@@version`, not from an option). Decided
+  against: the expectations are pinned to the current output instead, in the three
+  `util_dump_{instance,schemas,tables}_norecord.py` suites, five assertions each.
 - **The MySQL build has only been spot-checked on the scripted side** —
   `util_copy_trx` passes there, and both builds compile. The full MySQL scripted
-  run is still the gate this phase has to clear before it can be called done, and
-  `util_dump_instance` is **known-red on the MySQL build** from before this work:
-  phase 2 moved `targetVersion` validation into `on_validate()` and lost the
-  unpacker's `Argument #N:` prefix, which fails 12 assertions there.
+  run is still the gate this phase has to clear before it can be called done. The
+  12 assertions which made `util_dump_instance` known-red there are the prefix
+  ones above and should go green with them, but that run has not happened yet.
 - **The JavaScript suites are untouched.** `util_load_dump_norecord.js` and the
   `cli_dump_*` scripts only run where the Shell has JS, which a MariaDB build does
   not (`HAVE_JS`), so nothing there can be exercised from this side.
