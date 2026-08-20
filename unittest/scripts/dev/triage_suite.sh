@@ -40,6 +40,27 @@ export PATH="$SERVER_BIN:$PATH"
 export MYSQL_PORT=${MYSQL_PORT:-3315}
 export MYSQLSH_TEST_HOME=$REPO/unittest
 
+# A suite which aborts part way can leave a sandbox listening on one of the
+# reserved ports, and the harness then refuses to start at all ("mysqld running
+# on port reserved for sandbox tests"). Clear them first, so a run never fails
+# for the previous run's mess. Only the sandbox ports are touched, never the
+# main test server.
+free_sandbox_ports() {
+  local ports="3325,3335,3345,3355,3365,3375"
+  local pids
+  pids=$(lsof -nP -iTCP:$ports -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
+  [[ -z $pids ]] && return 0
+  print -- "--- terminating leftover sandboxes: $(print -- $pids | tr '\n' ' ')"
+  kill ${=pids} 2>/dev/null
+  for i in {1..15}; do
+    lsof -nP -iTCP:$ports -sTCP:LISTEN >/dev/null 2>&1 || break
+    sleep 1
+  done
+  for p in ${(s:,:)ports}; do rm -rf ${TMPDIR:-/tmp}/$p; done
+}
+
+free_sandbox_ports
+
 for suite in "$@"; do
   log=$OUT/$suite.log
   start=$(date +%s)
@@ -48,6 +69,16 @@ for suite in "$@"; do
 
   blocks=$(grep -c "BEGIN FAILURE" $log)
   verdict=$(grep -oE "\[  (PASSED|FAILED)  \] [0-9]+ test" $log | head -1)
+
+  if [[ -z $verdict ]]; then
+    # the harness never got to the test: a sandbox left listening on a reserved
+    # port, a missing server binary, no main server ... "0 failures" would read
+    # as success here, so say what actually happened instead
+    print -- "=== $suite: DID NOT RUN, ${elapsed}s"
+    tail -n 12 $log | sed 's/^/    /'
+    print -- "--- log: $log"
+    continue
+  fi
 
   print -- "=== $suite: $verdict, $blocks failure blocks, ${elapsed}s"
 

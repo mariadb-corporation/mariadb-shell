@@ -15,6 +15,21 @@ supported_versions = f"8.0 <= version < 10.0 or 26.7 <= version <= {'.'.join(__m
 def unsupported_target_version_msg(version):
     return f"Target MySQL version '{version}' is not supported by this version of MySQL Shell. Supported MySQL Server versions are {supported_versions}"
 
+# The newest server the 'targetVersion' option accepts. The Shell and MySQL share
+# a version scale, so for a MySQL server that is the Shell's own version; MariaDB
+# numbering is its own, so a MariaDB target is measured against the MariaDB
+# version this Shell was built from (MARIADB_DUMP_LOAD.md section 7.4).
+newest_target_version = __build_server_version if __server_is_maria_db else __mysh_version
+
+# What the two vendors reject is not the same shape either: MySQL has a minimum
+# (8.0.25, the oldest MySQL HeatWave Service) and a list of supported servers,
+# while for MariaDB the only question is whether this Shell knows the target at
+# all - see Dump_options::validate_target_version().
+def target_version_rejected_msg(version):
+    if __server_is_maria_db:
+        return f"Target MariaDB version '{version}' is newer than the MariaDB version this MySQL Shell was built against ({__build_server_version})"
+    return unsupported_target_version_msg(version)
+
 # The name the Shell and the server use for the vendor in their messages.
 server_vendor_name = "MariaDB" if __server_is_maria_db else "MySQL"
 
@@ -33,7 +48,9 @@ def md5_table(session, schema, table, where = "", partitions = []):
     has_pri = 0 != session.run_sql("SELECT COUNT(*) FROM information_schema.statistics WHERE index_name = 'PRIMARY' AND table_schema = ? AND table_name = ?", [schema, table]).fetch_one()[0]
     for c in session.run_sql("desc !.!", [schema, table]).fetch_all():
         quoted = quote_identifier(c[0])
-        columns.append(f"VECTOR_TO_STRING({quoted})" if c[1].upper().startswith('VECTOR') else quoted)
+        # MariaDB spells it VEC_ToText(); VECTOR_TO_STRING() is MySQL 9's name
+        vector_to_text = "VEC_ToText" if __server_is_maria_db else "VECTOR_TO_STRING"
+        columns.append(f"{vector_to_text}({quoted})" if c[1].upper().startswith('VECTOR') else quoted)
     query = f"SELECT @crc := sha1(concat(@crc, sha1(concat_ws('#', {', '.join([f'convert({c} using binary)' for c in columns])})))),@cnt := @cnt + 1 as discard from !.!"
     params = [schema, table]
     if partitions:

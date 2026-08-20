@@ -1738,6 +1738,21 @@ void Shell_script_tester::set_defaults() {
                          mysqlshdk::utils::k_shell_version.numeric());
   exec_and_out_equals(code);
 
+  // The newest server version this Shell understands. The Shell and MySQL share
+  // a version scale, so for a MySQL server that is the Shell's own version; a
+  // MariaDB server is measured against the MariaDB version this build was made
+  // from instead (MARIADB_DUMP_LOAD.md section 7.4), which is what the
+  // 'targetVersion' option is validated against.
+  code = shcore::str_format(
+      "%s__build_server_version = '%s'", var_prefix.c_str(),
+      mysqlshdk::utils::k_build_server_version.get_base().c_str());
+  exec_and_out_equals(code);
+
+  code = shcore::str_format(
+      "%s__build_server_version_num = %" PRIu32, var_prefix.c_str(),
+      mysqlshdk::utils::k_build_server_version.numeric());
+  exec_and_out_equals(code);
+
   code = shcore::str_format("%s__version = '%s'", var_prefix.c_str(),
                             _target_server_version.get_base().c_str());
   exec_and_out_equals(code);
