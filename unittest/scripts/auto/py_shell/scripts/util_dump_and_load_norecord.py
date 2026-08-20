@@ -124,7 +124,7 @@ mhs_excluded_users = [
 
 ## Tests to ensure restricted users dumped with strip_restricted_grants can be loaded with a restricted user and not just with root
 
-#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and __dbug}
+#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and __dbug and not __server_is_maria_db}
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -424,7 +424,7 @@ EXPECT_STDOUT_NOT_CONTAINS(grant_on_excluded_object(tested_user, schema_level_gr
 
 wipe_dir(dump_dir)
 
-#@<> BUG#34952027 - warnings for grants with excluded objects with partial_revokes ON {VER(>=8.0.16)}
+#@<> BUG#34952027 - warnings for grants with excluded objects with partial_revokes ON {VER(>=8.0.16) and not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 session.run_sql("SET @@GLOBAL.partial_revokes = ON")
 
@@ -524,7 +524,7 @@ del actual_accounts["root@%"]
 # validation
 EXPECT_EQ(expected_accounts, actual_accounts)
 
-#@<> BUG#34952027 - a warning if the value of partial_revoke differs between source and target {VER(>=8.0.16)}
+#@<> BUG#34952027 - a warning if the value of partial_revoke differs between source and target {VER(>=8.0.16) and not __server_is_maria_db}
 session.run_sql("SET GLOBAL partial_revokes=1")
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
 EXPECT_STDOUT_CONTAINS("WARNING: The dump was created on an instance where the 'partial_revokes' system variable was disabled, however the target instance has it enabled. GRANT statements on object names with wildcard characters (% or _) will behave differently.")
@@ -720,7 +720,7 @@ EXPECT_INCLUDE_EXCLUDE({ "ignoreExistingObjects": True }, [], [])
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping CREATE/ALTER USER statements for user 'mysql.sys'@'localhost'")
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping GRANT/REVOKE statements for user 'mysql.sys'@'localhost'")
 
-#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and __dbug}
+#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and __dbug and not __server_is_maria_db}
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -769,7 +769,7 @@ session.run_sql("DROP ROLE 'local'@'localhost';")
 session.run_sql("DROP user wolodia@localhost;")
 session.run_sql("DROP user zenon@localhost;")
 
-#@<> BUG#31748786 {__dbug}
+#@<> BUG#31748786 {__dbug and not __server_is_maria_db}
 # create a MDS-compatible dump
 shell.connect(__sandbox_uri1)
 
@@ -801,7 +801,7 @@ EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "skipBinlog": True, "showProgre
 
 testutil.dbug_set("")
 
-#@<> BUG#32140970 {__dbug}
+#@<> BUG#32140970 {__dbug and not __server_is_maria_db}
 # create a MDS-compatible dump but without 'ocimds' option
 shell.connect(__sandbox_uri1)
 
@@ -827,7 +827,7 @@ EXPECT_STDOUT_CONTAINS("WARNING: Destination is a MySQL HeatWave Service DB Syst
 
 testutil.dbug_set("")
 
-#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option
+#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option {not __server_is_maria_db}
 dump_pks_dir = os.path.join(outdir, "invisible_pks")
 dump_no_pks_dir = os.path.join(outdir, "no_invisible_pks")
 dump_just_pk_dir = os.path.join(outdir, "just_pk")
@@ -935,7 +935,7 @@ EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires ser
 # 'createInvisiblePKs' is true explicitly
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
 
-#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
+#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug and not __server_is_maria_db}
 # WL14506-TSFR_4_5
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -948,7 +948,7 @@ EXPECT_STDOUT_NOT_CONTAINS("createInvisiblePKs")
 
 testutil.dbug_set("")
 
-#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
+#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug and not __server_is_maria_db}
 # WL14506-TSFR_4_7
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -2903,7 +2903,7 @@ def do_load(create_pks):
 def has_primary_key(s, t) -> bool:
     return "PRIMARY KEY" in session2.run_sql("SHOW CREATE TABLE !.!", [ s, t ]).fetch_one()[1]
 
-#@<> BUG#34408669 - setup {VER(>= 8.0.30)}
+#@<> BUG#34408669 - setup {VER(>= 8.0.30) and not __server_is_maria_db}
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql("CREATE SCHEMA IF NOT EXISTS !", [tested_schema])
 session1.run_sql("SET @@SESSION.sql_generate_invisible_primary_key = OFF")
@@ -2913,7 +2913,7 @@ session1.run_sql("CREATE TABLE !.! (data INT)", [ tested_schema, tested_table ])
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "ddlOnly": True, "showProgress": False }), "Dump should not fail")
 
-#@<> BUG#34408669 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>= 8.0.30)}
+#@<> BUG#34408669 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>= 8.0.30) and not __server_is_maria_db}
 wipeout_server(session2)
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
@@ -2934,7 +2934,7 @@ EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_FALSE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30)}
+#@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30) and not __server_is_maria_db}
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = ON")
 
 #@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30)}
@@ -2975,7 +2975,7 @@ os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"] = "1"
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - cleanup {VER(>= 8.0.30)}
+#@<> BUG#34408669 - cleanup {VER(>= 8.0.30) and not __server_is_maria_db}
 del os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"]
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
@@ -3082,7 +3082,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProg
 compare_schema(session1, session2, tested_schema, check_rows=True)
 compare_user_grants(session1, session2, tested_user)
 
-#@<> BUG#34764157 - dumper should detect invalid grants - table/view
+#@<> BUG#34764157 - dumper should detect invalid grants - table/view {not __server_is_maria_db}
 # NOTE: it's not possible to test routine, as when routine is removed, grant is removed as well
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP VIEW !.!", [ tested_schema, tested_view ])
@@ -3569,13 +3569,13 @@ session1.run_sql("DROP SCHEMA IF EXISTS !", [ tested_schema ])
 session1.run_sql("CREATE SCHEMA !", [ tested_schema ])
 session1.run_sql("CREATE TABLE !.! (a date GENERATED ALWAYS AS (50399) STORED)", [ tested_schema, tested_table ])
 
-#@<> BUG#35860654 - dumping with ocimds should fail, complaining that table doesn't have a PK
+#@<> BUG#35860654 - dumping with ocimds should fail, complaining that table doesn't have a PK {not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 EXPECT_THROWS(lambda: util.dump_schemas([ tested_schema ], dump_dir, { "ocimds": True, "showProgress": False }), "Compatibility issues were found")
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, tested_table).error())
 wipe_dir(dump_dir)
 
-#@<> BUG#35860654 - test
+#@<> BUG#35860654 - test {not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([ tested_schema ], dump_dir, { "ocimds": True, "compatibility": [ "create_invisible_pks" ], "showProgress": False }), "dump should not throw")
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, tested_table).fixed())
@@ -4345,7 +4345,7 @@ session1.run_sql("CREATE TABLE !.t2 (id INT NOT NULL AUTO_INCREMENT UNIQUE)", [t
 session1.run_sql("CREATE TABLE !.t3 (id INT)", [tested_schema])
 session1.run_sql("/*80030 SET @@SESSION.sql_generate_invisible_primary_key = ON */")
 
-#@<> BUG#38907890 - 'targetVersion' is 9.6.0, table with PKE is reported as an error
+#@<> BUG#38907890 - 'targetVersion' is 9.6.0, table with PKE is reported as an error {not __server_is_maria_db}
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4354,7 +4354,7 @@ EXPECT_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "targetVers
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t2", False).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t3", False).error())
 
-#@<> BUG#38907890 - 'targetVersion' is 9.7.0, table with PKE is not reported as an error
+#@<> BUG#38907890 - 'targetVersion' is 9.7.0, table with PKE is not reported as an error {not __server_is_maria_db}
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4384,7 +4384,7 @@ ERROR: One or more tables without Primary Keys were found.
          It will not be possible to load the dump in an HA enabled DB System instance.
 """)
 
-#@<> BUG#38907890 - 'targetVersion' defaults to mysqlsh version, PK errors are fixed
+#@<> BUG#38907890 - 'targetVersion' defaults to mysqlsh version, PK errors are fixed {not __server_is_maria_db}
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4400,7 +4400,7 @@ NOTE: One or more tables without Primary Keys were found.
       Missing Primary Keys will be created automatically when this dump is loaded.
 """)
 
-#@<> BUG#38907890 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>=9.7.0)}
+#@<> BUG#38907890 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>=9.7.0) and not __server_is_maria_db}
 wipeout_server(session2)
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 session2.run_sql("SET @@GLOBAL.sql_require_primary_key = ON")
@@ -4423,7 +4423,7 @@ EXPECT_FALSE(has_primary_key(tested_schema, "t2"))
 # PK is created
 EXPECT_TRUE(has_primary_key(tested_schema, "t3"))
 
-#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {__dbug and VER(>=9.7.0)}
+#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {__dbug and VER(>=9.7.0) and not __server_is_maria_db}
 testutil.dbug_set("+d,dump_loader_force_mds")
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, {"createInvisiblePKs": False, "dropExistingObjects": True, "showProgress": False}), "sql_require_primary_key enabled at destination server")
@@ -4445,7 +4445,7 @@ You must do one of the following to be able to load this dump:
 - Disable the sql_require_primary_key sysvar at the server (note that the underlying reason for the option to be enabled may still prevent your database from functioning properly)
 """)
 
-#@<> BUG#38907890 - cleanup
+#@<> BUG#38907890 - cleanup {not __server_is_maria_db}
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 if __version_num >= 90700:

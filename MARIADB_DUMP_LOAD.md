@@ -2847,6 +2847,18 @@ note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so th
   `mysqlshdk::utils::k_build_server_version` would cover the ~28 failures that
   currently read "Target MariaDB version 'x' is newer than the MariaDB version
   this MySQL Shell was built against".
+- **The `Argument #N:` prefix is missing from `targetVersion` errors, on both
+  vendors.** Four assertions per big suite fail on it here, and it is what makes
+  `util_dump_instance` known-red on the MySQL build. Diagnosed: the prefix comes
+  from `Arg_handler::get()` (`scripting/type_info.h`), which wraps the conversion
+  of one argument, so an option setter which throws during unpacking gets it -
+  `set_target_version_str()` still does. Phase 2 moved the *version policy* checks
+  out of unpacking and into `on_validate()`, where nothing knows which argument
+  the options came from. The fix is to let `validate_and_configure()` take the
+  position (10 call sites, all in `mod_util.cc` and `copy_operation.h`, each entry
+  point knowing its own number) and have `validate_target_version()` prefix with
+  it. Phase 2 debt rather than phase 6 work, and it is the reason those four
+  assertions are left failing rather than pinned to the current output.
 - **The MySQL build has only been spot-checked on the scripted side** —
   `util_copy_trx` passes there, and both builds compile. The full MySQL scripted
   run is still the gate this phase has to clear before it can be called done, and
