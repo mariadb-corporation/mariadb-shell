@@ -274,6 +274,8 @@ Instance_cache_builder &Instance_cache_builder::users() {
   m_cache.users = fetch_users();
   m_cache.roles = fetch_roles();
 
+  add_granted_roles();
+
   m_cache.filtered.users = m_cache.users.size();
   m_cache.total.users = count_users();
 
@@ -1484,6 +1486,124 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
   return fetch_users("SELECT DISTINCT user, host FROM mysql.user",
                      "authentication_string='' AND account_locked='Y' AND "
                      "password_expired='Y'");
+}
+
+void Instance_cache_builder::add_granted_roles() {
+  // A MariaDB role is an object of its own, so an account filter which names a
+  // user does not name the roles granted to it - and a role is not a dependency
+  // of the account, it *is* part of the account's privileges. Restoring the
+  // account without them leaves it with fewer than it had, so the roles it holds
+  // are pulled in rather than asked for. Transitively: a role granted to a role
+  // carries privileges just the same.
+  if (!common::supports_role_dumping(m_cache.server.version) ||
+      !common::roles_are_hostless(m_cache.server.version) ||
+      m_cache.users.empty()) {
+    return;
+  }
+
+  // grantee -> the roles granted to it; a grantee with no host is itself a role
+  std::multimap<shcore::Account, std::string> granted;
+
+  try {
+    const auto result =
+        query("SELECT Host, User, Role FROM mysql.roles_mapping");
+
+    while (const auto row = result->fetch_one()) {
+      shcore::Account grantee;
+      grantee.host = row->get_string(0);
+      grantee.user = row->get_string(1);
+
+      granted.emplace(std::move(grantee), row->get_string(2));
+    }
+  } catch (const mysqlshdk::db::Error &e) {
+    log_error("Failed to fetch role grants: %s.", e.format().c_str());
+    current_console()->print_warning(
+        "Failed to fetch role grants, the dump may be missing roles which are "
+        "granted to the accounts being dumped.");
+    return;
+  }
+
+  // an explicitly excluded role stays out - that is an instruction, not an
+  // oversight, and dump_grants() still warns about the grant which names it
+  const auto &excluded = m_filters.users().excluded();
+  const auto is_excluded = [&excluded](const shcore::Account &role) {
+    // the same match User_filters::is_included() makes, where an entry without
+    // a host matches every host
+    return excluded.end() !=
+           std::find_if(excluded.begin(), excluded.end(),
+                        [&role](const shcore::Account &a) {
+                          return a.user == role.user &&
+                                 (a.host.empty() || a.host == role.host);
+                        });
+  };
+
+  std::set<shcore::Account> dumped{m_cache.users.begin(), m_cache.users.end()};
+  std::vector<shcore::Account> pending{m_cache.users};
+  std::set<shcore::Account> added;
+
+  const auto describe = [](const shcore::Account &a) {
+    // a role has no host of its own
+    return a.host.empty() ? shcore::quote_identifier(a.user)
+                          : shcore::make_account(a);
+  };
+
+  while (!pending.empty()) {
+    const auto account = std::move(pending.back());
+    pending.pop_back();
+
+    const auto [begin, end] = granted.equal_range(account);
+
+    for (auto it = begin; it != end; ++it) {
+      shcore::Account role;
+      role.user = it->second;
+
+      if (dumped.count(role)) {
+        continue;
+      }
+
+      if (is_excluded(role)) {
+        // dump_grants() reports a grant which names a role the dump does not
+        // carry, but only where it can parse the grantee - a role granted to a
+        // role is written without a host and is not recognized there, so the
+        // one case this function creates is reported here
+        current_console()->print_warning(shcore::str_format(
+            "Role %s is granted to %s but is excluded from the dump. The grant "
+            "which names it will fail unless the role already exists on the "
+            "target.",
+            shcore::quote_identifier(role.user).c_str(),
+            describe(account).c_str()));
+        continue;
+      }
+
+      dumped.emplace(role);
+      added.emplace(role);
+      pending.emplace_back(std::move(role));
+    }
+  }
+
+  if (added.empty()) {
+    return;
+  }
+
+  m_cache.users.assign(dumped.begin(), dumped.end());
+  // is_role() in the dumper reads this, and it decides between CREATE ROLE and
+  // CREATE USER
+  m_cache.roles.insert(m_cache.roles.end(), added.begin(), added.end());
+  std::sort(m_cache.roles.begin(), m_cache.roles.end());
+
+  std::vector<std::string> names;
+  names.reserve(added.size());
+
+  for (const auto &role : added) {
+    names.emplace_back(shcore::quote_identifier(role.user));
+  }
+
+  current_console()->print_note(shcore::str_format(
+      "%zu %s granted to the accounts being dumped and %s added to the dump: "
+      "%s.",
+      added.size(), 1 == added.size() ? "role is" : "roles are",
+      1 == added.size() ? "has been" : "have been",
+      shcore::str_join(names, ", ").c_str()));
 }
 
 uint64_t Instance_cache_builder::count_users() const {

@@ -3208,3 +3208,88 @@ dumping, then uninstalling the plugin before the load:
   note, so it cannot show a wrong number today.
 - **No scripted coverage**, for the same reason as §24.4: staging it needs a
   plugin installed, a dump, and then the plugin removed.
+
+---
+
+## 26. A dumped account brings its roles
+
+A MariaDB role is an object of its own, so `includeUsers` naming a user does not
+name the roles granted to it. What that produced, measured:
+
+```
+$ util.dumpInstance(dir, {users: true, includeUsers: ['u_app']})
+1 out of 9 users will be dumped.
+WARNING: User 'u_app'@'%' has a grant statement on a role `r_admin` which is not
+included in the dump (GRANT `r_admin` TO `u_app`@`%`)
+```
+
+The `GRANT` was written anyway, so the load restored an account whose privileges
+name a role which does not exist. The role is not a *dependency* of the account
+the way a sequence is of a table - it **is** part of the account's privileges, so
+"dump this user" already asks for it. It is now deduced rather than asked for, and
+no new option is involved: `Instance_cache_builder::add_granted_roles()` walks
+`mysql.roles_mapping` from the accounts the filters selected and adds the roles
+they hold, transitively, since a role granted to a role carries privileges just
+the same.
+
+```
+NOTE: 2 roles are granted to the accounts being dumped and have been added to the
+dump: `r_admin`, `r_app`.
+3 out of 9 users will be dumped.
+```
+
+The roles go into `m_cache.roles` as well as `m_cache.users`, because that is what
+`dump_grants()` reads to choose between `CREATE ROLE` and `CREATE USER`.
+
+### 26.1 An explicit exclusion still wins
+
+`includeUsers` and `excludeUsers` take account names, and a MariaDB role is a row
+in `mysql.user`, so those options can already name one - that is how a role was
+dumped before this change. Where the two conflict, the explicit instruction wins:
+a role in `excludeUsers` is not pulled in, and nothing it would have carried is
+either.
+
+That leaves the dangling grant the deduction was written to prevent, so it is
+reported where the decision is made:
+
+```
+WARNING: Role `r_app` is granted to `r_admin` but is excluded from the dump. The
+grant which names it will fail unless the role already exists on the target.
+```
+
+`dump_grants()` already reports a grant on a role the dump does not carry, but
+only where `parse_grant_statement()` recognizes the grantee - a role granted to a
+role is written without a host (`GRANT `r_app` TO `r_admin``) and is not
+recognized there. That is pre-existing and only reachable now that a role can
+join the dump on its own, which is why the warning is raised in the new code
+rather than by teaching the parser.
+
+### 26.2 Verified
+
+`Instance_cache_test.roles_of_included_users` pins the four cases: a user's roles
+follow it transitively, a role granted to nobody is not dragged in, excluding the
+first role in the chain drops what was only reachable through it, and a role named
+outright is dumped whether or not anyone holds it. `Instance_cache_test` and
+`Schema_dumper_test` are 41 passed, 0 failed.
+
+End to end, against 12.3.2: dumping `includeUsers: ['u_app']` and loading into an
+instance where none of the three accounts exist reports `3 accounts were loaded`,
+and `u_app` then connects, activates `r_admin` as its default role, and reads a
+table whose `SELECT` comes only from the transitively granted `r_app`. That is the
+whole point of the change, so it is the test that matters.
+
+### 26.3 Not done here
+
+- **MySQL is untouched**, gated on `roles_are_hostless()`. The same argument
+  applies there - naming a user does not name its roles either - but changing what
+  a MySQL dump contains is a MySQL → MySQL behaviour change and outside this
+  port's scope (§6).
+- **`mysql.roles_mapping` needs `SELECT` on `mysql`**, which §20.3 already
+  requires to dump users at all. If the read fails the dump continues with a
+  warning rather than aborting, so an account which cannot read it gets the old
+  behaviour.
+- **The deduction does not extend to what a role can reach other than roles.** A
+  role's own object grants are dumped because the role is now a dumped account,
+  but a grant on a schema outside the dump is still just a warning, as it is for
+  any account.
+- **No scripted coverage**, as with §24 and §25.
