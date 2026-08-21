@@ -3379,3 +3379,64 @@ one schema. `Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed
 - **Partitioned or `WITHOUT SYSTEM VERSIONING`-column tables were not tested**,
   nor `AS OF` / `BETWEEN` period queries in a view - only `FOR SYSTEM_TIME ALL`.
 
+---
+
+## 28. Enhancement: a MariaDB grammar for the parser
+
+§27.2 keeps the dump alive; it does not make the shell understand MariaDB SQL.
+The fix for that is a MariaDB grammar, and one exists - exported from the
+`mdblsp` project (`MariaDBLexer.g4`, `MariaDBParser.g4`, `PATCHES.md`), MIT
+licensed, not vendored here yet. Notes from reading it, so the assessment does not
+have to be redone.
+
+**What it is.** antlr/grammars-v4 lineage with 30 patches (2 lexer, 28 parser),
+each closing a divergence measured against live 10.6 / 11.4 / 11.8, each recorded
+with the statement and the errno. It needs ANTLR **4.13.2**, which is the runtime
+this shell links - the checked-in MySQL parser is 4.10.1 output, so the MariaDB
+set would be better aligned, not worse.
+
+**It is a second front-end, not a swap.** Three reasons:
+
+1. **The vocabularies are unrelated.** Their rules are `root` / `sqlStatements` /
+   `tableSourceItem` / `tableName` / `uid`; the shell's are `query` /
+   `BACK_TICK_QUOTED_ID` / `simpleExpr`. Templating the support layer over both -
+   the obvious idea - has nothing to template.
+2. **No `superClass`, no actions.** Neither grammar declares one, so
+   `MySQLBaseLexer` (320 references to MySQL token constants),
+   `MySQLBaseRecognizer` and `MySQLRecognizerCommon` do not apply. The trap to
+   design around: pointing both grammars at `MySQLBaseLexer` compiles cleanly and
+   misclassifies every token whose number moved.
+3. **`Extract_table_references` must be rewritten**, not reconfigured - it is a
+   listener over MySQL rule contexts. The MariaDB equivalent walks
+   `AtomTableItemContext -> tableName() -> fullId() -> uid`. The labelled
+   alternatives make that tractable, and the ~120 cases in
+   `MysqlParserUtils.extract_table_references` are already the acceptance spec.
+
+**Two things it gets right that this port had to fix by hand.**
+`BQUOTA_STRING : '`' ( ~'`' | '``')* '`'` - a quoted identifier the way the server
+writes one, so §22 would not have been needed on that path. And `FOR SYSTEM_TIME`
+is its patch #1, which is exactly §27's statement.
+
+**What it does not do.** `sql_mode` is not modelled at all: no `isSqlModeActive`,
+so `ANSI_QUOTES` and `NO_BACKSLASH_ESCAPES` have no effect. For the dump path that
+is close to harmless, since `I_S.VIEWS.VIEW_DEFINITION` is server-normalized and
+always back-tick quoted, but it rules the grammar out for autocompletion and for
+`check_sql_syntax` as written. It is also **over-permissive by design** - it
+accepts what the server rejects, which is right for extraction and wrong for
+validation. And `uid` takes `STRING_LITERAL` with `REVERSE_QUOTE_ID` commented
+out, so a back-tick identifier arrives as a string literal and has to be unquoted
+tolerantly.
+
+**Shape of the work.** Vendor the grammars; parameterize
+`grammars/build-parsers` by grammar, output directory and package, skipping the
+TypeScript-to-C++ `sed` for these (they have no actions); generate into
+`parser/mariadb/` with `-package parsers_maria`; add `is_maria_db` to
+`Parser_config` and make `Extract_table_references` a pImpl choosing between two
+implementations in separate translation units; switch the one call site in
+`fetch_view_metadata()`, which already has the vendor in scope. Leave
+autocompletion and `check_sql_syntax` on the MySQL grammar.
+
+**Cheapest way to size it before committing:** generate the C++ set and run a
+throwaway listener against those ~120 extraction cases. That answers the only
+question which can sink the plan - whether the reference extraction comes out
+equivalent - before any repository change.
