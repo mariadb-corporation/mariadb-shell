@@ -1736,6 +1736,124 @@ void Schema_dumper::check_object_for_definer(
   }
 }
 
+/**
+ * Drops the schema qualifier from a sequence reference which names the table's
+ * own schema.
+ *
+ * SHOW CREATE TABLE prints a sequence DEFAULT fully qualified - `nextval(`db`.
+ * `s`)` - even where the sequence was named bare, while the table name itself is
+ * printed unqualified. Dumping that verbatim hard codes the source schema: a
+ * load into a schema of another name creates the sequence in the target schema
+ * (section 16) and then a table which ignores it and draws from the source's
+ * instead, and a target without the source schema cannot create the table at
+ * all (error 1146). Neither says anything.
+ *
+ * An unqualified NEXTVAL() in CREATE TABLE resolves against the session's
+ * schema, which the loader has already selected, so dropping the qualifier binds
+ * the reference to wherever the table lands - the same way the table name
+ * already behaves.
+ *
+ * Only a self reference is rewritten. A sequence in another schema is a legal
+ * thing to point at and reads identically here, so its qualifier is the whole
+ * meaning and stays.
+ */
+void Schema_dumper::resolve_sequence_defaults(std::string *create_table,
+                                              const std::string &db,
+                                              const std::string &table) {
+  assert(create_table);
+
+  if (!common::supports_sequences(m_cache.server.version)) {
+    return;
+  }
+
+  // Every way of naming a sequence in a column DEFAULT which the server accepts,
+  // in the spelling it stores: NEXT VALUE FOR normalizes to nextval(), PREVIOUS
+  // VALUE FOR to lastval(). All three print the schema. A sequence cannot appear
+  // anywhere else in table DDL - a generated column is refused with error 1901
+  // and a CHECK with 1970.
+  static constexpr std::string_view k_functions[] = {"nextval(", "lastval(",
+                                                     "setval("};
+
+  // Collect the references before rewriting anything, so the offsets stay valid
+  // and an identifier holding a back tick is read by the same code which
+  // unquotes one everywhere else.
+  std::vector<std::pair<std::string, std::string>> references;
+
+  for (const auto &function : k_functions) {
+    for (auto pos = create_table->find(function); std::string::npos != pos;
+         pos = create_table->find(function, pos + 1)) {
+      auto offset = pos + function.length();
+      std::string first;
+      std::string second;
+
+      try {
+        offset = mysqlshdk::utils::span_quotable_sql_identifier(*create_table,
+                                                               offset, &first);
+
+        if (offset < create_table->length() && '.' == (*create_table)[offset]) {
+          offset = mysqlshdk::utils::span_quotable_sql_identifier(
+              *create_table, offset + 1, &second);
+        }
+      } catch (const std::runtime_error &) {
+        // not a sequence reference after all, i.e. a string which happens to
+        // contain the text
+        continue;
+      }
+
+      if (second.empty()) {
+        references.emplace_back(db, std::move(first));
+      } else {
+        references.emplace_back(std::move(first), std::move(second));
+      }
+    }
+  }
+
+  if (references.empty()) {
+    return;
+  }
+
+  const auto own_schema = shcore::quote_identifier(db) + ".`";
+
+  for (const auto &function : k_functions) {
+    const std::string needle = std::string{function} + own_schema;
+    const std::string replacement = std::string{function} + '`';
+
+    for (auto pos = create_table->find(needle); std::string::npos != pos;
+         pos = create_table->find(needle, pos + replacement.length())) {
+      create_table->replace(pos, needle.length(), replacement);
+    }
+  }
+
+  // A reference the dump does not carry is one the target has to satisfy on its
+  // own, and nothing else will say so: the table is simply not creatable there.
+  for (const auto &[schema, sequence] : references) {
+    const auto cached = m_cache.schemas.find(schema);
+
+    if (m_cache.schemas.end() != cached &&
+        cached->second.sequences.count(sequence)) {
+      continue;
+    }
+
+    // A self reference was just unqualified, so it binds to whichever schema the
+    // table is loaded into; a reference to another schema still names it.
+    if (db == schema) {
+      current_console()->print_warning(shcore::str_format(
+          "Table %s has a column DEFAULT which references sequence %s. The "
+          "sequence is not included in this dump, so the table cannot be "
+          "created unless a sequence of that name already exists in the schema "
+          "it is loaded into.",
+          quote(db, table).c_str(),
+          shcore::quote_identifier(sequence).c_str()));
+    } else {
+      current_console()->print_warning(shcore::str_format(
+          "Table %s has a column DEFAULT which references sequence %s in "
+          "another schema. The sequence is not included in this dump, so the "
+          "table cannot be created unless it already exists on the target.",
+          quote(db, table).c_str(), quote(schema, sequence).c_str()));
+    }
+  }
+}
+
 /*
   get_table_structure -- retrieves database structure, prints out
   corresponding CREATE statement.
@@ -1790,6 +1908,8 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
     }
 
     std::string create_table = row->get_string(1);
+
+    resolve_sequence_defaults(&create_table, db, table);
 
     std::string text = fix_identifier_with_newline(result_table);
     if (*out_table_type == "VIEW") /* view */

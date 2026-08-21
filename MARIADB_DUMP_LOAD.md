@@ -1937,10 +1937,12 @@ Nothing outstanding on the MariaDB → MariaDB path; these are the edges around 
 - **`cycle_count` is not carried.** It records how many times a cycling sequence
   has wrapped; `mysqldump` does not restore it either, and `SETVAL` cannot set
   it.
-- **`dumpTables` of a table whose `DEFAULT` names a sequence does not pull the
+- ~~**`dumpTables` of a table whose `DEFAULT` names a sequence does not pull the
   sequence in.** The table filters select exactly what was asked for, as they do
   for every other dependency; the resulting dump fails to load unless the
-  sequence is named too.
+  sequence is named too.~~ **Addressed in §24**, where it turned out to be the
+  smaller half of the problem: the reference also carried the source schema's
+  name. The filter still selects exactly what was asked for, but it now says so.
 - ~~**Unrelated bug found while testing (pre-existing, not sequences).** A view
   whose column alias contains embedded backticks — `` `format_name`(t1.f_name,
   t1.l_name) ``, which the server stores as an alias containing doubled
@@ -2961,4 +2963,104 @@ parsing and `provider_sql.cc`'s autocompletion. On the MariaDB build, against
 - **`fetch_view_metadata()` still parses MariaDB view definitions with the MySQL
   grammar** (§13.8). This fixes a rule that was wrong for *both* vendors;
   MariaDB-only view syntax is still not understood.
+
+---
+
+## 24. A sequence DEFAULT carried the source schema's name — fixed
+
+§16.5 recorded this as a `dumpTables` filter gap: dump a table whose column
+`DEFAULT` names a sequence, and the sequence is not pulled in. Measuring it found
+a second, worse defect underneath, which also reaches the paths §16 called done.
+
+`SHOW CREATE TABLE` prints a sequence `DEFAULT` **fully qualified** even where the
+sequence was named bare - ``DEFAULT nextval(`seqdep`.`s1`)`` - while the table
+name itself is printed unqualified. The dumper wrote that verbatim, so the source
+schema's name was baked into the DDL:
+
+| Scenario | Before |
+|---|---|
+| `dumpSchemas`, load into a **renamed** schema | the new schema gets its own sequence (§16), and a table which ignores it and draws from the **source's** |
+| `dumpTables` of the table alone, source schema present on the target | table draws from the **source's** sequence |
+| `dumpTables`, source schema absent | `CREATE TABLE` fails, error 1146 |
+| `dumpSchemas`, load into a schema of the same name | correct |
+
+Rows one and two were silent. Measured, not inferred: inserting into the restored
+`seqload2.t1` advanced `seqdep.s1`, so a restored copy consumed the original
+database's sequence values.
+
+### 24.1 The fix
+
+`Schema_dumper::resolve_sequence_defaults()` drops the qualifier **only** where it
+names the table's own schema. An unqualified `NEXTVAL()` in `CREATE TABLE`
+resolves against the session's schema, which the loader has already selected, so
+the reference binds to wherever the table lands - exactly how the table name
+already behaves. A sequence in another schema reads identically in the DDL but
+means something different, so its qualifier is the whole point and stays.
+
+References are collected before anything is rewritten, and the identifiers are
+read with `span_quotable_sql_identifier()` rather than by splitting on a back
+tick - §22 is the reason that matters.
+
+### 24.5 `nextval` is not the only spelling
+
+The first version of the fix looked for `nextval(` only, and that was a hole: a
+`DEFAULT` can name a sequence three ways, and the server stores each one
+qualified.
+
+| Written | Stored |
+|---|---|
+| `NEXTVAL(s1)`, `NEXT VALUE FOR s1` | ``nextval(`db`.`s1`)`` |
+| `LASTVAL(s1)`, `PREVIOUS VALUE FOR s1` | ``lastval(`db`.`s1`)`` |
+| `SETVAL(s1, 10)` | ``setval(`db`.`s1`,10,1,0)`` |
+
+All three are rewritten. The set is exhaustive rather than a guess: a sequence
+cannot appear anywhere else in table DDL, because a generated column referencing
+one is refused with **error 1901** (`Function or expression 'nextval()' cannot be
+used in the GENERATED ALWAYS AS clause`) and a `CHECK` with **error 1970**
+(`CHECK does not support subqueries or stored functions`) - both measured.
+
+### 24.2 The filter gap itself
+
+Left as it was, deliberately: `dumpTables` selects exactly what was asked for, as
+it does for a foreign key's target or a view's base tables. What changed is that
+it no longer does so silently - each reference the dump does not carry gets a
+warning, worded for which of the two cases it is:
+
+```
+WARNING: Table `seqdep`.`t1` has a column DEFAULT which references sequence `s1`.
+The sequence is not included in this dump, so the table cannot be created unless
+a sequence of that name already exists in the schema it is loaded into.
+```
+
+A cross-schema reference names the schema instead, since that one is not
+relocatable. Where the sequence *is* in the dump - any ordinary `dumpSchemas` or
+`dumpInstance` - nothing is printed.
+
+Auto-including the sequence was considered and rejected: it would make the
+dependency rule sequence-specific, and it would restore the sequence's position
+as a side effect of asking for a table.
+
+### 24.3 Verified
+
+On the MariaDB build against 12.3.2:
+
+- Renamed-schema load: the restored table now references its own schema's
+  sequence, inserts draw from it, and the source's position is untouched.
+- Cross-schema reference: qualifier preserved, table still points where it did.
+- `dumpTables` alone: warning at dump time, then error 1146 naming
+  `seqload4.s1` at load time rather than a silent bind to the source.
+- No warning where the sequence is part of the dump.
+- `Schema_dumper_test` + `Instance_cache_test` - 40 passed, 0 failed.
+
+### 24.4 Not done here
+
+- **No scripted-test coverage.** The rename case needs a dump and a load, so it
+  belongs with the end-to-end suites; the `util_dump_tables` sections are where
+  the warning would be asserted, and those are §21.8's four remaining suites.
+- **The MySQL build is untouched but unverified.** `supports_sequences()` gates
+  the whole function off there, so it cannot execute; the gate is the argument,
+  not a test run.
+- **Other schema-qualified references in table DDL were not audited.** Sequences
+  are covered exhaustively (§24.5), but a `DEFAULT` is not the only thing the
+  server prints with a schema on it, and nothing here looked for the rest.
 

@@ -267,6 +267,10 @@ class Schema_dumper {
   std::vector<Compatibility_issue> dump_sequences_for_db(IFile *sql_file,
                                                          const std::string &db);
 
+  void resolve_sequence_defaults(std::string *create_table,
+                                 const std::string &db,
+                                 const std::string &table);
+
   std::vector<Compatibility_issue> check_ct_for_mysqlaas(
       const std::string &db, const std::string &table,
       std::string *create_table);
