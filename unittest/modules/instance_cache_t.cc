@@ -3813,6 +3813,114 @@ TEST_F(Instance_cache_test, filter_libraries) {
 }
 #endif
 
+// A MariaDB role is an object of its own, so an account filter which names a
+// user does not name the roles granted to it - and those roles are not a
+// dependency of the account, they are part of its privileges. They are pulled
+// into the dump, transitively, unless excluded outright - see
+// MARIADB_DUMP_LOAD.md section 26
+TEST_F(Instance_cache_test, roles_of_included_users) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  const auto drop_accounts = [this]() {
+    m_session->execute("DROP USER IF EXISTS ic_user;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_a;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_b;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_c;");
+  };
+
+  drop_accounts();
+  shcore::on_leave_scope cleanup{drop_accounts};
+
+  {
+    // setup: b is granted to a, a is granted to the user, c to nobody
+    m_session->execute("CREATE USER ic_user;");
+    m_session->execute("CREATE ROLE ic_role_a;");
+    m_session->execute("CREATE ROLE ic_role_b;");
+    m_session->execute("CREATE ROLE ic_role_c;");
+    m_session->execute("GRANT ic_role_b TO ic_role_a;");
+    m_session->execute("GRANT ic_role_a TO ic_user;");
+  }
+
+  const auto EXPECT_ACCOUNTS =
+      [](const Instance_cache &cache,
+         const std::vector<std::string> &expected_users,
+         const std::vector<std::string> &expected_roles) {
+        const auto names = [](const std::vector<shcore::Account> &accounts) {
+          std::vector<std::string> result;
+
+          for (const auto &account : accounts) {
+            // only the accounts this test made, the instance holds others
+            if (shcore::str_beginswith(account.user, "ic_")) {
+              result.emplace_back(account.user);
+            }
+          }
+
+          std::sort(result.begin(), result.end());
+          return result;
+        };
+
+        EXPECT_EQ(expected_users, names(cache.users));
+        // the dumper reads this to choose between CREATE ROLE and CREATE USER
+        EXPECT_EQ(expected_roles, names(cache.roles));
+      };
+
+  {
+    SCOPED_TRACE("only the user is named, its roles follow it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    // ic_role_b is reached only through ic_role_a, ic_role_c not at all
+    EXPECT_ACCOUNTS(cache, {"ic_role_a", "ic_role_b", "ic_user"},
+                    {"ic_role_a", "ic_role_b"});
+  }
+
+  {
+    SCOPED_TRACE("an excluded role stays out, and takes nothing with it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+    filters.users().exclude(std::array{"ic_role_a"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    // excluding a is an instruction, and b was only reachable through it
+    EXPECT_ACCOUNTS(cache, {"ic_user"}, {});
+  }
+
+  {
+    SCOPED_TRACE("excluding the role in the middle of the chain");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+    filters.users().exclude(std::array{"ic_role_b"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_ACCOUNTS(cache, {"ic_role_a", "ic_user"}, {"ic_role_a"});
+  }
+
+  {
+    SCOPED_TRACE("a role named outright is dumped whether or not it is granted");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_role_c"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_ACCOUNTS(cache, {"ic_role_c"}, {"ic_role_c"});
+  }
+}
+
 // MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
 // share the table namespace, so they are enumerated and filtered as tables but
 // kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md

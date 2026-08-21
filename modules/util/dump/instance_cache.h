@@ -374,6 +374,8 @@ class Instance_cache_builder final {
 
   std::vector<shcore::Account> fetch_roles() const;
 
+  void add_granted_roles();
+
   std::vector<shcore::Account> fetch_users(const std::string &select,
                                            const std::string &where) const;
 
