@@ -3440,3 +3440,74 @@ autocompletion and `check_sql_syntax` on the MySQL grammar.
 throwaway listener against those ~120 extraction cases. That answers the only
 question which can sink the plan - whether the reference extraction comes out
 equivalent - before any repository change.
+
+---
+
+## 29. The backup lock no longer waits a day
+
+§14.5 left `lock_wait_timeout` at the server's value while entering the backup
+stage. MariaDB defaults it to **86400**, so a dump which could not take the lock
+sat at `Locking instance for backup` for a day - and an automated one simply
+stopped reporting. It is the one failure mode in this port which produces no
+output at all.
+
+The stage now runs with a bound of its own, `k_block_ddl_lock_wait_timeout`,
+five minutes: long enough for ordinary short DDL and metadata locks to clear,
+short enough that a dump fails and says why.
+
+### 29.1 Both stages wait, not just BLOCK_DDL
+
+The obvious place for the bound was between `BACKUP STAGE START` and
+`BACKUP STAGE BLOCK_DDL`, since BLOCK_DDL is the stage which waits for DDL. That
+is wrong: measured on 12.3.2, **`START` times out too** - MariaDB allows one
+backup at a time server-wide, so a stage held by another connection makes `START`
+wait. The bound is therefore set before `START`, and the timeout is reported for
+either statement. `started` tracks whether `BACKUP STAGE END` is owed, so a
+`START` which never succeeded is not followed by an `END` for a stage that was
+never entered.
+
+### 29.2 The failure says what is holding it
+
+A bound which only reports "lock wait timeout exceeded" trades a hang for a
+puzzle. `report_ddl_in_flight()` names the statements instead:
+
+```
+NOTE: The backup lock waited 300 seconds for the locks it needs, rather than the
+server's lock_wait_timeout, which defaults to a day. Wait for the statements
+below to finish and dump again, or dump with 'consistent: false', which does not
+take the lock at all.
+  thread 1079, running for 312 seconds: SELECT SLEEP(600)
+ERROR: Could not acquire the backup lock: MySQL Error 1205 (HY000): Lock wait
+timeout exceeded; try restarting transaction
+```
+
+The listing needs `PROCESS` to see another account's statements, so it is best
+effort - a failure to read `I_S.PROCESSLIST` is logged and the note stands on its
+own.
+
+### 29.3 Verified
+
+On 12.3.2, with a second connection holding `BACKUP STAGE START`: the dump gives
+up after its own bound rather than the server's, prints the note with the
+blocking thread, reports the 1205 through the existing error path and releases
+what it held. The advice is verified rather than asserted - `consistent: false`
+does complete against the same held stage.
+
+`Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed.
+
+### 29.4 Not done here
+
+- **MySQL is untouched.** `LOCK INSTANCE FOR BACKUP` still waits at MySQL's
+  `lock_wait_timeout`, which defaults to 31536000 - a year, so the same hang is
+  worse there. Changing it is a MySQL → MySQL behaviour change and outside this
+  port's scope (§6), but it is the same defect.
+- **There is no way to ask for more patience.** A dump which would rather wait an
+  hour cannot say so; the bound is a constant, not an option. An option is the
+  obvious follow-up, and it would want to cover the MySQL path too.
+- **`FLUSH TABLES WITH READ LOCK` is unbounded on both vendors**, except in a dry
+  run where it is already set to 1 second. It runs before the backup stage, so the
+  same day-long wait is still reachable there - untouched here because it is
+  upstream behaviour on the shared path.
+- **No test.** Reproducing it needs a second connection holding a backup stage
+  while a dump runs, which is an end-to-end scenario; the bound was exercised by
+  hand with the constant temporarily lowered to three seconds.

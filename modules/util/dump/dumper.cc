@@ -116,6 +116,17 @@ namespace {
 static constexpr const int k_mysql_server_net_write_timeout = 30 * 60;
 static constexpr const int k_mysql_server_wait_timeout = 365 * 24 * 60 * 60;
 
+/**
+ * How long BACKUP STAGE BLOCK_DDL waits for DDL already in flight.
+ *
+ * MariaDB's lock_wait_timeout defaults to 86400, so with the server's value the
+ * dump sits at "Locking instance for backup" for a day and an automated one just
+ * stops reporting. Long enough here for ordinary short DDL and metadata locks to
+ * clear, short enough that a long ALTER is a failure which says so rather than a
+ * hang - see MARIADB_DUMP_LOAD.md section 29.
+ */
+static constexpr const int k_block_ddl_lock_wait_timeout = 5 * 60;
+
 bool is_unsupported_historical_dump_source_version(
     const common::Server_version &version) {
   // this bounds a range on MySQL's version scale (8.0 up to the Shell's own
@@ -3670,6 +3681,38 @@ void Dumper::lock_instance() {
   m_instance_locked = true;
 }
 
+void Dumper::report_ddl_in_flight(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
+  const auto console = current_console();
+
+  console->print_note(shcore::str_format(
+      "The backup lock waited %i seconds for the locks it needs, rather than "
+      "the server's lock_wait_timeout, which defaults to a day. Wait for the "
+      "statements below to finish and dump again, or dump with "
+      "'consistent: false', which does not take the lock at all.",
+      k_block_ddl_lock_wait_timeout));
+
+  try {
+    // the statements which are most likely to be the reason, longest first
+    const auto result = session->query(
+        "SELECT ID, TIME, LEFT(INFO, 160) FROM information_schema.PROCESSLIST "
+        "WHERE COMMAND = 'Query' AND ID <> CONNECTION_ID() AND INFO IS NOT "
+        "NULL ORDER BY TIME DESC LIMIT 3");
+
+    while (const auto row = result->fetch_one()) {
+      console->print_info(
+          shcore::str_format("  thread %s, running for %s seconds: %s",
+                             row->get_as_string(0).c_str(),
+                             row->get_as_string(1).c_str(),
+                             row->get_string(2, "").c_str()));
+    }
+  } catch (const std::exception &e) {
+    // seeing another account's statements needs PROCESS, and the note above is
+    // the part which matters
+    log_warning("Failed to list the statements in flight: %s", e.what());
+  }
+}
+
 void Dumper::start_backup_stage() {
   // BACKUP STAGE cannot run in a session which holds a global read lock, and it
   // implicitly commits, which would throw away the consistent snapshot the main
@@ -3684,19 +3727,40 @@ void Dumper::start_backup_stage() {
   // START blocks concurrent backups and lets the storage engines prepare,
   // BLOCK_DDL is the analogue of LOCK INSTANCE FOR BACKUP. Intermediate stages
   // are entered implicitly, stages can only ever move forward.
-  execute(s, "BACKUP STAGE START");
+  // Both stages take metadata locks and both can wait: measured on 12.3.2,
+  // START alone times out against a held table lock. So the bound goes on
+  // before the first of them, not between the two.
+  execute(s, shcore::str_format("SET @@session.lock_wait_timeout = %i",
+                                k_block_ddl_lock_wait_timeout));
 
-  try {
-    execute(s, "BACKUP STAGE BLOCK_DDL");
-  } catch (...) {
+  bool started = false;
+
+  const auto abandon = [&s, &started]() {
     // do not leave the server-wide backup half-started
-    try {
-      execute(s, "BACKUP STAGE END");
-    } catch (const std::exception &e) {
-      log_error("Failed to end the backup stage: %s", e.what());
+    if (started) {
+      try {
+        execute(s, "BACKUP STAGE END");
+      } catch (const std::exception &e) {
+        log_error("Failed to end the backup stage: %s", e.what());
+      }
     }
 
     s->close();
+  };
+
+  try {
+    execute(s, "BACKUP STAGE START");
+    started = true;
+    execute(s, "BACKUP STAGE BLOCK_DDL");
+  } catch (const mysqlshdk::db::Error &e) {
+    if (ER_LOCK_WAIT_TIMEOUT == e.code()) {
+      report_ddl_in_flight(s);
+    }
+
+    abandon();
+    throw;
+  } catch (...) {
+    abandon();
     throw;
   }
 
