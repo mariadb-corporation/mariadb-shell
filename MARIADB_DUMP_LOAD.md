@@ -2626,7 +2626,8 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
   only; `dump_grants` has never seen one.
 - **Column statistics (`mysql.column_stats`) are still not dumped** — §4.5's last
   open item, and the only remaining piece of §4.5/§4.6. It is data, not ACL, so
-  it did not belong here.
+  it did not belong here. Now a **documented limitation** rather than pending
+  work, with what it costs measured — §23.
 
 ---
 
@@ -2964,6 +2965,81 @@ parsing and `provider_sql.cc`'s autocompletion. On the MariaDB build, against
 - **`fetch_view_metadata()` still parses MariaDB view definitions with the MySQL
   grammar** (§13.8). This fixes a rule that was wrong for *both* vendors;
   MariaDB-only view syntax is still not understood.
+
+---
+
+## 23. Engine-independent statistics are not dumped — known limitation
+
+§4.5's last open item, and a **deliberate limitation** rather than a gap left by
+accident. Recorded here with what it costs, because the cost is not obvious and
+the obvious workaround does not work.
+
+MariaDB keeps engine-independent table statistics (EITS) in `mysql.table_stats`,
+`mysql.index_stats` and `mysql.column_stats`. None of them is carried. The dump
+excludes the `mysql` schema, so nothing about statistics survives a round trip,
+and a restored instance runs on engine estimates alone.
+
+### 23.1 What it costs, measured on 12.3.2 defaults
+
+| | |
+|---|---|
+| `use_stat_tables` | `PREFERABLY_FOR_QUERIES` — EITS are *preferred* wherever they exist |
+| `optimizer_use_condition_selectivity` | `4` — the level which reads histograms |
+| `ANALYZE TABLE t` | collects **nothing** into the stat tables |
+| `ANALYZE TABLE t PERSISTENT FOR ALL` | collects them, histograms included (`JSON_HB`) |
+
+So the failure mode is a silent plan regression on the restored instance: no
+error, no warning, and nothing in the dump or the load output mentions
+statistics. Its magnitude is whatever a plan flip costs on the data.
+
+Three things make it worse than it first sounds:
+
+- **`analyzeTables` does not fix it.** `"histogram"` already says so - the loader
+  warns `Histogram creation enabled but MariaDB Server x does not support it`.
+  `"on"` is the silent one: it issues a plain `ANALYZE TABLE`, which refreshes the
+  engine's own statistics but under the default `..._FOR_QUERIES` setting collects
+  no EITS at all - measured, 0 rows - while its progress label still says
+  "Updating table histograms and key distribution statistics".
+- **It never self-heals.** Unlike InnoDB's own persistent statistics, EITS are
+  refreshed only by an explicit `ANALYZE ... PERSISTENT`.
+- **It hits exactly the users who care.** Nobody collects EITS by accident.
+
+What bounds it: no data is lost and nothing is corrupt. Recovery is
+`ANALYZE TABLE ... PERSISTENT FOR ALL` per table, scriptable from the dump's own
+table list, at the price of one scan per table.
+
+`util.copy*` is affected identically - same engines.
+
+### 23.2 What an implementation would look like
+
+Not planned work; notes so it does not have to be re-derived.
+
+MySQL's histogram support is the model, and it carries **no statistics data**:
+`fetch_table_histograms()` records only the column name and the requested bucket
+count, and the load re-derives the histogram from the restored rows with
+`ANALYZE TABLE ... UPDATE HISTOGRAM ON c WITH n BUCKETS`. The MariaDB analogue is
+to record which columns and indexes had statistics and let the target recompute
+with `ANALYZE TABLE ... PERSISTENT FOR COLUMNS (...) INDEXES (...)`.
+
+The pieces: a `supports_persistent_statistics()` predicate of its own (today
+`supports_column_statistics()` answers two questions at once); a MariaDB branch
+in `fetch_table_histograms()` reading `mysql.column_stats`, degrading with a
+warning where the account cannot read `mysql`; a sibling field in the per-table
+metadata, which `Dumper::write_table_metadata()` already writes for every entry
+point, so `dumpInstance`, `dumpSchemas`, `dumpTables` and `copy*` are covered by
+one change; and a MariaDB branch in `Analyze_table_task::execute()`.
+
+Two traps found while measuring:
+
+- **The requested histogram size cannot be recovered from the stored one.**
+  `histogram_size` was 254 and `mysql.column_stats.hist_size` came back as 2:
+  `JSON_HB` sizes itself to the data. So the metadata can carry "statistics
+  existed, of this type" but not MySQL's `WITH n BUCKETS` symmetry - the target's
+  own `histogram_size` has to govern.
+- **The stat tables are keyed by `db_name`/`table_name` as strings.** Carrying
+  their rows would need explicit rewriting for a load into a renamed schema;
+  hanging the metadata off the table avoids the question entirely, which is
+  another reason to prefer the recompute design over dumping the rows.
 
 ---
 
