@@ -2598,7 +2598,7 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
 
 ### 20.6 Not done here
 
-- **An auth plugin missing on the target aborts the load.** MariaDB's `ed25519`,
+- ~~**An auth plugin missing on the target aborts the load.** MariaDB's `ed25519`,
   `gssapi` and `pam` are loadable plugins, and `CREATE USER … IDENTIFIED VIA
   ed25519` fails with 1524 on a server that has not installed one — measured, and
   the fix is `INSTALL SONAME 'auth_ed25519'` on the target. The loader has
@@ -2606,7 +2606,8 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
   MHS, where a plugin *cannot* be installed. Aborting is the safer default —
   silently skipping an account is a privilege change nobody asked for — but the
   error should say what to install, and the load has by then created some of the
-  accounts.
+  accounts.~~ **Addressed in §25** — it still aborts, for the reason given here,
+  but it now says what to install and what it already did.
 - **`PUBLIC`'s grants are not dropped by `dropExistingObjects`,** because there
   is no account to drop. A target's pre-existing `GRANT … TO PUBLIC` therefore
   survives a load that was asked to replace everything. Correct in the narrow
@@ -3064,3 +3065,70 @@ On the MariaDB build against 12.3.2:
   are covered exhaustively (§24.5), but a `DEFAULT` is not the only thing the
   server prints with a schema on it, and nothing here looked for the rest.
 
+---
+
+## 25. A missing authentication plugin now says what to install
+
+§20.6's last item. `ed25519`, `gssapi` and `pam` are loadable plugins, so a target
+which never installed one refuses the account:
+
+```
+ERROR: While creating user accounts: MySQL Error 1524 (HY000):
+Plugin 'ed25519' is not loaded: CREATE USER IF NOT EXISTS `u_ed25519`@`%` ...
+```
+
+The server names the missing plugin and stops there. The load then aborted with
+nothing said about how to proceed or about the accounts it had already created.
+
+**It still aborts** - that part was right. The loader's other path for this error
+(warn, skip the account, continue) exists only for MHS, where a plugin *cannot*
+be installed; anywhere else, silently skipping an account is a privilege change
+nobody asked for. What was missing was the explanation, which
+`explain_missing_auth_plugin()` now prints right after the error:
+
+```
+NOTE: The target server does not have the 'ed25519' authentication plugin
+installed, which the account 'z_ed25519'@'%' requires. A MariaDB loadable plugin
+is installed with INSTALL SONAME; plugin_library in information_schema.PLUGINS on
+the source server names the library it comes from. Install the plugin on the
+target and run the load again - accounts are created with IF NOT EXISTS, so the
+ones which already exist are skipped - or exclude the affected accounts with the
+'excludeUsers' option. 1 account was created before this failure and is left on
+the target.
+```
+
+Three things it does not do: guess the library name (`ed25519` comes from
+`auth_ed25519`, but `unix_socket` comes from `auth_socket`, so the source's
+`plugin_library` is the honest answer rather than a pattern), roll back the
+accounts already created, or fall back to skipping.
+
+The retry advice is load-bearing and was verified rather than assumed: the users
+script writes `CREATE USER IF NOT EXISTS` / `CREATE ROLE IF NOT EXISTS`, so
+running the load again after installing the plugin completes and the existing
+accounts are skipped.
+
+### 25.1 Verified
+
+Staged on 12.3.2 by installing `auth_ed25519`, creating an account with it,
+dumping, then uninstalling the plugin before the load:
+
+- The note appears after the error, names the plugin and the account.
+- Ordering the accounts so the failing one is not first produces
+  `1 account was created before this failure and is left on the target`;
+  where it is first, the sentence is correctly absent.
+- After `INSTALL SONAME 'auth_ed25519'`, re-running the same load reports
+  `2 accounts were loaded` and both accounts exist with the right plugins.
+- `Load_dump*` unit suites - 9 passed, 0 failed.
+
+### 25.2 Not done here
+
+- **The dump says nothing.** The source has the plugin installed and its
+  `plugin_library` in `information_schema.PLUGINS`, so `dumpInstance` could warn
+  at dump time - when there is still time to prepare the target - and even name
+  the exact `INSTALL SONAME`. That is the better fix for the same problem and it
+  is not done; the load-side note has to reconstruct the advice generically.
+- **The counter counts completed statement groups**, so an account which the MHS
+  path skipped mid-way is still counted as created. That path does not reach this
+  note, so it cannot show a wrong number today.
+- **No scripted coverage**, for the same reason as §24.4: staging it needs a
+  plugin installed, a dump, and then the plugin removed.

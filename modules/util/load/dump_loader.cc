@@ -6307,6 +6307,62 @@ void Dump_loader::drop_existing_accounts() {
   });
 }
 
+namespace {
+
+/**
+ * Explains error 1524 during account creation.
+ *
+ * MariaDB's ed25519, gssapi and pam are loadable plugins, so a target which has
+ * never installed one refuses the account with `Plugin 'x' is not loaded` and
+ * says nothing else. Aborting the load is deliberate - silently skipping an
+ * account is a privilege change nobody asked for - but the load can say what to
+ * install, and that it has already created part of the accounts. Retrying is
+ * safe because the script creates accounts with IF NOT EXISTS.
+ */
+void explain_missing_auth_plugin(const mysqlshdk::db::Error &error,
+                                 const std::string &account,
+                                 std::size_t created) {
+  // the server names the plugin, and only the plugin, in quotes
+  const std::string_view message = error.what();
+  const auto begin = message.find('\'');
+  const auto end = std::string_view::npos == begin
+                       ? std::string_view::npos
+                       : message.find('\'', begin + 1);
+  const auto plugin = std::string_view::npos == end
+                          ? std::string_view{}
+                          : message.substr(begin + 1, end - begin - 1);
+
+  std::string msg;
+
+  if (plugin.empty()) {
+    msg = "The target server is missing an authentication plugin which the "
+          "account " +
+          account + " requires.";
+  } else {
+    msg = "The target server does not have the '" + std::string{plugin} +
+          "' authentication plugin installed, which the account " + account +
+          " requires. A MariaDB loadable plugin is installed with INSTALL "
+          "SONAME; plugin_library in information_schema.PLUGINS on the source "
+          "server names the library it comes from.";
+  }
+
+  msg +=
+      " Install the plugin on the target and run the load again - accounts are "
+      "created with IF NOT EXISTS, so the ones which already exist are skipped "
+      "- or exclude the affected accounts with the 'excludeUsers' option.";
+
+  if (created) {
+    msg += " " + std::to_string(created) +
+           (1 == created ? " account was" : " accounts were") +
+           " created before this failure and " +
+           (1 == created ? "is" : "are") + " left on the target.";
+  }
+
+  current_console()->print_note(msg);
+}
+
+}  // namespace
+
 void Dump_loader::create_accounts() {
   if (!m_options.load_users()) {
     return;
@@ -6328,6 +6384,10 @@ void Dump_loader::create_accounts() {
   m_load_log->log(progress::start::Create_users{});
 
   sql::ar::run(m_reconnect_callback, [this]() {
+    // accounts which the target already has when a later one fails - the load
+    // stops, but nothing undoes these
+    std::size_t created = 0;
+
     for (const auto &group : m_users.statements) {
       using Type = Schema_dumper::User_statements::Type;
 
@@ -6350,6 +6410,10 @@ void Dump_loader::create_accounts() {
           // BUG#36552764 - if target is MHS, ignore errors about missing
           // plugins and continue
           if (!m_options.is_mds() || ER_PLUGIN_IS_NOT_LOADED != e.code()) {
+            if (ER_PLUGIN_IS_NOT_LOADED == e.code()) {
+              explain_missing_auth_plugin(e, group.account, created);
+            }
+
             throw;
           }
 
@@ -6360,6 +6424,8 @@ void Dump_loader::create_accounts() {
           ++m_users.ignored_plugin_errors;
         }
       }
+
+      ++created;
     }
   });
 
