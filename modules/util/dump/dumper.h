@@ -297,6 +297,9 @@ class Dumper {
 
   void start_backup_stage();
 
+  void report_ddl_in_flight(
+      const std::shared_ptr<mysqlshdk::db::ISession> &session) const;
+
   void unlock_instance();
 
   void initialize_instance_cache_minimal();
