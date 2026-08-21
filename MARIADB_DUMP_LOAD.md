@@ -3293,3 +3293,89 @@ whole point of the change, so it is the test that matters.
   but a grant on a schema outside the dump is still just a warning, as it is for
   any account.
 - **No scripted coverage**, as with §24 and §25.
+
+---
+
+## 27. System-versioned tables, and a view the parser cannot read
+
+§13.8 said the parser understands no MariaDB-only view syntax. Reaching for a
+statement to prove it produced two failures, not one, and the second was the
+worse of the pair.
+
+```sql
+CREATE TABLE t1 (a INT) WITH SYSTEM VERSIONING;
+CREATE VIEW v_all AS SELECT * FROM t1 FOR SYSTEM_TIME ALL;
+```
+
+```
+$ util.dumpSchemas(['sysver'], dir)
+RuntimeError: no viable alternative at input
+'select `sysver`.`t1`.`a` AS `a` from `sysver`.`t1` FOR SYSTEM_TIME'
+```
+
+### 27.1 A system-versioned table was dumped as a view
+
+The second failure, found once the first was contained: MariaDB reports a
+system-versioned table in `I_S.TABLES` as **`TABLE_TYPE = 'SYSTEM VERSIONED'`**,
+not `'BASE TABLE'`. `fetch_tables()` classified with
+
+```cpp
+const auto is_table = "BASE TABLE" == table_type;   // else it is a view
+```
+
+so the table went into the view map, and the dump died in
+`dump_temporary_view_ddl()` with `unordered_map::at: key not found`. Any schema
+holding a system-versioned table could not be dumped at all - a headline MariaDB
+feature, and nothing to do with views.
+
+This is the §16 shape a third time: a `TABLE_TYPE` the classification does not
+know falls through to the view path. Sequences were the first
+(`TABLE_TYPE='SEQUENCE'`), this is the second, and the fix is the same - name the
+type. No MySQL server reports it, so it needs no gate.
+
+### 27.2 A view the parser cannot read costs one check, not the dump
+
+The references extracted from `VIEW_DEFINITION` feed exactly one thing:
+`check_view_for_table_references()`, which warns where a view uses a table the
+dump does not carry. They are a **diagnostic**, not something the dump needs in
+order to be correct - so `fetch_view_metadata()` now catches a parse failure per
+view, leaves that view's reference set empty and says so:
+
+```
+WARNING: The definition of view `sysver`.`v_all` could not be parsed, so the
+tables it uses are unknown and the dump cannot check that they are included in
+it. The view itself is dumped as it is.
+```
+
+An empty reference set means the check finds nothing to report, which is exactly
+the intended degradation. The view's own DDL is untouched - it is text from
+`SHOW CREATE VIEW` and never went through the parser.
+
+`Extract_table_references` is reusable after a throw (`Parser_context::query()`
+resets its input), so one unreadable view does not disturb the next.
+
+### 27.3 Verified
+
+Round trip on 12.3.2, `sysver` to `sysver2`: the dump reports 1 table and 2 rows
+with the warning above, the load restores `t1` as `SYSTEM VERSIONED` with both
+rows, and both views work on the target - including the one the shell cannot
+parse. `Instance_cache_test.system_versioned_table_is_a_table` pins the
+classification against a system-versioned table, an ordinary one and a view in
+one schema. `Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed.
+
+### 27.4 Not done here
+
+- **Version history is not carried.** Measured: a source table with 1 current and
+  2 historical rows restores with 1 row and no history. The dump reads current
+  rows with an ordinary `SELECT`, which is what `mariadb-dump` does too. Carrying
+  history would mean dumping the period columns and loading them with
+  `system_versioning_insert_history` - a feature, not a fix.
+- **The parser still cannot read MariaDB view syntax** (§13.8). §27.2 is
+  containment: the dump survives and loses a check. §28 is the actual fix.
+- **`FOR SYSTEM_TIME` in a view is now silently unchecked.** A view using a table
+  which was filtered out of the dump will not be reported if that view also
+  happens to be unparseable. The warning says so, but it is a warning about a
+  missing warning.
+- **Partitioned or `WITHOUT SYSTEM VERSIONING`-column tables were not tested**,
+  nor `AS OF` / `BETWEEN` period queries in a view - only `FOR SYSTEM_TIME ALL`.
+

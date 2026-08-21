@@ -3921,6 +3921,43 @@ TEST_F(Instance_cache_test, roles_of_included_users) {
   }
 }
 
+// MariaDB reports a system-versioned table with TABLE_TYPE='SYSTEM VERSIONED',
+// and anything which was not 'BASE TABLE' used to fall through to the view path
+// - so such a table was dumped as a view and aborted the dump. See
+// MARIADB_DUMP_LOAD.md section 27.
+TEST_F(Instance_cache_test, system_versioned_table_is_a_table) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    // setup: a system-versioned table, an ordinary one and a view, to show the
+    // three are told apart
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE TABLE first.one (a INT) WITH SYSTEM VERSIONING;");
+    m_session->execute("CREATE TABLE first.two (a INT);");
+    m_session->execute("CREATE VIEW first.three AS SELECT * FROM first.two;");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  const auto cache = Instance_cache_builder(m_session, filters).build();
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  EXPECT_TRUE(schema->second.tables.contains("one"));
+  EXPECT_TRUE(schema->second.tables.contains("two"));
+  EXPECT_FALSE(schema->second.views.contains("one"));
+  EXPECT_TRUE(schema->second.views.contains("three"));
+
+  EXPECT_EQ(2, cache.filtered.tables);
+  EXPECT_EQ(1, cache.filtered.views);
+  // the totals are counted with their own query, which has to agree
+  EXPECT_LE(2, cache.total.tables);
+}
+
 // MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
 // share the table namespace, so they are enumerated and filtered as tables but
 // kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md
