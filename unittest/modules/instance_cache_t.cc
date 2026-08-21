@@ -4852,8 +4852,20 @@ TEST_F(Instance_cache_test, stats) {
   expected_total.tables = total_count("tables", "'BASE TABLE'=TABLE_TYPE");
   expected_total.views = total_count("tables", "'VIEW'=TABLE_TYPE");
 
+  // information_schema.USER_PRIVILEGES has no row for an account holding
+  // nothing but USAGE, which is every fresh MariaDB role, so counting grantees
+  // there reports fewer accounts than the cache finds and a single role in the
+  // instance failed this test. count_users() reads mysql.user for the same
+  // reason - see MARIADB_DUMP_LOAD.md section 20.
   const auto total_users =
-      total_count("user_privileges", {}, "DISTINCT grantee");
+      target_server_is_maria_db()
+          ? m_session
+                ->query(
+                    "SELECT COUNT(*) FROM (SELECT DISTINCT user, host FROM "
+                    "mysql.user) AS user")
+                ->fetch_one()
+                ->get_uint(0)
+          : total_count("user_privileges", {}, "DISTINCT grantee");
 
   const auto EXPECT_STATS = [](const Instance_cache::Stats &expected,
                                const Instance_cache::Stats &actual) {
