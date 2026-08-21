@@ -588,7 +588,14 @@ void Instance_cache_builder::filter_tables() {
       return;
     }
 
-    const auto is_table = "BASE TABLE" == table_type;
+    // MariaDB reports a system-versioned table as SYSTEM VERSIONED rather than
+    // BASE TABLE, and it is a table in every way which matters here: it holds
+    // rows, it takes a lock and it can be chunked. Anything which is not a base
+    // table used to fall through to the view path, so a system-versioned table
+    // was dumped as a view and aborted the dump - see MARIADB_DUMP_LOAD.md
+    // section 27. No MySQL server reports this type, so it needs no gate.
+    const auto is_table =
+        "BASE TABLE" == table_type || "SYSTEM VERSIONED" == table_type;
     Instance_cache::Table &target =
         is_table ? schema->tables[table_name] : schema->views[table_name];
 
@@ -633,7 +640,8 @@ void Instance_cache_builder::filter_tables() {
   });
 
   // the total number of tables, views and sequences within the filtered schemas
-  m_cache.total.tables = count(info, "'BASE TABLE'=TABLE_TYPE");
+  m_cache.total.tables =
+      count(info, "TABLE_TYPE IN ('BASE TABLE','SYSTEM VERSIONED')");
   m_cache.total.views = count(info, "'VIEW'=TABLE_TYPE");
 
   if (common::supports_sequences(m_cache.server.version)) {
@@ -715,7 +723,8 @@ void Instance_cache_builder::fetch_view_metadata() {
   mysqlshdk::parser::Extract_table_references etr{
       mysqlshdk::parser::Parser_config{m_cache.server.version.number, true}};
 
-  iterate_views(info, [&etr](const std::string &schema, const std::string &,
+  iterate_views(info, [&etr](const std::string &schema,
+                             const std::string &name,
                              Instance_cache::View *view,
                              const mysqlshdk::db::IRow *row) {
     view->character_set_client = row->get_string(2);  // CHARACTER_SET_CLIENT
@@ -726,12 +735,32 @@ void Instance_cache_builder::fetch_view_metadata() {
     });
 
     if (row->num_fields() > 4) {
-      for (auto &ref : etr.run(row->get_string(4, {}))) {  // VIEW_DEFINITION
-        if (ref.schema.empty()) {
-          ref.schema = schema;
-        }
+      const auto definition = row->get_string(4, {});  // VIEW_DEFINITION
 
-        view->table_references.emplace(std::move(ref));
+      try {
+        for (auto &ref : etr.run(definition)) {
+          if (ref.schema.empty()) {
+            ref.schema = schema;
+          }
+
+          view->table_references.emplace(std::move(ref));
+        }
+      } catch (const std::exception &e) {
+        const auto qualified_name = shcore::quote_identifier(schema) + "." +
+                                    shcore::quote_identifier(name);
+        // The references are what the dump checks against its own contents -
+        // they are a diagnostic, not something the dump needs to be correct - so
+        // a definition this parser cannot read costs that one check rather than
+        // the whole dump. MariaDB has no I_S.VIEW_TABLE_USAGE to fall back on
+        // and the grammar is MySQL's, so a MariaDB-only construct lands here:
+        // FOR SYSTEM_TIME is one. See MARIADB_DUMP_LOAD.md section 27.
+        log_error("Failed to extract the table references of view %s: %s.",
+                  qualified_name.c_str(), e.what());
+        current_console()->print_warning(shcore::str_format(
+            "The definition of view %s could not be parsed, so the tables it "
+            "uses are unknown and the dump cannot check that they are included "
+            "in it. The view itself is dumped as it is.",
+            qualified_name.c_str()));
       }
     }
   });
