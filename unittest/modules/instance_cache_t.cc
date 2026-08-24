@@ -3958,6 +3958,47 @@ TEST_F(Instance_cache_test, system_versioned_table_is_a_table) {
   EXPECT_LE(2, cache.total.tables);
 }
 
+// A system-versioned table is not dumped partition by partition: MariaDB refuses
+// partition selection on one (error 1726) so the load could not name the
+// partition, and reading the partitions directly would dump the HISTORY
+// partition, whose rows carry no period columns and would come back as live
+// data. See MARIADB_DUMP_LOAD.md section 30.
+TEST_F(Instance_cache_test, system_versioned_table_has_no_partitions) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    // setup: the same partitioning, with and without system versioning
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute(
+        "CREATE TABLE first.one (a INT) WITH SYSTEM VERSIONING PARTITION BY "
+        "SYSTEM_TIME LIMIT 100 (PARTITION h0 HISTORY, PARTITION pc CURRENT);");
+    m_session->execute(
+        "CREATE TABLE first.two (a INT) PARTITION BY HASH(a) PARTITIONS 2;");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  const auto cache =
+      Instance_cache_builder(m_session, filters).metadata({}).build();
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  const auto versioned = schema->second.tables.find("one");
+  ASSERT_TRUE(schema->second.tables.end() != versioned);
+  EXPECT_TRUE(versioned->second.system_versioned);
+  EXPECT_TRUE(versioned->second.partitions.empty());
+
+  // an ordinary partitioned table is unaffected
+  const auto plain = schema->second.tables.find("two");
+  ASSERT_TRUE(schema->second.tables.end() != plain);
+  EXPECT_FALSE(plain->second.system_versioned);
+  EXPECT_EQ(2, plain->second.partitions.size());
+}
+
 // MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
 // share the table namespace, so they are enumerated and filtered as tables but
 // kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md
@@ -4886,7 +4927,11 @@ TEST_F(Instance_cache_test, stats) {
   Instance_cache::Stats expected_total;
 
   expected_total.schemas = total_count("schemata");
-  expected_total.tables = total_count("tables", "'BASE TABLE'=TABLE_TYPE");
+  // MariaDB reports a system-versioned table as SYSTEM VERSIONED, and the cache
+  // counts it as the table it is - so an instance holding one used to fail this
+  // test (MARIADB_DUMP_LOAD.md section 27)
+  expected_total.tables =
+      total_count("tables", "TABLE_TYPE IN ('BASE TABLE','SYSTEM VERSIONED')");
   expected_total.views = total_count("tables", "'VIEW'=TABLE_TYPE");
 
   // information_schema.USER_PRIVILEGES has no row for an account holding

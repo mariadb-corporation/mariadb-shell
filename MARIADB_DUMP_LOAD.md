@@ -3511,3 +3511,76 @@ does complete against the same held stage.
 - **No test.** Reproducing it needs a second connection holding a backup stage
   while a dump runs, which is an end-to-end scenario; the bound was exercised by
   hand with the constant temporarily lowered to three seconds.
+
+---
+
+## 30. A partitioned system-versioned table produced an unloadable dump
+
+§27.4 left two corners untested: temporal queries in a view other than
+`FOR SYSTEM_TIME ALL`, and a table which is both partitioned and system
+versioned. The first was fine, the second was the fourth instance of this
+port's recurring pattern.
+
+**Views.** `AS OF`, `BETWEEN` and `ALL` are all unreadable to the MySQL grammar,
+and all three land in §27.2's containment: the dump warns once per view and
+completes, the view's own DDL round-trips and works on the target. Nothing to fix.
+
+**Partitioned and versioned.** `PARTITION BY SYSTEM_TIME` does not introduce a
+`TABLE_TYPE` of its own - it is still `SYSTEM VERSIONED` - so §27 already put it
+in the right map. The dump completed. The load did not:
+
+```
+ERROR: sv@p1@pc@0.tsv.zst: MySQL Error 1726 (HY000): Not allowed for
+system-versioned table `sv2`.`p1`: LOAD DATA LOCAL INFILE ... REPLACE INTO TABLE
+`sv2`.`p1` PARTITION (`pc`) ...
+```
+
+MariaDB refuses partition selection on a system-versioned table, and the loader
+names the partition each chunk came from.
+
+The silent half is worse. Dumping partition by partition reads the **HISTORY**
+partition as well, and a history chunk holds only the ordinary columns - the
+period columns are not among them. Measured: a table with 2 current rows and 1
+superseded row dumped 2 + 1 rows across `pc` and `h0`. Had the `PARTITION` clause
+not failed first, that superseded row would have loaded as **live data**.
+
+### 30.1 The fix
+
+`fetch_table_partitions()` skips a system-versioned table, next to the NDB case
+which is there for the same reason - partition selection is unavailable, so
+per-partition chunks cannot be loaded back. Such a table is dumped through the
+table itself, which is the current version of every row, exactly as an
+unpartitioned system-versioned table already was. `Instance_cache::Table` gains
+`system_versioned`, set from the `TABLE_TYPE` §27 taught it to recognize.
+
+### 30.2 Verified
+
+Round trip of a schema holding four shapes - partitioned and versioned, versioned
+with a `WITHOUT SYSTEM VERSIONING` column, an application-time `PERIOD FOR`, and
+versioned with explicitly declared `ROW START` / `ROW END` columns - plus three
+views using `AS OF`, `BETWEEN` and `ALL`:
+
+- the dump produces whole-table chunks (`sv@p1@0`, not `sv@p1@h0@0`) with the
+  current rows only, and no history row
+- the load reports no error where it previously aborted
+- `SHOW CREATE TABLE` is **identical** for all four tables, partitioning clause
+  included, and the row counts match
+- the temporal views work on the target
+
+`Instance_cache_test.system_versioned_table_has_no_partitions` pins it against a
+partitioned versioned table and an ordinary partitioned one in the same schema.
+`Instance_cache_test` + `Schema_dumper_test` are 43 passed, 0 failed.
+
+### 30.3 Not done here
+
+- **`Instance_cache_test.stats` needed the same correction as §26's roles.** Its
+  expected table count came from `'BASE TABLE'=TABLE_TYPE`, so any instance
+  holding a system-versioned table failed it once the cache started counting one
+  as a table. That is twice now that the test's own counting query has drifted
+  from the production one.
+- **Naming a partition of a system-versioned table explicitly** - the `partitions`
+  option of `dumpTables` - is not refused. It would produce the same unloadable
+  dump this section removes from the default path.
+- **History is still not carried**, now for the same reason everywhere rather than
+  two different ones (§27.4).
+- **Subpartitions of a versioned table were not tested**, only partitions.
