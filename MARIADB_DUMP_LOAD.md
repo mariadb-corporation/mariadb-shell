@@ -1460,9 +1460,9 @@ helper):
   with the newest MySQL grammar rather than 5.6's. Closer than before, but
   MariaDB-only view syntax is still not understood — relevant once §4.5's view
   handling is revisited.
-- `dumper.cc` keeps two raw `is_8_0` reads on purpose, both on user-dumping /
-  `ocimds` paths that are unreachable on MariaDB today; they are marked with the
-  phase that owns them.
+- `dumper.cc` keeps one raw `is_8_0` read on purpose, on the `ocimds`
+  compatibility path which is refused for a MariaDB source; it is marked as such
+  at the site.
 - MySQL → MySQL dumps are **not** byte-identical before and after, as §7.5
   suggested checking: the manifest gained the `vendor` field. That is the only
   difference, and it is the §6.3 requirement.
@@ -1766,12 +1766,13 @@ exercised before):
   Galera node `wsrep_gtid_domain_id` makes the position cluster-wide and
   assigning it is a node-local action — worth a check, but it needs a Galera
   cluster to design against.
-- **`Schema_dumper::process_set_gtid_purged()` was left alone.** §4.6 lists its
+- ~~**`Schema_dumper::process_set_gtid_purged()` was left alone.** §4.6 lists its
   `SET @@GLOBAL.GTID_PURGED` epilogue as MySQL-specific, and it is, but the
   function is **dead code** — inherited from mysqldump, declared and defined,
-  called from nowhere. The shell carries the GTID set in the manifest instead.
-- `Dump_reader::show_metadata()` still labels the value `Executed_GTID_set` for
-  both vendors.
+  called from nowhere. The shell carries the GTID set in the manifest instead.~~
+  **Removed in §32**, along with the two helpers only it called.
+- ~~`Dump_reader::show_metadata()` still labels the value `Executed_GTID_set` for
+  both vendors.~~ **Fixed in §32** — a MariaDB dump reports `GTID_position`.
 
 ---
 
@@ -3673,3 +3674,46 @@ where only the period does. `Instance_cache_test`, `Schema_dumper_test` and
 - **Dynamic columns, `CONNECT` and `Spider` engines were not covered.**
 - **The sweep is per-feature, not combinatorial.** Each feature was tested on its
   own table; interactions between them were not.
+
+---
+
+## 32. Cleanup: dead code and a wrong label
+
+Two items the earlier phases parked, both small and both now done.
+
+**`Schema_dumper::process_set_gtid_purged()` is gone** (§15.7), and with it the
+two functions only it called - `add_set_gtid_purged()` and
+`set_session_binlog()` - plus the `enum_set_gtid_purged_mode` option member and
+the `is_binlog_disabled` flag which existed only to serve them. 135 lines of
+`schema_dumper.cc`, inherited from mysqldump and called from nowhere since the
+shell started carrying the GTID set in the manifest instead.
+
+That it was dead in **both** builds was worth checking rather than assuming, since
+a MySQL-only caller would have made the removal a MySQL regression which nothing
+here can catch. Two independent checks: a grep for all five names across
+`modules`, `mysqlshdk`, `src`, `unittest`, `common` and `ext` finds nothing
+outside `schema_dumper.*` - and a grep finds a call site whether or not it sits
+inside an `#ifdef` - and the project's own graph reports zero incoming edges to
+the function. Both builds compile with it gone.
+
+**`Dump_reader::show_metadata()` labelled the GTID value `Executed_GTID_set` on
+both vendors** (§15.7). MariaDB has no such thing: what the dump carries is the
+GTID position from `gtid_current_pos`, which the loader restores into
+`gtid_slave_pos` (§15). A MariaDB dump now reports `GTID_position`, and a MySQL
+dump is unchanged.
+
+### 32.1 Not done here
+
+- **`__have_dump_and_load` is still defined**, always true, across 30 sites in
+  five test files (§11.6). 26 of those are plain `{__have_dump_and_load}` chunk
+  guards which are trivial to drop, but two are `?{...}` / `?{}` blocks in
+  `validation/util_help_norecord.py` which **nest** with `?{__have_binlog_utils}`
+  and `?{__have_x_protocol}` - conditions which are *not* always true. Mispairing
+  a closing marker there silently moves other features' expected output into the
+  wrong branch, and the branch that would break is the MySQL-only one, which this
+  side cannot run. Left for whoever runs `util_help` on both builds; the payoff is
+  tidiness, not behaviour.
+- **`Instance_cache_test.stats` still recomputes the counts** it compares against,
+  which is why it has needed correcting twice (§26, §30). Asserting agreement
+  rather than reimplementing the query would end that, but it is a rewrite of the
+  test rather than a fix to it.
