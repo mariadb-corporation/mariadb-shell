@@ -270,6 +270,16 @@ bool supports_check_constraint_checks(const Server_version &v);
 bool supports_sequences(const Server_version &v);
 
 /**
+ * I_S.KEY_PERIOD_USAGE, which names the unique constraints declared WITHOUT
+ * OVERLAPS over an application-time period. MariaDB 10.5+, no MySQL
+ * counterpart.
+ *
+ * Such a table refuses REPLACE - error 1235 - so the loader has to know, see
+ * MARIADB_DUMP_LOAD.md section 31.
+ */
+bool supports_key_period_usage(const Server_version &v);
+
+/**
  * Oracle-mode packages (CREATE PACKAGE / CREATE PACKAGE BODY). A MariaDB 10.3+
  * routine type with no MySQL counterpart.
  *

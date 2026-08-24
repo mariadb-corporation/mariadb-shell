@@ -3584,3 +3584,92 @@ partitioned versioned table and an ordinary partitioned one in the same schema.
 - **History is still not carried**, now for the same reason everywhere rather than
   two different ones (§27.4).
 - **Subpartitions of a versioned table were not tested**, only partitions.
+
+---
+
+## 31. A sweep of MariaDB-specific features, and two more failures
+
+§30 closed the last item on the pending list by testing one untested feature and
+finding a bug in it. That is a poor signal to stop on, so the remaining
+MariaDB-specific surface was swept the same way: one schema holding each feature,
+dump, load, compare `SHOW CREATE TABLE` and the data. Ten tables covering
+`VECTOR` columns and vector indexes, `UUID` / `INET4` / `INET6`, `INVISIBLE`,
+`COMPRESSED`, `VIRTUAL` and `PERSISTENT` columns, `IGNORED` indexes,
+application-time periods with and without a `WITHOUT OVERLAPS` key, Aria table
+options, subpartitions, and a system-versioned table for company.
+
+Two of the ten failed, both hard.
+
+### 31.1 A UUID column aborted the dump
+
+```
+RuntimeError: LogicError: Unknown data_type: uuid and column_type: uuid
+```
+
+`mysqlshdk::db::dbstring_to_type()` maps `I_S.COLUMNS.DATA_TYPE` to an internal
+type and knew `vector` but not MariaDB's `uuid`, `inet4` or `inet6`. It throws
+rather than defaulting, so one column of a 10.7+ type stopped the whole dump.
+
+All three are mapped to `Type::String`, which is measured rather than assumed:
+the server renders a `UUID` on the wire as its 36-character canonical form, and
+`INET4` / `INET6` as their printable forms, and it takes all three back in the
+same form. `Type::Bytes` would have hex-escaped them into something the load
+could not read back.
+
+Only the metadata path reaches this function - a `SELECT` of the same columns in
+the shell always worked, because result sets carry the protocol's numeric type
+instead. That is why the gap survived: it is invisible everywhere except a dump.
+
+### 31.2 WITHOUT OVERLAPS refuses REPLACE, which is how chunks are loaded
+
+```
+ERROR: feat@t_overlap@@0.tsv.zst: MySQL Error 1235 (42000): This version of
+MariaDB doesn't yet support 'WITHOUT OVERLAPS': LOAD DATA LOCAL INFILE ...
+REPLACE INTO TABLE `feat2`.`t_overlap` ...
+```
+
+The loader loads every chunk with `REPLACE`, and MariaDB refuses `REPLACE` on a
+table with a `UNIQUE ... WITHOUT OVERLAPS` constraint. Measured, the refusal is
+specific: `INSERT`, `LOAD DATA ... IGNORE` and a bare `LOAD DATA` all work, and
+`REPLACE` is refused for that constraint alone - a period without the key takes
+it, and so do system-versioned and vector-indexed tables.
+
+Such a chunk is now loaded with `IGNORE`. The two differ only for a row which is
+already present, and on a resumed load that row is the same row - which is what
+the resume path already assumes, its own comment saying it relies "on duplicate
+rows being ignored".
+
+The signal is `I_S.KEY_PERIOD_USAGE`, which lists exactly these constraints and
+nothing else - `I_S.STATISTICS` cannot tell the key apart from a plain
+`UNIQUE (id, s, e)` without reading column order. It is read once per dump into
+`Instance_cache::Table::period_unique_key`, written to the table's metadata as
+`periodUniqueKey`, and travels to the chunk the way `partition` already does, so
+the loader needs no query of its own.
+
+### 31.3 Verified
+
+All ten tables round-trip: `SHOW CREATE TABLE` is identical for every one, and
+the data matches - vector values through `VEC_ToText()`, the UUID and both INET
+forms, an `INVISIBLE` column's default alongside `VIRTUAL` and `PERSISTENT`
+values, the overlaps rows and the subpartitioned rows.
+
+`Instance_cache_test.mariadb_column_types_and_period_keys` pins both: that a
+cache over `UUID` / `INET4` / `INET6` columns builds without throwing and types
+them as strings, and that the period key is detected where it exists and not
+where only the period does. `Instance_cache_test`, `Schema_dumper_test` and
+`Load_dump*` are 53 passed, 0 failed.
+
+### 31.4 Not done here
+
+- **The type mapping is still a throw, not a default.** A MariaDB type nobody has
+  thought of yet stops a dump instead of being treated as a string. That is
+  arguably right for MySQL, where the list is closed, and it is how §27 and this
+  section were found - but it is worth knowing that the next new type behaves the
+  same way.
+- **Encrypted and `PAGE_COMPRESSED` tables were not covered**, since neither is
+  enabled on the test server.
+- **`VECTOR` was tested with a vector index but not with `mariadb_vec_distance`
+  queries in a view**, which would go through the parser (§28).
+- **Dynamic columns, `CONNECT` and `Spider` engines were not covered.**
+- **The sweep is per-feature, not combinatorial.** Each feature was tested on its
+  own table; interactions between them were not.

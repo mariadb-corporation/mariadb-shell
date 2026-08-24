@@ -661,6 +661,7 @@ void Instance_cache_builder::fetch_metadata(
   fetch_columns();
   fetch_table_indexes();
   fetch_table_histograms();
+  fetch_period_unique_keys();
   fetch_table_partitions(partitions);
 }
 
@@ -1111,6 +1112,37 @@ void Instance_cache_builder::fetch_table_histograms() {
   } catch (const mysqlshdk::db::Error &e) {
     log_error("Failed to fetch table histograms: %s.", e.format().c_str());
     current_console()->print_warning("Failed to fetch table histograms.");
+  }
+}
+
+void Instance_cache_builder::fetch_period_unique_keys() {
+  Profiler profiler{"fetching period unique keys"};
+
+  if (!has_tables() ||
+      !common::supports_key_period_usage(m_cache.server.version)) {
+    return;
+  }
+
+  try {
+    // A UNIQUE ... WITHOUT OVERLAPS constraint over an application-time period.
+    // Such a table refuses REPLACE with error 1235, and the loader loads chunks
+    // with REPLACE - see MARIADB_DUMP_LOAD.md section 31. Nothing else about
+    // the constraint is needed, only which tables have one.
+    Iterate_table info;
+    info.schema_column = "TABLE_SCHEMA";  // NOT NULL
+    info.table_column = "TABLE_NAME";     // NOT NULL
+    info.table_name = "key_period_usage";
+
+    iterate_tables(info, [](const std::string &, const std::string &,
+                            Instance_cache::Table *table,
+                            const mysqlshdk::db::IRow *) {
+      table->period_unique_key = true;
+    });
+  } catch (const mysqlshdk::db::Error &e) {
+    log_error("Failed to fetch period unique keys: %s.", e.format().c_str());
+    current_console()->print_warning(
+        "Failed to fetch the list of tables with a UNIQUE ... WITHOUT OVERLAPS "
+        "constraint, loading such a table may fail.");
   }
 }
 

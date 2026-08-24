@@ -6012,6 +6012,12 @@ void Dumper::write_table_metadata(
   doc.AddMember(StringRef("extension"),
                 refs(table.output_config->data_file_extension), a);
   doc.AddMember(StringRef("chunking"), m_options.split(), a);
+
+  if (table.info && table.info->period_unique_key) {
+    // MariaDB: the table refuses REPLACE, which is how the loader loads a chunk
+    // - see MARIADB_DUMP_LOAD.md section 31
+    doc.AddMember(StringRef("periodUniqueKey"), true, a);
+  }
   doc.AddMember(
       StringRef("compression"),
       {mysqlshdk::storage::to_string(table.output_config->compression).c_str(),

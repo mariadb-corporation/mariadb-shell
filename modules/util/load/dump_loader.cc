@@ -1509,9 +1509,14 @@ void Dump_loader::Worker::Load_chunk_task::do_load(Worker *worker,
   auto import_options =
       import_table::Import_table_options::unpack(chunk().options);
 
-  // replace duplicate rows by default
+  // replace duplicate rows by default - except where the table will not take
+  // REPLACE at all: MariaDB refuses it on a table with a UNIQUE ... WITHOUT
+  // OVERLAPS constraint (error 1235), so such a chunk is loaded with IGNORE.
+  // The two differ only for a row which is already there, and on a resumed load
+  // that row is the same row - see MARIADB_DUMP_LOAD.md section 31.
   import_options.set_duplicate_handling(
-      import_table::Duplicate_handling::Replace);
+      chunk().period_unique_key ? import_table::Duplicate_handling::Ignore
+                               : import_table::Duplicate_handling::Replace);
   import_options.set_verbose(false);
   import_options.set_partition(chunk().partition);
 
