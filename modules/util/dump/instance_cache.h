@@ -134,6 +134,9 @@ struct Instance_cache {
     std::vector<Partition> partitions;
     bool is_innodb_vector_store_table = false;
     bool has_masking_policy = false;
+    // MariaDB, I_S.TABLES reports TABLE_TYPE='SYSTEM VERSIONED' - the table
+    // keeps superseded row versions of its own
+    bool system_versioned = false;
   };
 
   struct View : public Table {

@@ -610,6 +610,8 @@ void Instance_cache_builder::filter_tables() {
                     { use_unsupported_collation(&target.collation); });
 
     if (is_table) {
+      target.system_versioned = "SYSTEM VERSIONED" == table_type;
+
       set_has_tables();
 
       ++m_cache.filtered.tables;
@@ -1169,6 +1171,18 @@ void Instance_cache_builder::fetch_table_partitions(
           // Partition selection is disabled for tables employing a storage
           // engine that supplies automatic partitioning, such as NDB. Ignore
           // such tables.
+          return;
+        }
+
+        if (table->system_versioned) {
+          // The same reason, for a different mechanism: MariaDB refuses
+          // partition selection on a system-versioned table (error 1726), so a
+          // per-partition chunk cannot be loaded back - and reading the
+          // partitions directly would dump the HISTORY partition too, whose
+          // rows carry no period columns and would come back as live data. Such
+          // a table is dumped through the table itself, which is the current
+          // version of every row, exactly as an unpartitioned one is. See
+          // MARIADB_DUMP_LOAD.md section 30.
           return;
         }
 
