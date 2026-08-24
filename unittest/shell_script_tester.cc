@@ -1748,9 +1748,9 @@ void Shell_script_tester::set_defaults() {
       mysqlshdk::utils::k_build_server_version.get_base().c_str());
   exec_and_out_equals(code);
 
-  code = shcore::str_format(
-      "%s__build_server_version_num = %" PRIu32, var_prefix.c_str(),
-      mysqlshdk::utils::k_build_server_version.numeric());
+  code = shcore::str_format("%s__build_server_version_num = %" PRIu32,
+                            var_prefix.c_str(),
+                            mysqlshdk::utils::k_build_server_version.numeric());
   exec_and_out_equals(code);
 
   code = shcore::str_format("%s__version = '%s'", var_prefix.c_str(),
@@ -1766,10 +1766,10 @@ void Shell_script_tester::set_defaults() {
   exec_and_out_equals(code);
 
   // The vendor of the server the tests run against. Scripts need this wherever
-  // they would otherwise read a version number as if it implied MySQL: MariaDB's
-  // numbering is its own, so '__version_num >= 80000' does not mean "has what
-  // MySQL 8.0 has". Keyed on the server and not on __mariadb_build, since a
-  // Shell built against either vendor can be pointed at either server.
+  // they would otherwise read a version number as if it implied MySQL:
+  // MariaDB's numbering is its own, so '__version_num >= 80000' does not mean
+  // "has what MySQL 8.0 has". Keyed on the server and not on __mariadb_build,
+  // since a Shell built against either vendor can be pointed at either server.
   def_bool_var("__server_is_maria_db", target_server_is_maria_db());
 
   // Set terminology related variables
@@ -1840,13 +1840,6 @@ void Shell_script_tester::set_defaults() {
 #else
   def_bool_var("__have_binlog_utils", false);
 #endif
-
-  // Dump/load is built for every vendor now; the variable is kept (always true)
-  // so the existing scripted tests still resolve it. Removing it means editing
-  // the ~33 conditionals in the util_help / credential_handling /
-  // json_output_as_normal scripts and their validation files - test content
-  // work, tracked separately from the build change.
-  def_bool_var("__have_dump_and_load", true);
 
   def_var("__user_config_path",
           shcore::quote_string(shcore::get_user_config_path(), '\''));
