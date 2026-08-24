@@ -664,6 +664,7 @@ bool Dump_reader::next_table_chunk(
     out_chunk->schema = (*iter)->table->parent->name;
     out_chunk->table = (*iter)->table->name;
     out_chunk->partition = (*iter)->partition;
+    out_chunk->period_unique_key = (*iter)->period_unique_key;
     out_chunk->chunked = (*iter)->chunked;
     out_chunk->index = (*iter)->chunks_consumed;
 
@@ -1180,6 +1181,7 @@ void Dump_reader::Table_info::update_metadata(const std::string &data,
 
   di.extension = md->get_string("extension", "tsv");
   di.chunked = md->get_bool("chunking", false);
+  di.period_unique_key = md->get_bool("periodUniqueKey", false);
 
   if (md->has_key("compression")) {
     compression_type = md->get_string("compression");

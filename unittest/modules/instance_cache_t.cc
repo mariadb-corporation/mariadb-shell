@@ -3999,6 +3999,61 @@ TEST_F(Instance_cache_test, system_versioned_table_has_no_partitions) {
   EXPECT_EQ(2, plain->second.partitions.size());
 }
 
+// MariaDB types the shell had no mapping for aborted the dump outright, and a
+// UNIQUE ... WITHOUT OVERLAPS table refuses the REPLACE the loader uses - see
+// MARIADB_DUMP_LOAD.md section 31.
+TEST_F(Instance_cache_test, mariadb_column_types_and_period_keys) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE TABLE first.one (u UUID, v4 INET4, v6 INET6);");
+    // a WITHOUT OVERLAPS key, and an application-time period without one
+    m_session->execute(
+        "CREATE TABLE first.two (id INT, s DATE, e DATE, PERIOD FOR p(s,e), "
+        "UNIQUE (id, p WITHOUT OVERLAPS));");
+    m_session->execute(
+        "CREATE TABLE first.three (id INT, s DATE, e DATE, PERIOD FOR p(s,e));");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  // the type mapping used to throw a logic_error from here
+  Instance_cache cache;
+  ASSERT_NO_THROW(cache = Instance_cache_builder(m_session, filters)
+                              .metadata({})
+                              .build());
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  {
+    const auto table = schema->second.tables.find("one");
+    ASSERT_TRUE(schema->second.tables.end() != table);
+    ASSERT_EQ(3, table->second.all_columns.size());
+
+    // the server renders all three as text and takes them back as text
+    for (const auto &column : table->second.all_columns) {
+      SCOPED_TRACE(column.name);
+      EXPECT_EQ(mysqlshdk::db::Type::String, column.type);
+    }
+  }
+
+  {
+    const auto with_key = schema->second.tables.find("two");
+    ASSERT_TRUE(schema->second.tables.end() != with_key);
+    EXPECT_TRUE(with_key->second.period_unique_key);
+
+    // a period alone does not stop REPLACE, only the key over it does
+    const auto without_key = schema->second.tables.find("three");
+    ASSERT_TRUE(schema->second.tables.end() != without_key);
+    EXPECT_FALSE(without_key->second.period_unique_key);
+  }
+}
+
 // MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
 // share the table namespace, so they are enumerated and filtered as tables but
 // kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -180,6 +181,12 @@ Type dbstring_to_type(const std::string &data_type,
     return mysqlshdk::db::Type::Json;
   } else if (shcore::str_caseeq(data_type, "vector")) {
     return mysqlshdk::db::Type::Vector;
+  } else if (shcore::str_caseeq(data_type, "uuid", "inet4", "inet6")) {
+    // MariaDB types the server renders as text and accepts back in the same
+    // form: a UUID arrives as its 36 character canonical form, INET4 and INET6
+    // as their printable forms. No MySQL server reports these, so nothing there
+    // reaches this branch.
+    return mysqlshdk::db::Type::String;
   }
 
   throw std::logic_error("Unknown data_type: " + data_type +

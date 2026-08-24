@@ -217,6 +217,8 @@ class Dump_reader {
     std::string table;
     std::string partition;
     bool chunked = false;
+    // MariaDB: a UNIQUE ... WITHOUT OVERLAPS table refuses REPLACE
+    bool period_unique_key = false;
     std::unique_ptr<mysqlshdk::storage::IFile> file;
     ssize_t index = 0;
     size_t file_size = 0;
@@ -463,6 +465,8 @@ class Dump_reader {
 
     bool has_data = true;
     bool chunked = false;
+    // MariaDB: a UNIQUE ... WITHOUT OVERLAPS table refuses REPLACE
+    bool period_unique_key = false;
     bool last_chunk_seen = false;
 
     size_t chunks_seen = 0;

@@ -137,6 +137,10 @@ struct Instance_cache {
     // MariaDB, I_S.TABLES reports TABLE_TYPE='SYSTEM VERSIONED' - the table
     // keeps superseded row versions of its own
     bool system_versioned = false;
+    // MariaDB, I_S.KEY_PERIOD_USAGE - a unique constraint declared WITHOUT
+    // OVERLAPS over an application-time period, which makes the table refuse
+    // REPLACE
+    bool period_unique_key = false;
   };
 
   struct View : public Table {
@@ -378,6 +382,8 @@ class Instance_cache_builder final {
   std::vector<shcore::Account> fetch_roles() const;
 
   void add_granted_roles();
+
+  void fetch_period_unique_keys();
 
   std::vector<shcore::Account> fetch_users(const std::string &select,
                                            const std::string &where) const;

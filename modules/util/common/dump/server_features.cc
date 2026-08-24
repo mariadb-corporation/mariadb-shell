@@ -140,6 +140,12 @@ bool supports_sequences(const Server_version &v) {
   return v.is_maria_db && v.number.numeric() >= 100300;
 }
 
+bool supports_key_period_usage(const Server_version &v) {
+  // application-time periods, and the WITHOUT OVERLAPS keys over them, are
+  // 10.5
+  return v.is_maria_db && v.number.numeric() >= 100500;
+}
+
 bool supports_packages(const Server_version &v) {
   // the version routine_dump_param_array in client/mysqldump.cc gates the
   // PACKAGE and PACKAGE BODY entries on
