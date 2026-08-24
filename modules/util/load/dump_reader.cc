@@ -1939,10 +1939,17 @@ Dump_reader::create_progress_file_handle() const {
 }
 
 void Dump_reader::show_metadata() const {
+  // MariaDB has no Executed_Gtid_Set: what the dump carries is the GTID
+  // position, gtid_current_pos, and the loader restores it into gtid_slave_pos
+  // - see MARIADB_DUMP_LOAD.md section 15
+  const auto *const gtid_label = source_server().is_maria_db
+                                     ? "GTID_position"
+                                     : "Executed_GTID_set";
+
   const auto metadata = shcore::make_dict(
-      "Dump_metadata", shcore::make_dict("Binlog_file", binlog_file(),
-                                         "Binlog_position", binlog_position(),
-                                         "Executed_GTID_set", gtid_executed()));
+      "Dump_metadata",
+      shcore::make_dict("Binlog_file", binlog_file(), "Binlog_position",
+                        binlog_position(), gtid_label, gtid_executed()));
 
   const auto yaml = shcore::Value(metadata).yaml();
   const auto console = current_console();

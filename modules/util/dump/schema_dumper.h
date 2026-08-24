@@ -188,13 +188,6 @@ class Schema_dumper {
   bool opt_target_has_mysql_native_password = false;
   std::string opt_character_set_results = "utf8mb4";
 
-  enum enum_set_gtid_purged_mode {
-    SET_GTID_PURGED_OFF = 0,
-    SET_GTID_PURGED_AUTO = 1,
-    SET_GTID_PURGED_ON = 2,
-    SET_GTID_PURGED_COMMENTED = 3
-  } opt_set_gtid_purged_mode = SET_GTID_PURGED_AUTO;
-
  private:
 #ifdef FRIEND_TEST
   FRIEND_TEST(Schema_dumper_test, check_object_for_definer);
@@ -323,11 +316,6 @@ class Schema_dumper {
                              const std::string &table_name,
                              std::string *out_table_type);
 
-  void set_session_binlog(IFile *sql_file, bool flag);
-
-  bool add_set_gtid_purged(IFile *sql_file);
-
-  bool process_set_gtid_purged(IFile *sql_file);
   std::vector<Compatibility_issue> get_view_structure(IFile *sql_file,
                                                       const std::string &table,
                                                       const std::string &db);
@@ -375,7 +363,6 @@ class Schema_dumper {
   bool m_supports_pke_as_pk = false;
 
   // leftovers from original code
-  bool is_binlog_disabled = false;
   bool stats_tables_included = false;
 };
 
