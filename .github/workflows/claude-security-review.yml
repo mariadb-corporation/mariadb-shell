@@ -33,6 +33,12 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 20   # real runaway guard: actually kills the job.
+                          # --max-turns is deliberately NOT set — see
+                          # anthropics/claude-code-action#1577: the SDK
+                          # overshoots the cap on long sessions, and the
+                          # action then fails the job post-hoc even though
+                          # the review posted successfully.
     steps:
       # Optional CI gate — uncomment if you want to skip reviews on red PRs.
       # Set check-name to your CI *job* name and pin the action to a
@@ -70,7 +76,6 @@ jobs:
           claude_args: |
             --model claude-opus-5
             --effort high
-            --max-turns 25
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*)"
           prompt: |
             REPO: ${{ github.repository }}
@@ -212,7 +217,11 @@ jobs:
             - Post line-specific findings with
               `mcp__github_inline_comment__create_inline_comment` (pass
               `confirmed: true`). Post the verdict and anything not tied to a
-              specific line with `gh pr comment`.
+              specific line with `gh pr comment --body '...'`.
+            - In `gh pr comment` bodies, do NOT use markdown `#` headings — a
+              newline followed by `#` is rejected by the shell guard. Use
+              `**bold**` for headings instead. Do not try to write the body to
+              a temp file first; `/tmp` and `Write` are both unavailable.
             - ONLY post GitHub comments. Do not return review text as a chat
               message — output that is not posted to the PR is lost.
             - No praise padding, no summaries of what the PR does, no
