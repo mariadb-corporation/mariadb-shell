@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -132,13 +133,19 @@ class SHCORE_PUBLIC ShellBaseSession : public shcore::Cpp_object_bridge {
 
   // NOTE(rennox): These two are used in DBA, that's why we let them here
   // Where they are used, assume a connection is established, so the values must
-  // exist, we do not validate for nulls to let it crash on purpose since it
-  // would reveal a failing logic elsewhere
-  std::string get_user() { return _connection_options.get_user(); }
-  std::string get_host() { return _connection_options.get_host(); }
-  const mysqlshdk::db::Connection_options &get_connection_options() {
-    return _connection_options;
-  }
+  // exist
+  std::string get_user() const { return get_connection_options().get_user(); }
+  std::string get_host() const { return get_connection_options().get_host(); }
+
+  /**
+   * The connection options are owned by the low level session, so the returned
+   * reference is only valid while that session is not replaced, i.e. a caller
+   * that connects/reconnects this session must hold a copy, not a reference.
+   *
+   * If there's no low level session at all, an empty set of options is
+   * returned.
+   */
+  const mysqlshdk::db::Connection_options &get_connection_options() const;
 
   virtual void reconnect();
 
@@ -172,9 +179,6 @@ class SHCORE_PUBLIC ShellBaseSession : public shcore::Cpp_object_bridge {
 
  protected:
   std::string get_quoted_name(std::string_view name);
-  // TODO(rennox): Note that these are now stored on the low level session
-  // object too, they should be removed from here
-  mysqlshdk::db::Connection_options _connection_options;
 
   std::string get_sql_mode();
 

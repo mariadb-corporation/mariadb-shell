@@ -67,11 +67,8 @@ ClassicSession::ClassicSession(const ClassicSession &session)
 
 ClassicSession::ClassicSession(
     std::shared_ptr<mysqlshdk::db::mysql::Session> session)
-    : ShellBaseSession(), _session(session) {
+    : ShellBaseSession(), _session(std::move(session)) {
   init();
-
-  // TODO(alfredo) maybe can remove _connection_options ivar
-  _connection_options = session->get_connection_options();
 }
 
 ClassicSession::~ClassicSession() {
@@ -111,12 +108,14 @@ void ClassicSession::connect(
     const mysqlshdk::db::Connection_options &connection_options) {
   using shcore::option_tracker::Shell_feature;
 
-  _connection_options = connection_options;
+  // a copy is required: the given options may be owned by the session which is
+  // about to be replaced (i.e. when reconnecting)
+  const auto options = connection_options;
 
   try {
     _session = mysqlshdk::db::mysql::Session::create();
 
-    _session->connect(_connection_options);
+    _session->connect(options);
 
     _session->set_option_tracker_feature_id(Shell_feature::SHELL_USE);
   }
@@ -146,9 +145,11 @@ void ClassicSession::close() {
   // Connection must be explicitly closed, we can't rely on the
   // automatic destruction because if shared across different objects
   // it may remain open
+  //
+  // NOTE: the low level session is kept, it is the owner of the connection
+  // options, which are still to be reported (i.e. uri) and used (i.e.
+  // reconnect) on a closed session
   if (_session) _session->close();
-
-  _session.reset();
 }
 
 REGISTER_HELP_FUNCTION(setQueryAttributes, ClassicSession);
@@ -533,6 +534,7 @@ std::shared_ptr<shcore::Object_bridge> ClassicSession::create(
 
 shcore::Value::Map_type_ref ClassicSession::get_status() {
   shcore::Value::Map_type_ref status(new shcore::Value::Map_type);
+  const auto &connection_options = get_connection_options();
 
   try {
     auto result = _session->query("select DATABASE(), USER() limit 1");
@@ -540,8 +542,8 @@ shcore::Value::Map_type_ref ClassicSession::get_status() {
     if (row) {
       (*status)["SESSION_TYPE"] = shcore::Value("Classic");
       //        (*status)["DEFAULT_SCHEMA"] =
-      //          shcore::Value(_connection_options.has_schema() ?
-      //                        _connection_options.get_schema() : "");
+      //          shcore::Value(connection_options.has_schema() ?
+      //                        connection_options.get_schema() : "");
 
       std::string current_schema;
       if (!row->is_null(0)) current_schema = row->get_string(0);
@@ -605,8 +607,8 @@ shcore::Value::Map_type_ref ClassicSession::get_status() {
 
       mysqlshdk::db::Transport_type transport_type =
           mysqlshdk::db::Transport_type::Socket;
-      if (_connection_options.has_transport_type()) {
-        transport_type = _connection_options.get_transport_type();
+      if (connection_options.has_transport_type()) {
+        transport_type = connection_options.get_transport_type();
       }
       if (transport_type == mysqlshdk::db::Transport_type::Tcp) {
         (*status)["TCP_PORT"] = shcore::Value(row->get_int(6));
@@ -627,9 +629,9 @@ shcore::Value::Map_type_ref ClassicSession::get_status() {
         (*status)["SERVER_STATS"] = shcore::Value(_session->get_stats());
 
       try {
-        if (_connection_options.get_transport_type() ==
+        if (connection_options.get_transport_type() ==
             mysqlshdk::db::Transport_type::Tcp)
-          (*status)["TCP_PORT"] = shcore::Value(_connection_options.get_port());
+          (*status)["TCP_PORT"] = shcore::Value(connection_options.get_port());
       } catch (...) {
       }
       //(*status)["PROTOCOL_COMPRESSED"] = row->get_value(3);
