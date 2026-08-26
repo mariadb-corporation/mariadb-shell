@@ -7,6 +7,7 @@ from mysqlsh import mysql
 classicSession = mysql.get_classic_session(__uripwd)
 
 validate_members(classicSession, [
+  'clone',
   'close',
   'commit',
   'get_client_data',

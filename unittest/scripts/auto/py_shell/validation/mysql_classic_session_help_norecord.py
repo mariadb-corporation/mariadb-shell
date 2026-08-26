@@ -24,6 +24,9 @@ PROPERTIES
             Retrieves the URI for the current session.
 
 FUNCTIONS
+      clone()
+            Creates a new session connected to the same server as this one.
+
       close()
             Closes the internal connection to the MySQL Server held on this
             session object.

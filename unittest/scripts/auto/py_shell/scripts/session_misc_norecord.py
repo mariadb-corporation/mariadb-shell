@@ -76,6 +76,25 @@ EXPECT_EQ(None, session.get_client_data("opaque"))
 gc.collect()
 EXPECT_TRUE(deleted)
 
+#@<> clone creates an independent session to the same server
+clone = session.clone()
+
+EXPECT_TRUE(clone.is_open())
+EXPECT_EQ(session.uri, clone.uri)
+EXPECT_NE(session.connection_id, clone.connection_id)
+
+# closing the clone does not affect the session it was created from
+clone.close()
+EXPECT_FALSE(clone.is_open())
+EXPECT_TRUE(session.is_open())
+EXPECT_EQ(1, session.run_sql("select 1").fetch_one()[0])
+
+# the connection options are still available on a closed session
+EXPECT_EQ(session.uri, clone.uri)
+
+#@<> clone requires an open session
+EXPECT_THROWS(lambda: clone.clone(), "Not connected.")
+
 #@<> cleanup
 session2.close()
 shell.disconnect()

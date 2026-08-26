@@ -47,6 +47,34 @@ using namespace mysqlsh;
 using namespace mysqlsh::mysql;
 using namespace shcore;
 
+namespace {
+
+/**
+ * Creates a new session connected using the given options, establishing the SSH
+ * tunnel first if needed.
+ */
+std::shared_ptr<ClassicSession> connect_session(
+    mysqlshdk::db::Connection_options co) {
+  co.get_ssh_options().set_fallback_remote_port(
+      mysqlshdk::db::k_default_mysql_port);
+
+  mysqlshdk::ssh::Ssh_tunnel tunnel;
+
+  if (auto &ssh = co.get_ssh_options(); ssh.has_data()) {
+    // before creating a normal session we need to establish ssh if needed:
+    tunnel = mysqlshdk::ssh::current_ssh_manager()->create_tunnel(&ssh);
+  }
+
+  const auto session = std::make_shared<ClassicSession>();
+  session->connect(co);
+
+  shcore::ShellNotifications::get()->notify("SN_SESSION_CONNECTED", session);
+
+  return session;
+}
+
+}  // namespace
+
 // Documentation for ClassicSession class
 REGISTER_HELP_CLASS(ClassicSession, mysql);
 REGISTER_HELP(CLASSICSESSION_GLOBAL_BRIEF,
@@ -86,6 +114,7 @@ void ClassicSession::init() {
 
   expose("close", &ClassicSession::close);
   expose("runSql", &ClassicSession::run_sql, "query", "?args");
+  expose("clone", &ClassicSession::clone);
   expose("isOpen", &ClassicSession::is_open);
   expose("startTransaction", &ClassicSession::_start_transaction);
   expose("commit", &ClassicSession::_commit);
@@ -283,6 +312,40 @@ std::shared_ptr<ClassicResult> ClassicSession::run_sql(
   }
 
   return ret_val;
+}
+
+REGISTER_HELP_FUNCTION(clone, ClassicSession);
+REGISTER_HELP_FUNCTION_TEXT(CLASSICSESSION_CLONE, R"*(
+Creates a new session connected to the same server as this one.
+
+@returns A new ClassicSession object.
+
+A brand new connection is established using the same connection options used by
+this session, so the returned session is fully independent: it has its own
+connection id, transaction context, current schema and session variables, and
+closing one session does not affect the other.
+
+@throw LogicError if there's no open session.
+)*");
+/**
+ * $(CLASSICSESSION_CLONE_BRIEF)
+ *
+ * $(CLASSICSESSION_CLONE)
+ */
+#if DOXYGEN_JS
+ClassicSession ClassicSession::clone() {}
+#elif DOXYGEN_PY
+ClassicSession ClassicSession::clone() {}
+#endif
+std::shared_ptr<ClassicSession> ClassicSession::clone() const {
+  if (!is_open()) {
+    throw Exception::logic_error("Not connected.");
+  }
+
+  // The options of this session are used as they are, they already contain the
+  // defaults that were applied when it got connected, so the new session is an
+  // exact replica of this one, connection wise.
+  return connect_session(get_connection_options());
 }
 
 std::shared_ptr<mysqlshdk::db::IResult> ClassicSession::do_execute_sql(
@@ -514,22 +577,8 @@ std::shared_ptr<shcore::Object_bridge> ClassicSession::create(
   }
 
   co.set_default_data();
-  co.get_ssh_options().set_fallback_remote_port(
-      mysqlshdk::db::k_default_mysql_port);
 
-  mysqlshdk::ssh::Ssh_tunnel tunnel;
-
-  if (auto &ssh = co.get_ssh_options(); ssh.has_data()) {
-    // before creating a normal session we need to establish ssh if needed:
-    tunnel = mysqlshdk::ssh::current_ssh_manager()->create_tunnel(&ssh);
-  }
-
-  const auto session = std::make_shared<ClassicSession>();
-  session->connect(co);
-
-  shcore::ShellNotifications::get()->notify("SN_SESSION_CONNECTED", session);
-
-  return session;
+  return connect_session(std::move(co));
 }
 
 shcore::Value::Map_type_ref ClassicSession::get_status() {

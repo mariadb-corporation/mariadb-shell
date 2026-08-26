@@ -6,6 +6,7 @@ var mysql = require('mysql');
 var classicSession = mysql.getClassicSession(__uripwd);
 
 validateMembers(classicSession, [
+    'clone',
     'close',
     'commit',
     'getClientData',

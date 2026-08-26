@@ -85,6 +85,7 @@ class SHCORE_PUBLIC ClassicSession
   Integer getConnectionId();
   String getServerVendor();
   ClassicResult runSql(String query, Array args = []);
+  ClassicSession clone();
   Undefined close();
   ClassicResult startTransaction();
   ClassicResult commit();
@@ -108,6 +109,7 @@ class SHCORE_PUBLIC ClassicSession
   str get_connection_id();
   str get_server_vendor();
   ClassicResult run_sql(str query, list args = []);
+  ClassicSession clone();
   None close();
   ClassicResult start_transaction();
   ClassicResult commit();
@@ -149,6 +151,8 @@ class SHCORE_PUBLIC ClassicSession
 
   std::shared_ptr<ClassicResult> run_sql(const std::string &query,
                                          const shcore::Array_t &args = {});
+
+  std::shared_ptr<ClassicSession> clone() const;
 
   shcore::Value::Map_type_ref get_status() override;
 
