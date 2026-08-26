@@ -99,6 +99,14 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
+            FIRST: invoke the `review-shell-change` skill from this checkout
+            (.claude/skills/review-shell-change/SKILL.md) and follow it. It is
+            the single source of truth for this repo's review policy — what
+            other CI jobs already cover, the defect classes worth hunting here,
+            and the MariaDB-port conventions needed to judge a guard, a vendor
+            difference, or a gated test. The rest of this prompt only adds how
+            to post results to the PR.
+
             You are performing a code review of this pull request. The project is
             primarily C/C++ with some Python. Review ONLY the changed files and
             the code they directly interact with.
