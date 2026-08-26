@@ -32,7 +32,7 @@ jobs:
   build:
     name: Shell-CI-Verification
 
-    runs-on: self-hosted
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
 
     env:
       MARIADB_SHELL_BUILD_DIR: bld
