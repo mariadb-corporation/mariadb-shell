@@ -17,18 +17,41 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true   # new push cancels the in-flight review of stale code
 
+# DISABLED. The automatic trigger is commented out below; `workflow_dispatch`
+# only remains so GitHub still accepts the file (a workflow must declare at
+# least one event).
+#
+# Why it was disabled: every run ended in "Reached maximum number of turns
+# (25)". The `--max-turns 25` budget below cannot cover a multi-file C/C++ diff,
+# because each tool call costs a turn: 10-20 turns to read the diff and the
+# surrounding code, then one more per inline comment (the prompt mandates one
+# `create_inline_comment` call per line-specific finding). It ran out before
+# posting a verdict, so the check went red on every PR.
+#
+# Before re-enabling, two things need fixing:
+#   1. Turn budget — drop `--max-turns` (take the action default) or raise it to
+#      ~80, AND change the prompt to post findings as one grouped `gh pr comment`
+#      so the turn cost stops scaling with the number of findings.
+#   2. Who pays — `CLAUDE_CODE_OAUTH_TOKEN` is a personal Claude subscription
+#      token, so CI spends one individual's usage limits with no org billing or
+#      cost visibility. Move to an org-billed API key or the Claude GitHub App.
+#
+# Note: a manual `workflow_dispatch` run is not useful as written — there is no
+# PR context, so `github.event.pull_request.number` is empty and `checkout` gets
+# the default branch instead of a PR head. Restore the trigger below to use it.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.c"
-      - "**/*.cc"
-      - "**/*.cpp"
-      - "**/*.h"
-      - "**/*.hpp"
-      - "**/*.py"
-      - "**/CMakeLists.txt"
-      - "**/*.cmake"
+  workflow_dispatch:
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   paths:
+  #     - "**/*.c"
+  #     - "**/*.cc"
+  #     - "**/*.cpp"
+  #     - "**/*.h"
+  #     - "**/*.hpp"
+  #     - "**/*.py"
+  #     - "**/CMakeLists.txt"
+  #     - "**/*.cmake"
 
 jobs:
   review:
@@ -75,6 +98,14 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+
+            FIRST: invoke the `review-shell-change` skill from this checkout
+            (.claude/skills/review-shell-change/SKILL.md) and follow it. It is
+            the single source of truth for this repo's review policy — what
+            other CI jobs already cover, the defect classes worth hunting here,
+            and the MariaDB-port conventions needed to judge a guard, a vendor
+            difference, or a gated test. The rest of this prompt only adds how
+            to post results to the PR.
 
             You are performing a code review of this pull request. The project is
             primarily C/C++ with some Python. Review ONLY the changed files and
