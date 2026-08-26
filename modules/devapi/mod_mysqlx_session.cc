@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -99,9 +100,7 @@ Session::Session(std::shared_ptr<mysqlshdk::db::mysqlx::Session> session)
     : _case_sensitive_table_names(false) {
   init();
 
-  // TODO(alfredo) maybe can remove _connection_options ivar
-  _connection_options = session->get_connection_options();
-  _session = session;
+  _session = std::move(session);
 
   _connection_id = _session->get_connection_id();
 }
@@ -205,14 +204,15 @@ std::string Session::get_uuid() {
 
 void Session::connect(const mysqlshdk::db::Connection_options &data) {
   try {
-    _connection_options = data;
+    // a copy is required: the given options may be the ones owned by the low
+    // level session, which are overwritten on connect (i.e. when reconnecting)
+    const auto options = data;
 
-    _session->connect(_connection_options);
+    _session->connect(options);
 
     _connection_id = _session->get_connection_id();
 
-    if (_connection_options.has_schema())
-      update_schema_cache(_connection_options.get_schema(), true);
+    if (options.has_schema()) update_schema_cache(options.get_schema(), true);
   }
   CATCH_AND_TRANSLATE();
 }
@@ -272,7 +272,10 @@ void Session::close() {
     log_warning("Error occurred closing session: %s", e.what());
   }
 
-  _session = mysqlshdk::db::mysqlx::Session::create();
+  // NOTE: the low level session is kept, it is the owner of the connection
+  // options, which are still to be reported (i.e. uri) and used (i.e.
+  // reconnect) on a closed session. Closing it resets its state, so it is
+  // ready to be connected again.
 }
 
 // Documentation of createSchema function
@@ -686,11 +689,12 @@ std::string Session::db_object_exists(std::string &type,
 
 shcore::Value::Map_type_ref Session::get_status() {
   shcore::Value::Map_type_ref status(new shcore::Value::Map_type);
+  const auto &connection_options = get_connection_options();
 
   (*status)["SESSION_TYPE"] = shcore::Value("X");
 
   (*status)["DEFAULT_SCHEMA"] = shcore::Value(
-      _connection_options.has_schema() ? _connection_options.get_schema() : "");
+      connection_options.has_schema() ? connection_options.get_schema() : "");
 
   try {
     auto result = execute_sql("select DATABASE(), USER() limit 1");
@@ -742,8 +746,8 @@ shcore::Value::Map_type_ref Session::get_status() {
 
       mysqlshdk::db::Transport_type transport_type =
           mysqlshdk::db::Transport_type::Socket;
-      if (_connection_options.has_transport_type()) {
-        transport_type = _connection_options.get_transport_type();
+      if (connection_options.has_transport_type()) {
+        transport_type = connection_options.get_transport_type();
       }
       (*status)["CONNECTION"] = shcore::Value(_session->get_connection_info());
 
@@ -1263,9 +1267,10 @@ Value Session::get_member(const std::string &prop) const {
   } else if (prop == "sshUri") {
     ret_val = shcore::Value(ssh_uri());
   } else if (prop == "defaultSchema") {
-    if (_connection_options.has_schema()) {
+    if (const auto &connection_options = get_connection_options();
+        connection_options.has_schema()) {
       ret_val =
-          shcore::Value(session->get_schema(_connection_options.get_schema()));
+          shcore::Value(session->get_schema(connection_options.get_schema()));
     } else {
       ret_val = Value::Null();
     }

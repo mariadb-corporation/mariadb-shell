@@ -539,7 +539,9 @@ void XSession_impl::close() {
   _expired_account = false;
   _case_sensitive_table_names = false;
   _prev_result.reset();
-  _connection_options = Connection_options();
+  // NOTE: _connection_options are kept, they are still to be reported (i.e.
+  // uri) and used (i.e. reconnect) on a closed session, and are overwritten
+  // anyway if this session gets connected again
 }
 
 void XSession_impl::enable_trace(bool flag) {

@@ -198,9 +198,7 @@ std::shared_ptr<ShellBaseSession> ShellBaseSession::wrap_session(
 }
 
 ShellBaseSession::ShellBaseSession(const ShellBaseSession &s)
-    : Cpp_object_bridge(),
-      _connection_options(s._connection_options),
-      _tx_deep(s._tx_deep) {
+    : Cpp_object_bridge(), _tx_deep(s._tx_deep) {
   DEBUG_OBJ_ALLOC(ShellBaseSession);
 }
 
@@ -339,31 +337,50 @@ std::string ShellBaseSession::get_quoted_name(std::string_view name) {
   return quoted_name;
 }
 
+const mysqlshdk::db::Connection_options &
+ShellBaseSession::get_connection_options() const {
+  static const mysqlshdk::db::Connection_options k_no_connection;
+
+  const auto session = get_core_session();
+
+  return session ? session->get_connection_options() : k_no_connection;
+}
+
 std::string ShellBaseSession::uri(
     mysqlshdk::db::uri::Tokens_mask format) const {
-  return _connection_options.as_uri(format);
+  return get_connection_options().as_uri(format);
 }
 
 std::string ShellBaseSession::ssh_uri() const {
-  if (_connection_options.get_ssh_options().has_data()) {
-    return _connection_options.get_ssh_options().as_uri(
-        mysqlshdk::db::uri::formats::full_no_password());
+  const auto &ssh_options = get_connection_options().get_ssh_options();
+
+  if (ssh_options.has_data()) {
+    return ssh_options.as_uri(mysqlshdk::db::uri::formats::full_no_password());
   }
   return "";
 }
 
 std::string ShellBaseSession::get_default_schema() {
-  return _connection_options.has_schema() ? _connection_options.get_schema()
-                                          : "";
+  const auto &connection_options = get_connection_options();
+
+  return connection_options.has_schema() ? connection_options.get_schema() : "";
 }
 
 void ShellBaseSession::reconnect() {
+  // a copy is required: the options are owned by the low level session, which
+  // is replaced by connect()
+  const auto connection_options = get_connection_options();
+
+  if (!connection_options.has_data()) {
+    throw shcore::Exception::logic_error("Not connected.");
+  }
+
   // we need to hold the reference to the SSH tunnel while we reconnect, to
   // prevent it from being closed when the session closes
   const auto ssh = mysqlshdk::ssh::current_ssh_manager()->get_tunnel(
-      _connection_options.get_ssh_options());
+      connection_options.get_ssh_options());
 
-  connect(_connection_options);
+  connect(connection_options);
 }
 
 std::string ShellBaseSession::sub_query_placeholders(
