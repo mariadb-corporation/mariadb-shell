@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -762,14 +763,15 @@ bool iterate_sql_stream(
            (s.data() < (buffer.data() + buffer.size())));
 
     auto sdata = s.data();
-    if (!bol) s = s.substr(0, 2);
     assert(s.size() >= 2);
 
-    if (s[1] != 'g' && s[1] != 'G') {
+    const auto delim_length = statement_delimiter_length(s);
+    if (delim_length == 0) {
+      if (!bol) s = s.substr(0, 2);
       if (!callback(s, {}, lnum, sdata - &buffer[0])) stop = true;
       return std::make_pair(s.size(), false);
     }
-    return std::make_pair(2U, true);
+    return std::make_pair(delim_length, true);
   };
 
   Sql_splitter splitter(cmd_callback, err_callback, {"source"});
@@ -832,6 +834,19 @@ bool iterate_sql_stream(
   if (delimiter) *delimiter = splitter.delimiter();
 
   return !stop;
+}
+
+size_t statement_delimiter_length(std::string_view text) {
+  if (text.size() < 2 || text[0] != '\\') return 0;
+  if (text[1] != 'g' && text[1] != 'G') return 0;
+
+  // only \G takes a format, a letter after \g starts the next statement
+  if (text[1] == 'G' && text.size() > 2 &&
+      std::string_view{k_result_format_suffixes}.find(text[2]) !=
+          std::string_view::npos)
+    return 3;
+
+  return 2;
 }
 
 std::string to_string(Sql_splitter::Context context) {

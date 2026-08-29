@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -57,14 +58,15 @@ class TestMySQLSplitter : public ::testing::Test {
     splitter.reset(new Sql_splitter(
         [this](std::string_view s, bool bol,
                size_t lnum) -> std::pair<size_t, bool> {
-          if (!bol) s = s.substr(0, 2);
           assert(s.size() >= 2);
 
-          if (s[1] != 'g' && s[1] != 'G') {
+          const auto delim_length = statement_delimiter_length(s);
+          if (delim_length == 0) {
+            if (!bol) s = s.substr(0, 2);
             results.emplace_back(std::string{s}, "", lnum);
             return std::make_pair(s.size(), false);
           }
-          return std::make_pair(2U, true);
+          return std::make_pair(delim_length, true);
         },
         [this](std::string_view err) {
           results.emplace_back(std::string{err}, "", 0);
@@ -152,6 +154,65 @@ TEST_F(TestMySQLSplitter, full_statement_misc_delimiter) {
   EXPECT_EQ("", context);
   EXPECT_EQ("\\G", std::get<1>(results[0]));
   EXPECT_EQ("show databases", std::get<0>(results[0]));
+}
+
+TEST_F(TestMySQLSplitter, statement_delimiter_length) {
+  EXPECT_EQ(0, statement_delimiter_length(""));
+  EXPECT_EQ(0, statement_delimiter_length("\\"));
+  EXPECT_EQ(0, statement_delimiter_length(";"));
+  EXPECT_EQ(0, statement_delimiter_length("\\w"));
+
+  EXPECT_EQ(2, statement_delimiter_length("\\g"));
+  EXPECT_EQ(2, statement_delimiter_length("\\G"));
+
+  // the suffix belongs to the \G delimiter wherever it appears
+  for (const char suffix : std::string_view{k_result_format_suffixes}) {
+    EXPECT_EQ(3, statement_delimiter_length(std::string{"\\G"} + suffix));
+    EXPECT_EQ(3,
+              statement_delimiter_length(std::string{"\\G"} + suffix + "\n"));
+    EXPECT_EQ(3, statement_delimiter_length(std::string{"\\G"} + suffix +
+                                            "select 1;"));
+
+    // \g takes no format, the letter starts the next statement
+    EXPECT_EQ(2, statement_delimiter_length(std::string{"\\g"} + suffix));
+  }
+
+  // a letter which is not a format suffix is not consumed
+  EXPECT_EQ(2, statement_delimiter_length("\\Gx"));
+  EXPECT_EQ(2, statement_delimiter_length("\\Gselect 1;"));
+}
+
+TEST_F(TestMySQLSplitter, misc_delimiter_with_format) {
+  for (const char suffix : std::string_view{k_result_format_suffixes}) {
+    const auto delimiter = std::string{"\\G"} + suffix;
+
+    send_sql("show databases" + delimiter);
+    ASSERT_EQ(1, results.size());
+    EXPECT_EQ("", context);
+    EXPECT_EQ(delimiter, std::get<1>(results[0]));
+    EXPECT_EQ("show databases", std::get<0>(results[0]));
+
+    // the suffix is consumed, the statement that follows it is left intact
+    send_sql("show databases" + delimiter + "select 1;");
+    ASSERT_EQ(2, results.size());
+    EXPECT_EQ(delimiter, std::get<1>(results[0]));
+    EXPECT_EQ("show databases", std::get<0>(results[0]));
+    EXPECT_EQ("select 1", std::get<0>(results[1]));
+
+    // \g takes no format, the letter starts the next statement
+    send_sql("show databases\\g" + std::string(1, suffix) + ";");
+    ASSERT_EQ(2, results.size());
+    EXPECT_EQ("\\g", std::get<1>(results[0]));
+    EXPECT_EQ("show databases", std::get<0>(results[0]));
+    EXPECT_EQ(std::string(1, suffix), std::get<0>(results[1]));
+  }
+
+  // a letter which is not a format suffix starts the next statement
+  send_sql("show databases\\Gselect 1;");
+  ASSERT_EQ(2, results.size());
+  EXPECT_EQ("\\G", std::get<1>(results[0]));
+  EXPECT_EQ("show databases", std::get<0>(results[0]));
+  EXPECT_EQ("select 1", std::get<0>(results[1]));
 }
 
 TEST_F(TestMySQLSplitter, quoted) {

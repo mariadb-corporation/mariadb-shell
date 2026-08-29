@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -139,6 +140,24 @@ class Sql_splitter {
 };
 
 std::string to_string(Sql_splitter::Context context);
+
+/**
+ * Letters accepted after the \G statement delimiter to select the result
+ * format for a single statement. The format each one selects is resolved by
+ * apply_delimiter_format() in shell_sql.cc.
+ */
+constexpr const char k_result_format_suffixes[] = "jJTt";
+
+/**
+ * Length of the \g or \G statement delimiter at the beginning of the given
+ * text, including the optional result format suffix (\Gj, \GJ, \GT, \Gt), or 0
+ * if the text does not start with such a delimiter.
+ *
+ * The suffix belongs to the \G delimiter wherever it appears, so it is never
+ * left behind to be read as the beginning of the next statement. \g takes no
+ * format, so a letter following it always starts the next statement.
+ */
+size_t statement_delimiter_length(std::string_view text);
 
 std::vector<std::tuple<std::string, std::string, size_t>> split_sql_stream(
     std::istream *stream, size_t chunk_size,

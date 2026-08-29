@@ -521,12 +521,15 @@ class String_printer : public Resultset_printer {
 Resultset_dumper_base::Resultset_dumper_base(
     mysqlshdk::db::IResult *target, std::unique_ptr<Resultset_printer> printer,
     const std::string &wrap_json, const std::string &format,
-    bool show_column_type_info)
+    bool show_column_type_info, bool show_column_headers,
+    bool wrap_result_metadata)
     : m_result(target),
       m_wrap_json(wrap_json),
       m_format(format),
       m_printer(std::move(printer)),
-      m_show_column_type_info(show_column_type_info) {
+      m_show_column_type_info(show_column_type_info),
+      m_show_column_headers(show_column_headers),
+      m_wrap_result_metadata(wrap_result_metadata) {
   if (m_format == "ndjson") m_format = "json/raw";
 }
 
@@ -543,9 +546,12 @@ Resultset_dumper::Resultset_dumper(mysqlshdk::db::IResult *target,
                                    const std::string &wrap_json,
                                    const std::string &format,
                                    bool show_warnings, bool show_stats,
-                                   bool show_column_type_info)
+                                   bool show_column_type_info,
+                                   bool show_column_headers,
+                                   bool wrap_result_metadata)
     : Resultset_dumper_base(target, std::make_unique<Console_printer>(),
-                            wrap_json, format, show_column_type_info),
+                            wrap_json, format, show_column_type_info,
+                            show_column_headers, wrap_result_metadata),
       m_show_warnings(show_warnings),
       m_show_stats(show_stats) {}
 
@@ -748,8 +754,10 @@ size_t Resultset_dumper_base::dump_tabbed() {
     auto column = metadata[index];
 
     fmt.emplace_back(ResultFormat::TABBED, column);
-    m_printer->print(fmt.back().column_label());
-    m_printer->print(index < (field_count - 1) ? "\t" : "\n");
+    if (m_show_column_headers) {
+      m_printer->print(fmt.back().column_label());
+      m_printer->print(index < (field_count - 1) ? "\t" : "\n");
+    }
   }
 
   // Now prints the records
@@ -841,7 +849,9 @@ size_t Resultset_dumper_base::format_vertical(bool has_header, bool align_right,
  * - Statistics
  * - Warnings
  *
- * This function is used when JSON Wrapping is turned ON
+ * This function is used when JSON Wrapping is turned ON. Everything but the
+ * rows is left out when the result metadata is not wanted, in which case the
+ * document is the array of rows itself.
  */
 std::string Resultset_dumper_base::format_json(const std::string &item_label,
                                                bool is_doc_result, bool pretty,
@@ -850,11 +860,13 @@ std::string Resultset_dumper_base::format_json(const std::string &item_label,
   shcore::JSON_dumper dumper(
       pretty, mysqlsh::current_shell_options()->get().binary_limit);
 
-  dumper.start_object();
-  dumper.append_string("hasData");
-  dumper.append_bool(m_result->has_resultset());
+  if (m_wrap_result_metadata) {
+    dumper.start_object();
+    dumper.append_string("hasData");
+    dumper.append_bool(m_result->has_resultset());
 
-  dumper.append_string(item_label + "s");
+    dumper.append_string(item_label + "s");
+  }
   dumper.start_array();
 
   *row_count = 0;
@@ -875,6 +887,8 @@ std::string Resultset_dumper_base::format_json(const std::string &item_label,
   }
 
   dumper.end_array();
+
+  if (!m_wrap_result_metadata) return dumper.str();
 
   dumper.append_string("executionTime");
   dumper.append_string(
@@ -1212,7 +1226,8 @@ size_t dump_result(mysqlshdk::db::IResult *target,
                    const std::optional<std::string> &opt_format,
                    const std::optional<bool> &show_warnings,
                    const std::optional<bool> &show_stats,
-                   const std::optional<bool> &show_column_type_info) {
+                   const std::optional<bool> &show_column_type_info,
+                   bool show_column_headers, bool wrap_result_metadata) {
   const auto &options = mysqlsh::current_shell_options()->get();
 
   bool gui_mode = options.gui_mode;
@@ -1230,7 +1245,8 @@ size_t dump_result(mysqlshdk::db::IResult *target,
         target, wrap_json.value_or(options.wrap_json), format,
         show_warnings.value_or(options.show_warnings),
         show_stats.value_or(options.interactive),
-        show_column_type_info.value_or(options.show_column_type_info));
+        show_column_type_info.value_or(options.show_column_type_info),
+        show_column_headers, wrap_result_metadata);
   }
 
   return dumper->dump(item_label, is_query, is_doc_result);

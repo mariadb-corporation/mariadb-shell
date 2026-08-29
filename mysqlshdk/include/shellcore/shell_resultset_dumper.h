@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -125,7 +126,9 @@ class Resultset_dumper_base {
   Resultset_dumper_base(mysqlshdk::db::IResult *target,
                         std::unique_ptr<Resultset_printer> printer,
                         const std::string &wrap_json, const std::string &format,
-                        bool show_column_type_info = false);
+                        bool show_column_type_info = false,
+                        bool show_column_headers = true,
+                        bool wrap_result_metadata = true);
 
   size_t dump_tabbed();
   size_t dump_table();
@@ -148,6 +151,10 @@ class Resultset_dumper_base {
   shcore::atomic_flag m_cancelled;
   std::unique_ptr<Resultset_printer> m_printer;
   bool m_show_column_type_info;
+  //! Print the column names above a tabbed result
+  bool m_show_column_headers;
+  //! Include the result metadata in the JSON document wrapping the rows
+  bool m_wrap_result_metadata;
 };
 
 /**
@@ -158,7 +165,9 @@ class Resultset_dumper : public Resultset_dumper_base {
  public:
   Resultset_dumper(mysqlshdk::db::IResult *target, const std::string &wrap_json,
                    const std::string &format, bool show_warnings,
-                   bool show_stats, bool show_column_type_info = false);
+                   bool show_stats, bool show_column_type_info = false,
+                   bool show_column_headers = true,
+                   bool wrap_result_metadata = true);
   explicit Resultset_dumper(mysqlshdk::db::IResult *target,
                             bool show_column_type_info = false);
 
@@ -233,7 +242,9 @@ size_t dump_result(mysqlshdk::db::IResult *target,
                    const std::optional<std::string> &opt_format = {},
                    const std::optional<bool> &show_warnings = {},
                    const std::optional<bool> &show_stats = {},
-                   const std::optional<bool> &show_column_type_info = {});
+                   const std::optional<bool> &show_column_type_info = {},
+                   bool show_column_headers = true,
+                   bool wrap_result_metadata = true);
 
 }  // namespace mysqlsh
 #endif  // MYSQLSHDK_INCLUDE_SHELLCORE_SHELL_RESULTSET_DUMPER_H_

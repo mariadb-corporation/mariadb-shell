@@ -2076,14 +2076,17 @@ void Mysql_shell::process_sql_result(
       pager = current_console()->enable_pager();
     }
 
-    auto old_format = options().result_format;
-    if (info.show_vertical)
-      mysqlsh::current_shell_options()->set_result_format("vertical");
-    shcore::Scoped_callback clean([old_format = std::move(old_format)]() {
-      mysqlsh::current_shell_options()->set_result_format(old_format);
-    });
+    // The statement delimiter may request a format for this result only, the
+    // configured options are overridden for this dump rather than updated, so
+    // that the values seen through shell.options never change.
+    std::optional<std::string> wrap_json;
+    // A statement asking for a JSON result turns the wrapping on when it is
+    // off, when it is already on the configured flavor is kept
+    if (info.wrap_json && options().wrap_json == "off") wrap_json = "json";
 
-    mysqlsh::dump_result(result.get(), "row");
+    mysqlsh::dump_result(result.get(), "row", false, false, wrap_json,
+                         info.result_format, {}, {}, {},
+                         info.show_column_headers, info.wrap_result_metadata);
 
     auto cresult = dynamic_cast<mysqlshdk::db::mysql::Result *>(result.get());
     if (cresult && options().interactive) {

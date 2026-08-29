@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +28,7 @@
 #define _SHELL_SQL_H_
 
 #include <memory>
+#include <optional>
 #include <stack>
 #include <string>
 #include <utility>
@@ -40,9 +42,21 @@
 
 namespace shcore {
 
+/**
+ * How the result of a single statement is to be shown, as requested by the
+ * statement delimiter it was terminated with, see the \G handling in
+ * shell_sql.cc. The defaults leave the configured output options alone.
+ */
 struct Sql_result_info {
   double elapsed_seconds = 0.0;
-  bool show_vertical = false;
+  //! One of RESULTSET_DUMPER_FORMATS
+  std::optional<std::string> result_format;
+  //! Wrap the result in a JSON document even if the --json option is off
+  bool wrap_json = false;
+  //! Include the result metadata in the JSON document wrapping the rows
+  bool wrap_result_metadata = true;
+  //! Print the column names above a tabbed result
+  bool show_column_headers = true;
 };
 
 class SHCORE_PUBLIC Shell_sql : public Shell_language {

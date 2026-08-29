@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -43,13 +44,28 @@
 
 REGISTER_HELP(CMD_G_UC_BRIEF,
               "Send command to mysql server, display result vertically.");
-REGISTER_HELP(CMD_G_UC_SYNTAX, "<statement>\\G");
-REGISTER_HELP(CMD_G_UC_DETAIL,
-              "Execute the statement in the MySQL server and display results "
-              "in a vertical format, one field and value per line.");
+REGISTER_HELP(CMD_G_UC_SYNTAX, "<statement>\\G[<format>]");
+REGISTER_HELP(
+    CMD_G_UC_DETAIL,
+    "Execute the statement in the MySQL server and display results "
+    "in a given format, if no format is specified, vertical format is used.");
 REGISTER_HELP(
     CMD_G_UC_DETAIL1,
     "Useful for results that are too wide to fit the screen horizontally.");
+REGISTER_HELP(CMD_G_UC_DETAIL2,
+              "A format letter may be appended to display the result of the "
+              "statement in a format other than the vertical one:");
+REGISTER_HELP(CMD_G_UC_DETAIL3,
+              "@li j: JSON, one document per row, inside an array.");
+REGISTER_HELP(CMD_G_UC_DETAIL4,
+              "@li J: JSON, one document per row, with the full result "
+              "metadata.");
+REGISTER_HELP(CMD_G_UC_DETAIL5, "@li T: tab separated values, with a header.");
+REGISTER_HELP(CMD_G_UC_DETAIL6,
+              "@li t: tab separated values, without a header.");
+REGISTER_HELP(CMD_G_UC_DETAIL7,
+              "The T and t letters have no effect while the JSON output "
+              "wrapping is enabled with the --json option.");
 
 REGISTER_HELP(CMD_G_LC_BRIEF, "Send command to mysql server.");
 REGISTER_HELP(CMD_G_LC_SYNTAX, "<statement>\\g");
@@ -91,6 +107,45 @@ bool dollar_quoted_strings(
   FI_SUPPRESS(mysql);
   FI_SUPPRESS(mysqlx);
   return session->dollar_quoted_strings();
+}
+
+/**
+ * Fills in how the result is to be shown, as requested by the \G statement
+ * delimiter the statement was terminated with.
+ *
+ * \G on its own selects the vertical format, and it accepts one of the
+ * mysqlshdk::utils::k_result_format_suffixes to select a different format for
+ * the statement being executed. Any other delimiter, \g included, leaves the
+ * configured format in place.
+ */
+void apply_delimiter_format(std::string_view delimiter, Sql_result_info *info) {
+  if (delimiter.size() < 2 || delimiter[0] != '\\') return;
+  if (delimiter[1] != 'G') return;
+
+  info->result_format = "vertical";
+
+  if (delimiter.size() < 3) return;
+
+  switch (delimiter[2]) {
+    case 'j':
+      // one document per row, inside an array, no result metadata
+      info->result_format = "json";
+      info->wrap_json = true;
+      info->wrap_result_metadata = false;
+      break;
+    case 'J':
+      // one document per row, wrapped in the full result metadata
+      info->result_format = "json";
+      info->wrap_json = true;
+      break;
+    case 'T':
+      info->result_format = "tabbed";
+      break;
+    case 't':
+      info->result_format = "tabbed";
+      info->show_column_headers = false;
+      break;
+  }
 }
 
 }  // namespace
@@ -142,7 +197,8 @@ bool Shell_sql::process_sql(std::string_view query, std::string_view delimiter,
     try {
       std::shared_ptr<mysqlshdk::db::IResult> result;
       Sql_result_info info;
-      if (delimiter == "\\G") info.show_vertical = true;
+      apply_delimiter_format(delimiter, &info);
+
       try {
         mysqlshdk::utils::Profile_timer timer;
         timer.stage_begin("query");
@@ -399,7 +455,10 @@ std::pair<size_t, bool> Shell_sql::handle_command(const char *p, size_t len,
   static const char k_allowed_inline_commands[] = "wW";
   // handle single-letter commands
   if (len >= 2) {
-    if (p[1] == 'g' || p[1] == 'G') return {2, true};
+    if (const auto delim_length =
+            mysqlshdk::utils::statement_delimiter_length({p, len}))
+      return {delim_length, true};
+
     if (strchr(k_allowed_inline_commands, p[1])) {
       size_t skip = _owner->handle_inline_shell_command(std::string(p, len));
       if (skip > 0) return {skip, false};
@@ -453,6 +512,10 @@ void Shell_sql::execute(std::string_view sql) {
   };
 
   if (check_delim(";")) return;
+  for (const char suffix :
+       std::string_view{mysqlshdk::utils::k_result_format_suffixes}) {
+    if (check_delim(std::string{"\\G"} + suffix)) return;
+  }
   if (check_delim("\\G")) return;
   if (check_delim("\\g")) return;
   if (check_delim(get_main_delimiter())) return;
