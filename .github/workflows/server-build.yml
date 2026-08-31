@@ -19,6 +19,10 @@ env:
   CCACHE_DIR: '~/.cache/ccache'
 
 jobs:
+  ensure-runner:
+      uses: ./.github/workflows/devtools-ci-start.yml
+      secrets: inherit
+
   build-mariadb:
     name: Build MariaDB Server
     # Ensure this runs on your self-hosted runner

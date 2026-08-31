@@ -29,6 +29,10 @@ on:
         default: false
 
 jobs:
+  ensure-runner:
+      uses: ./.github/workflows/devtools-ci-start.yml
+      secrets: inherit
+  
   build:
     name: Shell-CI-Verification
 
