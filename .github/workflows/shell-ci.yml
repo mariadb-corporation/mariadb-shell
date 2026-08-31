@@ -30,7 +30,7 @@ on:
 
 jobs:
   ensure-runner:
-      uses: ./.github/workflows/shell-ci-start-vm.yml
+      uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
   
   build:
