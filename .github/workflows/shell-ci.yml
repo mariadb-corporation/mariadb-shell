@@ -37,6 +37,11 @@ jobs:
   start-vm:
       name: Start CI Instance
       runs-on: ubuntu-latest
+
+      permissions:
+        contents: read
+        id-token: write
+              
       steps:
         - name: Authenticate to Google Cloud
           uses: google-github-actions/auth@v2
