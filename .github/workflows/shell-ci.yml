@@ -30,11 +30,25 @@ on:
 
 jobs:
   ensure-runner:
+      # A PR tagged [bypass-ci] skips every build step, so there is no point
+      # spinning the self-hosted runner up for it.
+      if: ${{ !contains(github.event.pull_request.title, '[bypass-ci]') }}
       uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
   
   build:
     name: Shell-CI-Verification
+
+    needs: ensure-runner
+
+    # ensure-runner is skipped on two legitimate paths -- a [bypass-ci] PR, and
+    # a fork PR, which the reusable workflow declines because it has no access
+    # to the GCP secrets -- and both still want this job to run: the fork case
+    # builds on ubuntu-latest, the bypass case runs no steps but keeps the
+    # check reporting. Only a runner that actually failed to start should stop
+    # us, since every step below would then be waiting on a runner that is not
+    # coming.
+    if: ${{ always() && needs.ensure-runner.result != 'failure' && needs.ensure-runner.result != 'cancelled' }}
 
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
 
