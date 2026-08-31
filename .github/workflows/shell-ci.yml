@@ -32,6 +32,8 @@ jobs:
   ensure-runner:
       uses: ./.github/workflows/devtools-ci-start.yml
       secrets: inherit
+      if: |
+        !contains(github.event.pull_request.title, '[bypass-ci]')
   
   build:
     name: Shell-CI-Verification
