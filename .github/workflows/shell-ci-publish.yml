@@ -21,6 +21,7 @@ jobs:
   publish:
     name: Publish MariaDB Shell
     uses: ./.github/workflows/shell-ci.yml
+    secrets: inherit
     with:
       test: false
       publish: true
