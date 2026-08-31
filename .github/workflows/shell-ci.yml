@@ -28,35 +28,10 @@ on:
         required: false
         default: false
 
-env:
-  GCP_PROJECT_ID: "mariadb-devtools"
-  GCP_VM_NAME: "devtools-ci"
-  GCP_VM_ZONE: "us-central1-a"
-
 jobs:
-  start-vm:
-      name: Start CI Instance
-      runs-on: ubuntu-latest
-
-      permissions:
-        contents: read
-        id-token: write
-              
-      steps:
-        - name: Authenticate to Google Cloud
-          uses: google-github-actions/auth@v2
-          with:
-            workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-            service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-        - name: Set up Cloud SDK
-          uses: google-github-actions/setup-gcloud@v2
-
-        - name: Start VM (Instant if already running)
-          run: |
-            gcloud compute instances start ${{ env.GCP_VM_NAME }} \
-              --project=${{ env.GCP_PROJECT_ID }} \
-              --zone=${{ env.GCP_VM_ZONE }}
+  ensure-runner:
+      uses: ./.github/workflows/shell-ci-start-vm.yml
+  
   build:
     name: Shell-CI-Verification
 
