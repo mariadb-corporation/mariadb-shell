@@ -1593,6 +1593,9 @@ ENDIF()
 
 IF(_py_bundling AND NOT DEFINED PYTHON_DEPS_PACKAGES)
   SET(PYTHON_DEPS_PACKAGES "certifi;pyyaml;antlr4-python3-runtime;mcp")
+  IF(WIN32)
+    LIST(APPEND PYTHON_DEPS_PACKAGES "pywin32")
+  ENDIF()  
 ENDIF()
 
 # Tracks that PYTHON_DEPS below was produced by PYTHON_DEPS_PACKAGES (rather than
