@@ -7,9 +7,18 @@ on:
   workflow_dispatch: # Allows manual triggering from GitHub UI
 
 jobs:
+  ensure-runner:
+      # A PR tagged [bypass-ci] skips every build step, so there is no point
+      # spinning the self-hosted runner up for it.
+      if: ${{ !contains(github.event.pull_request.title, '[bypass-ci]') }}
+      uses: ./.github/workflows/devtools-ci-start.yml
+      secrets: inherit
+
   build-rocky9:
 
     name: Rocky-Linux-9-Build (${{ matrix.arch }})
+
+    needs: ensure-runner
 
     runs-on: ${{ matrix.os-runner }}
 
