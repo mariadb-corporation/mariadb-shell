@@ -1211,6 +1211,23 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
     MESSAGE(STATUS "OPENSSL_FULL_NAME ${OPENSSL_FULL_NAME}")
   ENDIF()
 
+  # OpenSSL 3 keeps some algorithms (MD4, RIPEMD160, DES, RC4, Blowfish) in a
+  # "legacy" provider that libcrypto loads as a separate module at run time,
+  # looking in the directory it was COMPILED to expect -- the build host's
+  # OpenSSL prefix, which no user has. The modules are therefore bundled, and
+  # shell_init.cc's init_openssl_modules() points OPENSSL_MODULES at the bundled
+  # copy; that only happens when BUNDLE_OPENSSL_MODULES is defined here.
+  #
+  # Locating them differs by platform. The usual install layout is a dedicated
+  # <prefix>/lib/ossl-modules directory, which the search below expects.
+  # vcpkg on Windows produces no such directory: the provider DLLs sit beside
+  # the OpenSSL DLLs in <prefix>/bin, so the search came up empty, silently --
+  # leaving BUNDLE_OPENSSL_MODULES undefined, OPENSSL_MODULES unset in the
+  # shipped package, and libcrypto hunting for providers in a build-host path.
+  # The symptom surfaces on the Python side, far from the cause: `cryptography`
+  # (pulled in by mcp -> pyjwt[crypto]) tries to load the legacy provider when
+  # its extension module is imported, so `import mcp` prints "OpenSSL 3's legacy
+  # provider failed to load".
   FIND_PATH(OPENSSL_MODULES_DIR
     NAMES ossl-modules
     NO_CMAKE_PATH
@@ -1219,23 +1236,57 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
     PATH_SUFFIXES lib lib64
   )
 
+  IF(WIN32)
+    SET(_module_ext "dll")
+  ELSEIF(APPLE)
+    SET(_module_ext "dylib")
+  ELSE()
+    SET(_module_ext "so")
+  ENDIF()
+
   IF(OPENSSL_MODULES_DIR)
     SET(OPENSSL_MODULES_DIR "${OPENSSL_MODULES_DIR}/ossl-modules")
     FILE(TO_CMAKE_PATH "${OPENSSL_MODULES_DIR}" OPENSSL_MODULES_DIR)
-    MESSAGE(STATUS "OPENSSL_MODULES_DIR ${OPENSSL_MODULES_DIR}")
 
-    IF(WIN32)
-      SET(_module_ext "dll")
-    ELSEIF(APPLE)
-      SET(_module_ext "dylib")
-    ELSE()
-      SET(_module_ext "so")
-    ENDIF()
-
+    # A directory that holds nothing but provider modules, so take all of it.
     FILE(GLOB OPENSSL_MODULES_LIST "${OPENSSL_MODULES_DIR}/*.${_module_ext}")
+  ELSEIF(WIN32 AND HAVE_CRYPTO_DLL)
+    # No dedicated directory: pick the providers out of the OpenSSL DLL
+    # directory BY NAME. It is shared with every other vcpkg DLL, so globbing it
+    # the way the branch above globs a private directory would bundle unrelated
+    # libraries as though they were OpenSSL providers.
+    GET_FILENAME_COMPONENT(_ossl_dll_dir "${HAVE_CRYPTO_DLL}" DIRECTORY)
+    SET(OPENSSL_MODULES_LIST "")
+
+    # OpenSSL 3's loadable providers; base/default/null are built into
+    # libcrypto itself and are never files on disk.
+    FOREACH(_ossl_module legacy fips)
+      IF(EXISTS "${_ossl_dll_dir}/${_ossl_module}.${_module_ext}")
+        LIST(APPEND OPENSSL_MODULES_LIST
+             "${_ossl_dll_dir}/${_ossl_module}.${_module_ext}")
+      ENDIF()
+    ENDFOREACH()
+
+    IF(OPENSSL_MODULES_LIST)
+      SET(OPENSSL_MODULES_DIR "${_ossl_dll_dir}")
+    ENDIF()
+  ENDIF()
+
+  IF(OPENSSL_MODULES_LIST)
+    MESSAGE(STATUS "OPENSSL_MODULES_DIR ${OPENSSL_MODULES_DIR}")
     MESSAGE(STATUS "OPENSSL_MODULES_LIST ${OPENSSL_MODULES_LIST}")
 
     add_definitions(-DBUNDLE_OPENSSL_MODULES)
+  ELSE()
+    # Warn rather than pass over it: this branch only runs for a build that
+    # bundles OpenSSL, and the result is a package whose OpenSSL cannot load a
+    # provider on any machine but this one -- previously a silent outcome.
+    MESSAGE(WARNING
+      "No OpenSSL provider modules found for the bundled OpenSSL (looked for an "
+      "ossl-modules directory under '${WITH_SSL_PATH}', and on Windows for the "
+      "provider DLLs beside the OpenSSL DLLs). The package will ship without "
+      "them, and OpenSSL will look for providers in this build host's paths: "
+      "algorithms from the legacy provider will be unavailable at run time.")
   ENDIF()
 ENDIF()
 

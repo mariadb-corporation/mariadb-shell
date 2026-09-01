@@ -194,7 +194,15 @@ if(BUNDLED_OPENSSL AND NOT WITH_PARFAIT)
       TARGET mariadb-shell
   )
 
-  IF(OPENSSL_MODULES_DIR)
+  # Keyed on the module list, not on the directory that was searched: what gets
+  # installed is the list, and it is what BUNDLE_OPENSSL_MODULES is keyed on too,
+  # so the bundled files and the OPENSSL_MODULES the shell sets cannot disagree.
+  #
+  # USE_LIBDIR keeps this under INSTALL_LIBDIR on Windows as well, rather than
+  # taking the usual lib->bin detour, because get_library_folder() -- what
+  # init_openssl_modules() joins "ossl-modules" onto -- is <home>/lib/mariadb-shell
+  # on every platform.
+  IF(OPENSSL_MODULES_LIST)
     install_bundled_binaries(
         DESCRIPTION "OpenSSL modules"
         BINARIES ${OPENSSL_MODULES_LIST}
