@@ -1575,8 +1575,8 @@ endif()
 #
 # When a bundle is being produced and the caller did not specify the list, it
 # defaults to the packages the bundled shell plugins require: certifi (CA bundle),
-# PyYAML, and the ANTLR4 Python runtime (antlr4-python3-runtime). Pass
-# -DPYTHON_DEPS_PACKAGES="..." to override, or an empty string
+# PyYAML, the ANTLR4 Python runtime (antlr4-python3-runtime), mcp, and on Windows
+# pywin32. Pass -DPYTHON_DEPS_PACKAGES="..." to override, or an empty string
 # (-DPYTHON_DEPS_PACKAGES=) to install none.
 #
 # This is not specific to MariaDB builds: certifi is imported by the plugin
@@ -1594,8 +1594,13 @@ ENDIF()
 IF(_py_bundling AND NOT DEFINED PYTHON_DEPS_PACKAGES)
   SET(PYTHON_DEPS_PACKAGES "certifi;pyyaml;antlr4-python3-runtime;mcp")
   IF(WIN32)
+    # Windows-only, and installed here rather than taken from whatever the build
+    # host happens to have in its site-packages, so the modules and the coupled
+    # DLLs in pywin32_system32 come from one release built for this ABI. The
+    # host's copy is filtered out of the package for that reason -- see the
+    # Python library bundling in src/CMakeLists.txt.
     LIST(APPEND PYTHON_DEPS_PACKAGES "pywin32")
-  ENDIF()  
+  ENDIF()
 ENDIF()
 
 # Tracks that PYTHON_DEPS below was produced by PYTHON_DEPS_PACKAGES (rather than
@@ -1709,6 +1714,102 @@ IF(PYTHON_DEPS_PACKAGES)
     FILE(WRITE "${_py_dep_stamp}" "${_py_pkg_list}")
   ELSE()
     MESSAGE(STATUS "Bundled Python packages already installed: ${_py_pkg_list}")
+  ENDIF()
+
+  # Cut pywin32 down to the modules mcp actually imports.
+  #
+  # pywin32 is here for one reason: mcp's Windows stdio transport imports
+  # pywintypes, win32api, win32con and win32job (mcp/os/win32/utilities.py),
+  # and nothing else in the package imports pywin32 at all. Shipping the whole
+  # wheel to satisfy that is 17 MB of COM, ADO, ISAPI and an MFC-based IDE.
+  #
+  # pythonwin/ in particular MUST NOT ship: its win32ui.pyd imports
+  # mfc140u.dll, and the win_arm64 wheel does not even carry a copy of it. MFC
+  # is a separate redistributable component that this package does not bundle
+  # and does not require users to install, so the result is an unresolved
+  # load-time dependency -- which scripts/verify_package.sh flags, by design
+  # (see the MFC note there).
+  #
+  # The keep list is a whitelist, not a "delete pythonwin" blacklist, so a
+  # future pywin32 release growing a new sub-package cannot silently re-enter
+  # the package. Each entry is required: the two .pyd modules are win32api and
+  # win32job, win32con is pure-Python constants, and pywintypes is the
+  # win32/lib/pywintypes.py shim -- which loads pywintypes<XY>.dll through
+  # _win32sysloader (so that .pyd is not optional) after pywin32.pth's
+  # `import pywin32_bootstrap` has put pywin32_system32 on the DLL search path
+  # via os.add_dll_directory. The .pth also adds win32, win32\lib and
+  # pythonwin to sys.path; the now-absent pythonwin line is inert, since site's
+  # .pth handling skips path entries that do not exist.
+  #
+  # The dist-info is kept so the bundled interpreter still reports the version
+  # it ships; its RECORD consequently lists files that are deliberately gone.
+  #
+  # Deliberately outside the stamp cache above, and idempotent (pruning an
+  # already-pruned staging directory is a no-op): a staging directory left by an
+  # earlier configure would otherwise keep its unpruned pywin32 for as long as
+  # the requested package list does not change.
+  IF(WIN32 AND EXISTS "${_py_deps_staging}/win32")
+    SET(_pywin32_keep
+        "pywin32.pth"
+        "pywin32.version.txt"
+        "win32/win32api.pyd"
+        "win32/win32job.pyd"
+        "win32/_win32sysloader.pyd"
+        "win32/lib/pywintypes.py"
+        "win32/lib/pywin32_bootstrap.py"
+        "win32/lib/win32con.py")
+
+    # Version-suffixed, hence globbed rather than named.
+    FILE(GLOB _pywin32_dlls
+         RELATIVE "${_py_deps_staging}"
+         "${_py_deps_staging}/pywin32_system32/pywintypes*.dll")
+    FILE(GLOB _pywin32_distinfo
+         RELATIVE "${_py_deps_staging}"
+         "${_py_deps_staging}/pywin32-*.dist-info")
+    LIST(APPEND _pywin32_keep ${_pywin32_dlls} ${_pywin32_distinfo})
+
+    # Stash what is kept, drop pywin32's top-level entries wholesale, restore.
+    # Copying out and back keeps this exact: pruning in place would leave the
+    # emptied directory tree behind, which CMake has no tidy way to remove.
+    SET(_pywin32_stash "${CMAKE_BINARY_DIR}/bundled-python-deps-pywin32")
+    FILE(REMOVE_RECURSE "${_pywin32_stash}")
+    FOREACH(_rel IN LISTS _pywin32_keep)
+      IF(NOT EXISTS "${_py_deps_staging}/${_rel}")
+        # A layout change upstream, not a missing optional file: shipping the
+        # rest would leave `import mcp` failing inside the finished package.
+        MESSAGE(FATAL_ERROR
+          "pywin32 does not contain '${_rel}', which mcp needs on Windows. "
+          "Its layout must have changed; update the keep list above.")
+      ENDIF()
+      GET_FILENAME_COMPONENT(_reldir "${_rel}" DIRECTORY)
+      FILE(COPY "${_py_deps_staging}/${_rel}"
+           DESTINATION "${_pywin32_stash}/${_reldir}")
+    ENDFOREACH()
+
+    # pywin32's own top-level entries, from its wheel manifest. GLOB drops the
+    # ones this pywin32 does not have, and the pip-generated console scripts
+    # for its post-install/test helpers go with them.
+    FILE(GLOB _pywin32_owned
+         "${_py_deps_staging}/PyWin32.chm"
+         "${_py_deps_staging}/adodbapi"
+         "${_py_deps_staging}/isapi"
+         "${_py_deps_staging}/pythoncom.py"
+         "${_py_deps_staging}/pythonwin"
+         "${_py_deps_staging}/pywin32.pth"
+         "${_py_deps_staging}/pywin32.version.txt"
+         "${_py_deps_staging}/pywin32_system32"
+         "${_py_deps_staging}/pywin32-*.dist-info"
+         "${_py_deps_staging}/win32"
+         "${_py_deps_staging}/win32com"
+         "${_py_deps_staging}/win32comext"
+         "${_py_deps_staging}/bin/pywin32_postinstall.py"
+         "${_py_deps_staging}/bin/pywin32_testall.py")
+    FILE(REMOVE_RECURSE ${_pywin32_owned})
+
+    FILE(COPY "${_pywin32_stash}/" DESTINATION "${_py_deps_staging}")
+    FILE(REMOVE_RECURSE "${_pywin32_stash}")
+    MESSAGE(STATUS
+      "Pruned bundled pywin32 to the modules mcp imports (no pythonwin/MFC)")
   ENDIF()
 
   # Feed the staged packages into the standard PYTHON_DEPS bundling path below.

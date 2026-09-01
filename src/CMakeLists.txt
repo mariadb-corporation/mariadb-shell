@@ -295,14 +295,14 @@ IF(HAVE_PYTHON)
     #
     # The Windows interpreter is a python.org / tool-cache install taken as it is
     # found, so its site-packages contains whatever the build host had installed
-    # there -- which on the GitHub runners means pywin32. Nothing in the shell or
-    # in any bundled plugin or dependency imports it (checked: only
-    # sys.platform == "win32" string tests), and it is not small: ~22 MB across
-    # win32/win32com/win32comext/pythonwin/isapi/adodbapi plus a 2.5 MB help
-    # file. It also drags in dependencies the package would then have to carry --
-    # pythonwin needs the MFC redistributable (mfc140u.dll), win32/odbc.pyd needs
-    # odbc32.dll, win32comext needs dsound.dll and activeds.dll -- none of which
-    # a stock Windows provides. Drop the whole component.
+    # there -- which on the GitHub runners means pywin32. pywin32 is a dependency
+    # we now ship deliberately (it is in the PYTHON_DEPS_PACKAGES default), but
+    # the copy we ship must be the one pip installed for this build, NOT the
+    # host's: pywin32's Python modules and its DLLs (pywin32_system32) are
+    # version-coupled, and both copies land in the same site-packages, so mixing
+    # them file-by-file produces import failures. The host's copy is therefore
+    # still filtered out here, and the pip-installed one is put back by the
+    # PYTHON_DEPS install below (declared later, so it lands last).
     #
     # The list is pywin32's own top-level entries, from its dist-info RECORD.
     # Anchored on a following slash or end-of-path so it cannot match a longer
@@ -334,6 +334,25 @@ IF(HAVE_PYTHON)
           DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}/Lib/site-packages"
           TARGET mariadb-shell
       )
+
+      # ...with one exception: install the staged packages explicitly as well.
+      #
+      # The copy above only populates the build tree, on the assumption that the
+      # Python library install carries it into the package as a subdirectory of
+      # Lib. That is true for every package except pywin32, which that install
+      # filters out (see above) and which would then be missing from the package
+      # even though pip installed it. Install straight from the pip staging
+      # directory rather than from the copy in the build tree: the build-tree
+      # site-packages holds the host's pywin32 overlaid with ours in whichever
+      # order the two copy targets happened to run, while the staging directory
+      # holds exactly what pip installed for this build.
+      #
+      # Everything else in PYTHON_DEPS is thus installed twice, from identical
+      # sources; that is a redundant file copy at install time, not a conflict.
+      install(DIRECTORY "${PYTHON_DEPS}/"
+          DESTINATION "lib/Python${PYTHONLIBS_MAJOR_MINOR}/Lib/site-packages"
+          USE_SOURCE_PERMISSIONS
+          COMPONENT main)
     ENDIF()
   elseif(BUNDLED_PYTHON_DIR)
     set(WRITE_RPATH TRUE)

@@ -326,9 +326,23 @@ list changes.
 use `-DPYTHON_DEPS=<dir>` (a pre-populated folder that is copied in).
 
 When a bundled Python is in use and you don't set `PYTHON_DEPS_PACKAGES`, it
-**defaults to `certifi;pyyaml;antlr4-python3-runtime;mcp`** — the packages the
-bundled shell plugins need. Override with your own list, or pass
-`-DPYTHON_DEPS_PACKAGES=` (empty) to install none.
+**defaults to `certifi;pyyaml;antlr4-python3-runtime;mcp`**, plus `pywin32` on
+Windows — the packages the bundled shell plugins need. Override with your own
+list, or pass `-DPYTHON_DEPS_PACKAGES=` (empty) to install none.
+
+On Windows the packaged `site-packages` deliberately drops the pywin32 that the
+build host's python.org install may already contain, and ships the one `pip`
+installed for this build instead; a `PYTHON_DEPS_PACKAGES` list without pywin32
+therefore produces a package with no pywin32 at all, even on a host that has it.
+
+That bundled pywin32 is also **pruned to the modules `mcp` imports** —
+`pywintypes`, `win32api`, `win32con`, `win32job` and the DLL loader behind them
+(~0.7 MB of the wheel's 17 MB). COM (`win32com`), ADO, ISAPI and `pythonwin` are
+dropped; `pythonwin` must be, because its `win32ui.pyd` needs `mfc140u.dll` — a
+Visual C++ redistributable component this package neither bundles nor requires,
+and which the `win_arm64` wheel does not ship at all. `import win32com` (or
+anything else outside that list) therefore fails in the bundled interpreter; the
+prune's keep list is in the top-level `CMakeLists.txt`, next to the pip install.
 
 ## 6.4. Additional Python modules
 

@@ -437,8 +437,10 @@ case "$(uname -s)" in
     #
     # MFC (mfc140*.dll) is NOT in it, on purpose: it is a separate redist
     # component, and the only thing that ever pulled it in was pywin32's
-    # pythonwin -- which src/CMakeLists.txt excludes from the package for exactly
-    # that reason. Leave it flagged so a regression there is still caught.
+    # pythonwin (win32ui.pyd) -- which the bundled pywin32 is pruned of in the
+    # top-level CMakeLists.txt for exactly that reason, the win_arm64 wheel not
+    # even carrying a copy of mfc140u.dll to bundle. Leave it flagged so a
+    # regression there is still caught.
     VCRUNTIME_RE='^(vcruntime140|vcruntime140_1|vcruntime140_threads|msvcp140|msvcp140_1|msvcp140_2|msvcp140_atomic_wait|msvcp140_codecvt_ids|concrt140|vcomp140|vcamp140)\.dll$'
 
     # DLLs Windows itself provides. The api-ms-win-* / ext-ms-win-* families are
