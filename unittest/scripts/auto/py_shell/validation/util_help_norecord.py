@@ -37,10 +37,12 @@ FUNCTIONS
             target instance. Requires an open global Shell session to the
             source instance, if there is none, an exception is raised.
 
+?{__have_binlog_utils}
       dump_binlogs(outputUrl[, options])
             Dumps binary logs generated since a specific point in time to the
             given local or remote directory.
 
+?{}
       dump_instance(outputUrl[, options])
             Dumps the whole database to files in the output directory.
 
@@ -67,10 +69,12 @@ ${}
             Import table dump stored in files to target table using LOAD DATA
             LOCAL INFILE calls in parallel connections.
 
+?{__have_binlog_utils}
       load_binlogs(url[, options])
             Loads binary log dumps created by MySQL Shell from a local or
             remote directory.
 
+?{}
       load_dump(url[, options])
             Loads database dumps created by MySQL Shell.
 ?{}
@@ -998,7 +1002,6 @@ DESCRIPTION
       - mysql.schema
       - mysql.slow_log
       - mysql.transaction_registry
-      - mysql.transaction_registry
 
       Dumps cannot be created for the following schemas:
 
@@ -1471,7 +1474,6 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
-      - mysql.transaction_registry
       - mysql.transaction_registry
 
       Options

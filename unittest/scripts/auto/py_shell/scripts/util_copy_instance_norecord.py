@@ -111,8 +111,10 @@ EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: The value of 'threads' o
 
 #@<> WL15298_TSFR_4_1_3_1
 # WL15298_TSFR_1_3_2
-# src is an X session
-EXPECT_SUCCESS(__sandbox_uri2, src = get_ssl_config(src_session, get_x_config(src_session, __sandbox_uri1)))
+# src is an X session - a build without the X protocol has no such session, and
+# MariaDB has no X plugin to connect to either
+if __have_x_protocol:
+    EXPECT_SUCCESS(__sandbox_uri2, src = get_ssl_config(src_session, get_x_config(src_session, __sandbox_uri1)))
 # WL15298_TSFR_1_3_3
 # src is using SSL
 EXPECT_SUCCESS(__sandbox_uri2, { "excludeUsers": [ "root" ] }, src = get_ssl_config(src_session, test_user_uri(__mysql_sandbox_port1)))
@@ -121,8 +123,9 @@ EXPECT_STDOUT_CONTAINS("Running data dump using 4 threads")
 
 #@<> WL15298_TSFR_4_1_3_2
 # WL15298_TSFR_1_3_2
-# tgt is an X session
-EXPECT_SUCCESS(get_x_config(tgt_session, __sandbox_uri2))
+# tgt is an X session - see above
+if __have_x_protocol:
+    EXPECT_SUCCESS(get_x_config(tgt_session, __sandbox_uri2))
 # WL15298_TSFR_1_3_3
 # tgt is using SSL
 # the user is copied from the source server to make sure that the CREATE USER statements for validation are the same
@@ -138,7 +141,7 @@ EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [] })
 #@<> WL15298_TSFR_4_4_7
 EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Unknown compatibility option: unknown_compat_mode", __sandbox_uri2, { "compatibility": [ "unknown_compat_mode" ] })
 
-#@<> WL15298_TSFR_4_4_8 {VER(>=8.0.24)}
+#@<> WL15298_TSFR_4_4_8 {VER(>=8.0.24) and not __server_is_maria_db}
 # this tests that compatibility mode is recognized (there's no error)
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "create_invisible_pks" ], "ddlOnly": True })
 
@@ -370,10 +373,12 @@ EXPECT_STDOUT_NOT_CONTAINS("Analyzing tables")
 #@<> WL15298_TSFR_4_5_11
 EXPECT_SUCCESS(__sandbox_uri2, { "analyzeTables": "histogram" })
 # NOTE: functionality is checked in load tests
-if __version_num > 80000:
+# histograms are MySQL 8.0+; MariaDB has its own statistics and the loader warns
+# that it cannot create them instead of analyzing anything
+if not __server_is_maria_db and __version_num > 80000:
     EXPECT_STDOUT_CONTAINS("Analyzing tables")
 else:
-    EXPECT_OUTPUT_CONTAINS(f"Histogram creation enabled but MySQL Server {__version} does not support it.")
+    EXPECT_OUTPUT_CONTAINS(f"Histogram creation enabled but {server_vendor_name} Server {__version} does not support it.")
 
 #@<> WL15298 - test analyzeTables option
 EXPECT_SUCCESS(__sandbox_uri2, { "analyzeTables": "on" })
@@ -464,7 +469,7 @@ if instance_supports_libraries:
 TEST_ARRAY_OF_STRINGS_OPTION("sessionInitSql")
 
 #@<> WL15298_TSFR_4_5_31
-EXPECT_FAIL("RuntimeError", "Error while executing sessionInitSql: MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'wrong' at line 1", __sandbox_uri2, { "sessionInitSql": [ "wrong" ] })
+EXPECT_FAIL("RuntimeError", f"Error while executing sessionInitSql: MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near 'wrong' at line 1", __sandbox_uri2, { "sessionInitSql": [ "wrong" ] })
 
 #@<> WL15298 - test sessionInitSql option
 EXPECT_SUCCESS(__sandbox_uri2, { "sessionInitSql": [ "INSERT INTO ver.t VALUES (1)" ] }, setup = lambda: tgt_session.run_sql('CREATE SCHEMA ver') and tgt_session.run_sql('CREATE TABLE ver.t (a INT)'))
@@ -880,7 +885,9 @@ test_table_partitioned = "part"
 test_table_empty = "empty"
 test_table_gipk = "gipk"
 test_table_timestamp = "ts"
-gipk_supported = __version_num >= 80030
+# generated invisible primary keys are MySQL 8.0.30+; MariaDB has neither them
+# nor the show_gipk_in_create_table_and_information_schema variable
+gipk_supported = not __server_is_maria_db and __version_num >= 80030
 
 def setup_db():
     src_session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])

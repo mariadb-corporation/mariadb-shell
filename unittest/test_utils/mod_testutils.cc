@@ -1560,9 +1560,19 @@ void Testutils::deploy_sandbox_with_plugin(
   if (!raw) (*options)["serverId"] = shcore::Value(port);
   if (timeout > 0) (*options)["timeout"] = shcore::Value(timeout);
 
+  auto extra = shcore::make_array();
+
+  // A MySQL 8.0+ instance starts with binary logging on, MariaDB's default is
+  // off, and the scripted tests were written against the MySQL default: they
+  // reset the binary log, read its position and size the binlog cache. Give a
+  // MariaDB sandbox a binary log too, so the tests mean the same thing on both
+  // servers. A raw sandbox is left exactly as the server would start it, and a
+  // test which passes its own log_bin still wins - the plugin keeps the last
+  // value for a repeated option.
+  if (!raw) extra->push_back(shcore::Value("log_bin=binlog"));
+
   // Forward any extra my.cnf options as 'option=value' strings.
-  if (my_cnf_opts && !my_cnf_opts->empty()) {
-    auto extra = shcore::make_array();
+  if (my_cnf_opts) {
     for (const auto &kv : *my_cnf_opts) {
       const std::string value =
           kv.second.get_type() == shcore::Value_type::String
@@ -1570,8 +1580,9 @@ void Testutils::deploy_sandbox_with_plugin(
               : kv.second.descr();
       extra->push_back(shcore::Value(kv.first + "=" + value));
     }
-    (*options)["mariadbdOptions"] = shcore::Value(extra);
   }
+
+  if (!extra->empty()) (*options)["mariadbdOptions"] = shcore::Value(extra);
 
   run_sandbox_plugin("deploy", port, options);
 

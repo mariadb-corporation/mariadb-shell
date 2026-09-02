@@ -3713,8 +3713,10 @@ void Dump_loader::check_server_version() {
   if (m_options.analyze_tables() ==
           Load_dump_options::Analyze_table_mode::HISTOGRAM &&
       !dump::common::supports_histograms(m_options.target_server()))
-    console->print_warning("Histogram creation enabled but MySQL Server " +
-                           target_server.get_base() + " does not support it.");
+    console->print_warning(std::string{"Histogram creation enabled but "} +
+                           (target.is_maria_db ? "MariaDB" : "MySQL") +
+                           " Server " + target_server.get_base() +
+                           " does not support it.");
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
     if (target.is_maria_db) {
       // MariaDB's GTIDs are domain-based d-s-seq positions with no

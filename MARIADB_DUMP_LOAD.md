@@ -28,9 +28,12 @@
 > can be provisioned from a dump, and MariaDB's own object types - sequences,
 > CHECK constraint enforcement, Oracle-mode packages, and users, roles and
 > grants - all round-trip; the MySQL build is verified unaffected (§11.7, §12.5,
-> §13.7, §14.4, §15.6, §16.4, §19.4, §20.5). Phase 6 (the end-to-end suites)
-> outstanding, and §4.5's `mysql.column_stats` is the last unported object.
-> Last updated: 2026-08-18.
+> §13.7, §14.4, §15.6, §16.4, §19.4, §20.5). **Phase 6 (tests) is in progress**
+> (§21): the component-level tests are green on both vendors at last - the four
+> failures every earlier phase carried are fixed or gated - and five of the twelve
+> scripted end-to-end suites pass on MariaDB, the four big `util_dump_*` ones being
+> what is left. §4.5's `mysql.column_stats` is the last unported object.
+> Last updated: 2026-08-19.
 
 ---
 
@@ -923,7 +926,7 @@ predicates without it.
 | 5b | ~~**Check constraints** (§4.5)~~ **DONE** (§17) — the DDL already round-tripped; the load now switches `check_constraint_checks` off, so a table holding rows its own constraints reject can be restored. | Not an object-metadata problem at all: MySQL's non-enforcement is per-constraint DDL, MariaDB's is a session variable, so only the restoring side had a gap. |
 | 5c | ~~**Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5).~~ **DONE** (§19) — dumped by the routine pass in mysqldump's order, filtered as routines, dropped and duplicate-checked on load. | Same failure as sequences, not the predicted one: a package was cached as a *function*, so the dump aborted on `SHOW CREATE FUNCTION`. |
 | 5d | ~~**Users, roles and grants** (§4.2, §4.6)~~ **DONE** (§20) — `users: true` works on a MariaDB-dialect dump; roles get `CREATE ROLE` / `DROP ROLE` of their own, `SHOW GRANTS` output is trimmed to its own grantee and the default role moves to its own block. 52037 stays, narrowed to the MySQL-shaped dump it was written for. | Nothing predicted here was the problem. `SHOW CREATE USER` does not *omit* a role, it **fails** for one; `IDENTIFIED VIA x OR y` round-trips verbatim; and the auth plugins only matter if the target lacks one. What did bite: `SHOW GRANTS FOR` a role is *transitive*. |
-| 6 | **Tests.** The end-to-end dump/load suites, deferred on MariaDB until here (§12.6); follow the `schema_dumper_t.cc` recipe (capture real MariaDB output, splice `#ifndef MARIADB_BUILD` into raw-string expectations). Include a `util.copy*` smoke test — the in-memory writer path is not covered by dump+load tests. | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
+| 6 | **Tests — in progress** (§21). The end-to-end suites, deferred on MariaDB until here (§12.6). The component-level tests are green on both vendors, and the `util.copy*` suites this row asked for — the in-memory writer path — are the first ones passing; the four big `util_dump_*` suites are what remains (§21.8). | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
 
 ---
 
@@ -1259,10 +1262,14 @@ same filter on a clean tree):
   becoming vendor-aware in §7.3, so it belongs with phase 2 rather than phase 6.
 - `User_privileges_test.partial_revokes` — sets a MySQL-only system variable on
   a MariaDB server; same treatment, same phase.
-- `Schema_dumper_test.{dump_grants, dump_filtered_grants, opt_mysqlaas,
+- ~~`Schema_dumper_test.{dump_grants, dump_filtered_grants, opt_mysqlaas,
   compat_ddl, unknown_collations}` — genuine expected-output differences,
   needing the `schema_dumper_t.cc` recipe from the
-  `mariadb-schema-dumper-tests` note. Phase 6.
+  `mariadb-schema-dumper-tests` note. Phase 6.~~ **All resolved in phase 6**
+  (§21.5): the grant ones were fixed along the way by §20, and the three mysqlaas
+  ones are skipped — two on the server's vendor, `unknown_collations` on the
+  build's, because it runs off a mock session and only the linked charset table
+  decides.
 
 ~~Also still open: `Version::is_mds()` is vendor-blind (§7.1).~~ **Fixed in
 phase 2** (§13.4).
@@ -2614,3 +2621,249 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
 - **Column statistics (`mysql.column_stats`) are still not dumped** — §4.5's last
   open item, and the only remaining piece of §4.5/§4.6. It is data, not ACL, so
   it did not belong here.
+
+---
+
+## 21. Phase 6 — in progress
+
+Started 2026-08-19. Goal is §9's last row: the end-to-end suites, deferred on
+MariaDB since §12.6. The component-level tests are **done** — the four failures
+every phase since §13.7 has carried are gone (§21.5) — and the scripted suites are
+being brought up one at a time (§21.8).
+
+Two things had to be fixed before a single scripted suite could run at all, and
+neither was a test:
+
+- **A stale sandbox boilerplate outranked a freshly built one.** The `sandbox`
+  plugin bootstraps one data directory per server version and copies it per
+  sandbox. The reuse check required a version stamp, but the *cleanup* of an
+  unstamped directory sat inside the same branch, so a boilerplate left behind by
+  an interrupted `mariadb-install-db` was never removed — and the publish step
+  then discarded the newly built one as if a concurrent deploy had won a race.
+  Every sandbox came up with an empty `mysql` schema and the deploy timed out with
+  `Can't open and lock privilege tables: Table 'mysql.db' doesn't exist`.
+  `_boilerplate_is_complete()` now decides both, and six unit tests in
+  `test_unit_runtime.py` pin it.
+- **`testutil.import_data()` needs a working client binary.** It shells out to
+  `mysql`/`mariadb` from `PATH` to load the SQL fixtures, and the client in the
+  MariaDB tarballs links `libgnutls`, which was missing locally — every suite died
+  in its Setup chunk. An environment fix (`brew install gnutls` here), but worth
+  knowing: the *server* binaries do not need it, so sandboxes deployed fine while
+  every suite failed.
+
+### 21.1 `__server_is_maria_db` — the gate the scripts were missing
+
+The scripted suites decide what to run from `__version_num`, reading it as "has
+what MySQL 8 has". MariaDB's numbering is its own, so on a MariaDB server every
+one of those checks answers yes, and the suites then use MySQL-only variables,
+plugins, statements and privileges. That is the same trap §7 fixed in the product
+code, and it needs the same fix in the tests: `unittest/shell_script_tester.cc`
+now defines **`__server_is_maria_db`** from `target_server_is_maria_db()`, beside
+`__version_num`.
+
+It is keyed on the **server**, like every product gate since §13 — a Shell built
+against either vendor can be pointed at either server. `__mariadb_build` is
+reserved for the two differences that really do come from the linked client
+library (§21.4).
+
+Chunk conditions compose, so a MySQL-only case becomes
+`#@<> title {VER(>=8.0.24) and not __server_is_maria_db}`.
+
+### 21.2 MySQL's version-gated comments are inert on MariaDB, not fatal
+
+The suites make MySQL-only statements conditional with executable comments —
+`/*!80021 alter instance disable innodb redo_log */`,
+`CREATE SCHEMA … /*!80016 DEFAULT ENCRYPTION='Y' */`,
+`REVOKE RELOAD /*!80023 , FLUSH_TABLES */`, `/*!80013 DEFAULT (RAND() * RAND())*/`,
+`/*!90200 CREATE LIBRARY …*/`. The obvious reading is that MariaDB, reporting
+120302, satisfies every one of those thresholds and runs them all.
+
+**It does not.** Measured on 12.3.2: MariaDB executes `/*!VERSION … */` for
+`VERSION` up to **50600** and again from **100000** — its own numbering — and
+*skips* everything in between, which is exactly the MySQL 5.7 … 9.x range. So
+every one of those statements is silently a no-op there, and none of them needed a
+vendor check. (`/*M!VERSION … */` is the mirror image: only MariaDB executes it,
+which is what the port's own DDL uses.)
+
+What that does change is the **fixtures**: on MariaDB the "encrypted" schema is not
+encrypted, the expression defaults are absent, no histogram is created and no
+library exists — so assertions about those *effects* still have to be gated, even
+though nothing raised an error. `/*!32312 IF NOT EXISTS*/`, which the dumper itself
+writes, is below the cutoff and runs on both vendors, so expected-output strings
+carrying it need no change.
+
+### 21.3 The shared helpers were the biggest lever
+
+Every suite calls `wipeout_server()` between cases, and it alone accounted for
+most of the early failures:
+
+| | Was | Now |
+|---|---|---|
+| `is_dynamic_data_masking_enabled()` | `SELECT … FROM mysql.component` for any server ≥ 9.7 by number, i.e. every MariaDB | false for MariaDB - there are no components |
+| `wipeout_users()` | dropped `mariadb.sys`, which owns the `mysql.user` view, so every later query failed with 1446 "definer does not exist" | reserved like `mysql.session` and friends, and MariaDB's roles are dropped with `DROP ROLE` (a `DROP USER` on a role reports success and does nothing, §20.1) |
+| `reset BINARY LOGS AND GTIDS` | a syntax error on MariaDB, and issued even with no binary log | `RESET MASTER` on MariaDB (`get_reset_binary_logs_keyword()` and its three siblings - the binary-log-status, replication-source and replication-option keywords - are vendor-aware now), skipped when `@@log_bin` is off |
+| the GTID state | `RESET MASTER` does not clear `gtid_slave_pos`, so a target kept the position an earlier case restored and `updateGtidSet: 'append'` was then correctly refused | `SET GLOBAL gtid_slave_pos = ''` alongside the reset |
+| `snapshot_accounts()` | `SHOW CREATE USER` for every `mysql.user` row - error 1133 on a role | a role is snapshotted by name and grants alone |
+| `snapshot_libraries()` | `information_schema.libraries` for any server ≥ 9.2 by number | `instance_supports_libraries` is false for MariaDB |
+| `get_ssl_config()` | client certificates from the data directory, where MySQL auto-generates them | next to the server certificate the instance is configured with, which holds for both layouts |
+
+### 21.4 Two differences that are the client library's, not the server's
+
+Both are gated on `__mariadb_build`, and they are the only cases where that is the
+right question to ask:
+
+- **`net-buffer-length` does not influence sub-chunking.** libmysqlclient sizes
+  the `LOAD DATA LOCAL` read callback from the connection's net buffer
+  (`MY_ALIGN(net.max_packet - 16, IO_SIZE)`, `libmysql.cc`); libmariadb hands it a
+  fixed 4096-byte buffer (`ma_loaddata.c`). `util_copy_trx`'s rows are crafted to
+  sit exactly on the transaction limit, so the smaller reads put one of them into
+  a sub-chunk of its own: 10 sub-chunks where MySQL gets 9. The data is
+  checksummed either way, and `maxBytesPerTransaction` still bounds every
+  transaction — only the split points move.
+- **A refused connection is worded differently.** libmariadb reports 2002
+  `Can't connect to server on '<host>'` where libmysqlclient reports 2003
+  `Can't connect to MySQL server on '<host>:<port>'`. `cannot_connect_error()`
+  returns the pair.
+
+And the same 4096-byte buffer cost the loader a **diagnostic**, which is a product
+fix rather than a test one. `Transaction_buffer::consume()` decided that a row was
+longer than `maxBytesPerTransaction` by comparing *one read* against the limit —
+true only where the read size comes from the net buffer. With 4096-byte reads no
+read is ever that big, so `util.loadDump` on a MariaDB-linked build stayed silent
+about the one thing the user needs to know when a load fails on transaction size:
+which row is too long. The detection moved to `read()`, where the answer is already
+known — the buffer holds a whole transaction's worth of data with no row boundary
+in it — and `mark_oversized_row()` reports it once per row per transaction. The
+`Transaction_buffer.oversized_row_detection_does_not_depend_on_read_size` unit test
+pins it across read sizes from a quarter of the limit to four times it.
+
+### 21.5 The component-level tests are green
+
+The four failures §13.7 recorded and every later phase repeated are resolved:
+
+- **`Instance_cache_test.table_columns` was a real gap, and the fix is in the
+  product.** The test asserts that the type the cache reads out of
+  `information_schema` matches the type the same column arrives with on the wire.
+  MariaDB's JSON is `LONGTEXT` plus an automatic `json_valid()` CHECK constraint,
+  so I_S reports `longtext` — but the wire protocol *does* know: the server sends
+  `format=json` in the extended metadata, and the Shell has reported such a column
+  as `Type::Json` since the extended-metadata commit. So the cache was the half
+  that was wrong. `fetch_json_check_constraints()` now reads
+  `I_S.CHECK_CONSTRAINTS` on a MariaDB source and types those columns as JSON,
+  behind `json_columns_use_check_constraints()` (§7.3) — one extra query, MariaDB
+  only, and only when the dump has tables.
+
+  The rule it applies is the server's own, measured on 12.3.2: a text column is
+  JSON when its **column-level** constraint has a `json_valid()` call at the top
+  level of its expression, alone or as a conjunct of an `AND`
+  (`Field_longstr::make_send_field()` and
+  `Item_cond_and::set_format_by_check_constraint()`). An `OR` does not count, a
+  table-level constraint does not count, and `json_valid()`'s argument is not
+  looked at — a constraint naming a *different* column still makes this one JSON.
+  `Instance_cache_test.maria_db_json_columns` pins all six shapes and re-checks
+  them against the protocol metadata.
+- **`Schema_dumper_test.opt_mysqlaas` and `compat_ddl` are skipped when the server
+  is MariaDB.** They exercise the MySQL HeatWave Service compatibility pass, which
+  `Dump_options::on_validate()` refuses outright for a MariaDB source (§4.11): the
+  DDL rewriting, the restricted privilege names and the collation mapping are all
+  MySQL's, so there is no reachable behaviour to port expected output for.
+- **`Schema_dumper_test.unknown_collations` is skipped on a MariaDB *build*.** It
+  runs off a mock session, so the server has no say: `is_supported_collation()`
+  asks the linked client library's charset table, where MariaDB's own
+  `utf8mb4_uca1400_*` collations are known — and therefore not replaced — while the
+  MySQL names they would be replaced with do not exist at all.
+
+One product message was wrong for MariaDB and is fixed here: the loader warned
+"Histogram creation enabled but **MySQL** Server 12.3.2 does not support it".
+
+### 21.6 The binlog suites are not registered where the utility is not built
+
+`util.dumpBinlogs()` / `util.loadBinlogs()` stay MySQL-only (§11.2), so
+`find_py_tests()` skips any script whose name contains `binlogs` unless
+`HAVE_BINLOG_UTILS` is defined. That covers `util_dump_binlogs`,
+`util_dump_binlogs_replication`, `util_load_binlogs` and the cloud variants.
+
+### 21.7 A MariaDB test sandbox now has a binary log
+
+MySQL 8.0+ logs by default and MariaDB does not, and the suites were written
+against the MySQL default: they reset the binary log, read its position and size
+the binlog cache against `max_binlog_cache_size`. `deploy_sandbox_with_plugin()`
+therefore passes `log_bin=binlog` for a non-raw sandbox, where a test's own
+`log_bin` still wins. Raw sandboxes are left exactly as the server starts them.
+
+### 21.8 Where the suites stand
+
+Component-level tests, MariaDB 12.3.2 (a throwaway empty-password sandbox):
+`Schema_dumper_test` + `Instance_cache_test` are **40 passed, 0 failed**, five
+skipped (§21.5). The MySQL build against MySQL 26.7.0 is **42 passed, 0 failed**
+with the MariaDB-only tests skipped, and `util_copy_trx` — the suite whose
+expectations §21.4 touched — still passes there.
+
+Scripted suites on MariaDB, one gtest each:
+
+| Suite | State |
+|---|---|
+| `util_dump_chunking` | **passes** |
+| `util_dump_instance_corners` | **passes** (already did) |
+| `util_copy_trx` | **passes** — 26 failures at the start of the phase |
+| `util_copy_tables` | **passes** — 96 failures at the start |
+| `util_copy_schemas` | **passes** — 11 after the shared-helper fixes |
+| `util_copy_instance` | in progress |
+| `util_load_dump_trx`, `util_dump_and_load_ddm`, `util_dump_and_load_extra` | in progress |
+| `util_dump_and_load`, `util_dump_instance`, `util_dump_schemas`, `util_dump_tables` | **not yet** — the four big ones (16k lines between them) |
+| `util_dump_binlogs`, `util_dump_binlogs_replication`, `util_load_binlogs` | not registered (§21.6) |
+
+The four remaining suites got their first honest run once the environment was
+fixed - `util_dump_and_load` 173 failure blocks, `util_dump_instance` 218,
+`util_dump_schemas` 139, `util_dump_tables` 415 - and the causes are catalogued
+rather than unknown. Counting the distinct first causes across all four:
+
+- **33 × `ocimds` refused for a MariaDB source.** Whole sections exist only to
+  exercise the MySQL HeatWave Service compatibility pass, the same thing §21.5
+  skips two unit tests for. They need chunk-level gating, not new expectations.
+- **28 × "Target MariaDB version 'x' is newer than the MariaDB version this MySQL
+  Shell was built against (13.1.0)".** The suites synthesize `targetVersion`
+  values from the *Shell's* version (26.x), which is the right yardstick only for
+  MySQL: §7.4 made the reference version vendor-dependent, so the helpers that
+  build those values have to follow.
+- **22 × `Unknown system variable`** - `partial_revokes`,
+  `sql_generate_invisible_primary_key`, `show_gipk_in_create_table_and_information_schema`
+  and friends, the same shape §21.3 fixed centrally for the shared helpers.
+- **44 × "An open session is required"**, which are cascades of the above rather
+  than causes of their own.
+
+The rest is expected-output work: MySQL's display widths and collation names in
+DDL, where the `schema_dumper_t.cc` recipe from the `mariadb-schema-dumper-tests`
+note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so the
+*effects* asserted afterwards do not happen (§21.2).
+
+### 21.9 Not done here
+
+- **The four big dump suites** (§21.8). They are the bulk of what is left of this
+  phase. Their `targetVersion` sections need one thing the scripts do not have
+  yet: the version the Shell was *built against* per §7.4, since on a MariaDB
+  build that - not `__mysh_version` - is the yardstick the option is validated
+  against. A `__build_server_version` script variable fed from
+  `mysqlshdk::utils::k_build_server_version` would cover the ~28 failures that
+  currently read "Target MariaDB version 'x' is newer than the MariaDB version
+  this MySQL Shell was built against".
+- **The MySQL build has only been spot-checked on the scripted side** —
+  `util_copy_trx` passes there, and both builds compile. The full MySQL scripted
+  run is still the gate this phase has to clear before it can be called done, and
+  `util_dump_instance` is **known-red on the MySQL build** from before this work:
+  phase 2 moved `targetVersion` validation into `on_validate()` and lost the
+  unpacker's `Argument #N:` prefix, which fails 12 assertions there.
+- **The JavaScript suites are untouched.** `util_load_dump_norecord.js` and the
+  `cli_dump_*` scripts only run where the Shell has JS, which a MariaDB build does
+  not (`HAVE_JS`), so nothing there can be exercised from this side.
+- **`util.importTable`'s own suites were not part of this pass**, only the
+  dump/load and copy ones.
+- **`transaction_registry` data is now skipped rather than translated.** Its rows
+  are MariaDB's system-versioning bookkeeping, and the load could not write them
+  anyway (error 1556), so a dump of the `mysql` schema carries the table's DDL and
+  none of its rows — the same treatment `general_log` and `slow_log` have always
+  had. Nothing reads it back.
+- **`snapshot_routines()` in the test helper still asks only for `PROCEDURE` and
+  `FUNCTION`**, so a MariaDB package is not part of an instance snapshot. The
+  package round-trip has its own coverage (§19), and widening the helper would
+  change every snapshot comparison at once.

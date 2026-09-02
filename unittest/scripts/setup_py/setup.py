@@ -1009,7 +1009,8 @@ class Docker_manipulator:
 
 
 def get_reset_binary_logs_keyword():
-    if __version_num < 80200:
+    # MariaDB kept RESET MASTER and has no RESET BINARY LOGS AND GTIDS
+    if __server_is_maria_db or __version_num < 80200:
         return "MASTER"
 
     return "BINARY LOGS AND GTIDS"
@@ -1023,21 +1024,26 @@ def get_replica_keyword():
 
 
 def get_replication_source_keyword():
-    if __version_num < 80022:
+    # MariaDB has the REPLICA spellings (10.5.1+) but not CHANGE REPLICATION
+    # SOURCE TO - it is still CHANGE MASTER TO
+    if __server_is_maria_db or __version_num < 80022:
         return "MASTER"
 
     return "REPLICATION SOURCE"
 
 
 def get_replication_option_keyword():
-    if __version_num < 80022:
+    # ... and its options are still MASTER_HOST, MASTER_PORT and so on
+    if __server_is_maria_db or __version_num < 80022:
         return "MASTER"
 
     return "SOURCE"
 
 
 def get_binary_log_status_keyword():
-    if __version_num < 80200:
+    # MariaDB kept SHOW MASTER STATUS; SHOW BINARY LOG STATUS is a syntax error
+    # there (it spells the new form SHOW BINLOG STATUS)
+    if __server_is_maria_db or __version_num < 80200:
         return "MASTER"
 
     return "BINARY LOG"
@@ -1171,7 +1177,8 @@ def supports_dynamic_data_masking(uri: str) -> bool:
     return True
 
 def is_dynamic_data_masking_enabled(sess) -> bool:
-    if __version_num < 90700:
+    # a MySQL 9.7 component, and mysql.component does not even exist on MariaDB
+    if __server_is_maria_db or __version_num < 90700:
         return False
 
     if sess.run_sql("SELECT 1 FROM mysql.component WHERE component_urn = 'file://component_object_policy'").fetch_one():

@@ -113,9 +113,13 @@ def get_ssl_config(s, uri = None):
         config["host"] = __host
     if "port" not in config:
         config["port"] = get_sysvar(s, "port")
-    datadir = get_sysvar(s, "datadir")
-    config["ssl-key"] = os.path.join(datadir, "client-key.pem")
-    config["ssl-cert"] = os.path.join(datadir, "client-cert.pem")
+    # MySQL auto-generates the certificates into the data directory, while the
+    # sandbox plugin generates MariaDB's into the sandbox directory above it; in
+    # both cases the client pair sits next to the server certificate the instance
+    # is actually configured with
+    certdir = os.path.dirname(get_sysvar(s, "ssl_cert")) or get_sysvar(s, "datadir")
+    config["ssl-key"] = os.path.join(certdir, "client-key.pem")
+    config["ssl-cert"] = os.path.join(certdir, "client-cert.pem")
     return config
 
 def get_x_config(s, uri = None):
@@ -148,7 +152,10 @@ def EXPECT_SUCCESS_IMPL(method, connectionData, options, src, setup, *args):
     if "showProgress" not in options:
         options["showProgress"] = False
     if method.__name__ == "copy_instance" and options.get("users", True) and "excludeUsers" not in options:
-        options["excludeUsers"] = [ "'root'@'%'" ]
+        # mariadb-install-db creates root for the host name, '::1' and '127.0.0.1'
+        # as well as 'localhost', and both sandboxes have all of them, so every
+        # account named root has to be left out - a bare name excludes all hosts
+        options["excludeUsers"] = [ "root" ] if __server_is_maria_db else [ "'root'@'%'" ]
     dump_options, load_options = dump_and_load_options(options)
     test_output = 'copy'
     shutil.rmtree(test_output, True)

@@ -38,14 +38,19 @@ def prepare(sbport, options={}):
         testutil.mkdir(datadir+"/test datadir")
     options.update({
         "loose_innodb_directories": datadir,
-        "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
-        "keyring_file_data": datadir+"/keyring",
         "local_infile": "1",
         "tmpdir": mysql_tmpdir,
         "innodb_doublewrite": "OFF",
         # small sort buffer to force stray filesorts to be triggered even if we don't have much data
         "sort_buffer_size": 32768
     })
+    if not __server_is_maria_db:
+        # keyring_file is a MySQL plugin; MariaDB refuses to start with an
+        # unknown early_plugin_load and has no keyring_file_data variable
+        options.update({
+            "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
+            "keyring_file_data": datadir+"/keyring",
+        })
     testutil.deploy_sandbox(sbport, "root", options)
 
 
@@ -220,16 +225,18 @@ binlog_info_header = "---"
 binlog_file = ""
 binlog_position = 0
 gtid_executed = ""
-if __version_num < 80200:
-    binlog_info = session1.run_sql("SHOW MASTER STATUS").fetch_one()
-else:
-    binlog_info = session1.run_sql("SHOW BINARY LOG STATUS").fetch_one()
+binlog_info = session1.run_sql(f"SHOW {get_binary_log_status_keyword()} STATUS").fetch_one()
 
 if binlog_info is not None:
     if len(binlog_info[0]) > 0:
         binlog_file = binlog_info[0]
         binlog_position = str(binlog_info[1])
-    if len(binlog_info[4]) > 0:
+    if __server_is_maria_db:
+        # MariaDB's SHOW MASTER STATUS has four columns and none of them is a
+        # GTID set - the position of the whole server is gtid_current_pos, which
+        # is what the dump carries (MARIADB_DUMP_LOAD.md section 15)
+        gtid_executed = session1.run_sql("SELECT @@GLOBAL.gtid_current_pos").fetch_one()[0]
+    elif len(binlog_info[4]) > 0:
         gtid_executed = binlog_info[4]
 
 metadata_file = os.path.join(outdir, "fulldump", "@.json")
@@ -329,7 +336,9 @@ session1.run_sql(f"create table {dbname}.bug_33976259 (a int, b int, c int, PRIM
 session1.run_sql(f"insert into {dbname}.bug_33976259 values {','.join([f'(1, 1, {i})' for i in range(1000)])}")
 session1.run_sql(f"analyze table {dbname}.bug_33976259")
 
-if __version_num > 80000:
+# histograms are MySQL's; MariaDB collects its own column statistics with
+# ANALYZE TABLE ... PERSISTENT FOR, and has no UPDATE HISTOGRAM syntax
+if not __server_is_maria_db and __version_num > 80000:
     for t in range(500):
         sql = f"ANALYZE TABLE {dbname}.table{t} UPDATE HISTOGRAM ON `column0`;"
         session1.run_sql(sql)
@@ -345,7 +354,11 @@ for i in range(500):
     session1.run_sql(sql)
 
 with ExitStack() as stack:
-    if __os_type != "windows":
+    # MariaDB materializes information_schema queries into internal Aria tables in
+    # tmpdir, so a read-only tmpdir stops the dump for a reason which has nothing
+    # to do with a filesort ("Can't create/write to file '#sql-temptable-....MAI'")
+    # - the dump and load below still run, they just cannot prove that much there
+    if __os_type != "windows" and not __server_is_maria_db:
         # make the tmpdir read-only to force an error when tmpfiles are created (like when filesort is used) during dump
         os.chmod(mysql_tmpdir, 0o550)
         # allow writing to tmpdir for loading (executed when leaving the 'with' scope)
