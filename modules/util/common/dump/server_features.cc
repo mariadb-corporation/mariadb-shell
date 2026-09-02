@@ -190,6 +190,14 @@ bool supports_ps_current_thread_id(const Server_version &v) {
 
 bool supports_gipks(const Server_version &v) { return mysql_only(v, 80030); }
 
+bool supports_invisible_pks(const Server_version &v) {
+  // MySQL has had INVISIBLE columns since 8.0.23, but this option has always
+  // asked for 8.0.24. MariaDB has had them since 10.3.0 - verified against
+  // 12.3.2, which takes `my_row_id BIGINT UNSIGNED AUTO_INCREMENT INVISIBLE
+  // PRIMARY KEY` and hides the column from SELECT * exactly as MySQL does.
+  return mysql_only(v, 80024) || maria_db_only(v, 100300);
+}
+
 bool supports_invisible_pk_replication(const Server_version &v) {
   return mysql_only(v, 80032);
 }

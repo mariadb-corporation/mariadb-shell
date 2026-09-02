@@ -371,6 +371,16 @@ bool supports_ps_current_thread_id(const Server_version &v);
 bool supports_gipks(const Server_version &v);
 
 /**
+ * Whether the server accepts the invisible AUTO_INCREMENT PRIMARY KEY column
+ * the 'createInvisiblePKs' option adds. Unlike supports_gipks(), which is about
+ * the server generating that key on its own, this only asks whether it can
+ * parse the DDL the loader writes - MariaDB has INVISIBLE columns (10.3.0) but
+ * no sql_generate_invisible_primary_key, so it takes the loader's own
+ * add_invisible_pk() path.
+ */
+bool supports_invisible_pks(const Server_version &v);
+
+/**
  * Whether a dump loaded with generated invisible primary keys can be used for
  * inbound replication into a High Availability DB System.
  */
