@@ -1948,6 +1948,7 @@ Data dumps cannot be created for the following tables:
 @li mysql.general_log
 @li mysql.schema
 @li mysql.slow_log
+@li mysql.transaction_registry
 )*");
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_EXPORT_DIALECT_OPTION_DETAILS, R"*(

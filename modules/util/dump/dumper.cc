@@ -6331,7 +6331,13 @@ bool Dumper::should_dump_data(const Table_task &table) const {
   if (table.info->columns.empty() ||
       (table.schema == "mysql" &&
        (table.name == "apply_status" || table.name == "general_log" ||
-        table.name == "schema" || table.name == "slow_log"))) {
+        table.name == "schema" || table.name == "slow_log" ||
+        // MariaDB's system-versioning metadata. It is an ordinary InnoDB table,
+        // but the server treats it as a log table, so it can neither be locked
+        // nor loaded into: LOAD DATA fails with 1556 "You can't use locks with
+        // log tables". Listed unconditionally, like the NDB tables above - a
+        // MySQL instance has no table of that name.
+        table.name == "transaction_registry"))) {
     return false;
   } else {
     return true;

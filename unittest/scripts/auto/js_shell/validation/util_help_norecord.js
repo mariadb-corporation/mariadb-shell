@@ -992,6 +992,7 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Dumps cannot be created for the following schemas:
 
@@ -1464,6 +1465,7 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Options
 
