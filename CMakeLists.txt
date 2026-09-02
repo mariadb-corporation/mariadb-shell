@@ -28,6 +28,24 @@ MESSAGE(STATUS "Running cmake version ${CMAKE_VERSION}")
 # configure; it is a no-op outside a git checkout. See cmake/git_hooks.cmake.
 INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_hooks.cmake)
 
+# Build the test suite by default; pass -DWITH_TESTS=0 to build without it.
+#
+# Resolved HERE, this early, because it selects a vcpkg manifest feature and not
+# merely what gets compiled: Google Test is declared under the "tests" feature in
+# vcpkg.json rather than as an unconditional dependency, so a -DWITH_TESTS=0
+# build does not install it at all. The manifest is installed twice -- explicitly
+# by bootstrap_vcpkg.cmake just below, and again by the vcpkg toolchain when
+# project() reads it -- and both must ask for the SAME feature set, or the second
+# re-resolves the tree the first just populated. VCPKG_MANIFEST_FEATURES is what
+# the toolchain reads, so it has to be set before either runs.
+IF(NOT DEFINED WITH_TESTS)
+  SET(WITH_TESTS 1)
+ENDIF()
+
+IF(WITH_TESTS)
+  LIST(APPEND VCPKG_MANIFEST_FEATURES "tests")
+ENDIF()
+
 # When the caller asks for vcpkg-managed dependencies via -DWITH_VCPKG_TRIPLET,
 # fetch and bootstrap vcpkg and derive CMAKE_TOOLCHAIN_FILE / VCPKG_TARGET_TRIPLET
 # (and VCPKG_ROOT). This must run before the first project() call (CMake reads
@@ -561,13 +579,8 @@ IF(NOT PACKAGE_YEAR)
 ENDIF()
 add_definitions(-DPACKAGE_YEAR="${PACKAGE_YEAR}")
 
-# Build the test suite by default. WITH_TESTS gates test compilation and
-# ENABLE_TESTING below; when the caller did not set it either way, turn it on.
-# Pass -DWITH_TESTS=0 to build without tests.
-IF(NOT DEFINED WITH_TESTS)
-  SET(WITH_TESTS 1)
-ENDIF()
-
+# WITH_TESTS is defaulted at the top of this file, ahead of the vcpkg bootstrap
+# that consumes it; only the testing side of it is left here.
 IF(WITH_TESTS)
   ENABLE_TESTING()
 ENDIF()

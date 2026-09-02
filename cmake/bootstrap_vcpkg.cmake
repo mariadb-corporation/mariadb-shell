@@ -293,12 +293,24 @@ MESSAGE(STATUS "vcpkg: building both debug and release for every port "
 #    finds everything up to date and is a near no-op. Passing anything else
 #    here would populate one tree and leave the toolchain to build another.
 ##############################################################################
-MESSAGE(STATUS "Installing vcpkg manifest dependencies (triplet '${VCPKG_TARGET_TRIPLET}')...")
+#    The optional features are part of "anything else": VCPKG_MANIFEST_FEATURES
+#    is what the toolchain will ask for, so this install has to ask for exactly
+#    the same set. Left out here, this call would install the featureless
+#    closure and the toolchain would then re-resolve it at project().
+SET(_vcpkg_feature_args "")
+FOREACH(_vcpkg_feature ${VCPKG_MANIFEST_FEATURES})
+  LIST(APPEND _vcpkg_feature_args "--x-feature=${_vcpkg_feature}")
+ENDFOREACH()
+
+MESSAGE(STATUS "Installing vcpkg manifest dependencies (triplet "
+               "'${VCPKG_TARGET_TRIPLET}', features: "
+               "'${VCPKG_MANIFEST_FEATURES}')...")
 EXECUTE_PROCESS(
   COMMAND "${_vcpkg_exe}" install
           --triplet "${VCPKG_TARGET_TRIPLET}"
           --x-manifest-root "${CMAKE_CURRENT_SOURCE_DIR}"
           --x-install-root "${VCPKG_INSTALLED_DIR}"
+          ${_vcpkg_feature_args}
   RESULT_VARIABLE _rc)
 IF(NOT _rc EQUAL 0)
   MESSAGE(FATAL_ERROR "vcpkg manifest install failed (see output above)")

@@ -14,7 +14,6 @@
     "libssh",
     "antlr4",
     "rapidjson",
-    "gtest",
     "sqlite3",
     {
       "name": "libffi",
@@ -36,6 +35,14 @@
     },
     "zstd"
   ],
+  "features": {
+    "tests": {
+      "description": "Dependencies of the unit-test suite; selected by -DWITH_TESTS=1",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  },
   "overrides": [
     {
       "name": "openssl",

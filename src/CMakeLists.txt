@@ -741,6 +741,25 @@ IF(USING_VCPKG AND (WIN32 OR APPLE OR LINUX))
                                           "zlib.*${_vcpkg_ext_re}"
                                           "z${_vcpkg_ext_re}")
     ENDIF()
+    IF(OPENSSL_MODULES_LIST)
+      # Bundled by name into INSTALL_LIBDIR/ossl-modules, which is where
+      # init_openssl_modules() points OPENSSL_MODULES. On Windows vcpkg keeps the
+      # providers in this very runtime directory, so without this they would also
+      # ship loose beside the executable -- a second, unreachable copy.
+      LIST(APPEND _vcpkg_exclude_patterns "legacy${_vcpkg_ext_re}"
+                                          "fips${_vcpkg_ext_re}")
+    ENDIF()
+    # Google Test is deliberately NOT excluded here even though it is no part of
+    # the product. This bundling step is not only a packaging step: it also
+    # populates the build tree, and run_unit_tests resolves libgmock/libgtest
+    # from there through its rpath rather than from the vcpkg tree. Excluding
+    # them removes the copy the test binary loads, and it dies at startup with
+    # "libgmock.so.1.17.0: cannot open shared object file".
+    #
+    # Keeping them out of the package is handled a step earlier instead: gtest is
+    # a vcpkg manifest feature selected by WITH_TESTS, so a -DWITH_TESTS=0 build
+    # never installs it and the glob above never sees it. A build that does build
+    # the tests bundles them, which is the trade for having them loadable.
 
     SET(_vcpkg_bundle_libs "")
     FOREACH(_lib ${_vcpkg_all_libs})
