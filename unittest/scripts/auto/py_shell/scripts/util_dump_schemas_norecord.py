@@ -1208,10 +1208,11 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basen
 # * `mysql.general_log`
 # * `mysql.schema`
 # * `mysql.slow_log`
+# * `mysql.transaction_registry`
 # WL13807-TSFR6_1
 EXPECT_SUCCESS(["mysql"], test_output_absolute, { "chunking": False, "showProgress": False })
 
-for table in ["apply_status", "general_log", "schema", "slow_log"]:
+for table in ["apply_status", "general_log", "schema", "slow_log", "transaction_registry"]:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", table) + ".tsv.zst")))
     exists = os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", table) + ".sql"))
     if 1 == session.run_sql("SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA = 'mysql' AND TABLE_NAME = ?", [table]).fetch_one()[0]:

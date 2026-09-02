@@ -1598,6 +1598,7 @@ for schema in ["information_schema", "mysql", "ndbinfo", "performance_schema", "
 # * `mysql.general_log`
 # * `mysql.schema`
 # * `mysql.slow_log`
+# * `mysql.transaction_registry`
 # WL13807-TSFR6_1
 # this requirement does not apply to dump_instance(), as according to FR5.1.3, mysql schema is always excluded
 
