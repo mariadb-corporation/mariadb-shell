@@ -1406,6 +1406,15 @@ GRANT SELECT, INSERT, LOCK TABLES ON *.* TO 'abr@dab'@'localhost';
 }
 
 TEST_F(Schema_dumper_test, opt_mysqlaas) {
+  if (target_server_is_maria_db()) {
+    // opt_mysqlaas is the MySQL HeatWave Service compatibility pass, which
+    // Dump_options::on_validate() refuses outright for a MariaDB source: the
+    // rewriting it does, the restricted privileges it names and the collations
+    // it maps to are all MySQL's, so there is nothing here a MariaDB dump can
+    // reach.
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   session->execute(std::string("use ") + compat_db_name);
   const auto mstg =
       create_table_in_mysql_schema_for_grant("testusr6@localhost");
@@ -1603,6 +1612,12 @@ TEST_F(Schema_dumper_test, opt_mysqlaas) {
 }
 
 TEST_F(Schema_dumper_test, compat_ddl) {
+  if (target_server_is_maria_db()) {
+    // same as opt_mysqlaas: this is the DDL the MySQL HeatWave Service
+    // compatibility options rewrite, and they are refused for a MariaDB source
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   session->execute(std::string("use ") + compat_db_name);
   const auto mstg =
       create_table_in_mysql_schema_for_grant("testusr6@localhost");
@@ -2532,6 +2547,16 @@ TEST_F(Schema_dumper_test, strip_restricted_grants_set_any_definer) {
 }
 
 TEST_F(Schema_dumper_test, unknown_collations) {
+#ifdef MARIADB_BUILD
+  // Unlike the other mysqlaas tests this one runs off a mock session, so it is
+  // the build and not the server which decides the answer: is_supported_collation
+  // asks the *linked* client library's charset table, where MariaDB's own
+  // utf8mb4_uca1400_* collations are known - and therefore not replaced - while
+  // the MySQL HeatWave Service names they would be replaced with
+  // (utf8mb4_vi_0900_ai_ci and the like) do not exist at all.
+  SKIP_TEST("This test requires a build linked against MySQL");
+#endif
+
   const auto dump_schema = [](std::string_view collation) {
     const auto s = std::make_shared<testing::Mock_mysql_session>();
 

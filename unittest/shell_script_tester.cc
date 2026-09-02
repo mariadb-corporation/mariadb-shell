@@ -1750,6 +1750,13 @@ void Shell_script_tester::set_defaults() {
                             version_num);
   exec_and_out_equals(code);
 
+  // The vendor of the server the tests run against. Scripts need this wherever
+  // they would otherwise read a version number as if it implied MySQL: MariaDB's
+  // numbering is its own, so '__version_num >= 80000' does not mean "has what
+  // MySQL 8.0 has". Keyed on the server and not on __mariadb_build, since a
+  // Shell built against either vendor can be pointed at either server.
+  def_bool_var("__server_is_maria_db", target_server_is_maria_db());
+
   // Set terminology related variables
   if (version_num > 80025) {
     def_var("__replica_keyword", "'replica'");
@@ -1811,6 +1818,12 @@ void Shell_script_tester::set_defaults() {
   def_bool_var("__have_upgrade_checker", true);
 #else
   def_bool_var("__have_upgrade_checker", false);
+#endif
+
+#ifdef HAVE_BINLOG_UTILS
+  def_bool_var("__have_binlog_utils", true);
+#else
+  def_bool_var("__have_binlog_utils", false);
 #endif
 
   // Dump/load is built for every vendor now; the variable is kept (always true)

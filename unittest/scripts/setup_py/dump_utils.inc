@@ -15,6 +15,19 @@ supported_versions = f"8.0 <= version < 10.0 or 26.7 <= version <= {'.'.join(__m
 def unsupported_target_version_msg(version):
     return f"Target MySQL version '{version}' is not supported by this version of MySQL Shell. Supported MySQL Server versions are {supported_versions}"
 
+# The name the Shell and the server use for the vendor in their messages.
+server_vendor_name = "MariaDB" if __server_is_maria_db else "MySQL"
+
+# The two client libraries word a refused connection differently, and libmariadb
+# reports the socket error code for a host it resolves locally: it says 2002
+# "Can't connect to server on '<host>'" where libmysqlclient says 2003 "Can't
+# connect to MySQL server on '<host>:<port>'". Which library is linked is a
+# property of the build, not of the server.
+def cannot_connect_error(host, port):
+    if __mariadb_build:
+        return ("DBError: MySQL Error (2002)", f"Can't connect to server on '{host}'")
+    return ("DBError: MySQL Error (2003)", f"Can't connect to MySQL server on '{host}:{port}'")
+
 def md5_table(session, schema, table, where = "", partitions = []):
     columns = []
     has_pri = 0 != session.run_sql("SELECT COUNT(*) FROM information_schema.statistics WHERE index_name = 'PRIMARY' AND table_schema = ? AND table_name = ?", [schema, table]).fetch_one()[0]
@@ -46,9 +59,26 @@ def snapshot_account(session, auser, ahost):
         user["grants"].append(row[0])
     return user
 
+# A MariaDB role has no CREATE statement to read - SHOW CREATE USER fails for one
+# with error 1133 - and SHOW GRANTS only accepts it hostless, so a role is
+# snapshotted by name and by its grants alone (MARIADB_DUMP_LOAD.md section 20).
+def snapshot_role(session, name):
+    role = {}
+    role["grants"] = []
+    for row in session.run_sql("SHOW GRANTS FOR !", [name]).fetch_all():
+        role["grants"].append(row[0])
+    return role
+
 def snapshot_accounts(session):
     accounts = {}
+    roles = set()
+    if __server_is_maria_db:
+        for row in session.run_sql("SELECT user FROM mysql.user WHERE is_role = 'Y'").fetch_all():
+            roles.add(row[0])
     for row in session.run_sql("SELECT user, host FROM mysql.user").fetch_all():
+        if row[0] in roles and not row[1]:
+            accounts[row[0]] = snapshot_role(session, row[0])
+            continue
         user = snapshot_account(session, row[0], row[1])
         name = row[0] + "@" + row[1]
         accounts[name]=user
@@ -166,8 +196,19 @@ def snapshot_instance(session):
     return json.loads(json.dumps(snapshot))
 
 def wipeout_users(session):
+    reserved = ["root", "mysql.infoschema", "mysql.sys", "mysql.session"]
+    if __server_is_maria_db:
+        # a MariaDB role lives in mysql.user as well, with is_role='Y' and an
+        # empty host, and only DROP ROLE removes one - DROP USER reports success
+        # and leaves it standing. PUBLIC is a role which cannot be dropped.
+        for role, in session.run_sql("select user from mysql.user where is_role='Y' and user <> 'PUBLIC'").fetch_all():
+            session.run_sql("drop role !", [role])
+        # mariadb.sys is the internal account owning the mysql.user view over
+        # mysql.global_priv - the counterpart of mysql.infoschema and friends -
+        # so dropping it breaks every later query on mysql.user
+        reserved += ["mariadb.sys", "PUBLIC"]
     for user,host in session.run_sql("select user,host from mysql.user").fetch_all():
-        if user not in ["root", "mysql.infoschema", "mysql.sys", "mysql.session"]:
+        if user not in reserved:
             session.run_sql("drop user ?@?", [user,host])
 
 def wipeout_masking_policies(session):
@@ -185,7 +226,15 @@ def wipeout_server(session):
         session.run_sql("drop schema `"+schema+"`")
     wipeout_users(session)
     wipeout_masking_policies(session)
-    session.run_sql("reset " + get_reset_binary_logs_keyword())
+    # a server without a binary log has nothing to reset, and rejects the
+    # statement outright - MariaDB does not log by default
+    if session.run_sql("SELECT @@log_bin").fetch_one()[0]:
+        session.run_sql("reset " + get_reset_binary_logs_keyword())
+    if __server_is_maria_db:
+        # RESET MASTER clears the binary log, but a MariaDB instance's GTID state
+        # also includes gtid_slave_pos - which is where a load restores a dumped
+        # position (MARIADB_DUMP_LOAD.md section 15) - and that survives it
+        session.run_sql("SET GLOBAL gtid_slave_pos = ''")
     session.run_sql("set global foreign_key_checks=1")
 
 def truncate_all_tables(session):
@@ -243,8 +292,13 @@ def compare_user_grants(session1, session2, user):
 
 def compare_users(session1, session2):
     users = set()
+    # a MariaDB role is a mysql.user row with an empty host, and SHOW GRANTS only
+    # accepts it hostless - 'r'@'' is error 1141 (MARIADB_DUMP_LOAD.md section 20)
+    query = "select concat(quote(user), '@', quote(host)) from mysql.user"
+    if __server_is_maria_db:
+        query = "select if(is_role = 'Y', concat('`', user, '`'), concat(quote(user), '@', quote(host))) from mysql.user"
     for s in [session1, session2]:
-        for user, in s.run_sql("select concat(quote(user), '@', quote(host)) from mysql.user").fetch_all():
+        for user, in s.run_sql(query).fetch_all():
             users.add(user)
     for user in users:
         compare_user_grants(session1, session2, user)
@@ -892,7 +946,9 @@ test_user = "sample_user"
 test_user_account = get_test_user_account(test_user)
 test_user_pwd = "p4$$"
 
-instance_supports_libraries = __version_num >= 90200
+# JavaScript libraries are a MySQL 9.2+ object type, and information_schema has
+# no 'libraries' table on MariaDB at all
+instance_supports_libraries = not __server_is_maria_db and __version_num >= 90200
 
 partition_awareness_capability = {
     "id": "partition_awareness",

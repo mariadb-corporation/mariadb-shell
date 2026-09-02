@@ -472,16 +472,23 @@ def TEST_DUMP_AND_LOAD(schemas, options = {}):
 EXPECT_FAIL("RuntimeError", "An open session is required to perform this operation.", test_output_relative)
 
 #@<> deploy sandbox
-testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", {
+sandbox_options = {
     "loose_innodb_directories": filename_for_file(table_data_directory),
-    "early-plugin-load": "keyring_file." + ("dll" if __os_type == "windows" else "so"),
-    "keyring_file_data": filename_for_file(os.path.join(incompatible_table_directory, "keyring")),
     "log-bin": "binlog",
     "server-id": str(random.randint(1, 4294967295)),
-    "enforce_gtid_consistency": "ON",
-    "gtid_mode": "ON",
     "innodb_doublewrite": "OFF"
-})
+}
+if not __server_is_maria_db:
+    # MariaDB refuses to start with an unknown early_plugin_load and has no
+    # keyring_file plugin, and it has neither gtid_mode nor
+    # enforce_gtid_consistency - its GTIDs are always on
+    sandbox_options.update({
+        "early-plugin-load": "keyring_file." + ("dll" if __os_type == "windows" else "so"),
+        "keyring_file_data": filename_for_file(os.path.join(incompatible_table_directory, "keyring")),
+        "enforce_gtid_consistency": "ON",
+        "gtid_mode": "ON",
+    })
+testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", sandbox_options)
 
 #@<> wait for server
 testutil.wait_sandbox_alive(uri)
@@ -3906,7 +3913,7 @@ EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()
 EXPECT_FAIL("ValueError", f"Argument #2: Malformed condition used for table '{schema_name}'.'{no_partitions_table_name}': 1 = 1) --", test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1) --" }, "showProgress": False })

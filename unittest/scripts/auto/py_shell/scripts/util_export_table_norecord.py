@@ -1252,7 +1252,7 @@ EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), quote(schema_name, no_partitions_table_name), test_output_absolute, { "where": "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL", "showProgress": False }, expect_file_created = True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()
 EXPECT_FAIL("ValueError", f"Malformed condition used for table '{schema_name}'.'{no_partitions_table_name}': 1 = 1) --", quote(schema_name, no_partitions_table_name), test_output_absolute, { "where": "1 = 1) --", "showProgress": False })

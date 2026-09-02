@@ -33,14 +33,20 @@ def prepare(sbport, options={}):
         testutil.mkdir(os.path.join(datadir, "test datadir"))
     options.update({
         "loose_innodb_directories": datadir,
-        "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
-        "keyring_file_data": os.path.join(datadir, "keyring"),
         "local_infile": "1",
         "tmpdir": mysql_tmpdir,
         "innodb_doublewrite": "OFF",
         # small sort buffer to force stray filesorts to be triggered even if we don't have much data
         "sort_buffer_size": 32768,
     })
+    if not __server_is_maria_db:
+        # keyring_file is a MySQL plugin; MariaDB refuses to start with an
+        # unknown early_plugin_load and has no keyring_file_data variable (its
+        # counterpart is the file_key_management plugin)
+        options.update({
+            "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
+            "keyring_file_data": os.path.join(datadir, "keyring"),
+        })
     if __os_type == "windows":
         options.update({
             "named_pipe": "1",
