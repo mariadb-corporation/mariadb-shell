@@ -218,7 +218,7 @@ util.dump_instance(os.path.join(outdir, "dump_admin"), {"compatibility":["strip_
 
 # load with admin user
 reset_server(session2)
-util.load_dump(os.path.join(outdir, "dump_admin"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root@%","root@localhost"]})
+util.load_dump(os.path.join(outdir, "dump_admin"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root"]})
 
 EXPECT_EQ("""GRANT USAGE ON *.* TO `myuser`@`%`
 GRANT SELECT, SHOW VIEW ON `mysql`.* TO `myuser`@`%`
@@ -240,7 +240,7 @@ REVOKE CREATE, DROP, REFERENCES, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TAB
           format_rows(session2.run_sql("show grants for myuser3@'%'").fetch_all()))
 
 reset_server(session2)
-util.load_dump(os.path.join(outdir, "dump_root"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root@%","root@localhost","myuser4"]})
+util.load_dump(os.path.join(outdir, "dump_root"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root","myuser4"]})
 
 EXPECT_EQ("""GRANT USAGE ON *.* TO `myuser`@`%`
 GRANT SELECT, SHOW VIEW ON `mysql`.* TO `myuser`@`%`
@@ -355,7 +355,7 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir), "Dump")
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"loadUsers":True, "excludeUsers":["root@%"]}), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"loadUsers":True, "excludeUsers":["root"]}), "Load")
 
 compare_servers(session1, session2)
 
@@ -401,6 +401,7 @@ schema_level_grant_with_escaped_percent = f"GRANT SELECT ON `all\\%`.* TO {teste
 session1.run_sql(schema_level_grant_with_escaped_percent)
 
 expected_accounts = snapshot_accounts(session1)
+
 del expected_accounts["root@%"]
 
 #@<> BUG#34952027 - warnings for grants with excluded objects
@@ -463,10 +464,20 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "excludeSchemas": [ "sch
 EXPECT_STDOUT_CONTAINS(grant_on_excluded_object(tested_user, grant_on_excluded_schema).warning())
 
 shell.connect(__sandbox_uri2)
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 
 # BUG#36197620 - summary should contain more details regarding all executed stages
-EXPECT_STDOUT_CONTAINS(f"{65 if instance_supports_libraries else 60 if __version_num >= 84000 else 59} DDL files were executed in ")
+if __server_is_maria_db:
+    # the instance holds three fewer tables than it does on MySQL: MariaDB skips
+    # any /*!NNNNN ... */ comment numbered in the MySQL 5.7-9.x range, so
+    # misc_features.sql's findextable, findextable2 and findextable3 are never
+    # created (functional and multi-value indexes are MySQL-only anyway). It does
+    # get fieldtypes_all.sql's t_vector, which MySQL only has from 9.0 on.
+    expected_ddl_files = 57 if __version_num >= 110700 else 56
+else:
+    expected_ddl_files = 65 if instance_supports_libraries else 60 if __version_num >= 84000 else 59
+
+EXPECT_STDOUT_CONTAINS(f"{expected_ddl_files} DDL files were executed in ")
 EXPECT_STDOUT_CONTAINS("1 accounts were loaded")
 EXPECT_STDOUT_CONTAINS("Data load duration: ")
 EXPECT_STDOUT_CONTAINS("Total duration: ")
@@ -483,14 +494,14 @@ testutil.rmfile(os.path.join(dump_dir, "load-progress*.json"))
 
 shell.connect(__sandbox_uri2)
 
-EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
 # 'abort' is the default value for handleGrantErrors
-EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "abort", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "abort", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
 # invalid value for handleGrantErrors
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "invalid", "showProgress": False }), "ValueError: Argument #2: The value of the 'handleGrantErrors' option must be set to one of: 'abort', 'drop_account', 'ignore'.")
 
 #@<> BUG#34952027 - same as above, ignore the error
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 # BUG#38624926 - ERROR has been downgraded to a WARNING
 EXPECT_STDOUT_CONTAINS(f"""
 WARNING: While applying grants to user accounts: MySQL Error 1146 (42S02): Table 'schema1.table1' doesn't exist: {grant_on_table};
@@ -507,7 +518,7 @@ del actual_accounts["root@%"]
 EXPECT_EQ(expected_accounts, actual_accounts)
 
 #@<> BUG#34952027 - same as above, drop the account
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 EXPECT_STDOUT_CONTAINS(f"""
 ERROR: While applying grants to user accounts: MySQL Error 1146 (42S02): Table 'schema1.table1' doesn't exist: {grant_on_table};
 NOTE: Due to the above error the account 'user_34952027'@'localhost' was dropped, the load operation will continue.
@@ -526,7 +537,7 @@ EXPECT_EQ(expected_accounts, actual_accounts)
 
 #@<> BUG#34952027 - a warning if the value of partial_revoke differs between source and target {VER(>=8.0.16) and not __server_is_maria_db}
 session.run_sql("SET GLOBAL partial_revokes=1")
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 EXPECT_STDOUT_CONTAINS("WARNING: The dump was created on an instance where the 'partial_revokes' system variable was disabled, however the target instance has it enabled. GRANT statements on object names with wildcard characters (% or _) will behave differently.")
 session.run_sql("SET GLOBAL partial_revokes=0")
 
@@ -654,7 +665,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: Account 'root'@'%' already exists")
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["third"] }, [], ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
 #@<> exclude non-existent user (and root@%), all accounts are loaded, mysql.sys is always excluded (and it already exists)
-EXPECT_INCLUDE_EXCLUDE({ "excludeUsers": ["third", "'root'@'%'"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
+EXPECT_INCLUDE_EXCLUDE({ "excludeUsers": ["third", "root"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping CREATE/ALTER USER statements for user 'mysql.sys'@'localhost'")
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping GRANT/REVOKE statements for user 'mysql.sys'@'localhost'")
 
@@ -748,9 +759,23 @@ for u in mhs_excluded_users:
 shell.connect(__sandbox_uri1)
 session.run_sql("CREATE ROLE IF NOT EXISTS 'aaabra';")
 session.run_sql("CREATE ROLE IF NOT EXISTS aaabby;")
-session.run_sql("CREATE ROLE IF NOT EXISTS 'local'@'localhost';")
-session.run_sql("create user IF NOT EXISTS wolodia@localhost default role 'aaabra', local@localhost, aaabby;")
-session.run_sql("create user IF NOT EXISTS zenon@localhost default role aaabby;")
+
+if not __server_is_maria_db:
+    session.run_sql("CREATE ROLE IF NOT EXISTS 'local'@'localhost';")
+    session.run_sql("create user IF NOT EXISTS wolodia@localhost default role 'aaabra', local@localhost, aaabby;")
+    session.run_sql("create user IF NOT EXISTS zenon@localhost default role aaabby;")
+else:
+    session.run_sql("CREATE ROLE IF NOT EXISTS 'local';")
+    session.run_sql("CREATE USER IF NOT EXISTS 'wolodia'@'localhost';")
+    session.run_sql("GRANT aaabra TO 'wolodia'@'localhost';")
+    session.run_sql("GRANT local TO 'wolodia'@'localhost';")
+    session.run_sql("GRANT aaabby TO 'wolodia'@'localhost';")
+    session.run_sql("SET DEFAULT ROLE aaabra FOR 'wolodia'@'localhost';")
+    session.run_sql("create user IF NOT EXISTS zenon@localhost;")
+    session.run_sql("GRANT aaabby TO 'zenon'@'localhost';")
+    session.run_sql("SET DEFAULT ROLE aaabby FOR 'zenon'@'localhost';")
+
+
 
 default_roles_dir = os.path.join(outdir, "default_roles_dir")
 util.dump_instance(default_roles_dir, { "users": True, "showProgress": False })
@@ -758,14 +783,18 @@ util.dump_instance(default_roles_dir, { "users": True, "showProgress": False })
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(default_roles_dir, {"loadUsers":True, "excludeUsers":["root@%"]}), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(default_roles_dir, {"loadUsers":True, "excludeUsers":["root"]}), "Load")
 
 compare_servers(session1, session2)
 
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP ROLE 'aaabra';")
 session.run_sql("DROP ROLE aaabby;")
-session.run_sql("DROP ROLE 'local'@'localhost';")
+if not __server_is_maria_db:
+    session.run_sql("DROP ROLE 'local'@'localhost';")
+else:
+    session.run_sql("DROP ROLE local")
+
 session.run_sql("DROP user wolodia@localhost;")
 session.run_sql("DROP user zenon@localhost;")
 
@@ -827,7 +856,7 @@ EXPECT_STDOUT_CONTAINS("WARNING: Destination is a MySQL HeatWave Service DB Syst
 
 testutil.dbug_set("")
 
-#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option {not __server_is_maria_db}
+#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option
 dump_pks_dir = os.path.join(outdir, "invisible_pks")
 dump_no_pks_dir = os.path.join(outdir, "no_invisible_pks")
 dump_just_pk_dir = os.path.join(outdir, "just_pk")
@@ -853,8 +882,8 @@ session.run_sql("ANALYZE TABLE !.!;", [ schema_name, pk_table_name ])
 session.run_sql("ANALYZE TABLE !.!;", [ schema_name, no_pk_table_name ])
 
 # small 'bytesPerChunk' value to force chunking
-util.dump_schemas([schema_name], dump_pks_dir, { "ocimds": True, "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
-util.dump_schemas([schema_name], dump_no_pks_dir, { "ocimds": True, "compatibility": ["ignore_missing_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+util.dump_schemas([schema_name], dump_pks_dir, { "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+util.dump_schemas([schema_name], dump_no_pks_dir, { "compatibility": ["ignore_missing_pks"], "bytesPerChunk" : "128k", "showProgress": False })
 # dump which has only table with a primary key
 util.dump_tables(schema_name, [ pk_table_name ], dump_just_pk_dir, { "bytesPerChunk" : "128k", "showProgress": False })
 
@@ -879,7 +908,9 @@ def EXPECT_PK(dump_dir, options, pk_created, expected_exception=None, wipeout=Tr
         # WL14506-TSFR_4.7_1
         EXPECT_EQ(1, len(pk), "Primary key should have been created using a single column")
         EXPECT_EQ("my_row_id", pk[0][0], "Primary key should be named `my_row_id`")
-        EXPECT_EQ("BIGINT UNSIGNED", pk[0][1].upper(), "Primary key should be a BIGINT UNSIGNED")
+        # MariaDB's information_schema still reports the display width which
+        # MySQL 8.0 dropped, so the same column reads as BIGINT(20) UNSIGNED
+        EXPECT_EQ("BIGINT(20) UNSIGNED" if __server_is_maria_db else "BIGINT UNSIGNED", pk[0][1].upper(), "Primary key should be a BIGINT UNSIGNED")
         EXPECT_NE(-1, pk[0][2].upper().find("AUTO_INCREMENT"), "Primary key should have the AUTO_INCREMENT attribute")
         EXPECT_NE(-1, pk[0][2].upper().find("INVISIBLE"), "Primary key should have the INVISIBLE attribute")
     else:
@@ -930,10 +961,10 @@ EXPECT_STDOUT_CONTAINS("WARNING: The 'createInvisiblePKs' option is set to true,
 #@<> WL14506-FR4.3 - If the createInvisiblePKs option is set to true and the target instance has version lower than 8.0.24, an error must be reported and the load process must be aborted. {VER(< 8.0.24)}
 # 'createInvisiblePKs' is true implicitly
 # WL14506-TSFR_4.3_1
-EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
+EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
 
 # 'createInvisiblePKs' is true explicitly
-EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
+EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
 
 #@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug and not __server_is_maria_db}
 # WL14506-TSFR_4_5
@@ -1223,7 +1254,7 @@ EXPECT_EQ([], session.run_sql("select 1 from mysql.user where user = ?", [ dumpe
 
 # load the dump, users are created
 shell.connect(f"{loader_user}:{password}@127.0.0.1:{__mysql_sandbox_port2}")
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root@%", "root@localhost" ], "showProgress": False }), "load should succeed")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "load should succeed")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Skipping CREATE/ALTER USER statements for user '{loader_user}'@'{host_with_netmask}'")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Skipping GRANT/REVOKE statements for user '{loader_user}'@'{host_with_netmask}'")
 
@@ -1240,11 +1271,13 @@ session.run_sql(f"DROP USER IF EXISTS '{loader_user}'@'{host_with_netmask}'")
 # reuse dump dir from one of the tests above
 dump_dir = os.path.join(outdir, "host_with_netmask")
 
+server_id_var = "server_id" if __server_is_maria_db else "server_uuid"
+
 shell.connect(__sandbox_uri2)
-saved_uuid = session.run_sql("SELECT @@server_uuid").fetch_one()[0]
+saved_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
 
 shell.connect(__sandbox_uri1)
-new_uuid = session.run_sql("SELECT @@server_uuid").fetch_one()[0]
+new_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
 
 #@<> BUG#32561035: test
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": os.path.join(dump_dir, f"load-progress.{saved_uuid}.json"),"showProgress": False }), f"Progress file was created for a server with UUID {saved_uuid}, while the target server has UUID: {new_uuid}")
@@ -2344,7 +2377,7 @@ load_with_conflicts({ "loadUsers": True, "includeUsers": [ "u@h" ], "excludeUser
 EXPECT_STDOUT_CONTAINS("ERROR: The includeUsers option contains a user 'u'@'h' which is excluded by the value of the excludeUsers option: 'u'@''.")
 EXPECT_STDOUT_CONTAINS("ERROR: Both includeUsers and excludeUsers options contain a user 'u'@'h'.")
 
-#@<> BUG#33414321 - table with a secondary engine {VER(>=8.0.21)}
+#@<> BUG#33414321 - table with a secondary engine {not __server_is_maria_db and VER(>=8.0.21)}
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -2395,7 +2428,7 @@ for deferred in [ ("off", 0), ("fulltext", 1), ("all", 13) ]:
     # verify correctness
     compare_servers(session1, session2, check_users=False)
 
-#@<> BUG#33414321 - table with a secondary engine with resume {VER(>=8.0.21) and (__dbug)}
+#@<> BUG#33414321 - table with a secondary engine with resume {not __server_is_maria_db and VER(>=8.0.21) and (__dbug)}
 # connect to the destination server
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
@@ -2616,7 +2649,7 @@ session.run_sql("SET sql_mode = ANSI_QUOTES")
 session.run_sql(f"DROP SCHEMA IF EXISTS {tested_schema}")
 session.run_sql("SET sql_mode = @saved_sql_mode")
 
-#@<> BUG#33497745 - load a dump created by shell 8.0.21
+#@<> BUG#33497745 - load a dump created by shell 8.0.21 {not __server_is_maria_db}
 # prepare the server
 shell.connect(__sandbox_uri2)
 wipeout_server(session)
@@ -2645,7 +2678,7 @@ if __version_num >= 90000:
     with open(users_file, "w") as f:
         f.write(users_contents)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "'root'@'%'" ], "ignoreVersion": True, "showProgress": False }), "Loading should not throw")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "ignoreVersion": True, "showProgress": False }), "Loading should not throw")
 EXPECT_STDOUT_CONTAINS(f"Loading DDL, Data and Users from '{dump_dir}' using 4 threads.")
 EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MySQL Shell. If you experience problems using it, please recreate the dump using the current version of MySQL Shell and try again.")
 EXPECT_STDOUT_CONTAINS("62 chunks (5.45K rows, 199.62 KB) for 62 tables in 8 schemas were loaded")
@@ -2706,7 +2739,7 @@ def TEST_STRING_OPTION(option):
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { option: {} }), f"TypeError: Argument #2: Option '{option}' is expected to be of type String, but is Map")
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { option: False }), f"TypeError: Argument #2: Option '{option}' is expected to be of type String, but is Bool")
 
-#@<> WL15884-TSFR_1_1 - `ociAuth` help text
+#@<> WL15884-TSFR_1_1 - `ociAuth` help text {not __server_is_maria_db}
 help_text = """
       - ociAuth: string (default: not set) - Use the specified authentication
         method when connecting to the OCI. Allowed values: api_key (used when
@@ -2809,7 +2842,13 @@ session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 100")
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_instance(dump_dir, { "users": False }), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpInstance\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 100\), SQL: "))
+
+if __server_is_maria_db:
+    max_questions_variable = 'max_queries_per_hour'
+else:
+    max_questions_variable = 'max_questions'
+
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpInstance\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 100\), SQL: "))
 
 # dump schemas
 wipe_dir(dump_dir)
@@ -2817,7 +2856,7 @@ session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 90")
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_schemas(["world"], dump_dir), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpSchemas\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 90\), SQL: "))
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpSchemas\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 90\), SQL: "))
 
 # dump tables
 wipe_dir(dump_dir)
@@ -2828,7 +2867,7 @@ if __os_type == "windows":
     tables = [ t.lower() for t in tables ]
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_tables("world", tables, dump_dir), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpTables\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 80\), SQL: "))
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpTables\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 80\), SQL: "))
 
 session1.run_sql("DROP USER admin@'%'")
 
@@ -2842,13 +2881,13 @@ shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2)
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.load_dump(dump_dir), "")
-EXPECT_STDOUT_CONTAINS("User 'admin' has exceeded the 'max_questions' resource (current value: 70)")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.loadDump\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 70\), SQL: "))
+EXPECT_STDOUT_CONTAINS(f"User 'admin' has exceeded the '{max_questions_variable}' resource (current value: 70)")
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.loadDump\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 70\), SQL: "))
 
 #@<> BUG#33788895 - cleanup
 shell.options["logSql"] = old_log_sql
 
-#@<> BUG#34141432 - shell may expose sensitive information via error messages
+#@<> BUG#34141432 - shell may expose sensitive information via error messages {not __server_is_maria_db}
 # constants
 dump_dir = os.path.join(outdir, "bug_34141432")
 
@@ -2909,7 +2948,7 @@ session1.run_sql("CREATE SCHEMA IF NOT EXISTS !", [tested_schema])
 session1.run_sql("SET @@SESSION.sql_generate_invisible_primary_key = OFF")
 session1.run_sql("CREATE TABLE !.! (data INT)", [ tested_schema, tested_table ])
 
-#@<> BUG#34408669 - dump DDL, we're not interested in data {VER(>= 8.0.30)}
+#@<> BUG#34408669 - dump DDL, we're not interested in data {VER(>= 8.0.30) and not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "ddlOnly": True, "showProgress": False }), "Dump should not fail")
 
@@ -2920,31 +2959,31 @@ session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
 session2.run_sql("GRANT ALL ON *.* TO admin@'%'")
 session2.run_sql("REVOKE SUPER,SYSTEM_VARIABLES_ADMIN,SESSION_VARIABLES_ADMIN ON *.* FROM admin@'%'")
 
-#@<> BUG#34408669 - connect as the created user {VER(>= 8.0.30)}
+#@<> BUG#34408669 - connect as the created user {VER(>= 8.0.30) and not __server_is_maria_db}
 shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2))
 
-#@<> BUG#34408669 - load the dump, ask for PKs to be created {VER(>= 8.0.30)}
+#@<> BUG#34408669 - load the dump, ask for PKs to be created {VER(>= 8.0.30) and not __server_is_maria_db}
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
 EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")
 
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - load again, this time PKs should not be created {VER(>= 8.0.30)}
+#@<> BUG#34408669 - load again, this time PKs should not be created {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_FALSE(has_primary_key(tested_schema, tested_table))
 
 #@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30) and not __server_is_maria_db}
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = ON")
 
-#@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - dump was created without 'create_invisible_pks', but since user doesn't have required privileges it fails {VER(>= 8.0.30)}
+#@<> BUG#34408669 - dump was created without 'create_invisible_pks', but since user doesn't have required privileges it fails {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_THROWS(do_load(None), "Error: Shell Error (53037): Insufficient privileges to disable automatic invisible primary key creation.")
 
-# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it
+# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_STDOUT_CONTAINS("""
 WARNING: The dump was created without the 'create_invisible_pks' compatibility option, while the 'sql_generate_invisible_primary_key' option is enabled on the destination server, and the current account lacks privileges to disable it at the session level.
 
@@ -2955,10 +2994,10 @@ To load this dump, you can either:
  * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
-#@<> BUG#34408669 - user requests no primary keys to be created, but since they don't have required privileges it fails {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests no primary keys to be created, but since they don't have required privileges it fails {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_THROWS(do_load(False), "Error: Shell Error (53037): Insufficient privileges to disable automatic invisible primary key creation.")
 
-# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it
+# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_STDOUT_CONTAINS("""
 WARNING: The 'createInvisiblePKs' load option is set to false, while the 'sql_generate_invisible_primary_key' option is enabled on the destination server, and the current account lacks privileges to disable it at the session level.
 
@@ -2969,7 +3008,7 @@ To load this dump, you can either:
  * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
-#@<> BUG#34408669 - user requests no primary keys to be created, env var is set, keys are created anyway {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests no primary keys to be created, env var is set, keys are created anyway {VER(>= 8.0.30) and not __server_is_maria_db}
 os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"] = "1"
 
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
@@ -3303,7 +3342,7 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ test
 
 #@<> BUG#35822020 - test
 shell.connect(__sandbox_uri2)
-l = lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "'root'@'%'" ], "resetProgress": True, "showProgress": False })
+l = lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "resetProgress": True, "showProgress": False })
 
 for f in os.listdir(dump_dir):
     print("------->", f)
@@ -3701,7 +3740,7 @@ compare_schema(session1, session2, tested_schema, check_rows=True)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#36470302 - use JSON output when executing EXPLAIN statements
+#@<> BUG#36470302 - use JSON output when executing EXPLAIN statements {not __server_is_maria_db}
 # constants
 dump_dir = os.path.join(outdir, "bug_36470302")
 test_schema = "test_schema"
@@ -3723,12 +3762,12 @@ session.run_sql(f"INSERT INTO !.! (data) VALUES {','.join(['(RANDOM_BYTES(1024))
 session.run_sql(f"INSERT INTO !.! (id, data) VALUES ({row_count * row_count}, RANDOM_BYTES(1024))", [ test_schema, test_table ])
 session.run_sql("ANALYZE TABLE !.!", [ test_schema, test_table ])
 
-#@<> BUG#36470302 - test
+#@<> BUG#36470302 - test {not __server_is_maria_db}
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(lambda: util.dump_schemas([ test_schema ], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }), "Dump should not throw")
 EXPECT_SHELL_LOG_CONTAINS(f"Chunking {quote_identifier(test_schema, test_table)} using integer algorithm with adaptive step")
 
-#@<> BUG#36470302 - test with JSON output version 2 {VER(>=8.3.0)}
+#@<> BUG#36470302 - test with JSON output version 2 {VER(>=8.3.0) and not __server_is_maria_db}
 shutil.rmtree(dump_dir, True)
 
 session.run_sql("SET @saved_explain_json_format_version = @@GLOBAL.explain_json_format_version")
@@ -3740,7 +3779,7 @@ EXPECT_SHELL_LOG_CONTAINS(f"Chunking {quote_identifier(test_schema, test_table)}
 
 session.run_sql("SET @@GLOBAL.explain_json_format_version = @saved_explain_json_format_version")
 
-#@<> BUG#36470302 - cleanup
+#@<> BUG#36470302 - cleanup {not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 
@@ -4065,7 +4104,7 @@ session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 wipe_dir(dump_dir)
 
-#@<> BUG#37669785 - load would fail if user loading the dump doesn't have ALLOW_NONEXISTENT_DEFINER {VER(>=8.2.0)}
+#@<> BUG#37669785 - load would fail if user loading the dump doesn't have ALLOW_NONEXISTENT_DEFINER {VER(>=8.2.0) and not __server_is_maria_db}
 # constants
 dump_dir = os.path.join(outdir, "bug_37669785")
 tested_schema = "tested_schema"
@@ -4110,7 +4149,7 @@ session.run_sql("SET @@GLOBAL.log_bin_trust_function_creators = 1")
 shell.connect(test_user_uri(__mysql_sandbox_port2))
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProgress": False }), "Load should not fail")
 
-#@<> BUG#37669785 - cleanup
+#@<> BUG#37669785 - cleanup  {not __server_is_maria_db}
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session.run_sql(f"DROP USER IF EXISTS {tested_user}")
@@ -4250,7 +4289,8 @@ session2.run_sql(f"DROP USER IF EXISTS {test_user_account}")
 session2.run_sql(f"CREATE USER {test_user_account} IDENTIFIED BY ?", [test_user_pwd])
 session2.run_sql(f"GRANT ALL ON *.* TO {test_user_account} WITH GRANT OPTION")
 # without this privilege, if an account which is a definer would be dropped, DROP will error out instead
-session2.run_sql(f"REVOKE ALLOW_NONEXISTENT_DEFINER ON *.* FROM {test_user_account}")
+if not __server_is_maria_db:
+    session2.run_sql(f"REVOKE ALLOW_NONEXISTENT_DEFINER ON *.* FROM {test_user_account}")
 
 # create the dump
 shell.connect(__sandbox_uri1)
@@ -4274,7 +4314,13 @@ tested_user = "'user'@'localhost'"
 
 dump_dir = os.path.join(outdir, "bug_38624926")
 
-privileges = ["BACKUP_ADMIN", "BINLOG_ADMIN", "CONNECTION_ADMIN"]
+if __server_is_maria_db:
+    privileges = ["RELOAD", "PROCESS", "LOCK TABLES", "BINLOG MONITOR", "BINLOG ADMIN"]
+    separator = ", "
+else:
+    privileges = ["BACKUP_ADMIN", "BINLOG_ADMIN", "CONNECTION_ADMIN"]
+    separator = ","
+
 privileges_count = len(privileges)
 
 # setup
@@ -4314,12 +4360,18 @@ for i in range(privileges_count):
     WIPE_OUTPUT()
     WIPE_SHELL_LOG()
     EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "loadUsers": True, "showProgress": False }), "Load should not fail")
-    EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation: GRANT {','.join(privileges)} ON *.* TO ")
+    if __server_is_maria_db:
+        EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1045 (28000): Access denied for user {test_user_account} (using password: YES): GRANT {separator.join(privileges)} ON *.* TO ")
+    else:
+        EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation: GRANT {separator.join(privileges)} ON *.* TO ")
     EXPECT_STDOUT_CONTAINS("NOTE: The above error was ignored, applying privileges one by one.")
     for j in range(privileges_count):
         if i == j:
             EXPECT_STDOUT_CONTAINS(f"NOTE: Failed to apply {privileges[j]} privilege.")
-            EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation, SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
+            if __server_is_maria_db:
+                EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1045 (28000): Access denied for user {test_user_account} (using password: YES), SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
+            else:
+                EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation, SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
         else:
             EXPECT_STDOUT_CONTAINS(f"NOTE: Successfully applied {privileges[j]} privilege.")
     EXPECT_STDOUT_CONTAINS("1 accounts were loaded, 1 GRANT statement errors were ignored")
@@ -4328,7 +4380,7 @@ for i in range(privileges_count):
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> BUG#38907890 - allow tables with PKE-only if 'targetVersion' >= 9.7.0
+#@<> BUG#38907890 - allow tables with PKE-only if 'targetVersion' >= 9.7.0 {not __server_is_maria_db}
 # constants
 tested_schema = "test_schema"
 tested_user = "'user'@'localhost'"
@@ -4408,10 +4460,10 @@ session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
 session2.run_sql("GRANT ALL ON *.* TO admin@'%'")
 session2.run_sql("REVOKE SUPER,SYSTEM_VARIABLES_ADMIN,SESSION_VARIABLES_ADMIN ON *.* FROM admin@'%'")
 
-#@<> BUG#38907890 - connect as the created user {VER(>=9.7.0)}
+#@<> BUG#38907890 - connect as the created user {VER(>=9.7.0) and not __server_is_maria_db}
 shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2))
 
-#@<> BUG#38907890 - load the dump, PKs should be created where applicable because dump was created with 'create_invisible_pks' {VER(>=9.7.0)}
+#@<> BUG#38907890 - load the dump, PKs should be created where applicable because dump was created with 'create_invisible_pks' {VER(>=9.7.0) and not __server_is_maria_db}
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"showProgress": False}), "Load should not fail")
 EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")

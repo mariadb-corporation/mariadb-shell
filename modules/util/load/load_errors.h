@@ -107,7 +107,7 @@
 
 #define SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION 53019
 #define SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION_MSG \
-  "The 'createInvisiblePKs' option requires server 8.0.24 or newer."
+  "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+."
 
 #define SHERR_LOAD_REQUIRE_PRIMARY_KEY_ENABLED 53020
 #define SHERR_LOAD_REQUIRE_PRIMARY_KEY_ENABLED_MSG \

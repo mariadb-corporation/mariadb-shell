@@ -2345,7 +2345,7 @@ OPTIONS
             Automatically create an invisible Primary Key for each table which
             does not have one. By default, set to true if dump was created with
             create_invisible_pks compatibility option, false otherwise.
-            Requires server 8.0.24 or newer. Default: taken from dump.
+            Requires MySQL 8.0.24+ or MariaDB 10.3+. Default: taken from dump.
 
 --deferTableIndexes=<str>
             "off", "fulltext", "all" (default: fulltext) - If "all", creation

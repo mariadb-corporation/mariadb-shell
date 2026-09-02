@@ -297,13 +297,24 @@ EXPECT_SUCCESS(__sandbox_uri2, { "maxBytesPerTransaction": "1M" })
 # WL15298_TSFR_4_5_7
 EXPECT_STDOUT_NOT_CONTAINS("Analyzing tables")
 # WL15298_TSFR_4_6_1
-EXPECT_STDOUT_MATCHES(re.compile(r"""
+mysql_gtid_data=re.compile(r"""
 ---
 Dump_metadata:
   Binlog_file: .*
   Binlog_position: .*
   Executed_GTID_set: .*
-"""))
+""")
+
+mariadb_gtid_data=re.compile(r"""
+---
+Dump_metadata:
+  Binlog_file: .*
+  Binlog_position: .*
+  GTID_position: .*
+""")
+
+expected_gtid = mysql_gtid_data if not __server_is_maria_db else mariadb_gtid_data
+EXPECT_STDOUT_MATCHES(expected_gtid)
 
 #@<> WL15298 - test invalid values of maxBytesPerTransaction option
 TEST_STRING_OPTION("maxBytesPerTransaction")

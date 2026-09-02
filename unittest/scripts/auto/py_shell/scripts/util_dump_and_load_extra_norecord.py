@@ -273,7 +273,10 @@ def EXPECT_BINLOG_INFO(file, position, gtid, options = {}):
             options[option] = True
     WIPE_SHELL_LOG()
     util.load_dump(os.path.join(outdir, "fulldump"), options)
-    yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "Executed_GTID_set": gtid } })
+    if __server_is_maria_db:
+        yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "GTID_position": gtid } })
+    else:
+        yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "Executed_GTID_set": gtid } })
     EXPECT_STDOUT_CONTAINS(binlog_info_header)
     EXPECT_STDOUT_CONTAINS(yaml)
     # BUG#35883344 - binlog info should be written to the log file

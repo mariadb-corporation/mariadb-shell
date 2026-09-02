@@ -227,6 +227,19 @@ def wipeout_users(session):
     for user,host in session.run_sql("select user,host from mysql.user").fetch_all():
         if user not in reserved:
             session.run_sql("drop user ?@?", [user,host])
+    if __server_is_maria_db:
+        # The reserved accounts survive this wipeout, so any state a previous load
+        # left on them has to be undone here. Loading a dumped
+        # `GRANT PROXY ON ''@'%'` onto an account which already holds that grant
+        # adds a second, redundant mysql.proxies_priv row: mariadb-install-db
+        # stores Proxied_host empty, SHOW GRANTS renders empty as '%', and GRANT
+        # stores '%' literally - so the two rows differ in the table while printing
+        # identically, and every later SHOW GRANTS lists the grant twice.
+        session.run_sql("""delete from mysql.proxies_priv
+                            where Proxied_host = '%' and Proxied_user = ''
+                              and (Host, User) in (select * from (select Host, User from mysql.proxies_priv
+                                                                   where Proxied_host = '' and Proxied_user = '') as installed)""")
+        session.run_sql("flush privileges")
 
 def wipeout_masking_policies(session):
     if not is_dynamic_data_masking_enabled(session):
@@ -302,9 +315,13 @@ def compare_schemas(session1, session2, check_rows=True, check_events=True, chec
         compare_schema(session1, session2, schema, check_rows, check_events, check_triggers, check_stored_procedures)
 
 def compare_user_grants(session1, session2, user):
-    grants1 = session1.run_sql(f"show grants for {user}").fetch_all()
-    grants2 = session2.run_sql(f"show grants for {user}").fetch_all()
-    EXPECT_EQ(str(grants1), str(grants2), f"grants for {user}")
+    # SHOW GRANTS promises no particular order: a role granted by the loader comes
+    # back in a different position than the same role on the server where it was
+    # created. Compare the grants as sorted lists, so that a difference in order is
+    # not reported while a missing or duplicated grant still is.
+    grants1 = sorted(str(row) for row in session1.run_sql(f"show grants for {user}").fetch_all())
+    grants2 = sorted(str(row) for row in session2.run_sql(f"show grants for {user}").fetch_all())
+    EXPECT_EQ(grants1, grants2, f"grants for {user}")
 
 
 def compare_users(session1, session2):

@@ -3734,7 +3734,7 @@ void Dump_loader::check_server_version() {
   }
 
   if (should_create_pks() &&
-      (target.is_maria_db || target_server < Version(8, 0, 24))) {
+      !dump::common::supports_invisible_pks(m_options.target_server())) {
     THROW_ERROR(SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION);
   }
 
