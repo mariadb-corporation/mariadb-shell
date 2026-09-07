@@ -1,4 +1,4 @@
-name: Weekly-Server-Update
+name: Weekly-Server-Update-CI
 
 on:
   # 1. Weekly Schedule: Runs every Monday at 02:00 UTC
@@ -25,6 +25,8 @@ jobs:
 
   build-mariadb:
     name: Build MariaDB Server
+    needs: ensure-runner
+
     # Ensure this runs on your self-hosted runner
     runs-on: self-hosted
 
@@ -76,7 +78,7 @@ jobs:
           cpack -T TGZ -X RelWithDebInfo
 
           # Update the cached server for the shell CI builds
-          rm -Rf ~/.cache/ci/mariadb*
+          find ~/.cache/ci -maxdepth 1 -type d -name "mariadb*" -exec rm -rf {} +
           tar -xvf mariadb*.tar.gz -C ~/.cache/ci
 
       - name: Display ccache Hits/Misses
