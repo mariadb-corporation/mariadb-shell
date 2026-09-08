@@ -25,8 +25,8 @@ across workers instead of loading a single one.
 
 Usage:
     python3 plot_execution_plan.py \\
-        --plan test-execution-plan.txt \\
-        --timing test-execution-times.txt \\
+        --execution-plan-file test-execution-plan.txt \\
+        --timing-file test-execution-times.txt \\
         -o execution-plan.html
 """
 
@@ -271,11 +271,13 @@ def parse_args():
                      "highlighting suites that deserve to be split."
     )
     parser.add_argument(
-        "--plan", default="test-execution-plan.txt", type=str,
+        "-p", "--execution-plan-file",
+        default="test-execution-plan.txt", type=str,
         help="Path to the execution plan file. Default: 'test-execution-plan.txt'."
     )
     parser.add_argument(
-        "--timing", default="test-execution-times.txt", type=str,
+        "-t", "--timing-file",
+        default="test-execution-times.txt", type=str,
         help="Path to the execution timing file. Default: 'test-execution-times.txt'."
     )
     parser.add_argument(
@@ -297,8 +299,8 @@ def parse_args():
 def main():
     args = parse_args()
 
-    plan_path = Path(args.plan)
-    timing_path = Path(args.timing)
+    plan_path = Path(args.execution_plan_file)
+    timing_path = Path(args.timing_file)
 
     if not plan_path.exists():
         print(f"Error: plan file '{plan_path}' does not exist.", file=sys.stderr)

@@ -113,6 +113,7 @@ class TestTaskFactory:
             filepath: Path to the timing file.
             tasks: List of TestTasks containing updated timing metadata.
         """
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
             for task in tasks:
                 f.write(f"{task.filter_spec} {task.last_execution_time_ms:.2f}\n")
@@ -140,7 +141,10 @@ class TestTaskFactory:
         def flush_suite():
             """Creates tasks for the accumulated suite based on split criteria."""
             nonlocal current_suite, current_tests
-            if not current_suite:
+            if not current_suite or not current_tests:
+                # No accumulated test names means this "suite" was just a line
+                # of stdout noise (e.g. a startup banner) ending in a period,
+                # not an actual GTest suite header.
                 return
 
             if current_suite in split_suites:
@@ -166,8 +170,12 @@ class TestTaskFactory:
                 # Header lines ending in a dot indicate a Test Suite name
                 flush_suite()
                 current_suite = line.strip()[:-1]
-            else:
-                # Indented lines under a header represent individual Test names
+            elif line[:1].isspace():
+                # Indented lines under a header represent individual Test names.
+                # Non-indented lines are ignored: the binary under test may write
+                # its own startup/diagnostic noise to stdout alongside the actual
+                # '--gtest_list_tests' listing (e.g. "Session replay not enabled."),
+                # and such noise must not be mistaken for a test name.
                 test_name = line.strip()
                 # Strip out type or value parameter comments (e.g., "# TypeParam = ...")
                 if "#" in test_name:
@@ -209,7 +217,7 @@ class TestWorker:
         """
         gtest_arg = f"--gtest_filter={task.filter_spec}"
         if _FIREJAIL_PATH:
-            cmd = [_FIREJAIL_PATH, "--quiet", "--noprofile", binary_path, gtest_arg]
+            cmd = [_FIREJAIL_PATH, "--quiet", "--noprofile", "--deterministic-exit-code", binary_path, gtest_arg]
         else:
             cmd = [binary_path, gtest_arg]
 
@@ -485,6 +493,9 @@ class Orchestrator:
         if not all_tasks:
             print("No test tasks discovered matching the criteria.")
             return
+
+        # Never spin up more workers than there are tasks to run.
+        self.num_workers = min(self.num_workers, len(all_tasks))
 
         # Step 3: Partition tasks into balanced queues
         queues = self._partition_tasks(all_tasks)
