@@ -54,7 +54,6 @@ jobs:
 
     env:
       MARIADB_SHELL_BUILD_DIR: bld
-      MYSQL_PORT: 3312
       # A pull_request run supplies no inputs, so `inputs.*` is empty there:
       # fall back to the pull request policy of always testing, never
       # publishing. Manual and called runs go by whatever they asked for.
@@ -156,7 +155,7 @@ jobs:
           cp mariadb-shell*.tar.gz ~/.cache/ci/
 
       # ============
-      # 5. CLEANUP
+      # 5. ARCHIVE
       # ============
       - name: Archive Test Execution Artifacts
         # always(), and not gated on success, so the plan/report/logs are still
