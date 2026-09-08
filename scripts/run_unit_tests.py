@@ -61,12 +61,14 @@ class FailureRecord:
 
     Attributes:
         worker_id: Id of the worker that ran the task.
+        sequence: Position of the task within its worker's execution plan line.
         filter_spec: GTest filter expression of the failed task.
         log_path: Path to that task's mariadb-shell.log.
         output_path: Path to that task's captured stdout/stderr.
         duration_ms: Measured execution duration.
     """
     worker_id: int
+    sequence: int
     filter_spec: str
     log_path: Path
     output_path: Path
@@ -258,12 +260,24 @@ class SandboxManager:
         self.env = env
 
     @staticmethod
-    def find_free_port() -> int:
-        """Returns a currently unused TCP port on localhost."""
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("", 0))
-            return s.getsockname()[1]
+    def find_free_ports(count: int) -> List[int]:
+        """Returns `count` currently unused TCP ports on localhost.
+
+        The sockets are all kept bound simultaneously until every one of them
+        has been claimed, so the same port can't be handed back twice (which
+        binding and releasing them one at a time could otherwise race into).
+        """
+        sockets = []
+        try:
+            for _ in range(count):
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("", 0))
+                sockets.append(s)
+            return [s.getsockname()[1] for s in sockets]
+        finally:
+            for s in sockets:
+                s.close()
 
     def _run_cli(self, *args: str) -> None:
         """Invokes 'mariadb-shell -- <args>' and raises on failure."""
@@ -294,6 +308,11 @@ class SandboxManager:
 
 class Orchestrator:
     """Manages task extraction, workload partitioning, and parallel worker execution."""
+
+    # 1 main sandbox deployed by this script + up to 6 extra servers a test may
+    # deploy itself via MYSQL_SANDBOX_PORT1..6 (unittest/test_utils/sandboxes.h
+    # k_num_ports).
+    NUM_SANDBOX_PORTS = 7
 
     def __init__(
         self,
@@ -359,7 +378,7 @@ class Orchestrator:
             total_tasks: Total number of tasks that were executed.
             failures: Failed tasks, in whatever order they were collected.
         """
-        failures = sorted(failures, key=lambda f: (f.worker_id, f.filter_spec))
+        failures = sorted(failures, key=lambda f: (f.worker_id, f.sequence))
 
         if failures:
             rows = "\n".join(
@@ -494,7 +513,7 @@ class Orchestrator:
         print(f"Execution logs will be kept under '{self.logs_dir}'.")
 
         # Worker thread task execution handler
-        def worker_loop(worker_id: int, queue: List[TestTask]) -> List[FailureRecord]:
+        def worker_loop(worker_id: int, queue: List[TestTask], worker_ports: List[int]) -> List[FailureRecord]:
             failures: List[FailureRecord] = []
             if not queue:
                 return failures
@@ -503,12 +522,33 @@ class Orchestrator:
             worker_dir.mkdir(parents=True, exist_ok=True)
 
             sandbox_env = os.environ.copy()
-            sandbox_env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(worker_dir)
+            sandbox_env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(worker_dir.resolve())
 
             sandbox = SandboxManager(self.shell_binary, env=sandbox_env)
-            port = SandboxManager.find_free_port()
+            # A test may deploy up to NUM_SANDBOX_PORTS-1 extra servers of its own
+            # (unittest/test_utils/sandboxes.h k_num_ports), on top of the one main
+            # sandbox this worker deploys below. worker_ports were reserved for
+            # this worker alone in one shared batch before any worker started, so
+            # no two workers can be handed the same port.
+            port, *extra_ports = worker_ports
+            sandbox_log_path = worker_dir / "mariadb-shell.log"
+
             print(f"[Worker {worker_id}] Deploying sandbox on port {port}...")
-            sandbox.deploy(port)
+            try:
+                sandbox.deploy(port)
+            except subprocess.CalledProcessError as e:
+                print(f"[Worker {worker_id}] {_ANSI_RED}FAILED{_ANSI_RESET} to deploy sandbox on port "
+                      f"{port}: {e.stderr.decode()}", file=sys.stderr)
+                # No server ever came up, so every task queued for this worker
+                # would fail anyway: report them all as failed up front instead
+                # of trying (and failing) each one, pointing at the base
+                # sandbox's own log since that's the only diagnostic available.
+                sandbox.teardown(port)
+                return [
+                    FailureRecord(worker_id, i, task.filter_spec, sandbox_log_path, sandbox_log_path, 0.0)
+                    for i, task in enumerate(queue)
+                ]
+
             try:
                 for i, task in enumerate(queue):
                     task_dir = worker_dir / str(i)
@@ -517,8 +557,11 @@ class Orchestrator:
                     output_path = task_dir / TestWorker.OUTPUT_FILE_NAME
 
                     env = os.environ.copy()
-                    env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(task_dir)
+                    env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(task_dir.resolve())
                     env["MYSQL_PORT"] = str(port)
+                    env["MYSQL_SANDBOX_PORT0"] = str(port)
+                    for j, extra_port in enumerate(extra_ports, start=1):
+                        env[f"MYSQL_SANDBOX_PORT{j}"] = str(extra_port)
 
                     print(f"[Worker {worker_id}] Starting: {task.filter_spec} (log: {task_dir})")
                     duration, success = TestWorker.execute_task(self.binary_path, task, env)
@@ -528,7 +571,7 @@ class Orchestrator:
                     if success:
                         shutil.rmtree(task_dir, ignore_errors=True)
                     else:
-                        failures.append(FailureRecord(worker_id, task.filter_spec, log_path, output_path, duration))
+                        failures.append(FailureRecord(worker_id, i, task.filter_spec, log_path, output_path, duration))
             finally:
                 print(f"[Worker {worker_id}] Tearing down sandbox on port {port}...")
                 sandbox.teardown(port)
@@ -539,10 +582,20 @@ class Orchestrator:
 
         # Step 4: Launch parallel worker threads consuming assigned queues
         print(f"Executing {len(all_tasks)} test tasks using {self.num_workers} parallel firejail workers...")
+
+        # Reserve every worker's ports in a single batch, up front, so the
+        # underlying find_free_ports() guarantee (no port handed out twice
+        # while its sockets are still open) covers all workers at once instead
+        # of each worker racing the others via its own separate call.
+        all_ports = SandboxManager.find_free_ports(self.num_workers * self.NUM_SANDBOX_PORTS)
+
         all_failures: List[FailureRecord] = []
         with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
             futures = [
-                executor.submit(worker_loop, i, queues[i])
+                executor.submit(
+                    worker_loop, i, queues[i],
+                    all_ports[i * self.NUM_SANDBOX_PORTS:(i + 1) * self.NUM_SANDBOX_PORTS],
+                )
                 for i in range(self.num_workers)
             ]
             for future in futures:

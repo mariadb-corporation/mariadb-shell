@@ -279,8 +279,8 @@ def parse_args():
         help="Path to the execution timing file. Default: 'test-execution-times.txt'."
     )
     parser.add_argument(
-        "-o", "--output", default="execution-plan.html", type=str,
-        help="Path to write the HTML chart to. Default: 'execution-plan.html'."
+        "-o", "--output", default="test-execution-plan.html", type=str,
+        help="Path to write the HTML chart to. Default: 'test-execution-plan.html'."
     )
     parser.add_argument(
         "--split-threshold", default=0.30, type=float,
