@@ -54,7 +54,6 @@ jobs:
 
     env:
       MARIADB_SHELL_BUILD_DIR: bld
-      MYSQL_PORT: 3312
       # A pull_request run supplies no inputs, so `inputs.*` is empty there:
       # fall back to the pull request policy of always testing, never
       # publishing. Manual and called runs go by whatever they asked for.
@@ -110,12 +109,13 @@ jobs:
         if: env.RUN_TESTS == 'true'
         id: setup
         run: |
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./mariadb-shell -- sandbox deploy $MYSQL_PORT --password=
+          # Seed this run's timing profile from the previous run's, cached on
+          # the self-hosted runner, so the LPT partitioning has historical
+          # data to balance workers with. Absent on a runner's first-ever run.
+          if [ -f ~/.cache/ci/test-execution-times.txt ]; then
+            cp ~/.cache/ci/test-execution-times.txt .
+          fi
 
-          # Mark that deployment succeeded so cleanup knows to run
-          echo "deployed=true" >> $GITHUB_OUTPUT          
 
       # ============
       # 3. EXECUTE TESTS
@@ -123,9 +123,9 @@ jobs:
       - name: Execute Unit Tests
         if: env.RUN_TESTS == 'true'
         run: |
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./run_unit_tests --gtest_filter="-*Slow_*"
+          python3 scripts/run_unit_tests.py -t ~/.cache/ci/test-execution-times.txt --binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell -s Shell_scripted/Auto_script_py --gtest_filter="-*Threaded_file*"
+          python3 scripts/plot_execution_plan.py
+          cp test-execution-times.txt ~/.cache/ci
 
       # ============
       # 4. PUBLISH
@@ -155,14 +155,16 @@ jobs:
           cp mariadb-shell*.tar.gz ~/.cache/ci/
 
       # ============
-      # 5. CLEANUP
+      # 5. ARCHIVE
       # ============
-      - name: Teardown Test Environment
-        # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
-        if: always() && steps.setup.outputs.deployed == 'true'
-        run: |
-          echo "Tearing down server..."
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./mariadb-shell -- sandbox stop $MYSQL_PORT
-          ./mariadb-shell -- sandbox delete $MYSQL_PORT
+      - name: Archive Test Execution Artifacts
+        # always(), and not gated on success, so the plan/report/logs are still
+        # picked up when a suite failure is exactly what we want to diagnose.
+        if: always() && env.RUN_TESTS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-execution-artifacts
+          path: test-execution-*
+          if-no-files-found: warn
+          retention-days: 7
+
