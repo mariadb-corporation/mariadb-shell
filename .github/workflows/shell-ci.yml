@@ -106,16 +106,16 @@ jobs:
       # ============
       # 2. SETUP TEST ENVIRONMENT
       # ============
-      - name: Setup Test Environment
-        if: env.RUN_TESTS == 'true'
-        id: setup
-        run: |
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./mariadb-shell -- sandbox deploy $MYSQL_PORT --password=
+      # - name: Setup Test Environment
+      #   if: env.RUN_TESTS == 'true'
+      #   id: setup
+      #   run: |
+      #     cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+      #     cd bin
+      #     ./mariadb-shell -- sandbox deploy $MYSQL_PORT --password=
 
-          # Mark that deployment succeeded so cleanup knows to run
-          echo "deployed=true" >> $GITHUB_OUTPUT          
+      #     # Mark that deployment succeeded so cleanup knows to run
+      #     echo "deployed=true" >> $GITHUB_OUTPUT          
 
       # ============
       # 3. EXECUTE TESTS
@@ -123,9 +123,9 @@ jobs:
       - name: Execute Unit Tests
         if: env.RUN_TESTS == 'true'
         run: |
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./run_unit_tests --gtest_filter="-*Slow_*"
+          # cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+          python3 scripts/run_unit_tests.py -t ~/.cache/ci/test-execution-times.txt --binary ../${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ../${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell -s Shell_scripted/Auto_script_py --gtest_filter="-*Threaded_file*"
+        # ./run_unit_tests --gtest_filter="-*Slow_*"
 
       # ============
       # 4. PUBLISH
@@ -157,12 +157,12 @@ jobs:
       # ============
       # 5. CLEANUP
       # ============
-      - name: Teardown Test Environment
-        # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
-        if: always() && steps.setup.outputs.deployed == 'true'
-        run: |
-          echo "Tearing down server..."
-          cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cd bin
-          ./mariadb-shell -- sandbox stop $MYSQL_PORT
-          ./mariadb-shell -- sandbox delete $MYSQL_PORT
+      # - name: Teardown Test Environment
+      #   # Runs if 'deploy' step set output AND job wasn't cancelled abruptly before deploy
+      #   if: always() && steps.setup.outputs.deployed == 'true'
+      #   run: |
+      #     echo "Tearing down server..."
+      #     cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
+      #     cd bin
+      #     ./mariadb-shell -- sandbox stop $MYSQL_PORT
+      #     ./mariadb-shell -- sandbox delete $MYSQL_PORT
