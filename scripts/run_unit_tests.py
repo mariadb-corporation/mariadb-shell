@@ -210,6 +210,15 @@ class TestWorker:
         folder the mariadb-shell.log for this task lands in), so a failure can
         be diagnosed from the test's own output as well as the shell's log.
 
+        The process is also run with its cwd set to that same folder. Some
+        GTest suites (e.g. ShellRunScript/ShellExeRunScript) create scratch
+        fixture files using relative paths (good.py, bad.py, ...); without a
+        per-task cwd, every task across every worker shares the parent
+        process's working directory, so two suites using the same fixture
+        names can race (one's TearDownTestCase/SetUpTestCase deleting or
+        recreating files while another is mid-test), causing intermittent
+        "No such file or directory" failures.
+
         Args:
             binary_path: Path to the target GTest executable.
             task: The TestTask to execute.
@@ -225,12 +234,14 @@ class TestWorker:
         else:
             cmd = [binary_path, gtest_arg]
 
+        config_home = (env or {}).get("MARIADB_SHELL_USER_CONFIG_HOME")
+
         success = True
         stdout_data = b""
         stderr_data = b""
         start_time = time.perf_counter()
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True, env=env)
+            result = subprocess.run(cmd, check=True, capture_output=True, env=env, cwd=config_home)
             stdout_data, stderr_data = result.stdout, result.stderr
         except subprocess.CalledProcessError as e:
             success = False
@@ -240,7 +251,6 @@ class TestWorker:
         finally:
             end_time = time.perf_counter()
 
-        config_home = (env or {}).get("MARIADB_SHELL_USER_CONFIG_HOME")
         if config_home:
             output_path = Path(config_home) / TestWorker.OUTPUT_FILE_NAME
             try:
