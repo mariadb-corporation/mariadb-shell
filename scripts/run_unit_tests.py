@@ -66,6 +66,9 @@ class FailureRecord:
         log_path: Path to that task's mariadb-shell.log.
         output_path: Path to that task's captured stdout/stderr.
         duration_ms: Measured execution duration.
+        sandbox_error_log_path: Path to the copy of the sandbox's error.log
+            taken at failure time, or None if it couldn't be copied (or wasn't
+            attempted, as when the sandbox itself never came up).
     """
     worker_id: int
     sequence: int
@@ -73,6 +76,7 @@ class FailureRecord:
     log_path: Path
     output_path: Path
     duration_ms: float
+    sandbox_error_log_path: Optional[Path] = None
 
 
 class TestTaskFactory:
@@ -296,6 +300,72 @@ class SandboxManager:
         """Deploys a base sandbox server instance listening on the given port."""
         self._run_cli("sandbox", "deploy", str(port), "--password=")
 
+    def start(self, port: int) -> None:
+        """(Re)starts a previously deployed, currently stopped sandbox instance."""
+        self._run_cli("sandbox", "start", str(port))
+
+    @staticmethod
+    def is_reachable(port: int, timeout: float = 2.0) -> bool:
+        """Returns whether a TCP connection to localhost:port can be established.
+
+        Used as a health check between suites: the sandbox process may have
+        died (crash, OOM kill, ...) without this script's own teardown ever
+        running, in which case the port simply refuses connections.
+        """
+        try:
+            with socket.create_connection(("localhost", port), timeout=timeout):
+                return True
+        except OSError:
+            return False
+
+    def clear_error_log(self, port: int) -> None:
+        """Deletes the sandbox's error.log, if any, so a restart starts with a
+        clean one instead of appending to the log from before it went down.
+        """
+        try:
+            error_log = self.get_path(port, "error")
+            if error_log.exists():
+                error_log.unlink()
+        except (subprocess.CalledProcessError, OSError) as e:
+            print(f"[WARN] Could not clear sandbox error log for port {port}: {e}", file=sys.stderr)
+
+    def get_path(self, port: int, path_id: str = None) -> Path:
+        """Returns the path to a file inside the sandbox's data directory.
+
+        Args:
+            port: Port number of the sandbox instance.
+            path_id: Identifier for the path to retrieve.
+
+        Returns:
+            Path to the requested file.
+        """
+        args = ["sandbox", "get-path", str(port)]
+        if path_id is not None:
+            args.append(path_id)
+        result = subprocess.run(
+            [self.shell_binary, "--", *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=self.env
+        )
+        return Path(result.stdout.strip())
+
+    def copy_error_log(self, port: int, dest: Path) -> Optional[Path]:
+        """Copies the sandbox's error.log to 'dest', returning the copy's path.
+
+        Returns None (and reports a warning) instead of raising if the log
+        can't be located or copied, since this is only ever best-effort
+        diagnostics collected after a test has already failed.
+        """
+        try:
+            src = self.get_path(port, "error")
+            shutil.copyfile(src, dest)
+            return dest
+        except (subprocess.CalledProcessError, OSError) as e:
+            print(f"[WARN] Could not copy sandbox error log for port {port}: {e}", file=sys.stderr)
+            return None
+
     def teardown(self, port: int) -> None:
         """Stops and removes the sandbox instance on the given port.
 
@@ -366,11 +436,15 @@ class Orchestrator:
         return result.stdout
 
     @staticmethod
-    def _report_link(path: Path, report_dir: Path) -> str:
+    def _report_link(path: Optional[Path], report_dir: Path) -> str:
         """Renders an HTML link to path, relative to the report's own directory.
 
-        Falls back to plain (non-linked) text if the file isn't there to link to.
+        Falls back to plain (non-linked) text if the file isn't there to link
+        to, and to "n/a" if there's no path at all (e.g. the sandbox error log
+        couldn't be copied).
         """
+        if path is None:
+            return "n/a"
         if not path.exists():
             return f"{html.escape(str(path))} (missing)"
         href = html.escape(os.path.relpath(path, start=report_dir))
@@ -394,15 +468,16 @@ class Orchestrator:
                 f"<td>worker{f.worker_id}</td>"
                 f"<td>{html.escape(f.filter_spec)}</td>"
                 f"<td>{f.duration_ms:.1f}</td>"
-                f"<td>{Orchestrator._report_link(f.log_path, report_path.parent)}</td>"
                 f"<td>{Orchestrator._report_link(f.output_path, report_path.parent)}</td>"
+                f"<td>{Orchestrator._report_link(f.log_path, report_path.parent)}</td>"
+                f"<td>{Orchestrator._report_link(f.sandbox_error_log_path, report_path.parent)}</td>"
                 "</tr>"
                 for f in failures
             )
             body = (
                 "<table>"
                 "<thead><tr><th>Worker</th><th>Suite</th><th>Duration (ms)</th>"
-                "<th>Shell log</th><th>Test output</th></tr></thead>"
+                "<th>Test output</th><th>Shell log</th><th>Sandbox log</th></tr></thead>"
                 f"<tbody>{rows}</tbody>"
                 "</table>"
             )
@@ -562,6 +637,26 @@ class Orchestrator:
 
             try:
                 for i, task in enumerate(queue):
+                    if not sandbox.is_reachable(port):
+                        print(f"[Worker {worker_id}] Sandbox on port {port} is not reachable; "
+                              f"restarting before running {task.filter_spec}...", file=sys.stderr)
+                        sandbox.clear_error_log(port)
+                        try:
+                            sandbox.start(port)
+                        except subprocess.CalledProcessError as e:
+                            print(f"[Worker {worker_id}] {_ANSI_RED}FAILED{_ANSI_RESET} to restart "
+                                  f"sandbox on port {port}: {e.stderr.decode()}", file=sys.stderr)
+                            # No server to run the remaining tasks against: report them
+                            # all as failed instead of trying (and failing) each one,
+                            # pointing at the base sandbox's own log since that's the
+                            # only diagnostic available.
+                            failures.extend(
+                                FailureRecord(worker_id, j, t.filter_spec, sandbox_log_path,
+                                              sandbox_log_path, 0.0)
+                                for j, t in enumerate(queue[i:], start=i)
+                            )
+                            break
+
                     task_dir = worker_dir / str(i)
                     task_dir.mkdir(parents=True, exist_ok=True)
                     log_path = task_dir / "mariadb-shell.log"
@@ -582,7 +677,11 @@ class Orchestrator:
                     if success:
                         shutil.rmtree(task_dir, ignore_errors=True)
                     else:
-                        failures.append(FailureRecord(worker_id, i, task.filter_spec, log_path, output_path, duration))
+                        sandbox_error_log_path = sandbox.copy_error_log(
+                            port, task_dir / "sandbox-error.log")
+                        failures.append(FailureRecord(
+                            worker_id, i, task.filter_spec, log_path, output_path, duration,
+                            sandbox_error_log_path))
             finally:
                 print(f"[Worker {worker_id}] Tearing down sandbox on port {port}...")
                 sandbox.teardown(port)
@@ -624,7 +723,8 @@ class Orchestrator:
             print(f"\n{len(all_failures)} of {len(all_tasks)} suite(s) failed:", file=sys.stderr)
             for failure in sorted(all_failures, key=lambda f: (f.worker_id, f.filter_spec)):
                 print(f"  worker{failure.worker_id}: {failure.filter_spec} "
-                      f"(log: {failure.log_path}, output: {failure.output_path})",
+                      f"(log: {failure.log_path}, output: {failure.output_path}, "
+                      f"sandbox error log: {failure.sandbox_error_log_path or 'n/a'})",
                       file=sys.stderr)
         else:
             print("All suites passed.")
