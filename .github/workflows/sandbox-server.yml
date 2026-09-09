@@ -1,5 +1,11 @@
 name: MariaDB-Sandbox-Server
 
+# publish-release.yml locates a run of this workflow to publish by matching on
+# this exact string (see its "Resolve Sandbox Server Runs" step) -- there is
+# no API field that exposes a workflow_dispatch run's inputs directly, so the
+# tag/branch has to be readable from the run's own display title instead.
+run-name: Sandbox Server ${{ inputs.mariadb_version || 'main' }}
+
 on:
   workflow_dispatch:
     inputs:
