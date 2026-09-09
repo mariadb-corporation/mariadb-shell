@@ -221,7 +221,7 @@ jobs:
             file_key_management locales handlersocket mariadbd-safe-helper \
             metadata_lock_info password_reuse_check query_cache_info \
             query_response_time server_audit simple_password_check sql_errlog \
-            type_mysql_json innochecksum
+            type_mysql_json innochecksum resolveip
 
       # ========================================
       # 5. INSTALL & PACKAGE

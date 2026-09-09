@@ -85,7 +85,8 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)" --target \
   aria_read_log aria_dump_log sphinx spider auth_ed25519 auth_mysql_sha2 \
   auth_parsec file_key_management locales handlersocket mariadbd-safe-helper \
   metadata_lock_info password_reuse_check query_cache_info query_response_time \
-  server_audit simple_password_check sql_errlog type_mysql_json innochecksum
+  server_audit simple_password_check sql_errlog type_mysql_json innochecksum \
+  resolveip
 
 echo "==> Build finished successfully."
 
