@@ -1,0 +1,167 @@
+name: Build MariaDB Sandbox Server (Rocky Linux 9)
+
+on:
+  # Called by sandbox-server.yml so the Linux package lands in the same
+  # run as the macOS/Windows ones.
+  workflow_call:
+    inputs:
+      mariadb_version:
+        description: 'MariaDB Branch/Tag to build'
+        type: string
+        required: false
+        default: 'main'
+  workflow_dispatch: # Allows manual triggering from GitHub UI
+    inputs:
+      mariadb_version:
+        description: 'MariaDB Branch/Tag to build'
+        type: string
+        required: false
+        default: 'main'
+
+jobs:
+  ensure-runner:
+      if: ${{ !contains(github.event.pull_request.title, '[bypass-ci]') }}
+      uses: ./.github/workflows/devtools-ci-start.yml
+      secrets: inherit
+
+  build-rocky9:
+
+    name: Rocky-Linux-9-Sandbox-Server-Build (${{ matrix.arch }})
+
+    needs: ensure-runner
+
+    runs-on: ${{ matrix.os-runner }}
+
+    # One Dockerfile, one workflow: rockylinux:9 is a multi-arch manifest and
+    # nothing in the image is architecture-specific, so the only real deltas
+    # are the triplet name, where the job runs, and how ccache survives.
+    #
+    # 'hosted' distinguishes the two cache strategies. The self-hosted x86
+    # runner keeps ~/.cache/ci/docker across runs on its own disk. The
+    # GitHub-hosted arm runner is wiped after every job, so ccache is hydrated
+    # via actions/cache instead.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86
+            os-runner: self-hosted
+            docker-platform: linux/amd64
+            hosted: false
+            timeout: 180
+          - arch: arm
+            os-runner: ubuntu-24.04-arm
+            docker-platform: linux/arm64
+            hosted: true
+            timeout: 240
+
+    timeout-minutes: ${{ matrix.timeout }}
+
+    env:
+      CI_PLATFORM: sandbox-server-rocky9-${{ matrix.arch }}
+      MARIADB_VERSION: ${{ inputs.mariadb_version || 'main' }}
+
+    # ccache is shared mutable state on the self-hosted runner: two concurrent
+    # runs would race on the same cache dir. Queue instead. Per-arch, since
+    # each arch has its own cache tree.
+    concurrency:
+      group: docker-build-sandbox-server-rocky9-${{ matrix.arch }}
+      cancel-in-progress: false
+
+    steps:
+      # 1. Checkout this repo -- it carries the Dockerfile and entrypoint
+      #    script used to build the image below.
+      - name: Checkout CI Config
+        uses: actions/checkout@v4
+
+      # 2. Checkout the MariaDB server source to be packaged, into its own
+      #    directory so it can be bind-mounted into the container separately
+      #    from the CI config checked out above.
+      - name: Checkout MariaDB Server Source
+        uses: actions/checkout@v4
+        with:
+          repository: MariaDB/server
+          ref: ${{ env.MARIADB_VERSION }}
+          submodules: recursive
+          path: server-src
+
+      # 3. Build the Rocky Linux 9 Docker Builder Image
+      - name: Build Rocky Linux Docker Image
+        run: |
+          docker build \
+            --platform ${{ matrix.docker-platform }} \
+            -f docker/linux-rocky9-server.Dockerfile \
+            -t rocky9-sandbox-server-builder-${{ matrix.arch }}:${{ github.sha }} .
+
+      # 4. Create host output dir + the persistent per-platform ccache dir.
+      - name: Prepare Host Directories
+        run: |
+          mkdir -p "${{ github.workspace }}/out"
+          CACHE_ROOT="$HOME/.cache/ci/docker/${CI_PLATFORM}"
+          mkdir -p "$CACHE_ROOT/ccache"
+          echo "CCACHE_DIR=$CACHE_ROOT/ccache" >> "$GITHUB_ENV"
+
+      # 4b. On the ephemeral hosted runner, hydrate ccache from the previous
+      #     run. Keyed on the MariaDB ref being built plus the Dockerfile, so a
+      #     different branch/tag or toolchain bump does not reuse stale
+      #     objects; restore-keys fall back to the newest previous set.
+      - name: Restore ccache
+        if: matrix.hosted
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ci/docker/sandbox-server-rocky9-${{ matrix.arch }}/ccache
+          key: sandbox-server-ccache-${{ matrix.arch }}-${{ env.MARIADB_VERSION }}-${{ hashFiles('docker/linux-rocky9-server.Dockerfile') }}
+          restore-keys: |
+            sandbox-server-ccache-${{ matrix.arch }}-${{ env.MARIADB_VERSION }}-
+            sandbox-server-ccache-${{ matrix.arch }}-
+
+      # 5. Execute build inside the Docker container
+      - name: Run Build inside Rocky Linux Container
+        run: |
+          docker run --rm \
+            --platform ${{ matrix.docker-platform }} \
+            -e SANDBOX_ARCH=${{ matrix.arch }} \
+            -e CCACHE_DIR=/workspace/ccache \
+            -v "${{ github.workspace }}/server-src:/workspace/src" \
+            -v "${{ github.workspace }}/out:/workspace/output" \
+            -v "$CCACHE_DIR:/workspace/ccache" \
+            rocky9-sandbox-server-builder-${{ matrix.arch }}:${{ github.sha }}
+
+      # 6. Fix permissions on created artifacts (Docker runs as root by default)
+      - name: Fix Output Directory Permissions
+        if: always()
+        run: |
+          sudo chown -R $(id -u):$(id -g) ${{ github.workspace }}/out
+
+      # 6b. The container writes ccache as root, but actions/cache saves it in
+      #     a post-job step running as the runner user -- which cannot read
+      #     root-owned files. Hand it back before that runs. Only needed on the
+      #     hosted runner; the self-hosted one keeps it root-owned and
+      #     re-enters as root next time.
+      - name: Hand Cache Back to the Runner User
+        if: always() && matrix.hosted
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$CCACHE_DIR"
+
+      # 7. Read the package name declared by the build container
+      - name: Identify Package
+        id: pkg
+        run: |
+          name=$(< "${{ github.workspace }}/out/package-name.txt")
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "path=${{ github.workspace }}/out/${name}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      # 8. Upload compiled package to GitHub Actions artifacts
+      - name: Upload Compiled Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.name }}
+          path: ${{ steps.pkg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+      # 9. Cleanup build image to save disk space on self-hosted VM
+      - name: Cleanup Docker Image
+        if: always()
+        run: |
+          docker rmi rocky9-sandbox-server-builder-${{ matrix.arch }}:${{ github.sha }} || true
