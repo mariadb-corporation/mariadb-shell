@@ -499,6 +499,7 @@ The following topics were found at the sandbox category:
 - sandbox
 - sandbox.delete
 - sandbox.deploy
+- sandbox.get_path
 - sandbox.help
 - sandbox.kill
 - sandbox.start

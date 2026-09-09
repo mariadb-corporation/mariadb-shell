@@ -1760,3 +1760,35 @@ def sandbox_version(port=None, options=None):
         # cannot be determined, so report nothing rather than failing.
         return None
     return _short_version(_version_number(mariadbd))
+
+
+def sandbox_path(port, path_id=None, options=None):
+    """Return a filesystem path belonging to an existing sandbox instance.
+
+    Args:
+        port: The port of the sandbox instance.
+        path_id: Which path to return. One of:
+            None or "" - the sandbox home directory.
+            "config" - the sandbox's my.cnf option file.
+            "error" - the sandbox's error log file.
+        options: dict, may contain 'sandboxDir'.
+
+    Raises when no sandbox exists at 'port', or when 'path_id' is not one of
+    the recognized values.
+    """
+    options = options or {}
+    port = _validate_port(port)
+    _, sandbox_dir = _sandbox_dir(port, options)
+    if not os.path.isdir(sandbox_dir):
+        raise Error("There is no sandbox at '{0}'. Deploy it first."
+                    "".format(sandbox_dir))
+
+    path_id = (path_id or "").strip().lower()
+    if path_id == "":
+        return sandbox_dir
+    if path_id == "config":
+        return _cnf_path(sandbox_dir)
+    if path_id == "error":
+        return os.path.join(_datadir(sandbox_dir), "error.log")
+    raise Error("Unknown path identifier '{0}'. Use 'config' or 'error', or "
+                "omit it for the sandbox home directory.".format(path_id))
