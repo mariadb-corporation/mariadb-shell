@@ -1,0 +1,269 @@
+name: MariaDB-Sandbox-Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      mariadb_version:
+        description: 'MariaDB Branch/Tag to build'
+        type: string
+        required: false
+        default: 'main'
+
+jobs:
+  build:
+    name: Sandbox-Server-Build (${{ matrix.os }}-${{ matrix.arch }})
+
+    runs-on: ${{ matrix.os-runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- LINUX ---
+          # Linux packages are NOT built here. They come from
+          # sandbox-server-rocky-linux.yml (called as the 'rocky' job
+          # below), which builds on Rocky Linux 9 for a glibc 2.34 floor --
+          # covering RHEL 9+, Ubuntu 22.04+ and Debian 12+. Building on
+          # ubuntu-latest instead would pin the packages to that runner's much
+          # newer glibc, so they would only run on recent distros.
+
+          # --- MACOS ---
+          - os: macos
+            arch: x64
+            os-runner: macos-15-intel
+          - os: macos
+            arch: arm64
+            os-runner: macos-latest
+
+          # --- WINDOWS ---
+          - os: windows
+            arch: x64
+            os-runner: windows-2022
+          - os: windows
+            arch: arm64
+            os-runner: windows-11-arm
+
+    env:
+      MARIADB_SERVER_BUILD_DIR: bld
+      MARIADB_VERSION: ${{ inputs.mariadb_version || 'main' }}
+
+    steps:
+      # ========================================
+      # 0. CHECKOUT MARIADB SERVER SOURCE
+      # ========================================
+      - name: Checkout MariaDB Server Source
+        uses: actions/checkout@v4
+        with:
+          repository: MariaDB/server
+          ref: ${{ env.MARIADB_VERSION }}
+          submodules: recursive
+
+      # ========================================
+      # 0b. COMPUTE PACKAGE VERSION & PLATFORM
+      # ========================================
+      # Mirrors cmake/packaging.cmake's MYSH_VERSION/MYSH_PLATFORM scheme from
+      # the shell build (shell-release.yml): <product>-<version>-<platform>,
+      # with a trailing "-sandbox" tag distinguishing this from a regular
+      # server package. The version comes from the checked-out server source's
+      # VERSION file -- MYSQL_VERSION_MAJOR/MINOR/PATCH(/EXTRA), the same
+      # fields and "${MAJOR}.${MINOR}.${PATCH}${EXTRA}" formula the server's
+      # own cmake/mysql_version.cmake uses (SERVER_MATURITY is a separate
+      # field, unrelated to the version string). The platform string reuses
+      # packaging.cmake's "arm-64bit"/"x86-64bit" CPU suffix and its
+      # "macos<major>-..." / "windows-..." naming.
+      - name: Compute Package Version & Platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAJOR=$(grep '^MYSQL_VERSION_MAJOR=' VERSION | cut -d= -f2)
+          MINOR=$(grep '^MYSQL_VERSION_MINOR=' VERSION | cut -d= -f2)
+          PATCH=$(grep '^MYSQL_VERSION_PATCH=' VERSION | cut -d= -f2)
+          EXTRA=$(grep '^MYSQL_VERSION_EXTRA=' VERSION | cut -d= -f2 || true)
+          PKG_VERSION="${MAJOR}.${MINOR}.${PATCH}${EXTRA}"
+
+          case "${{ matrix.arch }}" in
+            arm64) PKG_ARCH="arm-64bit" ;;
+            x64)   PKG_ARCH="x86-64bit" ;;
+          esac
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            PKG_PLATFORM="macos$(sw_vers -productVersion | cut -d. -f1)-${PKG_ARCH}"
+          else
+            PKG_PLATFORM="windows-${PKG_ARCH}"
+          fi
+
+          echo "PKG_NAME=mariadb-${PKG_VERSION}-${PKG_PLATFORM}-sandbox" >> "$GITHUB_ENV"
+
+      # ========================================
+      # 1. SETUP VISUAL STUDIO 2022 (WINDOWS ONLY)
+      # ========================================
+      - name: Setup Visual Studio 2022 Environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      # ========================================
+      # 1b. INSTALL BISON (WINDOWS)
+      # ========================================
+      # cmake/bison.cmake searches c:\ProgramData\chocolatey\bin for win_bison.
+      # windows-11-arm never ships it, and windows-2022 (x64) turned out not to
+      # either ("Could NOT find BISON") despite once appearing to -- so install
+      # it unconditionally on both Windows runners rather than only arm64.
+      - name: Install Bison (Windows)
+        if: runner.os == 'Windows'
+        run: choco install winflexbison3 -y
+
+      # ========================================
+      # 2. INSTALL BUILD DEPENDENCIES (MACOS)
+      # ========================================
+      # bison is keg-only on Homebrew (macOS ships an ancient system bison that
+      # other tools depend on), so its bin dir is never linked onto PATH by
+      # default; add it explicitly or cmake keeps finding the unusable system
+      # one ("Bison (GNU parser generator) is required").
+      - name: Install macOS Build Dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install cmake ninja bison
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+
+      # ========================================
+      # 3. CONFIGURE
+      # ========================================
+      # PLUGIN_DUCKDB=NO: excluded on every platform for consistency with the
+      # Rocky Linux Docker build, which also disables it (its bundled
+      # third-party sources bring their own build headaches).
+      #
+      # CMAKE_OSX_SYSROOT / ZLIB_* / OPENSSL_ROOT_DIR (macOS only): these
+      # runners have both a stable Xcode.app and a separately-staged, newer
+      # CommandLineTools SDK installed side by side. With CMAKE_OSX_SYSROOT
+      # left unset, CMake's find_package(ZLIB) resolves ZLIB_INCLUDE_DIRS by
+      # independently probing /Library/Developer/CommandLineTools/SDKs
+      # directly (confirmed with a trivial repro project) -- a *different* SDK
+      # generation than whichever one -isysroot ends up pointing at. Since
+      # sql/CMakeLists.txt has a global
+      # INCLUDE_DIRECTORIES(... ${ZLIB_INCLUDE_DIRS} ...), every file in sql/
+      # gets a mismatched SDK's C headers injected ahead of libc++'s own,
+      # breaking the build ("tried including ... but didn't find libc++'s ...
+      # header"). Pinning CMAKE_OSX_SYSROOT alone isn't enough -- confirmed on
+      # this exact runner that find_package(ZLIB) ignores it entirely and
+      # still resolves to the CommandLineTools SDK regardless -- so ZLIB's
+      # include dir and library are pinned directly, matching the same SDK
+      # path used for CMAKE_OSX_SYSROOT (Apple ships zlib only inside the SDK,
+      # as libz.tbd, there's no separate Homebrew package for it here).
+      # OPENSSL_ROOT_DIR pins OpenSSL discovery the same way, for the same
+      # reason, rather than relying on FindOpenSSL's own search/pkg-config hint.
+      - name: Configure MariaDB Sandbox Server
+        shell: bash
+        run: |
+          EXTRA_CMAKE_ARGS=()
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            MACOS_SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+            EXTRA_CMAKE_ARGS+=(
+              -DCMAKE_OSX_SYSROOT="$MACOS_SDK_PATH"
+              -DZLIB_INCLUDE_DIR="$MACOS_SDK_PATH/usr/include"
+              -DZLIB_LIBRARY="$MACOS_SDK_PATH/usr/lib/libz.tbd"
+              -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
+            )
+          fi
+
+          cmake -B ${{ env.MARIADB_SERVER_BUILD_DIR }} -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_UNIT_TESTS=OFF \
+            -DWITH_EMBEDDED_SERVER=OFF \
+            -DWITH_WSREP=OFF \
+            -DWITHOUT_DYNAMIC_PLUGINS=OFF \
+            -DPLUGIN_ROCKSDB=NO \
+            -DPLUGIN_MROONGA=NO \
+            -DPLUGIN_CONNECT=NO \
+            -DPLUGIN_OQGRAPH=NO \
+            -DWITH_MARIABACKUP=OFF \
+            -DPLUGIN_DUCKDB=NO \
+            -DWITH_PCRE=bundled \
+            -DCMAKE_DISABLE_FIND_PACKAGE_MFC=ON \
+            "${EXTRA_CMAKE_ARGS[@]}"
+
+      # ========================================
+      # 4. BUILD MINIMAL SERVER
+      # ========================================
+      - name: Build Minimal Server
+        shell: bash
+        run: |
+          cmake --build ${{ env.MARIADB_SERVER_BUILD_DIR }} --parallel --target minbuild
+
+      # ========================================
+      # 4b. BUILD SANDBOX PLUGINS & TOOLS
+      # ========================================
+      # Per-OS target lists: what each platform actually ships (e.g. no
+      # auth_named_pipe outside Windows, no auth_pam* outside macOS). duckdb
+      # itself is disabled everywhere via PLUGIN_DUCKDB=NO above, so it's not
+      # in either list.
+      - name: Build Sandbox Plugins & Tools (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cmake --build ${{ env.MARIADB_SERVER_BUILD_DIR }} --parallel --target \
+            archive blackhole federated federatedx aria_ftdump aria_chk aria_pack \
+            aria_read_log aria_dump_log sphinx spider auth_ed25519 auth_mysql_sha2 \
+            auth_parsec file_key_management locales metadata_lock_info \
+            password_reuse_check query_cache_info query_response_time server_audit \
+            simple_password_check sql_errlog type_mysql_json innochecksum \
+            auth_named_pipe
+
+      - name: Build Sandbox Plugins & Tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --build ${{ env.MARIADB_SERVER_BUILD_DIR }} --parallel --target \
+            archive auth_pam_v1 auth_pam auth_pam_tool pam_user_map blackhole \
+            disks federated federatedx aria_ftdump aria_chk aria_pack aria_read_log \
+            aria_dump_log sphinx spider auth_ed25519 auth_mysql_sha2 auth_parsec \
+            file_key_management locales handlersocket mariadbd-safe-helper \
+            metadata_lock_info password_reuse_check query_cache_info \
+            query_response_time server_audit simple_password_check sql_errlog \
+            type_mysql_json innochecksum
+
+      # ========================================
+      # 5. INSTALL & PACKAGE
+      # ========================================
+      # No CPack here: the tested procedure installs the Server component under
+      # a DESTDIR, hand-copies the few binaries the component omits, and tars
+      # the result up directly as ${PKG_NAME}.tar.gz (see step 0b).
+      - name: Install & Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd ${{ env.MARIADB_SERVER_BUILD_DIR }}
+          DESTDIR="$(pwd)/install_root" cmake --install . --config Release --component Server
+          cp extra/my_print_defaults.exe "install_root/Program Files (x86)/MariaDB/bin/"
+          cp client/mariadb-admin.exe "install_root/Program Files (x86)/MariaDB/bin/"
+          mv "install_root/Program Files (x86)/MariaDB" "$PKG_NAME"
+          tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+
+      - name: Install & Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd ${{ env.MARIADB_SERVER_BUILD_DIR }}
+          DESTDIR="$(pwd)/install_root" cmake --install . --component Server
+          cp ./extra/my_print_defaults ./install_root/usr/local/mysql/bin
+          mv install_root/usr/local/mysql "$PKG_NAME"
+          tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
+
+      # ========================================
+      # 6. UPLOAD ARTIFACTS FOR DOWNLOAD
+      # ========================================
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mariadb-sandbox-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ env.MARIADB_SERVER_BUILD_DIR }}/mariadb-*-sandbox.tar.gz
+          if-no-files-found: error
+
+  # ==========================================================================
+  # LINUX PACKAGES (Rocky 9, containerised)
+  # ==========================================================================
+  rocky:
+    uses: ./.github/workflows/sandbox-server-rocky-linux.yml
+    with:
+      mariadb_version: ${{ inputs.mariadb_version || 'main' }}
+    secrets: inherit
