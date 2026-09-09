@@ -108,3 +108,51 @@ def test_default_base_dir_fallback(sandboxlib, shell):
     result = sandboxlib.default_sandbox_base_dir()
     assert result.startswith(os.path.expanduser("~"))
     assert result.endswith(os.path.join("mariadb-shell", "sandboxes"))
+
+
+# --------------------------------------------------------------------------- #
+# sandbox_path
+# --------------------------------------------------------------------------- #
+def _make_sandbox(tmp_path, port=3311):
+    base = tmp_path / "sandboxes"
+    sbx = base / str(port)
+    sbx.mkdir(parents=True)
+    (sbx / "my.cnf").write_text("[mysqld]\n")
+    return base, sbx
+
+
+@pytest.mark.parametrize("path_id", [None, ""])
+def test_sandbox_path_defaults_to_home_dir(sandboxlib, tmp_path, path_id):
+    base, sbx = _make_sandbox(tmp_path)
+    assert sandboxlib.sandbox_path(
+        3311, path_id, {"sandboxDir": str(base)}) == str(sbx)
+
+
+def test_sandbox_path_config(sandboxlib, tmp_path):
+    base, sbx = _make_sandbox(tmp_path)
+    assert sandboxlib.sandbox_path(
+        3311, "config", {"sandboxDir": str(base)}) == str(sbx / "my.cnf")
+
+
+def test_sandbox_path_error(sandboxlib, tmp_path):
+    base, sbx = _make_sandbox(tmp_path)
+    assert sandboxlib.sandbox_path(
+        3311, "error", {"sandboxDir": str(base)}) == str(
+            sbx / "sandboxdata" / "error.log")
+
+
+def test_sandbox_path_is_case_and_space_insensitive(sandboxlib, tmp_path):
+    base, sbx = _make_sandbox(tmp_path)
+    assert sandboxlib.sandbox_path(
+        3311, " CONFIG ", {"sandboxDir": str(base)}) == str(sbx / "my.cnf")
+
+
+def test_sandbox_path_missing_sandbox_raises(sandboxlib, tmp_path):
+    with pytest.raises(sandboxlib.Error, match="no sandbox"):
+        sandboxlib.sandbox_path(3311, None, {"sandboxDir": str(tmp_path)})
+
+
+def test_sandbox_path_unknown_identifier_raises(sandboxlib, tmp_path):
+    base, _ = _make_sandbox(tmp_path)
+    with pytest.raises(sandboxlib.Error, match="Unknown path identifier"):
+        sandboxlib.sandbox_path(3311, "bogus", {"sandboxDir": str(base)})

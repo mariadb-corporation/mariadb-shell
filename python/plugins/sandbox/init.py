@@ -251,3 +251,29 @@ def version(port=None, options=None):
             determined.
     """
     return sandboxlib.sandbox_version(port, options or {})
+
+
+@plugin_function("sandbox.getPath", cli=True)
+def get_path(port, path_id=None, options=None):
+    """Reports the filesystem path to a sandbox instance or one of its files.
+
+    Args:
+        port (int): The port of an existing sandbox instance.
+        path_id (str): Which path to report. If omitted or empty, the sandbox
+            home directory is returned. If "config", the path to the
+            instance's my.cnf option file is returned. If "error", the path
+            to the instance's error log file is returned.
+        options (dict): Optional dictionary with options affecting the result.
+
+    Allowed options for options:
+        sandboxDir (str): Path where the instance is located.
+
+    Returns:
+        str: The requested filesystem path.
+
+    The sandboxDir must be the one where the instance was deployed. If not
+    specified the default sandbox directory is used. An exception is raised
+    if no sandbox exists at the given port, or if path_id is not one of the
+    recognized values.
+    """
+    return sandboxlib.sandbox_path(port, path_id, options or {})
