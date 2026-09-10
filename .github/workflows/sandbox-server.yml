@@ -131,7 +131,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install cmake ninja bison
+          brew install cmake ninja bison dylibbundler
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
 
       # ========================================
@@ -253,6 +253,39 @@ jobs:
           cd ${{ env.MARIADB_SERVER_BUILD_DIR }}
           DESTDIR="$(pwd)/install_root" cmake --install . --component Server
           cp ./extra/my_print_defaults ./install_root/usr/local/mysql/bin
+
+          # OPENSSL_ROOT_DIR (step 3) points find_package(OpenSSL) at Homebrew's
+          # copy, and Homebrew's dylibs carry absolute install names (their own
+          # `id` is the literal /opt/homebrew/... path, not @rpath) -- so every
+          # binary and plugin that links OpenSSL comes out of the build hardcoding
+          # that path. It only happens to work on this runner because Homebrew's
+          # openssl@3 happens to live there too; on a user's Mac without that exact
+          # keg installed, dyld fails to load it (and if the user *does* have it
+          # at a different location -- an Intel Mac's /usr/local, or a different
+          # openssl@3 version -- it's the wrong library regardless).
+          #
+          # dylibbundler copies the actual dylibs into lib/private and rewrites
+          # every consumer's load commands (and the dylibs' own inter-dependency,
+          # libssl -> libcrypto, which Homebrew resolves via a *different*,
+          # versioned Cellar path than the one being replaced) to
+          # @executable_path/../lib/private/. That resolves correctly even for
+          # the lib/plugin/*.so files, which aren't executed directly but are
+          # dlopen'd by mariadbd: @executable_path always means the directory of
+          # the process's main executable (bin/mariadbd), not the loading dylib's
+          # own directory, so one relative path works for both. install_name_tool
+          # invalidates the linker's original ad hoc signature, so dylibbundler
+          # re-signs (also ad hoc) everything it touches.
+          ROOT="install_root/usr/local/mysql"
+          mkdir -p "$ROOT/lib/private"
+          for f in "$ROOT"/bin/* "$ROOT"/lib/plugin/*.so; do
+            [ -f "$f" ] || continue
+            otool -L "$f" | grep -q '/opt/homebrew' || continue
+            dylibbundler -of -b \
+              -x "$f" \
+              -d "$ROOT/lib/private" \
+              -p "@executable_path/../lib/private/"
+          done
+
           mv install_root/usr/local/mysql "$PKG_NAME"
           tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
 
