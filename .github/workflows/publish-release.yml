@@ -35,6 +35,24 @@ on:
         description: "Assemble and check everything, but create no release"
         type: boolean
         default: false
+      server_11_tag:
+        # Matched against sandbox-server.yml's run-name, which is exactly the
+        # 'MariaDB Branch/Tag to build' that workflow was given -- so this is
+        # the same string you'd type into that workflow's own mariadb_version
+        # input (e.g. "11.4"), not a run id. The latest successful Sandbox
+        # Server run for that exact tag is published. Blank omits this line
+        # from the release entirely.
+        description: "Server tag for the 11.x line (blank = don't publish an 11.x server package)"
+        type: string
+        required: false
+      server_12_tag:
+        description: "Server tag for the 12.x line (blank = don't publish a 12.x server package)"
+        type: string
+        required: false
+      server_13_tag:
+        description: "Server tag for the 13.x line (blank = don't publish a 13.x server package)"
+        type: string
+        required: false
 
 # Says which of the two this run was, in the Actions list -- a dry run should not
 # read as a publish at a glance.
@@ -190,6 +208,94 @@ jobs:
           find _artifacts -type f | sort
 
       # ====================================================================
+      # 4b. RESOLVE SANDBOX SERVER RUNS TO PUBLISH ALONGSIDE THE SHELL
+      #
+      # Each of the (optional) server_*_tag inputs names a MariaDB
+      # branch/tag, not a run id -- the same string you'd pass as
+      # sandbox-server.yml's own mariadb_version input. That workflow's
+      # run-name embeds that exact string (see its run-name:), which is the
+      # only way to find the right run: the Actions API does not expose a
+      # workflow_dispatch run's inputs directly. The latest successful run
+      # whose display title matches is used; a tag with no matching run, or
+      # left blank, simply drops that line from this release rather than
+      # failing the whole publish (unlike the shell build above, a missing
+      # server line is expected and fine -- not every release ships all
+      # three).
+      # ====================================================================
+      - name: Resolve Sandbox Server Runs
+        id: server_runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_11: ${{ inputs.server_11_tag }}
+          TAG_12: ${{ inputs.server_12_tag }}
+          TAG_13: ${{ inputs.server_13_tag }}
+        run: |
+          set -euo pipefail
+
+          resolve() {
+            local label="$1" tag="$2"
+            if [ -z "$tag" ]; then
+              echo "==> [$label] no tag given; skipping this server line."
+              return
+            fi
+
+            echo "==> [$label] looking for the latest successful Sandbox Server run for '$tag'"
+            local match
+            match=$(gh run list -R "$REPO" --workflow sandbox-server.yml \
+              --status success --limit 50 \
+              --json databaseId,displayTitle,headSha \
+              --jq "[.[] | select(.displayTitle == \"Sandbox Server $tag\")][0] // empty")
+
+            if [ -z "$match" ]; then
+              echo "::warning::No successful Sandbox Server run found with tag '$tag' (run-name 'Sandbox Server $tag'); the $label.x line will be omitted."
+              return
+            fi
+
+            local run_id sha
+            run_id=$(jq -r .databaseId <<<"$match")
+            sha=$(jq -r .headSha <<<"$match")
+            echo "==> [$label] using run $run_id (commit $sha)"
+            echo "run_id_$label=$run_id" >> "$GITHUB_OUTPUT"
+            echo "sha_$label=$sha"       >> "$GITHUB_OUTPUT"
+            echo "tag_$label=$tag"       >> "$GITHUB_OUTPUT"
+          }
+
+          resolve 11 "$TAG_11"
+          resolve 12 "$TAG_12"
+          resolve 13 "$TAG_13"
+
+      # Three fixed, explicit steps rather than a loop: each line's presence
+      # is independently conditional on the resolve step above having found a
+      # matching run, and download-artifact needs its own step per run-id.
+      - name: Download 11.x Server Packages
+        if: steps.server_runs.outputs.run_id_11 != ''
+        uses: actions/download-artifact@v7
+        with:
+          path: _server_artifacts/11
+          merge-multiple: true
+          run-id: ${{ steps.server_runs.outputs.run_id_11 }}
+          github-token: ${{ github.token }}
+
+      - name: Download 12.x Server Packages
+        if: steps.server_runs.outputs.run_id_12 != ''
+        uses: actions/download-artifact@v7
+        with:
+          path: _server_artifacts/12
+          merge-multiple: true
+          run-id: ${{ steps.server_runs.outputs.run_id_12 }}
+          github-token: ${{ github.token }}
+
+      - name: Download 13.x Server Packages
+        if: steps.server_runs.outputs.run_id_13 != ''
+        uses: actions/download-artifact@v7
+        with:
+          path: _server_artifacts/13
+          merge-multiple: true
+          run-id: ${{ steps.server_runs.outputs.run_id_13 }}
+          github-token: ${{ github.token }}
+
+      # ====================================================================
       # 5. ASSEMBLE RELEASE ASSETS
       # ====================================================================
       - name: Assemble Release Assets
@@ -264,6 +370,67 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+
+      # ====================================================================
+      # 5b. ASSEMBLE SERVER PACKAGES
+      #
+      # Kept separate from the shell assembly above so the sandbox packages
+      # (named "...-sandbox.tar.gz", never matching the shell's per-platform
+      # globs) can't affect that step's "exactly one package per platform"
+      # count. Runs unconditionally; it's a no-op writing empty manifests
+      # when no server_*_tag input resolved to a run.
+      # ====================================================================
+      - name: Assemble Server Packages
+        id: server_assets
+        run: |
+          set -euo pipefail
+
+          : > dist/SERVER_MANIFEST.tsv
+          rm -f dist/SERVER_SHA256SUMS
+
+          assemble() {
+            local label="$1" run_id_var="run_id_$1" tag_var="tag_$1" sha_var="sha_$1"
+            local run_id="${!run_id_var:-}"
+            [ -z "$run_id" ] && return
+
+            local tag="${!tag_var}" sha="${!sha_var}"
+            local dir="_server_artifacts/$label"
+            shopt -s nullglob
+            local pkgs=("$dir"/*.tar.gz)
+            if [ ${#pkgs[@]} -eq 0 ]; then
+              echo "::warning::Sandbox Server run $run_id ($label.x, tag '$tag') produced no .tar.gz packages; omitting this line."
+              return
+            fi
+
+            echo "==> [$label] publishing ${#pkgs[@]} package(s) from run $run_id (tag '$tag', commit $sha)"
+            mv -t dist/ "${pkgs[@]}"
+            for pkg in "${pkgs[@]}"; do
+              printf '%s\t%s\t%s\t%s\n' "$label" "$tag" "$sha" "$(basename "$pkg")" >> dist/SERVER_MANIFEST.tsv
+            done
+          }
+
+          run_id_11="${{ steps.server_runs.outputs.run_id_11 }}"
+          tag_11="${{ steps.server_runs.outputs.tag_11 }}"
+          sha_11="${{ steps.server_runs.outputs.sha_11 }}"
+          run_id_12="${{ steps.server_runs.outputs.run_id_12 }}"
+          tag_12="${{ steps.server_runs.outputs.tag_12 }}"
+          sha_12="${{ steps.server_runs.outputs.sha_12 }}"
+          run_id_13="${{ steps.server_runs.outputs.run_id_13 }}"
+          tag_13="${{ steps.server_runs.outputs.tag_13 }}"
+          sha_13="${{ steps.server_runs.outputs.sha_13 }}"
+
+          assemble 11
+          assemble 12
+          assemble 13
+
+          if [ -s dist/SERVER_MANIFEST.tsv ]; then
+            cd dist
+            cut -f4 SERVER_MANIFEST.tsv | xargs sha256sum > SERVER_SHA256SUMS
+            echo "==> SERVER_SHA256SUMS:"
+            cat SERVER_SHA256SUMS
+          else
+            echo "==> No server packages resolved; skipping SERVER_SHA256SUMS."
+          fi
 
       # ====================================================================
       # 6. PUBLISH
@@ -401,6 +568,32 @@ jobs:
           \`--ignore-missing\` is what lets the check pass with only the one
           tarball you downloaded present, rather than all of them."
 
+          # Second table, appended only when at least one server_*_tag input
+          # resolved to a run (5b writes one manifest row per package it
+          # moved into dist/). The manifest itself is bookkeeping for this
+          # step, not a release asset -- its content ends up in the notes
+          # text and in SERVER_SHA256SUMS, so it's removed before dist/* gets
+          # uploaded below.
+          if [ -s dist/SERVER_MANIFEST.tsv ]; then
+            ROWS=""
+            while IFS=$'\t' read -r label tag sha pkg; do
+              ROWS="${ROWS}| ${label}.x | \`${tag}\` | \`${sha:0:7}\` | \`${pkg}\` |
+          "
+            done < dist/SERVER_MANIFEST.tsv
+
+            NOTES="$NOTES
+
+          ## Sandbox server packages
+
+          Built by [MariaDB-Sandbox-Server](../../actions/workflows/sandbox-server.yml)
+          runs matching each tag below. Checksums are in \`SERVER_SHA256SUMS\`.
+
+          | Line | Tag | Commit | Package |
+          |---|---|---|---|
+          $ROWS"
+          fi
+          rm -f dist/SERVER_MANIFEST.tsv
+
           # gh release view is read-only, so a dry run can still report which of
           # the two paths a real run would take -- create, or clobber an existing
           # release's assets.
@@ -454,5 +647,6 @@ jobs:
             dist/SHA256SUMS
             dist/install.sh
             dist/install.ps1
+            dist/SERVER_SHA256SUMS
           retention-days: 7
           if-no-files-found: error
