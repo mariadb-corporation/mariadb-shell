@@ -188,6 +188,7 @@ jobs:
             -DPLUGIN_DUCKDB=NO \
             -DWITH_PCRE=bundled \
             -DCMAKE_DISABLE_FIND_PACKAGE_MFC=ON \
+            -DCOMPILATION_COMMENT="Development Sandbox" \
             "${EXTRA_CMAKE_ARGS[@]}"
 
       # ========================================

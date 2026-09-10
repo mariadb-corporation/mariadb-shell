@@ -75,6 +75,7 @@ cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DPLUGIN_OQGRAPH=NO \
   -DWITH_MARIABACKUP=OFF \
   -DPLUGIN_DUCKDB=NO \
+  -DCOMPILATION_COMMENT="Development Sandbox" \
   -DWITH_PCRE=bundled
 
 # 2. Build the minimal server, then the sandbox plugins/tools it needs on top
