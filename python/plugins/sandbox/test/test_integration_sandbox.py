@@ -174,8 +174,9 @@ def test_deploy_connect_lifecycle(driver):
     # The instance is reachable and the root password was set.
     assert "QUERY_OK 1" in driver.query(port)
 
-    # Graceful stop.
-    out = driver.op("stop", port)
+    # Graceful stop. The password is only used on Windows (to authenticate the
+    # SQL SHUTDOWN request); harmless elsewhere, where a signal is used instead.
+    out = driver.op("stop", port, {"password": "rootpass"})
     assert "successfully stopped" in out, out
     assert not _listening(port)
 

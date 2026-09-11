@@ -144,8 +144,8 @@ def stop(port, options=None):
 
     Allowed options for options:
         sandboxDir (str): Path where the instance is located.
-        password (str): Root password, used on Windows to request the shutdown
-            via mariadb-admin. Ignored on other platforms, where a clean
+        password (str): Root password, used on Windows to authenticate the
+            shutdown request. Ignored on other platforms, where a clean
             shutdown signal is sent to the server process.
         timeout (int): Seconds to wait for the instance to stop. Defaults to 60.
 
