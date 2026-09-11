@@ -19,9 +19,9 @@ This module is imported by pytest before collecting any tests. It:
   * puts the plugin directory on sys.path so ``import sandboxlib`` works, and
   * installs a stub ``mysqlsh`` module into sys.modules.
 
-The stub lets ``sandboxlib`` (which does ``from mysqlsh import globals, Error``)
-be imported and exercised with a plain Python interpreter, without a built
-MySQL/MariaDB Shell.
+The stub lets ``sandboxlib`` (which does
+``from mysqlsh import globals, Error, executable``) be imported and exercised
+with a plain Python interpreter, without a built MySQL/MariaDB Shell.
 """
 
 import os
@@ -80,6 +80,7 @@ def _install_fake_mysqlsh():
 
     mod.Error = Error
     mod.globals = types.SimpleNamespace(shell=FakeShell())
+    mod.executable = "/fake/bin/mariadb-shell"
     sys.modules["mysqlsh"] = mod
     return mod
 
