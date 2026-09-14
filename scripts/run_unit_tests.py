@@ -151,6 +151,13 @@ class TestTaskFactory:
                 # not an actual GTest suite header.
                 return
 
+            if current_suite == "GoogleTestVerification":
+                # Synthetic suite GTest injects to report framework-level
+                # errors (e.g. unknown --gtest_ flags); it names no real
+                # test to execute.
+                current_tests = []
+                return
+
             if current_suite in split_suites:
                 # Create individual tasks for every test inside specified split suites
                 for test_name in current_tests:
@@ -308,7 +315,7 @@ class SandboxManager:
 
     def deploy(self, port: int) -> None:
         """Deploys a base sandbox server instance listening on the given port."""
-        self._run_cli("sandbox", "deploy", str(port), "--password=")
+        self._run_cli("sandbox", "deploy", str(port), "--password=", "--mariadbd-options=performance-schema=ON")
 
     def start(self, port: int) -> None:
         """(Re)starts a previously deployed, currently stopped sandbox instance."""
@@ -671,9 +678,12 @@ class Orchestrator:
                     task_dir.mkdir(parents=True, exist_ok=True)
                     log_path = task_dir / "mariadb-shell.log"
                     output_path = task_dir / TestWorker.OUTPUT_FILE_NAME
+                    task_tmp_dir = task_dir / "tmp"
+                    task_tmp_dir.mkdir(parents=True, exist_ok=True)
 
                     env = os.environ.copy()
                     env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(task_dir.resolve())
+                    env["TMPDIR"] = str(task_tmp_dir.resolve())
                     env["MYSQL_PORT"] = str(port)
                     env["MYSQL_SANDBOX_PORT0"] = str(port)
                     for j, extra_port in enumerate(extra_ports, start=1):

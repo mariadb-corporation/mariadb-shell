@@ -12,6 +12,11 @@ import urllib.parse
 
 supported_versions = f"8.0 <= version < 10.0 or 26.7 <= version <= {'.'.join(__mysh_version.split('.')[:2])}.*"
 
+# JavaScript libraries are a MySQL 9.2+ object type, and information_schema has
+# no 'libraries' table on MariaDB at all
+instance_supports_libraries = not __server_is_maria_db and __version_num >= 90200
+
+
 def unsupported_target_version_msg(version):
     return f"Target MySQL version '{version}' is not supported by this version of MySQL Shell. Supported MySQL Server versions are {supported_versions}"
 
@@ -42,6 +47,13 @@ def cannot_connect_error(host, port):
     if __mariadb_build:
         return ("DBError: MySQL Error (2002)", f"Can't connect to server on '{host}'")
     return ("DBError: MySQL Error (2003)", f"Can't connect to MySQL server on '{host}:{port}'")
+
+# Same server-side error (1054/42S22) for an unknown column in a WHERE clause,
+# worded differently: MySQL says "in 'where clause'", MariaDB "in 'WHERE'".
+def unknown_column_in_where(column):
+    if __server_is_maria_db:
+        return f"Unknown column '{column}' in 'WHERE'"
+    return f"Unknown column '{column}' in 'where clause'"
 
 def md5_table(session, schema, table, where = "", partitions = []):
     columns = []
@@ -979,10 +991,6 @@ session.close()
 test_user = "sample_user"
 test_user_account = get_test_user_account(test_user)
 test_user_pwd = "p4$$"
-
-# JavaScript libraries are a MySQL 9.2+ object type, and information_schema has
-# no 'libraries' table on MariaDB at all
-instance_supports_libraries = not __server_is_maria_db and __version_num >= 90200
 
 partition_awareness_capability = {
     "id": "partition_awareness",

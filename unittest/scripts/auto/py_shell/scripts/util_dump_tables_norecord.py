@@ -61,6 +61,12 @@ incompatible_view = "has_definer"
 incompatible_schema_tables = [incompatible_table_wrong_engine, incompatible_table_encryption, incompatible_table_data_directory, incompatible_table_index_directory, incompatible_table_tablespace]
 incompatible_schema_views = [incompatible_view]
 
+if __server_is_maria_db:
+    # the encryption and tablespace tables are never created on MariaDB - see
+    # the 'schema with MySQLaaS incompatibilities' chunk - so they cannot be
+    # named in a dump either
+    incompatible_schema_tables = [t for t in incompatible_schema_tables if t not in (incompatible_table_encryption, incompatible_table_tablespace)]
+
 incompatible_table_directory = os.path.join(__tmp_dir, "incompatible")
 table_data_directory = os.path.join(incompatible_table_directory, "data")
 table_index_directory = os.path.join(incompatible_table_directory, "index")
@@ -1506,7 +1512,7 @@ for f in os.listdir(test_output_absolute):
     EXPECT_EQ(os.getuid(), os.stat(path).st_uid)
 
 
-#@<> The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done.
+#@<> The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done. {not __server_is_maria_db}
 TEST_BOOL_OPTION("ocimds")
 
 #@<> If the `ocimds` option is set to `true`, the following must be done: {not __server_is_maria_db}
@@ -1776,7 +1782,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table]
 # WL14506-TSFR_3.3_1
 EXPECT_FAIL("ValueError", "Argument #4: The 'create_invisible_pks' and 'ignore_missing_pks' compatibility options cannot be used at the same time.", incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks", "ignore_missing_pks" ] })
 
-#@<> force_innodb
+#@<> force_innodb {not __server_is_maria_db}
 EXPECT_SUCCESS(incompatible_schema, incompatible_schema_tables, test_output_absolute, { "compatibility": [ "force_innodb" ] , "ddlOnly": True, "showProgress": False }, incompatible_schema_views)
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_index_directory).fixed())
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_wrong_engine).fixed())
@@ -1787,12 +1793,12 @@ EXPECT_SUCCESS(incompatible_schema, incompatible_schema_tables, test_output_abso
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(ignore_missing_pks(incompatible_schema, table).fixed())
 
-#@<> strip_definers
+#@<> strip_definers {not __server_is_maria_db}
 EXPECT_SUCCESS(incompatible_schema, incompatible_schema_tables, test_output_absolute, { "compatibility": [ "strip_definers" ] , "ddlOnly": True, "showProgress": False }, incompatible_schema_views)
 EXPECT_STDOUT_CONTAINS(strip_definers_definer_clause(incompatible_schema, incompatible_view).fixed())
 EXPECT_STDOUT_CONTAINS(strip_definers_security_clause(incompatible_schema, incompatible_view).fixed())
 
-#@<> strip_tablespaces
+#@<> strip_tablespaces {not __server_is_maria_db}
 EXPECT_SUCCESS(incompatible_schema, incompatible_schema_tables, test_output_absolute, { "compatibility": [ "strip_tablespaces" ] , "ddlOnly": True, "showProgress": False }, incompatible_schema_views)
 EXPECT_STDOUT_CONTAINS(strip_tablespaces(incompatible_schema, incompatible_table_tablespace).fixed())
 
@@ -2288,7 +2294,10 @@ test_session = shell.open_session("mysql://{0}:{1}@{2}:{3}".format("test", "test
 test_session.run_sql("INSERT INTO !.! (id) VALUES (1);", [ verification_schema, tested_tables[1] ])
 test_session.run_sql("INSERT INTO !.! (col) VALUES ('First'), ('Second'), ('Third');", [ verification_schema, tested_tables[0] ])
 test_session.run_sql("UPDATE !.! SET col = 'Fourth' WHERE col = 'Third';", [ verification_schema, tested_tables[0] ])
-EXPECT_THROWS(lambda: test_session.run_sql("DELETE FROM !.! WHERE col = 'Fourth';", [ verification_schema, tested_tables[0] ]), "TRIGGER command denied to user 'test'@'{0}' for table '{1}'".format(__host, tested_tables[0]))
+# MariaDB names the table schema-qualified and backtick-quoted in this error,
+# MySQL names it bare and single-quoted
+denied_table = f"`{verification_schema}`.`{tested_tables[0]}`" if __server_is_maria_db else f"'{tested_tables[0]}'"
+EXPECT_THROWS(lambda: test_session.run_sql("DELETE FROM !.! WHERE col = 'Fourth';", [ verification_schema, tested_tables[0] ]), "TRIGGER command denied to user 'test'@'{0}' for table {1}".format(__host, denied_table))
 EXPECT_EQ([ 1, 3, 1, 0, 3, 2, 0, "" ], [x for x in test_session.run_sql("SELECT * FROM !.!;", [ verification_schema, tested_tables[1] ]).fetch_one()])
 
 # drop the trigger using root
@@ -2593,11 +2602,15 @@ tested_table = "char_hashes_4"
 items = 10000
 
 session.run_sql("CREATE SCHEMA !;", [ tested_schema ])
-session.run_sql("""CREATE TABLE !.! (
+# MariaDB's grammar does not accept an explicit NOT NULL on a GENERATED ALWAYS
+# AS column, MySQL's does; the columns are never actually NULL either way, so
+# this does not change what the test covers
+generated_not_null = "" if __server_is_maria_db else " NOT NULL"
+session.run_sql(f"""CREATE TABLE !.! (
   `md5_1` varchar(8) NOT NULL,
   `md5_2` varchar(8) NOT NULL,
-  `md5_3` varchar(8) GENERATED ALWAYS AS (substr(md5_full, 17, 8)) VIRTUAL NOT NULL,
-  `md5_4` varchar(8) GENERATED ALWAYS AS (substr(md5_full, 25, 8)) STORED NOT NULL,
+  `md5_3` varchar(8) GENERATED ALWAYS AS (substr(md5_full, 17, 8)) VIRTUAL{generated_not_null},
+  `md5_4` varchar(8) GENERATED ALWAYS AS (substr(md5_full, 25, 8)) STORED{generated_not_null},
   `email` varchar(100) DEFAULT NULL,
   `md5_full` varchar(32) DEFAULT NULL,
   UNIQUE KEY `pk` (`md5_1`,`md5_2`,`md5_3`,`md5_4`)
@@ -3054,7 +3067,7 @@ EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verificatio
 
 #@<> WL15311_TSFR_3_2_3_1
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL' in 'where clause'")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
@@ -3508,7 +3521,7 @@ EXPECT_STDOUT_CONTAINS("Checksumming enabled.")
 #@<> WL15947 - cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#37770454 - shell crashes during dump if table has a functional key {VER(>=8.0.0)}
+#@<> BUG#37770454 - shell crashes during dump if table has a functional key {VER(>=8.0.0) and not __server_is_maria_db}
 tested_schema = "tested_schema"
 tested_table = "tested_table"
 

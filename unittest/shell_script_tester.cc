@@ -36,6 +36,7 @@
 #include <utility>
 
 #include "modules/adminapi/common/server_features.h"
+#include "modules/util/common/dump/server_features.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/shellcore/shell_console.h"
 #include "shellcore/interrupt_handler.h"
@@ -868,7 +869,8 @@ static std::string find_in_parent_dir(std::string dir,
 
 bool Shell_script_tester::load_source_chunks(const std::string &path,
                                              std::istream &stream,
-                                             const std::string &prefix) {
+                                             const std::string &prefix,
+                                             bool is_include) {
   std::string last_id;
 
   auto last_chunk = [this, &last_id]() { return &_chunks.at(last_id); };
@@ -884,7 +886,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
 
     auto line = str_rstrip_view(line_raw, "\r\n");
 
-    auto chunk_def = load_chunk_definition(line);
+    auto chunk_def = load_chunk_definition(line, is_include);
     if (chunk_def.has_value()) {
       if (!prefix.empty()) {
         chunk_def->id = prefix + chunk_def->id;
@@ -953,7 +955,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
                 std::string namespc =
                     std::get<0>(shcore::path::split_extension(include));
                 if (!tag.empty()) namespc = tag + "::" + namespc;
-                load_source_chunks(include, inc_stream, namespc + "::");
+                load_source_chunks(include, inc_stream, namespc + "::", true);
                 return true;
               }
             }
@@ -986,6 +988,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
           chunk.def.id = last_id = prefix + "__global__";
           chunk.def.validation_id = prefix + "__global__";
           chunk.def.validation = ValidationType::Optional;
+          chunk.def.is_include = is_include;
           chunk.code.push_back({linenum, std::string{line}});
           add_source_chunk(path, chunk);
         } else {
@@ -1073,7 +1076,7 @@ void Shell_script_tester::add_validation(Chunk_definition chunk,
  * @returns The chunk definition if the line is in the right format.
  */
 std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
-    std::string_view line) {
+    std::string_view line, bool is_include) {
   if (line.find(get_chunk_token()) != 0) return {};
 
   auto chunk_id = line.substr(get_chunk_token().size());
@@ -1125,6 +1128,14 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   start = chunk_id.find("[USE:");
   end = chunk_id.find("]", start);
 
+  std::optional<bool> process;
+  if (chunk_id.size() > 1) {
+    if (chunk_id[0] == '-' || chunk_id[0] == '+') {
+      process = chunk_id[0] == '+';
+      chunk_id = chunk_id.substr(1);
+    }
+  }
+
   std::string validation_id;
   if (start != std::string::npos && end != std::string::npos) {
     validation_id = chunk_id.substr(start + 5, end - start - 5);
@@ -1134,6 +1145,7 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   }
 
   chunk_id = str_strip_view(chunk_id);
+
   validation_id = str_strip_view(validation_id);
 
   Chunk_definition ret_val;
@@ -1143,6 +1155,8 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   ret_val.validation = val_type;
   ret_val.stream = std::string{stream};
   ret_val.validation_id = std::string{validation_id};
+  ret_val.process = process;
+  ret_val.is_include = is_include;
 
   return ret_val;
 }
@@ -1393,6 +1407,14 @@ void Shell_script_tester::execute_script(const std::string &path,
         }
       }
 
+      bool process_all_chunks = true;
+      for (size_t index = 0; process_all_chunks && index < _chunk_order.size();
+           index++) {
+        if (_chunks[_chunk_order[index]].def.process.has_value()) {
+          process_all_chunks = false;
+        }
+      }
+
       bool skip_until_cleanup = false;
       for (size_t index = 0; index < _chunk_order.size(); index++) {
         // Prints debugging information
@@ -1406,6 +1428,13 @@ void Shell_script_tester::execute_script(const std::string &path,
           output_handler.debug_print(makelblue(chunk_log));
           output_handler.debug_print(makelblue(splitter));
         } else {
+          // Skips chunks that are meant to be excluded
+          if (!_chunks[_chunk_order[index]].def.process.value_or(
+                  process_all_chunks) &&
+              !_chunks[_chunk_order[index]].def.is_include) {
+            continue;
+          }
+
           std::string chunk_log{"CHUNK: "};
           chunk_log += _chunk_order[index];
           auto splitter = makeyellow(std::string(chunk_log.length(), '-'));
@@ -1771,6 +1800,18 @@ void Shell_script_tester::set_defaults() {
   // "has what MySQL 8.0 has". Keyed on the server and not on __mariadb_build,
   // since a Shell built against either vendor can be pointed at either server.
   def_bool_var("__server_is_maria_db", target_server_is_maria_db());
+
+  // Single source of truth for the dump/load "does this server support X"
+  // questions below - reuse this instead of re-deriving them from
+  // __version_num, which is not on the same scale for MariaDB.
+  const auto target_server = mysqlsh::dump::common::server_version(
+      _target_server_version, target_server_is_maria_db());
+
+  // Whether the dumper can use a MySQL 8+ optimizer hint
+  // (/*+ SET_VAR(...) */) instead of falling back to SQL_NO_CACHE - see
+  // common::supports_optimizer_hints().
+  def_bool_var("__server_supports_optimizer_hints",
+              mysqlsh::dump::common::supports_optimizer_hints(target_server));
 
   // Set terminology related variables
   if (version_num > 80025) {

@@ -119,6 +119,8 @@ EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "create_invisible_pks" ], "d
 # WL15298_TSFR_4_4_13
 # WL15298_TSFR_4_4_14
 # WL15298_TSFR_4_4_15
+
+#@<> Compatibility option {not __server_is_maria_db}
 # this tests that compatibility mode is recognized and some of them are applied
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "force_innodb", "ignore_missing_pks", "ignore_wildcard_grants", "skip_invalid_accounts", "strip_definers", "strip_invalid_grants", "strip_restricted_grants", "strip_tablespaces" ], "ddlOnly": True })
 EXPECT_STDOUT_NOT_CONTAINS(f"User {test_user_account} had restricted privileges")
@@ -789,11 +791,11 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_definers_security_clause(schema_name, test_view
 # WL15887-TSFR_3_3_1 - no account is not included in the dump
 EXPECT_STDOUT_CONTAINS(definer_clause_uses_unknown_account_once().warning(True))
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0)}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "strip_definers" ], "dryRun": True, "showProgress": False, "ddlOnly": True }, schemas = [ schema_name ])
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887 - cleanup {__dbug and VER(>=8.2.0)}
+#@<> WL15887 - cleanup {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 src_session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 testutil.dbug_set("")
 

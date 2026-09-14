@@ -232,8 +232,13 @@ class Dump_reader {
         mysqlshdk::storage::Compression::NONE;
   };
 
+  // transactional_engines: upper-cased names of the storage engines the
+  // target considers transactional (information_schema.ENGINES.TRANSACTIONS
+  // = 'YES'); a table using any other engine never has two of its chunks
+  // handed out at once - see MARIADB_DUMP_LOAD.md section 33
   bool next_table_chunk(
       const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+      const std::unordered_set<std::string> &transactional_engines,
       Table_chunk *out_chunk);
 
   struct Histogram {
@@ -467,6 +472,9 @@ class Dump_reader {
     bool chunked = false;
     // MariaDB: a UNIQUE ... WITHOUT OVERLAPS table refuses REPLACE
     bool period_unique_key = false;
+    // storage engine the table used on the source instance, empty if the
+    // dump predates this field
+    std::string engine;
     bool last_chunk_seen = false;
 
     size_t chunks_seen = 0;
@@ -820,11 +828,13 @@ class Dump_reader {
 
   static Candidate schedule_chunk_proportionally(
       const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+      const std::unordered_set<std::string> &transactional_engines,
       std::unordered_set<Dump_reader::Table_data_info *> *tables_with_data,
       uint64_t max_concurrent_tables);
 
 #ifdef FRIEND_TEST
   FRIEND_TEST(Dump_scheduler, load_scheduler);
+  FRIEND_TEST(Dump_scheduler, non_transactional_engine_chunks_are_not_concurrent);
 #endif
 };
 

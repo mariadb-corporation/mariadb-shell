@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -45,8 +46,10 @@ struct Binlog_event {
   std::string info;
 };
 
+#ifndef MARIADB_BUILD
 /**
- * Inject an empty transaction with the given gtid at the server.
+ * Inject an empty transaction with the given gtid at the server. Relies on
+ * MySQL's gtid_next session variable, which MariaDB does not have.
  */
 void inject_gtid(const mysqlshdk::mysql::IInstance &server, const Gtid &gtid);
 
@@ -55,6 +58,7 @@ void inject_gtid(const mysqlshdk::mysql::IInstance &server, const Gtid &gtid);
  */
 size_t inject_gtid_set(const mysqlshdk::mysql::IInstance &server,
                        const Gtid_set &gtid_set);
+#endif  // !MARIADB_BUILD
 
 /**
  * Returns list of binary logs at the server.

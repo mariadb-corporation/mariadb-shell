@@ -561,8 +561,15 @@ std::string Dump_reader::fetch_routines_script(
 // Thus, smaller tables must get fewer threads allocated so they take longer
 // to load, while bigger threads get more, with the hope that the total time
 // to load all tables is minimized.
+//
+// That preference for a table already being loaded is a performance
+// optimization only - none of the above requires it. A table whose engine is
+// not in transactional_engines is the exception: for those, one chunk loading
+// is a hard reason to not offer another chunk of the same table at all - see
+// MARIADB_DUMP_LOAD.md section 33.
 Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+    const std::unordered_set<std::string> &transactional_engines,
     std::unordered_set<Dump_reader::Table_data_info *> *tables_with_data,
     uint64_t max_concurrent_tables) {
   if (tables_with_data->empty()) return tables_with_data->end();
@@ -575,11 +582,25 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     auto best = end;
 
     for (auto it = tables_with_data->begin(); it != end; ++it) {
+      const bool in_flight =
+          tables_being_loaded.find((*it)->key()) != tables_being_loaded.end();
+
+      if (in_flight && !(*it)->engine.empty() &&
+          !transactional_engines.count(shcore::str_upper((*it)->engine))) {
+        // a chunk of this table is already loading and its engine is not one
+        // the target considers transactional - a second connection
+        // concurrently loading another chunk of the same table is not safe
+        // (this is what crashed a MariaDB Aria system table, see
+        // MARIADB_DUMP_LOAD.md section 33) - do not offer it as a candidate
+        // at all until the in-flight chunk is done
+        continue;
+      }
+
       if ((*it)->chunks_consumed) {
         tables_in_progress.emplace_back(it);
       }
 
-      if (tables_being_loaded.find((*it)->key()) == tables_being_loaded.end()) {
+      if (!in_flight) {
         // table is better if it's bigger and in the same state as the current
         // best, or if it was previously scheduled and current best was not
         if (best == end ||
@@ -595,6 +616,14 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     if (best != end && (tables_in_progress.size() < max_concurrent_tables ||
                         (*best)->chunks_consumed)) {
       return best;
+    }
+
+    if (tables_in_progress.empty()) {
+      // every table with data available is excluded: either none can be
+      // started fresh (the loop above would otherwise have returned) or the
+      // only ones already started are all mid-chunk on a serialized engine -
+      // nothing can be handed out right now
+      return end;
     }
   }
 
@@ -656,9 +685,12 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
 
 bool Dump_reader::next_table_chunk(
     const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+    const std::unordered_set<std::string> &transactional_engines,
     Table_chunk *out_chunk) {
-  auto iter = schedule_chunk_proportionally(
-      tables_being_loaded, &m_tables_with_data, m_options.threads_count());
+  auto iter = schedule_chunk_proportionally(tables_being_loaded,
+                                            transactional_engines,
+                                            &m_tables_with_data,
+                                            m_options.threads_count());
 
   if (iter != m_tables_with_data.end()) {
     out_chunk->schema = (*iter)->table->parent->name;
@@ -1182,6 +1214,7 @@ void Dump_reader::Table_info::update_metadata(const std::string &data,
   di.extension = md->get_string("extension", "tsv");
   di.chunked = md->get_bool("chunking", false);
   di.period_unique_key = md->get_bool("periodUniqueKey", false);
+  di.engine = md->get_string("engine", "");
 
   if (md->has_key("compression")) {
     compression_type = md->get_string("compression");

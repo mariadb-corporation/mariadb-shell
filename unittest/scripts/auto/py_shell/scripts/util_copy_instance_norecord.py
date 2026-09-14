@@ -160,6 +160,7 @@ elif __version_num > __mysh_version_num:
 else:
     target_version = __version
 
+#@<> Compatibility option {not __server_is_maria_db}
 # this tests that compatibility mode is recognized and some of them are applied
 EXPECT_SUCCESS(__sandbox_uri2, { "targetVersion": target_version, "compatibility": [ "force_innodb", "ignore_missing_pks", "ignore_wildcard_grants", "skip_invalid_accounts", "strip_definers", "strip_invalid_grants", "strip_restricted_grants", "strip_tablespaces" ] })
 EXPECT_STDOUT_CONTAINS(f"User {test_user_account} had restricted privileges")
@@ -344,16 +345,27 @@ EXPECT_SUCCESS(__sandbox_uri2, { "maxBytesPerTransaction": "1M" }, setup = lambd
 # WL15298_TSFR_4_5_7
 EXPECT_STDOUT_NOT_CONTAINS("Analyzing tables")
 # WL15298_TSFR_4_6_1
-p = re.compile(r"""
+mysql_gtid_data=re.compile(r"""
 .*---
 Dump_metadata:
   Binlog_file: .*
   Binlog_position: .*
   Executed_GTID_set: .*
 """)
-EXPECT_STDOUT_MATCHES(p)
+
+mariadb_gtid_data=re.compile(r"""
+.*---
+Dump_metadata:
+  Binlog_file: .*
+  Binlog_position: .*
+  GTID_position: .*
+""")
+
+expected_gtid = mysql_gtid_data if not __server_is_maria_db else mariadb_gtid_data
+EXPECT_STDOUT_MATCHES(expected_gtid)
+
 # BUG#35883344 - binlog info should be written to the log file
-EXPECT_SHELL_LOG_MATCHES(p)
+EXPECT_SHELL_LOG_MATCHES(expected_gtid)
 
 #@<> WL15298 - test invalid values of maxBytesPerTransaction option
 TEST_STRING_OPTION("maxBytesPerTransaction")
@@ -849,11 +861,11 @@ for account in [ account_name, "`invalid-account`@`localhost`" ]:
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0)}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "strip_definers" ], "dryRun": True, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {__dbug and VER(>=8.2.0)}
+#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 for account in account_names:
     src_session.run_sql(f"GRANT SET_ANY_DEFINER ON *.* TO {account}")
     WIPE_OUTPUT()
@@ -861,7 +873,7 @@ for account in account_names:
     EXPECT_STDOUT_NOT_CONTAINS("SET_ANY_DEFINER")
     src_session.run_sql(f"REVOKE SET_ANY_DEFINER ON *.* FROM {account}")
 
-#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {__dbug and VER(>=8.2.0) and VER(<8.0.24)}
+#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {__dbug and VER(>=8.2.0) and VER(<8.0.24) and not __server_is_maria_db}
 for account in account_names:
     src_session.run_sql(f"GRANT SET_USER_ID ON *.* TO {account}")
     WIPE_OUTPUT()

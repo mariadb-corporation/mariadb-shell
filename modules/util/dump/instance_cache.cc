@@ -566,6 +566,16 @@ void Instance_cache_builder::filter_tables() {
       return;
     }
 
+    // Unlike MySQL, MariaDB reports a TEMPORARY table here. Dump_options
+    // rejects temporary tables during validation, but skip them here too:
+    // otherwise they fall through to the "is_table" check below, land in the
+    // views map, and abort the dump when a SHOW CREATE VIEW is issued against
+    // one - the same "wrong map" shape as sequences and packages, see
+    // MARIADB_DUMP_LOAD.md section 4.5.1.
+    if ("TEMPORARY" == table_type) {
+      return;
+    }
+
     const auto table_name = row->get_string(1);  // TABLE_NAME
 
     // MariaDB sequences are reported here as well, but none of the table

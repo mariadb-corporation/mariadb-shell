@@ -79,6 +79,19 @@ class Transaction_buffer {
   bool flush_pending() const;
   void flush_done(bool *out_has_more_data);
 
+  // Remembers the file offset of the next unconsumed byte, so a transaction
+  // that gets rolled back (e.g. an InnoDB deadlock) can be retried from
+  // scratch via try_rewind_for_retry(). Call before each attempt.
+  void mark_retry_point();
+
+  // Rewinds the file and the buffer's per-transaction state back to the last
+  // mark_retry_point(), so the same bytes can be resent to the server. Returns
+  // false (and changes nothing) when no reliable retry point is available -
+  // fast sub-chunking reads from a live producer with nothing to seek back
+  // to, and some sources (e.g. compressed/streamed ones) don't support
+  // seeking - in which case the caller must treat the transaction as failed.
+  bool try_rewind_for_retry();
+
   uint64_t oversized_rows() const { return m_oversized_rows; }
 
   void on_oversized_row(const std::function<void(uint64_t)> &callback) {
@@ -133,6 +146,10 @@ class Transaction_buffer {
   // whether the row currently being sent has already been reported as oversized
   bool m_oversized_row_counted = false;
   bool m_eof = false;
+
+  // file offset of the first unconsumed byte as of the last mark_retry_point()
+  off64_t m_retry_offset = 0;
+  bool m_retry_point_valid = false;
 
   std::string m_data;
 

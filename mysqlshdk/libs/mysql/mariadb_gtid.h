@@ -85,6 +85,20 @@ class Mariadb_gtid_position final {
   bool intersects(const Mariadb_gtid_position &other) const;
 
   /**
+   * How many transactions this position holds beyond `base`, i.e. the size of
+   * the set difference: per domain, how far its sequence has advanced past the
+   * one `base` names, counting every sequence of a domain `base` does not know
+   * about at all.
+   *
+   * Sequence numbers are handed out in order within a domain, so this is exact
+   * for the single-writer case the consistency check reports on; a domain
+   * written by several servers at once can leave gaps, which makes it an upper
+   * bound. Domains that only `base` carries contribute nothing - the result is
+   * never negative.
+   */
+  uint64_t transactions_since(const Mariadb_gtid_position &base) const;
+
+  /**
    * Adds `other` to this position, keeping the more advanced entry of the two
    * for every domain they share. This is the union of the two sets of
    * transactions, which is what `updateGtidSet: "append"` asks for.

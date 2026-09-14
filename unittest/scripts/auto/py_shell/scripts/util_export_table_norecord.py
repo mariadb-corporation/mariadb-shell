@@ -331,7 +331,10 @@ for table in session.run_sql("SELECT TABLE_NAME, TABLE_TYPE FROM information_sch
         types_schema_views.append(table[0])
 
 #@<> Analyze the table {VER(>=8.0.0)}
-session.run_sql("ANALYZE TABLE !.! UPDATE HISTOGRAM ON `id`;", [ test_schema, test_table_no_index ])
+if __server_is_maria_db:
+    session.run_sql("ANALYZE TABLE !.! PERSISTENT FOR COLUMNS (id) INDEXES ();", [ test_schema, test_table_no_index ])
+else:
+    session.run_sql("ANALYZE TABLE !.! UPDATE HISTOGRAM ON `id`;", [ test_schema, test_table_no_index ])
 
 #@<> WL13804-FR3 - The `table` parameter of the `util.exportTable()` function must be a string value which specifies the table to be dumped. This value may be given in the following forms: `table`, `schema.table`. Both `schema` and `table` must be valid MySQL identifiers and must be quoted with backtick (`` ` ``) character when required.
 # WL13804-TSFR_3_1
@@ -875,7 +878,7 @@ tested_name = new_tested_name
 
 TEST_LOAD(tested_schema, tested_name)
 
-#@<> WL13804-TSFR_2_1
+#@<> WL13804-TSFR_2_1 {__have_x_protocol}
 # setup X session
 setup_session(xuri)
 
@@ -923,7 +926,10 @@ session.run_sql("INSERT INTO !.! (!) VALUES (123);", [ tested_schema, tested_nam
 EXPECT_SUCCESS(quote(types_schema, types_schema_tables[0]), test_output_absolute, { "showProgress": False })
 
 # transaction should be in progress, trying to change its characteristics should throw
-EXPECT_THROWS(lambda: session.run_sql("SET TRANSACTION READ ONLY;"), "Transaction characteristics can't be changed while a transaction is in progress")
+if __server_is_maria_db:
+    EXPECT_THROWS(lambda: session.run_sql("SET TRANSACTION READ ONLY;"), "TRANSACTION READ ONLY can't be set while a transaction is in progress")
+else:
+    EXPECT_THROWS(lambda: session.run_sql("SET TRANSACTION READ ONLY;"), "Transaction characteristics can't be changed while a transaction is in progress")
 
 # commit and check data is there
 session.commit()
@@ -1248,7 +1254,7 @@ EXPECT_GT(count_rows(schema_name, no_partitions_table_name), count_rows(verifica
 
 #@<> WL15311_TSFR_1_2_1
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), quote(schema_name, no_partitions_table_name), test_output_absolute, { "where": "THIS_IS_NO_SQL", "showProgress": False }, expect_file_created = True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL' in 'where clause'")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), quote(schema_name, no_partitions_table_name), test_output_absolute, { "where": "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL", "showProgress": False }, expect_file_created = True)

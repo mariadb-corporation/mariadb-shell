@@ -53,6 +53,10 @@ struct Chunk_definition {
   std::string stream;           // The stream for multiline validation.
   int linenum{0};               // The line number
   std::string validation_id;    // The id of the validation chunk to be used
+  bool is_include{false};       // Whether this chunk is an include or not
+  std::optional<bool>
+      process;  // Whether this chunk should be processed or not, if none chunk
+                // has this set, they will be processde by default
 };
 
 /**
@@ -203,9 +207,11 @@ class Shell_script_tester : public Shell_core_test_wrapper {
     *line = resolve_string(*line);
   }
 
-  std::optional<Chunk_definition> load_chunk_definition(std::string_view line);
+  std::optional<Chunk_definition> load_chunk_definition(
+      std::string_view line, bool is_include = false);
   bool load_source_chunks(const std::string &path, std::istream &stream,
-                          const std::string &prefix = "");
+                          const std::string &prefix = "",
+                          bool is_include = false);
   bool add_source_chunk(const std::string &path, const Chunk_t &chunk);
   void add_validation(Chunk_definition chunk,
                       const std::vector<std::string> &source,

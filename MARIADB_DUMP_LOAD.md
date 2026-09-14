@@ -1392,7 +1392,15 @@ The manifest now records `"vendor": "mariadb" \| "mysql"` inside `source`
 without the field still work — the version string carries the answer.
 
 `ocimds` is refused for a MariaDB source as well: every rewrite it performs
-targets MySQL DDL, and MySQL HeatWave Service is a MySQL product.
+targets MySQL DDL, and MySQL HeatWave Service is a MySQL product. The
+`compatibility` list is refused on the same grounds and for the same reason —
+each of its values exists only to resolve a HeatWave restriction, rewriting
+MySQL DDL or MySQL account statements, so on a MariaDB source it would rewrite
+DDL that was never in conflict. Both checks live in `Dump_options::on_validate()`
+(the vendor is not known until the session is set), which also covers
+`copyInstance` / `copySchemas` / `copyTables`, where `compatibility` is exposed
+but `ocimds` is not.
+
 `updateGtidSet` was refused too, pending phase 4; phase 4 implemented it and
 that refusal (`SHERR_LOAD_UPDATE_GTID_UNSUPPORTED_VENDOR`) is gone — see §15.
 

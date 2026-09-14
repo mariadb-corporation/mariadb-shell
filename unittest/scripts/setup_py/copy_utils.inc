@@ -1,6 +1,7 @@
 # imports
 import re
 import shutil
+import tempfile
 
 options_arg_no = None
 
@@ -157,7 +158,7 @@ def EXPECT_SUCCESS_IMPL(method, connectionData, options, src, setup, *args):
         # account named root has to be left out - a bare name excludes all hosts
         options["excludeUsers"] = [ "root" ] if __server_is_maria_db else [ "'root'@'%'" ]
     dump_options, load_options = dump_and_load_options(options)
-    test_output = 'copy'
+    test_output = os.path.join(tempfile.gettempdir(),'copy')
     shutil.rmtree(test_output, True)
     wipeout_server(tgt_session)
     setup_session(src)
