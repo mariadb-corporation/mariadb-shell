@@ -36,6 +36,7 @@
 #include <utility>
 
 #include "modules/adminapi/common/server_features.h"
+#include "modules/util/common/dump/server_features.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/shellcore/shell_console.h"
 #include "shellcore/interrupt_handler.h"
@@ -1856,6 +1857,18 @@ void Shell_script_tester::set_defaults() {
   // "has what MySQL 8.0 has". Keyed on the server and not on __mariadb_build,
   // since a Shell built against either vendor can be pointed at either server.
   def_bool_var("__server_is_maria_db", target_server_is_maria_db());
+
+  // Single source of truth for the dump/load "does this server support X"
+  // questions below - reuse this instead of re-deriving them from
+  // __version_num, which is not on the same scale for MariaDB.
+  const auto target_server = mysqlsh::dump::common::server_version(
+      _target_server_version, target_server_is_maria_db());
+
+  // Whether the dumper can use a MySQL 8+ optimizer hint
+  // (/*+ SET_VAR(...) */) instead of falling back to SQL_NO_CACHE - see
+  // common::supports_optimizer_hints().
+  def_bool_var("__server_supports_optimizer_hints",
+              mysqlsh::dump::common::supports_optimizer_hints(target_server));
 
   // Set terminology related variables
   if (version_num > 80025) {

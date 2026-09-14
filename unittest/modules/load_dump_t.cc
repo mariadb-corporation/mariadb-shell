@@ -683,12 +683,13 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
         .then({"Variable_name", "Value"})
         .add_row({"mle.memory_max", "0"});
 
+    // see MARIADB_DUMP_LOAD.md section 33
     mock_main_session
         ->expect_query(
-            "SELECT VARIABLE_VALUE = 'OFF' FROM "
-            "performance_schema.global_status WHERE variable_name = "
-            "'Innodb_redo_log_enabled'")
-        .then({""});
+            "SELECT ENGINE FROM information_schema.ENGINES WHERE "
+            "TRANSACTIONS = 'YES'")
+        .then({"ENGINE"})
+        .add_row({"InnoDB"});
 
     return std::static_pointer_cast<mysqlshdk::db::ISession>(mock_main_session);
   }

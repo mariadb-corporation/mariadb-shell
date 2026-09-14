@@ -882,12 +882,18 @@ session.run_sql("ANALYZE TABLE !.!;", [ schema_name, pk_table_name ])
 session.run_sql("ANALYZE TABLE !.!;", [ schema_name, no_pk_table_name ])
 
 # small 'bytesPerChunk' value to force chunking
-util.dump_schemas([schema_name], dump_pks_dir, { "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
-util.dump_schemas([schema_name], dump_no_pks_dir, { "compatibility": ["ignore_missing_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+if not __server_is_maria_db:
+    # the 'compatibility' option only resolves MySQL HeatWave Service
+    # restrictions, none of which apply to a MariaDB source, so
+    # Dump_options::on_validate() refuses it outright when dumping from
+    # MariaDB - there is no way to produce a dump with the 'create_invisible_pks'
+    # metadata flag on that vendor
+    util.dump_schemas([schema_name], dump_pks_dir, { "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+util.dump_schemas([schema_name], dump_no_pks_dir, { "bytesPerChunk" : "128k", "showProgress": False })
 # dump which has only table with a primary key
 util.dump_tables(schema_name, [ pk_table_name ], dump_just_pk_dir, { "bytesPerChunk" : "128k", "showProgress": False })
 
-# helper function
+#@<> helper function
 def EXPECT_PK(dump_dir, options, pk_created, expected_exception=None, wipeout=True):
     opts = { "showProgress": False, "resetProgress": True }
     opts.update(options)
@@ -931,19 +937,19 @@ EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": False }, False)
 # WL14506-TSFR_4_8
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, True)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should be created {VER(>= 8.0.24) and not __server_is_maria_db}
 # WL14506-TSFR_4_1
 EXPECT_PK(dump_pks_dir, {}, True)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24) and not __server_is_maria_db}
 # WL14506-TSFR_4_6
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False }, False)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24) and not __server_is_maria_db}
 # WL14506-TSFR_4_1
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": True }, True)
 
-#@<> WL14506-FR4.2 - If the createInvisiblePKs option is set to true and the loadDdl option is set to false, a warning must be printed, the value of createInvisiblePks must be ignored and the load process must continue. {VER(>= 8.0.24)}
+#@<> WL14506-FR4.2 - If the createInvisiblePKs option is set to true and the loadDdl option is set to false, a warning must be printed, the value of createInvisiblePks must be ignored and the load process must continue. {VER(>= 8.0.24) and not __server_is_maria_db}
 # WL14506-TSFR_4_4
 # first load just DDL
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, False)
@@ -951,7 +957,7 @@ EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, Fals
 EXPECT_PK(dump_pks_dir, { "loadDdl": False }, False, wipeout=False)
 EXPECT_STDOUT_CONTAINS("WARNING: The 'createInvisiblePKs' option is set to true, but the 'loadDdl' option is false, Primary Keys are not going to be created.")
 
-#@<> WL14506-TSFR_4_4 {VER(>= 8.0.24)}
+#@<> WL14506-TSFR_4_4 {VER(>= 8.0.24) and not __server_is_maria_db}
 # first load just DDL
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, False)
 # then load data with 'createInvisiblePKs' set to true
@@ -961,7 +967,10 @@ EXPECT_STDOUT_CONTAINS("WARNING: The 'createInvisiblePKs' option is set to true,
 #@<> WL14506-FR4.3 - If the createInvisiblePKs option is set to true and the target instance has version lower than 8.0.24, an error must be reported and the load process must be aborted. {VER(< 8.0.24)}
 # 'createInvisiblePKs' is true implicitly
 # WL14506-TSFR_4.3_1
-EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
+if not __server_is_maria_db:
+    # dump_pks_dir does not exist on MariaDB, see the 'not __server_is_maria_db'
+    # guard around its creation above
+    EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
 
 # 'createInvisiblePKs' is true explicitly
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")

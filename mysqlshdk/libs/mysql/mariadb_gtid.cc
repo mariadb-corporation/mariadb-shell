@@ -148,6 +148,23 @@ bool Mariadb_gtid_position::intersects(
   return false;
 }
 
+uint64_t Mariadb_gtid_position::transactions_since(
+    const Mariadb_gtid_position &base) const {
+  uint64_t count = 0;
+
+  for (const auto &[domain, entry] : m_domains) {
+    const auto it = base.m_domains.find(domain);
+    const auto from =
+        base.m_domains.end() == it ? uint64_t{0} : it->second.sequence;
+
+    if (entry.sequence > from) {
+      count += entry.sequence - from;
+    }
+  }
+
+  return count;
+}
+
 Mariadb_gtid_position &Mariadb_gtid_position::merge(
     const Mariadb_gtid_position &other) {
   for (const auto &[domain, entry] : other.m_domains) {

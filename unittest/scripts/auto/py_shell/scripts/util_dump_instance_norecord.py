@@ -601,24 +601,20 @@ session.run_sql("INSERT INTO !.! (`id`, `data`) VALUES (1, 1), (NULL, NULL);", [
 for table in [test_table_primary, test_table_unique, test_table_non_unique, test_table_no_index]:
     session.run_sql("ANALYZE TABLE !.!;", [ test_schema, table ])
 
-#@<> skipUpgradeChecks {__version_num < __mysh_version_num and __version_num < 80000}
+#@<> skipUpgradeChecks {__version_num < __mysh_version_num and __version_num < 80000 and not __server_is_maria_db}
 # NOTE: this should be called for 8.0 to 8.4 upgrades (and others) too
 EXPECT_SUCCESS([], test_output_absolute, { "ocimds":True, "dryRun":True, "excludeSchemas":[test_schema, "xtest"], "users":False, "skipUpgradeChecks": True })
 EXPECT_STDOUT_CONTAINS("Skipping upgrade compatibility checks")
 EXPECT_STDOUT_NOT_CONTAINS("will now be checked for compatibility issues")
 
-#@<> schema with MySQLaaS incompatibilities
+#@<> schema with MySQLaaS incompatibilities {not __server_is_maria_db}
 session.run_sql("ALTER DATABASE ! CHARACTER SET latin1;", [ incompatible_schema ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=MyISAM DEFAULT CHARSET=latin1 ROW_FORMAT=FIXED;", [ incompatible_schema, incompatible_table_wrong_engine ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB DATA DIRECTORY = '{0}' DEFAULT CHARSET=latin1;".format(filename_for_file(table_data_directory)), [ incompatible_schema, incompatible_table_data_directory ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=MyISAM INDEX DIRECTORY = '{0}' DEFAULT CHARSET=latin1;".format(filename_for_file(table_index_directory)), [ incompatible_schema, incompatible_table_index_directory ])
-if not __server_is_maria_db:
-    # MariaDB spells table encryption ENCRYPTED=YES (ENCRYPTION is error 1911)
-    # and has no general tablespaces at all, so neither of these can be created
-    # there - and neither is reachable, they exist for the ocimds checks
-    session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB ENCRYPTION = 'Y' DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_encryption ])
-    session.run_sql("CREATE TABLESPACE ! ADD DATAFILE 't_s_1.ibd' ENGINE=INNODB;", [ incompatible_tablespace ])
-    session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) TABLESPACE ! DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_tablespace, incompatible_tablespace ])
+session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB ENCRYPTION = 'Y' DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_encryption ])
+session.run_sql("CREATE TABLESPACE ! ADD DATAFILE 't_s_1.ibd' ENGINE=INNODB;", [ incompatible_tablespace ])
+session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) TABLESPACE ! DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_tablespace, incompatible_tablespace ])
 session.run_sql("CREATE VIEW !.! AS SELECT `data` FROM !.!;", [ incompatible_schema, incompatible_view, incompatible_schema, incompatible_table_wrong_engine ])
 
 #@<> count types tables
@@ -632,7 +628,6 @@ for table in session.run_sql("SELECT TABLE_NAME, TABLE_TYPE FROM information_sch
         types_schema_views.append(table[0])
 
 #@<> Create roles {__server_is_maria_db or VER(>=8.0.0)}
-#BREAK
 session.run_sql("DROP ROLE IF EXISTS ?;", [ test_role ])
 session.run_sql("CREATE ROLE ?;", [ test_role ])
 
@@ -1216,47 +1211,35 @@ else:
 #@<> WL16731-G1 - `libraries` - invalid values
 TEST_BOOL_OPTION("libraries")
 
-#@<> WL16731-G2 - `libraries` - disabled
+#@<> WL16731-G2 - `libraries` - disabled {instance_supports_libraries}
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "libraries": False, "ddlOnly": True, "showProgress": False })
 
-if instance_supports_libraries:
-    # WL16731-TSFR_1_7_1 - note about routine using an excluded library is printed
-    EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Function", test_schema, test_schema_library_function, test_schema, test_schema_library).note())
-    EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` FUNCTION `{test_schema_library_function}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
-    EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", test_schema, test_schema_library_procedure, test_schema, test_schema_library).note())
-    EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `{test_schema_library_procedure}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
+# WL16731-TSFR_1_7_1 - note about routine using an excluded library is printed
+EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Function", test_schema, test_schema_library_function, test_schema, test_schema_library).note())
+EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` FUNCTION `{test_schema_library_function}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
+EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", test_schema, test_schema_library_procedure, test_schema, test_schema_library).note())
+EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `{test_schema_library_procedure}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
 
 EXPECT_FILE_CONTAINS("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{0}`".format(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
 
 EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries))))
 
-if instance_supports_libraries:
-    EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 4 routines, 1 trigger\.'))
-else:
-    EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 2 routines, 1 trigger\.'))
+EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 4 routines, 1 trigger\.'))
 
-#@<> WL16731-G3 - `libraries` - default value
+#@<> WL16731-G3 - `libraries` - default value {instance_supports_libraries}
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.1.0", "ddlOnly": True, "showProgress": False })
 
-if instance_supports_libraries:
-    EXPECT_FILE_CONTAINS(f"CREATE LIBRARY `{test_schema_library}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries)))
-    # WL16731-TSFR_1_1_2_1 - target version does not support libraries, warning is printed
-    EXPECT_STDOUT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
-else:
-    EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries))))
-    # WL16731-TSFR_1_1_2_1 - target version does not support libraries, but there are no libraries, warning is not printed
-    EXPECT_STDOUT_NOT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
+EXPECT_FILE_CONTAINS(f"CREATE LIBRARY `{test_schema_library}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries)))
+# WL16731-TSFR_1_1_2_1 - target version does not support libraries, warning is printed
+EXPECT_STDOUT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
 
-#@<> WL16731-G2 - `libraries` - filtering
+#@<> WL16731-G2 - `libraries` - filtering {instance_supports_libraries}
 # WL16731-TSFR_1_1_1 - test is executed regardless of server version
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.2.0", "libraries": True, "excludeLibraries": [ f"`{test_schema}`.`{test_schema_library}`" ], "dryRun": True, "showProgress": False })
 
-if instance_supports_libraries:
-    EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 0 out of 1 library, 4 routines, 1 trigger\.'))
-else:
-    EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 2 routines, 1 trigger\.'))
+EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 0 out of 1 library, 4 routines, 1 trigger\.'))
 
-# WL16731-TSFR_1_1_2_2 - target version supports libraries, warning is not printed
+# WL16731-TSFR_1_1_2_2 - target version supports libraries, warning is not printed {instance_supports_libraries}
 EXPECT_STDOUT_NOT_CONTAINS(warn_target_version_does_not_support_libraries("9.2.0"))
 
 #@<> WL16731-TSFR_1_7_1_2 - `libraries` - routine uses a library which does not exist {instance_supports_libraries}
@@ -1678,8 +1661,12 @@ EXPECT_FILE_CONTAINS("CREATE USER IF NOT EXISTS", os.path.join(test_output_absol
 EXPECT_FILE_CONTAINS("GRANT ", os.path.join(test_output_absolute, "@.users.sql"))
 
 #@<> Check for roles {VER(>=8.0.0)}
-EXPECT_FILE_CONTAINS(f"CREATE USER IF NOT EXISTS `{test_role}`@`%` IDENTIFIED WITH 'caching_sha2_password'", os.path.join(test_output_absolute, "@.users.sql"))
-EXPECT_FILE_CONTAINS(f"GRANT USAGE ON *.* TO `{test_role}`@`%`;", os.path.join(test_output_absolute, "@.users.sql"))
+if __server_is_maria_db:
+    EXPECT_FILE_CONTAINS(f"CREATE ROLE IF NOT EXISTS `{test_role}`;", os.path.join(test_output_absolute, "@.users.sql"))
+    EXPECT_FILE_CONTAINS(f"GRANT USAGE ON *.* TO `{test_role}`;", os.path.join(test_output_absolute, "@.users.sql"))
+else:
+    EXPECT_FILE_CONTAINS(f"CREATE USER IF NOT EXISTS `{test_role}`@`%` IDENTIFIED WITH 'caching_sha2_password'", os.path.join(test_output_absolute, "@.users.sql"))
+    EXPECT_FILE_CONTAINS(f"GRANT USAGE ON *.* TO `{test_role}`@`%`;", os.path.join(test_output_absolute, "@.users.sql"))
 
 #@<> WL13807-FR13 - Once the dump is complete, in addition to the summary described in WL#13804, FR15, the following information must be presented to the user:
 # * The number of schemas dumped.
@@ -1744,7 +1731,7 @@ for f in os.listdir(test_output_absolute):
     EXPECT_EQ(0o640, stat.S_IMODE(os.stat(path).st_mode))
     EXPECT_EQ(os.getuid(), os.stat(path).st_uid)
 
-#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done.
+#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done. {not __server_is_maria_db}
 TEST_BOOL_OPTION("ocimds")
 
 #@<> tables with missing PKs
@@ -1876,7 +1863,7 @@ for plugin in disallowed_authentication_plugins:
     msg = strip_restricted_grants(get_test_user_account(plugin), []).error()
     EXPECT_STDOUT_NOT_CONTAINS(msg[:msg.find("privilege")])
 
-# BUG#32213605 - list of privileges allowed in MDS
+# BUG#32213605 - list of privileges allowed in MDS {not __server_is_maria_db}
 # there should be no errors on USAGE privilege
 EXPECT_STDOUT_NOT_CONTAINS("USAGE")
 # there should be no errors about the user which only has allowed privileges
@@ -1936,7 +1923,7 @@ EXPECT_STDOUT_CONTAINS(too_many_columns(tested_schema, tested_table, columns_cou
 # cleanup
 session.run_sql(f"DROP SCHEMA !;", [ tested_schema ])
 
-#@<> WL14506-TSFR_2_1 {not __server_is_maria_db}
+#@<> WL14506-TSFR_2_1
 util.help("dump_instance")
 
 EXPECT_STDOUT_CONTAINS("""
@@ -2103,7 +2090,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table]
 # WL14506-TSFR_3.3_1
 EXPECT_FAIL("ValueError", "Argument #2: The 'create_invisible_pks' and 'ignore_missing_pks' compatibility options cannot be used at the same time.", test_output_relative, { "compatibility": [ "create_invisible_pks", "ignore_missing_pks" ] })
 
-#@<> WL13807-FR16.2.1 - force_innodb
+#@<> WL13807-FR16.2.1 - force_innodb {not __server_is_maria_db}
 # WL13807-TSFR16_3
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "force_innodb" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_index_directory).fixed())
@@ -2116,17 +2103,17 @@ EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(ignore_missing_pks(incompatible_schema, table).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_definers
+#@<> WL13807-FR16.2.1 - strip_definers {not __server_is_maria_db}
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_definers" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_definers_definer_clause(incompatible_schema, incompatible_view).fixed())
 EXPECT_STDOUT_CONTAINS(strip_definers_security_clause(incompatible_schema, incompatible_view).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_restricted_grants
+#@<> WL13807-FR16.2.1 - strip_restricted_grants {not __server_is_maria_db}
 # WL13807-TSFR16_5
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_restricted_grants" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_restricted_grants(test_user_account, test_privileges).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_tablespaces
+#@<> WL13807-FR16.2.1 - strip_tablespaces {not __server_is_maria_db}
 # WL13807-TSFR16_4
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_tablespaces" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_tablespaces(incompatible_schema, incompatible_table_tablespace).fixed())
@@ -2148,14 +2135,14 @@ for plugin in disallowed_authentication_plugins:
 
 EXPECT_STDOUT_CONTAINS(lock_invalid_accounts_no_password(test_user_no_pwd).fixed())
 
-#@<> BUG#38237729 - load the dump {VER(>=8.0.0)}
+#@<> BUG#38237729 - load the dump {VER(>=8.0.0) and not __server_is_maria_db}
 wipeout_users(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(test_output_absolute, { "showProgress": False, "loadUsers": True, "loadDdl": False, "loadData": False, "resetProgress": True }), "loading should not throw")
 
 #@<> BUG#38237729 - lock_invalid_accounts and skip_invalid_accounts cannot be used at the same time {not __server_is_maria_db}
 EXPECT_FAIL("ValueError", "Argument #2: The 'lock_invalid_accounts' and 'skip_invalid_accounts' compatibility options cannot be used at the same time.", test_output_relative, { "compatibility": [ "lock_invalid_accounts", "skip_invalid_accounts" ] })
 
-#@<> BUG#38237729 - cleanup
+#@<> BUG#38237729 - cleanup {not __server_is_maria_db}
 create_users()
 
 #@<> WL13807-FR16.2.2 - If the `compatibility` option is not given, a default value of `[]` must be used instead.
@@ -2244,7 +2231,11 @@ if not __server_is_maria_db and __version_num >= 80000:
         f"NOTE: Backup lock is not available to the account {test_user_account} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.",
         fatal=False
     )
-    # 8.0 requires SELECT on mysql.* before dumping users
+
+if __server_is_maria_db or __version_num >= 80000:
+    # 8.0 and every MariaDB require SELECT on mysql.* before dumping users, see
+    # common::requires_select_on_mysql_to_dump_users(); the check runs in the
+    # preflight phase, so it fires before the table-level one below
     required_privileges["SELECT"] = PrivilegeError(  # schema-level privilege
         re.compile(r"While 'Initializing': User {0} is missing the following privilege\(s\) for schema `mysql`: SELECT.".format(test_user_account)),
         exception_type = "Error: Shell Error (52008)",
@@ -2336,10 +2327,15 @@ for dry_run in [ True, False ]:
 testutil.clear_traps("mysql")
 
 #@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws some random error {__dbug}
-testutil.set_trap("mysql", ["sql == FLUSH TABLES WITH READ LOCK;"], { "code": 1226, "msg": "User 'root' has exceeded the 'max_questions' resource (current value: 2)", "state": "42000" })
+if __server_is_maria_db:
+    max_questions_variable = 'max_queries_per_hour'
+else:
+    max_questions_variable = 'max_questions'
+
+testutil.set_trap("mysql", ["sql == FLUSH TABLES WITH READ LOCK;"], { "code": 1226, "msg": f"User 'root' has exceeded the '{max_questions_variable}' resource (current value: 2)", "state": "42000" })
 
 EXPECT_FAIL("Error: Shell Error (52001)", "While 'Initializing': Unable to acquire global read lock", test_output_absolute, { "showProgress": False })
-EXPECT_STDOUT_CONTAINS("ERROR: Failed to acquire global read lock: MySQL Error 1226 (42000): User 'root' has exceeded the 'max_questions' resource (current value: 2)")
+EXPECT_STDOUT_CONTAINS(f"ERROR: Failed to acquire global read lock: MySQL Error 1226 (42000): User 'root' has exceeded the '{max_questions_variable}' resource (current value: 2)")
 
 testutil.clear_traps("mysql")
 
@@ -2403,7 +2399,12 @@ shell.connect(test_user_uri(__mysql_sandbox_port1))
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
-EXPECT_STDOUT_CONTAINS(f"WARNING: Could not lock mysql system tables: User {test_user_account} is missing the following privilege(s) for schema `mysql`: LOCK TABLES.")
+
+# This warning is left over from the two chunks above, which revoke LOCK TABLES
+# on mysql.* using partial revokes. MariaDB has no partial revokes, so they are
+# skipped there and the account can still lock the mysql system tables.
+if not __server_is_maria_db:
+    EXPECT_STDOUT_CONTAINS(f"WARNING: Could not lock mysql system tables: User {test_user_account} is missing the following privilege(s) for schema `mysql`: LOCK TABLES.")
 
 setup_session()
 session.run_sql("UNLOCK TABLES")
@@ -3915,7 +3916,10 @@ EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "includeTables": [ parti
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "excludeTables": [ no_partitions_table_name_quoted ], "where": { no_partitions_table_name_quoted: "id > 12345" }, "showProgress": False })
 
 #@<> WL15311_TSFR_3_1_2_5
-TEST_DUMP_AND_LOAD([ schema_name, types_schema ], { "excludeSchemas": [ types_schema ], "where": { no_partitions_table_name_quoted: "id > 12345", quote_identifier(types_schema, types_schema_tables[0]): "1=1" }, "showProgress": False })
+# a 'where' entry for a table in an excluded schema is harmless - it is never
+# consulted, since that table is never dumped; types_schema is therefore
+# excluded from the list to verify too, it was never part of this dump
+TEST_DUMP_AND_LOAD([ schema_name ], { "excludeSchemas": [ types_schema ], "where": { no_partitions_table_name_quoted: "id > 12345", quote_identifier(types_schema, types_schema_tables[0]): "1=1" }, "showProgress": False })
 
 #@<> WL15311_TSFR_3_1_2_10 - schema or table do not exist
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { quote_identifier("schema", "table"): "1 = 2", quote_identifier(schema_name, "table"): "1 = 2" } })
@@ -3927,7 +3931,7 @@ EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verificatio
 
 #@<> WL15311_TSFR_3_2_3_1
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL' in 'where clause'")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
@@ -4049,7 +4053,7 @@ EXPECT_EQ(count_rows(schema_name, subpartitions_table_name), count_rows(verifica
 session.run_sql("DROP SCHEMA !;", [schema_name])
 all_schemas.pop()
 
-#@<> BUG#34952027 - ocimds option detects schema-level grants with wildcards
+#@<> BUG#34952027 - ocimds option detects schema-level grants with wildcards {not __server_is_maria_db}
 wild_account = "'test_34952027'@'localhost'"
 
 def account_for_grant():
@@ -4152,13 +4156,13 @@ EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_w
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_underscore).warning())
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_percent).warning())
 
-#@<> BUG#34952027 - cleanup
+#@<> BUG#34952027 - cleanup {not __server_is_maria_db}
 session.run_sql(f"DROP USER IF EXISTS {wild_account}")
 
 #@<> Drop roles {VER(>=8.0.0)}
 session.run_sql("DROP ROLE IF EXISTS ?;", [ test_role ])
 
-#@<> BUG#35550282 - exclude `mysql_audit` schema if the `ocimds` option is set
+#@<> BUG#35550282 - exclude `mysql_audit` schema if the `ocimds` option is set {not __server_is_maria_db}
 # BUG#35805866 - exclude `mysql_firewall` schema if the `ocimds` option is set
 # BUG#37023079 - exclude `mysql_option` schema if the `ocimds` option is set
 # BUG#37278169 - exclude `mysql_autopilot` schema if the `ocimds` option is set
@@ -4170,7 +4174,7 @@ for schema_name in schema_names:
     session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
     session.run_sql("CREATE SCHEMA !", [schema_name])
 
-#@<> BUG#35550282 - option is not set, schema is dumped
+#@<> BUG#35550282 - option is not set, schema is dumped {not __server_is_maria_db}
 EXPECT_SUCCESS(None, test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
 for schema_name in schema_names:
@@ -4182,18 +4186,21 @@ EXPECT_SUCCESS(None, test_output_absolute, { "ocimds": True, "compatibility": ["
 for schema_name in schema_names:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema_name, Schema_ddl.Schema))))
 
-#@<> BUG#35550282 - cleanup
+#@<> BUG#35550282 - cleanup {not __server_is_maria_db}
 for schema_name in schema_names:
     session.run_sql("DROP SCHEMA !;", [schema_name])
 
 #@<> WL15887 - setup
 schema_name = "wl15887"
 account_name = get_test_user_account("sample_account")
-role_name = get_test_user_account("sample_role")
+if __server_is_maria_db:
+    role_name = test_role
+else:
+    role_name = get_test_user_account("sample_role")
 
 account_names = [ account_name ]
 
-if __version_num >= 80000:
+if __version_num >= 80000 and not __server_is_maria_db:
     account_names.append(role_name)
 
 def setup_db(account):
@@ -4211,7 +4218,7 @@ setup_db(test_user_account)
 create_users()
 session.run_sql(f"CREATE USER {account_name} IDENTIFIED BY 'pass'")
 
-if __version_num >= 80000:
+if __version_num >= 80000 or __server_is_maria_db:
     session.run_sql(f"CREATE ROLE {role_name}")
 
 #@<> WL15887-TSFR_1_1
@@ -4230,11 +4237,6 @@ EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' opt
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' option: empty", test_output_absolute, { "targetVersion": "", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_2_1 - wrong values - greater
-# These no longer carry the 'Argument #N:' prefix, on either vendor: the version
-# policy check needs the session to know the source vendor, so it moved out of
-# the option unpacker - which is what knows the argument position - and into
-# Dump_options::on_validate(). The parse errors above still come from the
-# unpacker and still carry it. See MARIADB_DUMP_LOAD.md section 21.9.
 for i in range(3):
     version = newest_target_version.split(".")
     version[i] = str(int(version[i]) + 1)
@@ -4242,7 +4244,7 @@ for i in range(3):
     # MariaDB rejects anything newer than the version this Shell was built
     # from, patch included; MySQL does not check the patch (BUG#38107377)
     if i < 2 or __server_is_maria_db:
-        EXPECT_FAIL("ValueError", target_version_rejected_msg(version), test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+        EXPECT_FAIL("ValueError", f"{target_version_rejected_msg(version)}", test_output_absolute, { "targetVersion": version, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "users": False, "showProgress": False })
@@ -4250,8 +4252,8 @@ for i in range(3):
 if not __server_is_maria_db:
     # older than the MariaDB version this Shell was built from, so a MariaDB
     # target accepts it; for MySQL it is not a supported server
-    EXPECT_FAIL("ValueError", unsupported_target_version_msg('10.0.0'), test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
-EXPECT_FAIL("ValueError", target_version_rejected_msg('26.6.0'), test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+    EXPECT_FAIL("ValueError", f"{unsupported_target_version_msg('10.0.0')}", test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
+EXPECT_FAIL("ValueError", f"{target_version_rejected_msg('26.6.0')}", test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
 #@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db}
 EXPECT_FAIL("ValueError", "Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
@@ -4362,10 +4364,10 @@ for account in account_names:
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 session.run_sql(f"DROP USER {account_name}")
 
-if __version_num >= 80000:
+if __version_num >= 80000 or __server_is_maria_db:
     session.run_sql(f"DROP ROLE {role_name}")
 
-#@<> BUG#35680824 - warnings on grants for system schemas should not be printed
+#@<> BUG#35680824 - warnings on grants for system schemas should not be printed {not __server_is_maria_db}
 # setup
 test_account = "'test_35680824'@'localhost'"
 
@@ -4383,7 +4385,7 @@ EXPECT_SUCCESS(None, test_output_relative, { "ocimds": True, "targetVersion": ta
 msg = grant_on_excluded_object(account_for_grant(), "").warning()
 EXPECT_STDOUT_NOT_CONTAINS(msg[:msg.find("included")])
 
-#@<> BUG#35680824 - cleanup
+#@<> BUG#35680824 - cleanup {not __server_is_maria_db}
 session.run_sql(f"DROP USER IF EXISTS {test_account}")
 
 #@<> WL15947 - setup
@@ -4606,16 +4608,16 @@ session.run_sql(f"REVOKE SELECT ON mysql.* FROM {test_user_account}")
 # connect
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> BUG#36247713 - dry run works {VER(>=8.0.19)}
+#@<> BUG#36247713 - dry run works {VER(>=8.0.19) and not __server_is_maria_db}
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "users": False, "showProgress": False })
 
-#@<> BUG#36247713 - dump works {VER(>=8.0.19)}
+#@<> BUG#36247713 - dump works {VER(>=8.0.19) and not __server_is_maria_db}
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "users": False, "showProgress": False })
 
-#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19)}
+#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19) and not __server_is_maria_db}
 EXPECT_FAIL("Error: Shell Error (52008)", f"While 'Initializing': User {test_user_account} is missing the following privilege(s) for schema `mysql`: SELECT.", test_output_absolute, { "users": True, "showProgress": False })
 
-#@<> BUG#36247713 - cleanup {VER(>=8.0.19)}
+#@<> BUG#36247713 - cleanup {VER(>=8.0.19) and not __server_is_maria_db}
 setup_session()
 create_users()
 

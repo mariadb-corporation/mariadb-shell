@@ -108,6 +108,26 @@ TEST(Mariadb_gtid_position_test, intersects) {
   EXPECT_FALSE(parse("0-1-0").intersects(parse("0-1-42")));
 }
 
+TEST(Mariadb_gtid_position_test, transactions_since) {
+  EXPECT_EQ(0, parse("").transactions_since(parse("")));
+  EXPECT_EQ(0, parse("").transactions_since(parse("0-1-42")));
+
+  // a domain the base does not know about contributes all of its sequences
+  EXPECT_EQ(42, parse("0-1-42").transactions_since(parse("")));
+  EXPECT_EQ(49, parse("0-1-42,1-1-7").transactions_since(parse("")));
+
+  // otherwise only what the sequence advanced by, per domain
+  EXPECT_EQ(0, parse("0-1-42").transactions_since(parse("0-1-42")));
+  EXPECT_EQ(31, parse("0-1-42").transactions_since(parse("0-1-11")));
+  EXPECT_EQ(31, parse("0-1-42").transactions_since(parse("0-9-11")));
+  EXPECT_EQ(36, parse("0-1-42,1-1-7").transactions_since(parse("0-1-11,1-1-2")));
+
+  // a base that is ahead, or carries domains this position lacks, never makes
+  // the count negative
+  EXPECT_EQ(0, parse("0-1-11").transactions_since(parse("0-1-42")));
+  EXPECT_EQ(31, parse("0-1-42").transactions_since(parse("0-1-11,1-1-7")));
+}
+
 TEST(Mariadb_gtid_position_test, merge) {
   auto position = parse("");
 

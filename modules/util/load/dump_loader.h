@@ -833,6 +833,11 @@ class Dump_loader {
 
   std::mutex m_tables_being_loaded_mutex;
   std::unordered_multimap<std::string, size_t> m_tables_being_loaded;
+  // upper-cased names of every storage engine the target reports as
+  // transactional (information_schema.ENGINES.TRANSACTIONS = 'YES'), used to
+  // decide which tables must not have two chunks loading at once - see
+  // MARIADB_DUMP_LOAD.md section 33
+  std::unordered_set<std::string> m_transactional_engines;
   std::atomic<size_t> m_num_threads_loading{0};
   std::atomic<size_t> m_num_threads_recreating_indexes{0};
   std::atomic<size_t> m_num_threads_checksumming{0};

@@ -41,6 +41,7 @@ using off64_t = off_t;
 #endif
 
 #include <mysql.h>
+#include <mysqld_error.h>  // ER_LOCK_DEADLOCK
 #ifdef MARIADB_BUILD
 #include <errmsg.h>  // CR_* client error codes
 #endif
@@ -152,6 +153,46 @@ void Transaction_buffer::flush_done(bool *out_has_more_data) {
 
   *out_has_more_data =
       m_options.max_trx_size > 0 && (!m_eof || !m_data.empty());
+}
+
+void Transaction_buffer::mark_retry_point() {
+  m_retry_point_valid = false;
+
+  if (m_options.fast_sub_chunking) {
+    // fed by a live producer (Synchronized_file), nothing to seek back to
+    return;
+  }
+
+  try {
+    m_retry_offset = m_file->tell() - static_cast<off64_t>(m_data.size());
+    m_retry_point_valid = true;
+  } catch (const std::exception &) {
+    // tell() unsupported; try_rewind_for_retry() will simply refuse to retry
+  }
+}
+
+bool Transaction_buffer::try_rewind_for_retry() {
+  if (!m_retry_point_valid) {
+    return false;
+  }
+
+  try {
+    m_file->seek(m_retry_offset);
+  } catch (const std::exception &) {
+    // not seekable (e.g. a streamed/compressed source, or a memory-reclaiming
+    // buffer whose already-consumed bytes no longer exist); can't retry safely
+    return false;
+  }
+
+  m_data.clear();
+  m_trx_size = 0;
+  m_trx_end_offset = 0;
+  m_partial_row_sent = false;
+  m_oversized_rows = 0;
+  m_oversized_row_counted = false;
+  m_eof = false;
+
+  return true;
 }
 
 bool Transaction_buffer::flush_pending() const {
@@ -943,51 +984,91 @@ void Load_data_worker::execute(
         }
       });
 
-      try {
-        session->set_local_infile_userdata(static_cast<void *>(&fi));
-        session->set_local_infile_init(local_infile_init);
-        session->set_local_infile_read(local_infile_read);
-        session->set_local_infile_end(local_infile_end);
-        session->set_local_infile_error(local_infile_error);
+      // A deadlock between two worker threads loading into the same table
+      // concurrently rolls the whole LOAD DATA statement back atomically, so
+      // retrying it from the same starting point is always safe - nothing
+      // from this attempt was committed. Bounded and backed off the same way
+      // Dump_loader::execute_statement() retries a deadlocked statement.
+      constexpr uint32_t k_max_deadlock_retry_time_ms = 30000;
+      uint32_t deadlock_sleep_time_ms = 200;
+      uint32_t deadlock_total_sleep_time_ms = 0;
 
-        const shcore::on_leave_scope restore_local_infile{
-            [&session]() { session->reject_local_infile(); }};
+      fi.buffer.mark_retry_point();
 
-        set_state(Thread_state::READING);
-        fi.buffer.before_query();
-        load_result = query(m_query_comment + full_query);
-        set_state(Thread_state::IDLE);
-        fi.buffer.flush_done(&fi.continuation);
-        m_load_stats->data_bytes += fi.data_bytes;
-        m_load_stats->file_bytes += fi.file_bytes;
+      while (true) {
+        try {
+          session->set_local_infile_userdata(static_cast<void *>(&fi));
+          session->set_local_infile_init(local_infile_init);
+          session->set_local_infile_read(local_infile_read);
+          session->set_local_infile_end(local_infile_end);
+          session->set_local_infile_error(local_infile_error);
 
-        if (!fi.continuation) {
-          // increase the counter only when there are no more subchunks
-          ++m_load_stats->files_processed;
+          const shcore::on_leave_scope restore_local_infile{
+              [&session]() { session->reject_local_infile(); }};
+
+          set_state(Thread_state::READING);
+          fi.buffer.before_query();
+          load_result = query(m_query_comment + full_query);
+          set_state(Thread_state::IDLE);
+          fi.buffer.flush_done(&fi.continuation);
+          m_load_stats->data_bytes += fi.data_bytes;
+          m_load_stats->file_bytes += fi.file_bytes;
+
+          if (!fi.continuation) {
+            // increase the counter only when there are no more subchunks
+            ++m_load_stats->files_processed;
+          }
+
+          break;
+        } catch (const mysqlshdk::db::Error &e) {
+          log_warning(
+              "%s deadlock retry check: code=%d (ER_LOCK_DEADLOCK=%d), "
+              "sleep_so_far=%u/%u",
+              worker_name.c_str(), e.code(), ER_LOCK_DEADLOCK,
+              deadlock_total_sleep_time_ms, k_max_deadlock_retry_time_ms);
+
+          if (ER_LOCK_DEADLOCK == e.code() &&
+              deadlock_total_sleep_time_ms < k_max_deadlock_retry_time_ms &&
+              fi.buffer.try_rewind_for_retry()) {
+            mysqlsh::current_console()->print_note(format_error_message(
+                "Deadlock found when trying to get lock, will retry: " +
+                e.format()));
+
+            if (deadlock_total_sleep_time_ms + deadlock_sleep_time_ms >
+                k_max_deadlock_retry_time_ms) {
+              deadlock_sleep_time_ms =
+                  k_max_deadlock_retry_time_ms - deadlock_total_sleep_time_ms;
+            }
+
+            shcore::sleep_ms(deadlock_sleep_time_ms);
+            deadlock_total_sleep_time_ms += deadlock_sleep_time_ms;
+            deadlock_sleep_time_ms *= 2;
+            continue;
+          }
+
+          handle_exception();
+          const auto error_msg = format_error_message(e.format(), full_query);
+          mysqlsh::current_console()->print_error(error_msg);
+
+          if (fi.buffer.oversized_rows()) {
+            mysqlsh::current_console()->print_note(format_error_message(
+                "This error has been reported for a sub-chunk which has at "
+                "least one row longer than maxBytesPerTransaction (" +
+                std::to_string(options.max_trx_size) + " bytes)."));
+          }
+
+          throw std::runtime_error(error_msg);
+        } catch (const mysqlshdk::rest::Connection_error &e) {
+          handle_exception();
+          const auto error_msg = format_error_message(e.what());
+          mysqlsh::current_console()->print_error(error_msg);
+          throw std::runtime_error(error_msg);
+        } catch (const std::exception &e) {
+          handle_exception();
+          const auto error_msg = format_error_message(e.what());
+          mysqlsh::current_console()->print_error(error_msg);
+          throw std::exception(e);
         }
-      } catch (const mysqlshdk::db::Error &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.format(), full_query);
-        mysqlsh::current_console()->print_error(error_msg);
-
-        if (fi.buffer.oversized_rows()) {
-          mysqlsh::current_console()->print_note(format_error_message(
-              "This error has been reported for a sub-chunk which has at least "
-              "one row longer than maxBytesPerTransaction (" +
-              std::to_string(options.max_trx_size) + " bytes)."));
-        }
-
-        throw std::runtime_error(error_msg);
-      } catch (const mysqlshdk::rest::Connection_error &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.what());
-        mysqlsh::current_console()->print_error(error_msg);
-        throw std::runtime_error(error_msg);
-      } catch (const std::exception &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.what());
-        mysqlsh::current_console()->print_error(error_msg);
-        throw std::exception(e);
       }
 
       const auto warnings_num =

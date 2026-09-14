@@ -36,22 +36,25 @@ set(mysql_SOURCE
 # User_privileges is needed by dump/load, which is built for both vendors; the
 # class already handles MariaDB's grant output (see the SET DEFAULT ROLE case in
 # user_privileges.cc). mariadb_gtid is the domain-based counterpart of
-# gtid_utils below and is likewise needed by dump/load.
+# gtid_utils below and is likewise needed by dump/load. binlog_utils' binlog
+# listing (SHOW BINARY LOGS / SHOW BINLOG EVENTS) is plain SQL and used by
+# dump/load's DDL-safety check on both vendors (MARIADB_DUMP_LOAD.md section
+# 4.4); only the Gtid_set-based injection helpers it also carries are
+# MySQL-only, guarded internally with #ifndef MARIADB_BUILD.
 list(APPEND mysql_SOURCE
   user_privileges.cc
   mariadb_gtid.cc
+  binlog_utils.cc
   )
 
-# gtid_utils/binlog_utils implement MySQL's uuid:N-M GTID model and binlog
-# listing; MariaDB uses domain-based d-s-seq positions, handled by
-# mariadb_gtid.cc above (MARIADB_DUMP_LOAD.md section 4.4), and its binary log
-# needs mariadb_rpl_*, so these stay MySQL-only. lock_service is the MySQL
-# locking-service plugin.
+# gtid_utils implements MySQL's uuid:N-M GTID model, comparing sets via the
+# server-side GTID_SUBTRACT()/GTID_SUBSET() functions, which do not exist on
+# MariaDB; its domain-based counterpart is mariadb_gtid.cc above. lock_service
+# is the MySQL locking-service plugin.
 IF(NOT MARIADB_BUILD)
   list(APPEND mysql_SOURCE
     lock_service.cc
     gtid_utils.cc
-    binlog_utils.cc
     )
 ENDIF()
 

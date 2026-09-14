@@ -53,10 +53,9 @@
 #include "mysqlshdk/include/shellcore/shell_init.h"
 #include "mysqlshdk/include/shellcore/shell_options.h"
 #include "mysqlshdk/libs/db/utils/utils.h"
-#ifdef HAVE_BINLOG_UTILS
 #include "mysqlshdk/libs/mysql/binlog_utils.h"
 #include "mysqlshdk/libs/mysql/gtid_utils.h"
-#endif
+#include "mysqlshdk/libs/mysql/mariadb_gtid.h"
 #include "mysqlshdk/libs/mysql/replication.h"
 #include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/textui/textui.h"
@@ -138,6 +137,40 @@ bool is_unsupported_historical_dump_source_version(
   return version.number >= Version(8, 0, 0) &&
          version.number <= k_shell_version &&
          !mysqlshdk::utils::version::is_supported_server(version.number);
+}
+
+/**
+ * The account a server running with --skip-grant-tables reports, MySQL side.
+ * There is no real account behind such a connection, so the server invents one.
+ */
+static constexpr const char k_skip_grants_user[] = "skip-grants user";
+static constexpr const char k_skip_grants_host[] = "skip-grants host";
+
+/**
+ * The account this connection runs as, the way CURRENT_USER() reports it.
+ *
+ * With --skip-grant-tables active there is no account behind the connection and
+ * the two vendors say so differently: MySQL invents the synthetic
+ * 'skip-grants user'@'skip-grants host' above, while MariaDB leaves both halves
+ * empty, so CURRENT_USER() is the bare '@' which split_account() rejects
+ * outright ("User name must not be empty.").
+ *
+ * MariaDB's empty account is therefore reported using MySQL's spelling: that is
+ * the account User_privileges recognizes as the skip-grants one and hands every
+ * privilege to, and the account which makes m_skip_grant_tables_active - and so
+ * the whole of the dumper's skip-grant-tables handling - work the same on both
+ * vendors. See MARIADB_DUMP_LOAD.md section 32.
+ */
+shcore::Account current_account(const mysqlshdk::mysql::IInstance &instance) {
+  const auto account =
+      instance.queryf_one_string(0, "", "SELECT CURRENT_USER()");
+
+  if ("@" == account) {
+    return {k_skip_grants_user, k_skip_grants_host};
+  }
+
+  return shcore::split_account(account,
+                               shcore::Account::Auto_quote::USER_AND_HOST);
 }
 
 // 255 characters total:
@@ -254,28 +287,20 @@ int64_t to_int64_t(const std::string &s) { return std::stoll(s); }
 
 uint64_t to_uint64_t(const std::string &s) { return std::stoull(s); }
 
-#ifdef HAVE_BINLOG_UTILS
-// Replays the binlog to decide whether the statements executed during the dump
-// were DDL. Needs MySQL's binlog streaming and its uuid:N-M GTID model
-// (gtid_utils/binlog_utils), neither of which is available in a MariaDB build -
-// MariaDB uses domain-based d-s-seq positions and mariadb_rpl_* streaming. See
-// MARIADB_DUMP_LOAD.md section 4.4.
+// Replays the binary log to decide whether the statements executed during the
+// dump were DDL. Both vendors serve the events through SHOW BINARY LOGS /
+// SHOW BINLOG EVENTS (mysqlshdk/libs/mysql/binlog_utils.cc) and the DDL test
+// itself is plain SQL parsing, so the only vendor-specific part is how the
+// caller decides which of the replayed GTIDs are new - MySQL subtracts two
+// uuid:N-M sets server side, MariaDB compares two domain positions client side.
+// See MARIADB_DUMP_LOAD.md section 4.4.
 using mysqlshdk::mysql::Gtid;
-using mysqlshdk::mysql::Gtid_range;
-using mysqlshdk::mysql::Gtid_set;
 
 bool check_if_transactions_are_ddl_safe(
     const mysqlshdk::mysql::IInstance &instance,
     const common::Binlog::File &from, const common::Binlog::File &to,
-    const Gtid_set &gtid_set = {}) {
-  std::vector<Gtid_range> gtid_ranges;
-  uint64_t count = 0;
-
-  gtid_set.enumerate_ranges([&gtid_ranges, &count](const Gtid_range &range) {
-    gtid_ranges.emplace_back(range);
-    count += range.count();
-  });
-
+    const std::function<bool(const Gtid &)> &is_new_gtid = {},
+    uint64_t count = 0) {
   const auto console = current_console();
   console->print_note("Checking" + (count ? " " + std::to_string(count) : "") +
                       " recent transactions for schema changes, use the "
@@ -299,23 +324,9 @@ bool check_if_transactions_are_ddl_safe(
                                                           : end.base()));
   }
 
-  const auto include_gtid = [&gtid_ranges](const Gtid &gtid) {
-    if (gtid_ranges.empty()) {
-      return true;
-    }
-
-    auto gtid_range = Gtid_range::from_gtid(gtid);
-    if (!gtid_range) return false;
-    assert(gtid_range.begin == gtid_range.end);
-
-    for (const auto &range : gtid_ranges) {
-      if (range.uuid_tag == gtid_range.uuid_tag &&
-          range.begin <= gtid_range.begin && gtid_range.begin <= range.end) {
-        return true;
-      }
-    }
-
-    return false;
+  // no predicate means every replayed transaction is in scope
+  const auto include_gtid = [&is_new_gtid](const Gtid &gtid) {
+    return !is_new_gtid || is_new_gtid(gtid);
   };
 
   const auto is_ddl_safe = [](const std::string &transaction) {
@@ -392,7 +403,6 @@ bool check_if_transactions_are_ddl_safe(
 
   return is_safe;
 }
-#endif  // HAVE_BINLOG_UTILS
 
 void append_capability_metadata(
     const std::unordered_set<Capability> &capabilities,
@@ -3169,12 +3179,13 @@ void Dumper::fetch_user_privileges() {
 
   const auto instance = Instance(session());
 
-  instance.get_current_user(&m_user_account.user, &m_user_account.host);
+  m_user_account = current_account(instance);
 
   m_user_privileges = instance.get_user_privileges(m_user_account.user,
                                                    m_user_account.host, true);
-  m_skip_grant_tables_active = "'skip-grants user'@'skip-grants host'" ==
-                               shcore::make_account(m_user_account);
+  m_skip_grant_tables_active =
+      m_user_account ==
+      shcore::Account{k_skip_grants_user, k_skip_grants_host};
 
   if (const auto privilege = backup_lock_privilege()) {
     m_backup_lock_available =
@@ -6018,6 +6029,10 @@ void Dumper::write_table_metadata(
     // - see MARIADB_DUMP_LOAD.md section 31
     doc.AddMember(StringRef("periodUniqueKey"), true, a);
   }
+
+  if (table.info) {
+    doc.AddMember(StringRef("engine"), refs(table.info->engine), a);
+  }
   doc.AddMember(
       StringRef("compression"),
       {mysqlshdk::storage::to_string(table.output_config->compression).c_str(),
@@ -6706,24 +6721,76 @@ void Dumper::validate_dump_consistency(
       } else {
         bool verified = false;
 
-#ifdef HAVE_BINLOG_UTILS
-        // GTID_SUBTRACT() below, and the binary log reader underneath
-        // check_if_transactions_are_ddl_safe(), are both MySQL-only
+        // which of the transactions in the replayed binary log range ran
+        // during the dump: MySQL subtracts the two uuid:N-M sets server side,
+        // MariaDB - which has no GTID_SUBTRACT() - compares the two
+        // domain-server-sequence positions client side
+#ifndef MARIADB_BUILD
         if (common::supports_gtid_set_functions(m_server_version)) {
-          // check if executed statements are safe
           // get GTID sets which were executed since the dump has started
-
           const auto set =
-              Gtid_set::from_normalized_string(gtid_executed)
-                  .subtract(
-                      Gtid_set::from_normalized_string(prev_gtid_executed),
-                      instance);
+              mysqlshdk::mysql::Gtid_set::from_normalized_string(gtid_executed)
+                  .subtract(mysqlshdk::mysql::Gtid_set::from_normalized_string(
+                                prev_gtid_executed),
+                            instance);
+
+          std::vector<mysqlshdk::mysql::Gtid_range> ranges;
+          uint64_t count = 0;
+
+          set.enumerate_ranges(
+              [&ranges, &count](const mysqlshdk::mysql::Gtid_range &range) {
+                ranges.emplace_back(range);
+                count += range.count();
+              });
 
           consistent = check_if_transactions_are_ddl_safe(
-              instance, m_cache.server.binlog.file, binlog(session).file, set);
+              instance, m_cache.server.binlog.file, binlog(session).file,
+              [&ranges](const Gtid &gtid) {
+                if (ranges.empty()) return true;
+
+                const auto one = mysqlshdk::mysql::Gtid_range::from_gtid(gtid);
+                if (!one) return false;
+                assert(one.begin == one.end);
+
+                return std::any_of(
+                    ranges.begin(), ranges.end(),
+                    [&one](const mysqlshdk::mysql::Gtid_range &range) {
+                      return range.uuid_tag == one.uuid_tag &&
+                             range.begin <= one.begin && one.begin <= range.end;
+                    });
+              },
+              count);
           verified = true;
         }
-#endif  // HAVE_BINLOG_UTILS
+#endif  // !MARIADB_BUILD
+
+        if (!verified && common::is_maria_db_dialect(m_server_version)) {
+          using mysqlshdk::mysql::Mariadb_gtid_position;
+
+          // a position covers every sequence below the one it names, so "ran
+          // during the dump" is "at or below where we ended, past where we
+          // started" - see MARIADB_DUMP_LOAD.md section 15.2
+          const auto before = Mariadb_gtid_position::parse(prev_gtid_executed);
+          const auto after = Mariadb_gtid_position::parse(gtid_executed);
+
+          consistent = check_if_transactions_are_ddl_safe(
+              instance, m_cache.server.binlog.file, binlog(session).file,
+              [&before, &after](const Gtid &gtid) {
+                Mariadb_gtid_position one;
+
+                try {
+                  one = Mariadb_gtid_position::parse(gtid);
+                } catch (const std::invalid_argument &) {
+                  // not a position we understand - do not exclude it from the
+                  // check, the DDL test itself decides
+                  return true;
+                }
+
+                return after.contains(one) && !before.contains(one);
+              },
+              after.transactions_since(before));
+          verified = true;
+        }
 
         if (!verified) {
           console->print_note(
@@ -6747,23 +6814,10 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
-        bool verified = false;
-
-#ifdef HAVE_BINLOG_UTILS
-        if (!m_server_version.is_maria_db) {
-          // check if executed statements are safe
-          consistent = check_if_transactions_are_ddl_safe(
-              instance, m_cache.server.binlog.file, binlog);
-          verified = true;
-        }
-#endif  // HAVE_BINLOG_UTILS
-
-        if (!verified) {
-          console->print_note(
-              "Verifying via the binary log whether the executed statements "
-              "were DDL is not supported yet against this server; treating the "
-              "dump as not verified.");
-        }
+        // no GTIDs to tell apart here: every transaction physically between
+        // the two binary log positions ran during the dump, on either vendor
+        consistent = check_if_transactions_are_ddl_safe(
+            instance, m_cache.server.binlog.file, binlog);
       }
     }
   }

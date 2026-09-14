@@ -147,6 +147,17 @@ void Dump_options::on_validate() const {
     throw std::invalid_argument(
         "The 'ocimds' option is not supported when dumping from MariaDB.");
   }
+
+  // The 'compatibility' options exist solely to resolve MySQL HeatWave Service
+  // restrictions, and every one of them rewrites MySQL DDL or MySQL account
+  // statements. None of those restrictions applies to a MariaDB source, so
+  // refuse the option instead of silently rewriting DDL that was never in
+  // conflict.
+  if (m_source_is_maria_db && !compatibility_options().empty()) {
+    throw std::invalid_argument(
+        "The 'compatibility' option is not supported when dumping from "
+        "MariaDB.");
+  }
 }
 
 bool Dump_options::exists(const std::string &schema) const {
@@ -167,9 +178,13 @@ std::set<std::string> Dump_options::find_missing(
 std::set<std::string> Dump_options::find_missing(
     const std::string &schema,
     const std::unordered_set<std::string> &tables) const {
+  // Unlike MySQL, MariaDB lists TEMPORARY tables in information_schema.tables
+  // for the session that created them. The dump utility never dumps temporary
+  // tables, so they must be treated as not found here, same as on MySQL.
   return find_missing_impl(
       shcore::sqlstring("SELECT TABLE_NAME AS name "
-                        "FROM information_schema.tables WHERE TABLE_SCHEMA = ?",
+                        "FROM information_schema.tables WHERE TABLE_SCHEMA = ? "
+                        "AND TABLE_TYPE != 'TEMPORARY'",
                         0)
           << schema,
       tables);
@@ -311,6 +326,18 @@ void Dump_options::validate_partitions() const {
 
   for (const auto &schema : m_partitions) {
     for (const auto &table : schema.second) {
+      if (!filters().tables().is_included(schema.first, table.first)) {
+        // the table is not going to be dumped anyway (its schema or the table
+        // itself is excluded), so there is nothing to validate its partitions
+        // against - the 'where' option is tolerant of this in the same way,
+        // by simply never consulting an entry for a table that is not dumped
+        log_warning(
+            "Table '%s'.'%s' is not going to be dumped, 'partition' option "
+            "was ignored for this table",
+            schema.first.c_str(), table.first.c_str());
+        continue;
+      }
+
       if (!exists(schema.first, table.first)) {
         log_warning(
             "Table '%s'.'%s' does not exist, 'partition' option was ignored "

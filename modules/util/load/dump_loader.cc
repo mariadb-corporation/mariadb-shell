@@ -2659,7 +2659,8 @@ bool Dump_loader::handle_table_data() {
       std::lock_guard<std::mutex> lock(m_tables_being_loaded_mutex);
       tables_being_loaded = m_tables_being_loaded;
     }
-    if (m_dump->next_table_chunk(tables_being_loaded, &chunk)) {
+    if (m_dump->next_table_chunk(tables_being_loaded, m_transactional_engines,
+                                 &chunk)) {
       log_debug3("Scheduling chunk: %s", format_table(chunk).c_str());
 
       if (bulk_load_supported(chunk)) {
@@ -3868,6 +3869,21 @@ To load this dump, you can either:
     console->print_warning(
         "The dump was created with the 'allowDataMasking' option enabled, data "
         "from tables with masked columns may be incomplete.");
+  }
+
+  if (m_options.load_data()) {
+    // ask the target which engines it considers transactional, rather than
+    // assuming - a plugin engine may be transactional too, and this is what
+    // decides whether a table's chunks may load concurrently, see
+    // MARIADB_DUMP_LOAD.md section 33. Verified to use the same column names
+    // and 'YES'/'NO'/NULL values on both vendors.
+    auto result = session.query(
+        "SELECT ENGINE FROM information_schema.ENGINES WHERE "
+        "TRANSACTIONS = 'YES'");
+
+    while (const auto row = result->fetch_one()) {
+      m_transactional_engines.emplace(shcore::str_upper(row->get_string(0)));
+    }
   }
 }
 
