@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +46,7 @@ namespace windows_credential {
 
 namespace {
 
-constexpr auto k_company_name = "Oracle";
+constexpr auto k_company_name = "MariaDB";
 constexpr auto k_name_separator = "|";
 
 constexpr DWORD k_credential_type = CRED_TYPE_GENERIC;  // generic credential
