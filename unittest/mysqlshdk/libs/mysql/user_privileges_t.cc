@@ -157,6 +157,9 @@ void setup(const Setup_options &options, Mock_session *session) {
   if (options.user_exists && !is_skip_grants_user) {
     EXPECT_CALL(*session, get_server_version())
         .WillRepeatedly(Return(options.version));
+    // these tests cover the MySQL role model
+    EXPECT_CALL(*session, get_server_vendor())
+        .WillRepeatedly(Return(mysqlshdk::db::ServerVendor::MySQL));
 
     std::set<std::string> all_roles;
 
@@ -954,6 +957,11 @@ TEST_F(User_privileges_test, validate_role_privileges_direct) {
 }
 
 TEST_F(User_privileges_test, partial_revokes) {
+  if (target_server_is_maria_db()) {
+    // partial_revokes is a MySQL-only system variable
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   if (_target_server_version < Version(8, 0, 16)) {
     SKIP_TEST("This test requires running against MySQL server version 8.0.16");
   }

@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/libs/db/mysql/result.h"
@@ -70,8 +71,21 @@ const shcore::Option_pack_def<Dump_options> &Dump_options::options() {
   return opts;
 }
 
-const mysqlshdk::utils::Version &Dump_options::current_version() {
-  return mysqlshdk::utils::k_shell_version;
+void Dump_options::on_set_session(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+  Common_options::on_set_session(session);
+
+  // the vendor is cached off the client-side handshake data, so this costs no
+  // round trip
+  m_source_is_maria_db =
+      mysqlshdk::db::ServerVendor::MariaDB == session->get_server_vendor();
+}
+
+const mysqlshdk::utils::Version &Dump_options::current_version() const {
+  // MariaDB version numbers are not on the Shell's version scale, so a MariaDB
+  // source is measured against the MariaDB release this Shell was built from
+  // - see MARIADB_DUMP_LOAD.md section 7.4
+  return common::reference_version(m_source_is_maria_db);
 }
 
 void Dump_options::on_start_unpack(const shcore::Dictionary_t &options) {
@@ -123,6 +137,27 @@ void Dump_options::on_validate() const {
   }
 
   validate_partitions();
+  validate_target_version();
+
+  // MySQL HeatWave Service is a MySQL product; every compatibility rewrite the
+  // 'ocimds' option performs targets MySQL DDL. Refuse it outright rather than
+  // let it run and report nonsense - see MARIADB_DUMP_LOAD.md sections 4.11
+  // and 6.
+  if (m_source_is_maria_db && mds_compatibility()) {
+    throw std::invalid_argument(
+        "The 'ocimds' option is not supported when dumping from MariaDB.");
+  }
+
+  // The 'compatibility' options exist solely to resolve MySQL HeatWave Service
+  // restrictions, and every one of them rewrites MySQL DDL or MySQL account
+  // statements. None of those restrictions applies to a MariaDB source, so
+  // refuse the option instead of silently rewriting DDL that was never in
+  // conflict.
+  if (m_source_is_maria_db && !compatibility_options().empty()) {
+    throw std::invalid_argument(
+        "The 'compatibility' option is not supported when dumping from "
+        "MariaDB.");
+  }
 }
 
 bool Dump_options::exists(const std::string &schema) const {
@@ -143,9 +178,13 @@ std::set<std::string> Dump_options::find_missing(
 std::set<std::string> Dump_options::find_missing(
     const std::string &schema,
     const std::unordered_set<std::string> &tables) const {
+  // Unlike MySQL, MariaDB lists TEMPORARY tables in information_schema.tables
+  // for the session that created them. The dump utility never dumps temporary
+  // tables, so they must be treated as not found here, same as on MySQL.
   return find_missing_impl(
       shcore::sqlstring("SELECT TABLE_NAME AS name "
-                        "FROM information_schema.tables WHERE TABLE_SCHEMA = ?",
+                        "FROM information_schema.tables WHERE TABLE_SCHEMA = ? "
+                        "AND TABLE_TYPE != 'TEMPORARY'",
                         0)
           << schema,
       tables);
@@ -287,6 +326,18 @@ void Dump_options::validate_partitions() const {
 
   for (const auto &schema : m_partitions) {
     for (const auto &table : schema.second) {
+      if (!filters().tables().is_included(schema.first, table.first)) {
+        // the table is not going to be dumped anyway (its schema or the table
+        // itself is excluded), so there is nothing to validate its partitions
+        // against - the 'where' option is tolerant of this in the same way,
+        // by simply never consulting an entry for a table that is not dumped
+        log_warning(
+            "Table '%s'.'%s' is not going to be dumped, 'partition' option "
+            "was ignored for this table",
+            schema.first.c_str(), table.first.c_str());
+        continue;
+      }
+
       if (!exists(schema.first, table.first)) {
         log_warning(
             "Table '%s'.'%s' does not exist, 'partition' option was ignored "
@@ -326,10 +377,36 @@ void Dump_options::validate_partitions() const {
 
 void Dump_options::set_target_version(const mysqlshdk::utils::Version &version,
                                       bool fatal) {
+  m_target_version = version;
+  m_target_version_is_fatal = fatal;
+
+  // The checks below are a MySQL version policy, and the vendor is not known
+  // yet when targetVersion arrives as a user option - options are unpacked
+  // before the session is set. Validation therefore happens in on_validate(),
+  // which runs after set_session().
+}
+
+void Dump_options::validate_target_version() const {
+  if (!m_target_version.has_value()) {
+    return;
+  }
+
+  const auto &version = *m_target_version;
   std::string error;
 
-  if (const auto k_minimum_version = mysqlshdk::utils::Version(8, 0, 25);
-      version < k_minimum_version) {
+  if (m_source_is_maria_db) {
+    // MariaDB versions are not on MySQL's scale, so neither the MDS minimum nor
+    // the supported-MySQL-servers list means anything here. The one question
+    // that does carry over is whether this Shell knows the target at all.
+    if (const auto &reference = common::reference_version(true);
+        version > reference) {
+      error = "Target MariaDB version '" + version.get_base() +
+              "' is newer than the MariaDB version this MySQL Shell was built "
+              "against (" +
+              reference.get_base() + ")";
+    }
+  } else if (const auto k_minimum_version = mysqlshdk::utils::Version(8, 0, 25);
+             version < k_minimum_version) {
     // 8.0.25 is the minimum MDS version we support
     error = "Target MySQL version '" + version.get_base() +
             "' is older than the minimum version '" +
@@ -343,14 +420,12 @@ void Dump_options::set_target_version(const mysqlshdk::utils::Version &version,
   }
 
   if (!error.empty()) {
-    if (fatal) {
+    if (m_target_version_is_fatal) {
       throw std::invalid_argument{error};
     } else {
       current_console()->print_warning(error);
     }
   }
-
-  m_target_version = version;
 }
 
 }  // namespace dump

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +36,7 @@
 #include "mysqlshdk/libs/ssh/ssh_manager.h"
 #include "mysqlshdk/libs/utils/log_sql.h"
 #include "mysqlshdk/libs/utils/logger.h"
+#include "mysqlshdk/libs/utils/mysys_thread.h"
 namespace mysqlsh {
 
 template <typename T>
@@ -85,6 +87,10 @@ std::thread spawn_scoped_thread(Function &&f, Args &&...args) {
        thd_current_shell_opts, thd_current_interrupt, thd_current_console,
        thd_current_ssh_manager,
        thd_current_log_sql](const std::decay_t<Args> &...a) {
+        // mysys keeps per-thread state; without this the first mysys error
+        // path on a worker thread dereferences a null thread-var. No-op on
+        // non-MariaDB builds. See mysys_thread.h.
+        mysqlshdk::utils::Mysys_thread_scope mysys_thread;
         mysqlsh::Scoped_logger logger(thd_current_logger);
         mysqlsh::Scoped_shell_options shell_opts(thd_current_shell_opts);
         mysqlsh::Scoped_interrupt interrupt(thd_current_interrupt);

@@ -48,6 +48,7 @@
 #include "modules/mod_utils.h"
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/capability.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -59,6 +60,7 @@
 #include "mysqlshdk/include/shellcore/shell_init.h"
 #include "mysqlshdk/libs/db/utils_error.h"
 #include "mysqlshdk/libs/mysql/instance.h"
+#include "mysqlshdk/libs/mysql/mariadb_gtid.h"
 #include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/storage/compressed_file.h"
 #include "mysqlshdk/libs/utils/debug.h"
@@ -195,8 +197,40 @@ inline void executef(const Reconnect &reconnect, const Session_ptr &session,
 }  // namespace ar
 }  // namespace sql
 
-bool histograms_supported(const Version &version) {
-  return version > Version(8, 0, 0);
+/**
+ * Whether a MariaDB server is replicating from anywhere - it refuses to change
+ * gtid_slave_pos while any replica thread is running.
+ *
+ * SHOW ALL SLAVES STATUS covers every connection of a multi-source replica,
+ * where SHOW SLAVE STATUS would report the default one only.
+ */
+bool is_replicating(const mysqlshdk::mysql::IInstance &instance) {
+  const auto result = instance.query("SHOW ALL SLAVES STATUS");
+  std::vector<uint32_t> running_columns;
+
+  {
+    const auto &metadata = result->get_metadata();
+
+    for (uint32_t i = 0; i < metadata.size(); ++i) {
+      const auto &name = metadata[i].get_column_label();
+
+      if (shcore::str_caseeq(name, "Slave_IO_Running") ||
+          shcore::str_caseeq(name, "Slave_SQL_Running")) {
+        running_columns.emplace_back(i);
+      }
+    }
+  }
+
+  while (const auto row = result->fetch_one()) {
+    for (const auto column : running_columns) {
+      // Slave_IO_Running is Yes/No/Connecting/Preparing
+      if (!shcore::str_caseeq(row->get_string(column, "No"), "No")) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 bool add_invisible_pk(std::string_view sql, std::string *out_new_sql) {
@@ -305,8 +339,13 @@ void execute_script(
   });
 }
 
-void drop_account(const Session_ptr &session, const std::string &account) {
-  const auto drop = "DROP USER IF EXISTS " + account;
+void drop_account(const Session_ptr &session, const std::string &account,
+                  bool is_role = false) {
+  // DROP USER does not remove a MariaDB role - it reports success and leaves it
+  // in place, because a role and an account of the same name are two different
+  // objects there. See common::roles_are_hostless().
+  const auto drop =
+      (is_role ? "DROP ROLE IF EXISTS " : "DROP USER IF EXISTS ") + account;
   execute_statement(session, drop, "While dropping the account " + account);
 }
 
@@ -600,8 +639,20 @@ class Dump_loader::Monitoring final {
 
   void monitor(const Session_ptr &session) {
     std::lock_guard lock{m_monitors_mutex};
-    for (const auto &m : m_monitors) {
-      m(session);
+
+    // A monitor which throws is dropped, it does not end the thread: this used
+    // to stop monitoring for the rest of the load, and with it the ability to
+    // cancel worker queries on a hard interrupt. See MARIADB_DUMP_LOAD.md
+    // section 18.
+    for (auto it = m_monitors.begin(); it != m_monitors.end();) {
+      try {
+        (*it)(session);
+        ++it;
+      } catch (const std::exception &e) {
+        log_warning("Monitoring thread: disabling a monitor which failed: %s",
+                    e.what());
+        it = m_monitors.erase(it);
+      }
     }
   }
 
@@ -900,6 +951,13 @@ class Dump_loader::Bulk_load_support {
       return false;
     }
 
+#ifdef MARIADB_BUILD
+    // BULK LOAD is MySQL-only and is never scheduled against MariaDB (the
+    // feature is version-gated off), so this retry path is unreachable. The
+    // ER_BULK_* codes it tests for do not exist in libmariadb.
+    (void)e;
+    return false;
+#else
     const auto code = e.code();
 
     // ER_BULK_EXECUTOR_ERROR is reported in case of various resource-related
@@ -923,6 +981,7 @@ class Dump_loader::Bulk_load_support {
                               });
 
     return true;
+#endif  // MARIADB_BUILD
   }
 
  private:
@@ -1450,9 +1509,14 @@ void Dump_loader::Worker::Load_chunk_task::do_load(Worker *worker,
   auto import_options =
       import_table::Import_table_options::unpack(chunk().options);
 
-  // replace duplicate rows by default
+  // replace duplicate rows by default - except where the table will not take
+  // REPLACE at all: MariaDB refuses it on a table with a UNIQUE ... WITHOUT
+  // OVERLAPS constraint (error 1235), so such a chunk is loaded with IGNORE.
+  // The two differ only for a row which is already there, and on a resumed load
+  // that row is the same row - see MARIADB_DUMP_LOAD.md section 31.
   import_options.set_duplicate_handling(
-      import_table::Duplicate_handling::Replace);
+      chunk().period_unique_key ? import_table::Duplicate_handling::Ignore
+                               : import_table::Duplicate_handling::Replace);
   import_options.set_verbose(false);
   import_options.set_partition(chunk().partition);
 
@@ -1752,7 +1816,7 @@ bool Dump_loader::Worker::Analyze_table_task::execute(Worker *worker,
             table().c_str());
 
   if (m_histograms.empty() ||
-      !histograms_supported(loader->m_options.target_server_version()))
+      !dump::common::supports_histograms(loader->m_options.target_server()))
     log_info("Analyzing table `%s`.`%s`", schema().c_str(), table().c_str());
   else
     log_info("Updating histogram for table `%s`.`%s`", schema().c_str(),
@@ -1767,8 +1831,8 @@ bool Dump_loader::Worker::Analyze_table_task::execute(Worker *worker,
       const auto &reconnect = worker->reconnect_callback();
       const auto &session = worker->session();
 
-      if (m_histograms.empty() ||
-          !histograms_supported(loader->m_options.target_server_version())) {
+      if (m_histograms.empty() || !dump::common::supports_histograms(
+                                      loader->m_options.target_server())) {
         sql::ar::executef(reconnect, session, "ANALYZE TABLE !.!", schema(),
                           table());
       } else {
@@ -1832,8 +1896,8 @@ bool Dump_loader::Worker::Index_recreation_task::execute(Worker *worker,
     if (!m_indexes->spatial.empty()) {
       // we load all indexes at once if:
       //  - server does not support parallel index creation
-      auto single_batch =
-          loader->m_options.target_server_version() < Version(8, 0, 27);
+      auto single_batch = !dump::common::supports_parallel_index_creation(
+          loader->m_options.target_server());
       //  - table has a virtual column
       single_batch |= m_indexes->has_virtual_columns;
       //  - table has a fulltext index
@@ -2099,7 +2163,10 @@ uint64_t Dump_loader::Worker::current_thread_id() const {
     }
   };
 
-  if (session()->get_server_version() >= Version(8, 0, 16)) {
+  // PS_CURRENT_THREAD_ID() is MySQL-only; MariaDB has no such function, so the
+  // thread id has to come from performance_schema.threads there
+  if (dump::common::supports_ps_current_thread_id(
+          m_owner->m_options.target_server())) {
     return query("SELECT PS_CURRENT_THREAD_ID()");
   }
 
@@ -2207,6 +2274,15 @@ Session_ptr Dump_loader::create_session() {
   sql::execute(session, "SET foreign_key_checks = 0");
   sql::execute(session, "SET unique_checks = 0");
 
+  // MariaDB has no NOT ENFORCED constraints, it has a session switch instead -
+  // so a dumped table may hold rows which its own DDL rejects, and restoring it
+  // needs the switch off. Same reasoning as the two above, and the same thing
+  // mariadb-import does for every import. See MARIADB_DUMP_LOAD.md section 17.
+  if (dump::common::supports_check_constraint_checks(
+          m_options.target_server())) {
+    sql::execute(session, "SET check_constraint_checks = 0");
+  }
+
   if (!m_character_set.empty())
     sql::executef(session, "SET NAMES ?", m_character_set);
 
@@ -2229,7 +2305,8 @@ Session_ptr Dump_loader::create_session() {
     }
 
     if (m_dump->force_non_standard_fks() &&
-        m_options.target_server_version() >= Version(8, 4, 0)) {
+        dump::common::supports_non_standard_fk_restriction(
+            m_options.target_server())) {
       sql::execute(session,
                    "SET @@SESSION.restrict_fk_on_non_standard_key=OFF");
     }
@@ -2344,10 +2421,14 @@ Dump_loader::filter_schema_objects(const std::string &schema) const {
 
         if (shcore::str_caseeq(type, "EVENT")) {
           execute = m_dump->include_event(schema, name);
-        } else if (shcore::str_caseeq(type, "FUNCTION", "PROCEDURE")) {
+        } else if (shcore::str_caseeq(type, "FUNCTION", "PROCEDURE", "PACKAGE",
+                                      "PACKAGE BODY")) {
+          // MariaDB Oracle-mode packages are routines and share their filters
           execute = m_dump->include_routine(schema, name);
         } else if (shcore::str_caseeq(type, "LIBRARY")) {
           execute = m_dump->include_library(schema, name);
+        } else if (shcore::str_caseeq(type, "SEQUENCE")) {
+          execute = m_dump->include_sequence(schema, name);
         }
 
         return execute;
@@ -2393,12 +2474,17 @@ void Dump_loader::on_dump_end() {
 
   const auto console = current_console();
 
-  // Update GTID_PURGED only when requested by the user
+  // Update GTID_PURGED (gtid_slave_pos on MariaDB) only when requested by the
+  // user
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
+    const auto *const gtid_variable = m_options.target_server().is_maria_db
+                                          ? "gtid_slave_pos"
+                                          : "GTID_PURGED";
     auto status = m_load_log->status(progress::Gtid_update{});
     if (status == Load_progress_log::Status::DONE) {
-      console->print_status("GTID_PURGED already updated, skipping");
-      log_info("GTID_PURGED already updated");
+      console->print_status(std::string{gtid_variable} +
+                            " already updated, skipping");
+      log_info("%s already updated", gtid_variable);
     } else if (!m_dump->gtid_executed().empty()) {
       if (m_dump->gtid_executed_inconsistent()) {
         console->print_warning(
@@ -2409,33 +2495,38 @@ void Dump_loader::on_dump_end() {
       try {
         m_load_log->log(progress::start::Gtid_update{});
 
-        const auto query = m_options.is_mds() ? "CALL sys.set_gtid_purged(?)"
-                                              : "SET GLOBAL GTID_PURGED=?";
-
-        if (m_options.update_gtid_set() ==
-            Load_dump_options::Update_gtid_set::REPLACE) {
-          console->print_status("Resetting GTID_PURGED to dumped gtid set");
-          log_info("Setting GTID_PURGED to %s",
-                   m_dump->gtid_executed().c_str());
-
-          if (!m_options.dry_run()) {
-            // statement is not idempotent - do not reconnect
-            sql::executef(m_session, query, m_dump->gtid_executed());
-          }
+        if (m_options.target_server().is_maria_db) {
+          update_maria_db_gtid_position();
         } else {
-          console->print_status("Appending dumped gtid set to GTID_PURGED");
-          log_info("Appending %s to GTID_PURGED",
-                   m_dump->gtid_executed().c_str());
+          const auto query = m_options.is_mds() ? "CALL sys.set_gtid_purged(?)"
+                                                : "SET GLOBAL GTID_PURGED=?";
 
-          if (!m_options.dry_run()) {
-            // statement is not idempotent - do not reconnect
-            sql::executef(m_session, query, "+" + m_dump->gtid_executed());
+          if (m_options.update_gtid_set() ==
+              Load_dump_options::Update_gtid_set::REPLACE) {
+            console->print_status("Resetting GTID_PURGED to dumped gtid set");
+            log_info("Setting GTID_PURGED to %s",
+                     m_dump->gtid_executed().c_str());
+
+            if (!m_options.dry_run()) {
+              // statement is not idempotent - do not reconnect
+              sql::executef(m_session, query, m_dump->gtid_executed());
+            }
+          } else {
+            console->print_status("Appending dumped gtid set to GTID_PURGED");
+            log_info("Appending %s to GTID_PURGED",
+                     m_dump->gtid_executed().c_str());
+
+            if (!m_options.dry_run()) {
+              // statement is not idempotent - do not reconnect
+              sql::executef(m_session, query, "+" + m_dump->gtid_executed());
+            }
           }
         }
+
         m_load_log->log(progress::end::Gtid_update{});
       } catch (const std::exception &e) {
-        console->print_error(std::string("Error while updating GTID_PURGED: ") +
-                             e.what());
+        console->print_error(std::string{"Error while updating "} +
+                             gtid_variable + ": " + e.what());
         throw;
       }
     } else {
@@ -2568,7 +2659,8 @@ bool Dump_loader::handle_table_data() {
       std::lock_guard<std::mutex> lock(m_tables_being_loaded_mutex);
       tables_being_loaded = m_tables_being_loaded;
     }
-    if (m_dump->next_table_chunk(tables_being_loaded, &chunk)) {
+    if (m_dump->next_table_chunk(tables_being_loaded, m_transactional_engines,
+                                 &chunk)) {
       log_debug3("Scheduling chunk: %s", format_table(chunk).c_str());
 
       if (bulk_load_supported(chunk)) {
@@ -3384,28 +3476,174 @@ void Dump_loader::open_dump(
   }
 }
 
+void Dump_loader::update_maria_db_gtid_position() {
+  const auto replace = m_options.update_gtid_set() ==
+                       Load_dump_options::Update_gtid_set::REPLACE;
+  auto position =
+      mysqlshdk::mysql::Mariadb_gtid_position::parse(m_dump->gtid_executed());
+
+  if (!replace) {
+    // there is no '+' form of the assignment: the union of the two positions
+    // is computed here and the result is set as a whole
+    const mysqlshdk::mysql::Instance instance{m_session};
+
+    position.merge(mysqlshdk::mysql::Mariadb_gtid_position::parse(
+        instance.get_sysvar_string("gtid_slave_pos", "")));
+  }
+
+  const auto value = position.str();
+  const auto console = current_console();
+
+  if (replace) {
+    console->print_status("Resetting gtid_slave_pos to dumped gtid position");
+  } else {
+    console->print_status("Appending dumped gtid position to gtid_slave_pos");
+  }
+
+  log_info("Setting gtid_slave_pos to %s", value.c_str());
+
+  if (!m_options.dry_run()) {
+    // statement is not idempotent - do not reconnect
+    sql::executef(m_session, "SET GLOBAL gtid_slave_pos = ?", value);
+  }
+}
+
+void Dump_loader::validate_update_gtid_set(
+    const mysqlshdk::mysql::Instance &session,
+    const dump::common::Server_version &target) {
+  // Check if group replication is running
+  bool group_replication_running = false;
+  try {
+    group_replication_running = session.queryf_one_int(
+        0, 0,
+        "select count(*) from performance_schema.replication_group_members "
+        "where MEMBER_ID = @@server_uuid AND MEMBER_STATE IS NOT NULL AND "
+        "MEMBER_STATE <> 'OFFLINE';");
+  } catch (...) {
+  }
+
+  if (group_replication_running) {
+    THROW_ERROR(SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING);
+  }
+
+  if (!target.is_8_0) {
+    if (m_options.update_gtid_set() ==
+        Load_dump_options::Update_gtid_set::APPEND) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_NOT_SUPPORTED);
+    }
+
+    if (!m_options.skip_binlog()) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REQUIRES_SKIP_BINLOG);
+    }
+
+    if (!session.queryf_one_int(0, 0,
+                                "select @@global.gtid_executed = '' and "
+                                "@@global.gtid_purged = ''")) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_EMPTY_VARIABLES);
+    }
+  } else {
+    const char *g = m_dump->gtid_executed().c_str();
+    if (m_options.update_gtid_set() ==
+        Load_dump_options::Update_gtid_set::REPLACE) {
+      if (!session.queryf_one_int(0, 0,
+                                  "select GTID_SUBTRACT(?, "
+                                  "GTID_SUBTRACT(@@global.gtid_executed, "
+                                  "@@global.gtid_purged)) = gtid_subtract(?, "
+                                  "'')",
+                                  g, g)) {
+        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_SETS_INTERSECT);
+      }
+
+      if (!session.queryf_one_int(
+              0, 0, "select GTID_SUBSET(@@global.gtid_purged, ?);", g)) {
+        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET);
+      }
+    } else if (!session.queryf_one_int(
+                   0, 0,
+                   "select GTID_SUBTRACT(@@global.gtid_executed, ?) = "
+                   "@@global.gtid_executed",
+                   g)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_SETS_INTERSECT);
+    }
+  }
+}
+
+void Dump_loader::validate_update_gtid_set_maria_db(
+    const mysqlshdk::mysql::Instance &session) {
+  if (is_replicating(session)) {
+    THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING);
+  }
+
+  const auto dumped =
+      mysqlshdk::mysql::Mariadb_gtid_position::parse(m_dump->gtid_executed());
+  const auto current = mysqlshdk::mysql::Mariadb_gtid_position::parse(
+      session.get_sysvar_string("gtid_slave_pos", ""));
+
+  if (m_options.update_gtid_set() ==
+      Load_dump_options::Update_gtid_set::REPLACE) {
+    // the whole position is overwritten, so anything the target had already
+    // replicated and the dump does not know about would be forgotten
+    if (!dumped.contains(current)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION);
+    }
+  } else {
+    // a position covers every sequence number up to the one it names, so two
+    // positions which share a replication domain share transactions - the
+    // counterpart of upstream's "the sets must not intersect"
+    if (dumped.intersects(current)) {
+      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT);
+    }
+  }
+}
+
 void Dump_loader::check_server_version() {
   const auto console = current_console();
-  const auto &source_server = m_dump->server_version();
-  const auto &target_server = m_options.target_server_version();
+  const auto &source = m_dump->source_server();
+  const auto &target = m_options.target_server();
+  const auto &source_server = source.number;
+  const auto &target_server = target.number;
   const auto mds = m_options.is_mds();
+
+  const auto vendor_name = [](const dump::common::Server_version &v) {
+    return v.is_maria_db ? "MariaDB" : "MySQL";
+  };
 
   // no reconnection here - we're using the global session
   mysqlshdk::mysql::Instance session(m_options.session());
 
-  std::string msg = "Target is MySQL " + target_server.get_full();
+  std::string msg = std::string{"Target is "} + vendor_name(target) + " " +
+                    target_server.get_full();
   if (mds) msg += " (MySQL HeatWave Service)";
-  msg += ". Dump was produced from MySQL " + source_server.get_full();
+  msg += ". Dump was produced from ";
+  msg += vendor_name(source);
+  msg += " " + source_server.get_full();
 
   console->print_info(msg);
 
-  if (target_server < Version(5, 7, 0)) {
+  // A dump is written in the dialect of the server it came from, and every
+  // version rule below is on that vendor's scale, so a cross-vendor load is
+  // refused up front rather than allowed to fail partway through the DDL.
+  //
+  // The question is the dump's *dialect*, not its source vendor: a MySQL build
+  // remaps a MariaDB source to 5.6, producing a MySQL-shaped dump, and loading
+  // that into MySQL is upstream's supported MariaDB -> MySQL migration path.
+  // See MARIADB_DUMP_LOAD.md sections 6.4 and 7.1.
+  if (dump::common::is_maria_db_dialect(source) != target.is_maria_db) {
+    console->print_error(shcore::str_format(
+        "The dump was produced from %s, but the target server is %s. Loading a "
+        "dump across server vendors is not supported.",
+        vendor_name(source), vendor_name(target)));
+    THROW_ERROR(SHERR_LOAD_VENDOR_MISMATCH);
+  }
+
+  if (!target.is_maria_db && target_server < Version(5, 7, 0)) {
     THROW_ERROR(SHERR_LOAD_UNSUPPORTED_SERVER_VERSION);
   }
 
   if (m_options.ignore_version() ||
-      (Version(5, 7, 0) <= source_server && source_server < Version(8, 0, 0) &&
-       Version(8, 0, 0) <= target_server && target_server < Version(9, 0, 0))) {
+      (!source.is_maria_db && Version(5, 7, 0) <= source_server &&
+       source_server < Version(8, 0, 0) && Version(8, 0, 0) <= target_server &&
+       target_server < Version(9, 0, 0))) {
     // we implicitly enable this transformation when loading 5.7 -> 8.X
     m_default_sql_transforms.add_strip_removed_sql_modes();
   }
@@ -3480,68 +3718,24 @@ void Dump_loader::check_server_version() {
 
   if (m_options.analyze_tables() ==
           Load_dump_options::Analyze_table_mode::HISTOGRAM &&
-      !histograms_supported(target_server))
-    console->print_warning("Histogram creation enabled but MySQL Server " +
-                           target_server.get_base() + " does not support it.");
+      !dump::common::supports_histograms(m_options.target_server()))
+    console->print_warning(std::string{"Histogram creation enabled but "} +
+                           (target.is_maria_db ? "MariaDB" : "MySQL") +
+                           " Server " + target_server.get_base() +
+                           " does not support it.");
   if (m_options.update_gtid_set() != Load_dump_options::Update_gtid_set::OFF) {
-    // Check if group replication is running
-    bool group_replication_running = false;
-    try {
-      group_replication_running = session.queryf_one_int(
-          0, 0,
-          "select count(*) from performance_schema.replication_group_members "
-          "where MEMBER_ID = @@server_uuid AND MEMBER_STATE IS NOT NULL AND "
-          "MEMBER_STATE <> 'OFFLINE';");
-    } catch (...) {
-    }
-
-    if (group_replication_running) {
-      THROW_ERROR(SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING);
-    }
-
-    if (target_server < Version(8, 0, 0)) {
-      if (m_options.update_gtid_set() ==
-          Load_dump_options::Update_gtid_set::APPEND) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_NOT_SUPPORTED);
-      }
-
-      if (!m_options.skip_binlog()) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REQUIRES_SKIP_BINLOG);
-      }
-
-      if (!session.queryf_one_int(0, 0,
-                                  "select @@global.gtid_executed = '' and "
-                                  "@@global.gtid_purged = ''")) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_EMPTY_VARIABLES);
-      }
+    if (target.is_maria_db) {
+      // MariaDB's GTIDs are domain-based d-s-seq positions with no
+      // GTID_SUBSET() / GTID_SUBTRACT() to compare them with, and are restored
+      // by assigning to gtid_slave_pos - see MARIADB_DUMP_LOAD.md section 4.4
+      validate_update_gtid_set_maria_db(session);
     } else {
-      const char *g = m_dump->gtid_executed().c_str();
-      if (m_options.update_gtid_set() ==
-          Load_dump_options::Update_gtid_set::REPLACE) {
-        if (!session.queryf_one_int(
-                0, 0,
-                "select GTID_SUBTRACT(?, "
-                "GTID_SUBTRACT(@@global.gtid_executed, "
-                "@@global.gtid_purged)) = gtid_subtract(?, '')",
-                g, g)) {
-          THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_SETS_INTERSECT);
-        }
-
-        if (!session.queryf_one_int(
-                0, 0, "select GTID_SUBSET(@@global.gtid_purged, ?);", g)) {
-          THROW_ERROR(SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET);
-        }
-      } else if (!session.queryf_one_int(
-                     0, 0,
-                     "select GTID_SUBTRACT(@@global.gtid_executed, ?) = "
-                     "@@global.gtid_executed",
-                     g)) {
-        THROW_ERROR(SHERR_LOAD_UPDATE_GTID_APPEND_SETS_INTERSECT);
-      }
+      validate_update_gtid_set(session, target);
     }
   }
 
-  if (should_create_pks() && target_server < Version(8, 0, 24)) {
+  if (should_create_pks() &&
+      !dump::common::supports_invisible_pks(m_options.target_server())) {
     THROW_ERROR(SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION);
   }
 
@@ -3559,7 +3753,8 @@ void Dump_loader::check_server_version() {
   }
 
   if (m_options.load_ddl() && m_dump->force_non_standard_fks() &&
-      m_options.target_server_version() >= Version(8, 4, 0)) {
+      dump::common::supports_non_standard_fk_restriction(
+          m_options.target_server())) {
     console->print_warning(
         "The dump was created with the 'force_non_standard_fks' compatibility "
         "option set, the 'restrict_fk_on_non_standard_key' session variable "
@@ -3675,6 +3870,21 @@ To load this dump, you can either:
         "The dump was created with the 'allowDataMasking' option enabled, data "
         "from tables with masked columns may be incomplete.");
   }
+
+  if (m_options.load_data()) {
+    // ask the target which engines it considers transactional, rather than
+    // assuming - a plugin engine may be transactional too, and this is what
+    // decides whether a table's chunks may load concurrently, see
+    // MARIADB_DUMP_LOAD.md section 33. Verified to use the same column names
+    // and 'YES'/'NO'/NULL values on both vendors.
+    auto result = session.query(
+        "SELECT ENGINE FROM information_schema.ENGINES WHERE "
+        "TRANSACTIONS = 'YES'");
+
+    while (const auto row = result->fetch_one()) {
+      m_transactional_engines.emplace(shcore::str_upper(row->get_string(0)));
+    }
+  }
 }
 
 void Dump_loader::check_tables_without_primary_key() {
@@ -3697,7 +3907,8 @@ void Dump_loader::check_tables_without_primary_key() {
           "true, Inbound Replication into an MySQL HeatWave Service DB System "
           "instance with High Availability can";
 
-      if (m_options.target_server_version() < Version(8, 0, 32)) {
+      if (!dump::common::supports_invisible_pk_replication(
+              m_options.target_server())) {
         msg += "not";
       } else {
         warning = false;
@@ -3717,16 +3928,23 @@ void Dump_loader::check_tables_without_primary_key() {
     }
   }
 
-  if (m_options.target_server_version() < Version(8, 0, 13) ||
+  if (!dump::common::supports_require_primary_key(m_options.target_server()) ||
       should_create_pks()) {
     return;
   }
 
-  if (sql::ar::query(m_reconnect_callback, m_session,
-                     "show variables like 'sql_require_primary_key';")
-          ->fetch_one()
-          ->get_string(1) != "ON")
-    return;
+  {
+    // SHOW VARIABLES LIKE returns no rows at all when the variable does not
+    // exist, which is the case on MariaDB (sql_require_primary_key is MySQL
+    // 8.0.13+). fetch_one() then yields nullptr - dereferencing it is a
+    // segfault, so treat "not present" the same as "not ON".
+    const auto result = sql::ar::query(
+        m_reconnect_callback, m_session,
+        "show variables like 'sql_require_primary_key';");
+    const auto row = result->fetch_one();
+
+    if (!row || row->get_string(1) != "ON") return;
+  }
 
   std::string tbs;
   for (const auto &s : m_dump->tables_without_pk())
@@ -3924,6 +4142,37 @@ bool Dump_loader::check_existing_users() const {
     }
   }
 
+  if (m_options.target_is_maria_db()) {
+    // a MariaDB role holds nothing but USAGE, and information_schema does not
+    // report an account which holds only that - so the query above sees every
+    // user on the target and not one role. mysql.user does, and it is where the
+    // role and the account of the same name are told apart.
+    std::set<std::string> roles;
+
+    for (const auto &r : m_dump->roles()) {
+      if (m_options.filters().users().is_included(r)) {
+        roles.emplace(shcore::str_lower(r.user));
+      }
+    }
+
+    if (!roles.empty()) {
+      const auto existing =
+          sql::ar::query(m_reconnect_callback, m_session,
+                         "SELECT DISTINCT user FROM mysql.user WHERE "
+                         "is_role='Y'");
+
+      while (const auto row = existing->fetch_one()) {
+        const auto role = row->get_string(0);
+
+        if (roles.count(shcore::str_lower(role))) {
+          report_duplicate_object("Role " + shcore::quote_identifier(role) +
+                                  " already exists");
+          has_duplicates = true;
+        }
+      }
+    }
+  }
+
   return has_duplicates;
 }
 
@@ -3990,6 +4239,9 @@ bool Dump_loader::check_existing_schema_objects() {
     std::list<Dump_reader::Object_info *> procedures;
     std::list<Dump_reader::Object_info *> libraries;
     std::list<Dump_reader::Object_info *> events;
+    std::list<Dump_reader::Object_info *> packages;
+    std::list<Dump_reader::Object_info *> package_bodies;
+    std::list<Dump_reader::Object_info *> sequences;
 
     if (!set_object_exists(schema, &schemas)) {
       log_info(
@@ -3999,7 +4251,8 @@ bool Dump_loader::check_existing_schema_objects() {
     }
 
     if (!m_dump->schema_objects(schema, &tables, &views, &triggers, &functions,
-                                &procedures, &libraries, &events))
+                                &procedures, &libraries, &events, &packages,
+                                &package_bodies, &sequences))
       continue;
 
     result = query_names(m_reconnect_callback, m_session, schema, tables,
@@ -4041,6 +4294,26 @@ bool Dump_loader::check_existing_schema_objects() {
       has_duplicates |= report_duplicate_schema_objects(
           "a procedure", schema, &procedures, result.get());
 
+    // a package and a function may share a name, so the routine queries above
+    // cannot see these - I_S.ROUTINES has to be asked for the type explicitly
+    result =
+        query_names(m_reconnect_callback, m_session, schema, packages,
+                    "SELECT routine_name FROM information_schema.routines"
+                    " WHERE routine_schema = ? AND routine_type = 'PACKAGE'"
+                    " AND routine_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a package", schema, &packages, result.get());
+
+    result = query_names(
+        m_reconnect_callback, m_session, schema, package_bodies,
+        "SELECT routine_name FROM information_schema.routines"
+        " WHERE routine_schema = ? AND routine_type = 'PACKAGE BODY'"
+        " AND routine_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a package body", schema, &package_bodies, result.get());
+
     result = query_names(m_reconnect_callback, m_session, schema, libraries,
                          "SELECT library_name FROM information_schema.libraries"
                          " WHERE library_schema = ? AND library_name in ");
@@ -4054,6 +4327,17 @@ bool Dump_loader::check_existing_schema_objects() {
     if (result)
       has_duplicates |= report_duplicate_schema_objects("an event", schema,
                                                         &events, result.get());
+
+    // I_S.TABLES reports a sequence as well, but only I_S.SEQUENCES says it is
+    // one - and the tables query above cannot see them, because a dumped
+    // sequence is never in the list of tables
+    result =
+        query_names(m_reconnect_callback, m_session, schema, sequences,
+                    "SELECT sequence_name FROM information_schema.sequences"
+                    " WHERE sequence_schema = ? AND sequence_name in ");
+    if (result)
+      has_duplicates |= report_duplicate_schema_objects(
+          "a sequence", schema, &sequences, result.get());
   }
 
   // mark the remaining schemas as non-existing
@@ -4144,19 +4428,27 @@ void Dump_loader::execute_drop_ddl_tasks() {
     const char *type;
   };
 
-  list_t tables;      // progress::Table_ddl
-  list_t views;       // progress::Schema_ddl
-  list_t triggers;    // progress::Triggers_ddl
-  list_t functions;   // progress::Schema_ddl
-  list_t procedures;  // progress::Schema_ddl
-  list_t libraries;   // progress::Schema_ddl
-  list_t events;      // progress::Schema_ddl
+  list_t tables;          // progress::Table_ddl
+  list_t views;           // progress::Schema_ddl
+  list_t triggers;        // progress::Triggers_ddl
+  list_t functions;       // progress::Schema_ddl
+  list_t procedures;      // progress::Schema_ddl
+  list_t libraries;       // progress::Schema_ddl
+  list_t events;          // progress::Schema_ddl
+  list_t packages;        // progress::Schema_ddl
+  list_t package_bodies;  // progress::Schema_ddl
+  list_t sequences;       // progress::Schema_ddl
 
+  // package bodies go before the specifications: DROP PACKAGE takes the body
+  // with it, so dropping the other way round leaves a statement with nothing
+  // to do. sequences go last: a table can default to NEXT VALUE FOR one of
+  // them, so the tables are dropped first
   std::vector<Objects> all_objects{
       {&tables, "TABLE"},         {&views, "VIEW"},
       {&triggers, "TRIGGER"},     {&functions, "FUNCTION"},
-      {&procedures, "PROCEDURE"}, {&libraries, "LIBRARY"},
-      {&events, "EVENT"},
+      {&procedures, "PROCEDURE"}, {&package_bodies, "PACKAGE BODY"},
+      {&packages, "PACKAGE"},     {&libraries, "LIBRARY"},
+      {&events, "EVENT"},         {&sequences, "SEQUENCE"},
   };
 
   const Dump_reader::Object_info *schema;
@@ -4225,11 +4517,13 @@ void Dump_loader::execute_drop_ddl_tasks() {
         // table progress is tracked separately, but once schema DDL is done
         // all tables are also done, only triggers may be pending
         m_dump->schema_objects(schema->name, nullptr, nullptr, &triggers,
-                               nullptr, nullptr, nullptr, nullptr);
+                               nullptr, nullptr, nullptr, nullptr, nullptr,
+                               nullptr, nullptr);
       } else {
         // fetch all objects
         m_dump->schema_objects(schema->name, &tables, &views, &triggers,
-                               &functions, &procedures, &libraries, &events);
+                               &functions, &procedures, &libraries, &events,
+                               &packages, &package_bodies, &sequences);
         // some of the tables may be completed
         remove_completed(&tables, table_status);
         // just in case drop both views and tables with these names
@@ -5407,6 +5701,22 @@ void Dump_loader::Sql_transform::add_execution_condition(
     while (it.valid()) {
       auto token = it.next_token();
 
+      // the position of a MariaDB sequence is restored with DO SETVAL(seq,...),
+      // which is neither a CREATE nor a DROP, but has to be filtered out
+      // together with the sequence it belongs to
+      if (shcore::str_caseeq(token, "DO")) {
+        if (!shcore::str_caseeq(it.next_token(), "SETVAL")) break;
+        // (
+        if (!shcore::str_caseeq(it.next_token(), "(")) break;
+
+        std::string object_name;
+        shcore::split_schema_and_table(std::string{it.next_token()}, nullptr,
+                                       &object_name, true);
+
+        execute = f("SEQUENCE", object_name);
+        break;
+      }
+
       if (!shcore::str_caseeq(token, "CREATE", "ALTER", "DROP")) continue;
 
       auto type = it.next_token();
@@ -5427,9 +5737,26 @@ void Dump_loader::Sql_transform::add_execution_condition(
         }
       }
 
-      if (shcore::str_caseeq(type, "EVENT", "FUNCTION", "PROCEDURE", "LIBRARY",
-                             "TRIGGER")) {
-        auto name = it.next_token();
+      std::string object_type{type};
+      std::string_view name;
+
+      // a MariaDB Oracle-mode package spells its type in two tokens, CREATE or
+      // DROP PACKAGE BODY. A package actually named `body` is written quoted,
+      // so an unquoted BODY here can only be the keyword
+      if (shcore::str_caseeq(type, "PACKAGE")) {
+        // either BODY, or the name of the package
+        name = it.next_token();
+
+        if (shcore::str_caseeq(name, "BODY")) {
+          object_type = "PACKAGE BODY";
+          name = it.next_token();
+        }
+      }
+
+      if (shcore::str_caseeq(object_type, "EVENT", "FUNCTION", "PROCEDURE",
+                             "LIBRARY", "TRIGGER", "SEQUENCE", "PACKAGE",
+                             "PACKAGE BODY")) {
+        if (name.empty()) name = it.next_token();
 
         if (shcore::str_caseeq(name, "IF")) {
           // NOT or EXISTS
@@ -5451,7 +5778,7 @@ void Dump_loader::Sql_transform::add_execution_condition(
         shcore::split_schema_and_table(std::string{name}, nullptr, &object_name,
                                        true);
 
-        execute = f(type, object_name);
+        execute = f(object_type, object_name);
       }
 
       break;
@@ -5643,15 +5970,61 @@ void Dump_loader::setup_load_data_progress() {
           }
         });
   } else {
-    m_monitoring->add([this](const Session_ptr &session) {
-      // no reconnection - we're using the monitoring session
-      update_rows_throughput(
-          sql::query(session,
-                     "SELECT CAST(VARIABLE_VALUE AS UNSIGNED) FROM "
-                     "performance_schema.global_status WHERE "
-                     "VARIABLE_NAME='Innodb_rows_inserted'")
-              ->fetch_one_or_throw()
-              ->get_uint(0));
+    // Innodb_rows_inserted is the cheapest source, but it is not everywhere: no
+    // MariaDB has that status variable at all, and no server running with
+    // performance_schema off has that table. Falling back to counting rows on
+    // the client side keeps a throughput figure in both cases - and, more
+    // importantly, stops one unreadable status variable from taking the
+    // monitoring thread down with it. See MARIADB_DUMP_LOAD.md section 18.
+    m_monitoring->add([this, use_server = true, had_sample = false,
+                       prev = m_rows_previously_loaded](
+                          const Session_ptr &session) mutable {
+      if (use_server) {
+        try {
+          // no reconnection - we're using the monitoring session
+          const auto result =
+              sql::query(session,
+                         "SELECT CAST(VARIABLE_VALUE AS UNSIGNED) FROM "
+                         "performance_schema.global_status WHERE "
+                         "VARIABLE_NAME='Innodb_rows_inserted'");
+
+          if (const auto row = result->fetch_one()) {
+            had_sample = true;
+            update_rows_throughput(row->get_uint(0));
+            return;
+          }
+
+          // the query itself ran, so this server simply does not have the
+          // status variable
+          log_info(
+              "The server does not expose Innodb_rows_inserted, row throughput "
+              "will be counted on the client side.");
+        } catch (const std::exception &e) {
+          if (had_sample) {
+            // it was readable before, so this is a transient failure - skipping
+            // one sample beats switching source mid-load and reporting a
+            // nonsense rate
+            log_debug("Failed to read Innodb_rows_inserted: %s", e.what());
+            return;
+          }
+
+          log_info(
+              "Unable to read Innodb_rows_inserted (%s), row throughput will "
+              "be counted on the client side.",
+              e.what());
+        }
+
+        use_server = false;
+      }
+
+      // the same client-side counting the BULK LOAD branch above uses: the
+      // total is updated whenever a data load task finishes
+      const auto rows = m_load_stats.records.load();
+
+      if (rows > prev) {
+        prev = rows;
+        update_rows_throughput(rows);
+      }
     });
   }
 
@@ -5678,13 +6051,7 @@ void Dump_loader::setup_create_indexes_progress() {
     return;
   }
 
-  m_indexes_recreated = 0;
-
   m_monitoring->add([this](const Session_ptr &session) {
-    if (m_indexes_to_recreate == m_indexes_recreated) {
-      return;
-    }
-
     uint64_t indexes_completed = 0;
     uint64_t indexes_in_progress = 0;
     uint64_t index_statements_in_progress = 0;
@@ -5694,6 +6061,10 @@ void Dump_loader::setup_create_indexes_progress() {
       indexes_completed = m_indexes_completed;
       indexes_in_progress = m_indexes_in_progress;
       index_statements_in_progress = m_index_statements_in_progress;
+    }
+
+    if (m_indexes_to_recreate == indexes_completed) {
+      return;
     }
 
     double updated_progress = 100.0 * indexes_completed / m_indexes_to_recreate;
@@ -5716,14 +6087,19 @@ void Dump_loader::setup_create_indexes_progress() {
     if (updated_progress > m_indexes_progress) {
       std::lock_guard lock{m_indexes_display_mutex};
       m_indexes_progress = updated_progress;
-      m_indexes_recreated = indexes_completed;
     }
   });
 
   dump::Progress_thread::Progress_config config;
   config.current = [this]() -> uint64_t {
-    std::lock_guard lock{m_indexes_display_mutex};
-    return m_indexes_recreated;
+    // the count the workers keep, rather than a copy of it the monitoring
+    // thread has to publish. A numeric stage finishes itself once current
+    // reaches total, so mirroring the count made the whole progress queue - and
+    // with it the end of the load - depend on the monitoring thread being alive
+    // and on the percentage below having increased. See
+    // MARIADB_DUMP_LOAD.md section 18.
+    std::lock_guard lock{m_indexes_progress_mutex};
+    return m_indexes_completed;
   };
   config.total = [this]() { return m_indexes_to_recreate; };
   config.right_label = [this]() {
@@ -5914,6 +6290,10 @@ void Dump_loader::read_users_sql() {
   for (auto &group : m_users.statements) {
     if (!group.account.empty()) {
       m_users.all_accounts.emplace(group.account);
+
+      if (Schema_dumper::User_statements::Type::CREATE_ROLE == group.type) {
+        m_users.role_accounts.emplace(group.account);
+      }
     }
 
     for (auto &stmt : group.statements) {
@@ -5939,12 +6319,70 @@ void Dump_loader::drop_existing_accounts() {
 
   sql::ar::run(m_reconnect_callback, [this]() {
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER == group.type) {
-        drop_account(m_session, group.account);
+      using Type = Schema_dumper::User_statements::Type;
+
+      if (Type::CREATE_USER == group.type || Type::CREATE_ROLE == group.type) {
+        drop_account(m_session, group.account, Type::CREATE_ROLE == group.type);
       }
     }
   });
 }
+
+namespace {
+
+/**
+ * Explains error 1524 during account creation.
+ *
+ * MariaDB's ed25519, gssapi and pam are loadable plugins, so a target which has
+ * never installed one refuses the account with `Plugin 'x' is not loaded` and
+ * says nothing else. Aborting the load is deliberate - silently skipping an
+ * account is a privilege change nobody asked for - but the load can say what to
+ * install, and that it has already created part of the accounts. Retrying is
+ * safe because the script creates accounts with IF NOT EXISTS.
+ */
+void explain_missing_auth_plugin(const mysqlshdk::db::Error &error,
+                                 const std::string &account,
+                                 std::size_t created) {
+  // the server names the plugin, and only the plugin, in quotes
+  const std::string_view message = error.what();
+  const auto begin = message.find('\'');
+  const auto end = std::string_view::npos == begin
+                       ? std::string_view::npos
+                       : message.find('\'', begin + 1);
+  const auto plugin = std::string_view::npos == end
+                          ? std::string_view{}
+                          : message.substr(begin + 1, end - begin - 1);
+
+  std::string msg;
+
+  if (plugin.empty()) {
+    msg = "The target server is missing an authentication plugin which the "
+          "account " +
+          account + " requires.";
+  } else {
+    msg = "The target server does not have the '" + std::string{plugin} +
+          "' authentication plugin installed, which the account " + account +
+          " requires. A MariaDB loadable plugin is installed with INSTALL "
+          "SONAME; plugin_library in information_schema.PLUGINS on the source "
+          "server names the library it comes from.";
+  }
+
+  msg +=
+      " Install the plugin on the target and run the load again - accounts are "
+      "created with IF NOT EXISTS, so the ones which already exist are skipped "
+      "- or exclude the affected accounts with the 'excludeUsers' option.";
+
+  if (created) {
+    msg += " " + std::to_string(created) +
+           (1 == created ? " account was" : " accounts were") +
+           " created before this failure and " +
+           (1 == created ? "is" : "are") + " left on the target.";
+  }
+
+  current_console()->print_note(msg);
+}
+
+}  // namespace
 
 void Dump_loader::create_accounts() {
   if (!m_options.load_users()) {
@@ -5967,8 +6405,15 @@ void Dump_loader::create_accounts() {
   m_load_log->log(progress::start::Create_users{});
 
   sql::ar::run(m_reconnect_callback, [this]() {
+    // accounts which the target already has when a later one fails - the load
+    // stops, but nothing undoes these
+    std::size_t created = 0;
+
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER != group.type ||
+      using Type = Schema_dumper::User_statements::Type;
+
+      if ((Type::CREATE_USER != group.type &&
+           Type::CREATE_ROLE != group.type) ||
           m_users.ignored_accounts.count(group.account) > 0) {
         continue;
       }
@@ -5986,6 +6431,10 @@ void Dump_loader::create_accounts() {
           // BUG#36552764 - if target is MHS, ignore errors about missing
           // plugins and continue
           if (!m_options.is_mds() || ER_PLUGIN_IS_NOT_LOADED != e.code()) {
+            if (ER_PLUGIN_IS_NOT_LOADED == e.code()) {
+              explain_missing_auth_plugin(e, group.account, created);
+            }
+
             throw;
           }
 
@@ -5996,6 +6445,8 @@ void Dump_loader::create_accounts() {
           ++m_users.ignored_plugin_errors;
         }
       }
+
+      ++created;
     }
   });
 
@@ -6027,7 +6478,9 @@ void Dump_loader::apply_grants() {
     const auto handle_grant_errors = m_options.on_grant_errors();
 
     for (const auto &group : m_users.statements) {
-      if (Schema_dumper::User_statements::Type::CREATE_USER == group.type ||
+      using Type = Schema_dumper::User_statements::Type;
+
+      if (Type::CREATE_USER == group.type || Type::CREATE_ROLE == group.type ||
           m_users.ignored_accounts.count(group.account) > 0) {
         continue;
       }
@@ -6043,7 +6496,9 @@ void Dump_loader::apply_grants() {
             Handle_grant_errors::ABORT == handle_grant_errors) {
           execute_statement(m_session, stmt, k_applying_grants_context);
         } else if (Handle_grant_errors::DROP_ACCOUNT == handle_grant_errors) {
-          execute_grant_and_drop_account_on_error(stmt, group.account);
+          execute_grant_and_drop_account_on_error(
+              stmt, group.account,
+              m_users.role_accounts.count(group.account) > 0);
         } else if (Handle_grant_errors::IGNORE == handle_grant_errors) {
           execute_grant_and_ignore_errors(stmt);
         } else {
@@ -6436,14 +6891,14 @@ bool Dump_loader::is_dump_complete() const noexcept {
 }
 
 void Dump_loader::execute_grant_and_drop_account_on_error(
-    std::string_view grant, const std::string &account) {
+    std::string_view grant, const std::string &account, bool is_role) {
   try {
     execute_statement(m_session, grant, k_applying_grants_context);
   } catch (const mysqlshdk::db::Error &e) {
     current_console()->print_note(
         "Due to the above error the account " + account +
         " was dropped, the load operation will continue.");
-    drop_account(m_session, account);
+    drop_account(m_session, account, is_role);
     m_users.ignored_accounts.emplace(account);
     ++m_users.dropped_accounts;
   }

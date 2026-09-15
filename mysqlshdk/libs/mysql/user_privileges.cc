@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <functional>
 #include <iterator>
+#include <vector>
 
 #include "mysqlshdk/include/shellcore/console.h"
 #include "mysqlshdk/libs/utils/utils_account.h"
@@ -220,16 +221,37 @@ bool User_privileges::check_if_user_exists(
 
 void User_privileges::parse_user_grants(
     const mysqlshdk::mysql::IInstance &instance) {
-  std::string query = "SHOW GRANTS FOR " + m_account;
+  std::vector<std::string> queries;
 
-  if (!m_roles.empty()) {
-    query += " USING " + shcore::str_join(m_roles, ",");
+  if (m_maria_db_roles) {
+    // MariaDB's SHOW GRANTS has no USING clause. Its bare form reports the
+    // current account's own grants, the full transitive closure of its active
+    // role and the PUBLIC role in a single statement, and requires no
+    // privileges on the mysql schema. Any other account has to be asked about
+    // its roles separately - SHOW GRANTS FOR <role> is transitive as well.
+    if (m_is_current_user) {
+      queries.emplace_back("SHOW GRANTS");
+    } else {
+      queries.emplace_back("SHOW GRANTS FOR " + m_account);
+
+      for (const auto &role : m_roles) {
+        queries.emplace_back("SHOW GRANTS FOR " + role);
+      }
+    }
+  } else {
+    auto &query = queries.emplace_back("SHOW GRANTS FOR " + m_account);
+
+    if (!m_roles.empty()) {
+      query += " USING " + shcore::str_join(m_roles, ",");
+    }
   }
 
-  const auto result = instance.query(query);
+  for (const auto &query : queries) {
+    const auto result = instance.query(query);
 
-  while (const auto row = result->fetch_one()) {
-    parse_grant(row->get_string(0));
+    while (const auto row = result->fetch_one()) {
+      parse_grant(row->get_string(0));
+    }
   }
 }
 
@@ -276,11 +298,14 @@ void User_privileges::parse_grant(const std::string &statement) {
     // revokes apply at the schema level only (column_list or object_type) does
     // not appear in the statement
     grant = false;
-#ifdef MARIADB_BUILD
-    // The case of the default grant statement, which is stored as a grant
+  } else if (shcore::str_caseeq(type, "DENY")) {
+    // MariaDB 12.0+: DENY privileges ON priv_level TO account, a revoke which
+    // keeps the token order of a GRANT
+    use(&m_revoked_privileges);
   } else if (shcore::str_caseeq(type, "SET")) {
+    // MariaDB reports the account's default role as a SET DEFAULT ROLE
+    // statement
     return;
-#endif
   } else {
     throw std::logic_error("Unsupported grant statement: " + std::string{type});
   }
@@ -493,7 +518,14 @@ std::set<std::string> User_privileges::get_mandatory_roles(
   // Get value of the system variable with the mandatory roles.
   const auto result =
       instance.query("SHOW GLOBAL VARIABLES LIKE 'mandatory_roles'");
-  const auto str_roles = shcore::str_strip(result->fetch_one()->get_string(1));
+  const auto row = result->fetch_one();
+
+  // servers which do not have the variable report no rows at all
+  if (!row) {
+    return {};
+  }
+
+  const auto str_roles = shcore::str_strip(row->get_string(1));
 
   // Return an empty set if no mandatory roles are defined.
   if (str_roles.empty()) {
@@ -548,6 +580,16 @@ std::set<std::string> User_privileges::get_mandatory_roles(
 void User_privileges::read_user_roles(
     const mysqlshdk::mysql::IInstance &instance) {
   const auto version = instance.get_version();
+
+  if (db::ServerVendor::MariaDB == instance.get_session()->get_server_vendor()) {
+    // Roles were added in MariaDB 10.0.5, and MariaDB does not implement
+    // MySQL's role model.
+    if (version >= Version(10, 0, 5)) {
+      read_maria_db_user_roles(instance);
+    }
+
+    return;
+  }
 
   // Roles are not supported in MySQL 5.7
   if (version < Version(8, 0, 0)) {
@@ -624,6 +666,41 @@ void User_privileges::read_user_roles(
   while (const auto row = result->fetch_one()) {
     m_roles.emplace(
         shcore::make_account(row->get_string(0), row->get_string(1)));
+  }
+}
+
+void User_privileges::read_maria_db_user_roles(
+    const mysqlshdk::mysql::IInstance &instance) {
+  // MariaDB has neither mandatory roles nor a way to activate every granted
+  // role on login: exactly one role - the account's default role - is enabled
+  // when the account connects. Enabling a role implicitly enables everything
+  // granted to that role, so the role graph does not have to be walked here.
+  m_maria_db_roles = true;
+
+  {
+    std::string user, host;
+    instance.get_current_user(&user, &host);
+    m_is_current_user = m_user == user && m_host == host;
+  }
+
+  // information_schema.APPLICABLE_ROLES only ever reports the roles of the
+  // current account, but unlike mysql.user it needs no privileges on the mysql
+  // schema
+  const auto result =
+      m_is_current_user
+          ? instance.query(
+                "SELECT ROLE_NAME FROM information_schema.APPLICABLE_ROLES "
+                "WHERE IS_DEFAULT='YES'")
+          : instance.queryf(
+                "SELECT default_role FROM mysql.user WHERE user=? AND host=?",
+                m_user, m_host);
+
+  while (const auto row = result->fetch_one()) {
+    // MariaDB roles have no host part, and mysql.user.default_role is an empty
+    // string when the account has no default role
+    if (const auto role = row->get_string(0, {}); !role.empty()) {
+      m_roles.emplace(shcore::quote_identifier(role));
+    }
   }
 }
 

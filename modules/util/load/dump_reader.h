@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -104,6 +105,13 @@ class Dump_reader {
     return m_contents.dump.source.version.number;
   }
 
+  /**
+   * Version *and* vendor of the server the dump was produced from.
+   */
+  const dump::common::Server_version &source_server() const {
+    return m_contents.dump.source.version;
+  }
+
   const std::optional<mysqlshdk::utils::Version> &target_version() const {
     return m_contents.dump.target_version;
   }
@@ -158,6 +166,13 @@ class Dump_reader {
 
   std::vector<shcore::Account> accounts() const;
 
+  /**
+   * The subset of accounts() which the dump describes as MariaDB roles. They
+   * are hostless, and information_schema does not report them the way it
+   * reports an account - see common::roles_are_hostless().
+   */
+  std::vector<shcore::Account> roles() const;
+
   std::list<Dump_reader::Object_info *> schemas();
 
   bool schema_objects(std::string_view schema,
@@ -167,7 +182,10 @@ class Dump_reader {
                       std::list<Object_info *> *out_functions,
                       std::list<Object_info *> *out_procedures,
                       std::list<Object_info *> *out_libraries,
-                      std::list<Object_info *> *out_events);
+                      std::list<Object_info *> *out_events,
+                      std::list<Object_info *> *out_packages,
+                      std::list<Object_info *> *out_package_bodies,
+                      std::list<Object_info *> *out_sequences);
 
   std::string fetch_schema_script(const std::string &schema) const;
   std::string fetch_events_script(const std::string &schema) const;
@@ -199,6 +217,8 @@ class Dump_reader {
     std::string table;
     std::string partition;
     bool chunked = false;
+    // MariaDB: a UNIQUE ... WITHOUT OVERLAPS table refuses REPLACE
+    bool period_unique_key = false;
     std::unique_ptr<mysqlshdk::storage::IFile> file;
     ssize_t index = 0;
     size_t file_size = 0;
@@ -212,8 +232,13 @@ class Dump_reader {
         mysqlshdk::storage::Compression::NONE;
   };
 
+  // transactional_engines: upper-cased names of the storage engines the
+  // target considers transactional (information_schema.ENGINES.TRANSACTIONS
+  // = 'YES'); a table using any other engine never has two of its chunks
+  // handed out at once - see MARIADB_DUMP_LOAD.md section 33
   bool next_table_chunk(
       const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+      const std::unordered_set<std::string> &transactional_engines,
       Table_chunk *out_chunk);
 
   struct Histogram {
@@ -321,6 +346,8 @@ class Dump_reader {
   bool include_event(const std::string &schema, const std::string &event) const;
   bool include_routine(const std::string &schema,
                        const std::string &routine) const;
+  bool include_sequence(const std::string &schema,
+                        const std::string &sequence) const;
   bool include_library(const std::string &schema,
                        const std::string &library) const;
   bool include_trigger(const std::string &schema, const std::string &table,
@@ -443,6 +470,11 @@ class Dump_reader {
 
     bool has_data = true;
     bool chunked = false;
+    // MariaDB: a UNIQUE ... WITHOUT OVERLAPS table refuses REPLACE
+    bool period_unique_key = false;
+    // storage engine the table used on the source instance, empty if the
+    // dump predates this field
+    std::string engine;
     bool last_chunk_seen = false;
 
     size_t chunks_seen = 0;
@@ -584,6 +616,15 @@ class Dump_reader {
     std::list<Routine_info> procedures;
     std::vector<Object_info> libraries;
     std::vector<Object_info> events;
+    // MariaDB Oracle-mode packages. Their DDL is part of the routines, this
+    // list is what lets them be dropped and reported as already existing.
+    std::vector<Object_info> packages;
+    std::vector<Object_info> package_bodies;
+    // MariaDB sequences. Unlike the object types above they have no script of
+    // their own - their DDL is part of the schema script, because a table can
+    // default to NEXT VALUE FOR a sequence. This list is what lets them be
+    // dropped and reported as already existing.
+    std::vector<Object_info> sequences;
 
    private:
     friend class Dump_reader;
@@ -787,11 +828,13 @@ class Dump_reader {
 
   static Candidate schedule_chunk_proportionally(
       const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+      const std::unordered_set<std::string> &transactional_engines,
       std::unordered_set<Dump_reader::Table_data_info *> *tables_with_data,
       uint64_t max_concurrent_tables);
 
 #ifdef FRIEND_TEST
   FRIEND_TEST(Dump_scheduler, load_scheduler);
+  FRIEND_TEST(Dump_scheduler, non_transactional_engine_chunks_are_not_concurrent);
 #endif
 };
 

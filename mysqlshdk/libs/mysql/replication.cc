@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1101,15 +1102,6 @@ std::string get_replication_source_keyword(
     return "MASTER";
   } else {
     return (command == true ? "REPLICATION SOURCE" : "SOURCE");
-  }
-}
-
-const char *get_binary_logs_keyword(const mysqlshdk::utils::Version &version,
-                                    bool status) {
-  if (version < mysqlshdk::utils::Version(8, 2, 0)) {
-    return "MASTER";
-  } else {
-    return (status == true ? "BINARY LOG" : "BINARY LOGS AND GTIDS");
   }
 }
 

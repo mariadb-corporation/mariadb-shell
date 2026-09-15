@@ -52,6 +52,7 @@
 #include "mysqlshdk/libs/db/utils_error.h"
 #include "mysqlshdk/libs/mysql/group_replication.h"
 #include "mysqlshdk/libs/mysql/gtid_utils.h"
+#include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/mysql/replication.h"
 #include "mysqlshdk/libs/mysql/script.h"
 #include "mysqlshdk/libs/textui/progress.h"

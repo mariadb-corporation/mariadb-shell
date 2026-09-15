@@ -608,6 +608,27 @@ def _clean_boilerplate_data(datadir):
             pass
 
 
+def _boilerplate_is_complete(bp_dir, version):
+    """True if 'bp_dir' holds a finished boilerplate for this server version.
+
+    The version stamp is written last, so its absence means the build did not
+    finish. That case has to be told apart from a finished one by the stamp
+    alone: an interrupted 'mariadb-install-db' leaves a data dir which looks
+    populated - 'mysql', 'performance_schema' and 'sys' are all there - but
+    holds no tables, and a sandbox copied from it dies on start with
+    "Can't open and lock privilege tables: Table 'mysql.db' doesn't exist".
+    """
+    try:
+        with open(os.path.join(bp_dir, "version.txt")) as f:
+            if f.read().strip() != version:
+                return False
+    except OSError:
+        return False
+
+    bp_data = _datadir(bp_dir)
+    return os.path.isdir(bp_data) and bool(os.listdir(bp_data))
+
+
 def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
                          innodb_opts):
     """Ensure a per-version boilerplate data dir exists; return its path.
@@ -620,19 +641,13 @@ def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
     version = _version_token(mariadbd, vendor)
     bp_dir = _boilerplate_dir(base, version)
     bp_data = _datadir(bp_dir)
-    version_file = os.path.join(bp_dir, "version.txt")
 
-    # Reuse only if the boilerplate is complete and matches the server version.
-    if os.path.isdir(bp_data) and os.path.isfile(version_file):
-        try:
-            with open(version_file) as f:
-                if f.read().strip() == version and os.listdir(bp_data):
-                    _log("debug", "Reusing sandbox boilerplate at {0}".format(
-                        bp_dir))
-                    return bp_data
-        except OSError:
-            pass
-        # Incomplete or mismatched: rebuild it.
+    # Reuse only a complete boilerplate for this server version; anything else
+    # is stale and gets removed rather than trusted.
+    if _boilerplate_is_complete(bp_dir, version):
+        _log("debug", "Reusing sandbox boilerplate at {0}".format(bp_dir))
+        return bp_data
+    if os.path.exists(bp_dir):
         shutil.rmtree(bp_dir, ignore_errors=True)
 
     print("Preparing sandbox boilerplate for {0} (one-time per version)..."
@@ -651,15 +666,18 @@ def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
-    # Publish atomically. If another deployment won the race, reuse theirs.
-    if os.path.isdir(bp_data):
+    # Publish atomically. If another deployment won the race, reuse theirs -
+    # but only a complete one, so a leftover data dir cannot outrank the
+    # boilerplate we just built.
+    if _boilerplate_is_complete(bp_dir, version):
         shutil.rmtree(tmp_dir, ignore_errors=True)
     else:
+        shutil.rmtree(bp_dir, ignore_errors=True)
         try:
             os.rename(tmp_dir, bp_dir)
         except OSError:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            if not os.path.isdir(bp_data):
+            if not _boilerplate_is_complete(bp_dir, version):
                 raise
     return bp_data
 

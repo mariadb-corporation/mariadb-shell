@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -106,7 +107,7 @@
 
 #define SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION 53019
 #define SHERR_LOAD_INVISIBLE_PKS_UNSUPPORTED_SERVER_VERSION_MSG \
-  "The 'createInvisiblePKs' option requires server 8.0.24 or newer."
+  "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+."
 
 #define SHERR_LOAD_REQUIRE_PRIMARY_KEY_ENABLED 53020
 #define SHERR_LOAD_REQUIRE_PRIMARY_KEY_ENABLED_MSG \
@@ -184,7 +185,30 @@
   "The dump contains dynamic data masking DDL which requires server 9.7.0 or " \
   "newer."
 
-#define SHERR_LOAD_LAST 53038
+#define SHERR_LOAD_VENDOR_MISMATCH 53039
+#define SHERR_LOAD_VENDOR_MISMATCH_MSG "Server vendor mismatch"
+
+// MariaDB restores a GTID position by assigning it to gtid_slave_pos, which
+// the server refuses to change while it is replicating - see
+// MARIADB_DUMP_LOAD.md section 4.4
+#define SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING 53040
+#define SHERR_LOAD_UPDATE_GTID_REPLICATION_IS_RUNNING_MSG                    \
+  "The updateGtidSet option cannot be used while replication is running on " \
+  "the target server."
+
+#define SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION 53041
+#define SHERR_LOAD_UPDATE_GTID_REPLACE_REQUIRES_SUPERSET_POSITION_MSG        \
+  "The updateGtidSet:'replace' option can only be used if the dumped GTID "  \
+  "position is a superset of the current value of gtid_slave_pos on target " \
+  "server."
+
+#define SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT 53042
+#define SHERR_LOAD_UPDATE_GTID_APPEND_POSITIONS_INTERSECT_MSG                \
+  "The updateGtidSet:'append' option can only be used if gtid_slave_pos on " \
+  "target server does not contain any of the replication domains of the "    \
+  "dumped GTID position."
+
+#define SHERR_LOAD_LAST 53042
 
 #define SHERR_LOAD_MAX 53999
 

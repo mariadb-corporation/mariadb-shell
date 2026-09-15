@@ -23,7 +23,7 @@ These are defined in [CMakeLists.txt](CMakeLists.txt) **exactly when
 | `HAVE_UPGRADE_CHECKER` | the Upgrade Checker | `#ifdef HAVE_UPGRADE_CHECKER` = MySQL-only code |
 | `HAVE_ADMIN_API` | AdminAPI (`dba`, Cluster/ReplicaSet/ClusterSet, InnoDB Cluster, metadata) | `#ifdef HAVE_ADMIN_API` = MySQL-only code; `#ifndef HAVE_ADMIN_API` = MariaDB stub |
 | `HAVE_X_PROTOCOL` | X protocol / X DevAPI (`mysqlx://`, X sessions, collections, X expr parser, `importJson`) | `#ifdef HAVE_X_PROTOCOL` = MySQL-only code; `#ifndef HAVE_X_PROTOCOL` = MariaDB stub |
-| `HAVE_DUMP_AND_LOAD` | the dump/load utilities | `#ifdef HAVE_DUMP_AND_LOAD` = MySQL-only code |
+| `HAVE_BINLOG_UTILS` | `util.dumpBinlogs()` / `util.loadBinlogs()` and the binlog streaming under them | `#ifdef HAVE_BINLOG_UTILS` = MySQL-only code |
 
 A bare `#ifdef MARIADB_BUILD` / `#ifndef MARIADB_BUILD` now denotes a guard that
 is **neither** AdminAPI nor X-protocol — i.e. an intrinsic build difference
@@ -216,6 +216,22 @@ library the shell links separately. Handled in
 - A stub `FI_DEFINE(mysqlx)` fault-injection handler is provided in session.cc
   (the X session normally defines it) so the `FI_SUPPRESS(mysqlx)` calls in
   shared code paths have a valid target.
+- **Threads registered with mysys have to be gone before `my_end()`.**
+  `my_end()` calls `my_thread_global_end()`, which waits `my_thread_end_wait_time`
+  seconds — **five** by default — for every thread that called `my_thread_init()`,
+  then prints `Error in my_thread_global_end(): N threads didn't exit`, suppresses
+  the leak report and leaves mysys' internal mutexes undestroyed
+  ([mysys/my_thr_init.c](https://github.com/MariaDB/server/blob/main/mysys/my_thr_init.c)).
+  `mysqlshdk::utils::Mysys_thread_scope` registers every thread spawned through
+  `spawn_scoped_thread()`, and `Interrupts`' background helper thread runs for the
+  whole session — so **every** shell process paid a flat five seconds at exit, and
+  every scripted test that spawns child shells paid it once per child
+  (`util_dump_chunking` took 25s instead of 4s; a trivial `-e "print(1)"` took
+  5.2s instead of 0.15s). `global_end()` now calls
+  `Interrupts::stop_background_thread()` before `mysql_library_end()`, which is
+  also what the pre-existing `mysqlsh_module_norecord.py` assertion
+  ("`EXPECT_STDOUT_NOT_CONTAINS("Error in my_thread_global_end()")`") is there to
+  catch. Any future long-lived thread needs the same treatment.
 
 ### Python scripting (`-DHAVE_PYTHON=1`)
 
@@ -981,10 +997,8 @@ identifiers cannot contain trailing spaces (`1102`). Verified passing against bo
 a `UTF8_IS_UTF8MB3` server (12.3.2) and an empty-`old_mode` server (13.1.0).
 
 Scope note: `Query_helper`'s only product consumers are dump/load and the Upgrade
-Checker, both excluded from MariaDB builds (`HAVE_DUMP_AND_LOAD`,
-`HAVE_UPGRADE_CHECKER`), so today the code is exercised only by its own unit test —
-but the defect is in shared library code and would resurface the moment either
-feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
+Checker. Dump/load is now built for MariaDB too, so this code is live there; the
+Upgrade Checker remains MySQL-only (`HAVE_UPGRADE_CHECKER`). The 66 SQL-literal expectations in the (MySQL-only)
 Upgrade-Checker tests were updated to match the generated SQL.
 
 ### 13.2 `sql_mode` is never reported via session state tracking

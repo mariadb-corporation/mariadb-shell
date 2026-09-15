@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +57,9 @@ class Dump_instance_options : public Dump_schemas_options {
 
  private:
   void on_unpacked_options();
+
+  void on_set_session(
+      const std::shared_ptr<mysqlshdk::db::ISession> &session) override;
 
   void on_validate() const override;
 

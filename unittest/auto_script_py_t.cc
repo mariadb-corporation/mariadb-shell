@@ -313,14 +313,11 @@ std::vector<std::string> find_py_tests(const std::string &subdir,
   std::vector<std::string> filtered;
 
   for (const auto &s : tests) {
-#ifndef HAVE_DUMP_AND_LOAD
-    if (subdir == "py_shell" && (shcore::str_beginswith(s, "util_dump") ||
-                                 shcore::str_beginswith(s, "util_load") ||
-                                 shcore::str_beginswith(s, "util_import") ||
-                                 shcore::str_beginswith(s, "util_export") ||
-                                 shcore::str_beginswith(s, "util_copy"))) {
-      continue;
-    }
+#ifndef HAVE_BINLOG_UTILS
+    // util.dumpBinlogs() / util.loadBinlogs() are not built here, so the
+    // methods these scripts drive do not exist on this build. Dump/load itself
+    // is built for both vendors; only the binlog utility is gated.
+    if (s.find("binlogs") != std::string::npos) continue;
 #endif
     // We let files starting with underscore as modules
     if (shcore::str_endswith(s, ext) && s[0] != '_' &&

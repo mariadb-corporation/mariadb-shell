@@ -130,8 +130,16 @@ IF(NOT MARIADB_BUILD)
   SET(HAVE_X_PROTOCOL 1)
   ADD_DEFINITIONS(-DHAVE_X_PROTOCOL)
 
-  SET(HAVE_DUMP_AND_LOAD 1)
-  ADD_DEFINITIONS(-DHAVE_DUMP_AND_LOAD)
+  # util.dumpBinlogs() / util.loadBinlogs() and the low-level binlog streaming
+  # they sit on still depend on MySQL's client binlog API (MYSQL_RPL,
+  # mysql_binlog_open/fetch/close) and on libbinlogevents
+  # (mysql::binlog::event, mysql::gtids) - none of which exist in MariaDB.
+  # Porting them means rewriting the streaming against MariaDB Connector/C's
+  # mariadb_rpl_* API and replacing mysql::gtids with a native domain-based GTID
+  # model. Until then the utility is MySQL-only. This is independent of
+  # dump/load, which is built for both vendors.
+  SET(HAVE_BINLOG_UTILS 1)
+  ADD_DEFINITIONS(-DHAVE_BINLOG_UTILS)
 ENDIF()
 
 
@@ -1614,6 +1622,16 @@ find_package(libssh 0.9.2 REQUIRED)
 message(STATUS "Found libssh: ${libssh_VERSION}, using config: ${libssh_CONFIG}")
 
 add_definitions(-DMYSH_VERSION="${MYSH_VERSION}" -DMYSH_BUILD_ID="${MYSH_BUILD_ID}" -DEXTRA_NAME_SUFFIX="${EXTRA_NAME_SUFFIX}")
+
+# The version of the server this Shell was built against, as computed by
+# GET_MYSQL_VERSION() in version.cmake (MYSQL_VERSION for a MySQL source tree,
+# VERSION for a MariaDB one). MariaDB server version numbers are not on the same
+# scale as the Shell's own version, so "is this server newer than the tool"
+# checks need this as their yardstick for a MariaDB server - see
+# MARIADB_DUMP_LOAD.md section 7.4.
+IF(MYSQL_VERSION)
+  add_definitions(-DMYSH_BUILD_SERVER_VERSION="${MYSQL_VERSION}")
+ENDIF()
 if(WIN32)
   add_definitions(-DMYSH_VERSION_WIN="${MYSH_VERSION_WIN}")
 endif()

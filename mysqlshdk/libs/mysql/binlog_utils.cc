@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +35,7 @@
 namespace mysqlshdk {
 namespace mysql {
 
+#ifndef MARIADB_BUILD
 void inject_gtid(const mysqlshdk::mysql::IInstance &server, const Gtid &gtid) {
   shcore::on_leave_scope guard(
       [&]() { server.executef("SET gtid_next = AUTOMATIC"); });
@@ -59,6 +61,7 @@ size_t inject_gtid_set(const mysqlshdk::mysql::IInstance &server,
 
   return count;
 }
+#endif  // !MARIADB_BUILD
 
 [[maybe_unused]] std::vector<std::string> list_binlogs(
     const mysqlshdk::mysql::IInstance &server) {
@@ -109,8 +112,16 @@ size_t inject_gtid_set(const mysqlshdk::mysql::IInstance &server,
 
     if (event.event_type == "Gtid") {
       if (shcore::str_beginswith(event.info, "SET @@SESSION.GTID_NEXT=")) {
+        // MySQL: SET @@SESSION.GTID_NEXT='uuid:n'
         const auto p = event.info.find('\'');
         last_gtid = event.info.substr(p + 1, event.info.rfind('\'') - p - 1);
+      } else if (const auto gtid_pos = event.info.find("GTID ");
+                 gtid_pos != std::string::npos) {
+        // MariaDB: "GTID d-s-seq" or "BEGIN GTID d-s-seq" (mariadb_gtid.h's
+        // domain-server-sequence position, not MySQL's uuid:n)
+        const auto value = event.info.substr(gtid_pos + 5);
+        const auto space = value.find(' ');
+        last_gtid = space == std::string::npos ? value : value.substr(0, space);
       } else {
         last_gtid.clear();
       }

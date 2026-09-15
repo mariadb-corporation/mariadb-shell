@@ -35,6 +35,7 @@
 
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/dump/indexes.h"
 
@@ -3550,7 +3551,8 @@ TEST_F(Instance_cache_test, filter_routines) {
 
 #ifndef MARIADB_BUILD
 TEST_F(Instance_cache_test, filter_libraries) {
-  if (!compatibility::supports_library_ddl(_target_server_version)) {
+  if (!common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
     SKIP_TEST("This test requires MySQL server 9.2.0");
   }
 
@@ -3810,6 +3812,507 @@ TEST_F(Instance_cache_test, filter_libraries) {
   }
 }
 #endif
+
+// A MariaDB role is an object of its own, so an account filter which names a
+// user does not name the roles granted to it - and those roles are not a
+// dependency of the account, they are part of its privileges. They are pulled
+// into the dump, transitively, unless excluded outright - see
+// MARIADB_DUMP_LOAD.md section 26
+TEST_F(Instance_cache_test, roles_of_included_users) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  const auto drop_accounts = [this]() {
+    m_session->execute("DROP USER IF EXISTS ic_user;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_a;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_b;");
+    m_session->execute("DROP ROLE IF EXISTS ic_role_c;");
+  };
+
+  drop_accounts();
+  shcore::on_leave_scope cleanup{drop_accounts};
+
+  {
+    // setup: b is granted to a, a is granted to the user, c to nobody
+    m_session->execute("CREATE USER ic_user;");
+    m_session->execute("CREATE ROLE ic_role_a;");
+    m_session->execute("CREATE ROLE ic_role_b;");
+    m_session->execute("CREATE ROLE ic_role_c;");
+    m_session->execute("GRANT ic_role_b TO ic_role_a;");
+    m_session->execute("GRANT ic_role_a TO ic_user;");
+  }
+
+  const auto EXPECT_ACCOUNTS =
+      [](const Instance_cache &cache,
+         const std::vector<std::string> &expected_users,
+         const std::vector<std::string> &expected_roles) {
+        const auto names = [](const std::vector<shcore::Account> &accounts) {
+          std::vector<std::string> result;
+
+          for (const auto &account : accounts) {
+            // only the accounts this test made, the instance holds others
+            if (shcore::str_beginswith(account.user, "ic_")) {
+              result.emplace_back(account.user);
+            }
+          }
+
+          std::sort(result.begin(), result.end());
+          return result;
+        };
+
+        EXPECT_EQ(expected_users, names(cache.users));
+        // the dumper reads this to choose between CREATE ROLE and CREATE USER
+        EXPECT_EQ(expected_roles, names(cache.roles));
+      };
+
+  {
+    SCOPED_TRACE("only the user is named, its roles follow it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    // ic_role_b is reached only through ic_role_a, ic_role_c not at all
+    EXPECT_ACCOUNTS(cache, {"ic_role_a", "ic_role_b", "ic_user"},
+                    {"ic_role_a", "ic_role_b"});
+  }
+
+  {
+    SCOPED_TRACE("an excluded role stays out, and takes nothing with it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+    filters.users().exclude(std::array{"ic_role_a"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    // excluding a is an instruction, and b was only reachable through it
+    EXPECT_ACCOUNTS(cache, {"ic_user"}, {});
+  }
+
+  {
+    SCOPED_TRACE("excluding the role in the middle of the chain");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_user"});
+    filters.users().exclude(std::array{"ic_role_b"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_ACCOUNTS(cache, {"ic_role_a", "ic_user"}, {"ic_role_a"});
+  }
+
+  {
+    SCOPED_TRACE("a role named outright is dumped whether or not it is granted");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"ic_role_c"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_ACCOUNTS(cache, {"ic_role_c"}, {"ic_role_c"});
+  }
+}
+
+// MariaDB reports a system-versioned table with TABLE_TYPE='SYSTEM VERSIONED',
+// and anything which was not 'BASE TABLE' used to fall through to the view path
+// - so such a table was dumped as a view and aborted the dump. See
+// MARIADB_DUMP_LOAD.md section 27.
+TEST_F(Instance_cache_test, system_versioned_table_is_a_table) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    // setup: a system-versioned table, an ordinary one and a view, to show the
+    // three are told apart
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE TABLE first.one (a INT) WITH SYSTEM VERSIONING;");
+    m_session->execute("CREATE TABLE first.two (a INT);");
+    m_session->execute("CREATE VIEW first.three AS SELECT * FROM first.two;");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  const auto cache = Instance_cache_builder(m_session, filters).build();
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  EXPECT_TRUE(schema->second.tables.contains("one"));
+  EXPECT_TRUE(schema->second.tables.contains("two"));
+  EXPECT_FALSE(schema->second.views.contains("one"));
+  EXPECT_TRUE(schema->second.views.contains("three"));
+
+  EXPECT_EQ(2, cache.filtered.tables);
+  EXPECT_EQ(1, cache.filtered.views);
+  // the totals are counted with their own query, which has to agree
+  EXPECT_LE(2, cache.total.tables);
+}
+
+// A system-versioned table is not dumped partition by partition: MariaDB refuses
+// partition selection on one (error 1726) so the load could not name the
+// partition, and reading the partitions directly would dump the HISTORY
+// partition, whose rows carry no period columns and would come back as live
+// data. See MARIADB_DUMP_LOAD.md section 30.
+TEST_F(Instance_cache_test, system_versioned_table_has_no_partitions) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    // setup: the same partitioning, with and without system versioning
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute(
+        "CREATE TABLE first.one (a INT) WITH SYSTEM VERSIONING PARTITION BY "
+        "SYSTEM_TIME LIMIT 100 (PARTITION h0 HISTORY, PARTITION pc CURRENT);");
+    m_session->execute(
+        "CREATE TABLE first.two (a INT) PARTITION BY HASH(a) PARTITIONS 2;");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  const auto cache =
+      Instance_cache_builder(m_session, filters).metadata({}).build();
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  const auto versioned = schema->second.tables.find("one");
+  ASSERT_TRUE(schema->second.tables.end() != versioned);
+  EXPECT_TRUE(versioned->second.system_versioned);
+  EXPECT_TRUE(versioned->second.partitions.empty());
+
+  // an ordinary partitioned table is unaffected
+  const auto plain = schema->second.tables.find("two");
+  ASSERT_TRUE(schema->second.tables.end() != plain);
+  EXPECT_FALSE(plain->second.system_versioned);
+  EXPECT_EQ(2, plain->second.partitions.size());
+}
+
+// MariaDB types the shell had no mapping for aborted the dump outright, and a
+// UNIQUE ... WITHOUT OVERLAPS table refuses the REPLACE the loader uses - see
+// MARIADB_DUMP_LOAD.md section 31.
+TEST_F(Instance_cache_test, mariadb_column_types_and_period_keys) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  {
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE TABLE first.one (u UUID, v4 INET4, v6 INET6);");
+    // a WITHOUT OVERLAPS key, and an application-time period without one
+    m_session->execute(
+        "CREATE TABLE first.two (id INT, s DATE, e DATE, PERIOD FOR p(s,e), "
+        "UNIQUE (id, p WITHOUT OVERLAPS));");
+    m_session->execute(
+        "CREATE TABLE first.three (id INT, s DATE, e DATE, PERIOD FOR p(s,e));");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  // the type mapping used to throw a logic_error from here
+  Instance_cache cache;
+  ASSERT_NO_THROW(cache = Instance_cache_builder(m_session, filters)
+                              .metadata({})
+                              .build());
+
+  const auto schema = cache.schemas.find("first");
+  ASSERT_TRUE(cache.schemas.end() != schema);
+
+  {
+    const auto table = schema->second.tables.find("one");
+    ASSERT_TRUE(schema->second.tables.end() != table);
+    ASSERT_EQ(3, table->second.all_columns.size());
+
+    // the server renders all three as text and takes them back as text
+    for (const auto &column : table->second.all_columns) {
+      SCOPED_TRACE(column.name);
+      EXPECT_EQ(mysqlshdk::db::Type::String, column.type);
+    }
+  }
+
+  {
+    const auto with_key = schema->second.tables.find("two");
+    ASSERT_TRUE(schema->second.tables.end() != with_key);
+    EXPECT_TRUE(with_key->second.period_unique_key);
+
+    // a period alone does not stop REPLACE, only the key over it does
+    const auto without_key = schema->second.tables.find("three");
+    ASSERT_TRUE(schema->second.tables.end() != without_key);
+    EXPECT_FALSE(without_key->second.period_unique_key);
+  }
+}
+
+// MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
+// share the table namespace, so they are enumerated and filtered as tables but
+// kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md
+// section 4.5.1
+TEST_F(Instance_cache_test, filter_sequences) {
+  if (!common::supports_sequences(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  {
+    // setup
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("CREATE SEQUENCE first.one;");
+    m_session->execute("CREATE SEQUENCE first.two;");
+    // a table and a view in the same schema, to show the three are told apart
+    m_session->execute("CREATE TABLE first.three (id INT);");
+    m_session->execute("CREATE VIEW first.four AS SELECT * FROM first.three;");
+    m_session->execute("CREATE SCHEMA second;");
+    m_session->execute("CREATE SEQUENCE second.one;");
+    m_session->execute("CREATE SEQUENCE second.two;");
+    m_session->execute("CREATE SCHEMA third;");
+    m_session->execute("CREATE SEQUENCE third.one;");
+    m_session->execute("CREATE SEQUENCE third.two;");
+  }
+
+  const auto EXPECT_SEQUENCES =
+      [](const Instance_cache &cache, const std::string &schema,
+         const std::unordered_set<std::string> &expected) {
+        SCOPED_TRACE("schema: " + schema);
+
+        const auto it = cache.schemas.find(schema);
+        ASSERT_TRUE(cache.schemas.end() != it)
+            << "cache does not contain schema `" << schema << "`";
+        EXPECT_EQ(expected, it->second.sequences);
+      };
+
+  const auto only_test_schemas = [](Filtering_options *filters) {
+    // makes the counts independent of whatever else the instance holds
+    filters->schemas().include(std::array{"first", "second", "third"});
+  };
+
+  {
+    SCOPED_TRACE("all filters are empty");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one", "two"});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(6, cache.filtered.sequences);
+
+    // a sequence is neither a table nor a view, and does not inflate either
+    // count - which it did before it had a map of its own
+    Instance_cache::Schema expected;
+    expected.tables["three"];
+    expected.views["four"];
+    verify(cache, "first", expected);
+
+    EXPECT_EQ(1, cache.total.tables);
+    EXPECT_EQ(1, cache.filtered.tables);
+    EXPECT_EQ(1, cache.total.views);
+    EXPECT_EQ(1, cache.filtered.views);
+  }
+
+  {
+    SCOPED_TRACE("exclude a sequence in one schema");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().exclude("third", "two");
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one"});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(5, cache.filtered.sequences);
+  }
+
+  {
+    SCOPED_TRACE("exclude all sequences in one schema, and a table");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().exclude("first", std::array{"one", "two", "three"});
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "third", {"one", "two"});
+
+    EXPECT_EQ(4, cache.filtered.sequences);
+    EXPECT_EQ(0, cache.filtered.tables);
+  }
+
+  {
+    SCOPED_TRACE("include one sequence - everything else is excluded");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.tables().include("second", "one");
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {});
+    EXPECT_SEQUENCES(cache, "second", {"one"});
+    EXPECT_SEQUENCES(cache, "third", {});
+
+    EXPECT_EQ(6, cache.total.sequences);
+    EXPECT_EQ(1, cache.filtered.sequences);
+    EXPECT_EQ(0, cache.filtered.tables);
+  }
+
+  {
+    SCOPED_TRACE("exclude the schema a sequence lives in");
+
+    Filtering_options filters;
+    filters.schemas().include(std::array{"first", "second"});
+    const auto cache = Instance_cache_builder(m_session, filters).build();
+
+    EXPECT_SEQUENCES(cache, "first", {"one", "two"});
+    EXPECT_SEQUENCES(cache, "second", {"one", "two"});
+    EXPECT_TRUE(cache.schemas.end() == cache.schemas.find("third"));
+
+    EXPECT_EQ(4, cache.total.sequences);
+    EXPECT_EQ(4, cache.filtered.sequences);
+  }
+}
+
+TEST_F(Instance_cache_test, filter_packages) {
+  if (!common::supports_packages(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  {
+    // setup - a package only comes into existence under sql_mode=ORACLE
+    m_session->execute("CREATE SCHEMA first;");
+    m_session->execute("SET sql_mode=ORACLE;");
+    m_session->execute(
+        "CREATE PACKAGE first.one AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute(
+        "CREATE PACKAGE BODY first.one AS FUNCTION f() RETURN "
+        "INT AS BEGIN RETURN 1; END; END;");
+    // a specification with no body of its own
+    m_session->execute(
+        "CREATE PACKAGE first.two AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute("CREATE SCHEMA second;");
+    m_session->execute(
+        "CREATE PACKAGE second.one AS FUNCTION f() RETURN INT; "
+        "END;");
+    m_session->execute(
+        "CREATE PACKAGE BODY second.one AS FUNCTION f() RETURN "
+        "INT AS BEGIN RETURN 1; END; END;");
+    m_session->execute("SET sql_mode=DEFAULT;");
+    // packages have a namespace of their own, so this function does not
+    // collide with the package of the same name
+    m_session->execute(
+        "CREATE FUNCTION first.one() RETURNS INT DETERMINISTIC RETURN 1;");
+  }
+
+  const auto EXPECT_PACKAGES =
+      [](const Instance_cache &cache, const std::string &schema,
+         const std::unordered_set<std::string> &expected_packages,
+         const std::unordered_set<std::string> &expected_bodies,
+         const std::unordered_set<std::string> &expected_functions) {
+        SCOPED_TRACE("schema: " + schema);
+
+        const auto it = cache.schemas.find(schema);
+        ASSERT_TRUE(cache.schemas.end() != it)
+            << "cache does not contain schema `" << schema << "`";
+
+        EXPECT_EQ(expected_packages, it->second.packages);
+        EXPECT_EQ(expected_bodies, it->second.package_bodies);
+
+        std::unordered_set<std::string> functions;
+
+        for (const auto &pair : it->second.functions) {
+          functions.emplace(pair.first);
+        }
+
+        EXPECT_EQ(expected_functions, functions);
+      };
+
+  const auto only_test_schemas = [](Filtering_options *filters) {
+    // makes the counts independent of whatever else the instance holds
+    filters->schemas().include(std::array{"first", "second"});
+  };
+
+  {
+    SCOPED_TRACE("all filters are empty");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {"one", "two"}, {"one"}, {"one"});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    // 3 packages, 2 bodies and a function
+    EXPECT_EQ(6, cache.total.routines);
+    EXPECT_EQ(6, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE("exclude a package - the routine filters select it");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().exclude("first", "two");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {"one"}, {"one"}, {"one"});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(5, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE(
+        "a filter is by name, so it takes the whole namespace with it");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().exclude("first", "one");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    // the package, its body and the function share the name `one`
+    EXPECT_PACKAGES(cache, "first", {"two"}, {}, {});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(3, cache.filtered.routines);
+  }
+
+  {
+    SCOPED_TRACE("include one package - everything else is excluded");
+
+    Filtering_options filters;
+    only_test_schemas(&filters);
+    filters.routines().include("second", "one");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().build();
+
+    EXPECT_PACKAGES(cache, "first", {}, {}, {});
+    EXPECT_PACKAGES(cache, "second", {"one"}, {"one"}, {});
+
+    EXPECT_EQ(2, cache.filtered.routines);
+  }
+}
 
 TEST_F(Instance_cache_test, filter_triggers) {
   {
@@ -4342,7 +4845,8 @@ TEST_F(Instance_cache_test, filter_triggers) {
 
 TEST_F(Instance_cache_test, stats) {
   const auto k_libraries_supported =
-      compatibility::supports_library_ddl(_target_server_version);
+      common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()));
 
   {
     // setup
@@ -4478,11 +4982,27 @@ TEST_F(Instance_cache_test, stats) {
   Instance_cache::Stats expected_total;
 
   expected_total.schemas = total_count("schemata");
-  expected_total.tables = total_count("tables", "'BASE TABLE'=TABLE_TYPE");
+  // MariaDB reports a system-versioned table as SYSTEM VERSIONED, and the cache
+  // counts it as the table it is - so an instance holding one used to fail this
+  // test (MARIADB_DUMP_LOAD.md section 27)
+  expected_total.tables =
+      total_count("tables", "TABLE_TYPE IN ('BASE TABLE','SYSTEM VERSIONED')");
   expected_total.views = total_count("tables", "'VIEW'=TABLE_TYPE");
 
+  // information_schema.USER_PRIVILEGES has no row for an account holding
+  // nothing but USAGE, which is every fresh MariaDB role, so counting grantees
+  // there reports fewer accounts than the cache finds and a single role in the
+  // instance failed this test. count_users() reads mysql.user for the same
+  // reason - see MARIADB_DUMP_LOAD.md section 20.
   const auto total_users =
-      total_count("user_privileges", {}, "DISTINCT grantee");
+      target_server_is_maria_db()
+          ? m_session
+                ->query(
+                    "SELECT COUNT(*) FROM (SELECT DISTINCT user, host FROM "
+                    "mysql.user) AS user")
+                ->fetch_one()
+                ->get_uint(0)
+          : total_count("user_privileges", {}, "DISTINCT grantee");
 
   const auto EXPECT_STATS = [](const Instance_cache::Stats &expected,
                                const Instance_cache::Stats &actual) {
@@ -4796,7 +5316,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 6, 3, 0, 0, 0, 12}, cache.filtered);
+    EXPECT_STATS({3, 6, 3, 0, 0, 0, 0, 12}, cache.filtered);
   }
 
   {
@@ -4819,7 +5339,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 6, 3, 0, 0, 0, 4}, cache.filtered);
+    EXPECT_STATS({3, 6, 3, 0, 0, 0, 0, 4}, cache.filtered);
   }
 
   {
@@ -4841,7 +5361,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 2, 1, 0, 0, 0, 4}, cache.filtered);
+    EXPECT_STATS({3, 2, 1, 0, 0, 0, 0, 4}, cache.filtered);
   }
 
   {
@@ -4865,7 +5385,7 @@ TEST_F(Instance_cache_test, stats) {
     expected_total.users = 0;
 
     EXPECT_STATS(expected_total, cache.total);
-    EXPECT_STATS({3, 2, 1, 0, 0, 0, 2}, cache.filtered);
+    EXPECT_STATS({3, 2, 1, 0, 0, 0, 0, 2}, cache.filtered);
   }
 }
 
@@ -5106,6 +5626,163 @@ TEST_F(Instance_cache_test, users) {
     EXPECT_EQ(2, cache.users.size());
     EXPECT_TRUE(contains(cache, "'first'@'localhost'"));
     EXPECT_TRUE(contains(cache, "'first'@'10.11.12.13'"));
+  }
+}
+
+TEST_F(Instance_cache_test, maria_db_roles) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  {
+    // setup - a role and an account of the same name are two different objects,
+    // and the role is hostless
+    m_session->execute("CREATE ROLE IF NOT EXISTS 'both'");
+    m_session->execute(
+        "CREATE USER IF NOT EXISTS 'both'@'localhost' IDENTIFIED BY 'pwd'");
+    m_session->execute("CREATE ROLE IF NOT EXISTS 'roleonly'");
+    m_session->execute(
+        "CREATE USER IF NOT EXISTS 'useronly'@'localhost' IDENTIFIED BY 'pwd'");
+  }
+
+  shcore::on_leave_scope cleanup{[this]() {
+    m_session->execute("DROP ROLE 'both';");
+    m_session->execute("DROP USER 'both'@'localhost';");
+    m_session->execute("DROP ROLE 'roleonly';");
+    m_session->execute("DROP USER 'useronly'@'localhost';");
+  }};
+
+  const auto accounts_of = [](const std::vector<shcore::Account> &list) {
+    std::set<std::string> accounts;
+
+    for (const auto &a : list) {
+      accounts.emplace(shcore::make_account(a));
+    }
+
+    return accounts;
+  };
+
+  {
+    SCOPED_TRACE("roles are enumerated, and separately from accounts");
+
+    Filtering_options filters;
+    filters.users().include(
+        std::array{"both", "roleonly", "useronly", "nosuchaccount"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+    const auto users = accounts_of(cache.users);
+    const auto roles = accounts_of(cache.roles);
+
+    // mysql.user holds a row for each, and a role has an empty host
+    EXPECT_EQ(
+        std::set<std::string>({"'both'@''", "'both'@'localhost'",
+                               "'roleonly'@''", "'useronly'@'localhost'"}),
+        users);
+    // only the is_role='Y' rows are roles - not the account named `both`
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'roleonly'@''"}), roles);
+
+    // every account is reported, roles included - information_schema
+    // .USER_PRIVILEGES has no row for one, so it cannot be the source of this
+    EXPECT_LE(4, cache.total.users);
+    EXPECT_EQ(4, cache.filtered.users);
+  }
+
+  {
+    SCOPED_TRACE("a user filter is by name, so it takes the role with it");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"both"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'both'@'localhost'"}),
+              accounts_of(cache.users));
+    EXPECT_EQ(std::set<std::string>({"'both'@''"}), accounts_of(cache.roles));
+  }
+
+  {
+    SCOPED_TRACE("a role can be excluded on its own");
+
+    Filtering_options filters;
+    filters.users().include(std::array{"both", "roleonly"});
+    filters.users().exclude(std::array{"roleonly"});
+
+    const auto cache =
+        Instance_cache_builder(m_session, filters).users().build();
+
+    EXPECT_EQ(std::set<std::string>({"'both'@''", "'both'@'localhost'"}),
+              accounts_of(cache.users));
+    EXPECT_EQ(std::set<std::string>({"'both'@''"}), accounts_of(cache.roles));
+  }
+}
+
+// A MariaDB JSON column is a text column with a json_valid() CHECK constraint,
+// so the cache has to read the constraint to type it the way the column arrives
+// on the wire - see MARIADB_DUMP_LOAD.md section 21.
+TEST_F(Instance_cache_test, maria_db_json_columns) {
+  if (!common::json_columns_use_check_constraints(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.5.0");
+  }
+
+  m_session->execute("DROP SCHEMA IF EXISTS json_cols;");
+  m_session->execute("CREATE SCHEMA json_cols;");
+
+  shcore::on_leave_scope cleanup{
+      [this]() { m_session->execute("DROP SCHEMA IF EXISTS json_cols;"); }};
+
+  m_session->execute(
+      "CREATE TABLE json_cols.t ("
+      // the JSON alias, which the server expands to the constraint below
+      "c0 JSON, "
+      // spelled out by hand, in a type the alias never uses
+      "c1 TEXT CHECK (json_valid(c1)), "
+      // json_valid() as a conjunct still marks the column
+      "c2 LONGTEXT CHECK (LENGTH(c2) > 2 AND json_valid(c2)), "
+      // ... but as an alternative it does not
+      "c3 LONGTEXT CHECK (json_valid(c3) OR c3 IS NULL), "
+      // the collation the alias uses is not what makes a column JSON
+      "c4 LONGTEXT COLLATE utf8mb4_bin, "
+      // a table-level constraint does not mark a column either
+      "c5 LONGTEXT, CONSTRAINT c5 CHECK (json_valid(c5))"
+      ");");
+
+  Filtering_options filters;
+  const auto cache =
+      Instance_cache_builder(m_session, filters).metadata({}).build();
+  const auto &columns =
+      cache.schemas.at("json_cols").tables.at("t").all_columns;
+
+  const auto type_of = [&columns](const std::string &name) {
+    const auto column =
+        std::find_if(columns.begin(), columns.end(),
+                     [&name](const auto &c) { return name == c.name; });
+    return columns.end() == column ? mysqlshdk::db::Type::Null : column->type;
+  };
+
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c0"));
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c1"));
+  EXPECT_EQ(mysqlshdk::db::Type::Json, type_of("c2"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c3"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c4"));
+  EXPECT_EQ(mysqlshdk::db::Type::String, type_of("c5"));
+
+  {
+    SCOPED_TRACE("the cache agrees with the metadata the columns arrive with");
+
+    const auto result = m_session->query(
+        "SELECT c0, c1, c2, c3, c4, c5 FROM json_cols.t LIMIT 0;");
+    const auto &metadata = result->get_metadata();
+
+    ASSERT_EQ(columns.size(), metadata.size());
+
+    for (std::size_t i = 0; i < metadata.size(); ++i) {
+      SCOPED_TRACE("checking column " + columns[i].name);
+      EXPECT_EQ(metadata[i].get_type(), columns[i].type);
+    }
   }
 }
 

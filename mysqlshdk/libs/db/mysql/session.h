@@ -61,6 +61,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -179,8 +180,13 @@ class Session_impl : public std::enable_shared_from_this<Session_impl> {
 
   ServerVendor get_server_vendor() {
     if (!m_server_vendor.has_value()) {
-      std::string info = get_server_info();
-      if (info.find("MariaDB") != std::string::npos) {
+      const auto *const info = get_server_info();
+
+      // the vendor comes from the server handshake, so there is nothing to
+      // detect it from before the session is connected
+      if (!info) throw std::runtime_error("Not connected");
+
+      if (std::string_view{info}.find("MariaDB") != std::string_view::npos) {
         m_server_vendor = ServerVendor::MariaDB;
       } else {
         m_server_vendor = ServerVendor::MySQL;

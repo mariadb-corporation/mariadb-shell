@@ -12,10 +12,12 @@ Locking instance for backup
 Global read lock has been released
 Writing global DDL files
 Writing users DDL
+?{not __server_is_maria_db}
 ${*}
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
+?{}
 ${*}
 Dump duration: [[*]]
 Total duration: [[*]]
@@ -44,12 +46,14 @@ Average compressed throughput: [[*]]
 {"info":"Global read lock has been released\n"}
 {"status":"Writing global DDL files\n"}
 {"status":"Writing users DDL\n"}
+?{not __server_is_maria_db}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
+?{}
 ${*}
 {"status":"Dump duration: [[*]]\n"}
 {"status":"Total duration: [[*]]\n"}

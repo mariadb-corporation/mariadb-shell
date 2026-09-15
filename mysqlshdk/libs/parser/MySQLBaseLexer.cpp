@@ -1015,8 +1015,19 @@ std::unique_ptr<antlr4::Token> MySQLBaseLexer::nextToken() {
     return tok;
   };
 
-  auto scan_ansi_quotes_identifier = [this]() -> std::unique_ptr<Token> {
-    if (!isSqlModeActive(AnsiQuotes) || _input->LA(1) != '"') {
+  // Scans one quoted identifier, in the only way the server escapes the quote
+  // character inside one: by doubling it. A backslash is an ordinary character
+  // here - `a\` is the identifier a\ - which is what separates an identifier
+  // from a string literal and what the BACK_TICK_QUOTED_ID grammar rule gets
+  // wrong: it was written from the string-literal rules, so it honours
+  // backslash escapes and does not know about the doubled quote. `a``b` lexes
+  // there as two adjacent identifiers instead of the single name a`b, and the
+  // parser then rejects a view definition the server itself printed. Returns
+  // nothing if the input does not start a terminated quoted identifier, leaving
+  // the generated lexer to report it as before.
+  // the quote is compared against what LA() returns, so it is typed to match
+  auto scan_quoted_identifier = [this](size_t quote) -> std::unique_ptr<Token> {
+    if (_input->LA(1) != quote) {
       return {};
     }
 
@@ -1028,8 +1039,8 @@ std::unique_ptr<antlr4::Token> MySQLBaseLexer::nextToken() {
         return {};
       }
 
-      if (c == '"') {
-        if (_input->LA(lookahead + 2) == '"') {
+      if (c == quote) {
+        if (_input->LA(lookahead + 2) == quote) {
           lookahead += 2;
           continue;
         }
@@ -1066,7 +1077,15 @@ std::unique_ptr<antlr4::Token> MySQLBaseLexer::nextToken() {
     return normalize_double_quotes(std::move(pending));
   }
 
-  if (auto quoted_identifier = scan_ansi_quotes_identifier()) {
+  // A double quote is an identifier quote only under ANSI_QUOTES; a back tick
+  // always is.
+  if (isSqlModeActive(AnsiQuotes)) {
+    if (auto quoted_identifier = scan_quoted_identifier('"')) {
+      return quoted_identifier;
+    }
+  }
+
+  if (auto quoted_identifier = scan_quoted_identifier('`')) {
     return quoted_identifier;
   }
 

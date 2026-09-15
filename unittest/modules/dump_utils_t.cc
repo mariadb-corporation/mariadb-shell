@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -161,6 +162,9 @@ class Dump_scheduler : public ::testing::Test {
     std::vector<std::string> schedule_order;
 
     std::unordered_multimap<std::string, size_t> tables_being_loaded;
+    // none of the test tables set an engine, so this stays empty and never
+    // affects the scheduling order being tested here
+    std::unordered_set<std::string> transactional_engines;
     std::unordered_set<Dump_reader::Table_data_info *> tables_with_data;
 
     auto copy = tables;
@@ -173,7 +177,8 @@ class Dump_scheduler : public ::testing::Test {
 
     auto schedule_one = [&](std::string *out_table, std::string *out_file,
                             size_t *out_size) {
-      auto iter = f(tables_being_loaded, &tables_with_data, nthreads);
+      auto iter = f(tables_being_loaded, transactional_engines,
+                    &tables_with_data, nthreads);
 
       if (iter != tables_with_data.end()) {
         *out_table = (*iter)->key();
@@ -380,6 +385,51 @@ TEST_F(Dump_scheduler, load_scheduler) {
   {
     SCOPED_TRACE("16");
     test_scheduling(Dump_reader::schedule_chunk_proportionally, tables, 16);
+  }
+}
+
+// see MARIADB_DUMP_LOAD.md section 33
+TEST_F(Dump_scheduler, non_transactional_engine_chunks_are_not_concurrent) {
+  const std::unordered_set<std::string> transactional_engines{"INNODB"};
+
+  // a table with 2 chunks, the 1st of which was already handed out and is
+  // "in flight" (as next_table_chunk() would have left it: consumed and
+  // tracked in tables_being_loaded); returns whether a candidate for the
+  // 2nd chunk was offered
+  auto has_candidate_with_engine = [&](const std::string &engine) {
+    auto table = make_table("mytable", /* chunks */ 2, 20, 5);
+    table.data_info.back().table = &table;
+    table.data_info.back().engine = engine;
+    table.data_info.back().chunks_consumed = 1;
+
+    std::unordered_set<Dump_reader::Table_data_info *> tables_with_data{
+        &table.data_info.back()};
+    std::unordered_multimap<std::string, size_t> tables_being_loaded{
+        {table.data_info.back().key(), 20}};
+
+    return Dump_reader::schedule_chunk_proportionally(
+               tables_being_loaded, transactional_engines, &tables_with_data,
+               4) != tables_with_data.end();
+  };
+
+  {
+    SCOPED_TRACE("Aria: must not hand out a second chunk while one loads");
+    EXPECT_FALSE(has_candidate_with_engine("Aria"));
+  }
+
+  {
+    SCOPED_TRACE("InnoDB: a second chunk may load concurrently");
+    EXPECT_TRUE(has_candidate_with_engine("InnoDB"));
+  }
+
+  {
+    SCOPED_TRACE("engine name match is case-insensitive");
+    EXPECT_TRUE(has_candidate_with_engine("innodb"));
+  }
+
+  {
+    SCOPED_TRACE("unknown engine (dump predates the field) is assumed safe");
+    EXPECT_TRUE(has_candidate_with_engine(""));
   }
 }
 }  // namespace mysqlsh

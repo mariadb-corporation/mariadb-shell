@@ -26,6 +26,7 @@
 
 #include "unittest/gprod_clean.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -122,6 +123,34 @@ TEST(Load_dump, sql_transforms_strip_sql_mode) {
             "sql_mode='ANSI_QUOTES,NO_AUTO_CREATE_USER,NO_ZERO_DATE' */"));
 }
 
+// The loader switches CHECK enforcement off while restoring, because MariaDB
+// lets a table hold rows its own DDL rejects. MySQL says the same thing with a
+// per-constraint NOT ENFORCED flag which travels inside the dumped DDL, so it
+// has no such variable and must never be sent one.
+// See MARIADB_DUMP_LOAD.md section 17.
+TEST(Load_dump, supports_check_constraint_checks) {
+  using dump::common::server_version;
+  using dump::common::supports_check_constraint_checks;
+
+  const auto EXPECT_SUPPORTED = [](bool expected, const Version &version,
+                                   bool is_maria_db) {
+    SCOPED_TRACE((is_maria_db ? "MariaDB " : "MySQL ") + version.get_full());
+    EXPECT_EQ(expected, supports_check_constraint_checks(
+                            server_version(version, is_maria_db)));
+  };
+
+  // no MySQL version has the variable, not even those which have CHECK
+  // constraints (8.0.16+)
+  EXPECT_SUPPORTED(false, Version(5, 7, 44), false);
+  EXPECT_SUPPORTED(false, Version(8, 0, 16), false);
+  EXPECT_SUPPORTED(false, Version(9, 7, 0), false);
+
+  // MariaDB got CHECK constraints and the variable together, in 10.2
+  EXPECT_SUPPORTED(false, Version(10, 1, 48), true);
+  EXPECT_SUPPORTED(true, Version(10, 2, 1), true);
+  EXPECT_SUPPORTED(true, Version(12, 3, 2), true);
+}
+
 TEST(Load_dump, add_execution_condition) {
   const auto call = [](const Dump_loader::Sql_transform &tx, std::string_view s,
                        bool result) {
@@ -206,6 +235,62 @@ TEST(Load_dump, add_execution_condition) {
       "/*!50003 CREATE DEFINER=`root`@`localhost` TRIGGER `foo` BEFORE INSERT "
       "ON `bar` FOR EACH ROW BEGIN END */",
       "TRIGGER", "foo");
+
+  // MariaDB sequences: the CREATE and DROP look like any other object, but the
+  // statement which restores the position does not - see MARIADB_DUMP_LOAD.md
+  // section 4.5.1
+  EXPECT_TYPE_NAME("CREATE SEQUENCE `foo` start with 1", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DROP SEQUENCE IF EXISTS `foo`;", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("ALTER SEQUENCE `bar`.`foo` RESTART", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(`foo`, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(foo, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("DO SETVAL(`bar`.`foo`, 105, 0);", "SEQUENCE", "foo");
+  EXPECT_TYPE_NAME("do setval(`foo`, 105, 0);", "SEQUENCE", "foo");
+  // any other DO statement is none of our business
+  EXPECT_TYPE_NAME("DO SLEEP(1);", "", "", false);
+  EXPECT_TYPE_NAME("DO 1;", "", "", false);
+
+  {
+    // a filtered out sequence takes its DO SETVAL with it, otherwise the load
+    // would fail on a sequence which was never created
+    Dump_loader::Sql_transform tx;
+    tx.add_execution_condition([](std::string_view type, std::string_view) {
+      return !shcore::str_caseeq(type, "SEQUENCE");
+    });
+
+    EXPECT_EQ("", call(tx, "CREATE SEQUENCE `foo` start with 1", true));
+    EXPECT_EQ("", call(tx, "DO SETVAL(`foo`, 105, 0)", true));
+    EXPECT_EQ("", call(tx, "DO SLEEP(1)", false));
+  }
+
+  // MariaDB Oracle-mode packages: the type is spelled in two tokens, and the
+  // DDL always arrives under ANSI_QUOTES - see MARIADB_DUMP_LOAD.md section 19
+  EXPECT_TYPE_NAME("DROP PACKAGE IF EXISTS `foo`;", "PACKAGE", "foo");
+  EXPECT_TYPE_NAME("DROP PACKAGE BODY IF EXISTS `foo`;", "PACKAGE BODY", "foo");
+  EXPECT_TYPE_NAME("CREATE DEFINER=\"root\"@\"localhost\" PACKAGE \"foo\" AS",
+                   "PACKAGE", "foo");
+  EXPECT_TYPE_NAME(
+      "CREATE DEFINER=\"root\"@\"localhost\" PACKAGE BODY \"foo\" AS",
+      "PACKAGE BODY", "foo");
+  EXPECT_TYPE_NAME("CREATE PACKAGE bar.foo AS", "PACKAGE", "foo");
+  EXPECT_TYPE_NAME("create package body `bar`.`foo` as", "PACKAGE BODY", "foo");
+  // a package named `body` is written quoted, so it is not the keyword
+  EXPECT_TYPE_NAME("DROP PACKAGE IF EXISTS `body`;", "PACKAGE", "body");
+  EXPECT_TYPE_NAME("CREATE PACKAGE `body` AS", "PACKAGE", "body");
+
+  {
+    // both halves of a package are filtered by the routine filters, so
+    // excluding one excludes the other
+    Dump_loader::Sql_transform tx;
+    tx.add_execution_condition([](std::string_view type, std::string_view) {
+      return !shcore::str_caseeq(type, "PACKAGE", "PACKAGE BODY");
+    });
+
+    EXPECT_EQ("", call(tx, "DROP PACKAGE IF EXISTS `foo`", true));
+    EXPECT_EQ("", call(tx, "DROP PACKAGE BODY IF EXISTS `foo`", true));
+    EXPECT_EQ("", call(tx, "CREATE PACKAGE \"foo\" AS", true));
+    EXPECT_EQ("", call(tx, "CREATE PACKAGE BODY \"foo\" AS", true));
+  }
 
   EXPECT_TYPE_NAME("/*!50001 CREATE VIEW `foo` AS */", "", "", false);
   EXPECT_TYPE_NAME("/*!50001 CREATE SQL SECURITY DEFINER VIEW `foo` AS */", "",
@@ -438,6 +523,8 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
           EXPECT_CALL(*mock, is_open()).WillRepeatedly(Return(false));
           EXPECT_CALL(*mock, get_server_version())
               .WillRepeatedly(Return(Version(m_version)));
+          EXPECT_CALL(*mock, get_server_vendor())
+              .WillRepeatedly(Return(mysqlshdk::db::ServerVendor::MySQL));
 
           if (m_auto_generate_pk_value.has_value() &&
               *m_auto_generate_pk_value != m_create_invisible_pks) {
@@ -539,10 +626,13 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
         .then({"version"})
         .add_row({m_version});
 
-    assert(compatibility::supports_gipks(Version(m_version)) ==
+    const auto mock_server =
+        dump::common::server_version(Version(m_version), false);
+
+    assert(dump::common::supports_gipks(mock_server) ==
            m_auto_generate_pk_value.has_value());
 
-    if (compatibility::supports_gipks(Version(m_version))) {
+    if (dump::common::supports_gipks(mock_server)) {
       mock_main_session
           ->expect_query(
               "show GLOBAL variables where `variable_name` in "
@@ -593,12 +683,13 @@ class Load_dump_mocked : public Shell_core_test_wrapper {
         .then({"Variable_name", "Value"})
         .add_row({"mle.memory_max", "0"});
 
+    // see MARIADB_DUMP_LOAD.md section 33
     mock_main_session
         ->expect_query(
-            "SELECT VARIABLE_VALUE = 'OFF' FROM "
-            "performance_schema.global_status WHERE variable_name = "
-            "'Innodb_redo_log_enabled'")
-        .then({""});
+            "SELECT ENGINE FROM information_schema.ENGINES WHERE "
+            "TRANSACTIONS = 'YES'")
+        .then({"ENGINE"})
+        .add_row({"InnoDB"});
 
     return std::static_pointer_cast<mysqlshdk::db::ISession>(mock_main_session);
   }

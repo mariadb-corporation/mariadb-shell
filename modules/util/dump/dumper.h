@@ -275,6 +275,10 @@ class Dumper {
 
   void warn_about_backup_lock() const;
 
+  // the privilege which grants the backup lock, nullptr if the server has no
+  // backup lock at all
+  const char *backup_lock_privilege() const;
+
   std::string why_backup_lock_is_missing() const;
 
   void acquire_read_locks();
@@ -290,6 +294,13 @@ class Dumper {
       const std::shared_ptr<mysqlshdk::db::ISession> &session) const;
 
   void lock_instance();
+
+  void start_backup_stage();
+
+  void report_ddl_in_flight(
+      const std::shared_ptr<mysqlshdk::db::ISession> &session) const;
+
+  void unlock_instance();
 
   void initialize_instance_cache_minimal();
 
@@ -587,6 +598,10 @@ class Dumper {
   std::thread::id m_main_thread;
 #endif  // !NDEBUG
   std::vector<std::shared_ptr<mysqlshdk::db::ISession>> m_lock_sessions;
+  // MariaDB's BACKUP STAGE is a server-wide singleton owned by the connection
+  // which started it, and the statement commits that connection's transaction,
+  // so it gets a session which does nothing else
+  std::shared_ptr<mysqlshdk::db::ISession> m_backup_stage_session;
   common::Server_version m_server_version;
   bool m_binlog_enabled = false;
   bool m_gtid_enabled = false;
@@ -596,8 +611,9 @@ class Dumper {
   std::unique_ptr<mysqlshdk::mysql::User_privileges> m_user_privileges;
   shcore::Account m_user_account;
   bool m_skip_grant_tables_active = false;
-  // whether user has the BACKUP_ADMIN privilege
-  bool m_user_has_backup_admin = false;
+  // whether the account can hold a backup lock for the length of the dump:
+  // BACKUP_ADMIN on MySQL, RELOAD on MariaDB
+  bool m_backup_lock_available = false;
 
   // input data
   const Dump_options &m_options;

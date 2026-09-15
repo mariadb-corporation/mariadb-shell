@@ -31,10 +31,11 @@
 #include <utility>
 #include <vector>
 #include "modules/mod_utils.h"
-#ifdef HAVE_DUMP_AND_LOAD
 #include "modules/mysqlxtest_utils.h"
+#ifdef HAVE_BINLOG_UTILS
 #include "modules/util/binlog/binlog_dumper.h"
 #include "modules/util/binlog/binlog_loader.h"
+#endif
 #include "modules/util/copy/copy_operation.h"
 #include "modules/util/dump/dump_instance.h"
 #include "modules/util/dump/dump_instance_options.h"
@@ -51,7 +52,6 @@
 #endif
 #include "modules/util/load/dump_loader.h"
 #include "modules/util/load/load_dump_options.h"
-#endif
 #include "mysqlshdk/include/scripting/shexcept.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/include/shellcore/console.h"
@@ -87,8 +87,9 @@ Util::Util(shcore::IShell_core *owner)
          "?connectionData", "?options")
       ->cli();
 #endif  // HAVE_UPGRADE_CHECKER
-#ifdef HAVE_DUMP_AND_LOAD
+#ifdef HAVE_X_PROTOCOL
   expose("importJson", &Util::import_json, "path", "?options")->cli();
+#endif  // HAVE_X_PROTOCOL
   expose("importTable", &Util::import_table_file, "path", "?options")
       ->cli(false);
   expose("importTable", &Util::import_table_files, "files", "?options")->cli();
@@ -110,9 +111,10 @@ Util::Util(shcore::IShell_core *owner)
          "?options")
       ->cli();
 
+#ifdef HAVE_BINLOG_UTILS
   expose("dumpBinlogs", &Util::dump_binlogs, "outputUrl", "?options")->cli();
   expose("loadBinlogs", &Util::load_binlogs, "urls", "?options")->cli();
-#endif
+#endif  // HAVE_BINLOG_UTILS
 }
 
 #ifdef HAVE_UPGRADE_CHECKER
@@ -320,7 +322,6 @@ void Util::check_for_server_upgrade(
 }
 #endif  // HAVE_UPGRADE_CHECKER
 
-#ifdef HAVE_DUMP_AND_LOAD
 #ifdef HAVE_X_PROTOCOL
 
 REGISTER_HELP_FUNCTION(importJson, util);
@@ -1066,6 +1067,8 @@ Each parallel connection sets the following session variables:
 @li SET NAMES ?; -- Set to characterSet option if provided by user.
 @li SET unique_checks = 0
 @li SET foreign_key_checks = 0
+@li SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
+constraints per session rather than per constraint.
 @li SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
 Note: because of storage engine limitations, table locks held by MyISAM will
@@ -1329,7 +1332,8 @@ otherwise they are kept as is.
 @li <b>createInvisiblePKs</b>: bool (default taken from dump) - Automatically
 create an invisible Primary Key for each table which does not have one. By
 default, set to true if dump was created with <b>create_invisible_pks</b>
-compatibility option, false otherwise. Requires server 8.0.24 or newer.
+compatibility option, false otherwise. Requires MySQL 8.0.24+ or MariaDB
+10.3+.
 @li <b>deferTableIndexes</b>: "off", "fulltext", "all" (default: fulltext) -
 If "all", creation of "all" indexes except PRIMARY is deferred until after
 table data is loaded, which in many cases can reduce load times. If "fulltext",
@@ -1456,7 +1460,9 @@ for the MySQL sessions used by the loader (set sql_log_bin=0).
 data.
 @li <b>updateGtidSet</b>: "off", "replace", "append" (default: off) - if set to
 a value other than 'off' updates GTID_PURGED by either replacing its contents
-or appending to it the gtid set present in the dump.
+or appending to it the gtid set present in the dump. On MariaDB the gtid
+position is written to gtid_slave_pos instead, which the server only allows
+while it is not replicating.
 @li <b>waitDumpTimeout</b>: float (default: 0) - Loads a dump while it's still
 being created. Once all uploaded tables are processed the command will either
 wait for more data, the dump is marked as completed or the given timeout (in
@@ -1943,6 +1949,7 @@ Data dumps cannot be created for the following tables:
 @li mysql.general_log
 @li mysql.schema
 @li mysql.slow_log
+@li mysql.transaction_registry
 )*");
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_EXPORT_DIALECT_OPTION_DETAILS, R"*(
@@ -2522,7 +2529,9 @@ list of SQL statements in each session about to copy data.
 for the MySQL sessions used by the loader (set sql_log_bin=0).
 @li <b>updateGtidSet</b>: "off", "replace", "append" (default: off) - if set to
 a value other than 'off' updates GTID_PURGED by either replacing its contents
-or appending to it the gtid set present in the copy.
+or appending to it the gtid set present in the copy. On MariaDB the gtid
+position is written to gtid_slave_pos instead, which the server only allows
+while it is not replicating.
 )*");
 
 REGISTER_HELP_FUNCTION(copyInstance, util);
@@ -2702,6 +2711,7 @@ std::shared_ptr<mysqlshdk::db::ISession> Util::global_session() const {
   return session->get_core_session();
 }
 
+#ifdef HAVE_BINLOG_UTILS
 REGISTER_HELP_FUNCTION(dumpBinlogs, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_DUMPBINLOGS, R"*(
 Dumps binary logs generated since a specific point in time to the given local or
@@ -2895,6 +2905,6 @@ void Util::load_binlogs(const std::string &url,
 
   loader.run();
 }
-#endif
+#endif  // HAVE_BINLOG_UTILS
 
 }  // namespace mysqlsh

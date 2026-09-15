@@ -12,15 +12,57 @@ import urllib.parse
 
 supported_versions = f"8.0 <= version < 10.0 or 26.7 <= version <= {'.'.join(__mysh_version.split('.')[:2])}.*"
 
+# JavaScript libraries are a MySQL 9.2+ object type, and information_schema has
+# no 'libraries' table on MariaDB at all
+instance_supports_libraries = not __server_is_maria_db and __version_num >= 90200
+
+
 def unsupported_target_version_msg(version):
     return f"Target MySQL version '{version}' is not supported by this version of MySQL Shell. Supported MySQL Server versions are {supported_versions}"
+
+# The newest server the 'targetVersion' option accepts. The Shell and MySQL share
+# a version scale, so for a MySQL server that is the Shell's own version; MariaDB
+# numbering is its own, so a MariaDB target is measured against the MariaDB
+# version this Shell was built from (MARIADB_DUMP_LOAD.md section 7.4).
+newest_target_version = __build_server_version if __server_is_maria_db else __mysh_version
+
+# What the two vendors reject is not the same shape either: MySQL has a minimum
+# (8.0.25, the oldest MySQL HeatWave Service) and a list of supported servers,
+# while for MariaDB the only question is whether this Shell knows the target at
+# all - see Dump_options::validate_target_version().
+def target_version_rejected_msg(version):
+    if __server_is_maria_db:
+        return f"Target MariaDB version '{version}' is newer than the MariaDB version this MySQL Shell was built against ({__build_server_version})"
+    return unsupported_target_version_msg(version)
+
+# The name the Shell and the server use for the vendor in their messages.
+server_vendor_name = "MariaDB" if __server_is_maria_db else "MySQL"
+
+# The two client libraries word a refused connection differently, and libmariadb
+# reports the socket error code for a host it resolves locally: it says 2002
+# "Can't connect to server on '<host>'" where libmysqlclient says 2003 "Can't
+# connect to MySQL server on '<host>:<port>'". Which library is linked is a
+# property of the build, not of the server.
+def cannot_connect_error(host, port):
+    if __mariadb_build:
+        return ("DBError: MySQL Error (2002)", f"Can't connect to server on '{host}'")
+    return ("DBError: MySQL Error (2003)", f"Can't connect to MySQL server on '{host}:{port}'")
+
+# Same server-side error (1054/42S22) for an unknown column in a WHERE clause,
+# worded differently: MySQL says "in 'where clause'", MariaDB "in 'WHERE'".
+def unknown_column_in_where(column):
+    if __server_is_maria_db:
+        return f"Unknown column '{column}' in 'WHERE'"
+    return f"Unknown column '{column}' in 'where clause'"
 
 def md5_table(session, schema, table, where = "", partitions = []):
     columns = []
     has_pri = 0 != session.run_sql("SELECT COUNT(*) FROM information_schema.statistics WHERE index_name = 'PRIMARY' AND table_schema = ? AND table_name = ?", [schema, table]).fetch_one()[0]
     for c in session.run_sql("desc !.!", [schema, table]).fetch_all():
         quoted = quote_identifier(c[0])
-        columns.append(f"VECTOR_TO_STRING({quoted})" if c[1].upper().startswith('VECTOR') else quoted)
+        # MariaDB spells it VEC_ToText(); VECTOR_TO_STRING() is MySQL 9's name
+        vector_to_text = "VEC_ToText" if __server_is_maria_db else "VECTOR_TO_STRING"
+        columns.append(f"{vector_to_text}({quoted})" if c[1].upper().startswith('VECTOR') else quoted)
     query = f"SELECT @crc := sha1(concat(@crc, sha1(concat_ws('#', {', '.join([f'convert({c} using binary)' for c in columns])})))),@cnt := @cnt + 1 as discard from !.!"
     params = [schema, table]
     if partitions:
@@ -46,9 +88,26 @@ def snapshot_account(session, auser, ahost):
         user["grants"].append(row[0])
     return user
 
+# A MariaDB role has no CREATE statement to read - SHOW CREATE USER fails for one
+# with error 1133 - and SHOW GRANTS only accepts it hostless, so a role is
+# snapshotted by name and by its grants alone (MARIADB_DUMP_LOAD.md section 20).
+def snapshot_role(session, name):
+    role = {}
+    role["grants"] = []
+    for row in session.run_sql("SHOW GRANTS FOR !", [name]).fetch_all():
+        role["grants"].append(row[0])
+    return role
+
 def snapshot_accounts(session):
     accounts = {}
+    roles = set()
+    if __server_is_maria_db:
+        for row in session.run_sql("SELECT user FROM mysql.user WHERE is_role = 'Y'").fetch_all():
+            roles.add(row[0])
     for row in session.run_sql("SELECT user, host FROM mysql.user").fetch_all():
+        if row[0] in roles and not row[1]:
+            accounts[row[0]] = snapshot_role(session, row[0])
+            continue
         user = snapshot_account(session, row[0], row[1])
         name = row[0] + "@" + row[1]
         accounts[name]=user
@@ -166,9 +225,33 @@ def snapshot_instance(session):
     return json.loads(json.dumps(snapshot))
 
 def wipeout_users(session):
+    reserved = ["root", "mysql.infoschema", "mysql.sys", "mysql.session"]
+    if __server_is_maria_db:
+        # a MariaDB role lives in mysql.user as well, with is_role='Y' and an
+        # empty host, and only DROP ROLE removes one - DROP USER reports success
+        # and leaves it standing. PUBLIC is a role which cannot be dropped.
+        for role, in session.run_sql("select user from mysql.user where is_role='Y' and user <> 'PUBLIC'").fetch_all():
+            session.run_sql("drop role !", [role])
+        # mariadb.sys is the internal account owning the mysql.user view over
+        # mysql.global_priv - the counterpart of mysql.infoschema and friends -
+        # so dropping it breaks every later query on mysql.user
+        reserved += ["mariadb.sys", "PUBLIC"]
     for user,host in session.run_sql("select user,host from mysql.user").fetch_all():
-        if user not in ["root", "mysql.infoschema", "mysql.sys", "mysql.session"]:
+        if user not in reserved:
             session.run_sql("drop user ?@?", [user,host])
+    if __server_is_maria_db:
+        # The reserved accounts survive this wipeout, so any state a previous load
+        # left on them has to be undone here. Loading a dumped
+        # `GRANT PROXY ON ''@'%'` onto an account which already holds that grant
+        # adds a second, redundant mysql.proxies_priv row: mariadb-install-db
+        # stores Proxied_host empty, SHOW GRANTS renders empty as '%', and GRANT
+        # stores '%' literally - so the two rows differ in the table while printing
+        # identically, and every later SHOW GRANTS lists the grant twice.
+        session.run_sql("""delete from mysql.proxies_priv
+                            where Proxied_host = '%' and Proxied_user = ''
+                              and (Host, User) in (select * from (select Host, User from mysql.proxies_priv
+                                                                   where Proxied_host = '' and Proxied_user = '') as installed)""")
+        session.run_sql("flush privileges")
 
 def wipeout_masking_policies(session):
     if not is_dynamic_data_masking_enabled(session):
@@ -185,7 +268,15 @@ def wipeout_server(session):
         session.run_sql("drop schema `"+schema+"`")
     wipeout_users(session)
     wipeout_masking_policies(session)
-    session.run_sql("reset " + get_reset_binary_logs_keyword())
+    # a server without a binary log has nothing to reset, and rejects the
+    # statement outright - MariaDB does not log by default
+    if session.run_sql("SELECT @@log_bin").fetch_one()[0]:
+        session.run_sql("reset " + get_reset_binary_logs_keyword())
+    if __server_is_maria_db:
+        # RESET MASTER clears the binary log, but a MariaDB instance's GTID state
+        # also includes gtid_slave_pos - which is where a load restores a dumped
+        # position (MARIADB_DUMP_LOAD.md section 15) - and that survives it
+        session.run_sql("SET GLOBAL gtid_slave_pos = ''")
     session.run_sql("set global foreign_key_checks=1")
 
 def truncate_all_tables(session):
@@ -236,15 +327,24 @@ def compare_schemas(session1, session2, check_rows=True, check_events=True, chec
         compare_schema(session1, session2, schema, check_rows, check_events, check_triggers, check_stored_procedures)
 
 def compare_user_grants(session1, session2, user):
-    grants1 = session1.run_sql(f"show grants for {user}").fetch_all()
-    grants2 = session2.run_sql(f"show grants for {user}").fetch_all()
-    EXPECT_EQ(str(grants1), str(grants2), f"grants for {user}")
+    # SHOW GRANTS promises no particular order: a role granted by the loader comes
+    # back in a different position than the same role on the server where it was
+    # created. Compare the grants as sorted lists, so that a difference in order is
+    # not reported while a missing or duplicated grant still is.
+    grants1 = sorted(str(row) for row in session1.run_sql(f"show grants for {user}").fetch_all())
+    grants2 = sorted(str(row) for row in session2.run_sql(f"show grants for {user}").fetch_all())
+    EXPECT_EQ(grants1, grants2, f"grants for {user}")
 
 
 def compare_users(session1, session2):
     users = set()
+    # a MariaDB role is a mysql.user row with an empty host, and SHOW GRANTS only
+    # accepts it hostless - 'r'@'' is error 1141 (MARIADB_DUMP_LOAD.md section 20)
+    query = "select concat(quote(user), '@', quote(host)) from mysql.user"
+    if __server_is_maria_db:
+        query = "select if(is_role = 'Y', concat('`', user, '`'), concat(quote(user), '@', quote(host))) from mysql.user"
     for s in [session1, session2]:
-        for user, in s.run_sql("select concat(quote(user), '@', quote(host)) from mysql.user").fetch_all():
+        for user, in s.run_sql(query).fetch_all():
             users.add(user)
     for user in users:
         compare_user_grants(session1, session2, user)
@@ -891,8 +991,6 @@ session.close()
 test_user = "sample_user"
 test_user_account = get_test_user_account(test_user)
 test_user_pwd = "p4$$"
-
-instance_supports_libraries = __version_num >= 90200
 
 partition_awareness_capability = {
     "id": "partition_awareness",

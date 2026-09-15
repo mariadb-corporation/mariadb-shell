@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -78,6 +79,19 @@ class Transaction_buffer {
   bool flush_pending() const;
   void flush_done(bool *out_has_more_data);
 
+  // Remembers the file offset of the next unconsumed byte, so a transaction
+  // that gets rolled back (e.g. an InnoDB deadlock) can be retried from
+  // scratch via try_rewind_for_retry(). Call before each attempt.
+  void mark_retry_point();
+
+  // Rewinds the file and the buffer's per-transaction state back to the last
+  // mark_retry_point(), so the same bytes can be resent to the server. Returns
+  // false (and changes nothing) when no reliable retry point is available -
+  // fast sub-chunking reads from a live producer with nothing to seek back
+  // to, and some sources (e.g. compressed/streamed ones) don't support
+  // seeking - in which case the caller must treat the transaction as failed.
+  bool try_rewind_for_retry();
+
   uint64_t oversized_rows() const { return m_oversized_rows; }
 
   void on_oversized_row(const std::function<void(uint64_t)> &callback) {
@@ -105,6 +119,22 @@ class Transaction_buffer {
 
   void set_trx_end_offset(uint64_t end) { m_trx_end_offset = m_trx_size + end; }
 
+  // Records that the row currently being sent is longer than the transaction
+  // limit, once per row. Called where read() finds that out, rather than by
+  // comparing a single read against the limit: the size of a read is chosen by
+  // the client library, and libmariadb always asks for 4096 bytes, so on that
+  // build no read could ever be larger than a useful maxBytesPerTransaction.
+  void mark_oversized_row() {
+    if (m_oversized_row_counted) return;
+
+    m_oversized_row_counted = true;
+    ++m_oversized_rows;
+
+    if (m_on_oversized_row) {
+      m_on_oversized_row(m_oversized_rows);
+    }
+  }
+
   Dialect m_dialect;
   mysqlshdk::storage::IFile *m_file = nullptr;
   Transaction_options m_options;
@@ -113,7 +143,13 @@ class Transaction_buffer {
   uint64_t m_trx_end_offset =
       0;  // offset of the end of the trx once we know it
   bool m_partial_row_sent = false;
+  // whether the row currently being sent has already been reported as oversized
+  bool m_oversized_row_counted = false;
   bool m_eof = false;
+
+  // file offset of the first unconsumed byte as of the last mark_retry_point()
+  off64_t m_retry_offset = 0;
+  bool m_retry_point_valid = false;
 
   std::string m_data;
 

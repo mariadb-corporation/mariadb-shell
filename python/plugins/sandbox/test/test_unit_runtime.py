@@ -106,6 +106,106 @@ def test_clean_boilerplate_data_tolerates_missing(sandboxlib, tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# _boilerplate_is_complete / _prepare_boilerplate
+# --------------------------------------------------------------------------- #
+def _make_boilerplate(sandboxlib, base, version, stamp=None, tables=True):
+    """Create a boilerplate dir for 'version'; return its path.
+
+    'stamp' is the version written to version.txt (None writes no stamp, which
+    is what an interrupted build leaves behind), 'tables' whether the data dir
+    holds anything at all.
+    """
+    bp_dir = sandboxlib._boilerplate_dir(base, version)
+    data = sandboxlib._datadir(bp_dir)
+    os.makedirs(data)
+    if tables:
+        os.makedirs(os.path.join(data, "mysql"))
+        open(os.path.join(data, "ibdata1"), "w").close()
+    if stamp is not None:
+        with open(os.path.join(bp_dir, "version.txt"), "w") as f:
+            f.write(stamp)
+    return bp_dir
+
+
+def test_boilerplate_is_complete(sandboxlib, tmp_path):
+    base = str(tmp_path)
+    _make_boilerplate(sandboxlib, base, "mariadb-12.3.2", stamp="mariadb-12.3.2")
+    assert sandboxlib._boilerplate_is_complete(
+        sandboxlib._boilerplate_dir(base, "mariadb-12.3.2"),
+        "mariadb-12.3.2") is True
+
+
+def test_boilerplate_without_version_stamp_is_incomplete(sandboxlib, tmp_path):
+    # An interrupted 'mariadb-install-db' leaves the data dir looking populated
+    # but holding no tables; the missing stamp is the only way to tell.
+    base = str(tmp_path)
+    _make_boilerplate(sandboxlib, base, "mariadb-12.3.2", stamp=None)
+    assert not sandboxlib._boilerplate_is_complete(
+        sandboxlib._boilerplate_dir(base, "mariadb-12.3.2"), "mariadb-12.3.2")
+
+
+def test_boilerplate_of_another_version_is_incomplete(sandboxlib, tmp_path):
+    base = str(tmp_path)
+    _make_boilerplate(sandboxlib, base, "mariadb-12.3.2", stamp="mariadb-11.4.2")
+    assert not sandboxlib._boilerplate_is_complete(
+        sandboxlib._boilerplate_dir(base, "mariadb-12.3.2"), "mariadb-12.3.2")
+
+
+def test_boilerplate_with_empty_data_dir_is_incomplete(sandboxlib, tmp_path):
+    base = str(tmp_path)
+    _make_boilerplate(sandboxlib, base, "mariadb-12.3.2",
+                      stamp="mariadb-12.3.2", tables=False)
+    assert not sandboxlib._boilerplate_is_complete(
+        sandboxlib._boilerplate_dir(base, "mariadb-12.3.2"), "mariadb-12.3.2")
+
+
+def test_prepare_boilerplate_rebuilds_over_unstamped_dir(sandboxlib, tmp_path,
+                                                         monkeypatch):
+    """A stale, unstamped boilerplate must not survive a rebuild.
+
+    It used to: the stale dir was left in place, and the freshly built one was
+    then discarded as if a concurrent deployment had won a race - so every
+    sandbox was copied from a data dir with no tables in it.
+    """
+    base = str(tmp_path)
+    version = "mariadb-12.3.2"
+    _make_boilerplate(sandboxlib, base, version, stamp=None)
+
+    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
+
+    def fake_init(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
+        open(os.path.join(datadir, "built-here"), "w").close()
+
+    monkeypatch.setattr(sandboxlib, "_init_data_dir", fake_init)
+
+    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
+                                              "mariadbd", "mariadb", {})
+
+    assert os.path.exists(os.path.join(bp_data, "built-here"))
+    assert sandboxlib._boilerplate_is_complete(
+        sandboxlib._boilerplate_dir(base, version), version)
+
+
+def test_prepare_boilerplate_reuses_complete_dir(sandboxlib, tmp_path,
+                                                 monkeypatch):
+    base = str(tmp_path)
+    version = "mariadb-12.3.2"
+    _make_boilerplate(sandboxlib, base, version, stamp=version)
+
+    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
+
+    def fail_init(*_args, **_kwargs):
+        raise AssertionError("the complete boilerplate should be reused")
+
+    monkeypatch.setattr(sandboxlib, "_init_data_dir", fail_init)
+
+    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
+                                              "mariadbd", "mariadb", {})
+    assert bp_data == sandboxlib._datadir(
+        sandboxlib._boilerplate_dir(base, version))
+
+
+# --------------------------------------------------------------------------- #
 # _set_root_password
 # --------------------------------------------------------------------------- #
 def test_set_root_password_sql_sequence(sandboxlib, session):

@@ -48,6 +48,7 @@
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/util/common/data_masking.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
 #include "modules/util/dump/schema_dumper.h"
 
@@ -57,6 +58,88 @@ namespace dump {
 namespace {
 
 constexpr std::string_view k_procedure_type = "PROCEDURE";
+constexpr std::string_view k_package_type = "PACKAGE";
+constexpr std::string_view k_package_body_type = "PACKAGE BODY";
+
+/**
+ * Whether a CHECK constraint clause has a json_valid() call at the top level of
+ * its expression - either alone, or as one conjunct of an AND.
+ *
+ * That is exactly when MariaDB reports the constrained column as JSON on the
+ * wire: Field_longstr::make_send_field() asks the constraint expression for a
+ * format name, Item_func_json_valid answers "json", and only Item_cond_and
+ * forwards the question to its arguments. So an OR, a NOT, or a json_valid()
+ * nested inside another call does not make the column JSON.
+ *
+ * The server stores the clause normalized - function and operator names in
+ * lowercase, identifiers quoted, single spaces around the operators - so the
+ * top-level conjuncts can be found by scanning outside of parentheses and
+ * quotes, without parsing the expression. The one shape that scan does not
+ * recognize is a redundantly parenthesized clause, 'CHECK ((json_valid(a)))',
+ * which the server does call JSON; neither the JSON alias nor a hand-written
+ * constraint produces it.
+ */
+bool has_top_level_json_valid(const std::string &clause) {
+  constexpr std::string_view k_json_valid = "json_valid(";
+  constexpr std::string_view k_and = " and ";
+  constexpr std::string_view k_or = " or ";
+
+  std::size_t depth = 0;
+  char quote = '\0';
+  bool conjunct_start = true;
+  bool found = false;
+
+  for (std::size_t i = 0; i < clause.length(); ++i) {
+    const auto c = clause[i];
+
+    if ('\0' != quote) {
+      if (c == quote) quote = '\0';
+      continue;
+    }
+
+    if ('`' == c || '\'' == c || '"' == c) {
+      quote = c;
+      conjunct_start = false;
+      continue;
+    }
+
+    if ('(' == c) {
+      ++depth;
+      conjunct_start = false;
+      continue;
+    }
+
+    if (')' == c) {
+      if (depth) --depth;
+      conjunct_start = false;
+      continue;
+    }
+
+    if (depth) continue;
+
+    if (0 == clause.compare(i, k_or.length(), k_or)) {
+      // the expression as a whole is an alternative, so it has no top-level
+      // conjuncts at all
+      return false;
+    }
+
+    if (0 == clause.compare(i, k_and.length(), k_and)) {
+      i += k_and.length() - 1;
+      conjunct_start = true;
+      continue;
+    }
+
+    if (conjunct_start) {
+      if (0 == clause.compare(i, k_json_valid.length(), k_json_valid)) {
+        found = true;
+      }
+
+      conjunct_start = false;
+    }
+  }
+
+  return found;
+}
 
 bool has_vector_store_comment(std::string_view comment) {
   static constexpr std::string_view k_genai_options = "GENAI_OPTIONS=";
@@ -191,8 +274,10 @@ Instance_cache_builder &Instance_cache_builder::users() {
   m_cache.users = fetch_users();
   m_cache.roles = fetch_roles();
 
+  add_granted_roles();
+
   m_cache.filtered.users = m_cache.users.size();
-  m_cache.total.users = count("user_privileges", {}, "DISTINCT grantee");
+  m_cache.total.users = count_users();
 
   return *this;
 }
@@ -236,23 +321,46 @@ Instance_cache_builder &Instance_cache_builder::routines() {
   // routine names are case insensitive
   info.where = m_query_helper.routine_filter(info);
 
-  iterate_schemas(info,
-                  [this](const std::string &, Instance_cache::Schema *schema,
-                         const mysqlshdk::db::IRow *row) {
-                    auto &target = row->get_string(2) == k_procedure_type
-                                       ? schema->procedures
-                                       : schema->functions;  // ROUTINE_TYPE
+  iterate_schemas(
+      info, [this](const std::string &, Instance_cache::Schema *schema,
+                   const mysqlshdk::db::IRow *row) {
+        const auto type = row->get_string(2);  // ROUTINE_TYPE
 
-                    target.emplace(row->get_string(1),
-                                   Instance_cache::Routine{});  // ROUTINE_NAME
+        // MariaDB reports Oracle-mode packages here as well; they have their
+        // own namespace, so they cannot share a map with the functions - a
+        // package and a function may both be named `pkg`. A MySQL build remaps
+        // a MariaDB source to 5.6 and writes a MySQL-shaped dump, which cannot
+        // carry a package, so there they are left out entirely - what they
+        // must never be is mistaken for a function, which is what used to
+        // abort the whole dump
+        if (k_package_type == type || k_package_body_type == type) {
+          if (common::supports_packages(m_cache.server.version)) {
+            auto &target = k_package_type == type ? schema->packages
+                                                  : schema->package_bodies;
 
-                    ++m_cache.filtered.routines;
-                  });
+            target.emplace(row->get_string(1));  // ROUTINE_NAME
+
+            ++m_cache.filtered.routines;
+          }
+
+          return;
+        }
+
+        {
+          auto &target =
+              k_procedure_type == type ? schema->procedures : schema->functions;
+
+          target.emplace(row->get_string(1),
+                         Instance_cache::Routine{});  // ROUTINE_NAME
+        }
+
+        ++m_cache.filtered.routines;
+      });
 
   // the total number of routines within the filtered schemas
   m_cache.total.routines = count(info);
 
-  if (compatibility::supports_library_ddl(m_cache.server.version.number)) {
+  if (common::supports_library_ddl(m_cache.server.version)) {
     // the routine_libraries view has ROUTINE_SCHEMA, ROUTINE_NAME and
     // ROUTINE_TYPE columns, so these do not need to be changed, routine filter
     // is valid as well
@@ -299,7 +407,7 @@ Instance_cache_builder &Instance_cache_builder::routines() {
 }
 
 Instance_cache_builder &Instance_cache_builder::libraries() {
-  if (!compatibility::supports_library_ddl(m_cache.server.version.number)) {
+  if (!common::supports_library_ddl(m_cache.server.version)) {
     return *this;
   }
 
@@ -458,8 +566,46 @@ void Instance_cache_builder::filter_tables() {
       return;
     }
 
+    // Unlike MySQL, MariaDB reports a TEMPORARY table here. Dump_options
+    // rejects temporary tables during validation, but skip them here too:
+    // otherwise they fall through to the "is_table" check below, land in the
+    // views map, and abort the dump when a SHOW CREATE VIEW is issued against
+    // one - the same "wrong map" shape as sequences and packages, see
+    // MARIADB_DUMP_LOAD.md section 4.5.1.
+    if ("TEMPORARY" == table_type) {
+      return;
+    }
+
     const auto table_name = row->get_string(1);  // TABLE_NAME
-    const auto is_table = "BASE TABLE" == table_type;
+
+    // MariaDB sequences are reported here as well, but none of the table
+    // metadata below applies to them: they carry no rows to dump, they take no
+    // lock and they are never chunked. They are DDL only, so they get their own
+    // map and are left out of both the table and the view path - which is also
+    // what mysqldump does with IGNORE_SEQUENCE_TABLE. See
+    // MARIADB_DUMP_LOAD.md section 4.5.1.
+    if ("SEQUENCE" == table_type) {
+      // A MySQL build remaps a MariaDB source to 5.6 and writes a MySQL-shaped
+      // dump, which cannot carry a sequence - so there they are left out
+      // entirely, as they always were. What they must never be is mistaken for
+      // a view, which is what used to abort the whole dump.
+      if (common::supports_sequences(m_cache.server.version)) {
+        schema->sequences.emplace(table_name);
+
+        ++m_cache.filtered.sequences;
+      }
+
+      return;
+    }
+
+    // MariaDB reports a system-versioned table as SYSTEM VERSIONED rather than
+    // BASE TABLE, and it is a table in every way which matters here: it holds
+    // rows, it takes a lock and it can be chunked. Anything which is not a base
+    // table used to fall through to the view path, so a system-versioned table
+    // was dumped as a view and aborted the dump - see MARIADB_DUMP_LOAD.md
+    // section 27. No MySQL server reports this type, so it needs no gate.
+    const auto is_table =
+        "BASE TABLE" == table_type || "SYSTEM VERSIONED" == table_type;
     Instance_cache::Table &target =
         is_table ? schema->tables[table_name] : schema->views[table_name];
 
@@ -474,6 +620,8 @@ void Instance_cache_builder::filter_tables() {
                     { use_unsupported_collation(&target.collation); });
 
     if (is_table) {
+      target.system_versioned = "SYSTEM VERSIONED" == table_type;
+
       set_has_tables();
 
       ++m_cache.filtered.tables;
@@ -503,9 +651,14 @@ void Instance_cache_builder::filter_tables() {
     }
   });
 
-  // the total number of tables and views within the filtered schemas
-  m_cache.total.tables = count(info, "'BASE TABLE'=TABLE_TYPE");
+  // the total number of tables, views and sequences within the filtered schemas
+  m_cache.total.tables =
+      count(info, "TABLE_TYPE IN ('BASE TABLE','SYSTEM VERSIONED')");
   m_cache.total.views = count(info, "'VIEW'=TABLE_TYPE");
+
+  if (common::supports_sequences(m_cache.server.version)) {
+    m_cache.total.sequences = count(info, "'SEQUENCE'=TABLE_TYPE");
+  }
 }
 
 void Instance_cache_builder::fetch_metadata(
@@ -518,6 +671,7 @@ void Instance_cache_builder::fetch_metadata(
   fetch_columns();
   fetch_table_indexes();
   fetch_table_histograms();
+  fetch_period_unique_keys();
   fetch_table_partitions(partitions);
 }
 
@@ -570,9 +724,10 @@ void Instance_cache_builder::fetch_view_metadata() {
 
   // BUG#36509026 - we're fetching view definitions to extract table references,
   // starting with 8.0.13 we get those from I_S.VIEW_TABLE_USAGE
-  static const mysqlshdk::utils::Version k_has_view_table_usage{8, 0, 13};
+  const auto has_view_table_usage =
+      common::supports_view_table_usage(m_cache.server.version);
 
-  if (m_cache.server.version.number < k_has_view_table_usage) {
+  if (!has_view_table_usage) {
     info.extra_columns.emplace_back("VIEW_DEFINITION");  // can be NULL in 8.x
   }
 
@@ -581,7 +736,8 @@ void Instance_cache_builder::fetch_view_metadata() {
   mysqlshdk::parser::Extract_table_references etr{
       mysqlshdk::parser::Parser_config{m_cache.server.version.number, true}};
 
-  iterate_views(info, [&etr](const std::string &schema, const std::string &,
+  iterate_views(info, [&etr](const std::string &schema,
+                             const std::string &name,
                              Instance_cache::View *view,
                              const mysqlshdk::db::IRow *row) {
     view->character_set_client = row->get_string(2);  // CHARACTER_SET_CLIENT
@@ -592,17 +748,37 @@ void Instance_cache_builder::fetch_view_metadata() {
     });
 
     if (row->num_fields() > 4) {
-      for (auto &ref : etr.run(row->get_string(4, {}))) {  // VIEW_DEFINITION
-        if (ref.schema.empty()) {
-          ref.schema = schema;
-        }
+      const auto definition = row->get_string(4, {});  // VIEW_DEFINITION
 
-        view->table_references.emplace(std::move(ref));
+      try {
+        for (auto &ref : etr.run(definition)) {
+          if (ref.schema.empty()) {
+            ref.schema = schema;
+          }
+
+          view->table_references.emplace(std::move(ref));
+        }
+      } catch (const std::exception &e) {
+        const auto qualified_name = shcore::quote_identifier(schema) + "." +
+                                    shcore::quote_identifier(name);
+        // The references are what the dump checks against its own contents -
+        // they are a diagnostic, not something the dump needs to be correct - so
+        // a definition this parser cannot read costs that one check rather than
+        // the whole dump. MariaDB has no I_S.VIEW_TABLE_USAGE to fall back on
+        // and the grammar is MySQL's, so a MariaDB-only construct lands here:
+        // FOR SYSTEM_TIME is one. See MARIADB_DUMP_LOAD.md section 27.
+        log_error("Failed to extract the table references of view %s: %s.",
+                  qualified_name.c_str(), e.what());
+        current_console()->print_warning(shcore::str_format(
+            "The definition of view %s could not be parsed, so the tables it "
+            "uses are unknown and the dump cannot check that they are included "
+            "in it. The view itself is dumped as it is.",
+            qualified_name.c_str()));
       }
     }
   });
 
-  if (m_cache.server.version.number >= k_has_view_table_usage) {
+  if (has_view_table_usage) {
     Iterate_table usage;
     usage.schema_column = "VIEW_SCHEMA";  // NOT NULL
     usage.table_column = "VIEW_NAME";     // NOT NULL
@@ -645,15 +821,9 @@ void Instance_cache_builder::fetch_columns() {
   info.table_name = "columns";
 
   // schema -> table -> columns
-  std::unordered_map<
-      std::string, std::unordered_map<
-                       std::string, std::map<uint64_t, Instance_cache::Column>>>
-      table_columns;
+  Column_map table_columns;
   // schema -> view -> columns
-  std::unordered_map<
-      std::string, std::unordered_map<
-                       std::string, std::map<uint64_t, Instance_cache::Column>>>
-      view_columns;
+  Column_map view_columns;
 
   const auto create_column = [](const mysqlshdk::db::IRow *row) {
     Instance_cache::Column column;
@@ -702,6 +872,10 @@ void Instance_cache_builder::fetch_columns() {
             row->get_uint(4),  // ORDINAL_POSITION
             create_column(row));
       });
+
+  if (common::json_columns_use_check_constraints(m_cache.server.version)) {
+    fetch_json_check_constraints(&table_columns);
+  }
 
   for (auto &schema : table_columns) {
     auto &s = m_cache.schemas.at(schema.first);
@@ -755,6 +929,52 @@ void Instance_cache_builder::fetch_columns() {
       }
     }
   }
+}
+
+void Instance_cache_builder::fetch_json_check_constraints(
+    Column_map *table_columns) {
+  Profiler profiler{"fetching JSON check constraints"};
+
+  // A MariaDB JSON column is a text column with a json_valid() CHECK constraint
+  // on it, so information_schema.COLUMNS - all fetch_columns() has to go on -
+  // cannot tell one from a plain LONGTEXT. The constraint can: the server
+  // reports a column as JSON on the wire exactly when its column-level
+  // constraint has a json_valid() call at the top level of its expression - see
+  // has_top_level_json_valid(). A table-level constraint does not count, and
+  // json_valid()'s argument is not looked at: a constraint naming another column
+  // still makes this one JSON. See MARIADB_DUMP_LOAD.md section 21.
+  Iterate_table info;
+  info.schema_column = "CONSTRAINT_SCHEMA";  // NOT NULL
+  info.table_column = "TABLE_NAME";          // NOT NULL
+  info.extra_columns = {
+      "CONSTRAINT_NAME",  // NOT NULL, at column level it is the column name
+      "CHECK_CLAUSE"      // NOT NULL
+  };
+  info.table_name = "check_constraints";
+  info.where = "LEVEL='Column'";
+
+  iterate_tables(info, [table_columns](const std::string &schema_name,
+                                       const std::string &table_name,
+                                       Instance_cache::Table *,
+                                       const mysqlshdk::db::IRow *row) {
+    if (!has_top_level_json_valid(row->get_string(3))) {  // CHECK_CLAUSE
+      return;
+    }
+
+    const auto schema = table_columns->find(schema_name);
+    if (table_columns->end() == schema) return;
+
+    const auto table = schema->second.find(table_name);
+    if (schema->second.end() == table) return;
+
+    const auto column_name = row->get_string(2);  // CONSTRAINT_NAME
+    const auto column = std::find_if(
+        table->second.begin(), table->second.end(),
+        [&column_name](const auto &c) { return column_name == c.second.name; });
+    if (table->second.end() == column) return;
+
+    column->second.type = mysqlshdk::db::Type::Json;
+  });
 }
 
 void Instance_cache_builder::fetch_table_indexes() {
@@ -864,7 +1084,8 @@ void Instance_cache_builder::fetch_table_indexes() {
 void Instance_cache_builder::fetch_table_histograms() {
   Profiler profiler{"fetching table histograms"};
 
-  if (!has_tables() || !m_cache.server.version.is_8_0) {
+  if (!has_tables() ||
+      !common::supports_column_statistics(m_cache.server.version)) {
     return;
   }
 
@@ -901,6 +1122,37 @@ void Instance_cache_builder::fetch_table_histograms() {
   } catch (const mysqlshdk::db::Error &e) {
     log_error("Failed to fetch table histograms: %s.", e.format().c_str());
     current_console()->print_warning("Failed to fetch table histograms.");
+  }
+}
+
+void Instance_cache_builder::fetch_period_unique_keys() {
+  Profiler profiler{"fetching period unique keys"};
+
+  if (!has_tables() ||
+      !common::supports_key_period_usage(m_cache.server.version)) {
+    return;
+  }
+
+  try {
+    // A UNIQUE ... WITHOUT OVERLAPS constraint over an application-time period.
+    // Such a table refuses REPLACE with error 1235, and the loader loads chunks
+    // with REPLACE - see MARIADB_DUMP_LOAD.md section 31. Nothing else about
+    // the constraint is needed, only which tables have one.
+    Iterate_table info;
+    info.schema_column = "TABLE_SCHEMA";  // NOT NULL
+    info.table_column = "TABLE_NAME";     // NOT NULL
+    info.table_name = "key_period_usage";
+
+    iterate_tables(info, [](const std::string &, const std::string &,
+                            Instance_cache::Table *table,
+                            const mysqlshdk::db::IRow *) {
+      table->period_unique_key = true;
+    });
+  } catch (const mysqlshdk::db::Error &e) {
+    log_error("Failed to fetch period unique keys: %s.", e.format().c_str());
+    current_console()->print_warning(
+        "Failed to fetch the list of tables with a UNIQUE ... WITHOUT OVERLAPS "
+        "constraint, loading such a table may fail.");
   }
 }
 
@@ -961,6 +1213,18 @@ void Instance_cache_builder::fetch_table_partitions(
           // Partition selection is disabled for tables employing a storage
           // engine that supplies automatic partitioning, such as NDB. Ignore
           // such tables.
+          return;
+        }
+
+        if (table->system_versioned) {
+          // The same reason, for a different mechanism: MariaDB refuses
+          // partition selection on a system-versioned table (error 1726), so a
+          // per-partition chunk cannot be loaded back - and reading the
+          // partitions directly would dump the HISTORY partition too, whose
+          // rows carry no period columns and would come back as live data. Such
+          // a table is dumped through the table itself, which is the current
+          // version of every row, exactly as an unpartitioned one is. See
+          // MARIADB_DUMP_LOAD.md section 30.
           return;
         }
 
@@ -1278,8 +1542,16 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_users() const {
 }
 
 std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
-  if (!m_cache.server.version.is_8_0) {
+  if (!common::supports_role_dumping(m_cache.server.version)) {
     return {};
+  }
+
+  if (common::roles_are_hostless(m_cache.server.version)) {
+    // MariaDB says so outright, and it has to: a role is not an account there,
+    // so the MySQL heuristic below cannot describe one - mysql.user does not
+    // even have an account_locked column
+    return fetch_users("SELECT DISTINCT user, host FROM mysql.user",
+                       "is_role='Y'");
   }
 
   try {
@@ -1299,6 +1571,147 @@ std::vector<shcore::Account> Instance_cache_builder::fetch_roles() const {
   return fetch_users("SELECT DISTINCT user, host FROM mysql.user",
                      "authentication_string='' AND account_locked='Y' AND "
                      "password_expired='Y'");
+}
+
+void Instance_cache_builder::add_granted_roles() {
+  // A MariaDB role is an object of its own, so an account filter which names a
+  // user does not name the roles granted to it - and a role is not a dependency
+  // of the account, it *is* part of the account's privileges. Restoring the
+  // account without them leaves it with fewer than it had, so the roles it holds
+  // are pulled in rather than asked for. Transitively: a role granted to a role
+  // carries privileges just the same.
+  if (!common::supports_role_dumping(m_cache.server.version) ||
+      !common::roles_are_hostless(m_cache.server.version) ||
+      m_cache.users.empty()) {
+    return;
+  }
+
+  // grantee -> the roles granted to it; a grantee with no host is itself a role
+  std::multimap<shcore::Account, std::string> granted;
+
+  try {
+    const auto result =
+        query("SELECT Host, User, Role FROM mysql.roles_mapping");
+
+    while (const auto row = result->fetch_one()) {
+      shcore::Account grantee;
+      grantee.host = row->get_string(0);
+      grantee.user = row->get_string(1);
+
+      granted.emplace(std::move(grantee), row->get_string(2));
+    }
+  } catch (const mysqlshdk::db::Error &e) {
+    log_error("Failed to fetch role grants: %s.", e.format().c_str());
+    current_console()->print_warning(
+        "Failed to fetch role grants, the dump may be missing roles which are "
+        "granted to the accounts being dumped.");
+    return;
+  }
+
+  // an explicitly excluded role stays out - that is an instruction, not an
+  // oversight, and dump_grants() still warns about the grant which names it
+  const auto &excluded = m_filters.users().excluded();
+  const auto is_excluded = [&excluded](const shcore::Account &role) {
+    // the same match User_filters::is_included() makes, where an entry without
+    // a host matches every host
+    return excluded.end() !=
+           std::find_if(excluded.begin(), excluded.end(),
+                        [&role](const shcore::Account &a) {
+                          return a.user == role.user &&
+                                 (a.host.empty() || a.host == role.host);
+                        });
+  };
+
+  std::set<shcore::Account> dumped{m_cache.users.begin(), m_cache.users.end()};
+  std::vector<shcore::Account> pending{m_cache.users};
+  std::set<shcore::Account> added;
+
+  const auto describe = [](const shcore::Account &a) {
+    // a role has no host of its own
+    return a.host.empty() ? shcore::quote_identifier(a.user)
+                          : shcore::make_account(a);
+  };
+
+  while (!pending.empty()) {
+    const auto account = std::move(pending.back());
+    pending.pop_back();
+
+    const auto [begin, end] = granted.equal_range(account);
+
+    for (auto it = begin; it != end; ++it) {
+      shcore::Account role;
+      role.user = it->second;
+
+      if (dumped.count(role)) {
+        continue;
+      }
+
+      if (is_excluded(role)) {
+        // dump_grants() reports a grant which names a role the dump does not
+        // carry, but only where it can parse the grantee - a role granted to a
+        // role is written without a host and is not recognized there, so the
+        // one case this function creates is reported here
+        current_console()->print_warning(shcore::str_format(
+            "Role %s is granted to %s but is excluded from the dump. The grant "
+            "which names it will fail unless the role already exists on the "
+            "target.",
+            shcore::quote_identifier(role.user).c_str(),
+            describe(account).c_str()));
+        continue;
+      }
+
+      dumped.emplace(role);
+      added.emplace(role);
+      pending.emplace_back(std::move(role));
+    }
+  }
+
+  if (added.empty()) {
+    return;
+  }
+
+  m_cache.users.assign(dumped.begin(), dumped.end());
+  // is_role() in the dumper reads this, and it decides between CREATE ROLE and
+  // CREATE USER
+  m_cache.roles.insert(m_cache.roles.end(), added.begin(), added.end());
+  std::sort(m_cache.roles.begin(), m_cache.roles.end());
+
+  std::vector<std::string> names;
+  names.reserve(added.size());
+
+  for (const auto &role : added) {
+    names.emplace_back(shcore::quote_identifier(role.user));
+  }
+
+  current_console()->print_note(shcore::str_format(
+      "%zu %s granted to the accounts being dumped and %s added to the dump: "
+      "%s.",
+      added.size(), 1 == added.size() ? "role is" : "roles are",
+      1 == added.size() ? "has been" : "have been",
+      shcore::str_join(names, ", ").c_str()));
+}
+
+uint64_t Instance_cache_builder::count_users() const {
+  if (common::roles_are_hostless(m_cache.server.version)) {
+    // information_schema.USER_PRIVILEGES has no row for an account holding
+    // nothing but USAGE, which is every MariaDB role, so counting grantees
+    // there reports fewer accounts than fetch_users() found - and the dump then
+    // announced "23 out of 12 users"
+    try {
+      return query(
+                 "SELECT COUNT(*) FROM (SELECT DISTINCT user, host FROM "
+                 "mysql.user) AS user")
+          ->fetch_one_or_throw()
+          ->get_uint(0);
+    } catch (const mysqlshdk::db::Error &e) {
+      log_warning(
+          "Failed to count accounts in the mysql.user table: %s. Falling back "
+          "to information_schema.user_privileges.",
+          e.format().c_str());
+    }
+  }
+
+  return count("user_privileges", {}, "DISTINCT grantee");
 }
 
 }  // namespace dump
