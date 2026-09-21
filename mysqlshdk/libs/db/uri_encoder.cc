@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +49,9 @@ std::string Uri_encoder::encode_uri(const IUri_encodable &info,
   if (info.has_value(db::kHost)) host = info.get(db::kHost);
 
   if (format.is_set(Tokens::Scheme) && !scheme.empty()) {
-    ret_val.append(encode_scheme(scheme));
+    // With the extension, or a URI parsed as `mariadb+ssh://` would come back
+    // out as a plain `mariadb://` and the tunnel would vanish on a round trip.
+    ret_val.append(encode_scheme(scheme, info.get_scheme_extension()));
   }
 
   if (type == Type::File ||
@@ -130,7 +133,8 @@ std::string Uri_encoder::encode_uri(const IUri_encodable &info,
   return ret_val;
 }
 
-std::string Uri_encoder::encode_scheme(const std::string &data) {
+std::string Uri_encoder::encode_scheme(const std::string &data,
+                                       const std::string &extension) {
   std::string ret_val;
 
   _tokenizer.reset();
@@ -149,20 +153,16 @@ std::string Uri_encoder::encode_scheme(const std::string &data) {
   ret_val = _tokenizer.consume_token("alphanumeric");
 
   if (_tokenizer.tokens_available()) {
-    _tokenizer.consume_token("+");
-    auto ext = _tokenizer.consume_token("alphanumeric");
-
-    if (_tokenizer.tokens_available())
-      throw std::invalid_argument(
-          shcore::str_format("Invalid scheme format "
-                             "[%s], only one extension is supported",
-                             data.c_str()));
-    else
-      throw std::invalid_argument(
-          shcore::str_format("Scheme extension [%s] is "
-                             "not supported",
-                             ext.c_str()));
+    // The scheme carried its own `+ext`, which is not how it is passed here:
+    // the extension is a separate argument, taken from the data being
+    // encoded. Anything else is a caller that built the string by hand.
+    throw std::invalid_argument(
+        shcore::str_format("Invalid scheme format [%s], the extension is not "
+                           "part of the scheme name",
+                           data.c_str()));
   }
+
+  if (!extension.empty()) ret_val.append("+").append(extension);
 
   return ret_val;
 }

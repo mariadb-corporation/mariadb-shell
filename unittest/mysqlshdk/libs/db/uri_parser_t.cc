@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -336,16 +337,20 @@ TEST(Uri_parser, parse_scheme) {
   //                0    5    0    5    0    5    0    5    0    5    0    5
   validate_bad_uri("://mysql.com", "Scheme is missing");
   validate_bad_uri("other://mysql.com",
-                   "Invalid scheme [other], supported schemes include: mysql, "
-                   "mysqlx");
+                   "Invalid scheme [other], supported schemes include: "
+                   "mariadb, mysql, mysqlx");
   validate_bad_uri("mysqlx ://mysql.com", "Illegal space found at position 6");
   validate_bad_uri("mysq=lx://mysql.com",
                    "Illegal character [=] found at position 4");
   validate_bad_uri("mysqlx+ssh+other://mysql.com",
                    "Invalid scheme format [mysqlx+ssh+other], only one "
                    "extension is supported");
-  validate_bad_uri("mysqlx+ssh://mysql.com",
-                   "Scheme extension [ssh] is not supported");
+  validate_bad_uri(
+      "mysqlx+ssh://mysql.com",
+      "Scheme extension [ssh] is not supported with the mysqlx protocol");
+  // An extension that means nothing is still refused, as all of them were.
+  validate_bad_uri("mariadb+srv://mysql.com",
+                   "Scheme extension [srv] is not supported");
 
   validate_bad_uri("://mysql.com", "Scheme is missing", Type::Ssh);
   validate_bad_uri("other://mysql.com",
@@ -360,7 +365,8 @@ TEST(Uri_parser, parse_scheme) {
                    "extension is supported",
                    Type::Ssh);
   validate_bad_uri("mysqlx+ssh://mysql.com",
-                   "Scheme extension [ssh] is not supported", Type::Ssh);
+                   "Invalid scheme [mysqlx], supported schemes include: ssh",
+                   Type::Ssh);
 }
 
 TEST(Uri_parser, parse_user_info) {

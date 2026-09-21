@@ -37,6 +37,7 @@
 
 #include "mysqlshdk/include/mysqlshdk_export.h"
 #include "mysqlshdk/libs/db/ssl_options.h"
+#include "mysqlshdk/libs/db/utils_connection.h"
 #include "mysqlshdk/libs/ssh/ssh_connection_options.h"
 #include "mysqlshdk/libs/utils/connection.h"
 #include "mysqlshdk/libs/utils/nullable_options.h"
@@ -94,6 +95,69 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   void set_login_options_from(const Connection_options &options);
   void set_ssl_options(const Ssl_options &options);
   void set_ssh_options(ssh::Ssh_connection_options &&options);
+
+  /**
+   * Takes the `+ssh` of `mariadb+ssh://`, and refuses any other extension.
+   *
+   * Turning tunnelling on is its only effect: it is what allows the `ssh-*`
+   * options into the URI, and what makes set_default_data work out the SSH
+   * endpoint and the forwarding target.
+   */
+  void set_scheme_extension(const std::string &extension) override;
+
+  /**
+   * Accepts `mariadb+ssh` as well as a bare scheme name.
+   *
+   * A dictionary is the other way a connection is described, and it has to be
+   * able to say everything a URI can - otherwise a tunnelled connection turned
+   * into a map and back would come out direct. The extension therefore rides
+   * on the scheme there, exactly as it does in a URI; get_scheme() still
+   * answers with the bare name, so every comparison against it is unaffected.
+   */
+  void set_scheme(const std::string &scheme) override;
+
+  /**
+   * Works the SSH endpoint out from the `+ssh` extension and the authority.
+   *
+   * Public because it has to run once everything else is known, and the two
+   * callers that build a Connection_options piecemeal - the URI constructor
+   * and mysqlsh::get_connection_options - are the ones that know when that
+   * is. Idempotent.
+   */
+  void apply_ssh_scheme_extension();
+
+  /**
+   * `ssh` for a connection that was written as `mariadb+ssh://`, else empty.
+   *
+   * Only for connections that used the extension, NOT for every connection
+   * that happens to tunnel. A tunnel configured the older way - the `ssh:
+   * "user@jump"` dictionary key, or --ssh on the command line - keeps the
+   * spelling it has always had, so that nothing which prints a connection
+   * back to the user suddenly grows a query string full of values it
+   * defaulted rather than values anybody wrote.
+   *
+   * That older form still loses its tunnel when written out as a URI. It is a
+   * real gap and predates this; fixing it means deciding what a defaulted
+   * ssh-user should serialize as, which is a question of its own.
+   */
+  std::string get_scheme_extension() const override {
+    return m_scheme_extension;
+  }
+
+  /** Whether this connection is to be made through an SSH tunnel. */
+  bool has_scheme_extension_ssh() const {
+    return m_scheme_extension == kSchemeExtensionSsh;
+  }
+
+  /**
+   * Whether the SSH host was NAMED, rather than defaulted to the authority.
+   *
+   * The two are different connections - named, the tunnel forwards to the
+   * authority host as the SSH server resolves it; defaulted, it forwards to
+   * loopback there - so anything that serializes a connection has to keep
+   * them apart. See query_attributes and mysqlsh::get_connection_map.
+   */
+  bool ssh_host_was_given() const { return m_ssh_host_given; }
   const std::string &get_schema() const { return get_value(kSchema); }
   const std::string &get_socket() const { return get_value(kSocket); }
   const std::string &get_pipe() const { return get_value(kPipe); }
@@ -306,7 +370,15 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   std::optional<uint8_t> m_webauth_device_index;
 
   Ssl_options m_ssl_options;
+  void set_ssh_uri_option(const std::string &name, const std::string &value);
+
   ssh::Ssh_connection_options m_ssh_options;
+  // The scheme's `+extension`, empty for none. Kept beside the scheme rather
+  // than inside it so that every `get_scheme() == "mariadb"` comparison in the
+  // code goes on meaning what it did.
+  std::string m_scheme_extension;
+  // Whether `ssh-host` was named, as opposed to defaulted from the authority.
+  bool m_ssh_host_given = false;
   Nullable_options m_extra_options;
   bool m_enable_connection_attributes;
   Nullable_options m_connection_attributes;

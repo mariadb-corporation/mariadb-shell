@@ -111,6 +111,13 @@ Connection_options::Connection_options(const std::string &uri,
   try {
     uri::Uri_parser parser(mysqlshdk::db::uri::Type::DevApi);
     *this = parser.parse(uri, m_options.get_mode());
+
+    // Here and not in set_default_data: the tunnel is created by the session
+    // factories (connect_session and friends) BEFORE they connect, and
+    // set_default_data does not run until the connect itself. Deriving the
+    // endpoint any later would leave the SSH options empty at the moment
+    // something asks whether there is a tunnel to open.
+    apply_ssh_scheme_extension();
   } catch (const std::invalid_argument &error) {
     std::string msg = "Invalid URI: ";
     msg.append(error.what());
@@ -312,8 +319,123 @@ void Connection_options::clear_needs_password(int factor) {
   m_needs_password[factor].reset();
 }
 
+void Connection_options::set_scheme(const std::string &scheme) {
+  const auto plus = scheme.find('+');
+
+  if (plus == std::string::npos) {
+    IConnection::set_scheme(scheme);
+    return;
+  }
+
+  // The base has to be valid before the extension is judged, so that
+  // `nonsense+ssh` complains about the scheme rather than the extension.
+  IConnection::set_scheme(scheme.substr(0, plus));
+  set_scheme_extension(scheme.substr(plus + 1));
+}
+
+void Connection_options::set_scheme_extension(const std::string &extension) {
+  if (extension != kSchemeExtensionSsh) {
+    throw std::invalid_argument("Scheme extension [" + extension +
+                                "] is not supported");
+  }
+
+  if (has_scheme() && get_scheme() == kSchemeMySQLx) {
+    // The X protocol has no tunnelling path here, and silently ignoring the
+    // extension would be the worst of the options.
+    throw std::invalid_argument(
+        "Scheme extension [" + extension + "] is not supported with the " +
+        kSchemeMySQLx + " protocol");
+  }
+
+  m_scheme_extension = extension;
+}
+
+void Connection_options::apply_ssh_scheme_extension() {
+  if (!has_scheme_extension_ssh()) return;
+
+  // The authority of a `+ssh` URI is the DATABASE, always. What changes is how
+  // it is reached:
+  //
+  //  * `ssh-host` given - the database is somewhere else on the far side, so
+  //    the tunnel forwards to the authority host as the SSH SERVER resolves
+  //    it. This is the bastion case.
+  //
+  //  * `ssh-host` left out - the database is ON the machine being reached over
+  //    SSH, so the SSH endpoint IS the authority host and the forward target
+  //    is loopback there. Forwarding to the authority host by name would be
+  //    wrong: a server bound to 127.0.0.1, which is the whole reason for
+  //    tunnelling, does not answer on its public interface.
+  //
+  // m_ssh_host_given rather than m_ssh_options.has_host(), because the first
+  // branch fills that host in - without the flag a second call would take
+  // itself for the bastion case and forward to the wrong place.
+  if (!m_ssh_host_given && has_host()) {
+    m_ssh_options.clear_host();
+    m_ssh_options.set_host(get_host());
+  }
+
+  m_ssh_options.clear_remote_host();
+  m_ssh_options.set_remote_host(m_ssh_host_given ? get_host() : "127.0.0.1");
+
+  if (m_port.has_value()) {
+    m_ssh_options.clear_remote_port();
+    m_ssh_options.set_remote_port(*m_port);
+  } else if (!m_ssh_options.has_remote_port()) {
+    m_ssh_options.set_remote_port(k_default_mysql_port);
+  }
+}
+
+/**
+ * Routes one of the `ssh-*` URI options into the SSH connection options.
+ *
+ * Kept apart from Connection_options::set so that the guard below - the
+ * options are only meaningful on a `+ssh` URI - lives in one place.
+ */
+void Connection_options::set_ssh_uri_option(const std::string &name,
+                                            const std::string &value) {
+  if (!has_scheme_extension_ssh()) {
+    throw std::invalid_argument(
+        "The connection option '" + name +
+        "' requires an SSH tunnel. Use the '+ssh' scheme extension, as in "
+        "'" + kSchemeMariaDb + "+" + kSchemeExtensionSsh + "://'.");
+  }
+
+  if (compare(name, kSshHost) == 0) {
+    m_ssh_options.clear_host();
+    m_ssh_options.set_host(value);
+    m_ssh_host_given = true;
+  } else if (compare(name, kSshUser) == 0) {
+    m_ssh_options.clear_user();
+    m_ssh_options.set_user(value);
+  } else if (compare(name, kSshPort) == 0) {
+    int port = 0;
+    try {
+      port = shcore::lexical_cast<int>(value);
+    } catch (...) {
+      throw std::invalid_argument("The value of '" + std::string(kSshPort) +
+                                  "' must be an integer.");
+    }
+    if (port <= 0 || port > 65535) {
+      throw std::invalid_argument(
+          "The value of '" + std::string(kSshPort) +
+          "' must be a port number between 1 and 65535.");
+    }
+    m_ssh_options.clear_port();
+    m_ssh_options.set_port(port);
+  } else if (compare(name, kSshConfigFile) == 0) {
+    m_ssh_options.set_config_file(value);
+  } else {
+    m_ssh_options.set_key_file(value);
+  }
+}
+
 void Connection_options::set_ssh_options(
     mysqlshdk::ssh::Ssh_connection_options &&options) {
+  // A tunnel handed over whole names its own endpoint - this is the
+  // dictionary form, where the SSH host is the jump host and the database is
+  // wherever the authority says. That is the bastion shape, so the host has
+  // to be written back out; see query_attributes.
+  m_ssh_host_given = options.has_host();
   m_ssh_options = std::move(options);
 
   if (!m_ssh_options.has_data()) {
@@ -331,9 +453,9 @@ void Connection_options::set_ssh_options(
   if (m_port.has_value()) {
     mysql_port = *m_port;
   } else if (has_scheme()) {
-    if (get_scheme() == "mysql") {
+    if (get_scheme() == kSchemeMariaDb || get_scheme() == kSchemeMySQL) {
       mysql_port = k_default_mysql_port;
-    } else if (get_scheme() == "mysqlx") {
+    } else if (get_scheme() == kSchemeMySQLx) {
       mysql_port = k_default_mysql_x_port;
     }
   }
@@ -495,7 +617,15 @@ void Connection_options::set(const std::string &name,
     set_kerberos_auth_mode(value);
   }
 #endif
-  else if (is_extra_option(name)) {
+  else if (ssh_uri_query_attributes.count(shcore::str_lower(name)) > 0) {
+    set_ssh_uri_option(shcore::str_lower(name), value);
+  } else if (ssh_uri_connection_attributes.count(shcore::str_lower(name)) >
+             0) {
+    // A real SSH option, but one a URI may not carry - the two passwords, and
+    // the nested `ssh` URI which the dictionary form uses instead.
+    throw std::invalid_argument("The connection option '" + name +
+                                "' cannot be set in a URI.");
+  } else if (is_extra_option(name)) {
     if (name == kGetServerPublicKey || name == kClientInteractive ||
         name == kLocalInfile) {
       if (!is_bool_value(value)) {
@@ -674,6 +804,34 @@ Connection_options::query_attributes() const {
         {kCompressionLevel, std::to_string(get_compression_level())});
   }
 
+  // The SSH options a `+ssh` URI carries. Without this the extension would
+  // survive a round trip but its settings would not, which is the trap the
+  // old behaviour set: `ssh` was accepted in a dictionary and then silently
+  // dropped by as_uri(). Only ever the ones a URI may carry - the two
+  // passwords are not among them, see ssh_uri_query_attributes.
+  if (has_scheme_extension_ssh()) {
+    // Written out only when it was NAMED. Defaulted, it is the authority host
+    // already, and emitting it would turn the "database on the SSH machine"
+    // form into the bastion form on a round trip - a different forwarding
+    // target. Keyed on the flag rather than on a comparison with the
+    // authority, so that naming an ssh-host that happens to equal it survives.
+    if (m_ssh_host_given && m_ssh_options.has_host()) {
+      attributes.push_back({kSshHost, m_ssh_options.get_host()});
+    }
+    if (m_ssh_options.has_user()) {
+      attributes.push_back({kSshUser, m_ssh_options.get_user()});
+    }
+    if (m_ssh_options.has_port()) {
+      attributes.push_back({kSshPort, std::to_string(m_ssh_options.get_port())});
+    }
+    if (m_ssh_options.has_config_file()) {
+      attributes.push_back({kSshConfigFile, m_ssh_options.get_config_file()});
+    }
+    if (m_ssh_options.has_key_file()) {
+      attributes.push_back({kSshIdentityFile, m_ssh_options.get_key_file()});
+    }
+  }
+
   return attributes;
 }
 
@@ -790,11 +948,14 @@ mysqlsh::SessionType Connection_options::get_session_type() const {
 
   const auto &scheme = get_scheme();
 #ifdef HAVE_X_PROTOCOL
-  if (scheme == "mysqlx") return mysqlsh::SessionType::X;
+  if (scheme == kSchemeMySQLx) return mysqlsh::SessionType::X;
 #endif
-  if (scheme == "mysql") return mysqlsh::SessionType::Classic;
+  // `mysql` is a synonym of `mariadb`: both name the classic client-server
+  // protocol, so a URI written for either shell means the same thing.
+  if (scheme == kSchemeMariaDb || scheme == kSchemeMySQL)
+    return mysqlsh::SessionType::Classic;
 
-  throw std::invalid_argument("Unknown MySQL URI type " + scheme);
+  throw std::invalid_argument("Unknown MariaDB URI type " + scheme);
 }
 
 void Connection_options::set_default_data() {
@@ -831,7 +992,7 @@ void Connection_options::set_default_data() {
     }
 
     if (!has_scheme()) {
-      set_scheme("mysql");
+      set_scheme(kSchemeMariaDb);
     }
   }
 #endif  // _WIN32
@@ -1062,7 +1223,7 @@ bool Connection_options::uses_local_transport() const {
   // Windows always uses TCP by default
   return false;
 #else
-  if (!has_scheme() || get_scheme() == "mysqlx") {
+  if (!has_scheme() || get_scheme() == kSchemeMySQLx) {
     // xproto connections connect via TCP by default
     return false;
   } else {

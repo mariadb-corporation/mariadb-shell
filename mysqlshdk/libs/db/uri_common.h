@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +28,7 @@
 #define MYSQLSHDK_LIBS_DB_URI_COMMON_H_
 
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -135,11 +137,26 @@ class IUri_parsable : public virtual IUri_data_base {
                    const std::vector<std::string> &values) = 0;
   bool is_allowed_scheme(const std::string &name) const;
 
+  /**
+   * Takes the `+extension` of a scheme, as in `mariadb+ssh://`.
+   *
+   * The grammar has always parsed this - RFC 3986 allows `+` in a scheme and
+   * the URI specification reserves it for extensions - and the parser used to
+   * reject every one of them outright. It now hands the extension here
+   * instead, so that a type which understands one can take it and every other
+   * type goes on refusing, which is what this default does.
+   */
+  virtual void set_scheme_extension(const std::string &extension) {
+    throw std::invalid_argument("Scheme extension [" + extension +
+                                "] is not supported");
+  }
+
  protected:
   void validate_allowed_scheme(const std::string &scheme) const;
 
  private:
   virtual const std::unordered_set<std::string> &allowed_schemes() const = 0;
+
 };
 
 class IUri_encodable : public virtual IUri_data_base {
@@ -150,6 +167,15 @@ class IUri_encodable : public virtual IUri_data_base {
   virtual int get_numeric(const std::string &name) const = 0;
   virtual std::vector<std::pair<std::string, std::optional<std::string>>>
   query_attributes() const = 0;
+
+  /**
+   * The `+extension` to write after the scheme, or empty for none.
+   *
+   * The counterpart of IUri_parsable::set_scheme_extension: what a URI is
+   * parsed with has to survive being written back out, or a round trip would
+   * quietly drop it.
+   */
+  virtual std::string get_scheme_extension() const { return {}; }
 };
 
 class Uri_serializable : public IUri_parsable, public IUri_encodable {

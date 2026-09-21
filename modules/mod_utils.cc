@@ -191,6 +191,10 @@ Connection_options get_connection_options(
   // be set, otherwise we can't use the tunneling.
   ret_val.set_ssh_options(get_ssh_options(instance_def));
 
+  // Last, with the scheme, the authority and the SSH options all in: this is
+  // what turns `mariadb+ssh` plus a host into an actual tunnel endpoint.
+  ret_val.apply_ssh_scheme_extension();
+
   for (const auto &warning : ret_val.get_warnings())
     mysqlsh::current_console()->print_warning(warning);
   ret_val.clear_warnings();
@@ -231,7 +235,19 @@ mysqlshdk::ssh::Ssh_connection_options get_ssh_options(
   }
 
   for (const auto &option : *instance_def) {
-    if (ssh_config.compare(option.first, mysqlshdk::db::kSshConfigFile) == 0) {
+    if (ssh_config.compare(option.first, mysqlshdk::db::kSshHost) == 0) {
+      ssh_config.clear_host();
+      ssh_config.set_host(connection_map.string_at(option.first));
+    } else if (ssh_config.compare(option.first, mysqlshdk::db::kSshUser) ==
+               0) {
+      ssh_config.clear_user();
+      ssh_config.set_user(connection_map.string_at(option.first));
+    } else if (ssh_config.compare(option.first, mysqlshdk::db::kSshPort) ==
+               0) {
+      ssh_config.clear_port();
+      ssh_config.set_port(connection_map.int_at(option.first));
+    } else if (ssh_config.compare(option.first,
+                                  mysqlshdk::db::kSshConfigFile) == 0) {
       ssh_config.set_config_file(connection_map.string_at(option.first));
     } else if (ssh_config.compare(option.first,
                                   mysqlshdk::db::kSshIdentityFile) == 0) {
@@ -260,9 +276,15 @@ shcore::Value::Map_type_ref get_connection_map(
     const mysqlshdk::db::Connection_options &connection_options) {
   shcore::Value::Map_type_ref map(new shcore::Value::Map_type());
 
-  if (connection_options.has_scheme())
-    (*map)[mysqlshdk::db::kScheme] =
-        shcore::Value(connection_options.get_scheme());
+  if (connection_options.has_scheme()) {
+    // With the `+ssh`, or a tunnelled connection turned into a map and back
+    // would come out direct: nothing else in the map says that it tunnels
+    // when the SSH host was defaulted from the authority.
+    const auto extension = connection_options.get_scheme_extension();
+    (*map)[mysqlshdk::db::kScheme] = shcore::Value(
+        extension.empty() ? connection_options.get_scheme()
+                          : connection_options.get_scheme() + "+" + extension);
+  }
 
   if (connection_options.has_user())
     (*map)[mysqlshdk::db::kUser] = shcore::Value(connection_options.get_user());
@@ -289,6 +311,38 @@ shcore::Value::Map_type_ref get_connection_map(
   if (connection_options.has_pipe())
     (*map)[mysqlshdk::db::kSocket] =
         shcore::Value(connection_options.get_pipe());
+
+  // The SSH endpoint, so that a tunnelled connection survives a trip through
+  // a dictionary. get_connection_options reads these back (via
+  // get_ssh_options), and without them the other direction quietly returned a
+  // connection with no tunnel - which is how shell.unparse_uri(
+  // shell.parse_uri(...)) used to turn a tunnelled URI into a direct one.
+  //
+  // The two SSH passwords are not here for the same reason they are not
+  // allowed in a URI: this map is printed, logged and used as an identity.
+  const auto &ssh = connection_options.get_ssh_options();
+  if (ssh.has_data()) {
+    // Only when it was named: defaulted, it is the authority host already,
+    // and writing it out would turn "the database on the machine I am
+    // reaching over SSH" into "the database somewhere behind a bastion" -
+    // which forwards to a different address.
+    if (ssh.has_host() && connection_options.ssh_host_was_given())
+      (*map)[mysqlshdk::db::kSshHost] = shcore::Value(ssh.get_host());
+
+    if (ssh.has_user())
+      (*map)[mysqlshdk::db::kSshUser] = shcore::Value(ssh.get_user());
+
+    if (ssh.has_port())
+      (*map)[mysqlshdk::db::kSshPort] = shcore::Value(ssh.get_port());
+
+    if (ssh.has_config_file())
+      (*map)[mysqlshdk::db::kSshConfigFile] =
+          shcore::Value(ssh.get_config_file());
+
+    if (ssh.has_key_file())
+      (*map)[mysqlshdk::db::kSshIdentityFile] =
+          shcore::Value(ssh.get_key_file());
+  }
 
   auto ssl = connection_options.get_ssl_options();
   if (ssl.has_data()) {

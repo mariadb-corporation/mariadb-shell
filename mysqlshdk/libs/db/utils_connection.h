@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +72,14 @@ inline constexpr const char kSchema[] = "schema";
 inline constexpr const char kUser[] = "user";
 inline constexpr const char kPassword[] = "password";
 inline constexpr const char kSshRemoteHost[] = "ssh-remote-host";
+// The SSH endpoint, spelled as three scalars so that a tunnelled connection
+// fits in a URI. `ssh-host` is optional: left out, the tunnel is opened to the
+// host in the URI's authority, which is the common case of a database running
+// on the machine being reached over SSH. See Connection_options::
+// set_default_data for how the forwarding target follows from it.
+inline constexpr const char kSshHost[] = "ssh-host";
+inline constexpr const char kSshUser[] = "ssh-user";
+inline constexpr const char kSshPort[] = "ssh-port";
 inline constexpr const char kSshPassword[] = "ssh-password";
 inline constexpr const char kSshIdentityFile[] = "ssh-identity-file";
 inline constexpr const char kSshIdentityFilePassword[] =
@@ -116,6 +125,19 @@ inline constexpr const char kOciAuthenticationClientConfigProfile[] =
 inline constexpr const char kOpenIdConnectAuthenticationClientTokenFile[] =
     "authentication-openid-connect-client-id-token-file";
 
+// The connection schemes. `mariadb` is this shell's own name for the classic
+// MariaDB/MySQL client-server protocol and is the default; `mysql` is accepted
+// as a synonym of it, so that URIs written for MySQL Shell keep working.
+inline constexpr const char kSchemeMariaDb[] = "mariadb";
+inline constexpr const char kSchemeMySQL[] = "mysql";
+inline constexpr const char kSchemeMySQLx[] = "mysqlx";
+
+// The one scheme extension that is supported, as in `mariadb+ssh://`. RFC 3986
+// allows `+` in a scheme name and the URI specification reserves it for
+// extensions; the parser has always understood the grammar, and this is the
+// first extension given a meaning.
+inline constexpr const char kSchemeExtensionSsh[] = "ssh";
+
 inline constexpr const char kSslModeDisabled[] = "disabled";
 inline constexpr const char kSslModePreferred[] = "preferred";
 inline constexpr const char kSslModeRequired[] = "required";
@@ -136,8 +158,18 @@ inline constexpr char kKerberosAuthModeSSPI[] = "SSPI";
 inline constexpr char kKerberosAuthModeGSSAPI[] = "GSSAPI";
 
 inline const std::set<std::string> ssh_uri_connection_attributes = {
-    kSsh, kSshConfigFile, kSshIdentityFile, kSshIdentityFilePassword,
-    kSshPassword};
+    kSsh,       kSshConfigFile, kSshIdentityFile, kSshIdentityFilePassword,
+    kSshPassword, kSshHost,     kSshUser,         kSshPort};
+
+// The SSH options a URI may carry, which is deliberately NOT all of them.
+//
+// The two passwords are missing on purpose. A URI is an identity: it is what
+// names a connection, what a credential store keys on, and what gets written
+// to logs and printed back to the user. A secret has no business in it - the
+// database password is already kept out for the same reason, even though the
+// grammar has a place for it - so they stay dictionary- and prompt-only.
+inline const std::set<std::string> ssh_uri_query_attributes = {
+    kSshHost, kSshUser, kSshPort, kSshConfigFile, kSshIdentityFile};
 
 std::set<std::string> connection_attributes();
 

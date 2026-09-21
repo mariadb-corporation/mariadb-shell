@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -91,8 +92,9 @@ void Uri_parser::parse_scheme() {
 
     m_scheme = _tokenizer.consume_token("alphanumeric");
 
+    std::string scheme_ext;
+
     if (_tokenizer.tokens_available()) {
-      std::string scheme_ext;
       _tokenizer.consume_token("+");
       scheme_ext = _tokenizer.consume_token("alphanumeric");
 
@@ -100,12 +102,14 @@ void Uri_parser::parse_scheme() {
         throw std::invalid_argument(shcore::str_format(
             "Invalid scheme format [%s], only one extension is supported",
             get_input_chunk(_chunks[URI_SCHEME]).c_str()));
-      else
-        throw std::invalid_argument(shcore::str_format(
-            "Scheme extension [%s] is not supported", scheme_ext.c_str()));
     }
 
     if (!m_scheme.empty()) _data->set(db::kScheme, m_scheme);
+
+    // After the scheme, so that whatever takes the extension already knows
+    // which scheme it is extending. A type that supports none throws from the
+    // default implementation, which is what every one of them used to do.
+    if (!scheme_ext.empty()) _data->set_scheme_extension(scheme_ext);
   }
 }
 

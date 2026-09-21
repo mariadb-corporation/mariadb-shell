@@ -830,4 +830,141 @@ TEST(Connection_options, reject_local_infile_requests) {
   EXPECT_FALSE(overridden.reject_local_infile_requests());
 }
 
+// -- mariadb scheme, mysql as its synonym -----------------------------------
+
+TEST(Connection_options, mariadb_is_a_scheme_and_mysql_is_its_synonym) {
+  // Both name the classic client-server protocol, so a URI written for
+  // either shell means the same connection.
+  for (const auto scheme : {"mariadb", "mysql"}) {
+    Connection_options options(std::string(scheme) + "://dba@localhost:3306");
+
+    EXPECT_STREQ(scheme, options.get_scheme().c_str());
+    EXPECT_EQ(mysqlsh::SessionType::Classic, options.get_session_type());
+  }
+
+  // And mysqlx is untouched, still naming the X protocol.
+  Connection_options x("mysqlx://dba@localhost:33060");
+  EXPECT_STREQ("mysqlx", x.get_scheme().c_str());
+
+  EXPECT_THROW(Connection_options("nonsense://dba@localhost"),
+               std::invalid_argument);
+}
+
+// -- the +ssh scheme extension ----------------------------------------------
+
+TEST(Connection_options, ssh_extension_defaults_the_endpoint_to_the_authority) {
+  // The authority is the DATABASE. With no ssh-host, the database is on the
+  // machine being reached over SSH, so the SSH endpoint is that host and the
+  // tunnel forwards to loopback THERE - forwarding to the public name would
+  // miss a server bound to 127.0.0.1, which is the whole point of tunnelling.
+  Connection_options options("mariadb+ssh://dba@remote-host.com:3306");
+
+  EXPECT_STREQ("mariadb", options.get_scheme().c_str());
+  EXPECT_STREQ("remote-host.com", options.get_host().c_str());
+  EXPECT_EQ(3306, options.get_port());
+  EXPECT_STREQ("dba", options.get_user().c_str());
+
+  const auto &ssh = options.get_ssh_options();
+  ASSERT_TRUE(ssh.has_data());
+  EXPECT_STREQ("remote-host.com", ssh.get_host().c_str());
+  EXPECT_STREQ("127.0.0.1", ssh.get_remote_host().c_str());
+  EXPECT_EQ(3306, ssh.get_remote_port());
+  EXPECT_FALSE(options.ssh_host_was_given());
+}
+
+TEST(Connection_options, ssh_extension_takes_a_named_host_as_a_bastion) {
+  // ssh-host given: the database is elsewhere on the far side, so the tunnel
+  // forwards to the authority host as the SSH SERVER resolves it.
+  Connection_options options(
+      "mariadb+ssh://dba@db-01.internal:3306"
+      "?ssh-host=bastion.example.com&ssh-user=mikez&ssh-port=2222");
+
+  EXPECT_STREQ("db-01.internal", options.get_host().c_str());
+
+  const auto &ssh = options.get_ssh_options();
+  EXPECT_STREQ("bastion.example.com", ssh.get_host().c_str());
+  EXPECT_STREQ("mikez", ssh.get_user().c_str());
+  EXPECT_EQ(2222, ssh.get_port());
+  EXPECT_STREQ("db-01.internal", ssh.get_remote_host().c_str());
+  EXPECT_EQ(3306, ssh.get_remote_port());
+  EXPECT_TRUE(options.ssh_host_was_given());
+}
+
+TEST(Connection_options, ssh_extension_survives_being_written_back_out) {
+  // The trap this replaces: as_uri() used to drop the tunnel silently, so a
+  // URI that went through a normalization step came back as a DIRECT
+  // connection with nothing said about it.
+  for (const auto uri : {
+           "mariadb+ssh://dba@remote-host.com:3306",
+           "mariadb+ssh://dba@remote-host.com:3306?ssh-user=mikez",
+           "mariadb+ssh://dba@db-01.internal:3306?ssh-host=bastion.example.com",
+           "mysql+ssh://dba@remote-host.com:3306",
+       }) {
+    Connection_options options{uri};
+    const auto written = options.as_uri();
+
+    EXPECT_NE(std::string::npos, written.find("+ssh"))
+        << "the tunnel vanished from " << uri;
+
+    // And what comes back means the same thing, endpoint included.
+    Connection_options again{written};
+    EXPECT_EQ(options.get_ssh_options().get_host(),
+              again.get_ssh_options().get_host());
+    EXPECT_EQ(options.get_ssh_options().get_remote_host(),
+              again.get_ssh_options().get_remote_host());
+    EXPECT_EQ(written, again.as_uri()) << "not stable for " << uri;
+  }
+}
+
+TEST(Connection_options, ssh_options_need_the_extension) {
+  // The extension is what says the connection tunnels, so the options are
+  // meaningless - and almost certainly a mistake - without it.
+  EXPECT_THROW(Connection_options("mariadb://dba@h:3306?ssh-user=mikez"),
+               std::invalid_argument);
+  EXPECT_THROW(Connection_options("dba@h:3306?ssh-host=jump"),
+               std::invalid_argument);
+}
+
+TEST(Connection_options, ssh_secrets_are_refused_in_a_uri) {
+  // A URI is an identity: it names a connection, keys a credential store and
+  // gets logged. The database password is kept out of it for that reason and
+  // these are no different.
+  EXPECT_THROW(Connection_options("mariadb+ssh://dba@h:3306?ssh-password=s"),
+               std::invalid_argument);
+  EXPECT_THROW(
+      Connection_options("mariadb+ssh://dba@h:3306?ssh-identity-file-password=s"),
+      std::invalid_argument);
+  // The nested-URI form belongs to the dictionary, not to a URI.
+  EXPECT_THROW(Connection_options("mariadb+ssh://dba@h:3306?ssh=jump"),
+               std::invalid_argument);
+}
+
+TEST(Connection_options, only_ssh_is_a_known_scheme_extension) {
+  EXPECT_THROW(Connection_options("mariadb+srv://dba@h:3306"),
+               std::invalid_argument);
+  // Two extensions were already refused and stay refused.
+  EXPECT_THROW(Connection_options("mariadb+ssh+srv://dba@h:3306"),
+               std::invalid_argument);
+  // The X protocol has no tunnelling path here; silence would be worse.
+  EXPECT_THROW(Connection_options("mysqlx+ssh://dba@h:33060"),
+               std::invalid_argument);
+}
+
+TEST(Connection_options, ssh_extension_rides_on_the_scheme_in_a_dictionary) {
+  // A dictionary has to be able to say everything a URI can, or a tunnelled
+  // connection turned into a map and back would come out direct.
+  Connection_options options;
+  options.set_scheme("mariadb+ssh");
+  options.set_user("dba");
+  options.set_host("remote-host.com");
+  options.set_port(3306);
+  options.apply_ssh_scheme_extension();
+
+  EXPECT_STREQ("mariadb", options.get_scheme().c_str());
+  EXPECT_EQ("ssh", options.get_scheme_extension());
+  EXPECT_STREQ("remote-host.com", options.get_ssh_options().get_host().c_str());
+  EXPECT_STREQ("127.0.0.1",
+               options.get_ssh_options().get_remote_host().c_str());
+}
+
 }  // namespace testing

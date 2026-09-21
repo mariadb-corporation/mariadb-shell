@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +46,8 @@ class SHCORE_PUBLIC IConnection : public Uri_serializable {
   IConnection(std::string options_name,
               utils::nullable_options::Comparison_mode mode =
                   utils::nullable_options::Comparison_mode::CASE_INSENSITIVE,
-              std::unordered_set<std::string> allowed_schemes = {"mysql",
+              std::unordered_set<std::string> allowed_schemes = {"mariadb",
+                                                                 "mysql",
                                                                  "mysqlx"})
       : Uri_serializable(std::move(allowed_schemes)),
         m_mode(mode),

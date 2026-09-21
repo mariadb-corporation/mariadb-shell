@@ -1,3 +1,20 @@
+/*
+  Copyright (c) 2026, MariaDB plc.
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; version 2 of the License.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA
+*/
+
 /* Copyright (c) 2017, 2024 Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
@@ -58,13 +75,20 @@ TEST(Uri_encoder, encode_scheme) {
   EXPECT_EQ("mysql", encoder.encode_scheme("mysql"));
   EXPECT_EQ("sample", encoder.encode_scheme("sample"));
 
+  // The extension is its own argument now, so it is written this way...
+  EXPECT_EQ("mariadb+ssh", encoder.encode_scheme("mariadb", "ssh"));
+  EXPECT_EQ("mysql+ssh", encoder.encode_scheme("mysql", "ssh"));
+
+  // ... and a scheme NAME carrying one is a caller that built the string by
+  // hand, which no longer round-trips through the encoder.
   MY_EXPECT_THROW(std::invalid_argument,
-                  "Scheme extension [ssh] is not supported",
+                  "Invalid scheme format [mysql+ssh], the extension is not "
+                  "part of the scheme name",
                   encoder.encode_scheme("mysql+ssh"));
 
   MY_EXPECT_THROW(std::invalid_argument,
-                  "Invalid scheme format [mysql+ssh+], only one extension "
-                  "is supported",
+                  "Invalid scheme format [mysql+ssh+], the extension is not "
+                  "part of the scheme name",
                   encoder.encode_scheme("mysql+ssh+"));
 }
 
