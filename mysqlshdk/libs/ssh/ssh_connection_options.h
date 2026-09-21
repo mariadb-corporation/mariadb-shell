@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -92,6 +93,24 @@ class Ssh_connection_options : public mysqlshdk::IConnection {
   }
 
   void clear_key_file_password() { shcore::clear_buffer(m_key_password); }
+
+  /**
+   * Makes the default SSH user the account this process runs as.
+   *
+   * Set only for a `mariadb+ssh://` URI. Everywhere else the default stays
+   * what it has always been (shcore::get_system_user), which asks getlogin()
+   * first and so reports the LOGIN SESSION's owner - "root" for anyone whose
+   * session was opened by somebody else, even when the process itself runs
+   * as an ordinary user. That is wrong for every caller, not just this one,
+   * but it also decides the default DATABASE user, so it is not this
+   * feature's to change.
+   *
+   * A `User` directive in the SSH config still wins: preload_ssh_config runs
+   * before the default is reached for.
+   */
+  void set_default_user_from_euid(bool value) {
+    m_default_user_from_euid = value;
+  }
 
   void clear_remote_host() { clear_value(mysqlshdk::db::kSshRemoteHost); }
   void clear_remote_port() { m_remote_port.reset(); }
@@ -213,6 +232,7 @@ class Ssh_connection_options : public mysqlshdk::IConnection {
   std::size_t m_connection_timeout = 10;
   std::string m_sourcehost = "127.0.0.1";
   bool m_key_encrypted = false;
+  bool m_default_user_from_euid = false;
   std::string m_fingerprint;
   std::string m_key_password;
 

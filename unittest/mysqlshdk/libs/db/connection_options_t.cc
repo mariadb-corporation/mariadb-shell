@@ -967,4 +967,45 @@ TEST(Connection_options, ssh_extension_rides_on_the_scheme_in_a_dictionary) {
                options.get_ssh_options().get_remote_host().c_str());
 }
 
+TEST(Connection_options, ssh_extension_defaults_the_user_to_this_process) {
+  // getlogin() names the owner of the LOGIN SESSION, which is not this
+  // process's user whenever the session was opened by somebody else - it
+  // reports "root" in a good few CI and agent environments. A
+  // `mariadb+ssh://` URI with no ssh-user should SSH as whoever is running
+  // the shell, so it reaches for the effective uid instead.
+  //
+  // A host with no stanza anywhere, so that a User directive in the
+  // developer's own ~/.ssh/config cannot decide the answer.
+  Connection_options options(
+      "mariadb+ssh://dba@no-such-host.invalid:3306");
+  options.set_default_data();
+
+  EXPECT_EQ(shcore::get_effective_user(),
+            options.get_ssh_options().get_user());
+}
+
+TEST(Connection_options, an_explicit_ssh_user_still_wins) {
+  Connection_options options(
+      "mariadb+ssh://dba@no-such-host.invalid:3306?ssh-user=someone");
+  options.set_default_data();
+
+  EXPECT_STREQ("someone", options.get_ssh_options().get_user().c_str());
+}
+
+TEST(Connection_options, the_older_ssh_form_keeps_its_own_default) {
+  // Not this feature's business to change: get_system_user() also decides
+  // the default DATABASE user, so the old spelling is left exactly as it was.
+  Connection_options options;
+  options.set_user("dba");
+  options.set_host("no-such-host.invalid");
+  options.set_port(3306);
+
+  mysqlshdk::ssh::Ssh_connection_options ssh;
+  ssh.set_host("jump.invalid");
+  options.set_ssh_options(std::move(ssh));
+  options.set_default_data();
+
+  EXPECT_EQ(shcore::get_system_user(), options.get_ssh_options().get_user());
+}
+
 }  // namespace testing

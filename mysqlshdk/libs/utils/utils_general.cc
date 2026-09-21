@@ -29,6 +29,7 @@
 #include <regex>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/utils_lexing.h"
@@ -197,6 +198,29 @@ mysqlshdk::ssh::Ssh_connection_options get_ssh_connection_options(
   if (set_defaults) config.set_default_data();
 
   return config;
+}
+
+std::string get_effective_user() {
+#ifdef _WIN32
+  return get_system_user();
+#else
+  // getpwuid first, unlike get_system_user: getlogin() answers with the login
+  // session's owner, which is not necessarily the user this process runs as.
+  const auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+  if (buffer_size > 0) {
+    std::vector<char> buffer(buffer_size);
+    struct passwd pwd;
+    struct passwd *res = nullptr;
+
+    if (!getpwuid_r(geteuid(), &pwd, buffer.data(), buffer.size(), &res) &&
+        res && pwd.pw_name && *pwd.pw_name) {
+      return pwd.pw_name;
+    }
+  }
+
+  // Whatever get_system_user can make of it, rather than nothing.
+  return get_system_user();
+#endif
 }
 
 std::string get_system_user() {

@@ -191,6 +191,22 @@ get_ssh_connection_options(const std::string &uri, bool set_defaults = true,
 
 std::string SHCORE_PUBLIC get_system_user();
 
+/**
+ * The account the process is running AS, resolved from the effective uid.
+ *
+ * Differs from get_system_user() in which answer it prefers. That one asks
+ * getlogin() first, which names the owner of the LOGIN SESSION rather than
+ * the effective user - the two part company whenever the session was opened
+ * by somebody else, and it then reports e.g. "root" for a process running
+ * quite happily as an ordinary user. This asks getpwuid(geteuid()) first,
+ * which is the question actually being asked when something wants "who am I".
+ *
+ * get_system_user() is left alone deliberately: it decides the default
+ * database user among other things, and changing that is not a side effect
+ * anything here should have.
+ */
+std::string SHCORE_PUBLIC get_effective_user();
+
 std::string SHCORE_PUBLIC strip_password(std::string_view connstring);
 
 char SHCORE_PUBLIC *mysh_get_stdin_password(const char *prompt);

@@ -353,6 +353,12 @@ void Connection_options::set_scheme_extension(const std::string &extension) {
 void Connection_options::apply_ssh_scheme_extension() {
   if (!has_scheme_extension_ssh()) return;
 
+  // `mariadb+ssh://dba@host` with nothing else should SSH as whoever is
+  // running the shell. It would otherwise default to getlogin(), which names
+  // the login session rather than this process - see
+  // Ssh_connection_options::set_default_user_from_euid.
+  m_ssh_options.set_default_user_from_euid(true);
+
   // The authority of a `+ssh` URI is the DATABASE, always. What changes is how
   // it is reached:
   //
