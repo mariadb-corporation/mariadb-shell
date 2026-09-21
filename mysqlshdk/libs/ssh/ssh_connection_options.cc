@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -84,7 +85,12 @@ void Ssh_connection_options::set_default_data() {
 
   preload_ssh_config();
 
-  if (!has_user()) set_user(shcore::get_system_user());
+  // After preload_ssh_config, so a `User` directive in the SSH config wins
+  // over either default.
+  if (!has_user()) {
+    set_user(m_default_user_from_euid ? shcore::get_effective_user()
+                                      : shcore::get_system_user());
+  }
   if (!has_port()) set_port(22);
   if (!has_scheme()) set_scheme("ssh");
 }
