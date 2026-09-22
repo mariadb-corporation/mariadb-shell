@@ -21,11 +21,30 @@ RUN dnf install -y \
     gcc-toolset-14-annobin-annocheck gcc-toolset-14-annobin-plugin-gcc \
     git cmake ninja-build bison perl-core ccache \
     ncurses-devel libaio-devel libxml2-devel openssl-devel \
+    libxcrypt-static cpio \
     zip unzip tar pkgconfig patchelf \
     && dnf clean all
 
 # Ensure 'ninja' command is available if the distro defaults to 'ninja-build'
 RUN command -v ninja || ln -s /usr/bin/ninja-build /usr/bin/ninja
+
+# Static libaio.a, so the sandbox binary doesn't depend on libaio.so at
+# runtime (it's more portable that way: libaio isn't installed by default on
+# every distro/version, and the .so it links carries a distro-specific
+# SONAME). libaio-devel only ships libaio.so + headers here -- no .a -- so
+# build the archive from libaio's own upstream Makefile, which does produce
+# one, using the same source RPM as the installed libaio-devel to keep them
+# in lockstep. libxcrypt-static (installed above) gives us the matching
+# /usr/lib64/libcrypt.a for the same reason; see entrypoint-sandbox-server.sh
+# for how both are actually linked in.
+RUN dnf download --source -y libaio --destdir /tmp/libaio-src && \
+    cd /tmp/libaio-src && \
+    rpm2cpio libaio-*.src.rpm | cpio -idmv && \
+    tar xzf libaio-*.tar.gz && \
+    make -C libaio-*/src libaio.a && \
+    mkdir -p /opt/static-libs && \
+    cp libaio-*/src/libaio.a /opt/static-libs/libaio.a && \
+    cd / && rm -rf /tmp/libaio-src
 
 # Bake Toolset 14 Environment
 ENV PATH="/opt/rh/gcc-toolset-14/root/usr/bin:${PATH}" \

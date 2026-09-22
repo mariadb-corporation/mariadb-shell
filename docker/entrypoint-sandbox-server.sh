@@ -61,6 +61,19 @@ ccache --set-config=cache_dir="$CCACHE_DIR"
 ccache --set-config=max_size=15G
 
 # 1. Generate Ninja build files
+#
+# LIBAIO_LIBRARIES/CMAKE_EXE_LINKER_FLAGS link libaio and libcrypt statically
+# (see the Dockerfile for where /opt/static-libs/libaio.a and
+# /usr/lib64/libcrypt.a come from) so the resulting binary doesn't depend on
+# libaio.so / libcrypt.so at runtime -- both are pulled in transitively
+# (libaio by tpool's AIO backend, libcrypt by ENCRYPT()) and neither is
+# guaranteed to be installed, or to have a matching SONAME, on every target
+# distro. -Wl,--undefined=crypt forces the archive member in despite
+# CMAKE_EXE_LINKER_FLAGS placing these flags before the object files that
+# reference crypt() on the link line; without it, ld never sees an undefined
+# `crypt` symbol at the point it processes libcrypt.a and silently drops it,
+# and the build fails with "undefined reference to `crypt'" instead of
+# linking it in.
 cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -76,7 +89,10 @@ cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DWITH_MARIABACKUP=OFF \
   -DPLUGIN_DUCKDB=NO \
   -DCOMPILATION_COMMENT="Development Sandbox" \
-  -DWITH_PCRE=bundled
+  -DWITH_PCRE=bundled \
+  -DLIBAIO_LIBRARIES=/opt/static-libs/libaio.a \
+  -DLIBAIO_INCLUDE_DIRS=/usr/include \
+  -DCMAKE_EXE_LINKER_FLAGS="-Wl,--undefined=crypt -Wl,-Bstatic -lcrypt -Wl,-Bdynamic"
 
 # 2. Build the minimal server, then the sandbox plugins/tools it needs on top
 cmake --build "$BUILD_DIR" --parallel "$(nproc)" --target minbuild
