@@ -166,26 +166,56 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # ==========================================================================
-  # One pristine runner per platform.
+  # One runner per platform, in two deliberately different environments.
   #
-  # macOS and Windows run on the runner image directly. The three Linux distros
-  # run in containers on the Linux runners: the packages are one Rocky 9 build
-  # per architecture (glibc 2.34), and what is being checked is that the same
-  # tarball comes up on Rocky 9 itself, on a newer Ubuntu and on a newer Fedora.
-  # Two runners with three containers each covers that without three runner
-  # images.
+  # POPULATED VMs (macOS, Windows, Ubuntu with no container) answer "does this
+  # work on a machine like a user's?" A runner image is a real, fully installed
+  # OS. It is the only environment macOS and Windows can be tested in at all --
+  # no macOS container format exists, and Windows containers are a stripped
+  # server SKU that no MariaDB Shell user runs -- so Linux gets a leg here too
+  # rather than being the one platform judged solely against an empty OS.
   #
-  # `container:` is given an empty string on the non-Linux legs, which runs them
-  # on the runner with no container -- that is what keeps this a single job with
-  # one step list rather than two jobs with the steps duplicated.
+  # BARE CONTAINERS (Debian, Fedora, Rocky) answer "is the package actually
+  # self-contained?" A base image carries far less than any real install, so it
+  # is stricter than reality: a failure here is a portability finding to triage,
+  # not automatically a bug. The packages are one Rocky 9 build per architecture
+  # (glibc 2.34), and this checks the same tarball comes up on Rocky 9 itself --
+  # the floor it was built against -- on Debian 12 and on a current Fedora.
+  #
+  # Debian rather than a second Ubuntu: shell-release.yml and sandbox-server.yml
+  # both state these packages cover "RHEL 9+, Ubuntu 22.04+ and Debian 12+", and
+  # Debian was the one claimed target with no coverage. Between the four legs,
+  # each of those three families is now exercised, and Ubuntu is covered by the
+  # runner-VM legs above.
+  #
+  # The strongest check for the second question is not here at all: the
+  # dependency audit in verify_package.sh inspects every binary's load commands
+  # instead of hoping execution trips over a gap.
+  #
+  # The containers are NOT run through `container:`. That would put every step
+  # inside the image, so the image would first have to be given git, tar and
+  # useradd just to get the packages onto it -- and provisioning it is exactly
+  # what a pristine target must not have. `apt-get install git` alone pulls
+  # libcurl4 and with it libssl3, which is one of the libraries the server
+  # package is being checked for; installing the harness would pre-satisfy the
+  # product's own dependencies and a packaging bug would pass unnoticed.
+  #
+  # So the runner does the fetching with its own preinstalled tooling and
+  # `docker run`s the lifecycle with the unpacked trees bind-mounted read-only,
+  # as the runner's own uid (no useradd, and mariadbd refuses to run as root).
+  # Nothing is installed into the image: whatever the packages need must come
+  # out of the packages. Keeping it a plain step also keeps every leg, container
+  # or not, in one matrix sharing one step list.
   # ==========================================================================
   verify:
     needs: resolve
 
-    name: ${{ matrix.name }}
+    # The suffix keeps the checks list honest about which environment a leg ran
+    # in: ubuntu-x64 is a populated runner VM, debian-x64 a bare container, and
+    # a failure means something quite different in each.
+    name: ${{ matrix.name }}${{ matrix.image != '' && ' (container)' || '' }}
 
     runs-on: ${{ matrix.os-runner }}
-    container: ${{ matrix.container }}
 
     timeout-minutes: 30
 
@@ -196,67 +226,84 @@ jobs:
           # --- MACOS ---
           - name: macos-x64
             os-runner: macos-15-intel
-            container: ''
+            image: ''
             shell-glob: "*-macos*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-macos*-x86-64bit-sandbox.tar.gz"
           - name: macos-arm64
             os-runner: macos-latest
-            container: ''
+            image: ''
             shell-glob: "*-macos*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-macos*-arm-64bit-sandbox.tar.gz"
 
           # --- WINDOWS ---
           - name: windows-x64
             os-runner: windows-2022
-            container: ''
+            image: ''
             shell-glob: "*-windows-x86-64bit.tar.gz"
             server-glob: "mariadb-*-windows-x86-64bit-sandbox.tar.gz"
           - name: windows-arm64
             os-runner: windows-11-arm
-            container: ''
+            image: ''
             shell-glob: "*-windows-arm-64bit.tar.gz"
             server-glob: "mariadb-*-windows-arm-64bit-sandbox.tar.gz"
 
-          # --- LINUX (x64) ---
-          # 'family' picks the package manager in the prerequisites step; the
-          # package globs are per-architecture only, since all three distros
-          # consume the same Rocky-built tarball.
+          # --- LINUX (runner VM, no container) ---
+          # Same populated-OS standard as the macOS and Windows legs above: a
+          # real Ubuntu install with everything a normal machine carries. This
+          # is the only Ubuntu coverage -- the container legs below deliberately
+          # spend their slots on the other distro families.
           - name: ubuntu-x64
             os-runner: ubuntu-latest
-            container: ubuntu:24.04
-            family: debian
+            image: ''
+            shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
+          - name: ubuntu-arm64
+            os-runner: ubuntu-24.04-arm
+            image: ''
+            shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
+
+          # --- LINUX CONTAINERS (x64) ---
+          # 'image' is the container the lifecycle runs in; an empty one means
+          # the leg runs on the runner itself. The package globs are
+          # per-architecture only, since all three distros consume the same
+          # Rocky-built tarball.
+          - name: debian-x64
+            os-runner: ubuntu-latest
+            image: debian:12
+            docker-platform: linux/amd64
             shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
           - name: fedora-x64
             os-runner: ubuntu-latest
-            container: fedora:latest
-            family: fedora
+            image: fedora:latest
+            docker-platform: linux/amd64
             shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
           - name: rocky-x64
             os-runner: ubuntu-latest
-            container: rockylinux:9
-            family: fedora
+            image: rockylinux:9
+            docker-platform: linux/amd64
             shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
 
-          # --- LINUX (arm64) ---
-          - name: ubuntu-arm64
+          # --- LINUX CONTAINERS (arm64) ---
+          - name: debian-arm64
             os-runner: ubuntu-24.04-arm
-            container: ubuntu:24.04
-            family: debian
+            image: debian:12
+            docker-platform: linux/arm64
             shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
           - name: fedora-arm64
             os-runner: ubuntu-24.04-arm
-            container: fedora:latest
-            family: fedora
+            image: fedora:latest
+            docker-platform: linux/arm64
             shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
           - name: rocky-arm64
             os-runner: ubuntu-24.04-arm
-            container: rockylinux:9
-            family: fedora
+            image: rockylinux:9
+            docker-platform: linux/arm64
             shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
 
@@ -274,60 +321,12 @@ jobs:
       # and has to fit in sun_path (~104 bytes on macOS), which the runner's own
       # temp directory already eats a good part of.
       SBX_DIR_POSIX: /tmp/mdb-sbx
-      # Non-empty only for the containerised legs -- see the step that creates
-      # it. A container job runs as root, and neither mariadbd nor
-      # mariadb-install-db will run as root, so the sandbox is driven as an
-      # ordinary user instead of being given --user=root (which would make this
-      # test the one configuration real users never have).
-      SBX_USER: ${{ matrix.container != '' && 'sbxverify' || '' }}
+      # Where the transcript lands, for the upload step. Under the workspace so
+      # one path covers both the native legs and the containerised ones, which
+      # write it through a bind mount.
+      OUT_DIR: _out
 
     steps:
-      # ====================================================================
-      # 0. CONTAINER PREREQUISITES
-      #
-      # First step on purpose: it runs before any JavaScript action, so
-      # actions/checkout finds a git to use rather than falling back to the
-      # tarball download. `run:` steps need nothing inside the image (the runner
-      # drives them through docker exec), which is what makes that ordering
-      # possible.
-      #
-      # The list is what a bare image lacks and the two packages need at run
-      # time -- the shell package is self-contained (verify-packages.yml checks
-      # exactly that), but the server links OpenSSL and ncurses, and
-      # mariadb-install-db is a POSIX shell script that shells out to the usual
-      # text utilities and to hostname.
-      # ====================================================================
-      - name: Install Container Prerequisites
-        if: matrix.container != ''
-        run: |
-          set -euo pipefail
-          case "${{ matrix.family }}" in
-            debian)
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update
-              apt-get install -y --no-install-recommends \
-                ca-certificates git tar gzip openssl libncurses6 libxml2 \
-                passwd util-linux procps hostname sed gawk findutils
-              ;;
-            fedora)
-              dnf install -y --setopt=install_weak_deps=False \
-                ca-certificates git tar gzip openssl ncurses-libs libxml2 \
-                shadow-utils util-linux procps-ng hostname sed gawk findutils
-              dnf clean all
-              ;;
-            *)
-              echo "Unknown package family '${{ matrix.family }}'" >&2
-              exit 1
-              ;;
-          esac
-
-      - name: Create Unprivileged Sandbox User
-        if: matrix.container != ''
-        run: |
-          set -euo pipefail
-          useradd -m -s /bin/bash "$SBX_USER"
-          id "$SBX_USER"
-
       # ====================================================================
       # 1. CHECKOUT THE DRIVER SCRIPTS
       #
@@ -440,8 +439,13 @@ jobs:
           for d in "$SHELL_ROOT/bin" "$SERVER_ROOT/bin"; do
             [ -d "$d" ] || { echo "No bin directory in the package: $d" >&2; exit 1; }
           done
-          echo "shell_bin=$(cd "$SHELL_ROOT/bin" && pwd)"   >> "$GITHUB_OUTPUT"
-          echo "server_bin=$(cd "$SERVER_ROOT/bin" && pwd)" >> "$GITHUB_OUTPUT"
+          {
+            echo "shell_bin=$(cd "$SHELL_ROOT/bin" && pwd)"
+            echo "server_bin=$(cd "$SERVER_ROOT/bin" && pwd)"
+            # The roots themselves, for the container legs to bind-mount.
+            echo "shell_root=$(cd "$SHELL_ROOT" && pwd)"
+            echo "server_root=$(cd "$SERVER_ROOT" && pwd)"
+          } >> "$GITHUB_OUTPUT"
 
       # ====================================================================
       # 4. PUT BOTH bin/ DIRECTORIES ON THE PATH
@@ -452,6 +456,7 @@ jobs:
       # native PATH back for its own use, so the bash steps below still see it.
       # ====================================================================
       - name: Add Package bin Directories To PATH
+        if: matrix.image == ''
         env:
           SHELL_BIN: ${{ steps.unpack.outputs.shell_bin }}
           SERVER_BIN: ${{ steps.unpack.outputs.server_bin }}
@@ -467,6 +472,7 @@ jobs:
           echo "    $SERVER_BIN"
 
       - name: Show Resolved Tools
+        if: matrix.image == ''
         run: |
           set -euo pipefail
           echo "==> mariadb-shell: $(command -v mariadb-shell)"
@@ -480,41 +486,73 @@ jobs:
       # deploy -> verify -> stop -> start -> verify -> kill -> delete, driven by
       # scripts/verify_sandbox.py inside the packaged shell.
       #
-      # In a container the driver is handed to an ordinary user: mariadbd and
-      # mariadb-install-db both refuse to run as root, and a container job is
-      # root. HOME is set explicitly because runuser keeps the caller's
-      # environment, and the shell writes its user configuration under HOME.
+      # Native legs run it directly, with both bin/ directories already on the
+      # PATH from step 4.
+      #
+      # Container legs hand the same script to `docker run` instead:
+      #   --user           the runner's own uid, so no account has to be created
+      #                    in the image (and mariadbd refuses to run as root).
+      #                    That uid has no /etc/passwd entry inside, which is
+      #                    why verify_sandbox.sh tolerates `id -un` failing.
+      #   -e PATH          the two package bin/ dirs ahead of the system ones --
+      #                    the same "add the bin folder to PATH" the native legs
+      #                    get from GITHUB_PATH.
+      #   :ro mounts       the packages cannot be modified by the run, so a leg
+      #                    cannot quietly repair its own package.
+      #   -e HOME          the shell writes its user config there; / is not
+      #                    writable for this uid.
+      # Nothing is installed into the image. If a package needs a library the
+      # distro does not ship, this is where it must show.
       # ====================================================================
       - name: Run Sandbox Lifecycle
         env:
           SBX_PASSWORD: S4ndb0x-Verify
+          IMAGE: ${{ matrix.image }}
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+          SHELL_ROOT: ${{ steps.unpack.outputs.shell_root }}
+          SERVER_ROOT: ${{ steps.unpack.outputs.server_root }}
         run: |
           set -uo pipefail
-          mkdir -p "$SBX_DIR_POSIX"
+          mkdir -p "$OUT_DIR"
+          LOG="$PWD/$OUT_DIR/sandbox-verification.log"
 
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            SBX_DIR="$(cygpath -w "$SBX_DIR_POSIX")"
-          else
-            SBX_DIR="$SBX_DIR_POSIX"
+          if [ -z "$IMAGE" ]; then
+            mkdir -p "$SBX_DIR_POSIX"
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              SBX_DIR="$(cygpath -w "$SBX_DIR_POSIX")"
+            else
+              SBX_DIR="$SBX_DIR_POSIX"
+            fi
+            SBX_DIR="$SBX_DIR" SBX_LOG="$LOG" bash scripts/verify_sandbox.sh
+            exit $?
           fi
-          export SBX_DIR
-          export SBX_LOG="$PWD/sandbox-verification.log"
 
-          if [ -n "${SBX_USER:-}" ]; then
-            # The workspace belongs to root in a container, so the transcript is
-            # created here and handed over -- it has to end up inside the
-            # workspace for the upload step to find it.
-            chown "$SBX_USER" "$SBX_DIR_POSIX"
-            : > "$SBX_LOG"
-            chown "$SBX_USER" "$SBX_LOG"
-            runuser -u "$SBX_USER" -- \
-              env PATH="$PATH" HOME="/home/$SBX_USER" \
-                  SBX_DIR="$SBX_DIR" SBX_LOG="$SBX_LOG" \
-                  SBX_PASSWORD="$SBX_PASSWORD" \
-                  bash scripts/verify_sandbox.sh
-          else
-            bash scripts/verify_sandbox.sh
-          fi
+          # Host-side directories for everything the run needs to write. Created
+          # here so they belong to the runner user, which is the uid the
+          # container runs as -- a directory left for docker to create would
+          # come back root-owned and break both the run and the upload step.
+          mkdir -p _sbx _home
+
+          echo "==> image:    $IMAGE ($DOCKER_PLATFORM)"
+          echo "==> running as uid $(id -u):$(id -g), nothing installed into the image"
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --user "$(id -u):$(id -g)" \
+            --workdir /work \
+            -e HOME=/work/home \
+            -e PATH=/work/shell/bin:/work/server/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            -e SBX_DIR=/work/sbx \
+            -e SBX_LOG=/work/out/sandbox-verification.log \
+            -e SBX_PASSWORD="$SBX_PASSWORD" \
+            -v "$SHELL_ROOT:/work/shell:ro" \
+            -v "$SERVER_ROOT:/work/server:ro" \
+            -v "$PWD/scripts:/work/scripts:ro" \
+            -v "$PWD/_sbx:/work/sbx" \
+            -v "$PWD/_home:/work/home" \
+            -v "$PWD/$OUT_DIR:/work/out" \
+            "$IMAGE" \
+            bash /work/scripts/verify_sandbox.sh
 
       # ====================================================================
       # 6. DIAGNOSTICS
@@ -528,6 +566,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failed-sandbox-verification-${{ matrix.name }}
-          path: sandbox-verification.log
+          path: ${{ env.OUT_DIR }}/sandbox-verification.log
           retention-days: 7
           if-no-files-found: ignore
