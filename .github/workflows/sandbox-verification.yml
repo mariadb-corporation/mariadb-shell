@@ -23,7 +23,7 @@ name: Sandbox Verification
 # survives) followed by delete (directory goes away); see scripts/verify_sandbox.py.
 
 on:
-  pull_request:
+  push:
       branches: [ "wip/sandbox" ]
   workflow_dispatch:
     inputs:
