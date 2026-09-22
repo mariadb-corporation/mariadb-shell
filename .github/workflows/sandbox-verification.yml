@@ -23,8 +23,9 @@ name: Sandbox Verification
 # survives) followed by delete (directory goes away); see scripts/verify_sandbox.py.
 
 on:
-  push:
-      branches: [ "wip/sandbox" ]
+  # No push trigger: this verifies published build artifacts, not a commit, and
+  # every run costs twelve machines. It is started by hand, or by the build that
+  # produced the packages (see sandbox-server.yml).
   workflow_dispatch:
     inputs:
       shell_run_id:
@@ -32,12 +33,13 @@ on:
         type: string
         required: false
       server_tag:
-        description: "MariaDB branch/tag whose sandbox server build to use (blank = DEFAULT_SERVER_TAG below)"
+        description: "MariaDB branch/tag whose sandbox server build to verify (newest successful build of it)"
         type: string
-        required: false
+        required: true
 
-  # Callable from another workflow (e.g. a release pipeline) so a build can be
-  # verified as part of it rather than only by hand.
+  # Callable from another workflow so a build can be verified as part of it.
+  # sandbox-server.yml does exactly that, passing its own run id -- see
+  # server_run_id below.
   workflow_call:
     inputs:
       shell_run_id:
@@ -45,27 +47,25 @@ on:
         required: false
       server_tag:
         type: string
+        required: true
+      # Skips the tag lookup and takes the server packages from this exact run.
+      #
+      # A reusable workflow runs inside its CALLER's run and shares its artifact
+      # scope, so a build that calls this one passes ${{ github.run_id }} here to
+      # have its own freshly-built packages verified. The tag lookup could not
+      # find them: it matches completed, successful runs, and the run doing the
+      # asking is neither yet.
+      #
+      # server_tag is still required alongside it -- it is what the logs and the
+      # failure messages name the packages by.
+      server_run_id:
+        type: string
         required: false
 
-# Only a label. The run name is fixed when the run starts, so the blank-input
-# case cannot show what the resolve job goes on to pick -- the run id and the
-# tag it actually used are printed in that job's log and in every leg's
-# "Select And Unpack Packages" step. run-name cannot read `env`, so the default
-# tag is named rather than spelled out here; one copy of the value is the point.
+# Only a label; the resolve job's log is the record of what was actually picked.
 run-name: >-
   Sandbox verification (shell ${{ inputs.shell_run_id || 'latest' }},
-  server ${{ inputs.server_tag || 'default tag' }})
-
-# The MariaDB branch/tag whose sandbox server build is verified when no
-# server_tag is supplied.
-#
-# This is the ONLY place that default lives, deliberately: a `default:` on the
-# inputs above applies solely to the event that declares it, so on a push (or
-# any trigger added later) the inputs context is empty and that default is
-# silently skipped -- which is how a run meant for mariadb-13.1.1 resolved
-# 'main' instead. A workflow-level env reaches every step whatever the trigger.
-env:
-  DEFAULT_SERVER_TAG: mariadb-13.1.1
+  server ${{ inputs.server_tag }})
 
 jobs:
   # ==========================================================================
@@ -96,6 +96,7 @@ jobs:
           REPO: ${{ github.repository }}
           INPUT_SHELL_RUN_ID: ${{ inputs.shell_run_id }}
           INPUT_SERVER_TAG: ${{ inputs.server_tag }}
+          INPUT_SERVER_RUN_ID: ${{ inputs.server_run_id }}
         run: |
           set -euo pipefail
 
@@ -135,30 +136,42 @@ jobs:
           #
           # Unlike there, no match is fatal: a release can legitimately omit a
           # server line, but there is nothing to verify without a server.
+          #
+          # server_run_id short-circuits the lookup entirely -- that is how a
+          # build verifies the packages it has just produced, which no search
+          # over finished runs could find.
           # ---------------------------------------------------------------
-          SERVER_TAG="${INPUT_SERVER_TAG:-$DEFAULT_SERVER_TAG}"
-          [ -n "$SERVER_TAG" ] || {
-            echo "No server_tag given and DEFAULT_SERVER_TAG is empty." >&2; exit 1; }
-          echo "==> server: newest successful Sandbox Server build of '$SERVER_TAG'"
+          SERVER_TAG="$INPUT_SERVER_TAG"
+          # The input is `required: true`, so this only fires if a caller passes
+          # an empty string, which the required flag does not catch.
+          [ -n "$SERVER_TAG" ] || { echo "server_tag is empty." >&2; exit 1; }
 
-          # gh run list returns newest first, so the first match is the newest.
-          SERVER_RUN_ID=$(gh run list -R "$REPO" \
-            --workflow sandbox-server.yml \
-            --status success --limit 50 \
-            --json databaseId,displayTitle \
-            --jq "[.[] | select(.displayTitle == \"Sandbox Server $SERVER_TAG\")][0].databaseId // empty")
+          if [ -n "$INPUT_SERVER_RUN_ID" ]; then
+            SERVER_RUN_ID="$INPUT_SERVER_RUN_ID"
+            echo "==> server: using run $SERVER_RUN_ID as given (MariaDB $SERVER_TAG)"
+            # No `describe` here: when the caller is that run, it is still in
+            # progress and has neither a conclusion nor its final title.
+          else
+            echo "==> server: newest successful Sandbox Server build of '$SERVER_TAG'"
 
-          if [ -z "$SERVER_RUN_ID" ]; then
-            echo "No successful Sandbox Server run with run-name 'Sandbox Server $SERVER_TAG'." >&2
-            echo "Tags with a successful build among the last 50 runs:" >&2
-            gh run list -R "$REPO" --workflow sandbox-server.yml \
-              --status success --limit 50 --json displayTitle \
-              --jq '.[].displayTitle' | sed -n 's/^Sandbox Server /  /p' | sort -u >&2
-            exit 1
+            # gh run list returns newest first, so the first match is the newest.
+            SERVER_RUN_ID=$(gh run list -R "$REPO" \
+              --workflow sandbox-server.yml \
+              --status success --limit 50 \
+              --json databaseId,displayTitle \
+              --jq "[.[] | select(.displayTitle == \"Sandbox Server $SERVER_TAG\")][0].databaseId // empty")
+
+            if [ -z "$SERVER_RUN_ID" ]; then
+              echo "No successful Sandbox Server run with run-name 'Sandbox Server $SERVER_TAG'." >&2
+              echo "Tags with a successful build among the last 50 runs:" >&2
+              gh run list -R "$REPO" --workflow sandbox-server.yml \
+                --status success --limit 50 --json displayTitle \
+                --jq '.[].displayTitle' | sed -n 's/^Sandbox Server /  /p' | sort -u >&2
+              exit 1
+            fi
+            echo "==> server: using run $SERVER_RUN_ID"
+            describe "$SERVER_RUN_ID"
           fi
-          echo "==> server: using run $SERVER_RUN_ID"
-          describe "$SERVER_RUN_ID"
-
           {
             echo "shell_run_id=$SHELL_RUN_ID"
             echo "server_run_id=$SERVER_RUN_ID"
