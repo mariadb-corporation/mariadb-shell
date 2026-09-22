@@ -32,10 +32,9 @@ on:
         type: string
         required: false
       server_tag:
-        description: "MariaDB branch/tag whose sandbox server build to use (the newest successful one)"
+        description: "MariaDB branch/tag whose sandbox server build to use (blank = DEFAULT_SERVER_TAG below)"
         type: string
         required: false
-        default: 'mariadb-13.1.1'
 
   # Callable from another workflow (e.g. a release pipeline) so a build can be
   # verified as part of it rather than only by hand.
@@ -47,14 +46,26 @@ on:
       server_tag:
         type: string
         required: false
-        default: 'main'
 
 # Only a label. The run name is fixed when the run starts, so the blank-input
-# case cannot show the ids the resolve job goes on to pick -- those are printed
-# in that job's log and in every leg's "Select Packages" step.
+# case cannot show what the resolve job goes on to pick -- the run id and the
+# tag it actually used are printed in that job's log and in every leg's
+# "Select And Unpack Packages" step. run-name cannot read `env`, so the default
+# tag is named rather than spelled out here; one copy of the value is the point.
 run-name: >-
   Sandbox verification (shell ${{ inputs.shell_run_id || 'latest' }},
-  server ${{ inputs.server_tag || 'main' }})
+  server ${{ inputs.server_tag || 'default tag' }})
+
+# The MariaDB branch/tag whose sandbox server build is verified when no
+# server_tag is supplied.
+#
+# This is the ONLY place that default lives, deliberately: a `default:` on the
+# inputs above applies solely to the event that declares it, so on a push (or
+# any trigger added later) the inputs context is empty and that default is
+# silently skipped -- which is how a run meant for mariadb-13.1.1 resolved
+# 'main' instead. A workflow-level env reaches every step whatever the trigger.
+env:
+  DEFAULT_SERVER_TAG: mariadb-13.1.1
 
 jobs:
   # ==========================================================================
@@ -125,7 +136,9 @@ jobs:
           # Unlike there, no match is fatal: a release can legitimately omit a
           # server line, but there is nothing to verify without a server.
           # ---------------------------------------------------------------
-          SERVER_TAG="${INPUT_SERVER_TAG:-main}"
+          SERVER_TAG="${INPUT_SERVER_TAG:-$DEFAULT_SERVER_TAG}"
+          [ -n "$SERVER_TAG" ] || {
+            echo "No server_tag given and DEFAULT_SERVER_TAG is empty." >&2; exit 1; }
           echo "==> server: newest successful Sandbox Server build of '$SERVER_TAG'"
 
           # gh run list returns newest first, so the first match is the newest.
@@ -140,7 +153,7 @@ jobs:
             echo "Tags with a successful build among the last 50 runs:" >&2
             gh run list -R "$REPO" --workflow sandbox-server.yml \
               --status success --limit 50 --json displayTitle \
-              --jq '.[].displayTitle' | sed 's/^Sandbox Server /  /' | sort -u >&2
+              --jq '.[].displayTitle' | sed -n 's/^Sandbox Server /  /p' | sort -u >&2
             exit 1
           fi
           echo "==> server: using run $SERVER_RUN_ID"
