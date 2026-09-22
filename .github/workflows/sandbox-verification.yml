@@ -35,7 +35,7 @@ on:
         description: "MariaDB branch/tag whose sandbox server build to use (the newest successful one)"
         type: string
         required: false
-        default: 'main'
+        default: 'mariadb-13.1.1'
 
   # Callable from another workflow (e.g. a release pipeline) so a build can be
   # verified as part of it rather than only by hand.
