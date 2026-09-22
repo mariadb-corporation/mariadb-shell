@@ -203,9 +203,17 @@ jobs:
   # So the runner does the fetching with its own preinstalled tooling and
   # `docker run`s the lifecycle with the unpacked trees bind-mounted read-only,
   # as the runner's own uid (no useradd, and mariadbd refuses to run as root).
-  # Nothing is installed into the image: whatever the packages need must come
-  # out of the packages. Keeping it a plain step also keeps every leg, container
-  # or not, in one matrix sharing one step list.
+  # No harness is installed into the image. The one thing a leg may add is the
+  # slice of its own distro's baseline that the minimal image omits, declared as
+  # `image-setup` in the matrix -- debian:12 has no libssl3 because apt uses
+  # GnuTLS, while every real Debian install does. That is calibration, not
+  # provisioning: the bar is "a real install of this distro always has it",
+  # verified, and never something that would hide a packaging gap (the `openssl`
+  # package, say, which carries the CLI). Everything else must come out of the
+  # packages.
+  #
+  # Keeping it a plain step also keeps every leg, container or not, in one
+  # matrix sharing one step list.
   # ==========================================================================
   verify:
     needs: resolve
@@ -272,6 +280,20 @@ jobs:
             os-runner: ubuntu-latest
             image: debian:12
             docker-platform: linux/amd64
+            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
+            # nothing pulls libssl3 in, while every real Debian 12 install has it
+            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
+            # calibrates the image to the real target; it does not paper over a gap.
+            #
+            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
+            # and the missing CLI is the packaging bug these legs just caught in the
+            # shell package -- installing it here would hide that class of bug again,
+            # which is exactly what the old prerequisites step did. libssl3 depends
+            # only on libc6, so it brings nothing else with it.
+            #
+            # Package name is tied to the pinned image: Debian 13 renamed it
+            # libssl3t64 in the time_t transition.
+            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
             shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
           - name: fedora-x64
@@ -292,6 +314,20 @@ jobs:
             os-runner: ubuntu-24.04-arm
             image: debian:12
             docker-platform: linux/arm64
+            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
+            # nothing pulls libssl3 in, while every real Debian 12 install has it
+            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
+            # calibrates the image to the real target; it does not paper over a gap.
+            #
+            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
+            # and the missing CLI is the packaging bug these legs just caught in the
+            # shell package -- installing it here would hide that class of bug again,
+            # which is exactly what the old prerequisites step did. libssl3 depends
+            # only on libc6, so it brings nothing else with it.
+            #
+            # Package name is tied to the pinned image: Debian 13 renamed it
+            # libssl3t64 in the time_t transition.
+            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
             shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
           - name: fedora-arm64
@@ -501,13 +537,15 @@ jobs:
       #                    cannot quietly repair its own package.
       #   -e HOME          the shell writes its user config there; / is not
       #                    writable for this uid.
-      # Nothing is installed into the image. If a package needs a library the
-      # distro does not ship, this is where it must show.
+      # Beyond a leg's declared distro baseline, nothing is installed into the
+      # image. If a package needs something the distro itself does not ship,
+      # this is where it must show.
       # ====================================================================
       - name: Run Sandbox Lifecycle
         env:
           SBX_PASSWORD: S4ndb0x-Verify
           IMAGE: ${{ matrix.image }}
+          IMAGE_SETUP: ${{ matrix.image-setup }}
           DOCKER_PLATFORM: ${{ matrix.docker-platform }}
           SHELL_ROOT: ${{ steps.unpack.outputs.shell_root }}
           SERVER_ROOT: ${{ steps.unpack.outputs.server_root }}
@@ -533,8 +571,25 @@ jobs:
           # come back root-owned and break both the run and the upload step.
           mkdir -p _sbx _home
 
+          # A leg may declare the slice of its distro's own baseline that the
+          # minimal image happens to omit (see the matrix). It has to go into a
+          # derived image: `docker run --rm` starts from the base image every
+          # time, so anything installed inside the run would be gone by the run
+          # that matters. `-` as the context means the Dockerfile comes from
+          # stdin and nothing is uploaded.
+          if [ -n "$IMAGE_SETUP" ]; then
+            echo "==> distro baseline: $IMAGE_SETUP"
+            TAG="sandbox-verify-${{ matrix.name }}:$GITHUB_RUN_ID"
+            # printf rather than a heredoc: this is already inside a YAML block
+            # scalar, so every line is indented and a heredoc terminator would
+            # never match at column 0.
+            printf 'FROM %s\nRUN %s\n' "$IMAGE" "$IMAGE_SETUP" \
+              | docker build --platform "$DOCKER_PLATFORM" -t "$TAG" -
+            IMAGE="$TAG"
+          fi
+
           echo "==> image:    $IMAGE ($DOCKER_PLATFORM)"
-          echo "==> running as uid $(id -u):$(id -g), nothing installed into the image"
+          echo "==> running as uid $(id -u):$(id -g); the packages are mounted read-only"
 
           docker run --rm \
             --platform "$DOCKER_PLATFORM" \
