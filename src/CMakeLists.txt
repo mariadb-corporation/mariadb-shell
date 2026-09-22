@@ -211,7 +211,29 @@ if(BUNDLED_OPENSSL AND NOT WITH_PARFAIT)
         TARGET mariadb-shell
     )
   ENDIF()
+endif()
 
+### Bundling of the OpenSSL CLI (if needed)
+#
+# Gated separately from the OpenSSL *libraries* above, and on a wider test.
+# BUNDLED_OPENSSL is only set for APPLE/WIN32/LINUX_STANDALONE, and
+# LINUX_STANDALONE only when BUNDLED_OPENSSL_DIR is passed -- which the Linux
+# package build does not do. So on Linux the block above was skipped whole and
+# the CLI went with it: those packages bundled their own libssl/libcrypto (via
+# the USING_VCPKG dependency closure, a different code path) yet still relied on
+# a *system* openssl binary. That held only by luck of the distro -- Rocky 9
+# ships one, debian:12 and fedora:latest do not -- and sandbox.deploy() failed
+# there with "Could not find the 'openssl' tool". The warning below could not
+# fire either, so the build never said so.
+#
+# USING_VCPKG is the right companion test: it is what packaging.cmake already
+# uses to ask whether this build ships its own dependency closure, and vcpkg is
+# what puts the CLI under <prefix>/tools/openssl in the first place. The gate
+# must NOT be dropped altogether -- in a genuine system-SSL build WITH_SSL_PATH
+# is /usr, and the "${WITH_SSL_PATH}/bin" hint would copy the distro's
+# /usr/bin/openssl into the package. There the system CLI is the correct answer
+# and the distro's own dependencies guarantee it is installed.
+if((BUNDLED_OPENSSL OR USING_VCPKG) AND NOT WITH_PARFAIT)
   # The sandbox plugin shells out to the openssl CLI to generate the sandbox SSL
   # certificates when it deploys a MariaDB instance (MariaDB, unlike MySQL, does
   # not auto-generate them at datadir init). The system openssl cannot be relied
