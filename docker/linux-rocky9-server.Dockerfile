@@ -59,6 +59,10 @@ ENV PATH="/opt/rh/gcc-toolset-14/root/usr/bin:${PATH}" \
 COPY docker/entrypoint-sandbox-server.sh /usr/local/bin/entrypoint-sandbox-server.sh
 RUN chmod +x /usr/local/bin/entrypoint-sandbox-server.sh
 
+# Baked in for the same reason, and used by the entrypoint's packaging step.
+COPY scripts/prune_sandbox_server.sh /usr/local/bin/prune_sandbox_server.sh
+RUN chmod +x /usr/local/bin/prune_sandbox_server.sh
+
 WORKDIR /workspace/src
 
 ENTRYPOINT ["/usr/local/bin/entrypoint-sandbox-server.sh"]

@@ -115,6 +115,15 @@ cp "$BUILD_DIR/extra/my_print_defaults" "$BUILD_DIR/install_root/usr/local/mysql
 
 mv "$BUILD_DIR/install_root/usr/local/mysql" "$BUILD_DIR/$PKG_NAME"
 
+# 3b. Drop everything a sandbox never touches. The Server component installs
+#     the full tool set -- and the build above has to produce all of it, since
+#     cmake --install refuses to run otherwise -- but a sandbox only ever runs
+#     mariadbd and mariadb-install-db. See the script (baked into the image by
+#     the Dockerfile, for the same reason this entrypoint is) for the keep-lists
+#     and the assertions that fail the build rather than ship a tree that cannot
+#     bootstrap.
+/usr/local/bin/prune_sandbox_server.sh "$BUILD_DIR/$PKG_NAME"
+
 # 4. Package and publish to the output mount, declaring the package name for
 #    downstream consumers (e.g. CI artifact naming).
 cd "$BUILD_DIR"

@@ -65,6 +65,20 @@ jobs:
           submodules: recursive
 
       # ========================================
+      # 0a. CHECKOUT THIS REPO (FOR scripts/)
+      # ========================================
+      # The checkout above lands MariaDB/server at the workspace root, so this
+      # repo's own tree -- and with it scripts/prune_sandbox_server.sh, used by
+      # step 5 -- is not there. Pull it into a subdirectory instead. Order
+      # matters: a root checkout cleans the whole workspace, so it has to come
+      # first or it would wipe this one. (The Rocky job does the reverse, since
+      # it is the server source that goes in a subdirectory there.)
+      - name: Checkout CI Config
+        uses: actions/checkout@v4
+        with:
+          path: ci-config
+
+      # ========================================
       # 0b. COMPUTE PACKAGE VERSION & PLATFORM
       # ========================================
       # Mirrors cmake/packaging.cmake's MYSH_VERSION/MYSH_PLATFORM scheme from
@@ -245,6 +259,13 @@ jobs:
           cp extra/my_print_defaults.exe "install_root/Program Files (x86)/MariaDB/bin/"
           cp client/mariadb-admin.exe "install_root/Program Files (x86)/MariaDB/bin/"
           mv "install_root/Program Files (x86)/MariaDB" "$PKG_NAME"
+
+          # Drop everything a sandbox never touches before tarring -- see the
+          # script for what "never touches" means and how it is verified.
+          # Pruning after the mv, not before, keeps the script off the
+          # "Program Files (x86)" path and its space.
+          bash "$GITHUB_WORKSPACE/ci-config/scripts/prune_sandbox_server.sh" "$PKG_NAME"
+
           tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
 
       - name: Install & Package (macOS)
@@ -253,6 +274,15 @@ jobs:
           cd ${{ env.MARIADB_SERVER_BUILD_DIR }}
           DESTDIR="$(pwd)/install_root" cmake --install . --component Server
           cp ./extra/my_print_defaults ./install_root/usr/local/mysql/bin
+
+          ROOT="install_root/usr/local/mysql"
+
+          # Drop everything a sandbox never touches -- see the script for what
+          # "never touches" means and how it is verified. It runs before the
+          # dylibbundler loop below rather than after the tar so that loop only
+          # rewrites binaries that survive, and lib/private ends up holding the
+          # dylibs those binaries actually need.
+          bash "$GITHUB_WORKSPACE/ci-config/scripts/prune_sandbox_server.sh" "$ROOT"
 
           # OPENSSL_ROOT_DIR (step 3) points find_package(OpenSSL) at Homebrew's
           # copy, and Homebrew's dylibs carry absolute install names (their own
@@ -275,7 +305,6 @@ jobs:
           # own directory, so one relative path works for both. install_name_tool
           # invalidates the linker's original ad hoc signature, so dylibbundler
           # re-signs (also ad hoc) everything it touches.
-          ROOT="install_root/usr/local/mysql"
           mkdir -p "$ROOT/lib/private"
           for f in "$ROOT"/bin/* "$ROOT"/lib/plugin/*.so; do
             [ -f "$f" ] || continue
