@@ -1,15 +1,21 @@
 name: MariaDB-Shell-CI-Publish
 
+# Owns the shell that ~/.cache/ci serves to the other workflows: decides when
+# it should be replaced, makes sure a package for the current sources exists,
+# and installs it. Building is MariaDB-Shell-CI's job, and this delegates to it
+# only when the package it needs is not already cached.
+
 on:
-  # Every merge into main. The pull request that produced the merge already ran
-  # MariaDB-Shell-CI with test=true, so this run only repackages.
+  # Every merge into main. The pull request that produced the merge already
+  # built and cached a package keyed by its source tree, and a squash merge
+  # leaves that tree unchanged, so this usually only has to install it.
   push:
     branches: [ "main" ]
 
   # Manual re-publish, for when main is fine but the cached shell is not.
   workflow_dispatch:
 
-# The publish step rewrites the shared ~/.cache/ci/mariadb-shell* directory on
+# The install step rewrites the shared ~/.cache/ci/mariadb-shell* tarball on
 # the runner. Two runs doing that at once would interleave; serialize them and
 # let the newest queued commit win.
 concurrency:
@@ -18,10 +24,159 @@ concurrency:
 
 
 jobs:
-  publish:
-    name: Publish MariaDB Shell
+  # ==========================================================================
+  # 0. Should this merge replace the cached shell at all?
+  # ==========================================================================
+  gate:
+    name: Decide
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - id: decide
+        env:
+          # Through the environment rather than spliced into the script with
+          # ${{ }}: a commit message is arbitrary text from whoever opened the
+          # pull request, and interpolating it would run it as shell.
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          # A [bypass-ci] pull request built nothing and tested nothing, so
+          # there is no evidence its change is safe to ship and no reason to
+          # believe the shell binaries moved -- the tag is for changes that do
+          # not touch the shell. Leave the cached tarball exactly as it is.
+          #
+          # A squash merge makes the pull request title the commit title, which
+          # is where the tag shows up here; the push event carries no pull
+          # request to ask directly. A maintainer who rewrites the squash title
+          # and drops the tag gets a publish, which is the safe way to be wrong.
+          #
+          # workflow_dispatch has no head commit, and is the documented way to
+          # repair a stale cache, so it always publishes.
+          #
+          # The first line only, matching the pull request *title* that
+          # MariaDB-Shell-CI tests. A squash body is every commit message on the
+          # branch concatenated, so one commit named "drop the [bypass-ci] tag"
+          # would otherwise silence a merge that very much wants publishing.
+          TITLE=${HEAD_COMMIT_MESSAGE%%$'\n'*}
+
+          if [ "$EVENT" != "push" ]; then
+            echo "Manual run: publishing."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$TITLE" | grep -qF '[bypass-ci]'; then
+            echo "Head commit is tagged [bypass-ci]: leaving the cached shell alone."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  ensure-runner:
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    uses: ./.github/workflows/devtools-ci-start.yml
+    secrets: inherit
+
+  # ==========================================================================
+  # 1. Is a package for these exact sources already cached?
+  # ==========================================================================
+  lookup:
+    name: Look Up Cached MariaDB Shell
+    needs: [ gate, ensure-runner ]
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: self-hosted
+    outputs:
+      tree: ${{ steps.lookup.outputs.tree }}
+      cached: ${{ steps.lookup.outputs.cached }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: lookup
+        run: |
+          set -euo pipefail
+
+          # The same key MariaDB-Shell-CI caches under: the tree, not the
+          # commit. The squash merge rewrote the commit but not the sources.
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$TREE" >> "$GITHUB_OUTPUT"
+
+          # -d rather than letting find fail on a missing directory: an absent
+          # entry is the ordinary miss, and under `set -o pipefail` find's
+          # exit 1 would propagate out of the assignment and kill the job.
+          CACHED=false
+          if [ -d ~/.cache/ci/staging/"$TREE" ] && \
+             [ -n "$(find ~/.cache/ci/staging/"$TREE" -maxdepth 1 -type f -name 'mariadb-shell*.tar.gz')" ]; then
+            CACHED=true
+          fi
+
+          echo "cached=$CACHED" >> "$GITHUB_OUTPUT"
+          if [ "$CACHED" = true ]; then
+            echo "A package for tree $TREE is already cached; no build needed."
+          else
+            echo "No package cached for tree $TREE; building one."
+          fi
+
+  # ==========================================================================
+  # 2. Build one when it is missing. Caching it is MariaDB-Shell-CI's doing.
+  # ==========================================================================
+  #
+  # Reached when main moved under the pull request, when the merge was not a
+  # squash, when the cached entry aged out, or when the change came from a
+  # fork. Tests are off: the pull request already ran them, and a manual
+  # re-publish is asking for a package, not for a verification run.
+  build:
+    needs: [ gate, lookup ]
+    if: needs.gate.outputs.publish == 'true' && needs.lookup.outputs.cached != 'true'
     uses: ./.github/workflows/shell-ci.yml
     secrets: inherit
     with:
       test: false
-      publish: true
+
+  # ==========================================================================
+  # 3. Install it, whether it was already there or was just built.
+  # ==========================================================================
+  publish:
+    name: Publish MariaDB Shell
+    needs: [ gate, lookup, build ]
+    # !cancelled() rather than always(): `build` is skipped on the cached path
+    # and that must not stop us, but a build that failed or a run the user
+    # cancelled leaves nothing worth installing. A skipped job's result is
+    # 'skipped', which passes the failure test below.
+    if: ${{ !cancelled()
+      && needs.gate.outputs.publish == 'true'
+      && needs.lookup.result == 'success'
+      && needs.build.result != 'failure' }}
+    runs-on: self-hosted
+    steps:
+      # No checkout: lookup already resolved the tree, and this job only moves
+      # a file between two directories the runner owns.
+      - name: Install the cached package as the current shell
+        env:
+          TREE: ${{ needs.lookup.outputs.tree }}
+        run: |
+          set -euo pipefail
+
+          CACHED=~/.cache/ci/staging/${TREE:?}
+          TARBALL=""
+          if [ -d "$CACHED" ]; then
+            TARBALL=$(find "$CACHED" -maxdepth 1 -type f -name 'mariadb-shell*.tar.gz' | head -n 1)
+          fi
+
+          # By now the package was either found by lookup or just built, so an
+          # empty result is a broken assumption, not a cache miss -- most
+          # likely a build that reported success without caching anything.
+          # Fail loudly: carrying on would silently leave every consumer of
+          # ~/.cache/ci on the previous shell.
+          if [ -z "$TARBALL" ]; then
+            echo "::error::No package cached for tree $TREE after the build stage; refusing to leave the published shell stale."
+            exit 1
+          fi
+
+          # Publish the tarball itself: consumers unpack it wherever they need
+          # it. The name is versioned, so clear any previous one rather than
+          # leaving two tarballs for a consumer's glob to trip over.
+          mkdir -p ~/.cache/ci
+          rm -f ~/.cache/ci/mariadb-shell*.tar.gz
+          cp "$TARBALL" ~/.cache/ci/
+          echo "Published $(basename "$TARBALL") (tree $TREE)."
