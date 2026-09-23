@@ -30,43 +30,63 @@ jobs:
   gate:
     name: Decide
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # to read the title of the PR behind this commit
     outputs:
       publish: ${{ steps.decide.outputs.publish }}
     steps:
       - id: decide
         env:
-          # Through the environment rather than spliced into the script with
-          # ${{ }}: a commit message is arbitrary text from whoever opened the
-          # pull request, and interpolating it would run it as shell.
-          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          # workflow_dispatch has no commit to attribute and is the documented
+          # way to repair a stale cache, so it always publishes.
+          if [ "$EVENT" != "push" ]; then
+            echo "Manual run: publishing."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The tag is only ever written in a pull request title, which is the
+          # same field MariaDB-Shell-CI gates on, so that is the only place
+          # worth reading. The commit is no use: GitHub's squash merge builds
+          # the commit message from the pull request title only when the branch
+          # had more than one commit, and otherwise reuses that single commit's
+          # own message -- and a rebase merge never writes the title anywhere.
+          #
+          # No `|| true`: a failure here is an auth, permission or network
+          # problem and must fail the job. The API answers an empty list, not
+          # an error, when a commit simply has no pull request.
+          TITLE=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+                    | jq -r --arg sha "$SHA" \
+                        '([.[] | select(.merge_commit_sha == $sha)] + .) | .[0].title // empty')
+
+          # A direct push, so there is no title to carry the tag and no way to
+          # opt out of publishing. It publishes, and since no pull request run
+          # cached anything for these sources, that publish pays for a full
+          # build. Which is the point: the cheap way to land a change that does
+          # not touch the shell is a [bypass-ci] pull request, where nothing is
+          # built at all. Pushing straight to main is the expensive path.
+          if [ -z "$TITLE" ]; then
+            echo "No pull request behind $SHA; publishing, which will have to build."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Pull request title: $TITLE"
 
           # A [bypass-ci] pull request built nothing and tested nothing, so
           # there is no evidence its change is safe to ship and no reason to
           # believe the shell binaries moved -- the tag is for changes that do
           # not touch the shell. Leave the cached tarball exactly as it is.
-          #
-          # A squash merge makes the pull request title the commit title, which
-          # is where the tag shows up here; the push event carries no pull
-          # request to ask directly. A maintainer who rewrites the squash title
-          # and drops the tag gets a publish, which is the safe way to be wrong.
-          #
-          # workflow_dispatch has no head commit, and is the documented way to
-          # repair a stale cache, so it always publishes.
-          #
-          # The first line only, matching the pull request *title* that
-          # MariaDB-Shell-CI tests. A squash body is every commit message on the
-          # branch concatenated, so one commit named "drop the [bypass-ci] tag"
-          # would otherwise silence a merge that very much wants publishing.
-          TITLE=${HEAD_COMMIT_MESSAGE%%$'\n'*}
-
-          if [ "$EVENT" != "push" ]; then
-            echo "Manual run: publishing."
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          elif printf '%s' "$TITLE" | grep -qF '[bypass-ci]'; then
-            echo "Head commit is tagged [bypass-ci]: leaving the cached shell alone."
+          if printf '%s' "$TITLE" | grep -qF '[bypass-ci]'; then
+            echo "Tagged [bypass-ci]: leaving the cached shell alone."
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
