@@ -1,5 +1,10 @@
 name: MariaDB-Shell-CI
 
+# Builds the shell, optionally tests it, and caches the package it produced
+# under a key derived from the source tree. It never touches the shell that
+# ~/.cache/ci serves to other workflows -- deciding when that one is replaced,
+# and replacing it, belongs to MariaDB-Shell-CI-Publish.
+
 on:
   pull_request:
       branches: [ "main" ]
@@ -10,11 +15,6 @@ on:
         type: boolean
         required: false
         default: true
-      publish:
-        description: 'Package the shell and publish it to ~/.cache/ci'
-        type: boolean
-        required: false
-        default: false
   workflow_call:
     inputs:
       test:
@@ -22,11 +22,6 @@ on:
         type: boolean
         required: false
         default: true
-      publish:
-        description: 'Package the shell and publish it to ~/.cache/ci'
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   ensure-runner:
@@ -61,13 +56,14 @@ jobs:
 
     env:
       MARIADB_SHELL_BUILD_DIR: bld
+      # Being invoked at all is the request to build and cache; [bypass-ci] is
+      # the only thing that calls it off.
+      RUN_BUILD: ${{ !contains(github.event.pull_request.title, '[bypass-ci]') }}
       # A pull_request run supplies no inputs, so `inputs.*` is empty there:
-      # fall back to the pull request policy of always testing, never
-      # publishing. Manual and called runs go by whatever they asked for.
+      # fall back to the pull request policy of always testing. Manual and
+      # called runs go by whatever they asked for.
       RUN_TESTS: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
         && (github.event_name == 'pull_request' || inputs.test || github.ref == 'refs/heads/workflow-test') }}
-      RUN_PUBLISH: ${{ !contains(github.event.pull_request.title, '[bypass-ci]')
-        && github.event_name != 'pull_request' && inputs.publish }}
 
     steps:
       # Echo a message if bypassing
@@ -79,34 +75,93 @@ jobs:
       # 0. CHECKOUT MAIN PROJECT (MUST BE FIRST)
       # ========================================
       - name: Checkout Main Project
-        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
+        if: env.RUN_BUILD == 'true'
         uses: actions/checkout@v4
+
+      # ==========
+      # 0b. CCACHE
+      # ==========
+      - name: Setup ccache
+        if: env.RUN_BUILD == 'true'
+        run: |
+          set -euo pipefail
+
+          if ! command -v ccache >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y ccache
+          fi
+
+          # An absolute path, not the literal '~': ccache reads CCACHE_DIR as a
+          # path, and nothing expands a tilde that arrives through the
+          # environment rather than through a shell word.
+          #
+          # A tree of its own rather than the ~/.cache/ccache that
+          # server-build.yml uses: the server is an order of magnitude bigger
+          # than the shell, so a shared cache would let the weekly server build
+          # evict every shell object between one shell run and the next.
+          echo "CCACHE_DIR=$HOME/.cache/ci/ccache-shell" >> "$GITHUB_ENV"
+
+      # A step of its own because a variable exported through $GITHUB_ENV only
+      # reaches the steps that follow, never the one that wrote it.
+      - name: Prime ccache
+        if: env.RUN_BUILD == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$CCACHE_DIR"
+          ccache --set-config=max_size=10G
+          # Per-run counters, so the summary printed after the build describes
+          # this build and not every build since the runner was created.
+          ccache --zero-stats
 
       # ============
       # 1. CONFIGURE
       # ============
       - name: Configure MariaDB Shell
-        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
+        if: env.RUN_BUILD == 'true'
         run: |
           # Resolve the wildcard path to an absolute path
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
-          
+
           # Add to GitHub Actions global PATH for all subsequent steps
           echo "$MARIADB_BIN" >> $GITHUB_PATH
 
           mkdir -p ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          
-          cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=x64-linux-dynamic
+
+          # The compiler launchers are the only addition here: the rest of the
+          # line has to stay byte-identical to what a publishing run configures
+          # with, or the tarball a pull request stages would not be the tarball
+          # the merge was going to build.
+          #
+          # ccache's own defaults are left alone deliberately. RelWithDebInfo
+          # means -g, so ccache hashes the working directory (hash_dir) to keep
+          # debug paths honest; the self-hosted runner checks this repo out at
+          # the same workspace path every run, so that costs no hits, and
+          # turning it off to chase path-independence we do not need would put
+          # wrong paths in a published binary's debug info.
+          cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=x64-linux-dynamic \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       # ============
       # 1. BUILD
       # ============
       - name: Build MariaDB Shell
-        if: env.RUN_TESTS == 'true' || env.RUN_PUBLISH == 'true'
+        if: env.RUN_BUILD == 'true'
         run: |
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
-          cmake --build . --parallel
+
+          # A job count, never a bare --parallel: with no number cmake hands the
+          # generator an unlimited job budget, which on a big link step is a
+          # reliable way to exhaust the runner's memory. $(nproc) matches what
+          # server-build.yml passes to make.
+          cmake --build . --parallel "$(nproc)"
+
+      # Reported even when the build failed -- a sudden collapse in the hit
+      # rate is worth seeing. Never allowed to fail the job: this is a
+      # diagnostic, and it also runs on the path where ccache is missing
+      # because its own setup step is what failed.
+      - name: Report ccache statistics
+        if: always() && env.RUN_BUILD == 'true'
+        run: ccache --show-stats || true
 
 
       # ============
@@ -134,18 +189,38 @@ jobs:
           python3 scripts/plot_execution_plan.py
           cp test-execution-times.txt ~/.cache/ci
 
-      # ============
-      # 4. PUBLISH
-      # ============
-      - name: Publish MariaDB Shell
-        # After the tests so a publishing run that also tests only ships a
-        # package the tests signed off on.
-        if: env.RUN_PUBLISH == 'true'
+      # =====================
+      # 4. PACKAGE AND CACHE
+      # =====================
+      - name: Package and cache MariaDB Shell
+        # After the tests, and inheriting the default "only if every earlier
+        # step passed", so a package the tests rejected is never cached for a
+        # later publish to pick up.
+        #
+        # Keyed by the source tree, never by the commit. On a pull request,
+        # actions/checkout builds refs/pull/N/merge -- this branch already
+        # merged into main -- so the tree hashed here is the exact tree the
+        # squash merge will put on main, and MariaDB-Shell-CI-Publish finds
+        # this tarball by it instead of rebuilding identical sources. On the
+        # rebuild path it is main's own tree, which is the same key the publish
+        # then looks under.
+        #
+        # Nothing matches when main moves between this run and the merge:
+        # GitHub recomputes the merge commit, the tree changes, and the publish
+        # falls back to a build. That is the correct answer -- the code really
+        # did change.
+        #
+        # Skipped off the self-hosted runner because ~/.cache/ci is that
+        # machine's shared cache; a fork pull request builds on a hosted runner
+        # that is wiped, so caching there would write to nowhere.
+        if: env.RUN_BUILD == 'true' && runner.environment == 'self-hosted'
         run: |
+          set -euo pipefail
+
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
 
           # The tarball name carries the version, so a version bump would leave
-          # the previous one behind and make the glob below match two files.
+          # the previous one behind and make the globs below match two files.
           rm -f mariadb-shell*.tar.gz
 
           # -G, not -T: cpack silently ignores -T, which would leave the
@@ -153,13 +228,28 @@ jobs:
           # portable build (cmake/packaging.cmake). A system-dependency Linux
           # configure would emit a .deb/.rpm instead and no tarball at all.
           cpack -G TGZ -C RelWithDebInfo
+          cd ..
 
-          # Publish the tarball itself: consumers unpack it wherever they need
-          # it. The name is versioned, so clear any previous one rather than
-          # leaving two tarballs for a consumer's glob to trip over.
-          mkdir -p ~/.cache/ci
-          rm -f ~/.cache/ci/mariadb-shell*.tar.gz
-          cp mariadb-shell*.tar.gz ~/.cache/ci/
+          TREE=$(git rev-parse 'HEAD^{tree}')
+          STAGING=~/.cache/ci/staging
+          echo "Caching the shell built from tree $TREE"
+
+          # Assembled aside and moved into place, so a run cancelled midway
+          # through the copy cannot leave a half-written tarball under a key
+          # that a later publish would then trust and ship.
+          TMP="$STAGING/.tmp.$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
+          rm -rf "$TMP"
+          mkdir -p "$TMP"
+          cp ${{ env.MARIADB_SHELL_BUILD_DIR }}/mariadb-shell*.tar.gz "$TMP/"
+          rm -rf "$STAGING/${TREE:?}"
+          mv "$TMP" "$STAGING/$TREE"
+
+          # Every run leaves a tarball here and only the merged ones are ever
+          # collected, so the directory needs a bound. A week is far longer
+          # than the gap between a run and its merge; raise it only if the
+          # runner starts missing entries it should have found. This also
+          # sweeps up the .tmp dirs of cancelled runs.
+          find "$STAGING" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + || true
 
       # ============
       # 5. ARCHIVE
