@@ -21,9 +21,22 @@ _256pl+aw uses some special icon characters from fonts patched with
 "powerline" and "awesome symbol" characters, for example:
 SourceCodePro+Powerline+Awesome+Regular.ttf
 
+_nerd-fonts uses the icon characters provided by the Nerd Fonts project
+(github.com/ryanoasis/nerd-fonts), which supersedes both of the above: the
+Powerline and awesome-terminal-fonts patched fonts have seen little activity
+for years, while Nerd Fonts keeps patching current fonts and bundles the
+Powerline glyphs itself. Pick any patched font from that project, for example
+JetBrainsMono Nerd Font or SourceCodePro Nerd Font.
+
 _dbl themes use one line for information display and a separate line for
 the input prompt itself, allowing more information and typed text to fit
 at the same time.
+
+None of the font dependent themes is selected automatically: without the
+patched font their glyphs show up as missing-character boxes, so the shell
+only ever picks _256, _16, _nocolor or _classic on its own, by terminal color
+capability. To use one of the others, copy it over the prompt.json path above
+or point MARIADB_SHELL_PROMPT_THEME at it.
 
 File Format
 ===========
@@ -129,6 +142,8 @@ Supported variables are:
     %port% - port or socket path of the connected session
     %schema% - default schema of the SQL session
     %ssl% - SSL if SSL is enabled for the connected session
+    %vendor% - vendor of the connected server (MariaDB or MySQL). While not
+        connected, it is the vendor this shell is built for (MariaDB)
     %time% - current time
     %date% - current date
     %env:varname% - environment variable

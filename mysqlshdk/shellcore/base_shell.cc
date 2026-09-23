@@ -287,6 +287,16 @@ void Base_shell::update_prompt_variables() {
       std::string socket;
       std::string port;
 
+      // Vendor of the server we are talking to, which is not necessarily the
+      // one this shell is built for.
+      if (const auto core_session = session->get_core_session()) {
+        _prompt_variables["vendor"] = mysqlshdk::db::ServerVendor::MariaDB ==
+                                              core_session->get_server_vendor()
+                                          ? "MariaDB"
+                                          : "MySQL";
+      } else {
+        _prompt_variables["vendor"] = shcore::k_shell_vendor_name;
+      }
       _prompt_variables["ssl"] = session->get_ssl_cipher().empty() ? "" : "SSL";
       _prompt_variables["uri"] =
           session->uri(mysqlshdk::db::uri::formats::user_transport());
@@ -322,6 +332,9 @@ void Base_shell::update_prompt_variables() {
       _prompt_variables["connection_id"] =
           std::to_string(session->get_connection_id());
     } else {
+      // Not connected: name the vendor this shell is built for, so that a
+      // theme showing %vendor% does not go blank while disconnected.
+      _prompt_variables["vendor"] = shcore::k_shell_vendor_name;
       _prompt_variables["ssl"] = "";
       _prompt_variables["uri"] = "";
       _prompt_variables["user"] = "";

@@ -1079,6 +1079,7 @@ Every user-visible name derived from the product name lives in
 | Constant | Value |
 |---|---|
 | `k_shell_binary_name` | `mariadb-shell` |
+| `k_shell_vendor_name` | `MariaDB` (vendor named while no session is open, see §14.10) |
 | `k_shell_user_config_dir_unix` | `.mariadb-shell` |
 | `k_shell_config_dir_win_vendor` / `k_shell_config_dir_win` | `MariaDB` / `mariadb-shell` |
 | `k_shell_global_config_dir_unix` | `/etc/mysql/mariadb-shell` |
@@ -1251,11 +1252,44 @@ Two classes of test breakage are worth knowing about when touching these names:
    shifts wrap points in unrelated lines. `~/.mariadb-shell/init.d` and
    `mariadb-shell.log` both re-flowed paragraphs in
    `unittest/scripts/auto/*/validation/shell_help_norecord.*`.
-2. **The prompt.** The 256-colour themes split the product name across two
-   coloured segments (`" My"` + `"SQL "` → `" Maria"` + `"DB "`), so
-   `unittest/shell_prompt_t.cc` asserts the exact escape-sequence string.
+2. **The prompt.** `unittest/shell_prompt_t.cc` asserts the exact
+   escape-sequence string a sample theme renders, so any edit to
+   `samples/prompt/*.json` lands there. The themes no longer name the product
+   at all — they read `%vendor%` (§14.10) — and the tests build their
+   expectations with `format_vendor()`. Note the tests read the themes from the
+   **build** tree (`Shell_prompt_exe::SetUpTestCase` copies
+   `get_share_folder()/prompt`), which only `ninja prompt_files` (or a full
+   build) refreshes; a targeted `ninja run_unit_tests` leaves stale copies and
+   the tests then pass or fail for the wrong reason.
 
 Also note `mysqlshrec` → **`mariadb-shell-rec`**: the name appears both in
 `prepare_mysqlsh_cmdline` (`unittest/test_utils/mod_testutils.cc`) and as a bare
 string in several `unittest/scripts/` test scripts — a mismatch makes the child
 shell launch hang rather than fail loudly.
+
+### 14.10 `%vendor%` prompt variable
+
+The shell talks to both vendors, so the product name baked into a prompt theme
+is not necessarily the server's. `%vendor%` (set in
+`Base_shell::update_prompt_variables()`,
+[mysqlshdk/shellcore/base_shell.cc](mysqlshdk/shellcore/base_shell.cc)) resolves
+to the vendor the **connected server** reports — `ISession::get_server_vendor()`,
+i.e. `MariaDB` or `MySQL` — and falls back to `shcore::k_shell_vendor_name`
+(`MariaDB`) while no session is open. Like the other connection-derived
+variables it is evaluated once per connection and cached.
+
+All sample themes but one use it for their leading segment, replacing the
+literal product name (in the 256-colour ones, a `" Maria"` + `"DB "` pair of
+differently coloured segments, now merged into one). The exception is
+`prompt_classic.json`, which renders `mariadb-sql>` from a lowercase literal:
+`%vendor%` is proper-case, and a lowercase companion (`%vendor%`/`%Vendor%`, as
+`%mode%`/`%Mode%`) was judged not worth the rename, so that one theme stays
+vendor-blind.
+
+The sample set also gains `prompt_256_nerd-fonts.json` and
+`prompt_dbl_256_nerd-fonts.json`, which upstream has no equivalent of: Nerd
+Fonts (github.com/ryanoasis/nerd-fonts) supersedes the Powerline and
+awesome-terminal-fonts patched fonts the `_256pl` / `_256pl+aw` themes need.
+Like those, they are opt-in — `pick_prompt_theme()`
+([src/mysqlsh/main.cc](src/mysqlsh/main.cc)) only ever auto-selects a theme
+that needs no patched font.

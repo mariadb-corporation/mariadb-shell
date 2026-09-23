@@ -1,8 +1,8 @@
 {
-  "symbols" : {
-    "separator" : "-",
-    "separator2" : "-",
-    "ellipsis" : "-"
+  "symbols": {
+    "separator": "-",
+    "separator2": "-",
+    "ellipsis": "-"
   },
   "segments": [
     {

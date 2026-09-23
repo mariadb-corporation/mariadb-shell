@@ -35,6 +35,14 @@ namespace shcore {
 constexpr const char k_shell_binary_name[] = "mariadb-shell";
 
 /**
+ * Display name of the database vendor this shell is built for. It names the
+ * server in messages written while no session is open, e.g. the %vendor%
+ * prompt variable; once connected, the vendor reported by the server itself
+ * takes over.
+ */
+constexpr const char k_shell_vendor_name[] = "MariaDB";
+
+/**
  * Leaf name of the per-user configuration directory, as created directly under
  * $HOME on Unix (i.e. "~/.mariadb-shell").
  */
