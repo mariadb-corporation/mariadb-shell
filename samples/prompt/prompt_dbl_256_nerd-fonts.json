@@ -1,5 +1,5 @@
 {
-  "desc": "256/24bit color terminal theme with MariaDB prefix, default schema, host:port, ssl, + indicator for X protocol, active mode. Requires Powerline patched font.",
+  "desc": "Two line 256/24bit color terminal theme with server vendor prefix, default schema, host:port, ssl, active mode. Requires nerd-fonts (github.com/ryanoasis/nerd-fonts)",
   "classes": {
     "SQL": {
       "fg": "15",
@@ -14,23 +14,23 @@
       "bg": "25"
     },
     "schema": {
-      "text": "%schema%"
+      "text": "\ue706 %schema%"
     },
     "noschema": {
       "text": ""
     },
     "disconnected": {},
     "hostx": {
-      "text": "%transport%+"
+      "text": "\uf233 %transport%+"
     },
     "hostc": {
-      "text": "%transport%"
+      "text": "\uf233 %transport%"
     },
     "SSLhostx": {
-      "text": "%transport%+ \ue0a2"
+      "text": "\uf233 %transport%+ \ue0a2"
     },
     "SSLhostc": {
-      "text": "%transport% \ue0a2"
+      "text": "\uf233 %transport% \ue0a2"
     },
     "ctrx": {
       "text": "",
@@ -38,27 +38,27 @@
       "fg": 15
     },
     "ctrx.": {
-      "text": " - ",
+      "text": " \uf05e ",
       "bg": 242,
       "fg": 15
     },
     "ctrx*": {
-      "text": " \u2605 ",
+      "text": " \uf005 ",
       "bg": 38,
       "fg": 15
     },
     "ctrx^": {
-      "text": " \u2606 ",
+      "text": " \uf006 ",
       "bg": 38,
       "fg": 15
     },
     "ctrx*.": {
-      "text": " \u2605 ",
+      "text": " \uf005 ",
       "bg": 38,
       "fg": 15
     },
     "ctrx^.": {
-      "text": " \u2606 ",
+      "text": " \uf006 ",
       "bg": 38,
       "fg": 15
     },

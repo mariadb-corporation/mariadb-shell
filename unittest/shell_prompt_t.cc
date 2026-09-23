@@ -1254,6 +1254,29 @@ TEST_F(Shell_prompt_exe, prompt_variables) {
   shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
 }
 
+// %vendor% names the server we are connected to, falling back to the vendor
+// this shell is built for while there is no session.
+TEST_F(Shell_prompt_exe, prompt_variable_vendor) {
+  shcore::create_file("vendorvar.json",
+                      "{\"segments\": [{\"text\": \"vendor=%vendor%\"}]}");
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME", "vendorvar.json");
+
+  wipe_out();
+  int rc =
+      execute({_mysqlsh, "--interactive=full", "--sql", "-e", "1;", nullptr});
+  EXPECT_EQ(0, rc);
+  EXPECT_PROMPT("vendor=MariaDB> ");
+
+  wipe_out();
+  rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(), "--sql",
+                "-e", "select 1;", nullptr});
+  EXPECT_EQ(0, rc);
+  EXPECT_PROMPT(format_vendor("vendor=%vendor%> "));
+
+  shcore::delete_file("vendorvar.json");
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+}
+
 // Test sample prompts (which in turn would test the whole thing)
 TEST_F(Shell_prompt_exe, sample_prompt_theme_nocolor) {
   shcore::setenv("MARIADB_SHELL_PROMPT_THEME",
@@ -1266,8 +1289,8 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_nocolor) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MariaDB [" + _host + ":" + _mysql_port + s_ssl_prompt +
-                "/mysql] SQL> ");
+  EXPECT_PROMPT(format_vendor("%vendor% [") + _host + ":" + _mysql_port +
+                s_ssl_prompt + "/mysql] SQL> ");
 
   shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
   shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
@@ -1284,7 +1307,7 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_16) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  EXPECT_PROMPT("MariaDB \x1B[1m[" + _host + s_ssl_prompt +
+  EXPECT_PROMPT(format_vendor("%vendor% \x1B[1m[") + _host + s_ssl_prompt +
                 "/mysql] \x1B[0mSQL> ");
 
   shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
@@ -1303,8 +1326,8 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256) {
   std::cout << _output << "\n";
 
   EXPECT_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
-      "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
+      format_vendor("\x1B[48;5;254m\x1B[38;5;23m %vendor% "
+                    "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m ") +
       _host + ":" + _mysql_port + s_ssl_prompt +
       " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\x1B[48;5;0m> \x1B[0m");
@@ -1325,8 +1348,8 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_dbl_256) {
   std::cout << _output << "\n";
 
   EXPECT_DBL_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
-      "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m " +
+      format_vendor("\x1B[48;5;254m\x1B[38;5;23m %vendor% "
+                    "\x1B[0m\x1B[48;5;237m\x1B[38;5;15m ") +
       _host + ":" + _mysql_port + s_ssl_prompt +
       " \x1B[0m\x1B[48;5;242m\x1B[38;5;15m mysql "
       "\x1B[0m\x1B[48;5;166m\x1B[38;5;15m SQL \x1B[0m\n\x1B[48;5;0m  > "
@@ -1348,14 +1371,66 @@ TEST_F(Shell_prompt_exe, sample_prompt_theme_256pl) {
   std::cout << _output << "\n";
 
   EXPECT_PROMPT(
-      "\x1B[48;5;254m\x1B[38;5;23m Maria\x1B[0m\x1B[48;5;254m\x1B[38;5;166mDB "
-      "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m\x1B[48;5;237m\x1B[38;5;"
-      "15m " +
+      format_vendor("\x1B[48;5;254m\x1B[38;5;23m %vendor% "
+                    "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m"
+                    "\x1B[48;5;237m\x1B[38;5;15m ") +
       _host + ":" + _mysql_port + s_ssl_prompt_x +
       " \x1B[48;5;242m\x1B[38;5;237m\xEE\x82\xB0\x1B[0m\x1B[48;5;242m\x1B[38;5;"
       "15m mysql "
       "\x1B[48;5;166m\x1B[38;5;242m\xEE\x82\xB0\x1B[0m\x1B[48;5;166m\x1B[38;5;"
       "15m SQL \x1B[0m\x1B[48;5;0m\x1B[38;5;166m\xEE\x82\xB0 \x1B[0m");
+
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
+}
+
+TEST_F(Shell_prompt_exe, sample_prompt_theme_256_nerd_fonts) {
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME",
+                 s_prompt_dir + "/prompt_256_nerd-fonts.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "256");
+
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
+  EXPECT_EQ(0, rc);
+  std::cout << _output << "\n";
+
+  EXPECT_PROMPT(format_vendor("\x1B[48;5;254m\x1B[38;5;23m %vendor% "
+                              "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m"
+                              "\x1B[48;5;237m\x1B[38;5;15m \xEF\x88\xB3 ") +
+                _host + ":" + _mysql_port + s_ssl_prompt_x +
+                " \x1B[48;5;242m\x1B[38;5;237m\xEE\x82\xB0\x1B[0m"
+                "\x1B[48;5;242m\x1B[38;5;15m \xEE\x9C\x86 mysql "
+                "\x1B[48;5;166m\x1B[38;5;242m\xEE\x82\xB0\x1B[0m"
+                "\x1B[48;5;166m\x1B[38;5;15m SQL "
+                "\x1B[0m\x1B[48;5;0m\x1B[38;5;166m\xEE\x82\xB0 \x1B[0m");
+
+  shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
+  shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
+}
+
+TEST_F(Shell_prompt_exe, sample_prompt_theme_dbl_256_nerd_fonts) {
+  shcore::setenv("MARIADB_SHELL_PROMPT_THEME",
+                 s_prompt_dir + "/prompt_dbl_256_nerd-fonts.json");
+  shcore::setenv("MARIADB_SHELL_TERM_COLOR_MODE", "256");
+
+  int rc = execute({_mysqlsh, "--interactive=full", _mysql_uri.c_str(),
+                    "--schema=mysql", "--ssl-mode=REQUIRED", "-e", "\\history",
+                    nullptr});
+  EXPECT_EQ(0, rc);
+  std::cout << _output << "\n";
+
+  EXPECT_DBL_PROMPT(
+      format_vendor("\x1B[48;5;254m\x1B[38;5;23m %vendor% "
+                    "\x1B[48;5;237m\x1B[38;5;254m\xEE\x82\xB0\x1B[0m"
+                    "\x1B[48;5;237m\x1B[38;5;15m \xEF\x88\xB3 ") +
+      _host + ":" + _mysql_port + s_ssl_prompt_x +
+      " \x1B[48;5;242m\x1B[38;5;237m\xEE\x82\xB0\x1B[0m"
+      "\x1B[48;5;242m\x1B[38;5;15m \xEE\x9C\x86 mysql "
+      "\x1B[48;5;166m\x1B[38;5;242m\xEE\x82\xB0\x1B[0m"
+      "\x1B[48;5;166m\x1B[38;5;15m SQL "
+      "\x1B[48;5;0m\x1B[38;5;166m\xEE\x82\xB0\x1B[0m\x1B[48;5;0m \x1B[0m"
+      "\n\x1B[48;5;0m  > \x1B[0m");
 
   shcore::unsetenv("MARIADB_SHELL_PROMPT_THEME");
   shcore::unsetenv("MARIADB_SHELL_TERM_COLOR_MODE");
@@ -1380,11 +1455,13 @@ TEST_F(Shell_prompt_exe, bug28314383_js) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("%vendor% [") + _host + ":" +
+                                _port +
                                 "+ ssl/mysql] JS> session.close();\n"
                                 "MariaDB JS> \\connect " +
                                 _uri + "?ssl-mode=REQUIRED\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _port +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("%vendor% [") + _host + ":" +
+                                _port +
                                 "+ ssl] JS> session.close();\n"
                                 "MariaDB JS> Bye!");
 
@@ -1413,13 +1490,13 @@ TEST_F(Shell_prompt_exe, bug28314383_py) {
   EXPECT_EQ(0, rc);
   std::cout << _output << "\n";
 
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _mysql_port +
-                                s_ssl_prompt +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("%vendor% [") + _host + ":" +
+                                _mysql_port + s_ssl_prompt +
                                 "/mysql] Py> session.close();\n"
                                 "MariaDB Py> \\connect " +
                                 _mysql_uri + "?ssl-mode=REQUIRED\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS("MariaDB [" + _host + ":" + _mysql_port +
-                                s_ssl_prompt +
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(format_vendor("%vendor% [") + _host + ":" +
+                                _mysql_port + s_ssl_prompt +
                                 "] Py> session.close();\n"
                                 "MariaDB Py> Bye!");
 

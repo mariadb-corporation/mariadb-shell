@@ -112,15 +112,9 @@
       ]
     },
     {
-      "text": " Maria",
+      "text": " %vendor% ",
       "bg": 254,
       "fg": 23
-    },
-    {
-      "separator": "",
-      "text": "DB ",
-      "bg": 254,
-      "fg": 166
     },
     {
       "classes": [

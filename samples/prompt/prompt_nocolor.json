@@ -1,36 +1,35 @@
 {
-  "classes" : {
+  "classes": {
     "schema": {
       "text": "[%transport%%xprotocol%%ssltext%/%schema%]"
     },
     "noschema": {
       "text": "[%transport%%xprotocol%%ssltext%]"
     },
-    "nohost": {
-    },
-    "production" : {
+    "nohost": {},
+    "production": {
       "text": " PRODUCTION "
     }
   },
-  "variables" : {
+  "variables": {
     "is_production": {
-        "match" : {
-            "pattern": "*;%host%;*",
-            "value": ";%env:PRODUCTION_SERVERS%;"
-        },
-        "if_true" : "production",
-        "if_false" : ""
+      "match": {
+        "pattern": "*;%host%;*",
+        "value": ";%env:PRODUCTION_SERVERS%;"
+      },
+      "if_true": "production",
+      "if_false": ""
     },
-    "target" : {
-      "match" : {
+    "target": {
+      "match": {
         "pattern": "%socket%",
         "value": ""
       },
       "if_true": "%host%:%port%",
       "if_false": "localhost"
     },
-    "transport" : {
-      "match" : {
+    "transport": {
+      "match": {
         "pattern": "%ssh_host%",
         "value": ""
       },
@@ -39,16 +38,16 @@
     },
     "xprotocol": {
       "match": {
-            "pattern": "%session%",
-            "value": "x"
+        "pattern": "%session%",
+        "value": "x"
       },
       "if_true": "+",
       "if_false": ""
     },
     "ssltext": {
       "match": {
-            "pattern": "%ssl%",
-            "value": "SSL"
+        "pattern": "%ssl%",
+        "value": "SSL"
       },
       "if_true": " ssl",
       "if_false": ""
@@ -59,22 +58,29 @@
     "cont_text": "%linectx%> "
   },
   "segments": [
-	{
-	  "classes": ["nohost%host%", "%is_production%"]
-	},
     {
-	  "separator": "",
-      "text": "MariaDB"
+      "classes": [
+        "nohost%host%",
+        "%is_production%"
+      ]
     },
     {
-      "classes": ["nohost%host%", "noschema%schema%", "schema"],
+      "separator": "",
+      "text": "%vendor%"
+    },
+    {
+      "classes": [
+        "nohost%host%",
+        "noschema%schema%",
+        "schema"
+      ],
       "shrink": "truncate_on_dot",
       "weight": 10
     },
     {
       "text": "%Mode%",
       "tag": "%Mode%",
-      "separator" : " "
+      "separator": " "
     }
   ]
 }
