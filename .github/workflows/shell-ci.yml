@@ -50,7 +50,14 @@ jobs:
     # coming.
     if: ${{ always() && needs.ensure-runner.result != 'failure' && needs.ensure-runner.result != 'cancelled' }}
 
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || 'self-hosted' }}
+    # Both paths that skip ensure-runner have to land on a hosted runner. A job
+    # is assigned to a runner BEFORE its steps' `if:` conditions are evaluated,
+    # so 'self-hosted' here would sit queued until the 24h timeout waiting for
+    # the GCP VM that ensure-runner never started -- the steps skipping is no
+    # help, the job never gets far enough to skip them. A fork PR could not
+    # reach the self-hosted runner anyway; a [bypass-ci] PR skips every step and
+    # exists only to report the check.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || contains(github.event.pull_request.title, '[bypass-ci]')) && 'ubuntu-latest' || 'self-hosted' }}
 
     env:
       MARIADB_SHELL_BUILD_DIR: bld

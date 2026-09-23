@@ -307,3 +307,35 @@ jobs:
     with:
       mariadb_version: ${{ inputs.mariadb_version || 'main' }}
     secrets: inherit
+
+  # ==========================================================================
+  # VERIFY THE PACKAGES THIS RUN JUST BUILT
+  #
+  # A package is not "OK" because it compiled: it is OK when a sandbox deploys
+  # from it, serves queries, stops, starts and is torn down again, on a machine
+  # that never built it. That is sandbox-verification.yml, and running it here
+  # makes it a gate -- `needs` both build jobs, so a failure turns this run red
+  # and no unverified package is left looking successful.
+  #
+  # Called rather than triggered separately, for the same reason the rocky job
+  # above is: a reusable workflow runs INSIDE this run and shares its artifact
+  # scope. `server_run_id: ${{ github.run_id }}` is therefore this run, and the
+  # verification downloads the tarballs the jobs above just uploaded. Its usual
+  # route -- find the newest successful Sandbox Server run for a tag -- cannot
+  # work here, since this run is neither finished nor successful yet.
+  #
+  # Note what this couples: the verification pairs these server packages with
+  # the latest successful MariaDB-Shell-Release build, so a broken shell release
+  # can fail a perfectly good server build. That is usually the news you want
+  # (the pair is what users get), but when the two need pinning apart, pass
+  # shell_run_id here.
+  #
+  # No `secrets: inherit`: unlike the build jobs, verification reads nothing but
+  # public artifacts through the automatic GITHUB_TOKEN.
+  # ==========================================================================
+  verify:
+    needs: [build, rocky]
+    uses: ./.github/workflows/sandbox-verification.yml
+    with:
+      server_tag: ${{ inputs.mariadb_version || 'main' }}
+      server_run_id: ${{ github.run_id }}

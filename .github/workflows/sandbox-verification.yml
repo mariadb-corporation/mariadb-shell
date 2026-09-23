@@ -1,0 +1,639 @@
+name: Sandbox Verification
+
+# Exercises the sandbox plugin end to end using nothing but released artifacts:
+# a shell package from MariaDB-Shell-Release (shell-release.yml) and a sandbox
+# server package from MariaDB-Sandbox-Server (sandbox-server.yml). Both are
+# unpacked on a machine that never built either, their bin/ directories go on
+# the PATH, and the plugin is then driven through the full lifecycle:
+#
+#   deploy -> verify -> stop -> start -> verify -> kill -> delete
+#
+# where "verify" is: connect to the instance, list its schemas, assert the
+# 'mysql' schema is among them, disconnect.
+#
+# Why pristine runners: the sandbox plugin locates mariadbd, mariadb-install-db
+# and openssl by looking at the PATH and at the shell's own bundle. On a build
+# host all three are lying around anyway, so a package that ships none of them
+# would still pass. Here the only MariaDB on the machine is the one that came
+# out of the two tarballs.
+#
+# Why kill AND delete: kill only terminates the server process -- it leaves the
+# deployment on disk by design, and delete is what removes the directory. So the
+# "the sandbox is gone" requirement is checked as kill (process dies, directory
+# survives) followed by delete (directory goes away); see scripts/verify_sandbox.py.
+
+on:
+  # No push trigger: this verifies published build artifacts, not a commit, and
+  # every run costs twelve machines. It is started by hand, or by the build that
+  # produced the packages (see sandbox-server.yml).
+  workflow_dispatch:
+    inputs:
+      shell_run_id:
+        description: "MariaDB-Shell-Release run to take the shell package from (blank = latest successful)"
+        type: string
+        required: false
+      server_tag:
+        description: "MariaDB branch/tag whose sandbox server build to verify (newest successful build of it)"
+        type: string
+        required: true
+
+  # Callable from another workflow so a build can be verified as part of it.
+  # sandbox-server.yml does exactly that, passing its own run id -- see
+  # server_run_id below.
+  workflow_call:
+    inputs:
+      shell_run_id:
+        type: string
+        required: false
+      server_tag:
+        type: string
+        required: true
+      # Skips the tag lookup and takes the server packages from this exact run.
+      #
+      # A reusable workflow runs inside its CALLER's run and shares its artifact
+      # scope, so a build that calls this one passes ${{ github.run_id }} here to
+      # have its own freshly-built packages verified. The tag lookup could not
+      # find them: it matches completed, successful runs, and the run doing the
+      # asking is neither yet.
+      #
+      # server_tag is still required alongside it -- it is what the logs and the
+      # failure messages name the packages by.
+      server_run_id:
+        type: string
+        required: false
+
+# Only a label; the resolve job's log is the record of what was actually picked.
+run-name: >-
+  Sandbox verification (shell ${{ inputs.shell_run_id || 'latest' }},
+  server ${{ inputs.server_tag }})
+
+jobs:
+  # ==========================================================================
+  # Resolve both build runs once, so every leg verifies the same pair of
+  # packages. Resolving per leg would let a build finishing mid-run leave some
+  # platforms testing one shell and the rest another.
+  # ==========================================================================
+  resolve:
+    runs-on: ubuntu-latest
+
+    # A permissions block REPLACES the default set rather than adding to it, so
+    # contents: read has to be listed explicitly -- without it actions/checkout
+    # fails with a misleading "Repository not found" on this private repo.
+    permissions:
+      contents: read   # checkout
+      actions: read    # gh run list / gh run view
+
+    outputs:
+      shell_run_id: ${{ steps.pick.outputs.shell_run_id }}
+      server_run_id: ${{ steps.pick.outputs.server_run_id }}
+      server_tag: ${{ steps.pick.outputs.server_tag }}
+
+    steps:
+      - name: Resolve Build Runs
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          INPUT_SHELL_RUN_ID: ${{ inputs.shell_run_id }}
+          INPUT_SERVER_TAG: ${{ inputs.server_tag }}
+          INPUT_SERVER_RUN_ID: ${{ inputs.server_run_id }}
+        run: |
+          set -euo pipefail
+
+          describe() {
+            gh run view "$1" -R "$REPO" --json displayTitle,conclusion,createdAt \
+              --jq '"    " + .displayTitle + " (" + (.conclusion // "?") + ", " + .createdAt + ")"'
+          }
+
+          # ---------------------------------------------------------------
+          # Shell: a run id, since shell-release.yml is triggered by a push to
+          # release/candidate and its runs carry no tag to select on.
+          # ---------------------------------------------------------------
+          if [ -n "$INPUT_SHELL_RUN_ID" ]; then
+            SHELL_RUN_ID="$INPUT_SHELL_RUN_ID"
+            echo "==> shell: using requested run $SHELL_RUN_ID"
+          else
+            SHELL_RUN_ID=$(gh run list -R "$REPO" \
+              --workflow shell-release.yml \
+              --status success --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$SHELL_RUN_ID" ] || {
+              echo "No successful MariaDB-Shell-Release run found." >&2; exit 1; }
+            echo "==> shell: using latest successful run $SHELL_RUN_ID"
+          fi
+          # Resolved here rather than left to fail later as a confusing
+          # "no artifact matched".
+          describe "$SHELL_RUN_ID"
+
+          # ---------------------------------------------------------------
+          # Server: a MariaDB branch/tag, not a run id -- the same string
+          # sandbox-server.yml takes as its mariadb_version input. That
+          # workflow's run-name embeds it verbatim ("Sandbox Server <tag>"),
+          # which is the only way to find the run: the Actions API does not
+          # expose a workflow_dispatch run's inputs. The newest successful
+          # match wins. Same lookup publish-release.yml does to pick the
+          # server packages it ships.
+          #
+          # Unlike there, no match is fatal: a release can legitimately omit a
+          # server line, but there is nothing to verify without a server.
+          #
+          # server_run_id short-circuits the lookup entirely -- that is how a
+          # build verifies the packages it has just produced, which no search
+          # over finished runs could find.
+          # ---------------------------------------------------------------
+          SERVER_TAG="$INPUT_SERVER_TAG"
+          # The input is `required: true`, so this only fires if a caller passes
+          # an empty string, which the required flag does not catch.
+          [ -n "$SERVER_TAG" ] || { echo "server_tag is empty." >&2; exit 1; }
+
+          if [ -n "$INPUT_SERVER_RUN_ID" ]; then
+            SERVER_RUN_ID="$INPUT_SERVER_RUN_ID"
+            echo "==> server: using run $SERVER_RUN_ID as given (MariaDB $SERVER_TAG)"
+            # No `describe` here: when the caller is that run, it is still in
+            # progress and has neither a conclusion nor its final title.
+          else
+            echo "==> server: newest successful Sandbox Server build of '$SERVER_TAG'"
+
+            # gh run list returns newest first, so the first match is the newest.
+            SERVER_RUN_ID=$(gh run list -R "$REPO" \
+              --workflow sandbox-server.yml \
+              --status success --limit 50 \
+              --json databaseId,displayTitle \
+              --jq "[.[] | select(.displayTitle == \"Sandbox Server $SERVER_TAG\")][0].databaseId // empty")
+
+            if [ -z "$SERVER_RUN_ID" ]; then
+              echo "No successful Sandbox Server run with run-name 'Sandbox Server $SERVER_TAG'." >&2
+              echo "Tags with a successful build among the last 50 runs:" >&2
+              gh run list -R "$REPO" --workflow sandbox-server.yml \
+                --status success --limit 50 --json displayTitle \
+                --jq '.[].displayTitle' | sed -n 's/^Sandbox Server /  /p' | sort -u >&2
+              exit 1
+            fi
+            echo "==> server: using run $SERVER_RUN_ID"
+            describe "$SERVER_RUN_ID"
+          fi
+          {
+            echo "shell_run_id=$SHELL_RUN_ID"
+            echo "server_run_id=$SERVER_RUN_ID"
+            echo "server_tag=$SERVER_TAG"
+          } >> "$GITHUB_OUTPUT"
+
+  # ==========================================================================
+  # One runner per platform, in two deliberately different environments.
+  #
+  # POPULATED VMs (macOS, Windows, Ubuntu with no container) answer "does this
+  # work on a machine like a user's?" A runner image is a real, fully installed
+  # OS. It is the only environment macOS and Windows can be tested in at all --
+  # no macOS container format exists, and Windows containers are a stripped
+  # server SKU that no MariaDB Shell user runs -- so Linux gets a leg here too
+  # rather than being the one platform judged solely against an empty OS.
+  #
+  # BARE CONTAINERS (Debian, Fedora, Rocky) answer "is the package actually
+  # self-contained?" A base image carries far less than any real install, so it
+  # is stricter than reality: a failure here is a portability finding to triage,
+  # not automatically a bug. The packages are one Rocky 9 build per architecture
+  # (glibc 2.34), and this checks the same tarball comes up on Rocky 9 itself --
+  # the floor it was built against -- on Debian 12 and on a current Fedora.
+  #
+  # Debian rather than a second Ubuntu: shell-release.yml and sandbox-server.yml
+  # both state these packages cover "RHEL 9+, Ubuntu 22.04+ and Debian 12+", and
+  # Debian was the one claimed target with no coverage. Between the four legs,
+  # each of those three families is now exercised, and Ubuntu is covered by the
+  # runner-VM legs above.
+  #
+  # The strongest check for the second question is not here at all: the
+  # dependency audit in verify_package.sh inspects every binary's load commands
+  # instead of hoping execution trips over a gap.
+  #
+  # The containers are NOT run through `container:`. That would put every step
+  # inside the image, so the image would first have to be given git, tar and
+  # useradd just to get the packages onto it -- and provisioning it is exactly
+  # what a pristine target must not have. `apt-get install git` alone pulls
+  # libcurl4 and with it libssl3, which is one of the libraries the server
+  # package is being checked for; installing the harness would pre-satisfy the
+  # product's own dependencies and a packaging bug would pass unnoticed.
+  #
+  # So the runner does the fetching with its own preinstalled tooling and
+  # `docker run`s the lifecycle with the unpacked trees bind-mounted read-only,
+  # as the runner's own uid (no useradd, and mariadbd refuses to run as root).
+  # No harness is installed into the image. The one thing a leg may add is the
+  # slice of its own distro's baseline that the minimal image omits, declared as
+  # `image-setup` in the matrix -- debian:12 has no libssl3 because apt uses
+  # GnuTLS, while every real Debian install does. That is calibration, not
+  # provisioning: the bar is "a real install of this distro always has it",
+  # verified, and never something that would hide a packaging gap (the `openssl`
+  # package, say, which carries the CLI). Everything else must come out of the
+  # packages.
+  #
+  # Keeping it a plain step also keeps every leg, container or not, in one
+  # matrix sharing one step list.
+  # ==========================================================================
+  verify:
+    needs: resolve
+
+    # The suffix keeps the checks list honest about which environment a leg ran
+    # in: ubuntu-x64 is a populated runner VM, debian-x64 a bare container, and
+    # a failure means something quite different in each.
+    name: ${{ matrix.name }}${{ matrix.image != '' && ' (container)' || '' }}
+
+    runs-on: ${{ matrix.os-runner }}
+
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- MACOS ---
+          - name: macos-x64
+            os-runner: macos-15-intel
+            image: ''
+            shell-glob: "*-macos*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-macos*-x86-64bit-sandbox.tar.gz"
+          - name: macos-arm64
+            os-runner: macos-latest
+            image: ''
+            shell-glob: "*-macos*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-macos*-arm-64bit-sandbox.tar.gz"
+
+          # --- WINDOWS ---
+          - name: windows-x64
+            os-runner: windows-2022
+            image: ''
+            shell-glob: "*-windows-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-windows-x86-64bit-sandbox.tar.gz"
+          - name: windows-arm64
+            os-runner: windows-11-arm
+            image: ''
+            shell-glob: "*-windows-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-windows-arm-64bit-sandbox.tar.gz"
+
+          # --- LINUX (runner VM, no container) ---
+          # Same populated-OS standard as the macOS and Windows legs above: a
+          # real Ubuntu install with everything a normal machine carries. This
+          # is the only Ubuntu coverage -- the container legs below deliberately
+          # spend their slots on the other distro families.
+          - name: ubuntu-x64
+            os-runner: ubuntu-latest
+            image: ''
+            shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
+          - name: ubuntu-arm64
+            os-runner: ubuntu-24.04-arm
+            image: ''
+            shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
+
+          # --- LINUX CONTAINERS (x64) ---
+          # 'image' is the container the lifecycle runs in; an empty one means
+          # the leg runs on the runner itself. The package globs are
+          # per-architecture only, since all three distros consume the same
+          # Rocky-built tarball.
+          - name: debian-x64
+            os-runner: ubuntu-latest
+            image: debian:12
+            docker-platform: linux/amd64
+            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
+            # nothing pulls libssl3 in, while every real Debian 12 install has it
+            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
+            # calibrates the image to the real target; it does not paper over a gap.
+            #
+            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
+            # and the missing CLI is the packaging bug these legs just caught in the
+            # shell package -- installing it here would hide that class of bug again,
+            # which is exactly what the old prerequisites step did. libssl3 depends
+            # only on libc6, so it brings nothing else with it.
+            #
+            # Package name is tied to the pinned image: Debian 13 renamed it
+            # libssl3t64 in the time_t transition.
+            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
+            shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
+          - name: fedora-x64
+            os-runner: ubuntu-latest
+            image: fedora:latest
+            docker-platform: linux/amd64
+            shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
+          - name: rocky-x64
+            os-runner: ubuntu-latest
+            image: rockylinux:9
+            docker-platform: linux/amd64
+            shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
+
+          # --- LINUX CONTAINERS (arm64) ---
+          - name: debian-arm64
+            os-runner: ubuntu-24.04-arm
+            image: debian:12
+            docker-platform: linux/arm64
+            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
+            # nothing pulls libssl3 in, while every real Debian 12 install has it
+            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
+            # calibrates the image to the real target; it does not paper over a gap.
+            #
+            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
+            # and the missing CLI is the packaging bug these legs just caught in the
+            # shell package -- installing it here would hide that class of bug again,
+            # which is exactly what the old prerequisites step did. libssl3 depends
+            # only on libc6, so it brings nothing else with it.
+            #
+            # Package name is tied to the pinned image: Debian 13 renamed it
+            # libssl3t64 in the time_t transition.
+            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
+            shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
+          - name: fedora-arm64
+            os-runner: ubuntu-24.04-arm
+            image: fedora:latest
+            docker-platform: linux/arm64
+            shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
+          - name: rocky-arm64
+            os-runner: ubuntu-24.04-arm
+            image: rockylinux:9
+            docker-platform: linux/arm64
+            shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
+            server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
+
+    permissions:
+      contents: read   # checkout
+      actions: read    # cross-run artifact download
+
+    defaults:
+      run:
+        # Git Bash on Windows, so one set of steps covers all three OSes.
+        shell: bash
+
+    env:
+      # The sandbox directory. Short on purpose: a Unix socket lives under it
+      # and has to fit in sun_path (~104 bytes on macOS), which the runner's own
+      # temp directory already eats a good part of.
+      SBX_DIR_POSIX: /tmp/mdb-sbx
+      # Where the transcript lands, for the upload step. Under the workspace so
+      # one path covers both the native legs and the containerised ones, which
+      # write it through a bind mount.
+      OUT_DIR: _out
+
+    steps:
+      # ====================================================================
+      # 1. CHECKOUT THE DRIVER SCRIPTS
+      #
+      # Deliberately at this workflow's own ref, NOT at the commit that built
+      # the shell: the driver exercises the plugin shipped inside the package,
+      # so it is the current definition of "the sandbox works" that should be
+      # applied -- including to an older build. Pinning it to the build's commit
+      # would also make this workflow unrunnable against any build predating
+      # these scripts.
+      # ====================================================================
+      - name: Checkout Driver Scripts
+        uses: actions/checkout@v4
+
+      # ====================================================================
+      # 2. DOWNLOAD BOTH PACKAGES
+      #
+      # Two downloads into two directories rather than one merged tree: the
+      # shell and server tarballs are named alike (mariadb-shell-<ver>-<platform>
+      # vs mariadb-<ver>-<platform>-sandbox) and keeping them apart means a glob
+      # can never pick the wrong product.
+      #
+      # Cross-run downloads, so run-id + github-token are required.
+      # ====================================================================
+      - name: Download Shell Package
+        uses: actions/download-artifact@v7
+        with:
+          path: _shell-artifacts
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.shell_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download Sandbox Server Package
+        uses: actions/download-artifact@v7
+        with:
+          path: _server-artifacts
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.server_run_id }}
+          github-token: ${{ github.token }}
+
+      # ====================================================================
+      # 3. SELECT AND UNPACK
+      # ====================================================================
+      - name: Select And Unpack Packages
+        id: unpack
+        env:
+          SHELL_GLOB: ${{ matrix.shell-glob }}
+          SERVER_GLOB: ${{ matrix.server-glob }}
+          SHELL_RUN_ID: ${{ needs.resolve.outputs.shell_run_id }}
+          SERVER_RUN_ID: ${{ needs.resolve.outputs.server_run_id }}
+          SERVER_TAG: ${{ needs.resolve.outputs.server_tag }}
+        run: |
+          set -euo pipefail
+
+          echo "==> shell packages (run $SHELL_RUN_ID):"
+          find _shell-artifacts -type f -name '*.tar.gz' | sort
+          echo "==> server packages (run $SERVER_RUN_ID, MariaDB $SERVER_TAG):"
+          find _server-artifacts -type f -name '*.tar.gz' | sort
+          echo ""
+
+          # find, not a shell glob. `merge-multiple: true` lands the artifacts
+          # flat, but a nested one-dir-per-artifact layout is also possible, and
+          # matching both would need globstar -- which does not exist in bash
+          # 3.2, the /bin/bash on the macOS runners.
+          #
+          # Exactly one match, or fail loudly: a silent "picked the first of
+          # several" would let this leg verify another architecture's package
+          # and report success.
+          select_one() {
+            local dir="$1" glob="$2" label="$3" matches count
+            matches=$(find "$dir" -type f -name "$glob" | sort)
+            count=$(printf '%s' "$matches" | grep -c . || true)
+            if [ "$count" -ne 1 ]; then
+              echo "Expected exactly one $label package matching '$glob', found $count:" >&2
+              [ -n "$matches" ] && printf '  %s\n' "$matches" >&2
+              return 1
+            fi
+            printf '%s' "$matches"
+          }
+
+          # The tarballs each hold a single top-level directory; that directory
+          # is the package root the PATH entries are taken from.
+          unpack_one() {
+            local pkg="$1" dest="$2" roots
+            mkdir -p "$dest"
+            tar -xzf "$pkg" -C "$dest"
+            roots=("$dest"/*/)
+            if [ ${#roots[@]} -ne 1 ]; then
+              echo "Expected one top-level directory in $pkg, found ${#roots[@]}" >&2
+              printf '  %s\n' ${roots[@]+"${roots[@]}"} >&2
+              return 1
+            fi
+            printf '%s' "${roots[0]%/}"
+          }
+
+          SHELL_PKG=$(select_one _shell-artifacts "$SHELL_GLOB" shell)
+          SERVER_PKG=$(select_one _server-artifacts "$SERVER_GLOB" server)
+          echo "==> shell package:  $SHELL_PKG"
+          echo "==> server package: $SERVER_PKG"
+
+          SHELL_ROOT=$(unpack_one "$SHELL_PKG" _shell-pkg)
+          SERVER_ROOT=$(unpack_one "$SERVER_PKG" _server-pkg)
+          echo "==> shell root:  $SHELL_ROOT"
+          echo "==> server root: $SERVER_ROOT"
+
+          # Absolute, since later steps run from the workspace but the PATH
+          # entries have to keep working wherever the driver is invoked from.
+          # Resolved here rather than assembled later so a package whose layout
+          # is not <root>/bin fails as "no bin directory", not as "mariadb-shell
+          # is not on the PATH".
+          for d in "$SHELL_ROOT/bin" "$SERVER_ROOT/bin"; do
+            [ -d "$d" ] || { echo "No bin directory in the package: $d" >&2; exit 1; }
+          done
+          {
+            echo "shell_bin=$(cd "$SHELL_ROOT/bin" && pwd)"
+            echo "server_bin=$(cd "$SERVER_ROOT/bin" && pwd)"
+            # The roots themselves, for the container legs to bind-mount.
+            echo "shell_root=$(cd "$SHELL_ROOT" && pwd)"
+            echo "server_root=$(cd "$SERVER_ROOT" && pwd)"
+          } >> "$GITHUB_OUTPUT"
+
+      # ====================================================================
+      # 4. PUT BOTH bin/ DIRECTORIES ON THE PATH
+      #
+      # On Windows the paths must be written in native form: GITHUB_PATH feeds
+      # the Windows PATH of every later step, and a /d/a/... MSYS path is not
+      # something a Win32 process can resolve. Git Bash converts the inherited
+      # native PATH back for its own use, so the bash steps below still see it.
+      # ====================================================================
+      - name: Add Package bin Directories To PATH
+        if: matrix.image == ''
+        env:
+          SHELL_BIN: ${{ steps.unpack.outputs.shell_bin }}
+          SERVER_BIN: ${{ steps.unpack.outputs.server_bin }}
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            SHELL_BIN="$(cygpath -w "$SHELL_BIN")"
+            SERVER_BIN="$(cygpath -w "$SERVER_BIN")"
+          fi
+          printf '%s\n%s\n' "$SHELL_BIN" "$SERVER_BIN" >> "$GITHUB_PATH"
+          echo "==> added to PATH:"
+          echo "    $SHELL_BIN"
+          echo "    $SERVER_BIN"
+
+      - name: Show Resolved Tools
+        if: matrix.image == ''
+        run: |
+          set -euo pipefail
+          echo "==> mariadb-shell: $(command -v mariadb-shell)"
+          mariadb-shell --version
+          echo "==> mariadbd:      $(command -v mariadbd)"
+          mariadbd --version
+
+      # ====================================================================
+      # 5. RUN THE SANDBOX LIFECYCLE
+      #
+      # deploy -> verify -> stop -> start -> verify -> kill -> delete, driven by
+      # scripts/verify_sandbox.py inside the packaged shell.
+      #
+      # Native legs run it directly, with both bin/ directories already on the
+      # PATH from step 4.
+      #
+      # Container legs hand the same script to `docker run` instead:
+      #   --user           the runner's own uid, so no account has to be created
+      #                    in the image (and mariadbd refuses to run as root).
+      #                    That uid has no /etc/passwd entry inside, which is
+      #                    why verify_sandbox.sh tolerates `id -un` failing.
+      #   -e PATH          the two package bin/ dirs ahead of the system ones --
+      #                    the same "add the bin folder to PATH" the native legs
+      #                    get from GITHUB_PATH.
+      #   :ro mounts       the packages cannot be modified by the run, so a leg
+      #                    cannot quietly repair its own package.
+      #   -e HOME          the shell writes its user config there; / is not
+      #                    writable for this uid.
+      # Beyond a leg's declared distro baseline, nothing is installed into the
+      # image. If a package needs something the distro itself does not ship,
+      # this is where it must show.
+      # ====================================================================
+      - name: Run Sandbox Lifecycle
+        env:
+          SBX_PASSWORD: S4ndb0x-Verify
+          IMAGE: ${{ matrix.image }}
+          IMAGE_SETUP: ${{ matrix.image-setup }}
+          DOCKER_PLATFORM: ${{ matrix.docker-platform }}
+          SHELL_ROOT: ${{ steps.unpack.outputs.shell_root }}
+          SERVER_ROOT: ${{ steps.unpack.outputs.server_root }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$OUT_DIR"
+          LOG="$PWD/$OUT_DIR/sandbox-verification.log"
+
+          if [ -z "$IMAGE" ]; then
+            mkdir -p "$SBX_DIR_POSIX"
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              SBX_DIR="$(cygpath -w "$SBX_DIR_POSIX")"
+            else
+              SBX_DIR="$SBX_DIR_POSIX"
+            fi
+            SBX_DIR="$SBX_DIR" SBX_LOG="$LOG" bash scripts/verify_sandbox.sh
+            exit $?
+          fi
+
+          # Host-side directories for everything the run needs to write. Created
+          # here so they belong to the runner user, which is the uid the
+          # container runs as -- a directory left for docker to create would
+          # come back root-owned and break both the run and the upload step.
+          mkdir -p _sbx _home
+
+          # A leg may declare the slice of its distro's own baseline that the
+          # minimal image happens to omit (see the matrix). It has to go into a
+          # derived image: `docker run --rm` starts from the base image every
+          # time, so anything installed inside the run would be gone by the run
+          # that matters. `-` as the context means the Dockerfile comes from
+          # stdin and nothing is uploaded.
+          if [ -n "$IMAGE_SETUP" ]; then
+            echo "==> distro baseline: $IMAGE_SETUP"
+            TAG="sandbox-verify-${{ matrix.name }}:$GITHUB_RUN_ID"
+            # printf rather than a heredoc: this is already inside a YAML block
+            # scalar, so every line is indented and a heredoc terminator would
+            # never match at column 0.
+            printf 'FROM %s\nRUN %s\n' "$IMAGE" "$IMAGE_SETUP" \
+              | docker build --platform "$DOCKER_PLATFORM" -t "$TAG" -
+            IMAGE="$TAG"
+          fi
+
+          echo "==> image:    $IMAGE ($DOCKER_PLATFORM)"
+          echo "==> running as uid $(id -u):$(id -g); the packages are mounted read-only"
+
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            --user "$(id -u):$(id -g)" \
+            --workdir /work \
+            -e HOME=/work/home \
+            -e PATH=/work/shell/bin:/work/server/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            -e SBX_DIR=/work/sbx \
+            -e SBX_LOG=/work/out/sandbox-verification.log \
+            -e SBX_PASSWORD="$SBX_PASSWORD" \
+            -v "$SHELL_ROOT:/work/shell:ro" \
+            -v "$SERVER_ROOT:/work/server:ro" \
+            -v "$PWD/scripts:/work/scripts:ro" \
+            -v "$PWD/_sbx:/work/sbx" \
+            -v "$PWD/_home:/work/home" \
+            -v "$PWD/$OUT_DIR:/work/out" \
+            "$IMAGE" \
+            bash /work/scripts/verify_sandbox.sh
+
+      # ====================================================================
+      # 6. DIAGNOSTICS
+      #
+      # The transcript is the whole record of what the plugin printed, including
+      # the server's error log, which the driver dumps when it fails. Keeping it
+      # makes a failure readable without re-running the leg.
+      # ====================================================================
+      - name: Upload Transcript On Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-sandbox-verification-${{ matrix.name }}
+          path: ${{ env.OUT_DIR }}/sandbox-verification.log
+          retention-days: 7
+          if-no-files-found: ignore
