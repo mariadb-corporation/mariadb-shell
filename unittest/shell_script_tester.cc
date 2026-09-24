@@ -1868,7 +1868,7 @@ void Shell_script_tester::set_defaults() {
   // (/*+ SET_VAR(...) */) instead of falling back to SQL_NO_CACHE - see
   // common::supports_optimizer_hints().
   def_bool_var("__server_supports_optimizer_hints",
-              mysqlsh::dump::common::supports_optimizer_hints(target_server));
+               mysqlsh::dump::common::supports_optimizer_hints(target_server));
 
   // Set terminology related variables
   if (version_num > 80025) {

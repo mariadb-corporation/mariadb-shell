@@ -2483,7 +2483,7 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 #@<> BUG#34556560 terminate the process immediately - skipConsistencyChecks
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 create a process which will add tables in the background (2) {__dbug}
+#@<> BUG#33697289 create a process which will add tables in the background 2 {__dbug}
 constantly_create_tables.generate_ddl()
 
 #@<> BUG#33697289 fail if gtid is disabled and DDL changes {__dbug}

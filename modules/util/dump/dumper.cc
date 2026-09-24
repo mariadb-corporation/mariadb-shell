@@ -3550,9 +3550,11 @@ void Dumper::assert_transaction_is_open(
       execute(session, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       // no exception -> transaction is not active
       assert(false);
-    } catch (const mysqlshdk::db::Error &e) {
+    } catch ([[maybe_unused]] const mysqlshdk::db::Error &e) {
       // make sure correct error is reported
+#ifndef MARIADB_BUILD
       assert(e.code() == ER_CANT_CHANGE_TX_CHARACTERISTICS);
+#endif
     } catch (...) {
       // any other exception means that something else went wrong
       assert(false);
