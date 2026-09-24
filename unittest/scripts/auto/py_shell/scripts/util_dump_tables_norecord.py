@@ -1298,7 +1298,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The 'schema' option can only be used when loading
 EXPECT_NO_THROWS(lambda: util.load_dump(test_output_absolute, { "includeSchemas": [test_schema], "schema": verification_schema, "showProgress": False }), "Loading should not fail")
 EXPECT_JSON_EQ(test_schema_snapshot, snapshot_schema(session, verification_schema))
 
-#@<> BUG#33799352 - it should be possible to use 'schema' option with dumps created by other dump utils as long as only one schema is loaded - util.dump_instance() (2)
+#@<> BUG#33799352 - it should be possible to use 'schema' option with dumps created by other dump utils as long as only one schema is loaded - util.dump_instance() (4)
 # one schema
 shutil.rmtree(test_output_absolute, True)
 EXPECT_NO_THROWS(lambda: util.dump_instance(test_output_absolute, { "includeSchemas": [test_schema], "showProgress": False }), "dumping the whole instance")

@@ -140,7 +140,10 @@ def snapshot_triggers(session, schema, table):
     triggers = {}
     for row in session.run_sql("SELECT trigger_name FROM information_schema.triggers WHERE trigger_schema = ? and event_object_table = ?", [schema, table]).fetch_all():
         trigger = row[0]
-        triggers[trigger] = session.run_sql("SHOW CREATE TRIGGER !.!", [schema, trigger]).fetch_one()[2]
+        # MariaDB (like 5.7) returns the CREATE TRIGGER statement as written, so
+        # a trigger created as `schema`.`name` keeps the schema qualifier; the
+        # dumper strips it, strip it here too so the snapshots compare equal
+        triggers[trigger] = session.run_sql("SHOW CREATE TRIGGER !.!", [schema, trigger]).fetch_one()[2].replace(" TRIGGER `" + schema.replace("`", "``") + "`.", " TRIGGER ", 1)
     return triggers
 
 def snapshot_tables_and_triggers(session, schema):
