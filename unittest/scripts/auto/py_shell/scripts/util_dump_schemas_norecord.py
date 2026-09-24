@@ -1,5 +1,12 @@
 #@<> INCLUDE dump_utils.inc
 
+#@<> backup lock privilege
+# The privilege which guards the backup lock, as the dumper names it: MySQL's
+# LOCK INSTANCE FOR BACKUP needs BACKUP_ADMIN, MariaDB's BACKUP STAGE needs
+# RELOAD (Dumper::backup_lock_privilege()).
+backup_lock_privilege = "RELOAD" if __server_is_maria_db else ("BACKUP_ADMIN" if __version_num >= 80000 else "")
+
+
 #@<> entry point
 
 # imports
@@ -236,16 +243,23 @@ def TEST_DUMP_AND_LOAD(schemas, options = {}):
 EXPECT_FAIL("RuntimeError", "An open session is required to perform this operation.", ['mysql'], test_output_relative)
 
 #@<> deploy sandbox
-testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", {
+sandbox_options = {
     "loose_innodb_directories": filename_for_file(table_data_directory),
-    "early-plugin-load": "keyring_file." + ("dll" if __os_type == "windows" else "so"),
-    "keyring_file_data": filename_for_file(os.path.join(incompatible_table_directory, "keyring")),
     "server_id": str(random.randint(1, 4294967295)),
     "log_bin": 1,
-    "enforce_gtid_consistency": "ON",
-    "gtid_mode": "ON",
     "innodb_doublewrite": "OFF"
-})
+}
+if not __server_is_maria_db:
+    # MariaDB refuses to start with an unknown early_plugin_load and has no
+    # keyring_file plugin, and it has neither gtid_mode nor
+    # enforce_gtid_consistency - its GTIDs are always on
+    sandbox_options.update({
+        "early-plugin-load": "keyring_file." + ("dll" if __os_type == "windows" else "so"),
+        "keyring_file_data": filename_for_file(os.path.join(incompatible_table_directory, "keyring")),
+        "enforce_gtid_consistency": "ON",
+        "gtid_mode": "ON",
+    })
+testutil.deploy_raw_sandbox(__mysql_sandbox_port1, "root", sandbox_options)
 
 #@<> wait for server
 testutil.wait_sandbox_alive(uri)
@@ -345,12 +359,12 @@ session.run_sql("INSERT INTO !.! (`id`, `data`) VALUES (1, 1), (NULL, NULL);", [
 for table in [test_table_primary, test_table_unique, test_table_non_unique, test_table_no_index]:
     session.run_sql("ANALYZE TABLE !.!;", [ test_schema, table ])
 
-#@<> schema with MySQLaaS incompatibilities
+#@<> schema with MySQLaaS incompatibilities {not __server_is_maria_db}
 session.run_sql("ALTER DATABASE ! CHARACTER SET latin1;", [ incompatible_schema ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=MyISAM DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_wrong_engine ])
-session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB ENCRYPTION = 'Y' DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_encryption ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB DATA DIRECTORY = '{0}' DEFAULT CHARSET=latin1;".format(filename_for_file(table_data_directory)), [ incompatible_schema, incompatible_table_data_directory ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=MyISAM INDEX DIRECTORY = '{0}' DEFAULT CHARSET=latin1;".format(filename_for_file(table_index_directory)), [ incompatible_schema, incompatible_table_index_directory ])
+session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) ENGINE=InnoDB ENCRYPTION = 'Y' DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_encryption ])
 session.run_sql("CREATE TABLESPACE ! ADD DATAFILE 't_s_1.ibd' ENGINE=INNODB;", [ incompatible_tablespace ])
 session.run_sql("CREATE TABLE !.! (`id` MEDIUMINT, `data` INT) TABLESPACE ! DEFAULT CHARSET=latin1;", [ incompatible_schema, incompatible_table_tablespace, incompatible_tablespace ])
 session.run_sql("CREATE VIEW !.! AS SELECT `data` FROM !.!;", [ incompatible_schema, incompatible_view, incompatible_schema, incompatible_table_wrong_engine ])
@@ -365,7 +379,7 @@ for table in session.run_sql("SELECT TABLE_NAME, TABLE_TYPE FROM information_sch
     else:
         types_schema_views.append(table[0])
 
-#@<> Analyze the table {VER(>=8.0.0)}
+#@<> Analyze the table {VER(>=8.0.0) and not __server_is_maria_db}
 session.run_sql("ANALYZE TABLE !.! UPDATE HISTOGRAM ON `id`;", [ test_schema, test_table_no_index ])
 
 #@<> first parameter
@@ -995,45 +1009,33 @@ else:
 #@<> WL16731-G1 - `libraries` - invalid values
 TEST_BOOL_OPTION("libraries")
 
-#@<> WL16731-G2 - `libraries` - disabled
+#@<> WL16731-G2 - `libraries` - disabled  {instance_supports_libraries}
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "libraries": False, "ddlOnly": True, "showProgress": False })
 
-if instance_supports_libraries:
-    # WL16731-TSFR_1_7_1 - note about routine using an excluded library is printed
-    EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Function", test_schema, test_schema_library_function, test_schema, test_schema_library).note())
-    EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` FUNCTION `{test_schema_library_function}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
-    EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", test_schema, test_schema_library_procedure, test_schema, test_schema_library).note())
-    EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `{test_schema_library_procedure}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
+# WL16731-TSFR_1_7_1 - note about routine using an excluded library is printed
+EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Function", test_schema, test_schema_library_function, test_schema, test_schema_library).note())
+EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` FUNCTION `{test_schema_library_function}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
+EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", test_schema, test_schema_library_procedure, test_schema, test_schema_library).note())
+EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `{test_schema_library_procedure}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
 
 EXPECT_FILE_CONTAINS("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{0}`".format(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
 
 EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries))))
 
-if instance_supports_libraries:
-    EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 4 routines, 1 trigger.")
-else:
-    EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 2 routines, 1 trigger.")
+EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 4 routines, 1 trigger.")
 
-#@<> WL16731-G3 - `libraries` - default value
+#@<> WL16731-G3 - `libraries` - default value {instance_supports_libraries}
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.1.0", "ddlOnly": True, "showProgress": False })
 
-if instance_supports_libraries:
-    EXPECT_FILE_CONTAINS(f"CREATE LIBRARY `{test_schema_library}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries)))
-    # WL16731-TSFR_1_1_2_1 - target version does not support libraries, warning is printed
-    EXPECT_STDOUT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
-else:
-    EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries))))
-    # WL16731-TSFR_1_1_2_1 - target version does not support libraries, but there are no libraries, warning is not printed
-    EXPECT_STDOUT_NOT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
+EXPECT_FILE_CONTAINS(f"CREATE LIBRARY `{test_schema_library}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries)))
+# WL16731-TSFR_1_1_2_1 - target version does not support libraries, warning is printed
+EXPECT_STDOUT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
 
-#@<> WL16731-G2 - `libraries` - filtering
+#@<> WL16731-G2 - `libraries` - filtering {instance_supports_libraries}
 # WL16731-TSFR_1_1_1 - test is executed regardless of server version
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.2.0", "libraries": True, "excludeLibraries": [ f"`{test_schema}`.`{test_schema_library}`" ], "dryRun": True, "showProgress": False })
 
-if instance_supports_libraries:
-    EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 0 out of 1 library, 4 routines, 1 trigger.")
-else:
-    EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 2 routines, 1 trigger.")
+EXPECT_STDOUT_CONTAINS("1 schemas will be dumped and within them 4 tables, 1 view, 1 event, 0 out of 1 library, 4 routines, 1 trigger.")
 
 # WL16731-TSFR_1_1_2_2 - target version supports libraries, warning is not printed
 EXPECT_STDOUT_NOT_CONTAINS(warn_target_version_does_not_support_libraries("9.2.0"))
@@ -1208,10 +1210,11 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basen
 # * `mysql.general_log`
 # * `mysql.schema`
 # * `mysql.slow_log`
+# * `mysql.transaction_registry`
 # WL13807-TSFR6_1
 EXPECT_SUCCESS(["mysql"], test_output_absolute, { "chunking": False, "showProgress": False })
 
-for table in ["apply_status", "general_log", "schema", "slow_log"]:
+for table in ["apply_status", "general_log", "schema", "slow_log", "transaction_registry"]:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", table) + ".tsv.zst")))
     exists = os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", table) + ".sql"))
     if 1 == session.run_sql("SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA = 'mysql' AND TABLE_NAME = ?", [table]).fetch_one()[0]:
@@ -1220,7 +1223,12 @@ for table in ["apply_status", "general_log", "schema", "slow_log"]:
         EXPECT_FALSE(exists)
 
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", "user") + ".sql")))
-EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", "user") + ".tsv.zst")))
+# mysql.user is a real table on MySQL, but on MariaDB it is a VIEW over
+# mysql.global_priv, so - like any view - it never gets a data file
+if __server_is_maria_db:
+    EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", "user") + ".tsv.zst")))
+else:
+    EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename("mysql", "user") + ".tsv.zst")))
 
 #@<> run dump for all SQL-related tests below
 EXPECT_SUCCESS([types_schema, test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
@@ -1332,7 +1340,7 @@ for f in os.listdir(test_output_absolute):
     EXPECT_EQ(0o640, stat.S_IMODE(os.stat(path).st_mode))
     EXPECT_EQ(os.getuid(), os.stat(path).st_uid)
 
-#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done.
+#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done. {not __server_is_maria_db}
 TEST_BOOL_OPTION("ocimds")
 
 #@<> tables with missing PKs
@@ -1377,7 +1385,7 @@ missing_pks = {
     ]
 }
 
-#@<> WL13807-FR16.1.1 - If the `ocimds` option is set to `true`, the following must be done:
+#@<> WL13807-FR16.1.1 - If the `ocimds` option is set to `true`, the following must be done: {not __server_is_maria_db}
 # * General
 #   * Add the `mysql` schema to the schema exclusion list
 # * GRANT
@@ -1497,7 +1505,7 @@ EXPECT_STDOUT_CONTAINS("""
       automatically using the create_invisible_pks compatibility value.
 """)
 
-#@<> WL14506-TSFR_1_7
+#@<> WL14506-TSFR_1_7 {not __server_is_maria_db}
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "ocimds": True, "dataOnly": True, "showProgress": False })
 
 #@<> WL13807-FR16.1.2 - If the `ocimds` option is not given, a default value of `false` must be used instead.
@@ -1511,7 +1519,7 @@ TEST_ARRAY_OF_STRINGS_OPTION("compatibility")
 EXPECT_FAIL("ValueError", "Argument #3: Unknown compatibility option: dummy", [incompatible_schema], test_output_relative, { "compatibility": [ "dummy" ] })
 EXPECT_FAIL("ValueError", "Argument #3: Unknown compatibility option: ", [incompatible_schema], test_output_relative, { "compatibility": [ "" ] })
 
-#@<> WL13807-FR16.2.1 - The `compatibility` option may contain the following values:
+#@<> WL13807-FR16.2.1 - The `compatibility` option may contain the following values: {not __server_is_maria_db}
 # * `force_innodb` - replace incompatible table engines with `InnoDB`,
 # * `strip_restricted_grants` - remove disallowed grants.
 # * `strip_tablespaces` - remove unsupported tablespace syntax.
@@ -1544,13 +1552,13 @@ NOTE: One or more tables without Primary Keys were found.
       Inbound Replication into a DB System HA instance will also be possible, as long as the instance has version 8.0.32 or newer. For more information, see https://docs.oracle.com/en-us/iaas/mysql-database/doc/creating-replication-channel.html.
 """)
 
-#@<> WL14506-FR3.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key, an information should be printed that an invisible primary key will be created when loading the dump.
+#@<> WL14506-FR3.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key, an information should be printed that an invisible primary key will be created when loading the dump. {not __server_is_maria_db}
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "create_invisible_pks" ] , "ddlOnly": True, "showProgress": False })
 
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(create_invisible_pks(incompatible_schema, table).fixed())
 
-#@<> WL14506-FR3.2 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column named my_row_id, an error must be reported.
+#@<> WL14506-FR3.2 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column named my_row_id, an error must be reported. {not __server_is_maria_db}
 # WL14506-TSFR_3.2_2
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
@@ -1565,7 +1573,7 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, t
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.4 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column with an AUTO_INCREMENT attribute, an error must be reported.
+#@<> WL14506-FR3.4 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column with an AUTO_INCREMENT attribute, an error must be reported. {not __server_is_maria_db}
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
@@ -1579,7 +1587,7 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.2 + WL14506-FR3.4 - same column
+#@<> WL14506-FR3.2 + WL14506-FR3.4 - same column {not __server_is_maria_db}
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
@@ -1595,7 +1603,7 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.2 + WL14506-FR3.4 - different columns
+#@<> WL14506-FR3.2 + WL14506-FR3.4 - different columns {not __server_is_maria_db}
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
@@ -1613,28 +1621,28 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.3 - When a dump is executed and the compatibility option contains both create_invisible_pks and ignore_missing_pks values, an error must be reported and process must be aborted.
+#@<> WL14506-FR3.3 - When a dump is executed and the compatibility option contains both create_invisible_pks and ignore_missing_pks values, an error must be reported and process must be aborted. {not __server_is_maria_db}
 # WL14506-TSFR_3.3_1
 EXPECT_FAIL("ValueError", "Argument #3: The 'create_invisible_pks' and 'ignore_missing_pks' compatibility options cannot be used at the same time.", [incompatible_schema], test_output_relative, { "compatibility": [ "create_invisible_pks", "ignore_missing_pks" ] })
 
-#@<> WL13807-FR16.2.1 - force_innodb
+#@<> WL13807-FR16.2.1 - force_innodb {not __server_is_maria_db}
 # WL13807-TSFR16_3
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "force_innodb" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_index_directory).fixed())
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_wrong_engine).fixed())
 
-#@<> WL14506-FR2.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the ignore_missing_pks value, for each table that would be dumped which does not contain a primary key, a note must be displayed, stating that this issue is ignored.
+#@<> WL14506-FR2.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the ignore_missing_pks value, for each table that would be dumped which does not contain a primary key, a note must be displayed, stating that this issue is ignored. {not __server_is_maria_db}
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "ignore_missing_pks" ] , "ddlOnly": True, "showProgress": False })
 
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(ignore_missing_pks(incompatible_schema, table).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_definers
+#@<> WL13807-FR16.2.1 - strip_definers {not __server_is_maria_db}
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_definers" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_definers_definer_clause(incompatible_schema, incompatible_view).fixed())
 EXPECT_STDOUT_CONTAINS(strip_definers_security_clause(incompatible_schema, incompatible_view).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_tablespaces
+#@<> WL13807-FR16.2.1 - strip_tablespaces {not __server_is_maria_db}
 # WL13807-TSFR16_4
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_tablespaces" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_tablespaces(incompatible_schema, incompatible_table_tablespace).fixed())
@@ -1693,21 +1701,23 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 
 # BUG#37226153 - if LOCK INSTANCE FOR BACKUP was executed, do not lock the mysql tables
-if __version_num >= 80000:
+# MariaDB's BACKUP STAGE does not block account management, so the mysql system
+# tables are locked there even with the backup lock held - see Dumper::lock_tables()
+if not __server_is_maria_db and __version_num >= 80000:
     EXPECT_STDOUT_CONTAINS("NOTE: Instance locked for backup, skipping mysql system tables locks")
 
-#@<> BUG#37226153 - revoke BACKUP_ADMIN, mysql tables will be locked {VER(>=8.0.0)}
+#@<> BUG#37226153 - revoke BACKUP_ADMIN, mysql tables will be locked {VER(>=8.0.0) and not __server_is_maria_db}
 setup_session()
 session.run_sql(f"REVOKE BACKUP_ADMIN ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> revoke lock tables from mysql.* {VER(>=8.0.16)}
+#@<> revoke lock tables from mysql.* {VER(>=8.0.16) and not __server_is_maria_db}
 setup_session()
 session.run_sql("SET GLOBAL partial_revokes=1")
 session.run_sql(f"REVOKE LOCK TABLES ON mysql.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> try again, this time it should succeed but without locking mysql.* tables {VER(>=8.0.16)}
+#@<> try again, this time it should succeed but without locking mysql.* tables {VER(>=8.0.16) and not __server_is_maria_db}
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_CONTAINS(f"WARNING: Could not lock mysql system tables: User {test_user_account} is missing the following privilege(s) for schema `mysql`: LOCK TABLES.")
@@ -1785,7 +1795,7 @@ WARNING: The consistency of the dump cannot be guaranteed.
 
 # BUG#38452568 - add an explanation on how to achieve a consistent dump
 EXPECT_STDOUT_CONTAINS(f"""
-NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the BACKUP_ADMIN privilege." if __version_num >= 80000 else ""}
+NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
  * Enable binary logging.
 """)
 
@@ -2585,7 +2595,7 @@ dump_with_conflicts({ "includeTriggers": [ "a.t.t", "a.t1.t" ], "excludeTriggers
 EXPECT_STDOUT_CONTAINS("ERROR: The includeTriggers option contains a trigger `a`.`t`.`t` which is excluded by the value of the excludeTriggers option: `a`.`t`.")
 EXPECT_STDOUT_NOT_CONTAINS("`a`.`t1`")
 
-#@<> BUG#34052980 run upgrade checker if server is 5.7 and ocimds option is used {VER(<8.0.0)}
+#@<> BUG#34052980 run upgrade checker if server is 5.7 and ocimds option is used {VER(<8.0.0) and not __server_is_maria_db}
 # setup
 wipeout_server(session)
 tested_schema = "test_schema"
@@ -2711,11 +2721,11 @@ EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verificatio
 
 #@<> WL15311_TSFR_3_2_3_1
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), [ schema_name ], test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1054 (42S22): Unknown column 'THIS_IS_NO_SQL' in 'where clause'")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
 EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), [ schema_name ], test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
-EXPECT_STDOUT_CONTAINS("MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
+EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()
 EXPECT_FAIL("ValueError", f"Argument #3: Malformed condition used for table '{schema_name}'.'{no_partitions_table_name}': 1 = 1) --", [ schema_name ], test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1) --" }, "showProgress": False })
@@ -2863,28 +2873,38 @@ EXPECT_FAIL("ValueError", "Argument #3: Invalid value of the 'targetVersion' opt
 EXPECT_FAIL("ValueError", "Argument #3: Invalid value of the 'targetVersion' option: empty", [ schema_name ], test_output_absolute, { "targetVersion": "", "showProgress": False })
 
 #@<> WL15887-TSFR_1_2_1 - wrong values - greater
+# These no longer carry the 'Argument #N:' prefix, on either vendor: the version
+# policy check needs the session to know the source vendor, so it moved out of
+# the option unpacker - which is what knows the argument position - and into
+# Dump_options::on_validate(). The parse errors above still come from the
+# unpacker and still carry it. See MARIADB_DUMP_LOAD.md section 21.9.
 for i in range(3):
-    version = __mysh_version.split(".")
+    version = newest_target_version.split(".")
     version[i] = str(int(version[i]) + 1)
     version = ".".join(version)
-    if i < 2:
-        EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg(version)}", [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
+    # MariaDB rejects anything newer than the version this Shell was built
+    # from, patch included; MySQL does not check the patch (BUG#38107377)
+    if i < 2 or __server_is_maria_db:
+        EXPECT_FAIL("ValueError", target_version_rejected_msg(version), [ schema_name ], test_output_absolute, { "targetVersion": version, "showProgress": False })
     else:
         # BUG#38107377 - patch version is not checked
         EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": version, "dryRun": True, "showProgress": False })
 
-EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg('10.0.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
-EXPECT_FAIL("ValueError", f"Argument #3: {unsupported_target_version_msg('26.6.0')}", [ schema_name ], test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
+if not __server_is_maria_db:
+    # older than the MariaDB version this Shell was built from, so a MariaDB
+    # target accepts it; for MySQL it is not a supported server
+    EXPECT_FAIL("ValueError", unsupported_target_version_msg('10.0.0'), [ schema_name ], test_output_absolute, { "targetVersion": "10.0.0", "showProgress": False })
+EXPECT_FAIL("ValueError", target_version_rejected_msg('26.6.0'), [ schema_name ], test_output_absolute, { "targetVersion": "26.6.0", "showProgress": False })
 
-#@<> WL15887-TSFR_1_3_1 - wrong values - lower
-EXPECT_FAIL("ValueError", "Argument #3: Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })
-EXPECT_FAIL("ValueError", "Argument #3: Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "7.9.26", "showProgress": False })
+#@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db}
+EXPECT_FAIL("ValueError", "Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "8.0.24", "showProgress": False })
+EXPECT_FAIL("ValueError", "Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", [ schema_name ], test_output_absolute, { "targetVersion": "7.9.26", "showProgress": False })
 
 #@<> WL15887 - valid values
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": "8.0.25", "dryRun": True, "showProgress": False })
-EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": __mysh_version, "dryRun": True, "showProgress": False })
+EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": newest_target_version, "dryRun": True, "showProgress": False })
 
-#@<> WL15887-TSFR_1_4_1 - implict value of targetVersion
+#@<> WL15887-TSFR_1_4_1 - implict value of targetVersion {not __server_is_maria_db}
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "ocimds": True, "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"Checking for compatibility with MySQL HeatWave Service {__mysh_version}")
 
@@ -2906,7 +2926,7 @@ NOTE: One or more objects with the DEFINER clause were found.
       Loading the dump will fail if it is loaded into an DB System instance that does not support the SET_ANY_DEFINER privilege, which was introduced in 8.2.0.
 """)
 
-#@<> WL15887-TSFR_3_1_1 - restricted accounts
+#@<> WL15887-TSFR_3_1_1 - restricted accounts {not __server_is_maria_db}
 for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "ocidbm", "ocirpl"]:
     account = f"`{account}`@`localhost`"
     setup_db(account)
@@ -2921,7 +2941,7 @@ for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "o
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_3_2_1 - valid account
+#@<> WL15887-TSFR_3_2_1 - valid account {not __server_is_maria_db}
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "showProgress": False })
 
 # no warnings about DEFINER=
@@ -2939,7 +2959,7 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_definers_security_clause(schema_name, test_view
 # WL15887-TSFR_3_3_1 - no account is not included in the dump
 EXPECT_STDOUT_CONTAINS(definer_clause_uses_unknown_account_once().warning())
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers
+#@<> WL15887-TSFR_4_1 - note about strip_definers {not __server_is_maria_db}
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "compatibility": [ "strip_definers" ], "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__mysh_version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
@@ -2975,7 +2995,9 @@ schema_name = "wl15947"
 test_table_unique_null = test_table_non_unique
 test_table_partitioned = "part"
 test_table_gipk = "gipk"
-gipk_supported = __version_num >= 80030
+# generated invisible primary keys are MySQL 8.0.30+; MariaDB has neither them
+# nor the show_gipk_in_create_table_and_information_schema variable
+gipk_supported = not __server_is_maria_db and __version_num >= 80030
 
 def setup_db():
     session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
@@ -3095,7 +3117,7 @@ checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_unique in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_3 - "checksum": True, GIPK {gipk_supported}
+#@<> WL15947-TSFR_1_6_3 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db}
 session.run_sql("SET @@GLOBAL.show_gipk_in_create_table_and_information_schema = OFF")
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_gipk) ], "showProgress": False })
 
@@ -3103,7 +3125,7 @@ checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_gipk in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_4 - "checksum": True, GIPK {gipk_supported}
+#@<> WL15947-TSFR_1_6_4 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db}
 session.run_sql("SET @@GLOBAL.show_gipk_in_create_table_and_information_schema = ON")
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_gipk) ], "showProgress": False })
 
@@ -3111,7 +3133,7 @@ checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_gipk in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_5 - "checksum": True, table without an index, with ignore_missing_pks
+#@<> WL15947-TSFR_1_6_5 - "checksum": True, table without an index, with ignore_missing_pks {not __server_is_maria_db}
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "compatibility": [ "ignore_missing_pks" ], "includeTables": [ quote_identifier(schema_name, test_table_no_index) ], "showProgress": False })
 
 checksums = read_json(checksum_file)
@@ -3157,7 +3179,7 @@ if 2 == lower_case_table_names:
     session.run_sql("INSERT INTO !.T3 (a) VALUES (1), (2), (3)", [schema_name])
     session.run_sql("CREATE VIEW !.v3 AS SELECT * FROM !.t3", [schema_name, schema_name])
 
-#@<> BUG#36509026 - test
+#@<> BUG#36509026 - test {not __server_is_maria_db}
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "excludeTables": [f"{schema_name}.t2"], "showProgress": False })
 
 EXPECT_STDOUT_NOT_CONTAINS(view_references_excluded_table(schema_name, "v1", schema_name, "t1").warning())
@@ -3170,7 +3192,7 @@ NOTE: One or more views that reference tables using the wrong case were found.
 Loading them in a system that uses lower_case_table_names=0 (such as in the MySQL HeatWave Service) will fail unless they are fixed.
 """)
 
-#@<> BUG#36509026 - test with ocimds:true on MacOS {2 == lower_case_table_names}
+#@<> BUG#36509026 - test with ocimds:true on MacOS {2 == lower_case_table_names and not __server_is_maria_db}
 EXPECT_FAIL("Shell Error (52004)", "Compatibility issues were found", [ schema_name ], test_output_absolute, { "ocimds": True, "excludeTables": [f"{schema_name}.t2"], "showProgress": False })
 
 EXPECT_STDOUT_NOT_CONTAINS(view_references_excluded_table(schema_name, "v1", schema_name, "t1").warning())
@@ -3202,11 +3224,11 @@ PARTITION BY HASH(col1)
 PARTITIONS 4;
 """, [schema_name])
 
-#@<> BUG#37892879 - test with ocimds:true - table is reported as invalid, as it does not contain a PK
+#@<> BUG#37892879 - test with ocimds:true - table is reported as invalid, as it does not contain a PK {not __server_is_maria_db}
 EXPECT_FAIL("Shell Error (52004)", "Compatibility issues were found", [ schema_name ], test_output_absolute, { "ocimds": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(schema_name, "t1").error())
 
-#@<> BUG#37892879 - test `create_invisible_pks` compatibility option - table is reported as invalid, as it's partitioned and does not contain a PK
+#@<> BUG#37892879 - test `create_invisible_pks` compatibility option - table is reported as invalid, as it's partitioned and does not contain a PK {not __server_is_maria_db}
 EXPECT_FAIL("Shell Error (52004)", "Compatibility issues were found", [ schema_name ], test_output_absolute, { "compatibility": [ "create_invisible_pks" ], "ocimds": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_partitioned_table(schema_name, "t1").error())
 
@@ -3218,7 +3240,8 @@ session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 schema_name = "test_37904121"
 table_name = "t1"
 heatwave_table_name = "t2"
-supports_secondary_engine = __version_num >= 80013
+# SECONDARY_ENGINE is MySQL's HeatWave attachment; MariaDB rejects the option
+supports_secondary_engine = not __server_is_maria_db and __version_num >= 80013
 
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("CREATE SCHEMA !", [schema_name])
@@ -3234,7 +3257,7 @@ shell.options["logSql"] = "unfiltered"
 #@<> BUG#37904121 - test
 WIPE_SHELL_LOG()
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "showProgress": False })
-EXPECT_SHELL_LOG_CONTAINS(f"""SELECT {"SQL_NO_CACHE " if __version_num < 80000 else ""}`a` FROM `{schema_name}`.`{table_name}` ORDER BY `a` LIMIT 1""")
+EXPECT_SHELL_LOG_CONTAINS(f"""SELECT {"" if __server_supports_optimizer_hints else "SQL_NO_CACHE "}`a` FROM `{schema_name}`.`{table_name}` ORDER BY `a` LIMIT 1""")
 
 if supports_secondary_engine:
     EXPECT_SHELL_LOG_CONTAINS(f"""SELECT /*+ SET_VAR(use_secondary_engine='OFF') {"SET_VAR(optimizer_switch='hypergraph_optimizer=OFF') " if __version_num >= 80400 and __version_num < 90000 else ""}*/ `a` FROM `{schema_name}`.`{heatwave_table_name}` ORDER BY `a` LIMIT 1""")
@@ -3253,11 +3276,11 @@ session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("CREATE SCHEMA !", [schema_name])
 session.run_sql("CREATE TABLE !.! (a INT, b INT AUTO_INCREMENT, PRIMARY KEY (a, b)) ENGINE=MyISAM", [schema_name, table_name])
 
-#@<> BUG#38650807 - test with ocimds:true - table is reported as invalid, as AUTO_INCREMENT has to be the first in PK definition
+#@<> BUG#38650807 - test with ocimds:true - table is reported as invalid, as AUTO_INCREMENT has to be the first in PK definition {not __server_is_maria_db}
 EXPECT_FAIL("Shell Error (52004)", "Compatibility issues were found", [ schema_name ], test_output_absolute, { "ocimds": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(force_innodb_cannot_replace_engine(schema_name, table_name, error_msg).error())
 
-#@<> BUG#38650807 - test with ocimds:true - same error with force_innodb
+#@<> BUG#38650807 - test with ocimds:true - same error with force_innodb {not __server_is_maria_db}
 EXPECT_FAIL("Shell Error (52004)", "Compatibility issues were found", [ schema_name ], test_output_absolute, { "compatibility": ["force_innodb"], "ocimds": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(force_innodb_cannot_replace_engine(schema_name, table_name, error_msg).error())
 

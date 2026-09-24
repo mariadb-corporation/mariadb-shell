@@ -84,7 +84,17 @@ CREATE TABLE `*/` (
 /*!50700 CREATE TABLE gctable1 (
     a INT PRIMARY KEY,
     b INT GENERATED ALWAYS AS (sqrt(a)) VIRTUAL
-) */; 
+) */;
+-- MariaDB never executes a /*!NNNNN ... */ comment numbered in the MySQL
+-- 5.7-9.x range (its own numbering starts at 100000), so the table above is
+-- skipped there - as are the three findextable* ones, which stay MySQL-only
+-- because MariaDB has neither functional nor multi-value indexes. Virtual
+-- generated columns, however, MariaDB has had since 10.2, so recreate the
+-- table through a MariaDB-only /*M! ... */ comment (ignored by MySQL).
+/*M!100200 CREATE TABLE gctable1 (
+    a INT PRIMARY KEY,
+    b INT GENERATED ALWAYS AS (sqrt(a)) VIRTUAL
+) */;
 
 -- Constraints
 

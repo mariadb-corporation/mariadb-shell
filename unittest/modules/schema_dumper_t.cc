@@ -39,6 +39,7 @@
 // needs to be included first for FRIEND_TEST
 #include "unittest/gprod_clean.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/compatibility_issue.h"
 #include "modules/util/dump/instance_cache.h"
 #include "modules/util/dump/schema_dumper.h"
@@ -823,7 +824,8 @@ TEST_F(Schema_dumper_test, dump_libraries) {
   EXPECT_TRUE(output_handler.std_err.empty());
   wipe_all();
 
-  if (!compatibility::supports_library_ddl(_target_server_version)) {
+  if (!common::supports_library_ddl(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
     return;
   }
 
@@ -863,6 +865,153 @@ DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
 -- end library `mysqldump_test_db`.`lib1`
 )",
+  });
+  wipe_all();
+}
+
+// MariaDB sequences: the definition comes from SHOW CREATE SEQUENCE, the
+// position from the sequence read as a table, and DO SETVAL() restores it - see
+// MARIADB_DUMP_LOAD.md section 4.5.1
+TEST_F(Schema_dumper_test, dump_sequences) {
+  if (!common::supports_sequences(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_sequences_ddl(file.get(), db_name));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  expect_output_contains({
+      R"(
+--
+-- Dumping sequences for database 'mysqldump_test_db'
+--
+)",
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq1`
+DROP SEQUENCE IF EXISTS `seq1`;
+CREATE SEQUENCE `seq1` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB;
+DO SETVAL(`seq1`, 1, 0);
+-- end sequence `mysqldump_test_db`.`seq1`
+)",
+      // the position which was reached, not the one the sequence starts at
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq2`
+DROP SEQUENCE IF EXISTS `seq2`;
+CREATE SEQUENCE `seq2` start with 100 minvalue 1 maxvalue 9223372036854775806 increment by 5 nocache nocycle ENGINE=InnoDB;
+DO SETVAL(`seq2`, 105, 0);
+-- end sequence `mysqldump_test_db`.`seq2`
+)",
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq3`
+DROP SEQUENCE IF EXISTS `seq3`;
+CREATE SEQUENCE `seq3` start with 1 minvalue 1 maxvalue 1000 increment by 1 cache 1000 cycle ENGINE=InnoDB;
+DO SETVAL(`seq3`, 1, 0);
+-- end sequence `mysqldump_test_db`.`seq3`
+)",
+      // a name which needs quoting, created while sql_mode was ANSI
+      R"(
+-- begin sequence `mysqldump_test_db`.`a'b seq`
+DROP SEQUENCE IF EXISTS `a'b seq`;
+CREATE SEQUENCE `a'b seq` start with 1 minvalue 1 maxvalue 9223372036854775806 increment by 1 cache 1000 nocycle ENGINE=InnoDB;
+DO SETVAL(`a'b seq`, 1, 0);
+-- end sequence `mysqldump_test_db`.`a'b seq`
+)",
+  });
+  wipe_all();
+}
+
+// MariaDB Oracle-mode packages are dumped by the routine pass, in the order
+// mysqldump uses - see MARIADB_DUMP_LOAD.md section 19.
+TEST_F(Schema_dumper_test, dump_packages) {
+  if (!common::supports_packages(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.3.0");
+  }
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_routines_ddl(file.get(), db_name));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  std::string contents;
+
+  expect_output_contains(
+      {
+          R"(
+-- begin package `mysqldump_test_db`.`pkg1`
+DROP PACKAGE IF EXISTS `pkg1`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE "pkg1" AS
+  PROCEDURE p1(a INT);
+  FUNCTION f1(b INT) RETURN INT;
+END ;;)",
+          // a specification with no body, under a name which needs quoting
+          R"(
+-- begin package `mysqldump_test_db`.`a'b pkg`
+DROP PACKAGE IF EXISTS `a'b pkg`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE "a'b pkg" AS FUNCTION g() RETURN INT; END ;;)",
+          R"(
+-- begin package body `mysqldump_test_db`.`pkg1`
+DROP PACKAGE BODY IF EXISTS `pkg1`;)",
+          R"(CREATE DEFINER="root"@"localhost" PACKAGE BODY "pkg1" AS
+  vc INT := 10;)",
+          // the function of the same name is a different object, and it is
+          // still dumped as a function
+          R"(
+-- begin function `mysqldump_test_db`.`pkg1`
+/*!50003 DROP FUNCTION IF EXISTS `pkg1` */;)",
+      },
+      &contents);
+
+  {
+    // specifications come before the standalone routines and bodies after
+    // them, because a specification may declare types the routines use and a
+    // body may call those routines
+    const auto spec = contents.find("-- begin package `mysqldump_test_db`");
+    const auto function =
+        contents.find("-- begin function `mysqldump_test_db`");
+    const auto body =
+        contents.find("-- begin package body `mysqldump_test_db`");
+
+    ASSERT_NE(std::string::npos, spec);
+    ASSERT_NE(std::string::npos, function);
+    ASSERT_NE(std::string::npos, body);
+
+    EXPECT_LT(spec, function);
+    EXPECT_LT(function, body);
+  }
+
+  wipe_all();
+}
+
+// MariaDB CHECK constraints need no DDL work of their own - SHOW CREATE TABLE
+// carries them, and this pins that the dumper does not rewrite them away. What
+// MariaDB does need is the load-side session switch, see MARIADB_DUMP_LOAD.md
+// section 17.
+TEST_F(Schema_dumper_test, dump_table_check_constraints) {
+  if (!common::supports_check_constraint_checks(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.2.0");
+  }
+
+  auto sd = schema_dumper();
+  // the compatibility rewriting is the thing which could plausibly drop them
+  sd.opt_mysqlaas = true;
+  sd.opt_force_innodb = true;
+
+  EXPECT_NO_THROW(sd.dump_table_ddl(file.get(), db_name, "ck1"));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  expect_output_contains({
+      // a column-level check stays on its column
+      R"(  `a` int(11) DEFAULT NULL CHECK (`a` > 0),)",
+      // and a table-level one keeps its name and its expression verbatim,
+      // parentheses, commas and quoted keywords included
+      R"(  CONSTRAINT `b_range` CHECK (`b` between 1 and 100),)",
+      R"(  CONSTRAINT `c_ck` CHECK (`c` <> 'KEY' and `c` not in ('a,b','(x)')))",
   });
   wipe_all();
 }
@@ -921,6 +1070,133 @@ TEST_F(Schema_dumper_test, dump_grants) {
   session->execute("DROP USER 'firstfirst'@'localhost';");
   session->execute("DROP USER 'second'@'localhost';");
   session->execute("DROP USER 'second'@'10.11.12.14';");
+}
+
+// MariaDB roles are not accounts: SHOW CREATE USER fails for one, they are
+// addressed without a host, SHOW GRANTS walks the role graph downwards and the
+// default role arrives as a statement rather than a clause. See
+// MARIADB_DUMP_LOAD.md section 20.
+TEST_F(Schema_dumper_test, dump_maria_db_roles) {
+  if (!common::roles_are_hostless(common::server_version(
+          _target_server_version, target_server_is_maria_db()))) {
+    SKIP_TEST("This test requires MariaDB server 10.0.5");
+  }
+
+  // setup - a three level role chain, an account which has one as its default
+  // role, and an account of the same name as one of the roles
+  session->execute("CREATE ROLE IF NOT EXISTS `sdbase`;");
+  session->execute("CREATE ROLE IF NOT EXISTS `sdmid`;");
+  session->execute("CREATE ROLE IF NOT EXISTS `sdtop`;");
+  session->execute(
+      "CREATE USER IF NOT EXISTS 'sdbase'@'localhost' IDENTIFIED BY 'pwd';");
+  session->execute(
+      "CREATE USER IF NOT EXISTS 'sduser'@'localhost' IDENTIFIED BY 'pwd';");
+  const std::string schema{db_name};
+
+  session->execute("GRANT SELECT ON `" + schema + "`.* TO `sdbase`;");
+  session->execute("GRANT INSERT ON `" + schema + "`.* TO `sdmid`;");
+  session->execute("GRANT `sdbase` TO `sdmid`;");
+  session->execute("GRANT `sdmid` TO `sdtop`;");
+  session->execute("GRANT `sdtop` TO 'sduser'@'localhost';");
+  session->execute("SET DEFAULT ROLE `sdtop` FOR 'sduser'@'localhost';");
+
+  shcore::on_leave_scope cleanup{[this]() {
+    session->execute("DROP ROLE `sdtop`;");
+    session->execute("DROP ROLE `sdmid`;");
+    session->execute("DROP ROLE `sdbase`;");
+    session->execute("DROP USER 'sdbase'@'localhost';");
+    session->execute("DROP USER 'sduser'@'localhost';");
+  }};
+
+  auto sd = schema_dumper();
+  EXPECT_NO_THROW(sd.dump_grants(file.get()));
+  EXPECT_TRUE(output_handler.std_err.empty());
+  wipe_all();
+
+  std::string out;
+  expect_output_contains(
+      {
+          // a role is created with CREATE ROLE, under its own marker, and is
+          // named without a host
+          R"(
+-- begin role `sdbase`
+CREATE ROLE IF NOT EXISTS `sdbase`;
+-- end role `sdbase`)",
+          // the account of the same name is a separate object and still gets a
+          // CREATE USER
+          R"(
+-- begin user 'sdbase'@'localhost'
+CREATE USER IF NOT EXISTS `sdbase`@`localhost` IDENTIFIED BY PASSWORD)",
+          // two levels down the chain, and still only its own grants - SHOW
+          // GRANTS FOR sdtop reports sdmid's and sdbase's as well
+          R"(
+-- begin grants `sdtop`
+GRANT `sdmid` TO `sdtop`;
+GRANT USAGE ON *.* TO `sdtop`;
+-- end grants `sdtop`)",
+          // the default role moves out of the grants block and keeps MariaDB's
+          // FOR spelling, which is the only one the server accepts
+          R"(
+-- begin default role 'sduser'@'localhost'
+SET DEFAULT ROLE `sdtop` FOR `sduser`@`localhost`;
+-- end default role 'sduser'@'localhost')",
+      },
+      &out);
+
+  // the role's own grants, and nothing else
+  EXPECT_THAT(out, HasSubstr("\n-- begin grants `sdbase`\n"
+                             "GRANT USAGE ON *.* TO `sdbase`;\n"
+                             "GRANT SELECT ON `" +
+                             schema +
+                             "`.* TO `sdbase`;\n"
+                             "-- end grants `sdbase`"));
+  // sdmid keeps the role it was granted, but not the privileges that role
+  // carries
+  EXPECT_THAT(out, HasSubstr("\n-- begin grants `sdmid`\n"
+                             "GRANT `sdbase` TO `sdmid`;\n"
+                             "GRANT USAGE ON *.* TO `sdmid`;\n"
+                             "GRANT INSERT ON `" +
+                             schema +
+                             "`.* TO `sdmid`;\n"
+                             "-- end grants `sdmid`"));
+
+  {
+    SCOPED_TRACE("the loader reads a role back as a role");
+
+    using Type = Schema_dumper::User_statements::Type;
+    // an account has more than one block, so collect every type per account
+    std::map<std::string, std::set<Type>> types;
+
+    for (const auto &group : Schema_dumper::preprocess_users_script(
+             out, [](const std::string &) { return true; })) {
+      types[group.account].emplace(group.type);
+    }
+
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdbase`"));
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdmid`"));
+    EXPECT_EQ(std::set<Type>({Type::CREATE_ROLE, Type::GRANT}),
+              types.at("`sdtop`"));
+    // the account of the same name as a role is still a user
+    EXPECT_EQ(std::set<Type>({Type::CREATE_USER, Type::GRANT}),
+              types.at("'sdbase'@'localhost'"));
+    EXPECT_EQ(
+        std::set<Type>({Type::CREATE_USER, Type::GRANT, Type::DEFAULT_ROLE}),
+        types.at("'sduser'@'localhost'"));
+  }
+
+  {
+    SCOPED_TRACE("a role can be filtered out on the load side");
+
+    for (const auto &group : Schema_dumper::preprocess_users_script(
+             out,
+             [](const std::string &account) { return "`sdmid`" != account; })) {
+      EXPECT_NE("`sdmid`", group.account);
+    }
+  }
+
+  wipe_all();
 }
 
 TEST_F(Schema_dumper_test, dump_filtered_grants) {
@@ -1130,6 +1406,15 @@ GRANT SELECT, INSERT, LOCK TABLES ON *.* TO 'abr@dab'@'localhost';
 }
 
 TEST_F(Schema_dumper_test, opt_mysqlaas) {
+  if (target_server_is_maria_db()) {
+    // opt_mysqlaas is the MySQL HeatWave Service compatibility pass, which
+    // Dump_options::on_validate() refuses outright for a MariaDB source: the
+    // rewriting it does, the restricted privileges it names and the collations
+    // it maps to are all MySQL's, so there is nothing here a MariaDB dump can
+    // reach.
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   session->execute(std::string("use ") + compat_db_name);
   const auto mstg =
       create_table_in_mysql_schema_for_grant("testusr6@localhost");
@@ -1327,6 +1612,12 @@ TEST_F(Schema_dumper_test, opt_mysqlaas) {
 }
 
 TEST_F(Schema_dumper_test, compat_ddl) {
+  if (target_server_is_maria_db()) {
+    // same as opt_mysqlaas: this is the DDL the MySQL HeatWave Service
+    // compatibility options rewrite, and they are refused for a MariaDB source
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   session->execute(std::string("use ") + compat_db_name);
   const auto mstg =
       create_table_in_mysql_schema_for_grant("testusr6@localhost");
@@ -1730,10 +2021,19 @@ TEST_F(Schema_dumper_test, dump_and_load) {
     session->executef("USE !", db);
 
     std::vector<std::string> tables;
+    std::vector<std::string> sequences;
 
-    if (const auto res = session->query("show tables")) {
+    if (const auto res = session->query("show full tables")) {
       while (const auto row = res->fetch_one()) {
-        tables.emplace_back(row->get_string(0));
+        auto name = row->get_string(0);
+
+        // a MariaDB sequence lives in the table namespace, so SHOW TABLES lists
+        // it - but it is dumped as a sequence, not as a table
+        if ("SEQUENCE" == row->get_string(1)) {
+          sequences.emplace_back(name);
+        }
+
+        tables.emplace_back(std::move(name));
       }
     }
 
@@ -1748,8 +2048,16 @@ TEST_F(Schema_dumper_test, dump_and_load) {
       }
     }
 
+    // sequences go first, a table can default to NEXT VALUE FOR one of them
+    EXPECT_NO_THROW(sd.dump_sequences_ddl(file.get(), db));
+
     for (const auto &table : tables) {
       SCOPED_TRACE(std::string{"`"} + db + "`.`" + table + "`");
+
+      if (sequences.end() !=
+          std::find(sequences.begin(), sequences.end(), table)) {
+        continue;
+      }
 
       EXPECT_NO_THROW(sd.dump_table_ddl(file.get(), db, table));
 
@@ -2152,6 +2460,14 @@ TEST_F(Schema_dumper_test, check_object_for_definer_set_any_definer_issues) {
 }
 
 TEST_F(Schema_dumper_test, strip_restricted_grants_set_any_definer) {
+  if (target_server_is_maria_db()) {
+    // SET_ANY_DEFINER is a MySQL privilege and restricted-grant rewriting is
+    // MySQL HeatWave Service surface. set_target_version() stamps the target
+    // with the *source* server's vendor, so the MySQL versions this test sets
+    // are not meaningful against a MariaDB server.
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   // WL#15887 - test SET_ANY_DEFINER grant
   using Status = Compatibility_issue::Status;
   using Object_type = Compatibility_issue::Object_type;
@@ -2231,6 +2547,16 @@ TEST_F(Schema_dumper_test, strip_restricted_grants_set_any_definer) {
 }
 
 TEST_F(Schema_dumper_test, unknown_collations) {
+#ifdef MARIADB_BUILD
+  // Unlike the other mysqlaas tests this one runs off a mock session, so it is
+  // the build and not the server which decides the answer: is_supported_collation
+  // asks the *linked* client library's charset table, where MariaDB's own
+  // utf8mb4_uca1400_* collations are known - and therefore not replaced - while
+  // the MySQL HeatWave Service names they would be replaced with
+  // (utf8mb4_vi_0900_ai_ci and the like) do not exist at all.
+  SKIP_TEST("This test requires a build linked against MySQL");
+#endif
+
   const auto dump_schema = [](std::string_view collation) {
     const auto s = std::make_shared<testing::Mock_mysql_session>();
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +62,14 @@ struct Binlog {
   std::string gtid_executed;
 };
 
+/**
+ * Version of a server, together with the vendor it belongs to.
+ *
+ * The is_5_6 / is_5_7 / is_8_0 flags describe a *MySQL* server and are all
+ * false for MariaDB, whose version numbers are not on MySQL's scale. Do not add
+ * new code which tests them directly - ask a feature question instead, using
+ * one of the vendor-aware predicates in server_features.h.
+ */
 struct Server_version {
   mysqlshdk::utils::Version number;
   bool is_5_6 = false;
@@ -95,8 +104,22 @@ struct Server_info {
   Replication_topology topology;
 };
 
+/**
+ * The set of transactions the server has executed: @@GTID_EXECUTED on MySQL,
+ * @@gtid_current_pos on MariaDB, whose GTIDs are domain-based positions
+ * instead - see MARIADB_DUMP_LOAD.md section 4.4.
+ *
+ * Returns an empty string if the value cannot be read.
+ */
 std::string gtid_executed(
-    const std::shared_ptr<mysqlshdk::db::ISession> &session);
+    const std::shared_ptr<mysqlshdk::db::ISession> &session,
+    const Server_version &version);
+
+/**
+ * The keyword which names the binary log in SHOW ... STATUS: MySQL renamed
+ * MASTER in 8.2, MariaDB did not.
+ */
+const char *binlog_status_keyword(const Server_version &version);
 
 Binlog binlog(const std::shared_ptr<mysqlshdk::db::ISession> &session,
               const Server_version &version, bool quiet = false);
@@ -112,6 +135,17 @@ Server_version server_version(
     const std::shared_ptr<mysqlshdk::db::ISession> &session);
 
 Server_version server_version(std::string_view version);
+
+/**
+ * Builds a Server_version for a version number whose vendor is already known.
+ *
+ * Unlike the string overload this performs no detection and - importantly - no
+ * remapping, so it is the right tool wherever the vendor comes from somewhere
+ * else (the session handshake, the dump manifest, a user-supplied
+ * targetVersion) rather than from the version string itself.
+ */
+Server_version server_version(const mysqlshdk::utils::Version &number,
+                              bool is_maria_db);
 
 Server_variables server_variables(
     const std::shared_ptr<mysqlshdk::db::ISession> &session);

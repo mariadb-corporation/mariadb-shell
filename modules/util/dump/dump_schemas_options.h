@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -55,6 +56,12 @@ class Dump_schemas_options : public Ddl_dumper_options {
   bool dump_routines() const override { return m_dump_routines; }
 
   bool dump_libraries() const override { return m_dump_libraries; }
+
+  // sequences have no toggle of their own: like views, they are part of the
+  // structure of a schema rather than an optional extra, and a table with a
+  // DEFAULT NEXT VALUE FOR cannot be restored without them. They are selected
+  // with the table filters, since they share the table namespace.
+  bool dump_sequences() const override { return true; }
 
   bool dump_users() const override { return false; }
 

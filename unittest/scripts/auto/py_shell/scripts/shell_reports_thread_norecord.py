@@ -290,7 +290,7 @@ report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblo
 EXPECT_EQ(1 if __version_num > 80000 else 0, report[1][0])
 EXPECT_EQ(1 if __version_num > 80000 else 0, report[1][1])
 
-#@<> --raw-locks {sandbox.vendor() == "MySQL"}
+#@<> Tests --raw-locks {sandbox.vendor() == "MySQL"}
 WIPE_STDOUT()
 
 \show thread --tid <<<__test_ids['tid']>>> --raw-locks

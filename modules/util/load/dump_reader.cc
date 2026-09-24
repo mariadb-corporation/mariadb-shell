@@ -38,6 +38,7 @@
 #include <utility>
 
 #include "modules/util/common/dump/constants.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/server_info.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/common/utils.h"
@@ -352,6 +353,20 @@ std::vector<shcore::Account> Dump_reader::accounts() const {
   return account_list;
 }
 
+std::vector<shcore::Account> Dump_reader::roles() const {
+  using Type = dump::Schema_dumper::User_statements::Type;
+  std::vector<shcore::Account> role_list;
+
+  for (const auto &group : dump::Schema_dumper::preprocess_users_script(
+           users_script(), [](const std::string &) { return true; })) {
+    if (Type::CREATE_ROLE == group.type) {
+      role_list.emplace_back(shcore::split_account(group.account));
+    }
+  }
+
+  return role_list;
+}
+
 std::list<Dump_reader::Object_info *> Dump_reader::schemas() {
   std::list<Dump_reader::Object_info *> slist;
 
@@ -369,7 +384,10 @@ bool Dump_reader::schema_objects(std::string_view schema,
                                  std::list<Object_info *> *out_functions,
                                  std::list<Object_info *> *out_procedures,
                                  std::list<Object_info *> *out_libraries,
-                                 std::list<Object_info *> *out_events) {
+                                 std::list<Object_info *> *out_events,
+                                 std::list<Object_info *> *out_packages,
+                                 std::list<Object_info *> *out_package_bodies,
+                                 std::list<Object_info *> *out_sequences) {
   const auto schema_info = find_schema(schema, nullptr);
 
   if (!schema_info) return false;
@@ -387,6 +405,9 @@ bool Dump_reader::schema_objects(std::string_view schema,
     clear_out(out_procedures);
     clear_out(out_libraries);
     clear_out(out_events);
+    clear_out(out_packages);
+    clear_out(out_package_bodies);
+    clear_out(out_sequences);
   }
 
   const auto add_objects = [](auto *src, std::list<Object_info *> *tgt) {
@@ -410,6 +431,9 @@ bool Dump_reader::schema_objects(std::string_view schema,
   add_objects(&schema_info->procedures, out_procedures);
   add_objects(&schema_info->libraries, out_libraries);
   add_objects(&schema_info->events, out_events);
+  add_objects(&schema_info->packages, out_packages);
+  add_objects(&schema_info->package_bodies, out_package_bodies);
+  add_objects(&schema_info->sequences, out_sequences);
 
   return true;
 }
@@ -537,8 +561,15 @@ std::string Dump_reader::fetch_routines_script(
 // Thus, smaller tables must get fewer threads allocated so they take longer
 // to load, while bigger threads get more, with the hope that the total time
 // to load all tables is minimized.
+//
+// That preference for a table already being loaded is a performance
+// optimization only - none of the above requires it. A table whose engine is
+// not in transactional_engines is the exception: for those, one chunk loading
+// is a hard reason to not offer another chunk of the same table at all - see
+// MARIADB_DUMP_LOAD.md section 33.
 Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+    const std::unordered_set<std::string> &transactional_engines,
     std::unordered_set<Dump_reader::Table_data_info *> *tables_with_data,
     uint64_t max_concurrent_tables) {
   if (tables_with_data->empty()) return tables_with_data->end();
@@ -551,11 +582,25 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     auto best = end;
 
     for (auto it = tables_with_data->begin(); it != end; ++it) {
+      const bool in_flight =
+          tables_being_loaded.find((*it)->key()) != tables_being_loaded.end();
+
+      if (in_flight && !(*it)->engine.empty() &&
+          !transactional_engines.count(shcore::str_upper((*it)->engine))) {
+        // a chunk of this table is already loading and its engine is not one
+        // the target considers transactional - a second connection
+        // concurrently loading another chunk of the same table is not safe
+        // (this is what crashed a MariaDB Aria system table, see
+        // MARIADB_DUMP_LOAD.md section 33) - do not offer it as a candidate
+        // at all until the in-flight chunk is done
+        continue;
+      }
+
       if ((*it)->chunks_consumed) {
         tables_in_progress.emplace_back(it);
       }
 
-      if (tables_being_loaded.find((*it)->key()) == tables_being_loaded.end()) {
+      if (!in_flight) {
         // table is better if it's bigger and in the same state as the current
         // best, or if it was previously scheduled and current best was not
         if (best == end ||
@@ -571,6 +616,14 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
     if (best != end && (tables_in_progress.size() < max_concurrent_tables ||
                         (*best)->chunks_consumed)) {
       return best;
+    }
+
+    if (tables_in_progress.empty()) {
+      // every table with data available is excluded: either none can be
+      // started fresh (the loop above would otherwise have returned) or the
+      // only ones already started are all mid-chunk on a serialized engine -
+      // nothing can be handed out right now
+      return end;
     }
   }
 
@@ -632,14 +685,18 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
 
 bool Dump_reader::next_table_chunk(
     const std::unordered_multimap<std::string, size_t> &tables_being_loaded,
+    const std::unordered_set<std::string> &transactional_engines,
     Table_chunk *out_chunk) {
-  auto iter = schedule_chunk_proportionally(
-      tables_being_loaded, &m_tables_with_data, m_options.threads_count());
+  auto iter = schedule_chunk_proportionally(tables_being_loaded,
+                                            transactional_engines,
+                                            &m_tables_with_data,
+                                            m_options.threads_count());
 
   if (iter != m_tables_with_data.end()) {
     out_chunk->schema = (*iter)->table->parent->name;
     out_chunk->table = (*iter)->table->name;
     out_chunk->partition = (*iter)->partition;
+    out_chunk->period_unique_key = (*iter)->period_unique_key;
     out_chunk->chunked = (*iter)->chunked;
     out_chunk->index = (*iter)->chunks_consumed;
 
@@ -1156,6 +1213,8 @@ void Dump_reader::Table_info::update_metadata(const std::string &data,
 
   di.extension = md->get_string("extension", "tsv");
   di.chunked = md->get_bool("chunking", false);
+  di.period_unique_key = md->get_bool("periodUniqueKey", false);
+  di.engine = md->get_string("engine", "");
 
   if (md->has_key("compression")) {
     compression_type = md->get_string("compression");
@@ -1534,6 +1593,24 @@ void Dump_reader::Schema_info::update_metadata(const std::string &data,
     }
   }
 
+  // MariaDB Oracle-mode packages are routines, so the routine filters select
+  // them - see MARIADB_DUMP_LOAD.md section 19
+  for (const auto &[key, target] :
+       {std::pair{"packages", &packages},
+        std::pair{"packageBodies", &package_bodies}}) {
+    if (const auto package_list = md->get_array(key)) {
+      for (const auto &p : *package_list) {
+        auto package_name = p.as_string();
+
+        if (reader->include_routine(name, package_name)) {
+          target->emplace_back(Object_info{this, std::move(package_name)});
+        }
+      }
+
+      log_debug("%s has %zi %s", name.c_str(), target->size(), key);
+    }
+  }
+
   if (const auto library_list = md->get_array("libraries")) {
     for (const auto &l : *library_list) {
       auto library_name = l.as_string();
@@ -1544,6 +1621,18 @@ void Dump_reader::Schema_info::update_metadata(const std::string &data,
     }
 
     log_debug("%s has %zi libraries", name.c_str(), libraries.size());
+  }
+
+  if (const auto sequence_list = md->get_array("sequences")) {
+    for (const auto &s : *sequence_list) {
+      auto sequence_name = s.as_string();
+
+      if (reader->include_sequence(name, sequence_name)) {
+        sequences.emplace_back(Object_info{this, std::move(sequence_name)});
+      }
+    }
+
+    log_debug("%s has %zi sequences", name.c_str(), sequences.size());
   }
 
   if (const auto event_list = md->get_array("events")) {
@@ -1883,10 +1972,17 @@ Dump_reader::create_progress_file_handle() const {
 }
 
 void Dump_reader::show_metadata() const {
+  // MariaDB has no Executed_Gtid_Set: what the dump carries is the GTID
+  // position, gtid_current_pos, and the loader restores it into gtid_slave_pos
+  // - see MARIADB_DUMP_LOAD.md section 15
+  const auto *const gtid_label = source_server().is_maria_db
+                                     ? "GTID_position"
+                                     : "Executed_GTID_set";
+
   const auto metadata = shcore::make_dict(
-      "Dump_metadata", shcore::make_dict("Binlog_file", binlog_file(),
-                                         "Binlog_position", binlog_position(),
-                                         "Executed_GTID_set", gtid_executed()));
+      "Dump_metadata",
+      shcore::make_dict("Binlog_file", binlog_file(), "Binlog_position",
+                        binlog_position(), gtid_label, gtid_executed()));
 
   const auto yaml = shcore::Value(metadata).yaml();
   const auto console = current_console();
@@ -1961,6 +2057,14 @@ bool Dump_reader::include_routine(const std::string &schema,
                                   const std::string &routine) const {
   return m_options.filters().routines().is_included(override_schema(schema),
                                                     routine);
+}
+
+bool Dump_reader::include_sequence(const std::string &schema,
+                                   const std::string &sequence) const {
+  // sequences share the table namespace, so they use the table filters - see
+  // MARIADB_DUMP_LOAD.md section 4.5.1
+  return m_options.filters().tables().is_included(override_schema(schema),
+                                                  sequence);
 }
 
 bool Dump_reader::include_library(const std::string &schema,
@@ -2441,8 +2545,8 @@ void Dump_reader::validate_vector_store_options() {
     // location of vector store data in OCI is known, convert tables to
     // lakehouse
     if (m_options.is_mds() &&
-        compatibility::supports_vector_store_conversion(
-            m_options.target_server_version()) &&
+        dump::common::supports_vector_store_conversion(
+            m_options.target_server()) &&
         (m_options.has_lakehouse_source_option() ||
          m_contents.innodb_vector_store.resource_principals.valid())) {
       mode = load::Convert_vector_store::CONVERT;
@@ -2486,8 +2590,8 @@ void Dump_reader::validate_vector_store_options() {
     }
 
     // WL16802-FR2.1.7.2: throw when MHS version is not supported
-    if (!compatibility::supports_vector_store_conversion(
-            m_options.target_server_version())) {
+    if (!dump::common::supports_vector_store_conversion(
+            m_options.target_server())) {
       THROW_ERROR(SHERR_LOAD_INNODB_VECTOR_STORE_UNSUPPORTED_MHS);
     }
 

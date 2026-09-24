@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +55,19 @@ class Interrupts final {
   void interrupt();
 
   void wait(uint32_t ms);
+
+  /**
+   * Stops the background helper thread, if one is running. Idempotent.
+   *
+   * Shutdown has to do this before the client library and mysys are torn down.
+   * The thread is spawned through spawn_scoped_thread(), which registers it with
+   * mysys (Mysys_thread_scope), and my_end() waits my_thread_end_wait_time
+   * seconds - five, by default - for every registered thread to exit before
+   * giving up with "Error in my_thread_global_end(): N threads didn't exit". It
+   * also suppresses the leak report and leaves mysys' internal mutexes
+   * undestroyed, so the wait is not the only cost.
+   */
+  void stop_background_thread();
 
  private:
   friend class Interrupt_handler;

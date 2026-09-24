@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -54,6 +55,7 @@
 #include "modules/util/import_table/import_stats.h"
 
 #include "mysqlshdk/libs/db/mysql/session.h"
+#include "mysqlshdk/libs/mysql/instance.h"
 #include "mysqlshdk/libs/storage/ifile.h"
 #include "mysqlshdk/libs/textui/text_progress.h"
 #include "mysqlshdk/libs/utils/atomic_flag.h"
@@ -117,11 +119,14 @@ class Dump_loader {
 
     /**
      * Adds a callback which is going to be called whenever a CREATE|ALTER|DROP
-     * statement for an EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER object is about
-     * to be executed. Callback is called with two arguments:
-     *  - type - EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER
+     * statement for an EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER|SEQUENCE object
+     * is about to be executed. Callback is called with two arguments:
+     *  - type - EVENT|FUNCTION|PROCEDURE|LIBRARY|TRIGGER|SEQUENCE
      *  - name - name of the object
      * Callback should return true if this statement should be executed.
+     *
+     * DO SETVAL(sequence, ...), which restores the position of a MariaDB
+     * sequence, is reported as a SEQUENCE statement as well.
      */
     void add_execution_condition(
         std::function<bool(std::string_view, const std::string &)> f);
@@ -634,6 +639,23 @@ class Dump_loader {
   void check_server_version();
   void check_tables_without_primary_key();
 
+  /**
+   * Whether the target server can have the dumped GTID set applied to it.
+   *
+   * The two vendors carry different GTID models and validate against different
+   * variables; MARIADB_DUMP_LOAD.md section 4.4 has the details.
+   */
+  void validate_update_gtid_set(const mysqlshdk::mysql::Instance &session,
+                                const dump::common::Server_version &target);
+  void validate_update_gtid_set_maria_db(
+      const mysqlshdk::mysql::Instance &session);
+
+  /**
+   * Applies the dumped GTID position to the target's gtid_slave_pos, which is
+   * how MariaDB restores one.
+   */
+  void update_maria_db_gtid_position();
+
   void handle_schema_option();
 
   void handle_vector_store_dump();
@@ -720,7 +742,8 @@ class Dump_loader {
   bool is_dump_complete() const noexcept;
 
   void execute_grant_and_drop_account_on_error(std::string_view grant,
-                                               const std::string &account);
+                                               const std::string &account,
+                                               bool is_role);
 
   void execute_grant_and_ignore_errors(std::string_view grant);
 
@@ -781,6 +804,9 @@ class Dump_loader {
     std::vector<dump::Schema_dumper::User_statements> statements;
     std::unordered_set<std::string> all_accounts;
     std::unordered_set<std::string> ignored_accounts;
+    // the subset of all_accounts which are MariaDB roles - they need DROP ROLE,
+    // see common::roles_are_hostless()
+    std::unordered_set<std::string> role_accounts;
 
     // stats
     std::size_t dropped_accounts = 0;
@@ -807,6 +833,11 @@ class Dump_loader {
 
   std::mutex m_tables_being_loaded_mutex;
   std::unordered_multimap<std::string, size_t> m_tables_being_loaded;
+  // upper-cased names of every storage engine the target reports as
+  // transactional (information_schema.ENGINES.TRANSACTIONS = 'YES'), used to
+  // decide which tables must not have two chunks loading at once - see
+  // MARIADB_DUMP_LOAD.md section 33
+  std::unordered_set<std::string> m_transactional_engines;
   std::atomic<size_t> m_num_threads_loading{0};
   std::atomic<size_t> m_num_threads_recreating_indexes{0};
   std::atomic<size_t> m_num_threads_checksumming{0};
@@ -845,7 +876,6 @@ class Dump_loader {
   // these variables are used to display the progress
   std::mutex m_indexes_display_mutex;
   double m_indexes_progress = 0.0;
-  uint64_t m_indexes_recreated;
   // (this variable does not change once DDL finishes loading)
   uint64_t m_indexes_to_recreate = 0;
   // whether to query for partial index progress

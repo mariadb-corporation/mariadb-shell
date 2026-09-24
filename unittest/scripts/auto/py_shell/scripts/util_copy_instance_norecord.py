@@ -111,8 +111,10 @@ EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: The value of 'threads' o
 
 #@<> WL15298_TSFR_4_1_3_1
 # WL15298_TSFR_1_3_2
-# src is an X session
-EXPECT_SUCCESS(__sandbox_uri2, src = get_ssl_config(src_session, get_x_config(src_session, __sandbox_uri1)))
+# src is an X session - a build without the X protocol has no such session, and
+# MariaDB has no X plugin to connect to either
+if __have_x_protocol:
+    EXPECT_SUCCESS(__sandbox_uri2, src = get_ssl_config(src_session, get_x_config(src_session, __sandbox_uri1)))
 # WL15298_TSFR_1_3_3
 # src is using SSL
 EXPECT_SUCCESS(__sandbox_uri2, { "excludeUsers": [ "root" ] }, src = get_ssl_config(src_session, test_user_uri(__mysql_sandbox_port1)))
@@ -121,8 +123,9 @@ EXPECT_STDOUT_CONTAINS("Running data dump using 4 threads")
 
 #@<> WL15298_TSFR_4_1_3_2
 # WL15298_TSFR_1_3_2
-# tgt is an X session
-EXPECT_SUCCESS(get_x_config(tgt_session, __sandbox_uri2))
+# tgt is an X session - see above
+if __have_x_protocol:
+    EXPECT_SUCCESS(get_x_config(tgt_session, __sandbox_uri2))
 # WL15298_TSFR_1_3_3
 # tgt is using SSL
 # the user is copied from the source server to make sure that the CREATE USER statements for validation are the same
@@ -138,7 +141,7 @@ EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [] })
 #@<> WL15298_TSFR_4_4_7
 EXPECT_FAIL("ValueError", f"Argument #{options_arg_no}: Unknown compatibility option: unknown_compat_mode", __sandbox_uri2, { "compatibility": [ "unknown_compat_mode" ] })
 
-#@<> WL15298_TSFR_4_4_8 {VER(>=8.0.24)}
+#@<> WL15298_TSFR_4_4_8 {VER(>=8.0.24) and not __server_is_maria_db}
 # this tests that compatibility mode is recognized (there's no error)
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "create_invisible_pks" ], "ddlOnly": True })
 
@@ -157,6 +160,7 @@ elif __version_num > __mysh_version_num:
 else:
     target_version = __version
 
+#@<> Compatibility option {not __server_is_maria_db}
 # this tests that compatibility mode is recognized and some of them are applied
 EXPECT_SUCCESS(__sandbox_uri2, { "targetVersion": target_version, "compatibility": [ "force_innodb", "ignore_missing_pks", "ignore_wildcard_grants", "skip_invalid_accounts", "strip_definers", "strip_invalid_grants", "strip_restricted_grants", "strip_tablespaces" ] })
 EXPECT_STDOUT_CONTAINS(f"User {test_user_account} had restricted privileges")
@@ -341,16 +345,27 @@ EXPECT_SUCCESS(__sandbox_uri2, { "maxBytesPerTransaction": "1M" }, setup = lambd
 # WL15298_TSFR_4_5_7
 EXPECT_STDOUT_NOT_CONTAINS("Analyzing tables")
 # WL15298_TSFR_4_6_1
-p = re.compile(r"""
+mysql_gtid_data=re.compile(r"""
 .*---
 Dump_metadata:
   Binlog_file: .*
   Binlog_position: .*
   Executed_GTID_set: .*
 """)
-EXPECT_STDOUT_MATCHES(p)
+
+mariadb_gtid_data=re.compile(r"""
+.*---
+Dump_metadata:
+  Binlog_file: .*
+  Binlog_position: .*
+  GTID_position: .*
+""")
+
+expected_gtid = mysql_gtid_data if not __server_is_maria_db else mariadb_gtid_data
+EXPECT_STDOUT_MATCHES(expected_gtid)
+
 # BUG#35883344 - binlog info should be written to the log file
-EXPECT_SHELL_LOG_MATCHES(p)
+EXPECT_SHELL_LOG_MATCHES(expected_gtid)
 
 #@<> WL15298 - test invalid values of maxBytesPerTransaction option
 TEST_STRING_OPTION("maxBytesPerTransaction")
@@ -370,10 +385,12 @@ EXPECT_STDOUT_NOT_CONTAINS("Analyzing tables")
 #@<> WL15298_TSFR_4_5_11
 EXPECT_SUCCESS(__sandbox_uri2, { "analyzeTables": "histogram" })
 # NOTE: functionality is checked in load tests
-if __version_num > 80000:
+# histograms are MySQL 8.0+; MariaDB has its own statistics and the loader warns
+# that it cannot create them instead of analyzing anything
+if not __server_is_maria_db and __version_num > 80000:
     EXPECT_STDOUT_CONTAINS("Analyzing tables")
 else:
-    EXPECT_OUTPUT_CONTAINS(f"Histogram creation enabled but MySQL Server {__version} does not support it.")
+    EXPECT_OUTPUT_CONTAINS(f"Histogram creation enabled but {server_vendor_name} Server {__version} does not support it.")
 
 #@<> WL15298 - test analyzeTables option
 EXPECT_SUCCESS(__sandbox_uri2, { "analyzeTables": "on" })
@@ -464,7 +481,7 @@ if instance_supports_libraries:
 TEST_ARRAY_OF_STRINGS_OPTION("sessionInitSql")
 
 #@<> WL15298_TSFR_4_5_31
-EXPECT_FAIL("RuntimeError", "Error while executing sessionInitSql: MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'wrong' at line 1", __sandbox_uri2, { "sessionInitSql": [ "wrong" ] })
+EXPECT_FAIL("RuntimeError", f"Error while executing sessionInitSql: MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near 'wrong' at line 1", __sandbox_uri2, { "sessionInitSql": [ "wrong" ] })
 
 #@<> WL15298 - test sessionInitSql option
 EXPECT_SUCCESS(__sandbox_uri2, { "sessionInitSql": [ "INSERT INTO ver.t VALUES (1)" ] }, setup = lambda: tgt_session.run_sql('CREATE SCHEMA ver') and tgt_session.run_sql('CREATE TABLE ver.t (a INT)'))
@@ -844,11 +861,11 @@ for account in [ account_name, "`invalid-account`@`localhost`" ]:
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0)}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 EXPECT_SUCCESS(__sandbox_uri2, { "compatibility": [ "strip_definers" ], "dryRun": True, "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {__dbug and VER(>=8.2.0)}
+#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {__dbug and VER(>=8.2.0) and not __server_is_maria_db}
 for account in account_names:
     src_session.run_sql(f"GRANT SET_ANY_DEFINER ON *.* TO {account}")
     WIPE_OUTPUT()
@@ -856,7 +873,7 @@ for account in account_names:
     EXPECT_STDOUT_NOT_CONTAINS("SET_ANY_DEFINER")
     src_session.run_sql(f"REVOKE SET_ANY_DEFINER ON *.* FROM {account}")
 
-#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {__dbug and VER(>=8.2.0) and VER(<8.0.24)}
+#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {__dbug and VER(>=8.2.0) and VER(<8.0.24) and not __server_is_maria_db}
 for account in account_names:
     src_session.run_sql(f"GRANT SET_USER_ID ON *.* TO {account}")
     WIPE_OUTPUT()
@@ -880,7 +897,9 @@ test_table_partitioned = "part"
 test_table_empty = "empty"
 test_table_gipk = "gipk"
 test_table_timestamp = "ts"
-gipk_supported = __version_num >= 80030
+# generated invisible primary keys are MySQL 8.0.30+; MariaDB has neither them
+# nor the show_gipk_in_create_table_and_information_schema variable
+gipk_supported = not __server_is_maria_db and __version_num >= 80030
 
 def setup_db():
     src_session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])

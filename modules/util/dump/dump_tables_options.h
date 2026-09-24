@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -58,6 +59,10 @@ class Dump_tables_options : public Ddl_dumper_options {
   bool dump_routines() const override { return false; }
 
   bool dump_libraries() const override { return false; }
+
+  // a sequence named here is dumped, exactly as mysqldump dumps one named on
+  // its command line - the table filters select both kinds of object
+  bool dump_sequences() const override { return true; }
 
   bool dump_users() const override { return false; }
 

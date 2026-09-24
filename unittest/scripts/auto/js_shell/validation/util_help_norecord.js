@@ -348,7 +348,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpInstance() and loadDump().
 
@@ -505,7 +507,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpSchemas() and loadDump().
 
@@ -645,7 +649,9 @@ DESCRIPTION
         MySQL sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dumpTables() and loadDump().
 
@@ -986,6 +992,7 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Dumps cannot be created for the following schemas:
 
@@ -1458,6 +1465,7 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Options
 
@@ -2571,6 +2579,8 @@ DESCRIPTION
       - SET NAMES ?; -- Set to characterSet option if provided by user.
       - SET unique_checks = 0
       - SET foreign_key_checks = 0
+      - SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
+        constraints per session rather than per constraint.
       - SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
       Note: because of storage engine limitations, table locks held by MyISAM
@@ -2773,7 +2783,8 @@ DESCRIPTION
       - createInvisiblePKs: bool (default taken from dump) - Automatically
         create an invisible Primary Key for each table which does not have one.
         By default, set to true if dump was created with create_invisible_pks
-        compatibility option, false otherwise. Requires server 8.0.24 or newer.
+        compatibility option, false otherwise. Requires MySQL 8.0.24+ or
+        MariaDB 10.3+.
       - deferTableIndexes: "off", "fulltext", "all" (default: fulltext) - If
         "all", creation of "all" indexes except PRIMARY is deferred until after
         table data is loaded, which in many cases can reduce load times. If
@@ -2899,7 +2910,9 @@ DESCRIPTION
         data.
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the dump.
+        contents or appending to it the gtid set present in the dump. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
       - waitDumpTimeout: float (default: 0) - Loads a dump while it's still
         being created. Once all uploaded tables are processed the command will
         either wait for more data, the dump is marked as completed or the given

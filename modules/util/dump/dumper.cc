@@ -55,7 +55,9 @@
 #include "mysqlshdk/libs/db/utils/utils.h"
 #include "mysqlshdk/libs/mysql/binlog_utils.h"
 #include "mysqlshdk/libs/mysql/gtid_utils.h"
+#include "mysqlshdk/libs/mysql/mariadb_gtid.h"
 #include "mysqlshdk/libs/mysql/replication.h"
+#include "mysqlshdk/libs/mysql/utils.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/thread_pool.h"
@@ -82,6 +84,7 @@
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/common/utils.h"
 #include "modules/util/dump/compatibility_issue.h"
@@ -112,9 +115,62 @@ namespace {
 static constexpr const int k_mysql_server_net_write_timeout = 30 * 60;
 static constexpr const int k_mysql_server_wait_timeout = 365 * 24 * 60 * 60;
 
-bool is_unsupported_historical_dump_source_version(const Version &version) {
-  return version >= Version(8, 0, 0) && version <= k_shell_version &&
-         !mysqlshdk::utils::version::is_supported_server(version);
+/**
+ * How long BACKUP STAGE BLOCK_DDL waits for DDL already in flight.
+ *
+ * MariaDB's lock_wait_timeout defaults to 86400, so with the server's value the
+ * dump sits at "Locking instance for backup" for a day and an automated one just
+ * stops reporting. Long enough here for ordinary short DDL and metadata locks to
+ * clear, short enough that a long ALTER is a failure which says so rather than a
+ * hang - see MARIADB_DUMP_LOAD.md section 29.
+ */
+static constexpr const int k_block_ddl_lock_wait_timeout = 5 * 60;
+
+bool is_unsupported_historical_dump_source_version(
+    const common::Server_version &version) {
+  // this bounds a range on MySQL's version scale (8.0 up to the Shell's own
+  // version), so it says nothing at all about a MariaDB server
+  if (version.is_maria_db) {
+    return false;
+  }
+
+  return version.number >= Version(8, 0, 0) &&
+         version.number <= k_shell_version &&
+         !mysqlshdk::utils::version::is_supported_server(version.number);
+}
+
+/**
+ * The account a server running with --skip-grant-tables reports, MySQL side.
+ * There is no real account behind such a connection, so the server invents one.
+ */
+static constexpr const char k_skip_grants_user[] = "skip-grants user";
+static constexpr const char k_skip_grants_host[] = "skip-grants host";
+
+/**
+ * The account this connection runs as, the way CURRENT_USER() reports it.
+ *
+ * With --skip-grant-tables active there is no account behind the connection and
+ * the two vendors say so differently: MySQL invents the synthetic
+ * 'skip-grants user'@'skip-grants host' above, while MariaDB leaves both halves
+ * empty, so CURRENT_USER() is the bare '@' which split_account() rejects
+ * outright ("User name must not be empty.").
+ *
+ * MariaDB's empty account is therefore reported using MySQL's spelling: that is
+ * the account User_privileges recognizes as the skip-grants one and hands every
+ * privilege to, and the account which makes m_skip_grant_tables_active - and so
+ * the whole of the dumper's skip-grant-tables handling - work the same on both
+ * vendors. See MARIADB_DUMP_LOAD.md section 32.
+ */
+shcore::Account current_account(const mysqlshdk::mysql::IInstance &instance) {
+  const auto account =
+      instance.queryf_one_string(0, "", "SELECT CURRENT_USER()");
+
+  if ("@" == account) {
+    return {k_skip_grants_user, k_skip_grants_host};
+  }
+
+  return shcore::split_account(account,
+                               shcore::Account::Auto_quote::USER_AND_HOST);
 }
 
 // 255 characters total:
@@ -231,22 +287,20 @@ int64_t to_int64_t(const std::string &s) { return std::stoll(s); }
 
 uint64_t to_uint64_t(const std::string &s) { return std::stoull(s); }
 
+// Replays the binary log to decide whether the statements executed during the
+// dump were DDL. Both vendors serve the events through SHOW BINARY LOGS /
+// SHOW BINLOG EVENTS (mysqlshdk/libs/mysql/binlog_utils.cc) and the DDL test
+// itself is plain SQL parsing, so the only vendor-specific part is how the
+// caller decides which of the replayed GTIDs are new - MySQL subtracts two
+// uuid:N-M sets server side, MariaDB compares two domain positions client side.
+// See MARIADB_DUMP_LOAD.md section 4.4.
 using mysqlshdk::mysql::Gtid;
-using mysqlshdk::mysql::Gtid_range;
-using mysqlshdk::mysql::Gtid_set;
 
 bool check_if_transactions_are_ddl_safe(
     const mysqlshdk::mysql::IInstance &instance,
     const common::Binlog::File &from, const common::Binlog::File &to,
-    const Gtid_set &gtid_set = {}) {
-  std::vector<Gtid_range> gtid_ranges;
-  uint64_t count = 0;
-
-  gtid_set.enumerate_ranges([&gtid_ranges, &count](const Gtid_range &range) {
-    gtid_ranges.emplace_back(range);
-    count += range.count();
-  });
-
+    const std::function<bool(const Gtid &)> &is_new_gtid = {},
+    uint64_t count = 0) {
   const auto console = current_console();
   console->print_note("Checking" + (count ? " " + std::to_string(count) : "") +
                       " recent transactions for schema changes, use the "
@@ -270,23 +324,9 @@ bool check_if_transactions_are_ddl_safe(
                                                           : end.base()));
   }
 
-  const auto include_gtid = [&gtid_ranges](const Gtid &gtid) {
-    if (gtid_ranges.empty()) {
-      return true;
-    }
-
-    auto gtid_range = Gtid_range::from_gtid(gtid);
-    if (!gtid_range) return false;
-    assert(gtid_range.begin == gtid_range.end);
-
-    for (const auto &range : gtid_ranges) {
-      if (range.uuid_tag == gtid_range.uuid_tag &&
-          range.begin <= gtid_range.begin && gtid_range.begin <= range.end) {
-        return true;
-      }
-    }
-
-    return false;
+  // no predicate means every replayed transaction is in scope
+  const auto include_gtid = [&is_new_gtid](const Gtid &gtid) {
+    return !is_new_gtid || is_new_gtid(gtid);
   };
 
   const auto is_ddl_safe = [](const std::string &transaction) {
@@ -2796,8 +2836,8 @@ void Dumper::initialize_dumper() {
 
   if (m_options.compatibility_options().is_set(
           Compatibility_option::STRIP_DEFINERS) &&
-      compatibility::supports_set_any_definer_privilege(
-          m_options.target_version())) {
+      common::supports_set_any_definer_privilege(
+          m_options.target_server_version())) {
     current_console()->print_note(
         "The 'targetVersion' option is set to " +
         m_options.target_version().get_base() +
@@ -2851,7 +2891,9 @@ void Dumper::abort() {
 
 void Dumper::do_run() {
   // helper:
-  // lock_instance():
+  // lock_instance():  (LIFB below is the backup lock: LOCK INSTANCE FOR BACKUP
+  //                    on MySQL, BACKUP STAGE BLOCK_DDL in a session of its own
+  //                    on MariaDB)
   //   1. if LIFB is available to the user
   //     1.1. LOCK INSTANCE FOR BACKUP
   //   2. if LIFB is not available to the user
@@ -2898,7 +2940,10 @@ void Dumper::do_run() {
   //       9.1.2.1. if dumpInstance(): error and abort
   //       9.1.2.2. else: warning and continue
 
-  shcore::on_leave_scope terminate_session([this]() { close_session(); });
+  shcore::on_leave_scope terminate_session([this]() {
+    unlock_instance();
+    close_session();
+  });
 
   {
     m_worker_interrupt.clear();
@@ -3025,8 +3070,8 @@ void Dumper::do_run() {
   }
 
 #ifndef NDEBUG
-  if (m_server_version.number < Version(8, 0, 21) ||
-      m_server_version.number > Version(8, 0, 23) || !dump_users()) {
+  if (!common::show_create_user_autocommits(m_server_version) ||
+      !dump_users()) {
     // SHOW CREATE USER auto-commits transaction in some 8.0 versions, we don't
     // check if transaction is still open in such case if users were dumped
     assert_transaction_is_open(session());
@@ -3134,19 +3179,33 @@ void Dumper::fetch_user_privileges() {
 
   const auto instance = Instance(session());
 
-  instance.get_current_user(&m_user_account.user, &m_user_account.host);
+  m_user_account = current_account(instance);
 
   m_user_privileges = instance.get_user_privileges(m_user_account.user,
                                                    m_user_account.host, true);
-  m_skip_grant_tables_active = "'skip-grants user'@'skip-grants host'" ==
-                               shcore::make_account(m_user_account);
+  m_skip_grant_tables_active =
+      m_user_account ==
+      shcore::Account{k_skip_grants_user, k_skip_grants_host};
 
-  if (m_server_version.number >= Version(8, 0, 0)) {
-    m_user_has_backup_admin =
-        !m_user_privileges->validate({"BACKUP_ADMIN"}).has_missing_privileges();
+  if (const auto privilege = backup_lock_privilege()) {
+    m_backup_lock_available =
+        !m_user_privileges->validate({privilege}).has_missing_privileges();
   }
 
   warn_about_backup_lock();
+}
+
+const char *Dumper::backup_lock_privilege() const {
+  if (common::supports_lock_instance_for_backup(m_server_version)) {
+    return "BACKUP_ADMIN";
+  }
+
+  // BACKUP STAGE is guarded by RELOAD, the same privilege FTWRL needs
+  if (common::supports_backup_stage(m_server_version)) {
+    return "RELOAD";
+  }
+
+  return nullptr;
 }
 
 void Dumper::warn_about_backup_lock() const {
@@ -3154,7 +3213,7 @@ void Dumper::warn_about_backup_lock() const {
     return;
   }
 
-  if (!m_user_has_backup_admin) {
+  if (!m_backup_lock_available) {
     current_console()->print_note(
         "Backup lock is not " + why_backup_lock_is_missing() +
         " and DDL changes will not be blocked. The dump may fail with an error "
@@ -3163,10 +3222,13 @@ void Dumper::warn_about_backup_lock() const {
 }
 
 std::string Dumper::why_backup_lock_is_missing() const {
-  return m_server_version.number >= Version(8, 0, 0)
+  return backup_lock_privilege()
              ? "available to the account " +
                    shcore::make_account(m_user_account)
-             : "supported in MySQL " + m_server_version.number.get_short();
+             : "supported in " +
+                   std::string(m_server_version.is_maria_db ? "MariaDB "
+                                                            : "MySQL ") +
+                   m_server_version.number.get_short();
 }
 
 void Dumper::lock_all_tables() {
@@ -3222,7 +3284,11 @@ void Dumper::lock_all_tables() {
     }
   };
 
-  if (m_user_has_backup_admin) {
+  // MariaDB's BACKUP STAGE blocks DDL, but not account management - the grant
+  // tables are transactional and stay writable - so there the mysql system
+  // tables still have to be locked
+  if (m_backup_lock_available &&
+      common::supports_lock_instance_for_backup(m_server_version)) {
     current_console()->print_note(
         "Instance locked for backup, skipping mysql system tables locks");
   } else {
@@ -3243,11 +3309,21 @@ void Dumper::lock_all_tables() {
       // be possible to list tables
       validate_privileges(mysql);
 
+      // MariaDB stores the account data in `global_priv` (`user` is only a
+      // view over it since 10.4, locking it does not lock the account data),
+      // roles in `roles_mapping`, and has neither `default_roles` nor
+      // `global_grants`. Events live in `event`; they are part of the dumped
+      // DDL and there is no data dictionary to read them from instead.
       const auto result = query(
-          "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
-          "('columns_priv', 'db', 'default_roles', 'func', 'global_grants', "
-          "'proc', 'procs_priv', 'proxies_priv', 'role_edges', 'tables_priv', "
-          "'user')");
+          m_server_version.is_maria_db
+              ? "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
+                "('columns_priv', 'db', 'event', 'func', 'global_priv', "
+                "'proc', 'procs_priv', 'proxies_priv', 'roles_mapping', "
+                "'tables_priv')"
+              : "SHOW TABLES IN mysql WHERE Tables_in_mysql IN"
+                "('columns_priv', 'db', 'default_roles', 'func', "
+                "'global_grants', 'proc', 'procs_priv', 'proxies_priv', "
+                "'role_edges', 'tables_priv', 'user')");
 
       auto stmt = k_lock_tables;
 
@@ -3334,7 +3410,7 @@ void Dumper::acquire_read_locks() {
   // 8.0.23, FLUSH_TABLES privilege
   const auto execute_ftwrl =
       !m_user_privileges->validate({"RELOAD"}).has_missing_privileges() ||
-      (m_server_version.number >= Version(8, 0, 23) &&
+      (common::supports_flush_tables_privilege(m_server_version) &&
        !m_user_privileges->validate({"FLUSH_TABLES"}).has_missing_privileges());
   m_ftwrl_used = execute_ftwrl;
 
@@ -3490,14 +3566,18 @@ void Dumper::lock_instance() {
     return;
   }
 
-  if (m_user_has_backup_admin) {
+  if (m_backup_lock_available) {
     const auto console = current_console();
 
     console->print_info("Locking instance for backup");
 
     if (!m_options.is_dry_run()) {
       try {
-        execute("LOCK INSTANCE FOR BACKUP");
+        if (common::supports_backup_stage(m_server_version)) {
+          start_backup_stage();
+        } else {
+          execute("LOCK INSTANCE FOR BACKUP");
+        }
       } catch (const shcore::Error &e) {
         console->print_error("Could not acquire the backup lock: " +
                              e.format());
@@ -3506,8 +3586,13 @@ void Dumper::lock_instance() {
       }
     }
   } else if (!m_ftwrl_used) {
+    // MariaDB 10.5 renamed REPLICATION CLIENT to BINLOG MONITOR and does not
+    // report the old name in SHOW PRIVILEGES, which makes validate() reject it
+    // as an unknown privilege rather than report it as missing
+    const auto *const replication_client =
+        m_server_version.is_maria_db ? "BINLOG MONITOR" : "REPLICATION CLIENT";
     auto can_execute_show_status =
-        2 != m_user_privileges->validate({"REPLICATION CLIENT", "SUPER"})
+        2 != m_user_privileges->validate({replication_client, "SUPER"})
                  .missing_privileges()
                  .size();
     DBUG_EXECUTE_IF("dumper_replication_client_unavailable",
@@ -3536,15 +3621,18 @@ void Dumper::lock_instance() {
       }
 
       if (!can_check_dump_consistency) {
-        msg +=
-            "\n * The gtid_mode system variable is set to OFF or "
-            "OFF_PERMISSIVE.";
+        // MariaDB has no gtid_mode - there, GTIDs come with the binary log,
+        // which the bullet above already reports as disabled
+        if (!m_server_version.is_maria_db) {
+          msg +=
+              "\n * The gtid_mode system variable is set to OFF or "
+              "OFF_PERMISSIVE.";
+        }
 
         msg += shcore::str_format(
             "\n * The current user does not have required privileges to "
             "execute SHOW %s STATUS.",
-            mysqlshdk::mysql::get_binary_logs_keyword(m_server_version.number,
-                                                      true));
+            common::binlog_status_keyword(m_server_version));
       }
 
       console->print_warning(msg);
@@ -3559,30 +3647,38 @@ void Dumper::lock_instance() {
 
       msg = "In order to create a consistent dump, either:";
 
-      if (m_server_version.number >= Version(8, 0, 0)) {
-        msg += "\n * Use an account which has the BACKUP_ADMIN privilege.";
+      if (const auto privilege = backup_lock_privilege()) {
+        msg += shcore::str_format(
+            "\n * Use an account which has the %s privilege.", privilege);
       }
 
       if (!m_binlog_enabled) {
         if (can_check_dump_consistency) {
           msg += "\n * Enable binary logging.";
         } else {
-          msg +=
-              "\n * Enable binary logging and set the gtid_mode system "
-              "variable to ON or ON_PERMISSIVE.";
+          // on MariaDB enabling the binary log is what enables GTIDs, so the
+          // remedy is the same one either way
+          msg += m_server_version.is_maria_db
+                     ? "\n * Enable binary logging."
+                     : "\n * Enable binary logging and set the gtid_mode "
+                       "system variable to ON or ON_PERMISSIVE.";
 
-          msg +=
+          msg += shcore::str_format(
               "\n * Enable binary logging and use an account which has the "
-              "REPLICATION CLIENT or SUPER privileges.";
+              "%s or SUPER privileges.",
+              replication_client);
         }
       } else {
+        // MariaDB cannot get here: the binary log being on means GTIDs are on,
+        // which is what can_check_dump_consistency asks about
         assert(!can_check_dump_consistency);
+        assert(!m_server_version.is_maria_db);
 
         msg += "\n * Set the gtid_mode system variable to ON or ON_PERMISSIVE.";
 
-        msg +=
-            "\n * Use an account which has the REPLICATION CLIENT or SUPER "
-            "privileges.";
+        msg += shcore::str_format(
+            "\n * Use an account which has the %s or SUPER privileges.",
+            replication_client);
       }
 
       console->print_note(msg);
@@ -3594,6 +3690,117 @@ void Dumper::lock_instance() {
   }
 
   m_instance_locked = true;
+}
+
+void Dumper::report_ddl_in_flight(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
+  const auto console = current_console();
+
+  console->print_note(shcore::str_format(
+      "The backup lock waited %i seconds for the locks it needs, rather than "
+      "the server's lock_wait_timeout, which defaults to a day. Wait for the "
+      "statements below to finish and dump again, or dump with "
+      "'consistent: false', which does not take the lock at all.",
+      k_block_ddl_lock_wait_timeout));
+
+  try {
+    // the statements which are most likely to be the reason, longest first
+    const auto result = session->query(
+        "SELECT ID, TIME, LEFT(INFO, 160) FROM information_schema.PROCESSLIST "
+        "WHERE COMMAND = 'Query' AND ID <> CONNECTION_ID() AND INFO IS NOT "
+        "NULL ORDER BY TIME DESC LIMIT 3");
+
+    while (const auto row = result->fetch_one()) {
+      console->print_info(
+          shcore::str_format("  thread %s, running for %s seconds: %s",
+                             row->get_as_string(0).c_str(),
+                             row->get_as_string(1).c_str(),
+                             row->get_string(2, "").c_str()));
+    }
+  } catch (const std::exception &e) {
+    // seeing another account's statements needs PROCESS, and the note above is
+    // the part which matters
+    log_warning("Failed to list the statements in flight: %s", e.what());
+  }
+}
+
+void Dumper::start_backup_stage() {
+  // BACKUP STAGE cannot run in a session which holds a global read lock, and it
+  // implicitly commits, which would throw away the consistent snapshot the main
+  // session is holding - hence a session of its own. That session also owns the
+  // stage: MariaDB allows one backup at a time server-wide and only the
+  // connection which started it can advance or end it.
+  assert(!m_backup_stage_session);
+
+  auto s = establish_session(session()->get_connection_options(), false);
+  on_init_thread_session(s);
+
+  // START blocks concurrent backups and lets the storage engines prepare,
+  // BLOCK_DDL is the analogue of LOCK INSTANCE FOR BACKUP. Intermediate stages
+  // are entered implicitly, stages can only ever move forward.
+  // Both stages take metadata locks and both can wait: measured on 12.3.2,
+  // START alone times out against a held table lock. So the bound goes on
+  // before the first of them, not between the two.
+  execute(s, shcore::str_format("SET @@session.lock_wait_timeout = %i",
+                                k_block_ddl_lock_wait_timeout));
+
+  bool started = false;
+
+  const auto abandon = [&s, &started]() {
+    // do not leave the server-wide backup half-started
+    if (started) {
+      try {
+        execute(s, "BACKUP STAGE END");
+      } catch (const std::exception &e) {
+        log_error("Failed to end the backup stage: %s", e.what());
+      }
+    }
+
+    s->close();
+  };
+
+  try {
+    execute(s, "BACKUP STAGE START");
+    started = true;
+    execute(s, "BACKUP STAGE BLOCK_DDL");
+  } catch (const mysqlshdk::db::Error &e) {
+    if (ER_LOCK_WAIT_TIMEOUT == e.code()) {
+      report_ddl_in_flight(s);
+    }
+
+    abandon();
+    throw;
+  } catch (...) {
+    abandon();
+    throw;
+  }
+
+  // this is the one way the MariaDB lock is heavier than MySQL's, which blocks
+  // no DML at all - worth having in the log when a dump appears to stall
+  // someone else's writes
+  log_info(
+      "Instance locked with BACKUP STAGE BLOCK_DDL: DDL and writes to "
+      "non-transactional tables block for the length of the dump, "
+      "transactional DML and account management do not");
+
+  m_backup_stage_session = std::move(s);
+}
+
+void Dumper::unlock_instance() {
+  if (!m_backup_stage_session) {
+    return;
+  }
+
+  // closing the session would end the stage as well, but an explicit END
+  // releases the server-wide backup even if the connection lingers
+  try {
+    execute(m_backup_stage_session, "BACKUP STAGE END");
+  } catch (const std::exception &e) {
+    log_error("Failed to end the backup stage: %s", e.what());
+  }
+
+  m_backup_stage_session->close();
+  m_backup_stage_session.reset();
 }
 
 void Dumper::initialize_instance_cache_minimal() {
@@ -3769,6 +3976,7 @@ void Dumper::validate_mds() {
       "Checking for compatibility with MySQL HeatWave Service " + version,
       stage_attrib("begin"));
 
+  // reachable only via 'ocimds', which is refused for a MariaDB source
   if (!m_cache.server.version.is_8_0) {
     console->print_note("MySQL Server " +
                         m_cache.server.version.number.get_short() +
@@ -3928,7 +4136,7 @@ void Dumper::validate_mds() {
          This will disable this check and the dump will be produced normally, Primary Keys will not be added automatically.
          It will not be possible to load the dump in an HA enabled DB System instance.
 )",
-        compatibility::supports_pke_as_pk(m_options.target_version())
+        common::supports_pke_as_pk(m_options.target_server_version())
             ? " or Primary Key Equivalents"
             : ""));
   }
@@ -4829,6 +5037,10 @@ std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_complete_schema(
     m->dump(&Schema_dumper::write_comment, schema, std::string{});
     m->dump(&Schema_dumper::dump_schema_ddl, schema);
 
+    if (m_options.dump_sequences()) {
+      m->dump(&Schema_dumper::dump_sequences_ddl, schema);
+    }
+
     if (m_options.dump_events()) {
       m->dump(&Schema_dumper::dump_events_ddl, schema);
     }
@@ -4845,9 +5057,16 @@ std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_complete_schema(
 
 std::unique_ptr<Dumper::Memory_dumper> Dumper::dump_schema(
     Schema_dumper *dumper, const std::string &schema) const {
-  return dump_ddl(dumper, [&schema](Memory_dumper *m) {
+  return dump_ddl(dumper, [&schema, this](Memory_dumper *m) {
     m->dump(&Schema_dumper::write_comment, schema, std::string{});
     m->dump(&Schema_dumper::dump_schema_ddl, schema);
+
+    // sequences travel with the schema itself rather than in a file of their
+    // own: they have to exist before any table which defaults to NEXT VALUE FOR
+    // one of them, and the schema script is the first thing the loader runs
+    if (m_options.dump_sequences()) {
+      m->dump(&Schema_dumper::dump_sequences_ddl, schema);
+    }
   });
 }
 
@@ -5635,6 +5854,27 @@ void Dumper::write_schema_metadata(
         doc.AddMember({(shcore::str_lower(type) + "Dependencies").c_str(), a},
                       std::move(routine_dependencies), a);
       }
+
+      // MariaDB Oracle-mode packages, written only when there is something to
+      // write, so that a dump taken from a server which has none looks exactly
+      // as it did before
+      for (const auto &[type, key] :
+           {std::pair{"PACKAGE", "packages"},
+            std::pair{"PACKAGE BODY", "packageBodies"}}) {
+        const auto names = dumper->get_routines(schema.name, type);
+
+        if (names.empty()) {
+          continue;
+        }
+
+        Value packages{Type::kArrayType};
+
+        for (const auto &package : names) {
+          packages.PushBack({package.c_str(), a}, a);
+        }
+
+        doc.AddMember(StringRef(key), std::move(packages), a);
+      }
     }
 
     if (m_options.dump_libraries()) {
@@ -5646,6 +5886,22 @@ void Dumper::write_schema_metadata(
       }
 
       doc.AddMember(StringRef("libraries"), std::move(libraries), a);
+    }
+
+    // written only when there is something to write, so that a dump taken from
+    // a server which has no sequences at all looks exactly as it did before
+    if (m_options.dump_sequences()) {
+      if (const auto &names = dumper->get_sequences(schema.name);
+          !names.empty()) {
+        // list of sequences
+        Value sequences{Type::kArrayType};
+
+        for (const auto &sequence : names) {
+          sequences.PushBack({sequence.c_str(), a}, a);
+        }
+
+        doc.AddMember(StringRef("sequences"), std::move(sequences), a);
+      }
     }
   }
 
@@ -5767,6 +6023,16 @@ void Dumper::write_table_metadata(
   doc.AddMember(StringRef("extension"),
                 refs(table.output_config->data_file_extension), a);
   doc.AddMember(StringRef("chunking"), m_options.split(), a);
+
+  if (table.info && table.info->period_unique_key) {
+    // MariaDB: the table refuses REPLACE, which is how the loader loads a chunk
+    // - see MARIADB_DUMP_LOAD.md section 31
+    doc.AddMember(StringRef("periodUniqueKey"), true, a);
+  }
+
+  if (table.info) {
+    doc.AddMember(StringRef("engine"), refs(table.info->engine), a);
+  }
   doc.AddMember(
       StringRef("compression"),
       {mysqlshdk::storage::to_string(table.output_config->compression).c_str(),
@@ -5848,16 +6114,15 @@ void Dumper::summarize() const {
   }
 
   if (m_cache.has_library_ddl &&
-      !compatibility::supports_library_ddl(m_options.target_version())) {
+      !common::supports_library_ddl(m_options.target_server_version())) {
     console->print_warning(shcore::str_format(
         "The dump contains library DDL, however the 'targetVersion' option is "
         "set to %s, where this feature is not supported.",
         m_options.target_version().get_base().c_str()));
   }
 
-  if (uses_innodb_vector_store() &&
-      !compatibility::supports_vector_store_conversion(
-          m_options.target_version())) {
+  if (uses_innodb_vector_store() && !common::supports_vector_store_conversion(
+                                        m_options.target_server_version())) {
     console->print_warning(shcore::str_format(
         "The dump contains InnoDB-based vector store tables, however the "
         "'targetVersion' option is set to %s, where automatic conversion to "
@@ -5865,9 +6130,8 @@ void Dumper::summarize() const {
         m_options.target_version().get_base().c_str()));
   }
 
-  if (uses_dynamic_data_masking() &&
-      !compatibility::supports_dynamic_data_masking(
-          m_options.target_version())) {
+  if (uses_dynamic_data_masking() && !common::supports_dynamic_data_masking(
+                                         m_options.target_server_version())) {
     // WL17279-FR1.4.1: warn if `targetVersion` doesn't support dynamic data
     // masking
     console->print_warning(
@@ -6152,7 +6416,13 @@ bool Dumper::should_dump_data(const Table_task &table) const {
   if (table.info->columns.empty() ||
       (table.schema == "mysql" &&
        (table.name == "apply_status" || table.name == "general_log" ||
-        table.name == "schema" || table.name == "slow_log"))) {
+        table.name == "schema" || table.name == "slow_log" ||
+        // MariaDB's system-versioning metadata. It is an ordinary InnoDB table,
+        // but the server treats it as a log table, so it can neither be locked
+        // nor loaded into: LOAD DATA fails with 1556 "You can't use locks with
+        // log tables". Listed unconditionally, like the NDB tables above - a
+        // MySQL instance has no table of that name.
+        table.name == "transaction_registry"))) {
     return false;
   } else {
     return true;
@@ -6164,7 +6434,7 @@ void Dumper::validate_preflight_privileges() const {
     return;
   }
 
-  if (m_server_version.is_5_6) {
+  if (common::requires_super_to_dump_users(m_server_version)) {
     const auto result = m_user_privileges->validate({"SUPER"});
 
     if (result.has_missing_privileges()) {
@@ -6174,8 +6444,8 @@ void Dumper::validate_preflight_privileges() const {
     }
   }
 
-  if (m_server_version.is_8_0) {
-    // SHOW CREATE USER requires access to the mysql schema.
+  if (common::requires_select_on_mysql_to_dump_users(m_server_version)) {
+    // SHOW CREATE USER and SHOW GRANTS FOR read the grant tables.
     const auto result = m_user_privileges->validate({"SELECT"}, "mysql");
 
     if (result.has_missing_privileges()) {
@@ -6205,7 +6475,7 @@ void Dumper::validate_object_privileges() const {
     table_required.emplace(std::move(trigger));
   }
 
-  if (!m_cache.server.version.is_8_0) {
+  if (common::requires_explicit_select_privilege(m_cache.server.version)) {
     // need to explicitly check for SELECT privilege, otherwise some queries
     // will return empty results
     std::string select{"SELECT"};
@@ -6421,7 +6691,7 @@ bool Dumper::dump_users() const {
 
 void Dumper::validate_dump_consistency(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
-  if (!m_options.consistent_dump() || m_ftwrl_used || m_user_has_backup_admin) {
+  if (!m_options.consistent_dump() || m_ftwrl_used || m_backup_lock_available) {
     return;
   }
 
@@ -6449,16 +6719,85 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
-        // check if executed statements are safe
-        // get GTID sets which were executed since the dump has started
+        bool verified = false;
 
-        const auto set =
-            Gtid_set::from_normalized_string(gtid_executed)
-                .subtract(Gtid_set::from_normalized_string(prev_gtid_executed),
-                          instance);
+        // which of the transactions in the replayed binary log range ran
+        // during the dump: MySQL subtracts the two uuid:N-M sets server side,
+        // MariaDB - which has no GTID_SUBTRACT() - compares the two
+        // domain-server-sequence positions client side
+#ifndef MARIADB_BUILD
+        if (common::supports_gtid_set_functions(m_server_version)) {
+          // get GTID sets which were executed since the dump has started
+          const auto set =
+              mysqlshdk::mysql::Gtid_set::from_normalized_string(gtid_executed)
+                  .subtract(mysqlshdk::mysql::Gtid_set::from_normalized_string(
+                                prev_gtid_executed),
+                            instance);
 
-        consistent = check_if_transactions_are_ddl_safe(
-            instance, m_cache.server.binlog.file, binlog(session).file, set);
+          std::vector<mysqlshdk::mysql::Gtid_range> ranges;
+          uint64_t count = 0;
+
+          set.enumerate_ranges(
+              [&ranges, &count](const mysqlshdk::mysql::Gtid_range &range) {
+                ranges.emplace_back(range);
+                count += range.count();
+              });
+
+          consistent = check_if_transactions_are_ddl_safe(
+              instance, m_cache.server.binlog.file, binlog(session).file,
+              [&ranges](const Gtid &gtid) {
+                if (ranges.empty()) return true;
+
+                const auto one = mysqlshdk::mysql::Gtid_range::from_gtid(gtid);
+                if (!one) return false;
+                assert(one.begin == one.end);
+
+                return std::any_of(
+                    ranges.begin(), ranges.end(),
+                    [&one](const mysqlshdk::mysql::Gtid_range &range) {
+                      return range.uuid_tag == one.uuid_tag &&
+                             range.begin <= one.begin && one.begin <= range.end;
+                    });
+              },
+              count);
+          verified = true;
+        }
+#endif  // !MARIADB_BUILD
+
+        if (!verified && common::is_maria_db_dialect(m_server_version)) {
+          using mysqlshdk::mysql::Mariadb_gtid_position;
+
+          // a position covers every sequence below the one it names, so "ran
+          // during the dump" is "at or below where we ended, past where we
+          // started" - see MARIADB_DUMP_LOAD.md section 15.2
+          const auto before = Mariadb_gtid_position::parse(prev_gtid_executed);
+          const auto after = Mariadb_gtid_position::parse(gtid_executed);
+
+          consistent = check_if_transactions_are_ddl_safe(
+              instance, m_cache.server.binlog.file, binlog(session).file,
+              [&before, &after](const Gtid &gtid) {
+                Mariadb_gtid_position one;
+
+                try {
+                  one = Mariadb_gtid_position::parse(gtid);
+                } catch (const std::invalid_argument &) {
+                  // not a position we understand - do not exclude it from the
+                  // check, the DDL test itself decides
+                  return true;
+                }
+
+                return after.contains(one) && !before.contains(one);
+              },
+              after.transactions_since(before));
+          verified = true;
+        }
+
+        if (!verified) {
+          console->print_note(
+              "Verifying via the binary log whether the executed statements "
+              "were DDL is not supported yet against this server; treating the "
+              "dump as not verified.");
+        }
       }
     }
   } else {
@@ -6475,7 +6814,8 @@ void Dumper::validate_dump_consistency(
       if (m_options.skip_consistency_checks()) {
         skip_check();
       } else {
-        // check if executed statements are safe
+        // no GTIDs to tell apart here: every transaction physically between
+        // the two binary log positions ran during the dump, on either vendor
         consistent = check_if_transactions_are_ddl_safe(
             instance, m_cache.server.binlog.file, binlog);
       }
@@ -6510,32 +6850,45 @@ void Dumper::fetch_server_information() {
 
   m_server_version = common::server_version(session());
   m_binlog_enabled = instance.get_sysvar_bool("log_bin").value_or(false);
-  m_gtid_enabled = shcore::str_ibeginswith(
-      instance.get_sysvar_string("gtid_mode").value_or("OFF"), "ON");
+  // MariaDB has no gtid_mode: every transaction written to the binary log gets
+  // a GTID, so binary logging is what decides whether the GTID position is a
+  // usable record of what the server did - MARIADB_DUMP_LOAD.md section 4.4
+  m_gtid_enabled =
+      common::is_maria_db_dialect(m_server_version)
+          ? m_binlog_enabled
+          : shcore::str_ibeginswith(
+                instance.get_sysvar_string("gtid_mode").value_or("OFF"), "ON");
 
   DBUG_EXECUTE_IF("dumper_binlog_disabled", { m_binlog_enabled = false; });
   DBUG_EXECUTE_IF("dumper_gtid_disabled", { m_gtid_enabled = false; });
 
+  // "is this server newer than the tool" is measured against the Shell's own
+  // version for MySQL and against the server version this Shell was built from
+  // for MariaDB, whose numbering is not on the Shell's scale - see
+  // MARIADB_DUMP_LOAD.md section 7.4
+  const auto &reference = common::reference_version(m_server_version);
+  const auto vendor = m_server_version.is_maria_db ? "MariaDB" : "MySQL";
+
   // BUG#37866205 disallow dumps from server with a greater major version
   DBUG_EXECUTE_IF("dumper_unsupported_server_version", {
-    m_server_version.number = Version(k_shell_version.get_major() + 1, 0, 0);
+    m_server_version.number = Version(reference.get_major() + 1, 0, 0);
   });
 
   DBUG_EXECUTE_IF("dumper_unsupported_calendar_gap_server_version",
                   { m_server_version.number = Version(26, 6, 0); });
 
-  const auto unsupported_server_error = [this]() {
+  const auto unsupported_server_error = [this, vendor]() {
     return std::runtime_error(
-        shcore::str_format("Unsupported MySQL Server %s detected, please "
+        shcore::str_format("Unsupported %s Server %s detected, please "
                            "upgrade the MySQL Shell first",
-                           m_server_version.number.get_base().c_str()));
+                           vendor, m_server_version.number.get_base().c_str()));
   };
 
-  if (m_server_version.number.get_major() > k_shell_version.get_major()) {
+  if (m_server_version.number.get_major() > reference.get_major()) {
     throw unsupported_server_error();
   }
 
-  if (is_unsupported_historical_dump_source_version(m_server_version.number)) {
+  if (is_unsupported_historical_dump_source_version(m_server_version)) {
     throw unsupported_server_error();
   }
 
@@ -6543,24 +6896,28 @@ void Dumper::fetch_server_information() {
   // warn if server has a greater minor version (8.0.x -> 8.1.0, 8.4.0 -> 8.5.0
   // -> does not exist, but handles also 9.0.0)
   const auto newer_version =
-      Version{k_shell_version.get_major(), k_shell_version.get_minor() + 1, 0};
+      Version{reference.get_major(), reference.get_minor() + 1, 0};
 
   DBUG_EXECUTE_IF("dumper_newer_server_version",
                   { m_server_version.number = newer_version; });
 
   if (m_server_version.number >= newer_version) {
     current_console()->print_warning(shcore::str_format(
-        "MySQL Server %s detected, which is newer than the MySQL Shell. Please "
+        "%s Server %s detected, which is newer than the MySQL Shell. Please "
         "upgrade the MySQL Shell if dump or load operation fails.",
-        m_server_version.number.get_base().c_str()));
+        vendor, m_server_version.number.get_base().c_str()));
   }
 
-  if (compatibility::supports_dynamic_data_masking(m_server_version.number)) {
+  if (common::supports_dynamic_data_masking(m_server_version)) {
     m_data_masking_enabled =
         mysqlsh::common::Data_masking{session()}.is_component_installed();
   }
 }
 
+// The Upgrade Checker is MySQL-server specific and is not built for MariaDB.
+// This is only reached from validate_mds(), i.e. the MySQL HeatWave Service
+// compatibility path, which does not apply to MariaDB either.
+#ifdef HAVE_UPGRADE_CHECKER
 issues::Status_set Dumper::check_for_upgrade_errors() const {
   if (!m_options.mds_compatibility()) {
     return {};
@@ -6654,9 +7011,19 @@ issues::Status_set Dumper::check_for_upgrade_errors() const {
 
   return status;
 }
+#else
+issues::Status_set Dumper::check_for_upgrade_errors() const { return {}; }
+#endif  // HAVE_UPGRADE_CHECKER
 
 void Dumper::throw_if_cannot_dump_users() const {
-  if (m_server_version.is_maria_db && dump_users()) {
+  // BUG#34049624 refused this for every MariaDB source, and a MySQL-shaped dump
+  // still cannot carry a MariaDB account: roles are not accounts there, the
+  // authentication plugins have no MySQL counterpart and IDENTIFIED VIA x OR y
+  // has no MySQL form at all. A MariaDB-dialect dump can - see
+  // MARIADB_DUMP_LOAD.md section 20 - so the refusal now keys on the dialect
+  // the dump is being written in rather than on the vendor of the source.
+  if (m_server_version.is_maria_db &&
+      !common::is_maria_db_dialect(m_server_version) && dump_users()) {
     THROW_ERROR(SHERR_DUMP_USERS_MARIA_DB_NOT_SUPPORTED);
   }
 }
@@ -6696,7 +7063,7 @@ void Dumper::handle_mismatched_view_references(issues::Status_set status,
 
 std::string Dumper::gtid_executed(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) const {
-  return common::gtid_executed(session);
+  return common::gtid_executed(session, m_server_version);
 }
 
 common::Binlog Dumper::binlog(
@@ -6705,7 +7072,7 @@ common::Binlog Dumper::binlog(
 }
 
 std::string Dumper::optimizer_hints(const Instance_cache::Table *info) const {
-  if (!m_server_version.is_8_0) {
+  if (!common::supports_optimizer_hints(m_server_version)) {
     return "SQL_NO_CACHE ";
   } else if ("RAPID" == info->secondary_engine) {
     // disable off-loading to heatwave

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +37,8 @@
 #include "modules/mod_utils.h"
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
+#include "modules/util/common/dump/server_features.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
 #include "modules/util/load/load_errors.h"
@@ -178,19 +181,29 @@ void Load_dump_options::on_set_session(
 
   const auto instance = mysqlshdk::mysql::Instance(session);
 
-  m_target_server_version =
-      Version(session->query("SELECT @@version")->fetch_one()->get_string(0));
+  // The version *scale* is meaningless without the vendor, so the two are
+  // captured together. The vendor is cached off the client-side handshake
+  // data, so unlike common::server_version() it costs no round trip - and,
+  // unlike the dump side, no remapping is applied here: a MariaDB target keeps
+  // its real version. See MARIADB_DUMP_LOAD.md sections 4.0 and 7.1.
+  m_target_server = dump::common::server_version(
+      Version(session->query("SELECT @@version")->fetch_one()->get_string(0)),
+      mysqlshdk::db::ServerVendor::MariaDB == session->get_server_vendor());
+
+  // these all name MySQL versions on the 8.0-or-later side of every flag, so
+  // only the number changes
   DBUG_EXECUTE_IF("dump_loader_bulk_unsupported_version",
-                  { m_target_server_version = Version(8, 3, 0); });
+                  { m_target_server.number = Version(8, 3, 0); });
 
   DBUG_EXECUTE_IF("dump_loader_libraries_unsupported_version",
-                  { m_target_server_version = Version(9, 1, 0); });
+                  { m_target_server.number = Version(9, 1, 0); });
 
   // dynamic data masking
   DBUG_EXECUTE_IF("dump_loader_ddm_unsupported_version",
-                  { m_target_server_version = Version(9, 6, 0); });
+                  { m_target_server.number = Version(9, 6, 0); });
 
-  m_is_mds = m_target_server_version.is_mds();
+  // is_mds() keys off a 'cloud' version suffix, which is vendor-blind
+  m_is_mds = !target_is_maria_db() && m_target_server.number.is_mds();
   DBUG_EXECUTE_IF("dump_loader_force_mds", { m_is_mds = true; });
 
   if (is_gipk_supported()) {
@@ -215,13 +228,30 @@ void Load_dump_options::on_set_session(
     }
   }
 
-  m_server_uuid = session->query("SELECT @@server_uuid")
-                      ->fetch_one_or_throw()
-                      ->get_string(0);
+  // @@server_uuid is MySQL-only; MariaDB identifies an instance by @@server_id.
+  // This value only names the default progress file and is recorded in the
+  // progress log so a resume can tell it is pointed at a different server, so
+  // any stable per-instance identifier does. Detected at run time rather than
+  // per build, because a MariaDB-linked shell can be pointed at MySQL and vice
+  // versa (see MARIADB_DUMP_LOAD.md section 4.0).
+  if (target_is_maria_db()) {
+    // @@server_id is an integer, unlike MySQL's @@server_uuid string.
+    m_server_uuid = std::to_string(session->query("SELECT @@server_id")
+                                       ->fetch_one_or_throw()
+                                       ->get_uint(0));
+  } else {
+    m_server_uuid = session->query("SELECT @@server_uuid")
+                        ->fetch_one_or_throw()
+                        ->get_string(0);
+  }
 
   if (m_load_users) {
     // some users are always excluded
     filters().users().exclude(dump::common::k_excluded_users);
+
+    if (target_is_maria_db()) {
+      filters().users().exclude(dump::common::k_maria_db_excluded_users);
+    }
 
     if (is_mds()) {
       filters().users().exclude(dump::common::k_mhs_excluded_users);
@@ -238,7 +268,7 @@ void Load_dump_options::on_set_session(
     filters().schemas().exclude(dump::common::k_mhs_excluded_schemas);
   }
 
-  if (m_target_server_version >= Version(8, 0, 27)) {
+  if (dump::common::supports_parallel_index_creation(m_target_server)) {
     // adding indexes in parallel was added in 8.0.27,
     // innodb_parallel_read_threads threads are used during the first stage,
     // innodb_ddl_threads threads are used during second and third stages, in
@@ -253,7 +283,7 @@ void Load_dump_options::on_set_session(
             ->get_uint(0);
   }
 
-  if (m_target_server_version >= Version(8, 0, 16)) {
+  if (dump::common::supports_partial_revokes(m_target_server)) {
     m_partial_revokes =
         instance.get_sysvar_bool("partial_revokes").value_or(false);
   }
@@ -262,16 +292,18 @@ void Load_dump_options::on_set_session(
       instance.get_sysvar_int("lower_case_table_names", 0);
 
   // this system variable is only available when MLE component is installed
-  m_is_mle_component_installed = instance.get_sysvar_int("mle.memory_max", 0);
+  m_is_mle_component_installed =
+      dump::common::supports_mle_component(m_target_server)
+          ? instance.get_sysvar_int("mle.memory_max", 0)
+          : 0;
 
   m_is_library_ddl_supported =
-      compatibility::supports_library_ddl(m_target_server_version);
+      dump::common::supports_library_ddl(m_target_server);
 
-  m_supports_pke_as_pk =
-      compatibility::supports_pke_as_pk(m_target_server_version);
+  m_supports_pke_as_pk = dump::common::supports_pke_as_pk(m_target_server);
 
   m_is_ddm_ddl_supported =
-      compatibility::supports_dynamic_data_masking(m_target_server_version);
+      dump::common::supports_dynamic_data_masking(m_target_server);
 
   if (m_is_ddm_ddl_supported) {
     m_is_ddm_component_installed =
@@ -512,7 +544,7 @@ bool Load_dump_options::include_object(
 }
 
 bool Load_dump_options::is_gipk_supported() const {
-  return compatibility::supports_gipks(m_target_server_version);
+  return dump::common::supports_gipks(m_target_server);
 }
 
 void Load_dump_options::set_handle_grant_errors(const std::string &action) {
@@ -540,8 +572,7 @@ void Load_dump_options::configure_bulk_load() {
     return;
   }
 
-  if (m_target_server_version < Version(8, 4, 0)) {
-    // minimum version which supports required syntax is 8.4.0
+  if (!dump::common::supports_bulk_load(m_target_server)) {
     log_info("BULK LOAD: unsupported version");
     return;
   }

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2000, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -46,8 +47,31 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#ifdef MARIADB_BUILD
+// MariaDB's my_sys.h/m_string.h need my_bool (mysql.h) and the my_global.h
+// typedefs (uchar, longlong, DBUG_ASSERT) first; m_ctype.h is at the include
+// root rather than under mysql/strings/. m_ctype.h's CHARSET_INFO uses an
+// anonymous struct inside an anonymous union, which Clang flags as a GNU
+// extension; these are Clang diagnostic names (GCC would error on them under
+// -Werror=pragmas), so the suppression is Clang-only.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
+#endif
+#include <mysql.h>
+
+#include <my_global.h>
+
+#include <m_ctype.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+#include "my_sys.h"
+#else
 #include "my_sys.h"
 #include "mysql/strings/m_ctype.h"
+#endif
 #include "mysqld_error.h"
 
 #include "mysqlshdk/include/shellcore/console.h"
@@ -64,6 +88,7 @@
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/constants.h"
 #include "modules/util/common/dump/dump_version.h"
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
 
 namespace mysqlsh {
@@ -111,8 +136,33 @@ namespace {
 
 using IFile = Schema_dumper::IFile;
 
+// CHARSET_INFO spells the charset/collation names differently per vendor:
+// MariaDB uses LEX_CSTRING cs_name/coll_name, MySQL 8.x plain const char*
+// csname/m_coll_name.
+inline const char *charset_name(const CHARSET_INFO *cs) {
+#ifdef MARIADB_BUILD
+  return cs->cs_name.str;
+#else
+  return cs->csname;
+#endif
+}
+
+inline const char *collation_name(const CHARSET_INFO *cs) {
+#ifdef MARIADB_BUILD
+  return cs->coll_name.str;
+#else
+  return cs->m_coll_name;
+#endif
+}
+
 constexpr std::size_t k_max_innodb_columns = 1017;
 constexpr std::string_view k_innodb_engine = "InnoDB";
+
+constexpr std::string_view k_function_type = "FUNCTION";
+constexpr std::string_view k_procedure_type = "PROCEDURE";
+// MariaDB only, Oracle-mode packages - MARIADB_DUMP_LOAD.md section 19
+constexpr std::string_view k_package_type = "PACKAGE";
+constexpr std::string_view k_package_body_type = "PACKAGE BODY";
 
 using mysqlshdk::utils::Version;
 
@@ -165,7 +215,7 @@ bool is_supported_collation(std::string_view collation) {
 
     for (int i = 0; i < MY_ALL_CHARSETS_SIZE; ++i) {
       if (const auto charset = all_charsets[i]) {
-        collations.emplace(charset->m_coll_name);
+        collations.emplace(collation_name(charset));
       }
     }
 
@@ -444,8 +494,8 @@ void switch_db_collation(IFile *sql_file, const std::string &db_name,
     }
 
     fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-            shcore::quote_identifier(db_name).c_str(), db_cl->csname,
-            db_cl->m_coll_name, delimiter);
+            shcore::quote_identifier(db_name).c_str(), charset_name(db_cl),
+            collation_name(db_cl), delimiter);
 
     *db_cl_altered = 1;
     return;
@@ -464,7 +514,8 @@ void restore_db_collation(IFile *sql_file, const std::string &db_name,
   }
 
   fprintf(sql_file, "ALTER DATABASE %s CHARACTER SET %s COLLATE %s %s\n",
-          quoted_db_name.c_str(), db_cl->csname, db_cl->m_coll_name, delimiter);
+          quoted_db_name.c_str(), charset_name(db_cl), collation_name(db_cl),
+          delimiter);
 }
 
 void switch_cs_variables(IFile *sql_file, const char *delimiter,
@@ -1144,10 +1195,23 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
     IFile *sql_file, const std::string &db) {
   std::vector<Compatibility_issue> res;
   char query_buff[QUERY_LENGTH];
-  const std::array<std::pair<std::string, Compatibility_issue::Object_type>, 2>
-      routine_types{
-          {{"FUNCTION", Compatibility_issue::Object_type::FUNCTION},
-           {"PROCEDURE", Compatibility_issue::Object_type::PROCEDURE}}};
+  // MariaDB Oracle-mode packages bracket the standalone routines, following
+  // routine_dump_param_array in client/mysqldump.cc: a package specification
+  // may declare public data types the routines below it use, so it goes first,
+  // and a package body may call those routines, so it goes last
+  std::vector<std::pair<std::string, Compatibility_issue::Object_type>>
+      routine_types{{std::string{k_function_type},
+                     Compatibility_issue::Object_type::FUNCTION},
+                    {std::string{k_procedure_type},
+                     Compatibility_issue::Object_type::PROCEDURE}};
+
+  if (common::supports_packages(m_cache.server.version)) {
+    routine_types.emplace(routine_types.begin(), std::string{k_package_type},
+                          Compatibility_issue::Object_type::PACKAGE_SPEC);
+    routine_types.emplace_back(std::string{k_package_body_type},
+                               Compatibility_issue::Object_type::PACKAGE_BODY);
+  }
+
   std::string db_name;
 
   std::string db_cl_name;
@@ -1169,6 +1233,10 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
 
   /* 0, retrieve and dump functions, 1, procedures */
   for (const auto &routine_type : routine_types) {
+    // a package holds no parameters of its own and cannot reference a library
+    const auto is_package =
+        Compatibility_issue::Object_type::PACKAGE_SPEC == routine_type.second ||
+        Compatibility_issue::Object_type::PACKAGE_BODY == routine_type.second;
     const auto routine_list = get_routines(db, routine_type.first);
     for (const auto &routine : routine_list) {
       const auto qualified_name = quote(db, routine);
@@ -1204,9 +1272,20 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
         } else if (body.length() > 0) {
           Object_guard_msg guard(sql_file, routine_type.first, db,
                                  routine_name);
-          if (opt_drop_routine || opt_reexecutable)
-            fprintf(sql_file, "/*!50003 DROP %s IF EXISTS %s */;\n",
-                    routine_type.first.c_str(), routine_name.c_str());
+          if (opt_drop_routine || opt_reexecutable) {
+            if (is_package) {
+              // no version comment: the CREATE below is written bare as well,
+              // so a MySQL server could not read this dump either way (a
+              // cross-vendor load is refused up front), and a /*M! ... */
+              // wrapper would additionally hide the statement from the
+              // loader's own object filter
+              fprintf(sql_file, "DROP %s IF EXISTS %s;\n",
+                      routine_type.first.c_str(), routine_name.c_str());
+            } else {
+              fprintf(sql_file, "/*!50003 DROP %s IF EXISTS %s */;\n",
+                      routine_type.first.c_str(), routine_name.c_str());
+            }
+          }
 
           if (routine_res->get_metadata().size() >= 6) {
             auto routine_db_col = row->get_string(5);
@@ -1254,10 +1333,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_routines_for_db(
 
           check_object_for_definer(routine_type.second, qualified_name, &body,
                                    &res);
-          check_routine_for_dependencies(db, routine, routine_type.second,
-                                         &res);
 
-          {
+          if (!is_package) {
+            check_routine_for_dependencies(db, routine, routine_type.second,
+                                           &res);
+
             // BUG#38089433 - handle unsupported collations
             const auto &s = m_cache.schemas.at(db);
             const auto &r = (Compatibility_issue::Object_type::FUNCTION ==
@@ -1379,6 +1459,89 @@ std::vector<Compatibility_issue> Schema_dumper::dump_libraries_for_db(
   }
 
   switch_character_set_results(opt_character_set_results.c_str());
+
+  return {};
+}
+
+/*
+  dump_sequences_for_db
+  -- retrieves the list of sequences for a given db and prints out both the
+  CREATE SEQUENCE statement and the statement which restores the position the
+  sequence was at.
+
+  Follows get_sequence_structure() in client/mysqldump.cc: the definition comes
+  from SHOW CREATE SEQUENCE, but the position does not - I_S.SEQUENCES only
+  describes the sequence, so the current value has to be read from the sequence
+  read as a table. SETVAL() with is_used = 0 makes the next NEXT VALUE FOR
+  return exactly that value.
+
+  See MARIADB_DUMP_LOAD.md section 4.5.1.
+*/
+std::vector<Compatibility_issue> Schema_dumper::dump_sequences_for_db(
+    IFile *sql_file, const std::string &db) {
+  print_comment(sql_file, false,
+                "\n--\n-- Dumping sequences for database '%s'\n--\n\n",
+                fix_identifier_with_newline(db).c_str());
+
+  const auto &sequences = get_sequences(db);
+
+  if (sequences.empty()) {
+    return {};
+  }
+
+  for (const auto &sequence : sequences) {
+    const auto qualified_name = quote(db, sequence);
+    const auto sequence_name = shcore::quote_identifier(sequence);
+
+    log_debug("retrieving CREATE SEQUENCE for %s", qualified_name.c_str());
+
+    // each result has to be consumed before the next query is sent, the row it
+    // handed out does not outlive it
+    std::string ddl;
+
+    {
+      const auto res =
+          query_log_and_throw("SHOW CREATE SEQUENCE " + qualified_name);
+      const auto row = res->fetch_one();
+
+      if (!row || row->is_null(1)) {
+        // dump_sequences_ddl() adds the schema this happened in
+        throw std::runtime_error("No create sequence statement for " +
+                                 qualified_name);
+      }
+
+      ddl = row->get_string(1);
+    }
+
+    // the cached values are gone the moment the sequence is dumped, exactly as
+    // they are on a server restart, so this is the next value which was not
+    // handed out yet - never one which was
+    std::string position;
+
+    {
+      const auto res = query_log_and_throw(
+          "SELECT next_not_cached_value FROM " + qualified_name);
+
+      if (const auto row = res->fetch_one(); row && !row->is_null(0)) {
+        // read as a string, the column is a 64 bit integer whose signedness
+        // follows the type the sequence was declared with
+        position = row->get_as_string(0);
+      }
+    }
+
+    Object_guard_msg guard{sql_file, "sequence", db, sequence_name};
+
+    if (opt_drop_sequence || opt_reexecutable) {
+      fprintf(sql_file, "DROP SEQUENCE IF EXISTS %s;\n", sequence_name.c_str());
+    }
+
+    fprintf(sql_file, "%s;\n", ddl.c_str());
+
+    if (!position.empty()) {
+      fprintf(sql_file, "DO SETVAL(%s, %s, 0);\n", sequence_name.c_str(),
+              position.c_str());
+    }
+  }
 
   return {};
 }
@@ -1573,6 +1736,124 @@ void Schema_dumper::check_object_for_definer(
   }
 }
 
+/**
+ * Drops the schema qualifier from a sequence reference which names the table's
+ * own schema.
+ *
+ * SHOW CREATE TABLE prints a sequence DEFAULT fully qualified - `nextval(`db`.
+ * `s`)` - even where the sequence was named bare, while the table name itself is
+ * printed unqualified. Dumping that verbatim hard codes the source schema: a
+ * load into a schema of another name creates the sequence in the target schema
+ * (section 16) and then a table which ignores it and draws from the source's
+ * instead, and a target without the source schema cannot create the table at
+ * all (error 1146). Neither says anything.
+ *
+ * An unqualified NEXTVAL() in CREATE TABLE resolves against the session's
+ * schema, which the loader has already selected, so dropping the qualifier binds
+ * the reference to wherever the table lands - the same way the table name
+ * already behaves.
+ *
+ * Only a self reference is rewritten. A sequence in another schema is a legal
+ * thing to point at and reads identically here, so its qualifier is the whole
+ * meaning and stays.
+ */
+void Schema_dumper::resolve_sequence_defaults(std::string *create_table,
+                                              const std::string &db,
+                                              const std::string &table) {
+  assert(create_table);
+
+  if (!common::supports_sequences(m_cache.server.version)) {
+    return;
+  }
+
+  // Every way of naming a sequence in a column DEFAULT which the server accepts,
+  // in the spelling it stores: NEXT VALUE FOR normalizes to nextval(), PREVIOUS
+  // VALUE FOR to lastval(). All three print the schema. A sequence cannot appear
+  // anywhere else in table DDL - a generated column is refused with error 1901
+  // and a CHECK with 1970.
+  static constexpr std::string_view k_functions[] = {"nextval(", "lastval(",
+                                                     "setval("};
+
+  // Collect the references before rewriting anything, so the offsets stay valid
+  // and an identifier holding a back tick is read by the same code which
+  // unquotes one everywhere else.
+  std::vector<std::pair<std::string, std::string>> references;
+
+  for (const auto &function : k_functions) {
+    for (auto pos = create_table->find(function); std::string::npos != pos;
+         pos = create_table->find(function, pos + 1)) {
+      auto offset = pos + function.length();
+      std::string first;
+      std::string second;
+
+      try {
+        offset = mysqlshdk::utils::span_quotable_sql_identifier(*create_table,
+                                                               offset, &first);
+
+        if (offset < create_table->length() && '.' == (*create_table)[offset]) {
+          offset = mysqlshdk::utils::span_quotable_sql_identifier(
+              *create_table, offset + 1, &second);
+        }
+      } catch (const std::runtime_error &) {
+        // not a sequence reference after all, i.e. a string which happens to
+        // contain the text
+        continue;
+      }
+
+      if (second.empty()) {
+        references.emplace_back(db, std::move(first));
+      } else {
+        references.emplace_back(std::move(first), std::move(second));
+      }
+    }
+  }
+
+  if (references.empty()) {
+    return;
+  }
+
+  const auto own_schema = shcore::quote_identifier(db) + ".`";
+
+  for (const auto &function : k_functions) {
+    const std::string needle = std::string{function} + own_schema;
+    const std::string replacement = std::string{function} + '`';
+
+    for (auto pos = create_table->find(needle); std::string::npos != pos;
+         pos = create_table->find(needle, pos + replacement.length())) {
+      create_table->replace(pos, needle.length(), replacement);
+    }
+  }
+
+  // A reference the dump does not carry is one the target has to satisfy on its
+  // own, and nothing else will say so: the table is simply not creatable there.
+  for (const auto &[schema, sequence] : references) {
+    const auto cached = m_cache.schemas.find(schema);
+
+    if (m_cache.schemas.end() != cached &&
+        cached->second.sequences.count(sequence)) {
+      continue;
+    }
+
+    // A self reference was just unqualified, so it binds to whichever schema the
+    // table is loaded into; a reference to another schema still names it.
+    if (db == schema) {
+      current_console()->print_warning(shcore::str_format(
+          "Table %s has a column DEFAULT which references sequence %s. The "
+          "sequence is not included in this dump, so the table cannot be "
+          "created unless a sequence of that name already exists in the schema "
+          "it is loaded into.",
+          quote(db, table).c_str(),
+          shcore::quote_identifier(sequence).c_str()));
+    } else {
+      current_console()->print_warning(shcore::str_format(
+          "Table %s has a column DEFAULT which references sequence %s in "
+          "another schema. The sequence is not included in this dump, so the "
+          "table cannot be created unless it already exists on the target.",
+          quote(db, table).c_str(), quote(schema, sequence).c_str()));
+    }
+  }
+}
+
 /*
   get_table_structure -- retrieves database structure, prints out
   corresponding CREATE statement.
@@ -1627,6 +1908,8 @@ std::vector<Compatibility_issue> Schema_dumper::get_table_structure(
     }
 
     std::string create_table = row->get_string(1);
+
+    resolve_sequence_defaults(&create_table, db, table);
 
     std::string text = fix_identifier_with_newline(result_table);
     if (*out_table_type == "VIEW") /* view */
@@ -2330,141 +2613,6 @@ char Schema_dumper::check_if_ignore_table(const std::string &db,
   return result;
 }
 
-/**
-  This function sets the session binlog in the dump file.
-  When --set-gtid-purged is used, this function is called to
-  disable the session binlog and at the end of the dump, to restore
-  the session binlog.
-
-  @note: md_result_file should have been opened, before
-         this function is called.
-
-  @param[in]      flag          If false, disable binlog.
-                                If true and binlog disabled previously,
-                                restore the session binlog.
-*/
-
-void Schema_dumper::set_session_binlog(IFile *file, bool flag) {
-  if (!flag && !is_binlog_disabled) {
-    fputs("SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;\n", file);
-    fputs("SET @@SESSION.SQL_LOG_BIN= 0;\n", file);
-    is_binlog_disabled = true;
-  } else if (flag && is_binlog_disabled) {
-    fputs("SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;\n", file);
-    is_binlog_disabled = false;
-  }
-}
-
-/**
-  This function gets the GTID_EXECUTED sets from the
-  server and assigns those sets to GTID_PURGED in the
-  dump file.
-
-  @param[in]  mysql_con     connection to the server
-
-  @retval     false         successfully printed GTID_PURGED sets
-                             in the dump file.
-  @retval     true          failed.
-
-*/
-
-bool Schema_dumper::add_set_gtid_purged(IFile *file) {
-  std::shared_ptr<mysqlshdk::db::IResult> gtid_purged_res;
-
-  /* query to get the GTID_EXECUTED */
-  if (query_no_throw("SELECT @@GLOBAL.GTID_EXECUTED", &gtid_purged_res))
-    return true;
-
-  /* Proceed only if gtid_purged_res is non empty */
-  if (auto gtid_set = gtid_purged_res->fetch_one()) {
-    if (opt_comments)
-      fputs("\n--\n-- GTID state at the beginning of the backup \n--\n\n",
-            file);
-
-    const char *comment_suffix = "";
-    if (opt_set_gtid_purged_mode == SET_GTID_PURGED_COMMENTED) {
-      comment_suffix = "*/";
-      fputs("/* SET @@GLOBAL.GTID_PURGED='+", file);
-    } else {
-      fputs("SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '", file);
-    }
-
-    /* close the SET expression */
-    fprintf(file, "%s';%s\n", gtid_set->get_string(0).c_str(), comment_suffix);
-  }
-  // NOTE: original code in mysqldump assumed there can be multiple rows
-  // returned by gtid_executed, but that seems wrong???
-
-  return false; /*success */
-}
-
-/**
-  This function processes the opt_set_gtid_purged option.
-  This function also calls set_session_binlog() function before
-  setting the SET @@GLOBAL.GTID_PURGED in the output.
-
-  @param[in]          mysql_con     the connection to the server
-
-  @retval             false         successful according to the value
-                                    of opt_set_gtid_purged.
-  @retval             true          fail.
-*/
-
-bool Schema_dumper::process_set_gtid_purged(IFile *file) {
-  std::shared_ptr<mysqlshdk::db::IResult> gtid_mode_res;
-  std::string gtid_mode_val;
-
-  if (opt_set_gtid_purged_mode == SET_GTID_PURGED_OFF)
-    return false; /* nothing to be done */
-
-  /*
-    Check if the server has the knowledge of GTIDs(pre mysql-5.6)
-    or if the gtid_mode is ON or OFF.
-  */
-
-  if (query_no_throw("SHOW VARIABLES LIKE " + quote_for_like("gtid_mode"),
-                     &gtid_mode_res))
-    return true;
-
-  auto gtid_mode_row = gtid_mode_res->fetch_one();
-
-  /*
-     gtid_mode_row is NULL for pre 5.6 versions. For versions >= 5.6,
-     get the gtid_mode value from the second column.
-  */
-  gtid_mode_val = gtid_mode_row ? gtid_mode_row->get_string(1) : "";
-
-  if (!gtid_mode_val.empty() && gtid_mode_val != "OFF") {
-    /*
-       For any gtid_mode !=OFF and irrespective of --set-gtid-purged
-       being AUTO or ON,  add GTID_PURGED in the output.
-    */
-    if (opt_databases || !opt_alldbs) {
-      fprintf(stderr,
-              "Warning: A partial dump from a server that has GTIDs will "
-              "by default include the GTIDs of all transactions, even "
-              "those that changed suppressed parts of the database. If "
-              "you don't want to restore GTIDs, pass "
-              "--set-gtid-purged=OFF. To make a complete dump, pass "
-              "--all-databases --triggers --routines --events. \n");
-    }
-
-    set_session_binlog(file, false);
-    if (add_set_gtid_purged(file)) {
-      return true;
-    }
-  } else /* gtid_mode is off */
-  {
-    if (opt_set_gtid_purged_mode == SET_GTID_PURGED_ON ||
-        opt_set_gtid_purged_mode == SET_GTID_PURGED_COMMENTED) {
-      fprintf(stderr, "Error: Server has GTIDs disabled.\n");
-      return true;
-    }
-  }
-
-  return false;
-}
-
 /*
   Getting VIEW structure
 
@@ -2730,11 +2878,21 @@ std::vector<std::string> Schema_dumper::get_routines(const std::string &db,
   std::vector<std::string> routine_list;
 
   const auto &schema = m_cache.schemas.at(db);
-  const auto &routines =
-      "PROCEDURE" == type ? schema.procedures : schema.functions;
 
-  for (const auto &routine : routines) {
-    routine_list.emplace_back(routine.first);
+  // MariaDB Oracle-mode packages take no parameters and reference no
+  // libraries, so they are cached as plain sets of names
+  if (k_package_type == type || k_package_body_type == type) {
+    const auto &packages =
+        k_package_type == type ? schema.packages : schema.package_bodies;
+
+    routine_list.assign(packages.begin(), packages.end());
+  } else {
+    const auto &routines =
+        k_procedure_type == type ? schema.procedures : schema.functions;
+
+    for (const auto &routine : routines) {
+      routine_list.emplace_back(routine.first);
+    }
   }
 
   return routine_list;
@@ -2746,7 +2904,7 @@ const std::vector<Instance_cache::Routine::Library_reference>
                                              const std::string_view type) {
   const auto &schema = m_cache.schemas.at(db);
   const auto &routines =
-      "PROCEDURE" == type ? schema.procedures : schema.functions;
+      k_procedure_type == type ? schema.procedures : schema.functions;
 
   return routines.at(routine).library_references;
 }
@@ -2767,7 +2925,78 @@ const std::unordered_set<std::string> &Schema_dumper::get_libraries(
   return m_cache.schemas.at(db).libraries;
 }
 
+std::vector<Compatibility_issue> Schema_dumper::dump_sequences_ddl(
+    IFile *file, const std::string &db) {
+  if (!common::supports_sequences(m_cache.server.version)) {
+    return {};
+  }
+
+  try {
+    log_debug("Dumping sequences for database %s", db.c_str());
+    init_dumping(file, db, nullptr);
+    return dump_sequences_for_db(file, db);
+  } catch (const std::exception &e) {
+    THROW_ERROR(SHERR_DUMP_SD_SEQUENCE_DDL_ERROR, db.c_str(), e.what());
+  }
+}
+
+const std::unordered_set<std::string> &Schema_dumper::get_sequences(
+    const std::string &db) {
+  return m_cache.schemas.at(db).sequences;
+}
+
 namespace {
+
+// the implicit MariaDB role: it turns up in mysql.user like any other role once
+// it holds a grant, but CREATE ROLE PUBLIC is rejected with error 1959
+constexpr std::string_view k_public_role = "PUBLIC";
+
+/**
+ * How dump_grants() has to address one account. The three forms coincide for
+ * every account MySQL has, and for a MariaDB user; they differ for a MariaDB
+ * role, which is hostless - see common::roles_are_hostless().
+ */
+struct Dumped_account {
+  shcore::Account account;
+  // written into the -- begin/-- end markers, and hence what the loader filters
+  // by and drops
+  std::string label;
+  // SHOW CREATE USER / SHOW GRANTS FOR this
+  std::string show_target;
+  // the information_schema.*_PRIVILEGES grantee, 'user'@'host'
+  std::string grantee;
+  bool is_role = false;
+};
+
+/**
+ * MariaDB's SHOW GRANTS FOR a role reports the grants of every role granted to
+ * it as well, each under its own grantee - see
+ * common::show_grants_expands_roles(). Keeps only the statements which are
+ * about the account that was asked about; the rest are dumped with the role
+ * they belong to, and executing them here would fail on a target where that
+ * role was filtered out.
+ */
+void keep_own_grants(std::vector<std::string> *grants,
+                     const shcore::Account &account) {
+  const auto belongs_to_someone_else = [&account](const std::string &grant) {
+    compatibility::Privilege_level_info info;
+
+    try {
+      if (!compatibility::parse_grant_statement(grant, &info)) return false;
+    } catch (const std::runtime_error &) {
+      // not a grant statement at all, leave it for the caller to deal with
+      return false;
+    }
+
+    // roles are hostless, so the name alone identifies the grantee
+    return shcore::split_account(info.account).user != account.user;
+  };
+
+  grants->erase(
+      std::remove_if(grants->begin(), grants->end(), belongs_to_someone_else),
+      grants->end());
+}
+
 enum class Priv_level_type { GLOBAL, SCHEMA, TABLE };
 
 Priv_level_type check_priv_level(const std::string &s, std::string *out_schema,
@@ -2848,6 +3077,32 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
     return roles.end() != std::find(roles.begin(), roles.end(), a);
   };
 
+  // MariaDB roles are objects of their own - see the three predicates for what
+  // that changes
+  const auto hostless_roles =
+      common::roles_are_hostless(m_cache.server.version);
+  const auto transitive_role_grants =
+      common::show_grants_expands_roles(m_cache.server.version);
+  const auto default_role_from_grants =
+      common::default_role_in_show_grants(m_cache.server.version);
+
+  const auto describe_account = [hostless_roles,
+                                 &is_role](const shcore::Account &a) {
+    Dumped_account info;
+
+    info.account = a;
+    info.grantee = shcore::make_account(a);
+    info.is_role = is_role(a);
+
+    if (info.is_role && hostless_roles) {
+      info.label = info.show_target = shcore::quote_identifier(a.user);
+    } else {
+      info.label = info.show_target = info.grantee;
+    }
+
+    return info;
+  };
+
   using get_grants_t =
       std::function<std::vector<std::string>(const std::string &)>;
 
@@ -2868,7 +3123,10 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
     return all_grants_5_6.at(u);
   };
 
-  const auto is_5_6 = m_cache.server.version.is_5_6;
+  // before SHOW CREATE USER existed the account has to be reconstructed from
+  // the first SHOW GRANTS statement
+  const auto is_5_6 =
+      !common::supports_show_create_user(m_cache.server.version);
   const auto &get_grants = is_5_6 ? get_grants_5_6 : get_grants_all;
 
   using get_create_user_t = std::function<std::string(const std::string &)>;
@@ -2915,19 +3173,35 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
   const auto &get_create_user =
       is_5_6 ? get_create_user_5_6 : get_create_user_5_7_or_8_0;
 
-  std::vector<std::string> users;
+  std::vector<Dumped_account> users;
 
   for (const auto &u : m_cache.users) {
-    const auto user = shcore::make_account(u);
+    auto info = describe_account(u);
+    const auto &user = info.label;
 
     if (u.user.find('\'') != std::string::npos) {
       // we don't allow accounts with 's in them because they're incorrectly
       // escaped in the output of SHOW GRANTS, which would generate invalid
       // or dangerous SQL.
-      THROW_ERROR(SHERR_DUMP_ACCOUNT_WITH_APOSTROPHE, user.c_str());
+      THROW_ERROR(SHERR_DUMP_ACCOUNT_WITH_APOSTROPHE, info.grantee.c_str());
     }
 
-    auto create_user = get_create_user(user);
+    if (info.is_role && hostless_roles) {
+      // there is nothing to read from the server: SHOW CREATE USER fails for a
+      // MariaDB role, and a role has no attribute a CREATE ROLE could carry
+      // anyway - even its administrator comes back from SHOW GRANTS, as
+      // GRANT <role> TO <admin> WITH ADMIN OPTION
+      if (!shcore::str_caseeq(u.user, k_public_role)) {
+        fputs("-- begin role " + user + "\n", file);
+        fputs("CREATE ROLE IF NOT EXISTS " + user + ";\n", file);
+        fputs("-- end role " + user + "\n\n", file);
+      }
+
+      users.emplace_back(std::move(info));
+      continue;
+    }
+
+    auto create_user = get_create_user(info.show_target);
 
     if (create_user.empty()) {
       current_console()->print_error("No create user statement for user " +
@@ -2993,11 +3267,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
           const auto &version_info = it->second;
 
           if (version_info.removed.has_value() &&
-              m_target_version >= *version_info.removed) {
+              m_target_version.number >= *version_info.removed) {
             handle_unsupported_plugin(plugin);
-          } else if (m_target_version >= version_info.deprecated) {
+          } else if (m_target_version.number >= version_info.deprecated) {
             const auto is_8_4 =
-                804 == m_target_version.numeric_version_series();
+                804 == m_target_version.number.numeric_version_series();
             const auto is_mysql_native_password =
                 "mysql_native_password" == plugin;
 
@@ -3074,11 +3348,11 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
       auto default_role =
           compatibility::strip_default_role(create_user, &create_user);
       if (!default_role.empty())
-        default_roles.emplace(user, std::move(default_role));
+        default_roles.emplace(user, "SET " + default_role + " TO " + user);
       fputs(create_user + ";\n", file);
       fputs("-- end user " + user + "\n\n", file);
 
-      users.emplace_back(std::move(user));
+      users.emplace_back(std::move(info));
     }
   }
 
@@ -3089,11 +3363,33 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
   // going to be reported as a warning
   mhs_roles.include(common::k_mhs_excluded_users);
 
-  for (const auto &user : users) {
+  for (const auto &info : users) {
+    const auto &user = info.label;
     std::set<std::string> restricted;
-    auto grants = get_grants(user);
+    auto grants = get_grants(info.show_target);
+
+    if (transitive_role_grants && info.is_role) {
+      keep_own_grants(&grants, info.account);
+    }
+
+    if (default_role_from_grants) {
+      // MariaDB reports the default role as a complete statement at the end of
+      // SHOW GRANTS instead of as a clause of SHOW CREATE USER. Move it to its
+      // own block, both because it has to run after every role exists and
+      // because the loader gives it its own statement type.
+      for (auto &grant : grants) {
+        if (shcore::str_ibeginswith(grant, "SET DEFAULT ROLE")) {
+          default_roles.emplace(user, grant);
+          grant.clear();
+        }
+      }
+    }
 
     for (auto &grant : grants) {
+      if (grant.empty()) {
+        continue;
+      }
+
       if (opt_mysqlaas || opt_strip_restricted_grants) {
         if (const auto mysql_table_grant =
                 compatibility::is_grant_on_object_from_mysql_schema(grant);
@@ -3115,7 +3411,7 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
         // ALL PRIVILEGES, which isn't helpful for filtering out grants.
         // Also, ALL PRIVILEGES can appear even in 8.0 for DB grants
         std::string schema;
-        grant = expand_all_privileges(grant, user, &schema);
+        grant = expand_all_privileges(grant, info.grantee, &schema);
 
         // grants on specific user schemas don't need to be filtered
         if (schema.empty() || is_system_schema_or_ndb(schema) ||
@@ -3336,7 +3632,7 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
 
   for (const auto &df : default_roles) {
     fputs("-- begin default role " + df.first + "\n", file);
-    fprintf(file, "SET %s TO %s;\n", df.second.c_str(), df.first.c_str());
+    fputs(df.second + ";\n", file);
     fputs("-- end default role " + df.first + "\n\n", file);
   }
 
@@ -3352,6 +3648,7 @@ Schema_dumper::preprocess_users_script(
         &strip_privilege_cb) {
   static constexpr const char *k_begin_cmt = "-- begin ";
   static constexpr const char *k_create_user_cmt = "-- begin user ";
+  static constexpr const char *k_create_role_cmt = "-- begin role ";
   static constexpr const char *k_grant_cmt = "-- begin grants ";
   static constexpr auto k_default_role_cmt = "-- begin default role ";
   static constexpr const char *k_end_cmt = "-- end ";
@@ -3386,6 +3683,9 @@ Schema_dumper::preprocess_users_script(
       if (shcore::str_beginswith(line, k_create_user_cmt)) {
         current->type = Type::CREATE_USER;
         account_pos = strlen(k_create_user_cmt);
+      } else if (shcore::str_beginswith(line, k_create_role_cmt)) {
+        current->type = Type::CREATE_ROLE;
+        account_pos = strlen(k_create_role_cmt);
       } else if (shcore::str_beginswith(line, k_default_role_cmt)) {
         current->type = Type::DEFAULT_ROLE;
         account_pos = strlen(k_default_role_cmt);
@@ -3410,6 +3710,10 @@ Schema_dumper::preprocess_users_script(
           switch (current->type) {
             case Type::CREATE_USER:
               what = "CREATE/ALTER USER";
+              break;
+
+            case Type::CREATE_ROLE:
+              what = "CREATE ROLE";
               break;
 
             case Type::DEFAULT_ROLE:
@@ -3682,11 +3986,14 @@ std::size_t Schema_dumper::column_count(const std::string &schema,
 
 void Schema_dumper::set_target_version(
     const mysqlshdk::utils::Version &target_version) {
-  m_target_version = target_version;
+  // under the vendor -> vendor scope the target is the same vendor as the
+  // source, which the instance cache already knows
+  m_target_version = common::server_version(target_version,
+                                            m_cache.server.version.is_maria_db);
 
   m_supports_set_any_definer_privilege =
-      compatibility::supports_set_any_definer_privilege(m_target_version);
-  m_supports_pke_as_pk = compatibility::supports_pke_as_pk(m_target_version);
+      common::supports_set_any_definer_privilege(m_target_version);
+  m_supports_pke_as_pk = common::supports_pke_as_pk(m_target_version);
 }
 
 }  // namespace dump

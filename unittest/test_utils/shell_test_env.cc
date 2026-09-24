@@ -177,6 +177,11 @@ Shell_test_env::Shell_test_env() {
   _test_context = _target_server_version.get_base();
 }
 
+bool Shell_test_env::target_server_is_maria_db() {
+  return std::string::npos !=
+         shcore::str_lower(_target_server_version.get_extra()).find("mariadb");
+}
+
 std::string Shell_test_env::mysql_sandbox_uri(int sbindex,
                                               const std::string &user,
                                               const std::string &pwd) {

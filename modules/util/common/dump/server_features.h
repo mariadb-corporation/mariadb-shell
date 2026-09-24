@@ -1,0 +1,431 @@
+/*
+ * Copyright (c) 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is designed to work with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
+ *
+ * This program is distributed in the hope that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+#ifndef MODULES_UTIL_COMMON_DUMP_SERVER_FEATURES_H_
+#define MODULES_UTIL_COMMON_DUMP_SERVER_FEATURES_H_
+
+#include "mysqlshdk/libs/utils/version.h"
+
+#include "modules/util/common/dump/server_info.h"
+
+/**
+ * Vendor-aware feature predicates for the dump & load code.
+ *
+ * Every gate here answers "does *this vendor* at *this version* support X",
+ * never "is the version >= 8.0". MySQL and MariaDB version numbers are on
+ * different scales, so a bare version comparison is only meaningful once the
+ * vendor is known - which is why all of these take a Server_version rather than
+ * a Version.
+ *
+ * MySQL thresholds are carried over unchanged from where these gates used to
+ * live, so the MySQL build sees exactly the same answers it always has.
+ *
+ * See MARIADB_DUMP_LOAD.md section 7.3.
+ */
+namespace mysqlsh {
+namespace dump {
+namespace common {
+
+/**
+ * The version this Shell should be measured against when deciding whether a
+ * server is "newer than the tool".
+ *
+ * The Shell versions on the same calendar scale MySQL Server uses, so for a
+ * MySQL server the answer is the Shell's own version. MariaDB numbers its
+ * releases differently, so a MariaDB server is measured against the MariaDB
+ * version this Shell was built from instead. The semantics are identical in
+ * both cases - "this tool understands servers up to the version it was built
+ * for" - only the yardstick differs.
+ *
+ * Selected by the vendor of the *server*, never by the vendor of the build.
+ *
+ * See MARIADB_DUMP_LOAD.md section 7.4.
+ */
+const mysqlshdk::utils::Version &reference_version(bool is_maria_db);
+
+inline const mysqlshdk::utils::Version &reference_version(
+    const Server_version &v) {
+  return reference_version(v.is_maria_db);
+}
+
+/**
+ * Whether a dump produced from this server carries MariaDB's own SQL dialect.
+ *
+ * This is *not* the same question as "is the source MariaDB". A MySQL build
+ * remaps a MariaDB source to 5.6 (see server_version() in server_info.cc),
+ * which suppresses everything MariaDB-specific and makes the output
+ * MySQL-shaped - that is upstream's supported MariaDB -> MySQL migration path,
+ * and such a dump loads into MySQL. A MariaDB build applies no remap, so its
+ * dumps are MariaDB-dialect and only load into MariaDB.
+ *
+ * Used to decide whether a load or a copy is crossing vendors - see
+ * MARIADB_DUMP_LOAD.md sections 6.4 and 7.1.
+ */
+inline bool is_maria_db_dialect(const Server_version &v) {
+  return v.is_maria_db && !v.is_5_6;
+}
+
+/**
+ * Whether *this build* produces MariaDB-dialect dumps from a source of the
+ * given vendor. The in-process counterpart of is_maria_db_dialect(), for
+ * util.copy*() where there is no manifest to inspect.
+ */
+bool produces_maria_db_dialect(bool source_is_maria_db);
+
+// --- privileges and locking ---------------------------------------------
+
+/**
+ * LOCK INSTANCE FOR BACKUP and the BACKUP_ADMIN privilege which guards it.
+ *
+ * MariaDB's analogue is BACKUP STAGE BLOCK_DDL - see supports_backup_stage().
+ */
+bool supports_lock_instance_for_backup(const Server_version &v);
+
+/**
+ * BACKUP STAGE, MariaDB's answer to LOCK INSTANCE FOR BACKUP (10.4+).
+ *
+ * BACKUP STAGE BLOCK_DDL blocks DDL and writes to non-transactional tables
+ * while leaving InnoDB DML running, which is what the dumper wants for the
+ * whole length of the dump. It is guarded by RELOAD rather than by a dedicated
+ * privilege, and it differs from LOCK INSTANCE FOR BACKUP in two ways that the
+ * dumper has to design around: it is a server-wide singleton held by one
+ * connection, and the statement commits the transaction of the session that
+ * runs it - so it needs a session of its own.
+ *
+ * See MARIADB_DUMP_LOAD.md section 4.1.
+ */
+bool supports_backup_stage(const Server_version &v);
+
+/**
+ * The FLUSH_TABLES privilege, an alternative to RELOAD for executing FLUSH
+ * TABLES WITH READ LOCK. MariaDB only has RELOAD.
+ */
+bool supports_flush_tables_privilege(const Server_version &v);
+
+/**
+ * Whether SELECT has to be checked explicitly before reading object metadata.
+ *
+ * On MySQL 8.0 the data dictionary reports what the account cannot see, so the
+ * check is redundant. Everywhere else - older MySQL and every MariaDB - the
+ * information_schema queries quietly return fewer rows instead, so the
+ * privilege has to be verified up front.
+ */
+bool requires_explicit_select_privilege(const Server_version &v);
+
+/**
+ * Whether dumping accounts requires the SUPER privilege. MySQL 5.6 only -
+ * MariaDB 10.5+ split SUPER into granular privileges, and what dumping accounts
+ * actually needs there is SELECT on the mysql schema, which
+ * requires_select_on_mysql_to_dump_users() covers.
+ */
+bool requires_super_to_dump_users(const Server_version &v);
+
+/**
+ * Whether SELECT on the mysql schema has to be checked before dumping accounts.
+ *
+ * SHOW CREATE USER and SHOW GRANTS FOR another account both read the grant
+ * tables. MySQL 5.6/5.7 let a SUPER account do it (see
+ * requires_super_to_dump_users()); MySQL 8.0 and every MariaDB want the
+ * privilege on the schema itself.
+ */
+bool requires_select_on_mysql_to_dump_users(const Server_version &v);
+
+/**
+ * SHOW CREATE USER. MySQL grew it in 5.7, MariaDB in 10.2; before that the
+ * account has to be reconstructed from the first SHOW GRANTS statement.
+ */
+bool supports_show_create_user(const Server_version &v);
+
+/**
+ * Whether SHOW CREATE USER implicitly commits the open transaction, which some
+ * 8.0 releases do (and no MariaDB does).
+ */
+bool show_create_user_autocommits(const Server_version &v);
+
+/**
+ * Whether the partial_revokes system variable exists.
+ */
+bool supports_partial_revokes(const Server_version &v);
+
+// --- metadata ------------------------------------------------------------
+
+/**
+ * information_schema.COLUMN_STATISTICS, the source of dumped histograms.
+ *
+ * MariaDB keeps engine-independent statistics in mysql.column_stats instead;
+ * dumping those is MARIADB_DUMP_LOAD.md section 4.5 (phase 5).
+ */
+bool supports_column_statistics(const Server_version &v);
+
+/**
+ * Whether roles can be enumerated for dumping. MySQL 8.0+, MariaDB 10.0.5+.
+ *
+ * Note this is *not* the same question as whether role-granted privileges are
+ * resolved, which User_privileges already does for both vendors.
+ */
+bool supports_role_dumping(const Server_version &v);
+
+/**
+ * Whether a role is a hostless object of its own rather than an ordinary
+ * account, which is what MariaDB made it (10.0.5+).
+ *
+ * MySQL implements a role as a locked, passwordless user: it has a host, SHOW
+ * CREATE USER describes it, CREATE USER makes one and DROP USER removes one.
+ * Every MariaDB difference below was measured on 12.3.2 - see
+ * MARIADB_DUMP_LOAD.md section 20.1:
+ *
+ * - a role lives in mysql.user with is_role='Y' and an *empty* host, and its
+ *   own namespace: `r`@`` the role and `r`@`%` the user coexist;
+ * - it must be addressed without a host. SHOW CREATE USER fails for it
+ *   outright (error 1133, in either spelling), and SHOW GRANTS FOR 'r'@''
+ *   fails with 1141 where SHOW GRANTS FOR `r` works;
+ * - CREATE ROLE is the only way to make one, and DROP ROLE the only way to
+ *   remove one - DROP USER reports success and silently leaves the role in
+ *   place;
+ * - the implicit PUBLIC role appears in mysql.user like any other role once it
+ *   holds a grant, but CREATE ROLE PUBLIC is rejected with error 1959.
+ *
+ * So on MariaDB an account list has to carry which entries are roles, and the
+ * DDL for one has to be synthesized rather than read from the server.
+ */
+bool roles_are_hostless(const Server_version &v);
+
+/**
+ * Whether SHOW GRANTS FOR a role walks the role graph downwards, reporting the
+ * grants of every role granted to it *under their own grantee*.
+ *
+ * MariaDB does (traverse_role_graph_down, sql/sql_acl.cc), which is why phase 1
+ * could use the bare SHOW GRANTS in place of MySQL's USING clause - but it also
+ * means the output is not a description of the one account asked about, so a
+ * dumper has to drop the statements belonging to somebody else. Verified not to
+ * happen for a plain user: SHOW GRANTS FOR a user lists its role *grants*, not
+ * the privileges those roles carry.
+ */
+bool show_grants_expands_roles(const Server_version &v);
+
+/**
+ * Whether the default role of an account is reported by SHOW GRANTS rather than
+ * by SHOW CREATE USER, and set with FOR rather than TO.
+ *
+ * MySQL 8.0 puts a DEFAULT ROLE clause inside SHOW CREATE USER and takes
+ * SET DEFAULT ROLE ... TO <account>. MariaDB emits a whole
+ * SET DEFAULT ROLE ... FOR <account> statement as the last line of SHOW GRANTS
+ * and rejects the TO spelling.
+ */
+bool default_role_in_show_grants(const Server_version &v);
+
+/**
+ * JavaScript libraries (SHOW CREATE LIBRARY, I_S.LIBRARIES). MySQL 9.2+ only.
+ */
+bool supports_library_ddl(const Server_version &v);
+
+/**
+ * The check_constraint_checks session variable, MariaDB 10.2+.
+ *
+ * Both vendors have CHECK constraints; what differs is the shape of the escape
+ * hatch. MySQL's is DDL - a constraint is [NOT] ENFORCED, SHOW CREATE TABLE
+ * emits it, so the state travels inside the dump - and an enforced constraint
+ * can never be violated, so the data in a dump always satisfies the DDL in that
+ * same dump. MariaDB has no NOT ENFORCED syntax at all; instead this variable
+ * switches enforcement off for both DML and ALTER TABLE ... ADD CONSTRAINT, so
+ * a table can legitimately hold rows its own DDL rejects. Restoring one
+ * therefore needs the variable, which is why mariadb-import turns it off for
+ * every import (client/mysqlimport.cc).
+ *
+ * See MARIADB_DUMP_LOAD.md section 17.
+ */
+bool supports_check_constraint_checks(const Server_version &v);
+
+/**
+ * Sequences (CREATE SEQUENCE, I_S.SEQUENCES, TABLE_TYPE='SEQUENCE'). A MariaDB
+ * 10.3+ object type with no MySQL counterpart.
+ *
+ * Sequences share the table namespace and are reported by I_S.TABLES, so they
+ * are enumerated and filtered as tables, but they are dumped as DDL only - see
+ * MARIADB_DUMP_LOAD.md section 4.5.1.
+ */
+bool supports_sequences(const Server_version &v);
+
+/**
+ * I_S.KEY_PERIOD_USAGE, which names the unique constraints declared WITHOUT
+ * OVERLAPS over an application-time period. MariaDB 10.5+, no MySQL
+ * counterpart.
+ *
+ * Such a table refuses REPLACE - error 1235 - so the loader has to know, see
+ * MARIADB_DUMP_LOAD.md section 31.
+ */
+bool supports_key_period_usage(const Server_version &v);
+
+/**
+ * Oracle-mode packages (CREATE PACKAGE / CREATE PACKAGE BODY). A MariaDB 10.3+
+ * routine type with no MySQL counterpart.
+ *
+ * A package only ever comes into existence under sql_mode=ORACLE, but the
+ * server exposes it like any other routine afterwards: I_S.ROUTINES reports it
+ * with ROUTINE_TYPE 'PACKAGE' or 'PACKAGE BODY', and SHOW CREATE PACKAGE [BODY]
+ * works in any sql_mode - see MARIADB_DUMP_LOAD.md section 19.
+ */
+bool supports_packages(const Server_version &v);
+
+/**
+ * Whether a JSON column is a text column carrying a json_valid() CHECK
+ * constraint, rather than a column type of its own.
+ *
+ * MariaDB has no JSON type: 'JSON' is an alias for 'LONGTEXT CHARACTER SET
+ * utf8mb4 COLLATE utf8mb4_bin' plus an automatic column-level CHECK constraint,
+ * so information_schema.COLUMNS reports DATA_TYPE 'longtext' and only
+ * information_schema.CHECK_CONSTRAINTS still says the column is JSON.
+ *
+ * The wire protocol does know: since 10.5.0 (MDEV-20016) the server sends
+ * 'format=json' in the extended column metadata of any text column whose
+ * column-level CHECK constraint has a json_valid() call at its top level, and
+ * mysqlshdk/libs/db/mysql/result.cc reports such a column as Type::Json. This
+ * predicate is what lets the types read out of information_schema agree with
+ * the types the same columns arrive with - see MARIADB_DUMP_LOAD.md section 21.
+ */
+bool json_columns_use_check_constraints(const Server_version &v);
+
+/**
+ * information_schema.VIEW_TABLE_USAGE, which lists the tables a view reads.
+ *
+ * MySQL 8.0.13+ only - MariaDB has no such table, so the tables have to be
+ * extracted by parsing VIEW_DEFINITION, which is the same fallback used for
+ * older MySQL.
+ */
+bool supports_view_table_usage(const Server_version &v);
+
+// --- SQL dialect ---------------------------------------------------------
+
+/**
+ * Whether the optimizer-hint comment syntax is available. Where it is not,
+ * SQL_NO_CACHE is used instead - which is also what MariaDB wants, since it
+ * kept SQL_NO_CACHE.
+ */
+bool supports_optimizer_hints(const Server_version &v);
+
+/**
+ * Whether BIT_XOR() accepts binary strings wider than 64 bits, as used by the
+ * checksum expressions. MySQL 8.0 extended the bit functions; MariaDB did not,
+ * so the checksum has to be computed in 64-bit slices there.
+ */
+bool supports_wide_bit_xor(const Server_version &v);
+
+/**
+ * GTID_SUBSET() / GTID_SUBTRACT() and the uuid:n-m GTID model.
+ *
+ * MariaDB's GTIDs are domain-based d-s-seq triples with no set-algebra
+ * functions - MARIADB_DUMP_LOAD.md section 4.4 (phase 4).
+ */
+bool supports_gtid_set_functions(const Server_version &v);
+
+/**
+ * SET_ANY_DEFINER privilege.
+ */
+bool supports_set_any_definer_privilege(const Server_version &v);
+
+// --- load target ---------------------------------------------------------
+
+/**
+ * ANALYZE TABLE ... UPDATE HISTOGRAM.
+ */
+bool supports_histograms(const Server_version &v);
+
+/**
+ * Whether indexes can be added in parallel (and hence whether
+ * innodb_parallel_read_threads / innodb_ddl_threads exist).
+ */
+bool supports_parallel_index_creation(const Server_version &v);
+
+/**
+ * PS_CURRENT_THREAD_ID(). MySQL 8.0.16+; MariaDB has no such function, the
+ * thread id has to come from performance_schema.threads.
+ */
+bool supports_ps_current_thread_id(const Server_version &v);
+
+/**
+ * Generated Invisible Primary Keys (sql_generate_invisible_primary_key).
+ */
+bool supports_gipks(const Server_version &v);
+
+/**
+ * Whether the server accepts the invisible AUTO_INCREMENT PRIMARY KEY column
+ * the 'createInvisiblePKs' option adds. Unlike supports_gipks(), which is about
+ * the server generating that key on its own, this only asks whether it can
+ * parse the DDL the loader writes - MariaDB has INVISIBLE columns (10.3.0) but
+ * no sql_generate_invisible_primary_key, so it takes the loader's own
+ * add_invisible_pk() path.
+ */
+bool supports_invisible_pks(const Server_version &v);
+
+/**
+ * Whether a dump loaded with generated invisible primary keys can be used for
+ * inbound replication into a High Availability DB System.
+ */
+bool supports_invisible_pk_replication(const Server_version &v);
+
+/**
+ * Primary Key Equivalents standing in for a primary key when the server runs
+ * with sql_require_primary_key enabled.
+ */
+bool supports_pke_as_pk(const Server_version &v);
+
+/**
+ * The sql_require_primary_key system variable. MariaDB has no equivalent, and
+ * probing for one used to crash the loader (MARIADB_DUMP_LOAD.md section 4.10).
+ */
+bool supports_require_primary_key(const Server_version &v);
+
+/**
+ * restrict_fk_on_non_standard_key, and hence the force_non_standard_fks
+ * compatibility option having any effect on the target.
+ */
+bool supports_non_standard_fk_restriction(const Server_version &v);
+
+/**
+ * The BULK LOAD statement.
+ */
+bool supports_bulk_load(const Server_version &v);
+
+/**
+ * Dynamic data masking, a MySQL 9.7 component.
+ */
+bool supports_dynamic_data_masking(const Server_version &v);
+
+/**
+ * Conversion of InnoDB-based vector store tables to Lakehouse.
+ */
+bool supports_vector_store_conversion(const Server_version &v);
+
+/**
+ * The MLE (JavaScript) component, and hence the mle.memory_max variable.
+ */
+bool supports_mle_component(const Server_version &v);
+
+}  // namespace common
+}  // namespace dump
+}  // namespace mysqlsh
+
+#endif  // MODULES_UTIL_COMMON_DUMP_SERVER_FEATURES_H_

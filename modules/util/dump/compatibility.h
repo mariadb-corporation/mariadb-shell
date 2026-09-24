@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -256,62 +257,10 @@ bool parse_grant_statement(std::string_view statement,
  */
 std::string to_grant_statement(const Privilege_level_info &info);
 
-/**
- * Checks if server with the given version supports SET_ANY_DEFINER privilege.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports this privilege.
- */
-bool supports_set_any_definer_privilege(const mysqlshdk::utils::Version &v);
-
-/**
- * Checks if server with the given version supports library DDL.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports library DDL.
- */
-bool supports_library_ddl(const mysqlshdk::utils::Version &v);
-
-/**
- * Checks if server with the given version supports conversion of InnoDB-based
- * vector store tables to Lakehouse.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports the conversion.
- */
-bool supports_vector_store_conversion(const mysqlshdk::utils::Version &v);
-
-/**
- * Checks if server with the given version supports Generated Invisible Primary
- * Keys.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports GIPKs.
- */
-bool supports_gipks(const mysqlshdk::utils::Version &v);
-
-/**
- * Checks if server with the given version allows for Primary Key Equivalents
- * when server is running with sql_require_primary_key enabled.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports PKEs.
- */
-bool supports_pke_as_pk(const mysqlshdk::utils::Version &v);
-
-/**
- * Checks if server with the given version supports dynamic data masking.
- *
- * @param v Version to be checked.
- *
- * @returns true If server supports dynamic data masking.
- */
-bool supports_dynamic_data_masking(const mysqlshdk::utils::Version &v);
+// The supports_*() feature predicates that used to live here moved to
+// modules/util/common/dump/server_features.h, where they take a
+// common::Server_version and answer per vendor - see MARIADB_DUMP_LOAD.md
+// section 7.3.
 
 /**
  * Replaces first occurrence of a keyword (case insensitive comparison) with the
