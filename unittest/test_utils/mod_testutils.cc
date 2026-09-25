@@ -1525,12 +1525,17 @@ void Testutils::run_sandbox_plugin(const std::string &operation, int port,
   if (g_test_trace_scripts)
     std::cerr << "Running MariaDB sandbox plugin: " << code << "\n";
 
-  const int rc = call_mysqlsh_c({"--py", "--quiet-start=2", "-e", code});
+  // the output is also echoed to the test's stdout, but that is only shown when
+  // an expectation fails, not when this exception aborts the chunk - keep it
+  // in the message so the cause of the failure makes it to the log
+  std::string output;
+  const int rc = call_mysqlsh_c({"--py", "--quiet-start=2", "-e", code}, "",
+                                {}, "", &output);
   if (rc != 0)
-    throw std::runtime_error(
-        shcore::str_format("MariaDB sandbox plugin operation '%s' on port %d "
-                           "failed (exit code %d)",
-                           operation.c_str(), port, rc));
+    throw std::runtime_error(shcore::str_format(
+        "MariaDB sandbox plugin operation '%s' on port %d failed (exit code "
+        "%d), output:\n%s",
+        operation.c_str(), port, rc, shcore::str_strip(output).c_str()));
 }
 
 // Shared deploy path for deploy_sandbox()/deploy_raw_sandbox(): builds the
@@ -4492,7 +4497,8 @@ int Testutils::call_mysqlsh(const shcore::Array_t &args,
 int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
                               const std::string &std_input,
                               const std::vector<std::string> &env,
-                              const std::string &executable_path) {
+                              const std::string &executable_path,
+                              std::string *out_output) {
   char c;
   int exit_code = 1;
   std::string output;
@@ -4539,6 +4545,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
       if (c == '\r') continue;
       if (c == '\n') {
         if (shell) mysqlsh::current_console()->println(output);
+        if (out_output) out_output->append(output).append(1, '\n');
         output.clear();
       } else {
         output += c;
@@ -4546,6 +4553,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
     }
     if (!output.empty()) {
       if (shell) mysqlsh::current_console()->println(output);
+      if (out_output) out_output->append(output);
       if (expect == output) {
         process.write(&std_input[0], std_input.size());
         process.finish_writing();  // Reader will see EOF
@@ -4556,6 +4564,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
     exit_code = process.wait();
   } catch (const std::system_error &e) {
     output = e.what();
+    if (out_output) out_output->append(output);
     if (shell)
       mysqlsh::current_console()->println(
           ("Exception calling mysqlsh: " + output).c_str());

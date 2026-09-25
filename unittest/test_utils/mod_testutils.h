@@ -389,10 +389,13 @@ class Testutils : public mysqlsh::Extensible_object {
                    const std::string &std_input = std::string{},
                    const shcore::Array_t &env = nullptr,
                    const std::string &executable_path = "");
+  // out_output, if given, receives everything the process wrote, in addition
+  // to it being echoed to the console as before
   int call_mysqlsh_c(const std::vector<std::string> &args,
                      const std::string &std_input = "",
                      const std::vector<std::string> &env = {},
-                     const std::string &executable_path = "");
+                     const std::string &executable_path = "",
+                     std::string *out_output = nullptr);
 
   int call_mysqlsh_async(const std::vector<std::string> &args,
                          const std::string &std_input = {},
