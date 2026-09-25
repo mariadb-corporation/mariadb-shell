@@ -400,10 +400,14 @@ void Dump_options::validate_target_version() const {
     // that does carry over is whether this Shell knows the target at all.
     if (const auto &reference = common::reference_version(true);
         version > reference) {
+      // say what the option means here: a Shell version, which is what the
+      // option takes for a MySQL source, is the easy mistake to make
       error = "Target MariaDB version '" + version.get_base() +
-              "' is newer than the MariaDB version this MySQL Shell was built "
+              "' is newer than the MariaDB version this Shell was built "
               "against (" +
-              reference.get_base() + ")";
+              reference.get_base() +
+              "). When dumping from MariaDB, the 'targetVersion' option "
+              "takes a MariaDB server version.";
     }
   } else if (const auto k_minimum_version = mysqlshdk::utils::Version(8, 0, 25);
              version < k_minimum_version) {

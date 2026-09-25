@@ -3675,8 +3675,9 @@ void Dump_loader::check_server_version() {
     if (const auto &target_version = m_dump->target_version();
         target_version.has_value() && *target_version != target_server) {
       console->print_warning(
-          "Destination MySQL version is different than the value of the "
-          "'targetVersion' option set when the dump was created: " +
+          std::string{"Destination "} + vendor_name(target) +
+          " version is different than the value of the 'targetVersion' option "
+          "set when the dump was created: " +
           target_version->get_base());
     }
   }

@@ -487,11 +487,11 @@ EXPECT_EQ(0, count_rows(verification_schema, no_partitions_table_name))
 EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
 
 #@<> WL15311_TSFR_3_2_3_1
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()

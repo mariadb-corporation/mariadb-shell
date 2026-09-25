@@ -70,7 +70,7 @@ session2 = mysql.get_session(__sandbox_uri2)
 session2.run_sql("set names utf8mb4")
 session2.run_sql("/*!80021 alter instance disable innodb redo_log */")
 
-#@<> load while dump is still running (prepare)
+#@<> load while dump is still running (prepare) (1)
 # We test this artificially by manually assembling the loaded dump
 wipeout_server(session2)
 
@@ -125,7 +125,7 @@ def copy_rest():
     for f in datafiles[n:]:
         copy(f)
 
-#@<> load dump while dump still running
+#@<> load dump while dump still running (1)
 
 shell.connect(__sandbox_uri2)
 
@@ -135,14 +135,14 @@ threading.Thread(target=copy_rest).start()
 # Now at least half of the DDL files would be loaded
 EXPECT_THROWS(lambda: util.load_dump(target, {"waitDumpTimeout": 5}), "Dump timeout")
 
-#@<> load dump after it's done
+#@<> load dump after it's done (1)
 
 copy("@.done.json")
 util.load_dump(target, {"waitDumpTimeout": 10})
 
 compare_servers(session1, session2, check_rows=True, check_users=False)
 
-#@<> load incomplete dumps by retrying
+#@<> load incomplete dumps by retrying (1)
 testutil.rmfile(target+"/*")
 
 shell.connect(__sandbox_uri2)
@@ -188,7 +188,7 @@ for f in ordered:
         if not EXPECT_THROWS(lambda: util.load_dump(target, {"waitDumpTimeout": 0.001}), "Dump timeout"):
             break
 
-#@<> BUG#BUG33332497 ensure progress reporting is correct
+#@<> BUG#BUG33332497 ensure progress reporting is correct (1)
 # clean up after the previous test
 testutil.rmfile(target+"/*")
 
@@ -220,7 +220,8 @@ compare_servers(session1, session2, check_rows=True, check_users=False)
 
 ### BUG#32430402 showMetadata option
 
-#@<> setup showMetadata tests
+#@<> setup showMetadata tests (1)
+# balance: keep-with-previous (reads the fulldump written by 'load while dump is still running (prepare)')
 binlog_info_header = "---"
 binlog_file = ""
 binlog_position = 0
@@ -283,38 +284,38 @@ def EXPECT_BINLOG_INFO(file, position, gtid, options = {}):
     for line in yaml.splitlines():
         EXPECT_SHELL_LOG_CONTAINS(line)
 
-#@<> showMetadata defaults to false
+#@<> showMetadata defaults to false (1)
 util.load_dump(os.path.join(outdir, "fulldump"), { "dryRun": True })
 EXPECT_STDOUT_NOT_CONTAINS(binlog_info_header)
 
-#@<> showMetadata displays expected information
+#@<> showMetadata displays expected information (1)
 EXPECT_BINLOG_INFO(binlog_file, binlog_position, gtid_executed)
 
-#@<> create backup of @.json
+#@<> create backup of @.json (1)
 testutil.cpfile(metadata_file, metadata_file + ".bak")
 
-#@<> no binary log information
+#@<> no binary log information (1)
 set_binlog_info(None)
 EXPECT_BINLOG_INFO("", 0, "", { "loadData": True, "loadDdl": False, "loadUsers": False })
 
-#@<> executed GTID set + empty binlog file + zero binlog position
+#@<> executed GTID set + empty binlog file + zero binlog position (1)
 set_binlog_info(Binlog("", 0, "gtid_executed"))
 EXPECT_BINLOG_INFO("", 0, "gtid_executed", { "loadData": False, "loadDdl": False, "loadUsers": True })
 
-#@<> executed GTID set + empty binlog file + non-zero binlog position
+#@<> executed GTID set + empty binlog file + non-zero binlog position (1)
 set_binlog_info(Binlog("", 5, "gtid_executed"))
 EXPECT_BINLOG_INFO("", 5, "gtid_executed")
 
-#@<> everything is available
+#@<> everything is available (1)
 set_binlog_info(Binlog("binlog.file", 1234, "gtid_executed"))
 EXPECT_BINLOG_INFO("binlog.file", "1234", "gtid_executed")
 
-#@<> restore backup of @.json
+#@<> restore backup of @.json (1)
 testutil.cpfile(metadata_file + ".bak", metadata_file)
 
 ### BUG#32430402 showMetadata option -- END
 
-#@<> Check that dumping lots of things won't trigger a filesort, which could be a problem if the source has no disk space left
+#@<> Check that dumping lots of things won't trigger a filesort, which could be a problem if the source has no disk space left (2)
 session1.run_sql("set global sort_buffer_size=32768")
 
 # create lots of users
@@ -375,7 +376,7 @@ wipeout_server(session2)
 
 util.load_dump(dump_dir)
 
-#@<> cleanup the schemas with lots of things
+#@<> cleanup the schemas with lots of things (2)
 for i in range(500):
     session1.run_sql(f"drop user if exists rando_____________________{i}@'l{'o'*user_length}calhost'")
 

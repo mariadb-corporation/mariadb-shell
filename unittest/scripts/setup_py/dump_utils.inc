@@ -32,7 +32,7 @@ newest_target_version = __build_server_version if __server_is_maria_db else __my
 # all - see Dump_options::validate_target_version().
 def target_version_rejected_msg(version):
     if __server_is_maria_db:
-        return f"Target MariaDB version '{version}' is newer than the MariaDB version this MySQL Shell was built against ({__build_server_version})"
+        return f"Target MariaDB version '{version}' is newer than the MariaDB version this Shell was built against ({__build_server_version}). When dumping from MariaDB, the 'targetVersion' option takes a MariaDB server version."
     return unsupported_target_version_msg(version)
 
 # The name the Shell and the server use for the vendor in their messages.

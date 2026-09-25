@@ -717,8 +717,20 @@ void Load_data_worker::init_session(
 
   // BUG#34173126, BUG#33360787 - loading when global auto-commit is OFF fails
   execute("SET autocommit = 1");
+  const bool is_maria_db =
+      mysqlshdk::db::ServerVendor::MariaDB == session->get_server_vendor();
+
   // set session variables
-  execute("SET unique_checks = 0");
+  // MariaDB loads into an empty table with InnoDB's bulk insert when both
+  // checks are off, and that path does not honour IGNORE: a duplicate row
+  // silently discards other rows, up to the whole statement, with no error or
+  // warning (MDEV-31985). REPLACE is handled correctly, so unique checks stay
+  // on only when duplicates are ignored. See MARIADB_PORT.md section 13.5.
+  if (!is_maria_db ||
+      Duplicate_handling::Replace == options.duplicate_handling()) {
+    execute("SET unique_checks = 0");
+  }
+
   execute("SET foreign_key_checks = 0");
 
   // MariaDB expresses "this CHECK constraint is not enforced" as a session
@@ -728,8 +740,7 @@ void Load_data_worker::init_session(
   // no round trip. See MARIADB_DUMP_LOAD.md section 17.
   if (dump::common::supports_check_constraint_checks(
           dump::common::server_version(session->get_server_version(),
-                                       mysqlshdk::db::ServerVendor::MariaDB ==
-                                           session->get_server_vendor()))) {
+                                       is_maria_db))) {
     execute("SET check_constraint_checks = 0");
   }
 
@@ -994,6 +1005,9 @@ void Load_data_worker::execute(
       uint32_t deadlock_total_sleep_time_ms = 0;
 
       fi.buffer.mark_retry_point();
+      // a range read also counts down the bytes left in its range, a retry has
+      // to send the whole range again
+      const auto retry_bytes_left = fi.bytes_left;
 
       while (true) {
         try {
@@ -1021,12 +1035,6 @@ void Load_data_worker::execute(
 
           break;
         } catch (const mysqlshdk::db::Error &e) {
-          log_warning(
-              "%s deadlock retry check: code=%d (ER_LOCK_DEADLOCK=%d), "
-              "sleep_so_far=%u/%u",
-              worker_name.c_str(), e.code(), ER_LOCK_DEADLOCK,
-              deadlock_total_sleep_time_ms, k_max_deadlock_retry_time_ms);
-
           if (ER_LOCK_DEADLOCK == e.code() &&
               deadlock_total_sleep_time_ms < k_max_deadlock_retry_time_ms &&
               fi.buffer.try_rewind_for_retry()) {
@@ -1039,6 +1047,12 @@ void Load_data_worker::execute(
               deadlock_sleep_time_ms =
                   k_max_deadlock_retry_time_ms - deadlock_total_sleep_time_ms;
             }
+
+            fi.bytes_left = retry_bytes_left;
+            // the rolled back attempt was already counted by the progress,
+            // local_infile_init() resets the per-attempt counters
+            *fi.prog_data_bytes -= fi.data_bytes;
+            *fi.prog_file_bytes -= fi.file_bytes;
 
             shcore::sleep_ms(deadlock_sleep_time_ms);
             deadlock_total_sleep_time_ms += deadlock_sleep_time_ms;
@@ -1069,6 +1083,13 @@ void Load_data_worker::execute(
           mysqlsh::current_console()->print_error(error_msg);
           throw std::exception(e);
         }
+      }
+
+      if (fi.range_read && !fi.continuation) {
+        // the range is loaded and won't be resent, release it now instead of
+        // when the next one is fetched - an in-memory chunk keeps its data
+        // until it's destroyed
+        fi.filehandler.reset();
       }
 
       const auto warnings_num =

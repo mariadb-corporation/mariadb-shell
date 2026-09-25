@@ -313,6 +313,14 @@ EXPECT_SHELL_LOG_CONTAINS("testdb@data2.tsv.zst: Records: 382  Deleted: 0  Skipp
 
 #@<> impossible load: row too big
 
+# the loads above left max_binlog_cache_size at trx_size_limit, which MySQL does
+# not apply to the big rows inserted here, but MariaDB does, rejecting them with
+# 1197; raise it and reconnect, as the setup of "deceptively small row sizes"
+# does - MariaDB fixes the limit of a session once its binlog cache is created
+if __server_is_maria_db:
+    session.run_sql("set global max_binlog_cache_size=?", [1024*1024*1024])
+    shell.connect(__sandbox_uri1)
+
 # this table will generate a chunk with a row that's too big to be loaded
 wipeout_server(session)
 session.run_sql("create schema testdb")

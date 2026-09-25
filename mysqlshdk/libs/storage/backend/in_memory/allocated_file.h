@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -149,6 +150,13 @@ class Allocated_file : public Virtual_fs::IFile {
    */
   void append(Scoped_data_block block);
 
+  /**
+   * Keeps all the blocks until the file is destroyed, instead of releasing
+   * them while reading, so that the file can be read again from any offset,
+   * i.e. to retry a statement which was sending its contents.
+   */
+  void retain_data() { m_retain_data = true; }
+
  private:
   Allocator *m_allocator;
   bool m_is_open = false;
@@ -162,6 +170,7 @@ class Allocated_file : public Virtual_fs::IFile {
   bool m_reading_from_beginning = false;
   std::deque<char *> m_blocks;
   bool m_consume_if_first;
+  bool m_retain_data = false;
   bool m_accepts_append = true;
 };
 

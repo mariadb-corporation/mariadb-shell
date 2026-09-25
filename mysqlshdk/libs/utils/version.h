@@ -143,6 +143,11 @@ inline const Version k_shell_version = Version(MYSH_VERSION EXTRA_NAME_SUFFIX);
 inline const Version k_build_server_version =
     Version(MYSH_BUILD_SERVER_VERSION);
 #else   // !MYSH_BUILD_SERVER_VERSION
+#ifdef MARIADB_BUILD
+// the Shell's own version is not on MariaDB's scale, so there is nothing to
+// fall back to
+#error "MYSH_BUILD_SERVER_VERSION is required for a MariaDB build"
+#endif  // MARIADB_BUILD
 // no server source tree was configured, fall back to the Shell's own version
 inline const Version k_build_server_version = k_shell_version;
 #endif  // !MYSH_BUILD_SERVER_VERSION

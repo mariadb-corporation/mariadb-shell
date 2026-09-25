@@ -476,7 +476,7 @@ def TEST_DUMP_AND_LOAD(schemas, options = {}):
             quoted = quote_identifier(schema, table)
             TEST_LOAD(schema, table, where.get(quoted, ""), partitions.get(quoted, []), False)
 
-#@<> WL13807-FR1.2 - an exception must be thrown if there is no global session
+#@<> WL13807-FR1.2 - an exception must be thrown if there is no global session (1)
 # WL13807-TSFR_1_17
 EXPECT_FAIL("RuntimeError", "An open session is required to perform this operation.", test_output_relative)
 
@@ -504,7 +504,7 @@ testutil.wait_sandbox_alive(uri)
 shell.connect(uri)
 session.run_sql("/*!80021 alter instance disable innodb redo_log */")
 
-#@<> WL13807-FR1.2 - an exception must be thrown if there is no open global session
+#@<> WL13807-FR1.2 - an exception must be thrown if there is no open global session (1)
 # WL13807-TSFR_1_16
 session.close()
 EXPECT_FAIL("RuntimeError", "An open session is required to perform this operation.", test_output_relative)
@@ -634,37 +634,37 @@ session.run_sql("CREATE ROLE ?;", [ test_role ])
 #@<> Analyze the table {VER(>=8.0.0) and not __server_is_maria_db}
 session.run_sql("ANALYZE TABLE !.! UPDATE HISTOGRAM ON `id`;", [ test_schema, test_table_no_index ])
 
-#@<> WL13807-TSFR_1_3 - first parameter
+#@<> WL13807-TSFR_1_3 - first parameter (1)
 EXPECT_FAIL("TypeError", "Argument #1 is expected to be a string", None)
 EXPECT_FAIL("TypeError", "Argument #1 is expected to be a string", 1)
 EXPECT_FAIL("TypeError", "Argument #1 is expected to be a string", [])
 EXPECT_FAIL("TypeError", "Argument #1 is expected to be a string", {})
 EXPECT_FAIL("TypeError", "Argument #1 is expected to be a string", False)
 
-#@<> WL13807-TSFR_3_1 - second parameter
+#@<> WL13807-TSFR_3_1 - second parameter (1)
 EXPECT_FAIL("TypeError", "Argument #2 is expected to be a map", test_output_relative, 1)
 EXPECT_FAIL("TypeError", "Argument #2 is expected to be a map", test_output_relative, "string")
 EXPECT_FAIL("TypeError", "Argument #2 is expected to be a map", test_output_relative, [])
 
-#@<> WL13807-FR1.1 - The `outputUrl` parameter must be a string value which specifies the output directory, where the dump data is going to be stored.
+#@<> WL13807-FR1.1 - The `outputUrl` parameter must be a string value which specifies the output directory, where the dump data is going to be stored. (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.1 - If the dump is going to be stored on the local filesystem, the `outputUrl` parameter may be optionally prefixed with `file://` scheme.
+#@<> WL13807-FR1.1.1 - If the dump is going to be stored on the local filesystem, the `outputUrl` parameter may be optionally prefixed with `file://` scheme. (1)
 EXPECT_SUCCESS([types_schema], "file://" + test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.2 - If the dump is going to be stored on the local filesystem and the `outputUrl` parameter holds a relative path, its absolute value is computed as relative to the current working directory.
+#@<> WL13807-FR1.1.2 - If the dump is going to be stored on the local filesystem and the `outputUrl` parameter holds a relative path, its absolute value is computed as relative to the current working directory. (1)
 EXPECT_SUCCESS([types_schema], test_output_relative, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.2 - relative with .
+#@<> WL13807-FR1.1.2 - relative with . (1)
 EXPECT_SUCCESS([types_schema], "./" + test_output_relative, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.2 - relative with ..
+#@<> WL13807-FR1.1.2 - relative with .. (1)
 EXPECT_SUCCESS([types_schema], "dummy/../" + test_output_relative, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.1 + WL13807-FR1.1.2
+#@<> WL13807-FR1.1.1 + WL13807-FR1.1.2 (1)
 EXPECT_SUCCESS([types_schema], "file://" + test_output_relative, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR1.1.3 - If the output directory does not exist, it must be created if its parent directory exists. If it is not possible or parent directory does not exist, an exception must be thrown.
+#@<> WL13807-FR1.1.3 - If the output directory does not exist, it must be created if its parent directory exists. If it is not possible or parent directory does not exist, an exception must be thrown. (1)
 # parent directory does not exist
 shutil.rmtree(test_output_absolute, True)
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
@@ -680,7 +680,7 @@ EXPECT_FAIL("RuntimeError", "Could not create directory ", test_output_absolute,
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 os.remove(test_output_relative)
 
-#@<> WL13807-FR1.1.4 - If a local directory is used and the output directory must be created, `rwxr-x---` permissions should be used on the created directory. The owner of the directory is the user running the Shell. {__os_type != "windows"}
+#@<> WL13807-FR1.1.4 - If a local directory is used and the output directory must be created, `rwxr-x---` permissions should be used on the created directory. The owner of the directory is the user running the Shell. {__os_type != "windows"} (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 # get the umask value
 umask = os.umask(0o777)
@@ -689,7 +689,7 @@ os.umask(umask)
 EXPECT_EQ(0o750 & ~umask, stat.S_IMODE(os.stat(test_output_absolute).st_mode))
 EXPECT_EQ(os.getuid(), os.stat(test_output_absolute).st_uid)
 
-#@<> WL13807-FR1.1.5 - If the output directory exists and is not empty, an exception must be thrown.
+#@<> WL13807-FR1.1.5 - If the output directory exists and is not empty, an exception must be thrown. (1)
 # dump into empty directory
 shutil.rmtree(test_output_absolute, True)
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
@@ -697,7 +697,7 @@ os.mkdir(test_output_absolute)
 testutil.call_mysqlsh([uri, "--", "util", "dump-instance", test_output_absolute, "--exclude-schemas=" + ','.join(exclude_all_but_types_schema), "--ddl-only", "--show-progress=false"])
 EXPECT_STDOUT_CONTAINS("Schemas dumped: 1")
 
-#@<> dump once again to the same directory, should fail
+#@<> dump once again to the same directory, should fail (1)
 EXPECT_THROWS(lambda: util.dump_instance(test_output_relative, { "showProgress": False }), "ValueError: Cannot proceed with the dump, the specified directory '{0}' already exists at the target location {1} and is not empty.".format(test_output_relative, absolute_path_for_output(test_output_absolute)))
 
 # WL13807-FR3 - Both new functions must accept the following options specified in WL#13804, FR5:
@@ -710,7 +710,7 @@ EXPECT_THROWS(lambda: util.dump_instance(test_output_relative, { "showProgress":
 # * The `ociProfile` option specified in WL#13804, FR5.7.
 # * The `defaultCharacterSet` option specified in WL#13804, FR5.8.
 
-#@<> WL13807-FR4.12 - The `options` dictionary may contain a `chunking` key with a Boolean value, which specifies whether to split the dump data into multiple files.
+#@<> WL13807-FR4.12 - The `options` dictionary may contain a `chunking` key with a Boolean value, which specifies whether to split the dump data into multiple files. (1)
 # WL13807-TSFR_3_52
 TEST_BOOL_OPTION("chunking")
 
@@ -718,7 +718,7 @@ EXPECT_SUCCESS([test_schema], test_output_absolute, { "chunking": False, "showPr
 EXPECT_FALSE(has_file_with_basename(test_output_absolute, encode_table_basename(test_schema, test_table_primary) + "@"))
 EXPECT_FALSE(has_file_with_basename(test_output_absolute, encode_table_basename(test_schema, test_table_unique) + "@"))
 
-#@<> WL13807-FR4.12.3 - If the `chunking` option is not given, a default value of `true` must be used instead.
+#@<> WL13807-FR4.12.3 - If the `chunking` option is not given, a default value of `true` must be used instead. (1)
 WIPE_SHELL_LOG()
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "showProgress": False })
 
@@ -739,7 +739,7 @@ EXPECT_TRUE(has_file_with_basename(test_output_absolute, encode_table_basename(t
 EXPECT_TRUE(has_file_with_basename(test_output_absolute, encode_table_basename(test_schema, test_table_unique) + "@"))
 number_of_dump_files = count_files_with_basename(test_output_absolute, encode_table_basename(test_schema, test_table_primary) + "@")
 
-#@<> WL13807-FR4.13 - The `options` dictionary may contain a `bytesPerChunk` key with a string value, which specifies the average estimated number of bytes to be written per each data dump file.
+#@<> WL13807-FR4.13 - The `options` dictionary may contain a `bytesPerChunk` key with a string value, which specifies the average estimated number of bytes to be written per each data dump file. (1)
 TEST_STRING_OPTION("bytesPerChunk")
 
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "bytesPerChunk": "128k", "showProgress": False })
@@ -753,7 +753,7 @@ EXPECT_TRUE(has_file_with_basename(test_output_absolute, encode_table_basename(t
 # this dump used smaller chunk size, number of files should be greater
 EXPECT_TRUE(count_files_with_basename(test_output_absolute, encode_table_basename(test_schema, test_table_primary) + "@") > number_of_dump_files)
 
-#@<> WL13807-FR4.13.2 - The value of the `bytesPerChunk` option must use the same format as specified in WL#12193.
+#@<> WL13807-FR4.13.2 - The value of the `bytesPerChunk` option must use the same format as specified in WL#12193. (1)
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "xyz"', test_output_absolute, { "bytesPerChunk": "xyz" })
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "1xyz"', test_output_absolute, { "bytesPerChunk": "1xyz" })
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "2Mhz"', test_output_absolute, { "bytesPerChunk": "2Mhz" })
@@ -765,13 +765,13 @@ EXPECT_FAIL("ValueError", "Argument #2: The option 'bytesPerChunk' cannot be set
 # WL13807-TSFR_3_532_2
 EXPECT_FAIL("ValueError", "Argument #2: The option 'bytesPerChunk' cannot be used if the 'chunking' option is set to false.", test_output_absolute, { "bytesPerChunk": "128k", "chunking": False })
 
-#@<> WL13807-TSFR_3_532_1
+#@<> WL13807-TSFR_3_532_1 (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "bytesPerChunk": "1000k", "ddlOnly": True, "showProgress": False })
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "bytesPerChunk": "1M", "ddlOnly": True, "showProgress": False })
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "bytesPerChunk": "1G", "ddlOnly": True, "showProgress": False })
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "bytesPerChunk": "128000", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR4.13.3 - If the value of the `bytesPerChunk` option is smaller than `128k`, an exception must be thrown.
+#@<> WL13807-FR4.13.3 - If the value of the `bytesPerChunk` option is smaller than `128k`, an exception must be thrown. (1)
 # WL13807-TSFR_3_533_1
 EXPECT_FAIL("ValueError", "Argument #2: The value of 'bytesPerChunk' option must be greater than or equal to 128k.", test_output_relative, { "bytesPerChunk": "127k" })
 EXPECT_FAIL("ValueError", "Argument #2: The value of 'bytesPerChunk' option must be greater than or equal to 128k.", test_output_relative, { "bytesPerChunk": "127999" })
@@ -779,7 +779,7 @@ EXPECT_FAIL("ValueError", "Argument #2: The value of 'bytesPerChunk' option must
 EXPECT_FAIL("ValueError", "Argument #2: The value of 'bytesPerChunk' option must be greater than or equal to 128k.", test_output_relative, { "bytesPerChunk": "0" })
 EXPECT_FAIL("ValueError", 'Argument #2: Input number "-1" cannot be negative', test_output_relative, { "bytesPerChunk": "-1" })
 
-#@<> WL13807-FR4.14 - The `options` dictionary may contain a `threads` key with an unsigned integer value, which specifies the number of threads to be used to perform the dump.
+#@<> WL13807-FR4.14 - The `options` dictionary may contain a `threads` key with an unsigned integer value, which specifies the number of threads to be used to perform the dump. (1)
 # WL13807-TSFR_3_54
 TEST_UINT_OPTION("threads")
 
@@ -787,16 +787,16 @@ TEST_UINT_OPTION("threads")
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "threads": 2, "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS("Running data dump using 2 threads.")
 
-#@<> WL13807-FR4.14.1 - If the value of the `threads` option is set to `0`, an exception must be thrown.
+#@<> WL13807-FR4.14.1 - If the value of the `threads` option is set to `0`, an exception must be thrown. (1)
 # WL13807-TSFR_3_54
 EXPECT_FAIL("ValueError", "Argument #2: The value of 'threads' option must be greater than 0.", test_output_relative, { "threads": 0 })
 
-#@<> WL13807-FR4.14.2 - If the `threads` option is not given, a default value of `4` must be used instead.
+#@<> WL13807-FR4.14.2 - If the `threads` option is not given, a default value of `4` must be used instead. (1)
 # WL13807-TSFR_3_542
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS("Running data dump using 4 threads.")
 
-#@<> WL13807: WL13804-FR5.1 - The `options` dictionary may contain a `maxRate` key with a string value, which specifies the limit of data read throughput in bytes per second per thread.
+#@<> WL13807: WL13804-FR5.1 - The `options` dictionary may contain a `maxRate` key with a string value, which specifies the limit of data read throughput in bytes per second per thread. (1)
 TEST_STRING_OPTION("maxRate")
 
 # WL13807-TSFR_3_551_1
@@ -806,7 +806,7 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1000K", "ddlO
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1M", "ddlOnly": True, "showProgress": False })
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1G", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.1 - The value of the `maxRate` option must use the same format as specified in WL#12193.
+#@<> WL13807: WL13804-FR5.1.1 - The value of the `maxRate` option must use the same format as specified in WL#12193. (1)
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "xyz"', test_output_absolute, { "maxRate": "xyz" })
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "1xyz"', test_output_absolute, { "maxRate": "1xyz" })
 EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "2Mhz"', test_output_absolute, { "maxRate": "2Mhz" })
@@ -820,30 +820,30 @@ EXPECT_FAIL("ValueError", 'Argument #2: Wrong input number "4g"', test_output_ab
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1000000", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.1 - kilo.
+#@<> WL13807: WL13804-FR5.1.1 - kilo. (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1000k", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.1 - giga.
+#@<> WL13807: WL13804-FR5.1.1 - giga. (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "1G", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.2 - If the `maxRate` option is set to `"0"` or to an empty string, the read throughput must not be limited.
+#@<> WL13807: WL13804-FR5.1.2 - If the `maxRate` option is set to `"0"` or to an empty string, the read throughput must not be limited. (1)
 # WL13807-TSFR_3_552
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "0", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.2 - empty string.
+#@<> WL13807: WL13804-FR5.1.2 - empty string. (1)
 # WL13807-TSFR_3_552
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "maxRate": "", "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.1.2 - missing.
+#@<> WL13807: WL13804-FR5.1.2 - missing. (1)
 # WL13807-TSFR_3_552
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.2 - The `options` dictionary may contain a `showProgress` key with a Boolean value, which specifies whether to display the progress of dump process.
+#@<> WL13807: WL13804-FR5.2 - The `options` dictionary may contain a `showProgress` key with a Boolean value, which specifies whether to display the progress of dump process. (1)
 TEST_BOOL_OPTION("showProgress")
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": True, "ddlOnly": True })
 
-#@<> WL13807: WL13804-FR5.2.1 - The information about the progress must include:
+#@<> WL13807: WL13804-FR5.2.1 - The information about the progress must include: (1)
 # * The estimated total number of rows to be dumped.
 # * The number of rows dumped so far.
 # * The current progress as a percentage.
@@ -856,7 +856,7 @@ EXPECT_EQ(0, rc)
 EXPECT_TRUE(os.path.isdir(test_output_absolute))
 EXPECT_STDOUT_MATCHES(re.compile(r'\d+% \(\d+\.?\d*[TGMK]? rows / ~\d+\.?\d*[TGMK]? rows\), \d+\.?\d*[TGMK]? rows?/s, \d+\.?\d* [TGMK]?B/s', re.MULTILINE))
 
-#@<> Bug #31829337 - IMPROVE USABILITY OF DUMP OPERATIONS IN CLI: LIST PARAMETERS NOT SUPPORTED
+#@<> Bug #31829337 - IMPROVE USABILITY OF DUMP OPERATIONS IN CLI: LIST PARAMETERS NOT SUPPORTED (1)
 shutil.rmtree(test_output_absolute, True)
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 WIPE_SHELL_LOG()
@@ -868,7 +868,7 @@ EXPECT_SHELL_LOG_CONTAINS("Data dump for table `xtest`.`t_decimal2` will be writ
 EXPECT_SHELL_LOG_NOT_CONTAINS("Data dump for table `xtest`.`t_decimal3` will be written to 1 file")
 EXPECT_STDOUT_MATCHES(re.compile(r'\d+% \(\d+\.?\d*[TGMK]? rows / ~\d+\.?\d*[TGMK]? rows\), \d+\.?\d*[TGMK]? rows?/s, \d+\.?\d* [TGMK]?B/s', re.MULTILINE))
 
-#@<> WL13807: WL13804-FR5.2.2 - If the `showProgress` option is not given, a default value of `true` must be used instead if shell is used interactively. Otherwise, it is set to `false`.
+#@<> WL13807: WL13804-FR5.2.2 - If the `showProgress` option is not given, a default value of `true` must be used instead if shell is used interactively. Otherwise, it is set to `false`. (1)
 shutil.rmtree(test_output_absolute, True)
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 rc = testutil.call_mysqlsh([uri, "--", "util", "dump-instance", test_output_relative])
@@ -876,7 +876,7 @@ EXPECT_EQ(0, rc)
 EXPECT_TRUE(os.path.isdir(test_output_absolute))
 EXPECT_STDOUT_NOT_CONTAINS("rows/s")
 
-#@<> WL13807: WL13804-FR5.3 - The `options` dictionary may contain a `compression` key with a string value, which specifies the compression type used when writing the data dump files.
+#@<> WL13807: WL13804-FR5.3 - The `options` dictionary may contain a `compression` key with a string value, which specifies the compression type used when writing the data dump files. (1)
 # WL13807-TSFR_3_57
 # WL13807-TSFR_3_571_1
 TEST_STRING_OPTION("compression")
@@ -890,7 +890,7 @@ EXPECT_STDOUT_CONTAINS("Rows written: ")
 EXPECT_STDOUT_CONTAINS("Bytes written: ")
 EXPECT_STDOUT_CONTAINS("Average throughput: ")
 
-#@<> WL13807: WL13804-FR5.3.1 - The allowed values for the `compression` option are:
+#@<> WL13807: WL13804-FR5.3.1 - The allowed values for the `compression` option are: (1)
 # * `"none"` - no compression is used,
 # * `"gzip"` - gzip compression is used.
 # * `"zstd"` - zstd compression is used.
@@ -911,14 +911,14 @@ EXPECT_FAIL("ValueError", "Argument #2: Unknown compression type: dummy", test_o
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "compression": "zstd", "chunking": False, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(types_schema, types_schema_tables[0]) + ".tsv.zst")))
 
-#@<> WL13807: WL13804-FR5.3.2 - If the `compression` option is not given, a default value of `"none"` must be used instead.
+#@<> WL13807: WL13804-FR5.3.2 - If the `compression` option is not given, a default value of `"none"` must be used instead. (1)
 # WL13807-FR3 - Both new functions must accept the following options specified in WL#13804, FR5:
 # * The `compression` option specified in WL#13804, FR5.3, with the modification of FR5.3.2, the default value must be`"zstd"`.
 # WL13807-TSFR_3_572_1
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "chunking": False, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(types_schema, types_schema_tables[0]) + ".tsv.zst")))
 
-#@<> Check compression level option
+#@<> Check compression level option (1)
 EXPECT_FAIL("ValueError", "Argument #2: Compression options not supported", test_output_relative, {"compression": "none;level=3"})
 EXPECT_FAIL("ValueError", "Argument #2: Invalid compression level for zstd: 9000", test_output_relative, {"compression": "zstd;level=9000"})
 EXPECT_FAIL("ValueError", "Argument #2: Invalid compression level for gzip: 12", test_output_relative, {"compression": "gzip;level=12"})
@@ -928,33 +928,33 @@ EXPECT_FAIL("ValueError", "Argument #2: Invalid compression option for zstd: sup
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "compression": "zstd;level=20", "showProgress": False })
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "compression": "gzip;level=9", "showProgress": False })
 
-#@<> WL13807: WL13804-FR5.4 - The `options` dictionary may contain a `osBucketName` key with a string value, which specifies the OCI bucket name where the data dump files are going to be stored.
+#@<> WL13807: WL13804-FR5.4 - The `options` dictionary may contain a `osBucketName` key with a string value, which specifies the OCI bucket name where the data dump files are going to be stored. (1)
 # WL13807-TSFR_3_58
 TEST_STRING_OPTION("osBucketName")
 
-#@<> WL13807: WL13804-FR5.5 - The `options` dictionary may contain a `osNamespace` key with a string value, which specifies the OCI namespace (tenancy name) where the OCI bucket is located.
+#@<> WL13807: WL13804-FR5.5 - The `options` dictionary may contain a `osNamespace` key with a string value, which specifies the OCI namespace (tenancy name) where the OCI bucket is located. (1)
 # WL13807-TSFR_3_59
 TEST_STRING_OPTION("osNamespace")
 
-#@<> WL13807: WL13804-FR5.5.2 - If the value of `osNamespace` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown.
+#@<> WL13807: WL13804-FR5.5.2 - If the value of `osNamespace` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown. (1)
 # WL13807-TSFR_3_592_1
 EXPECT_FAIL("ValueError", "Argument #2: The option 'osNamespace' cannot be used when the value of 'osBucketName' option is not set.", test_output_relative, { "osNamespace": "namespace" })
 
-#@<> WL13807: WL13804-FR5.6 - The `options` dictionary may contain a `ociConfigFile` key with a string value, which specifies the path to the OCI configuration file.
+#@<> WL13807: WL13804-FR5.6 - The `options` dictionary may contain a `ociConfigFile` key with a string value, which specifies the path to the OCI configuration file. (1)
 # WL13807-TSFR_3_510_1
 TEST_STRING_OPTION("ociConfigFile")
 
-#@<> WL13807: WL13804-FR5.6.2 - If the value of `ociConfigFile` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown.
+#@<> WL13807: WL13804-FR5.6.2 - If the value of `ociConfigFile` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown. (1)
 # WL13807-TSFR_3_5102
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociConfigFile' cannot be used when the value of 'osBucketName' option is not set.", test_output_relative, { "ociConfigFile": "config" })
 
-#@<> WL13807: WL13804-FR5.7 - The `options` dictionary may contain a `ociProfile` key with a string value, which specifies the name of the OCI profile to use.
+#@<> WL13807: WL13804-FR5.7 - The `options` dictionary may contain a `ociProfile` key with a string value, which specifies the name of the OCI profile to use. (1)
 TEST_STRING_OPTION("ociProfile")
 
-#@<> WL13807: WL13804-FR5.7.2 - If the value of `ociProfile` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown.
+#@<> WL13807: WL13804-FR5.7.2 - If the value of `ociProfile` option is a non-empty string and the value of `osBucketName` option is an empty string, an exception must be thrown. (1)
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociProfile' cannot be used when the value of 'osBucketName' option is not set", test_output_relative, { "ociProfile": "profile" })
 
-#@<> WL15884-TSFR_1_1 - `ociAuth` help text
+#@<> WL15884-TSFR_1_1 - `ociAuth` help text (1)
 help_text = """
       - ociAuth: string (default: not set) - Use the specified authentication
         method when connecting to the OCI. Allowed values: api_key (used when
@@ -963,49 +963,49 @@ help_text = """
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15884-TSFR_1_2 - `ociAuth` is a string option
+#@<> WL15884-TSFR_1_2 - `ociAuth` is a string option (1)
 TEST_STRING_OPTION("ociAuth")
 
-#@<> WL15884-TSFR_2_1 - `ociAuth` set to an empty string is ignored
+#@<> WL15884-TSFR_2_1 - `ociAuth` set to an empty string is ignored (1)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ociAuth": "", "showProgress": False })
 
-#@<> WL15884-TSFR_3_1 - `ociAuth` cannot be used without `osBucketName`
+#@<> WL15884-TSFR_3_1 - `ociAuth` cannot be used without `osBucketName` (1)
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociAuth' cannot be used when the value of 'osBucketName' option is not set", test_output_relative, { "osBucketName": "", "ociAuth": "api_key" })
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociAuth' cannot be used when the value of 'osBucketName' option is not set", test_output_relative, { "ociAuth": "api_key" })
 
-#@<> WL15884-TSFR_6_1_1 - `ociAuth` set to instance_principal cannot be used with `ociConfigFile` or `ociProfile`
+#@<> WL15884-TSFR_6_1_1 - `ociAuth` set to instance_principal cannot be used with `ociConfigFile` or `ociProfile` (1)
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociConfigFile' cannot be used when the 'ociAuth' option is set to: instance_principal.", test_output_relative, { "osBucketName": "bucket", "ociAuth": "instance_principal", "ociConfigFile": "file" })
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociProfile' cannot be used when the 'ociAuth' option is set to: instance_principal.", test_output_relative, { "osBucketName": "bucket", "ociAuth": "instance_principal", "ociProfile": "profile" })
 
-#@<> WL15884-TSFR_7_1_1 - `ociAuth` set to resource_principal cannot be used with `ociConfigFile` or `ociProfile`
+#@<> WL15884-TSFR_7_1_1 - `ociAuth` set to resource_principal cannot be used with `ociConfigFile` or `ociProfile` (1)
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociConfigFile' cannot be used when the 'ociAuth' option is set to: resource_principal.", test_output_relative, { "osBucketName": "bucket", "ociAuth": "resource_principal", "ociConfigFile": "file" })
 EXPECT_FAIL("ValueError", "Argument #2: The option 'ociProfile' cannot be used when the 'ociAuth' option is set to: resource_principal.", test_output_relative, { "osBucketName": "bucket", "ociAuth": "resource_principal", "ociProfile": "profile" })
 
-#@<> WL15884-TSFR_9_1 - `ociAuth` set to an invalid value
+#@<> WL15884-TSFR_9_1 - `ociAuth` set to an invalid value (1)
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of 'ociAuth' option, expected one of: api_key, instance_obo_user, instance_principal, resource_principal, security_token, but got: unknown.", test_output_relative, { "osBucketName": "bucket", "ociAuth": "unknown" })
 
-#@<> WL13807: WL13804-FR5.8 - The `options` dictionary may contain a `defaultCharacterSet` key with a string value, which specifies the character set to be used during the dump. The session variables `character_set_client`, `character_set_connection`, and `character_set_results` must be set to this value for each opened connection.
+#@<> WL13807: WL13804-FR5.8 - The `options` dictionary may contain a `defaultCharacterSet` key with a string value, which specifies the character set to be used during the dump. The session variables `character_set_client`, `character_set_connection`, and `character_set_results` must be set to this value for each opened connection. (1)
 # WL13807-TSFR4_43
 TEST_STRING_OPTION("defaultCharacterSet")
 
-#@<> WL13807-TSFR4_40
+#@<> WL13807-TSFR4_40 (1)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "defaultCharacterSet": "utf8mb4", "ddlOnly": True, "showProgress": False })
 # name should be correctly encoded using UTF-8
 EXPECT_FILE_CONTAINS("CREATE TABLE IF NOT EXISTS `{0}`".format(test_table_non_unique), os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_non_unique) + ".sql"))
 
-#@<> WL13807: WL13804-FR5.8.1 - If the value of the `defaultCharacterSet` option is not a character set supported by the MySQL server, an exception must be thrown.
+#@<> WL13807: WL13804-FR5.8.1 - If the value of the `defaultCharacterSet` option is not a character set supported by the MySQL server, an exception must be thrown. (1)
 # WL13807-TSFR4_41
 # WL14841-TSFR_4_1
 EXPECT_FAIL("MySQL Error (1115)", "Unknown character set: ''", test_output_relative, { "defaultCharacterSet": "" })
 EXPECT_FAIL("MySQL Error (1115)", "Unknown character set: 'dummy'", test_output_relative, { "defaultCharacterSet": "dummy" })
 
-#@<> WL13807: WL13804-FR5.8.2 - If the `defaultCharacterSet` option is not given, a default value of `"utf8mb4"` must be used instead.
+#@<> WL13807: WL13804-FR5.8.2 - If the `defaultCharacterSet` option is not given, a default value of `"utf8mb4"` must be used instead. (1)
 # WL13807-TSFR4_39
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 # name should be correctly encoded using UTF-8
 EXPECT_FILE_CONTAINS("CREATE TABLE IF NOT EXISTS `{0}`".format(test_table_non_unique), os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_non_unique) + ".sql"))
 
-#@<> WL15311_TSFR_5_1
+#@<> WL15311_TSFR_5_1 (1)
 help_text = """
       - fieldsTerminatedBy: string (default: "\\t") - This option has the same
         meaning as the corresponding clause for SELECT ... INTO OUTFILE.
@@ -1028,7 +1028,7 @@ help_text = """
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15311 - option types
+#@<> WL15311 - option types (1)
 TEST_STRING_OPTION("fieldsTerminatedBy")
 TEST_STRING_OPTION("fieldsEnclosedBy")
 TEST_STRING_OPTION("fieldsEscapedBy")
@@ -1036,19 +1036,19 @@ TEST_BOOL_OPTION("fieldsOptionallyEnclosed")
 TEST_STRING_OPTION("linesTerminatedBy")
 TEST_STRING_OPTION("dialect")
 
-#@<> WL15311_TSFR_5_1_1, WL15311_TSFR_5_2_1 - various predefined dialects and their extensions
+#@<> WL15311_TSFR_5_1_1, WL15311_TSFR_5_2_1 - various predefined dialects and their extensions (1)
 for dialect, ext in { "default": "tsv", "csv": "csv", "tsv": "tsv", "csv-unix": "csv", "csv-rfc-unix": "csv" }.items():
     TEST_DUMP_AND_LOAD([types_schema], { "dialect": dialect })
     EXPECT_TRUE(count_files_with_extension(test_output_relative, f".{ext}.zst") > 0)
 
-#@<> WL15311 - The JSON dialect must not be supported.
+#@<> WL15311 - The JSON dialect must not be supported. (2)
 EXPECT_FAIL("ValueError", "Argument #2: The 'json' dialect is not supported.", test_output_relative, { "dialect": "json" })
 
-#@<> WL15311_TSFR_5_3_1 - custom dialect
+#@<> WL15311_TSFR_5_3_1 - custom dialect (2)
 TEST_DUMP_AND_LOAD([types_schema], { "fieldsTerminatedBy": "a", "fieldsEnclosedBy": "b", "fieldsEscapedBy": "c", "linesTerminatedBy": "d", "fieldsOptionallyEnclosed": True })
 EXPECT_TRUE(count_files_with_extension(test_output_relative, ".txt.zst") > 0)
 
-#@<> WL15311_TSFR_5_2, WL15311_TSFR_5_3, WL15311_TSFR_5_4, WL15311_TSFR_5_5, WL15311_TSFR_5_6 - more custom dialects
+#@<> WL15311_TSFR_5_2, WL15311_TSFR_5_3, WL15311_TSFR_5_4, WL15311_TSFR_5_5, WL15311_TSFR_5_6 - more custom dialects (2)
 custom_dialect_schema = "wl15311_tsfr_5"
 custom_dialect_table = "x"
 
@@ -1072,84 +1072,84 @@ TEST_DUMP_AND_LOAD([ custom_dialect_schema ], { "fieldsEnclosedBy": '"', "fields
 all_schemas.pop()
 session.run_sql("DROP SCHEMA !;", [ custom_dialect_schema ])
 
-#@<> WL15311 - fixed-row format is not supported yet
+#@<> WL15311 - fixed-row format is not supported yet (2)
 EXPECT_FAIL("ValueError", "Argument #2: The fieldsTerminatedBy and fieldsEnclosedBy are both empty, resulting in a fixed-row format. This is currently not supported.", test_output_absolute, { "fieldsTerminatedBy": "", "fieldsEnclosedBy": "" })
 
-#@<> WL14387-TSFR_1_1_1 - s3BucketName - string option
+#@<> WL14387-TSFR_1_1_1 - s3BucketName - string option (2)
 TEST_STRING_OPTION("s3BucketName")
 
-#@<> WL14387-TSFR_1_2_1 - s3BucketName and osBucketName cannot be used at the same time
+#@<> WL14387-TSFR_1_2_1 - s3BucketName and osBucketName cannot be used at the same time (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3BucketName' cannot be used when the value of 'osBucketName' option is set", test_output_relative, { "s3BucketName": "one", "osBucketName": "two" })
 
-#@<> WL14387-TSFR_1_1_3 - s3BucketName set to an empty string dumps to a local directory
+#@<> WL14387-TSFR_1_1_3 - s3BucketName set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "showProgress": False })
 
-#@<> s3CredentialsFile - string option
+#@<> s3CredentialsFile - string option (2)
 TEST_STRING_OPTION("s3CredentialsFile")
 
-#@<> WL14387-TSFR_3_1_1_1 - s3CredentialsFile cannot be used without s3BucketName
+#@<> WL14387-TSFR_3_1_1_1 - s3CredentialsFile cannot be used without s3BucketName (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3CredentialsFile' cannot be used when the value of 's3BucketName' option is not set", test_output_relative, { "s3CredentialsFile": "file" })
 
-#@<> s3BucketName and s3CredentialsFile both set to an empty string dumps to a local directory
+#@<> s3BucketName and s3CredentialsFile both set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "s3CredentialsFile": "", "showProgress": False })
 
-#@<> s3ConfigFile - string option
+#@<> s3ConfigFile - string option (2)
 TEST_STRING_OPTION("s3ConfigFile")
 
-#@<> WL14387-TSFR_4_1_1_1 - s3ConfigFile cannot be used without s3BucketName
+#@<> WL14387-TSFR_4_1_1_1 - s3ConfigFile cannot be used without s3BucketName (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3ConfigFile' cannot be used when the value of 's3BucketName' option is not set", test_output_relative, { "s3ConfigFile": "file" })
 
-#@<> s3BucketName and s3ConfigFile both set to an empty string dumps to a local directory
+#@<> s3BucketName and s3ConfigFile both set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "s3ConfigFile": "", "showProgress": False })
 
-#@<> WL14387-TSFR_2_1_1 - s3Profile - string option
+#@<> WL14387-TSFR_2_1_1 - s3Profile - string option (2)
 TEST_STRING_OPTION("s3Profile")
 
-#@<> WL14387-TSFR_2_1_1_2 - s3Profile cannot be used without s3BucketName
+#@<> WL14387-TSFR_2_1_1_2 - s3Profile cannot be used without s3BucketName (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3Profile' cannot be used when the value of 's3BucketName' option is not set", test_output_relative, { "s3Profile": "profile" })
 
-#@<> WL14387-TSFR_2_1_2_1 - s3BucketName and s3Profile both set to an empty string dumps to a local directory
+#@<> WL14387-TSFR_2_1_2_1 - s3BucketName and s3Profile both set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "s3Profile": "", "showProgress": False })
 
-#@<> s3Region - string option
+#@<> s3Region - string option (2)
 TEST_STRING_OPTION("s3Region")
 
-#@<> s3Region cannot be used without s3BucketName
+#@<> s3Region cannot be used without s3BucketName (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3Region' cannot be used when the value of 's3BucketName' option is not set", test_output_relative, { "s3Region": "region" })
 
-#@<> s3BucketName and s3Region both set to an empty string dumps to a local directory
+#@<> s3BucketName and s3Region both set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "s3Region": "", "showProgress": False })
 
-#@<> s3EndpointOverride - string option
+#@<> s3EndpointOverride - string option (2)
 TEST_STRING_OPTION("s3EndpointOverride")
 
-#@<> WL14387-TSFR_6_1_1 - s3EndpointOverride cannot be used without s3BucketName
+#@<> WL14387-TSFR_6_1_1 - s3EndpointOverride cannot be used without s3BucketName (2)
 EXPECT_FAIL("ValueError", "Argument #2: The option 's3EndpointOverride' cannot be used when the value of 's3BucketName' option is not set", test_output_relative, { "s3EndpointOverride": "http://example.org" })
 
-#@<> s3BucketName and s3EndpointOverride both set to an empty string dumps to a local directory
+#@<> s3BucketName and s3EndpointOverride both set to an empty string dumps to a local directory (2)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "s3BucketName": "", "s3EndpointOverride": "", "showProgress": False })
 
-#@<> s3EndpointOverride is missing a scheme
+#@<> s3EndpointOverride is missing a scheme (2)
 EXPECT_FAIL("ValueError", "Argument #2: The value of the option 's3EndpointOverride' is missing a scheme, expected: http:// or https://.", test_output_absolute, { "s3BucketName": "bucket", "s3EndpointOverride": "endpoint", "showProgress": False })
 
-#@<> s3EndpointOverride is using wrong scheme
+#@<> s3EndpointOverride is using wrong scheme (2)
 EXPECT_FAIL("ValueError", "Argument #2: The value of the option 's3EndpointOverride' uses an invalid scheme 'FTp://', expected: http:// or https://.", test_output_absolute, { "s3BucketName": "bucket", "s3EndpointOverride": "FTp://endpoint", "showProgress": False })
 
-#@<> WL13807-TSFR_3_2 - options param being a dictionary that contains an unknown key
+#@<> WL13807-TSFR_3_2 - options param being a dictionary that contains an unknown key (2)
 for param in { "dummy", "indexColumn", "ociParManifest", "ociParExpireTime" }:
     EXPECT_FAIL("ValueError", f"Argument #2: Invalid options: {param}", test_output_relative, { param: "fails" })
 
 # WL13807-FR4 - Both new functions must accept a set of additional options:
 
-#@<> WL13807-FR4.1 - The `options` dictionary may contain a `consistent` key with a Boolean value, which specifies whether the data from the tables should be dumped consistently.
+#@<> WL13807-FR4.1 - The `options` dictionary may contain a `consistent` key with a Boolean value, which specifies whether the data from the tables should be dumped consistently. (2)
 TEST_BOOL_OPTION("consistent")
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "consistent": False, "showProgress": False })
 
-#@<> BUG#34556560 - skipConsistencyChecks options
+#@<> BUG#34556560 - skipConsistencyChecks options (2)
 TEST_BOOL_OPTION("skipConsistencyChecks")
 
-#@<> WL13807-FR4.3 - The `options` dictionary may contain a `events` key with a Boolean value, which specifies whether to include events in the DDL file of each schema.
+#@<> WL13807-FR4.3 - The `options` dictionary may contain a `events` key with a Boolean value, which specifies whether to include events in the DDL file of each schema. (2)
 TEST_BOOL_OPTION("events")
 
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "events": False, "ddlOnly": True, "showProgress": False })
@@ -1165,12 +1165,12 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 routines, 1 trigger\.'))
 
-#@<> WL13807-FR4.3.1 - If the `events` option is not given, a default value of `true` must be used instead.
+#@<> WL13807-FR4.3.1 - If the `events` option is not given, a default value of `true` must be used instead. (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_FILE_CONTAINS("CREATE DEFINER=`{0}`@`{1}` EVENT IF NOT EXISTS `{2}`".format(__user, __host, test_schema_event), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Events)))
 EXPECT_FILE_CONTAINS("CREATE DEFINER=`root`@`localhost` EVENT IF NOT EXISTS `bug31820571`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Events)))
 
-#@<> BUG#33396153 - dumpInstance() + events
+#@<> BUG#33396153 - dumpInstance() + events (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "excludeEvents": [ f"`{test_schema}`.`{test_schema_event}`" ], "dryRun": True, "showProgress": False })
 
 if instance_supports_libraries:
@@ -1178,7 +1178,7 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 1 out of 2 events, 2 routines, 1 trigger\.'))
 
-#@<> WL13807-FR4.4 - The `options` dictionary may contain a `routines` key with a Boolean value, which specifies whether to include functions and stored procedures in the DDL file of each schema. User-defined functions must not be included.
+#@<> WL13807-FR4.4 - The `options` dictionary may contain a `routines` key with a Boolean value, which specifies whether to include functions and stored procedures in the DDL file of each schema. User-defined functions must not be included. (2)
 TEST_BOOL_OPTION("routines")
 
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "routines": False, "ddlOnly": True, "showProgress": False })
@@ -1195,12 +1195,12 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 1 trigger\.'))
 
-#@<> WL13807-FR4.4.1 - If the `routines` option is not given, a default value of `true` must be used instead.
+#@<> WL13807-FR4.4.1 - If the `routines` option is not given, a default value of `true` must be used instead. (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_FILE_CONTAINS("CREATE DEFINER=`{0}`@`{1}` PROCEDURE `{2}`".format(__user, __host, test_schema_procedure), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
 EXPECT_FILE_CONTAINS("CREATE DEFINER=`{0}`@`{1}` FUNCTION `{2}`".format(__user, __host, test_schema_function), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
 
-#@<> BUG#33396153 - dumpInstance() + routines
+#@<> BUG#33396153 - dumpInstance() + routines (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "excludeRoutines": [ f"`{test_schema}`.`{test_schema_procedure}`" ], "dryRun": True, "showProgress": False })
 
 if instance_supports_libraries:
@@ -1208,10 +1208,10 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 1 out of 2 routines, 1 trigger\.'))
 
-#@<> WL16731-G1 - `libraries` - invalid values
+#@<> WL16731-G1 - `libraries` - invalid values (2)
 TEST_BOOL_OPTION("libraries")
 
-#@<> WL16731-G2 - `libraries` - disabled {instance_supports_libraries}
+#@<> WL16731-G2 - `libraries` - disabled {instance_supports_libraries} (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "libraries": False, "ddlOnly": True, "showProgress": False })
 
 # WL16731-TSFR_1_7_1 - note about routine using an excluded library is printed
@@ -1226,14 +1226,14 @@ EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(t
 
 EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 4 routines, 1 trigger\.'))
 
-#@<> WL16731-G3 - `libraries` - default value {instance_supports_libraries}
+#@<> WL16731-G3 - `libraries` - default value {instance_supports_libraries} (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.1.0", "ddlOnly": True, "showProgress": False })
 
 EXPECT_FILE_CONTAINS(f"CREATE LIBRARY `{test_schema_library}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries)))
 # WL16731-TSFR_1_1_2_1 - target version does not support libraries, warning is printed
 EXPECT_STDOUT_CONTAINS(warn_target_version_does_not_support_libraries("9.1.0"))
 
-#@<> WL16731-G2 - `libraries` - filtering {instance_supports_libraries}
+#@<> WL16731-G2 - `libraries` - filtering {instance_supports_libraries} (2)
 # WL16731-TSFR_1_1_1 - test is executed regardless of server version
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "targetVersion": "9.2.0", "libraries": True, "excludeLibraries": [ f"`{test_schema}`.`{test_schema_library}`" ], "dryRun": True, "showProgress": False })
 
@@ -1242,7 +1242,7 @@ EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and withi
 # WL16731-TSFR_1_1_2_2 - target version supports libraries, warning is not printed {instance_supports_libraries}
 EXPECT_STDOUT_NOT_CONTAINS(warn_target_version_does_not_support_libraries("9.2.0"))
 
-#@<> WL16731-TSFR_1_7_1_2 - `libraries` - routine uses a library which does not exist {instance_supports_libraries}
+#@<> WL16731-TSFR_1_7_1_2 - `libraries` - routine uses a library which does not exist {instance_supports_libraries} (2)
 # constants
 tested_schema = "wl16731"
 tested_library = "my_library"
@@ -1265,7 +1265,7 @@ EXPECT_STDOUT_CONTAINS(routine_references_missing_library("Procedure", tested_sc
 # cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> WL13807-FR4.5 - The `options` dictionary may contain a `triggers` key with a Boolean value, which specifies whether to include triggers in the DDL file of each table.
+#@<> WL13807-FR4.5 - The `options` dictionary may contain a `triggers` key with a Boolean value, which specifies whether to include triggers in the DDL file of each table. (2)
 # WL13807-TSFR4_15
 TEST_BOOL_OPTION("triggers")
 
@@ -1279,12 +1279,12 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 2 routines\.'))
 
-#@<> WL13807-FR4.5.1 - If the `triggers` option is not given, a default value of `true` must be used instead.
+#@<> WL13807-FR4.5.1 - If the `triggers` option is not given, a default value of `true` must be used instead. (2)
 # WL13807-TSFR4_13
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_no_index) + ".triggers.sql")))
 
-#@<> BUG#33396153 - dumpInstance() + triggers
+#@<> BUG#33396153 - dumpInstance() + triggers (2)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "excludeTriggers": [ f"`{test_schema}`.`{test_table_no_index}`" ], "dryRun": True, "showProgress": False })
 
 if instance_supports_libraries:
@@ -1292,7 +1292,7 @@ if instance_supports_libraries:
 else:
     EXPECT_STDOUT_MATCHES(re.compile(r'1 out of \d+ schemas will be dumped and within them 4 tables, 1 view, 2 events, 2 routines, 0 out of 1 trigger\.'))
 
-#@<> WL13807-FR4.6 - The `options` dictionary may contain a `tzUtc` key with a Boolean value, which specifies whether to set the time zone to UTC and include a `SET TIME_ZONE='+00:00'` statement in the DDL files and to execute this statement before the data dump is started. This allows dumping TIMESTAMP data when a server has data in different time zones or data is being moved between servers with different time zones.
+#@<> WL13807-FR4.6 - The `options` dictionary may contain a `tzUtc` key with a Boolean value, which specifies whether to set the time zone to UTC and include a `SET TIME_ZONE='+00:00'` statement in the DDL files and to execute this statement before the data dump is started. This allows dumping TIMESTAMP data when a server has data in different time zones or data is being moved between servers with different time zones. (2)
 # WL13807-TSFR4_18
 TEST_BOOL_OPTION("tzUtc")
 
@@ -1301,13 +1301,13 @@ EXPECT_SUCCESS([test_schema], test_output_absolute, { "tzUtc": False, "ddlOnly":
 with open(os.path.join(test_output_absolute, "@.json"), encoding="utf-8") as json_file:
     EXPECT_FALSE(json.load(json_file)["tzUtc"])
 
-#@<> WL13807-FR4.6.1 - If the `tzUtc` option is not given, a default value of `true` must be used instead.
+#@<> WL13807-FR4.6.1 - If the `tzUtc` option is not given, a default value of `true` must be used instead. (2)
 # WL13807-TSFR4_16
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 with open(os.path.join(test_output_absolute, "@.json"), encoding="utf-8") as json_file:
     EXPECT_TRUE(json.load(json_file)["tzUtc"])
 
-#@<> WL13807-FR4.7 - The `options` dictionary may contain a `ddlOnly` key with a Boolean value, which specifies whether the data dump should be skipped.
+#@<> WL13807-FR4.7 - The `options` dictionary may contain a `ddlOnly` key with a Boolean value, which specifies whether the data dump should be skipped. (2)
 # WL13807-TSFR4_21
 TEST_BOOL_OPTION("ddlOnly")
 
@@ -1317,13 +1317,13 @@ EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProg
 EXPECT_EQ(0, count_files_with_extension(test_output_absolute, ".zst"))
 EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".sql"))
 
-#@<> WL13807-FR4.7.2 - If the `ddlOnly` option is not given, a default value of `false` must be used instead.
+#@<> WL13807-FR4.7.2 - If the `ddlOnly` option is not given, a default value of `false` must be used instead. (2)
 # WL13807-TSFR4_19
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "showProgress": False })
 EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".zst"))
 EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".sql"))
 
-#@<> WL13807-FR4.8 - The `options` dictionary may contain a `dataOnly` key with a Boolean value, which specifies whether the DDL files should be written.
+#@<> WL13807-FR4.8 - The `options` dictionary may contain a `dataOnly` key with a Boolean value, which specifies whether the DDL files should be written. (2)
 # WL13807-TSFR4_24
 TEST_BOOL_OPTION("dataOnly")
 
@@ -1336,17 +1336,17 @@ EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".zst"))
 # WL13807-TSFR11_2
 EXPECT_EQ(0, count_files_with_extension(test_output_absolute, ".sql"))
 
-#@<> WL13807-FR4.8.2 - If both `ddlOnly` and `dataOnly` options are set to `true`, an exception must be raised.
+#@<> WL13807-FR4.8.2 - If both `ddlOnly` and `dataOnly` options are set to `true`, an exception must be raised. (2)
 # WL13807-TSFR4_25
 EXPECT_FAIL("ValueError", "Argument #2: The 'ddlOnly' and 'dataOnly' options cannot be both set to true.", test_output_relative, { "ddlOnly": True, "dataOnly": True })
 
-#@<> WL13807-FR4.8.3 - If the `dataOnly` option is not given, a default value of `false` must be used instead.
+#@<> WL13807-FR4.8.3 - If the `dataOnly` option is not given, a default value of `false` must be used instead. (2)
 # WL13807-TSFR4_22
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "showProgress": False })
 EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".zst"))
 EXPECT_NE(0, count_files_with_extension(test_output_absolute, ".sql"))
 
-#@<> WL13807-FR4.9 - The `options` dictionary may contain a `dryRun` key with a Boolean value, which specifies whether a dry run should be performed.
+#@<> WL13807-FR4.9 - The `options` dictionary may contain a `dryRun` key with a Boolean value, which specifies whether a dry run should be performed. (2)
 # WL13807-TSFR4_28
 TEST_BOOL_OPTION("dryRun")
 
@@ -1363,11 +1363,11 @@ EXPECT_STDOUT_CONTAINS("dryRun enabled, no locks will be acquired and no files w
 # BUG#32695301 - unlock the tables
 session.run_sql("UNLOCK TABLES")
 
-#@<> WL13807-FR4.9.2 - If the `dryRun` option is not given, a default value of `false` must be used instead.
+#@<> WL13807-FR4.9.2 - If the `dryRun` option is not given, a default value of `false` must be used instead. (2)
 # WL13807-TSFR4_26
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR4.10 - The `options` dictionary may contain a `users` key with a Boolean value, which specifies whether to include users, roles and grants in the DDL file.
+#@<> WL13807-FR4.10 - The `options` dictionary may contain a `users` key with a Boolean value, which specifies whether to include users, roles and grants in the DDL file. (2)
 # WL13807-TSFR4_31
 TEST_BOOL_OPTION("users")
 
@@ -1378,22 +1378,22 @@ EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, "@.users.sql")))
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, "@.sql")))
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, "@.post.sql")))
 
-#@<> WL13807-FR4.10.1 - If the `users` option is not given, a default value of `true` must be used in case of `util.dumpInstance()` and false in case of `util.dumpSchemas()`.
+#@<> WL13807-FR4.10.1 - If the `users` option is not given, a default value of `true` must be used in case of `util.dumpInstance()` and false in case of `util.dumpSchemas()`. (2)
 # WL13807-TSFR4_29
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, "@.users.sql")))
 
-#@<> test invalid values of the `includeUsers` option
+#@<> test invalid values of the `includeUsers` option (2)
 TEST_ARRAY_OF_STRINGS_OPTION("includeUsers")
 
-#@<> test invalid values of the `excludeUsers` option
+#@<> test invalid values of the `excludeUsers` option (2)
 TEST_ARRAY_OF_STRINGS_OPTION("excludeUsers")
 
-#@<> the `includeUsers` and `excludeUsers` options cannot be used when `users` is false
+#@<> the `includeUsers` and `excludeUsers` options cannot be used when `users` is false (2)
 EXPECT_FAIL("ValueError", "Argument #2: The 'includeUsers' option cannot be used if the 'users' option is set to false.", test_output_relative, { "users": False, "includeUsers": ["third"] })
 EXPECT_FAIL("ValueError", "Argument #2: The 'excludeUsers' option cannot be used if the 'users' option is set to false.", test_output_relative, { "users": False, "excludeUsers": ["third"] })
 
-#@<> test invalid user names
+#@<> test invalid user names (2)
 EXPECT_FAIL("ValueError", "Argument #2: User name must not be empty.", test_output_relative, { "includeUsers": [""] })
 EXPECT_FAIL("ValueError", "Argument #2: User name must not be empty.", test_output_relative, { "excludeUsers": [""] })
 
@@ -1406,7 +1406,7 @@ EXPECT_FAIL("ValueError", "Argument #2: Invalid user name: @", test_output_relat
 EXPECT_FAIL("ValueError", "Argument #2: Malformed hostname. Cannot use \"'\" or '\"' characters on the hostname without quotes", test_output_relative, { "includeUsers": ["foo@''nope"] })
 EXPECT_FAIL("ValueError", "Argument #2: Malformed hostname. Cannot use \"'\" or '\"' characters on the hostname without quotes", test_output_relative, { "excludeUsers": ["foo@''nope"] })
 
-#@<> create an invalid test user with a ' character, which would be dumped wrong
+#@<> create an invalid test user with a ' character, which would be dumped wrong (2)
 session.run_sql("CREATE USER IF NOT EXISTS 'foo''bar'@'localhost' IDENTIFIED BY 'pwd';")
 
 # WL14841-TSFR_1_1
@@ -1417,7 +1417,7 @@ EXPECT_SUCCESS([test_schema], test_output_absolute, {"excludeUsers":["foo'bar@lo
 
 session.run_sql("DROP USER 'foo''bar'@'localhost'")
 
-#@<> create some test users
+#@<> create some test users (2)
 session.run_sql("CREATE USER IF NOT EXISTS 'first'@'localhost' IDENTIFIED BY 'pwd';")
 session.run_sql("CREATE USER IF NOT EXISTS 'first'@'10.11.12.13' IDENTIFIED BY 'pwd';")
 session.run_sql("CREATE USER IF NOT EXISTS 'firstfirst'@'localhost' IDENTIFIED BY 'pwd';")
@@ -1437,83 +1437,83 @@ def EXPECT_INCLUDE_EXCLUDE(options, included, excluded, expected_exception = Non
     for e in excluded:
         EXPECT_FILE_NOT_CONTAINS(f"CREATE USER IF NOT EXISTS {get_user_account_for_output(e)}", os.path.join(test_output_absolute, "@.users.sql"))
 
-#@<> don't include or exclude any users, all accounts are dumped
+#@<> don't include or exclude any users, all accounts are dumped (2)
 # some accounts are always excluded
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": [], "excludeUsers": [] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], ["'mysql.infoschema'", "'mysql.session'", "'mysql.sys'"])
 
-#@<> include non-existent user, no accounts are dumped
+#@<> include non-existent user, no accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["third"] }, [], ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> exclude non-existent user, all accounts are dumped
+#@<> exclude non-existent user, all accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "excludeUsers": ["third"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
 
-#@<> include an existing user, one account is dumped
+#@<> include an existing user, one account is dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first@localhost"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is dumped - single quotes
+#@<> include an existing user, one account is dumped - single quotes (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["'first'@'localhost'"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is dumped - double quotes
+#@<> include an existing user, one account is dumped - double quotes (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ['"first"@"localhost"'] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is dumped - backticks
+#@<> include an existing user, one account is dumped - backticks (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["`first`@`localhost`"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, two accounts are dumped
+#@<> include using just the username, two accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
 EXPECT_STDOUT_MATCHES(re.compile(r'2 out of \d+ users will be dumped\.'))
 
-#@<> include using just the same username twice, two accounts are dumped
+#@<> include using just the same username twice, two accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "first"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude different accounts using just the username, two accounts are dumped
+#@<> include using just the username, exclude different accounts using just the username, two accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["second"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include and exclude the same username, conflicting options -> exception
+#@<> include and exclude the same username, conflicting options -> exception (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["first"] }, [], [], "Conflicting filtering options")
 
-#@<> include using just the username, exclude one of the accounts, one account is dumped
+#@<> include using just the username, exclude one of the accounts, one account is dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["first@10.11.12.13"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is dumped - single quotes
+#@<> include using just the username, exclude one of the accounts, one account is dumped - single quotes (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["'first'@'10.11.12.13'"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is dumped - double quotes
+#@<> include using just the username, exclude one of the accounts, one account is dumped - double quotes (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ['"first"@"10.11.12.13"'] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is dumped - backticks
+#@<> include using just the username, exclude one of the accounts, one account is dumped - backticks (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["`first`@`10.11.12.13`"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using two usernames, four accounts are dumped
+#@<> include using two usernames, four accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'localhost'", "'second'@'10.11.12.14'"], ["'firstfirst'@'localhost'"])
 
-#@<> include using two usernames, exclude one of them, conflicting options -> exception
+#@<> include using two usernames, exclude one of them, conflicting options -> exception (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"], "excludeUsers": ["second"] }, [], [], "Conflicting filtering options")
 
-#@<> include using two usernames, exclude one of the accounts, three accounts are dumped
+#@<> include using two usernames, exclude one of the accounts, three accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"], "excludeUsers": ["second@localhost"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'10.11.12.14'"], ["'firstfirst'@'localhost'", "'second'@'localhost'"])
 
-#@<> include using an username and an account, three accounts are dumped
+#@<> include using an username and an account, three accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'localhost'"], ["'firstfirst'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using an username and an account, exclude using username, conflicting options -> exception
+#@<> include using an username and an account, exclude using username, conflicting options -> exception (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"], "excludeUsers": ["second"]  }, [], [], "Conflicting filtering options")
 
-#@<> include using an username and an account, exclude using an account, conflicting options -> exception
+#@<> include using an username and an account, exclude using an account, conflicting options -> exception (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"], "excludeUsers": ["second@localhost"]  }, [], [], "Conflicting filtering options")
 
-#@<> include using an username and non-existing username, exclude using a non-existing username, two accounts are dumped
+#@<> include using an username and non-existing username, exclude using a non-existing username, two accounts are dumped (2)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "third"], "excludeUsers": ["fourth"]  }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> drop test users
+#@<> drop test users (2)
 session.run_sql("DROP USER 'first'@'localhost';")
 session.run_sql("DROP USER 'first'@'10.11.12.13';")
 session.run_sql("DROP USER 'firstfirst'@'localhost';")
 session.run_sql("DROP USER 'second'@'localhost';")
 session.run_sql("DROP USER 'second'@'10.11.12.14';")
 
-#@<> WL13807-FR4.11 - The `options` dictionary may contain an `excludeTables` key with a list of strings, which specifies the names of tables to be excluded from the dump.
+#@<> WL13807-FR4.11 - The `options` dictionary may contain an `excludeTables` key with a list of strings, which specifies the names of tables to be excluded from the dump. (2)
 # WL13807-TSFR4_38
 TEST_ARRAY_OF_STRINGS_OPTION("excludeTables")
 
@@ -1529,7 +1529,7 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basen
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_unique) + ".sql")))
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_no_index) + ".sql")))
 
-#@<> WL13807-FR4.11.1 - The table names must be in form `schema.table`. Both `schema` and `table` must be valid MySQL identifiers and must be quoted with backtick (`` ` ``) character when required.
+#@<> WL13807-FR4.11.1 - The table names must be in form `schema.table`. Both `schema` and `table` must be valid MySQL identifiers and must be quoted with backtick (`` ` ``) character when required. (2)
 # WL13807-TSFR4_36
 EXPECT_FAIL("ValueError", "Argument #2: The table to be excluded must be in the following form: schema.table, with optional backtick quotes, wrong value: 'dummy'.", test_output_relative, { "excludeTables": [ "dummy" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse table to be excluded 'dummy.dummy.dummy': Invalid object name, expected end of name, but got: '.'", test_output_relative, { "excludeTables": [ "dummy.dummy.dummy" ] })
@@ -1540,11 +1540,11 @@ EXPECT_FAIL("ValueError", "Argument #2: Failed to parse table to be excluded '1.
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse table to be excluded 'dummy.1': Invalid identifier: identifiers may begin with a digit but unless quoted may not consist solely of digits.", test_output_relative, { "excludeTables": [ "dummy.1" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse table to be excluded '2.1': Invalid identifier: identifiers may begin with a digit but unless quoted may not consist solely of digits.", test_output_relative, { "excludeTables": [ "2.1" ] })
 
-#@<> WL13807-FR4.11.2 - If the specified table does not exist in the schema, or the schema is not included in dump, the table name is discarded.
+#@<> WL13807-FR4.11.2 - If the specified table does not exist in the schema, or the schema is not included in dump, the table name is discarded. (2)
 # WL13807-TSFR4_34
 EXPECT_SUCCESS(None, test_output_absolute, { "excludeTables": [ "`{0}`.`dummy`".format(test_schema), "`@`.dummy", "dummy.`@`", "`@`.`@`", "`1`.dummy", "dummy.`1`", "`2`.`1`" ], "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR4.11.3 - If the `excludeTables` option is not given, a default value of an empty list must be used instead.
+#@<> WL13807-FR4.11.3 - If the `excludeTables` option is not given, a default value of an empty list must be used instead. (2)
 # WL13807-TSFR4_32
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_non_unique) + ".sql")))
@@ -1554,7 +1554,7 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basen
 
 # WL13807-FR5 - The `util.dumpInstance()` function must additionally accept the following options:
 
-#@<> WL13807-FR5.1 - The `options` dictionary may contain an `excludeSchemas` key with a list of strings, which specifies the names of schemas to be excluded from the dump.
+#@<> WL13807-FR5.1 - The `options` dictionary may contain an `excludeSchemas` key with a list of strings, which specifies the names of schemas to be excluded from the dump. (2)
 # WL13807-TSFR5_6
 TEST_ARRAY_OF_STRINGS_OPTION("excludeSchemas")
 
@@ -1565,14 +1565,14 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(ty
 for schema in exclude_all_but_types_schema:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema, Schema_ddl.Schema))))
 
-#@<> excludeSchemas + excludeTables
+#@<> excludeSchemas + excludeTables (2)
 EXPECT_SUCCESS(None, test_output_absolute, { "excludeSchemas": exclude_all_but_types_schema, "excludeTables": [ "`{0}`.`{1}`".format(test_schema, test_table_non_unique), "`{0}`.`dummy`".format(test_schema), "`@`.dummy" ], "ddlOnly": True, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(types_schema, Schema_ddl.Schema))))
 
 for schema in exclude_all_but_types_schema:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema, Schema_ddl.Schema))))
 
-#@<> WL13807-FR5.1.1 - If the specified schema does not exist, it is discarded from the list.
+#@<> WL13807-FR5.1.1 - If the specified schema does not exist, it is discarded from the list. (2)
 # WL13807-TSFR5_3
 EXPECT_SUCCESS(None, test_output_absolute, { "excludeSchemas": exclude_all_but_types_schema + [ "dummy" ], "ddlOnly": True, "showProgress": False })
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(types_schema, Schema_ddl.Schema))))
@@ -1580,7 +1580,7 @@ EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(ty
 for schema in exclude_all_but_types_schema:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema, Schema_ddl.Schema))))
 
-#@<> WL13807-FR5.1.2 - If the `excludeSchemas` option is not given, a default value of an empty list must be used instead.
+#@<> WL13807-FR5.1.2 - If the `excludeSchemas` option is not given, a default value of an empty list must be used instead. (2)
 # WL13807-TSFR5_1
 EXPECT_SUCCESS(None, test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
@@ -1597,7 +1597,7 @@ for schema in all_schemas:
 for schema in ["information_schema", "mysql", "ndbinfo", "performance_schema", "sys"]:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema, Schema_ddl.Schema))))
 
-#@<> WL13807-FR6 - The data dumps for the following tables must be excluded from any dumps that include their respective schemas. DDL must still be generated:
+#@<> WL13807-FR6 - The data dumps for the following tables must be excluded from any dumps that include their respective schemas. DDL must still be generated: (2)
 # * `mysql.apply_status`
 # * `mysql.general_log`
 # * `mysql.schema`
@@ -1606,16 +1606,16 @@ for schema in ["information_schema", "mysql", "ndbinfo", "performance_schema", "
 # WL13807-TSFR6_1
 # this requirement does not apply to dump_instance(), as according to FR5.1.3, mysql schema is always excluded
 
-#@<> run dump for all SQL-related tests below
+#@<> run dump for all SQL-related tests below (2)
 EXPECT_SUCCESS([types_schema, test_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR9 - For each schema dumped, a DDL file with the base name as specified in FR8 and `.sql` extension must be created in the output directory.
+#@<> WL13807-FR9 - For each schema dumped, a DDL file with the base name as specified in FR8 and `.sql` extension must be created in the output directory. (2)
 # * The schema DDL file must contain all objects being dumped, including routines and events if enabled by options.
 # WL13807-TSFR9_1
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(types_schema, Schema_ddl.Schema))))
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema))))
 
-#@<> WL13807-FR10 - For each table dumped, a DDL file must be created with a base name as specified in FR7.1, and `.sql` extension.
+#@<> WL13807-FR10 - For each table dumped, a DDL file must be created with a base name as specified in FR7.1, and `.sql` extension. (2)
 # * The table DDL file must contain all objects being dumped.
 # WL13807-TSFR10_1
 for table in types_schema_tables:
@@ -1624,14 +1624,14 @@ for table in types_schema_tables:
 for table in [test_table_primary, test_table_unique, test_table_non_unique, test_table_no_index]:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, table) + ".sql")))
 
-#@<> WL13807-FR10.1 - If the `triggers` option was set to `true` and the dumped table has triggers, a DDL file must be created with a base name as specified in FR7.1, and `.triggers.sql` extension. File must contain all triggers for that table.
+#@<> WL13807-FR10.1 - If the `triggers` option was set to `true` and the dumped table has triggers, a DDL file must be created with a base name as specified in FR7.1, and `.triggers.sql` extension. File must contain all triggers for that table. (2)
 # WL13807-TSFR10_4
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, test_table_no_index) + ".triggers.sql")))
 
 for table in [test_table_primary, test_table_unique, test_table_non_unique]:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, table) + ".triggers.sql")))
 
-#@<> WL13807-FR11 - For each view dumped, a DDL file must be created with a base name as specified in FR7.1, and `.sql` extension.
+#@<> WL13807-FR11 - For each view dumped, a DDL file must be created with a base name as specified in FR7.1, and `.sql` extension. (2)
 # WL13807-TSFR11_1
 for view in types_schema_views:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(types_schema, view) + ".sql")))
@@ -1639,7 +1639,7 @@ for view in types_schema_views:
 for view in [test_view]:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, view) + ".sql")))
 
-#@<> WL13807-FR11.1 - For each view dumped, a DDL file must be created with a base name as specified in FR7.1, and `.pre.sql` extension. This file must contain SQL statements which create a table with the same structure as the dumped view.
+#@<> WL13807-FR11.1 - For each view dumped, a DDL file must be created with a base name as specified in FR7.1, and `.pre.sql` extension. This file must contain SQL statements which create a table with the same structure as the dumped view. (2)
 # WL13807-TSFR11_3
 for view in types_schema_views:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(types_schema, view) + ".pre.sql")))
@@ -1647,20 +1647,20 @@ for view in types_schema_views:
 for view in [test_view]:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, encode_table_basename(test_schema, view) + ".pre.sql")))
 
-#@<> WL13807-FR12 - The following DDL files must be created in the output directory:
+#@<> WL13807-FR12 - The following DDL files must be created in the output directory: (2)
 # * A file with the name `@.sql`, containing the SQL statements which should be executed before the whole dump is imported.
 # * A file with the name `@.post.sql`, containing the SQL statements which should be executed after the whole dump is imported.
 # WL13807-TSFR12_1
 for f in [ "@.sql", "@.post.sql" ]:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, f)))
 
-#@<> WL13807-FR12.1 - If the `users` option was set to `true`, a file with the name `@.users.sql` must be created in the output directory:
+#@<> WL13807-FR12.1 - If the `users` option was set to `true`, a file with the name `@.users.sql` must be created in the output directory: (2)
 # * The dump file must contain SQL statements to create users, roles and grant privileges.
 EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, "@.users.sql")))
 EXPECT_FILE_CONTAINS("CREATE USER IF NOT EXISTS", os.path.join(test_output_absolute, "@.users.sql"))
 EXPECT_FILE_CONTAINS("GRANT ", os.path.join(test_output_absolute, "@.users.sql"))
 
-#@<> Check for roles {VER(>=8.0.0)}
+#@<> Check for roles {VER(>=8.0.0)} (2)
 if __server_is_maria_db:
     EXPECT_FILE_CONTAINS(f"CREATE ROLE IF NOT EXISTS `{test_role}`;", os.path.join(test_output_absolute, "@.users.sql"))
     EXPECT_FILE_CONTAINS(f"GRANT USAGE ON *.* TO `{test_role}`;", os.path.join(test_output_absolute, "@.users.sql"))
@@ -1668,7 +1668,7 @@ else:
     EXPECT_FILE_CONTAINS(f"CREATE USER IF NOT EXISTS `{test_role}`@`%` IDENTIFIED WITH 'caching_sha2_password'", os.path.join(test_output_absolute, "@.users.sql"))
     EXPECT_FILE_CONTAINS(f"GRANT USAGE ON *.* TO `{test_role}`@`%`;", os.path.join(test_output_absolute, "@.users.sql"))
 
-#@<> WL13807-FR13 - Once the dump is complete, in addition to the summary described in WL#13804, FR15, the following information must be presented to the user:
+#@<> WL13807-FR13 - Once the dump is complete, in addition to the summary described in WL#13804, FR15, the following information must be presented to the user: (2)
 # * The number of schemas dumped.
 # * The number of tables dumped.
 # WL13807: WL13804-FR15 - Once the dump is complete, the summary of the export process must be presented to the user. It must contain:
@@ -1688,7 +1688,7 @@ EXPECT_SUCCESS([types_schema, test_schema], test_output_absolute, { "compression
 EXPECT_STDOUT_CONTAINS("Schemas dumped: 2")
 EXPECT_STDOUT_CONTAINS("Tables dumped: {0}".format(len(types_schema_tables) + 4))
 
-#@<> WL13807-FR14 - SQL scripts for DDL must be idempotent. That is, executing the same script multiple times (including when some of the attempts have failed) should result in the same schema that would be left by a single successful execution.
+#@<> WL13807-FR14 - SQL scripts for DDL must be idempotent. That is, executing the same script multiple times (including when some of the attempts have failed) should result in the same schema that would be left by a single successful execution. (2)
 # * All SQL statements which create objects must not fail if object with the same type and name already exist.
 # * Existing schemas and tables with the same names as the ones being dumped must not be deleted.
 # * Existing views with the same names as the ones being dumped may be deleted.
@@ -1722,7 +1722,7 @@ for f in all_sql_files:
 
 drop_all_schemas(all_schemas)
 
-#@<> WL13807-FR15 - All created files should have permissions set to rw-r-----, owner should be set to the user running Shell. {__os_type != "windows"}
+#@<> WL13807-FR15 - All created files should have permissions set to rw-r-----, owner should be set to the user running Shell. {__os_type != "windows"} (2)
 # WL13807-TSFR15_1
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "showProgress": False })
 
@@ -1731,10 +1731,10 @@ for f in os.listdir(test_output_absolute):
     EXPECT_EQ(0o640, stat.S_IMODE(os.stat(path).st_mode))
     EXPECT_EQ(os.getuid(), os.stat(path).st_uid)
 
-#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done. {not __server_is_maria_db}
+#@<> WL13807-FR16.1 - The `options` dictionary may contain a `ocimds` key with a Boolean or string value, which specifies whether the compatibility checks with `MySQL HeatWave Service` and DDL substitutions should be done. {not __server_is_maria_db} (2)
 TEST_BOOL_OPTION("ocimds")
 
-#@<> tables with missing PKs
+#@<> tables with missing PKs (2)
 missing_pks = {
     "xtest": [
         "t_bigint",
@@ -1776,7 +1776,7 @@ missing_pks = {
     ]
 }
 
-#@<> WL13807-FR16.1.1 - If the `ocimds` option is set to `true`, the following must be done: {not __server_is_maria_db}
+#@<> WL13807-FR16.1.1 - If the `ocimds` option is set to `true`, the following must be done: {not __server_is_maria_db} (2)
 # * General
 #   * Add the `mysql` schema to the schema exclusion list
 # * GRANT
@@ -1907,7 +1907,10 @@ ERROR: One or more tables without Primary Keys were found.
          It will not be possible to load the dump in an HA enabled DB System instance.
 """)
 
-#@<> BUG#33159903 table with too many columns {not __server_is_maria_db}
+#@<> targetVersion used by the MySQL HeatWave Service tests below
+target_version = "8.1.0"
+
+#@<> BUG#33159903 table with too many columns {not __server_is_maria_db} (2)
 # setup
 tested_schema = "tested_schema"
 tested_table = "too_many_columns"
@@ -1923,7 +1926,7 @@ EXPECT_STDOUT_CONTAINS(too_many_columns(tested_schema, tested_table, columns_cou
 # cleanup
 session.run_sql(f"DROP SCHEMA !;", [ tested_schema ])
 
-#@<> WL14506-TSFR_2_1
+#@<> WL14506-TSFR_2_1 (2)
 util.help("dump_instance")
 
 EXPECT_STDOUT_CONTAINS("""
@@ -1961,29 +1964,29 @@ EXPECT_STDOUT_CONTAINS("""
       automatically using the create_invisible_pks compatibility value.
 """)
 
-#@<> BUG#31403104: if users is false, errors about the users should not be included {not __server_is_maria_db}
+#@<> BUG#31403104: if users is false, errors about the users should not be included {not __server_is_maria_db} (2)
 EXPECT_FAIL("Error: Shell Error (52004)", "Compatibility issues were found", test_output_relative, { "ocimds": True, "users": False })
 EXPECT_STDOUT_NOT_CONTAINS(strip_restricted_grants(test_user_account, test_privileges).error())
 
 for plugin in disallowed_authentication_plugins:
     EXPECT_STDOUT_NOT_CONTAINS(skip_invalid_accounts_plugin(get_test_user_account(plugin), plugin).error())
 
-#@<> BUG#31403104: compatibility checks are enabled, but users and SQL is not dumped, this should succeed {not __server_is_maria_db}
+#@<> BUG#31403104: compatibility checks are enabled, but users and SQL is not dumped, this should succeed {not __server_is_maria_db} (2)
 # WL14506-TSFR_1_4
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "ocimds": True, "dataOnly": True, "users": False, "showProgress": False })
 
-#@<> WL13807-FR16.1.2 - If the `ocimds` option is not given, a default value of `false` must be used instead.
+#@<> WL13807-FR16.1.2 - If the `ocimds` option is not given, a default value of `false` must be used instead. (2)
 # WL13807-TSFR16_2
 # WL14506-TSFR_1_1
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
-#@<> WL13807-FR16.2 - The `options` dictionary may contain a `compatibility` key with an array of strings value, which specifies the `MySQL HeatWave Service`-related compatibility modifications that should be applied when creating the DDL files.
+#@<> WL13807-FR16.2 - The `options` dictionary may contain a `compatibility` key with an array of strings value, which specifies the `MySQL HeatWave Service`-related compatibility modifications that should be applied when creating the DDL files. (2)
 TEST_ARRAY_OF_STRINGS_OPTION("compatibility")
 
 EXPECT_FAIL("ValueError", "Argument #2: Unknown compatibility option: dummy", test_output_relative, { "compatibility": [ "dummy" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Unknown compatibility option: ", test_output_relative, { "compatibility": [ "" ] })
 
-#@<> WL13807-FR16.2.1 - The `compatibility` option may contain the following values: {not __server_is_maria_db}
+#@<> WL13807-FR16.2.1 - The `compatibility` option may contain the following values: {not __server_is_maria_db} (2)
 # * `force_innodb` - replace incompatible table engines with `InnoDB`,
 # * `strip_restricted_grants` - remove disallowed grants.
 # * `strip_tablespaces` - remove unsupported tablespace syntax.
@@ -2017,18 +2020,18 @@ NOTE: One or more tables without Primary Keys were found.
       Inbound Replication into a DB System HA instance will also be possible, as long as the instance has version 8.0.32 or newer. For more information, see https://docs.oracle.com/en-us/iaas/mysql-database/doc/creating-replication-channel.html.
 """)
 
-#@<> WL14506-FR3.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key, an information should be printed that an invisible primary key will be created when loading the dump. {not __server_is_maria_db}
+#@<> WL14506-FR3.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key, an information should be printed that an invisible primary key will be created when loading the dump. {not __server_is_maria_db} (2)
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "create_invisible_pks" ] , "ddlOnly": True, "showProgress": False })
 
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(create_invisible_pks(incompatible_schema, table).fixed())
 
-#@<> WL14506-FR3.2 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column named my_row_id, an error must be reported. {not __server_is_maria_db}
+#@<> WL14506-FR3.2 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column named my_row_id, an error must be reported. {not __server_is_maria_db} (2)
 # WL14506-TSFR_3.2_1
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
 
@@ -2038,11 +2041,11 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, t
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.4 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column with an AUTO_INCREMENT attribute, an error must be reported. {not __server_is_maria_db}
+#@<> WL14506-FR3.4 - When a dump is executed and the compatibility option contains the create_invisible_pks value, for each table that would be dumped which does not contain a primary key but has a column with an AUTO_INCREMENT attribute, an error must be reported. {not __server_is_maria_db} (2)
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
 
@@ -2052,11 +2055,11 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.2 + WL14506-FR3.4 - same column {not __server_is_maria_db}
+#@<> WL14506-FR3.2 + WL14506-FR3.4 - same column {not __server_is_maria_db} (2)
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
@@ -2068,12 +2071,12 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.2 + WL14506-FR3.4 - different columns {not __server_is_maria_db}
+#@<> WL14506-FR3.2 + WL14506-FR3.4 - different columns {not __server_is_maria_db} (2)
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
@@ -2086,39 +2089,39 @@ EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible
 session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, table])
 session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table])
 
-#@<> WL14506-FR3.3 - When a dump is executed and the compatibility option contains both create_invisible_pks and ignore_missing_pks values, an error must be reported and process must be aborted. {not __server_is_maria_db}
+#@<> WL14506-FR3.3 - When a dump is executed and the compatibility option contains both create_invisible_pks and ignore_missing_pks values, an error must be reported and process must be aborted. {not __server_is_maria_db} (2)
 # WL14506-TSFR_3.3_1
 EXPECT_FAIL("ValueError", "Argument #2: The 'create_invisible_pks' and 'ignore_missing_pks' compatibility options cannot be used at the same time.", test_output_relative, { "compatibility": [ "create_invisible_pks", "ignore_missing_pks" ] })
 
-#@<> WL13807-FR16.2.1 - force_innodb {not __server_is_maria_db}
+#@<> WL13807-FR16.2.1 - force_innodb {not __server_is_maria_db} (2)
 # WL13807-TSFR16_3
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "force_innodb" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_index_directory).fixed())
 EXPECT_STDOUT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_wrong_engine).fixed())
 EXPECT_STDOUT_CONTAINS(force_innodb_row_format_fixed(incompatible_schema, incompatible_table_wrong_engine).fixed())
 
-#@<> WL14506-FR2.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the ignore_missing_pks value, for each table that would be dumped which does not contain a primary key, a note must be displayed, stating that this issue is ignored. {not __server_is_maria_db}
+#@<> WL14506-FR2.1 - When a dump is executed with the ocimds option set to true and the compatibility option contains the ignore_missing_pks value, for each table that would be dumped which does not contain a primary key, a note must be displayed, stating that this issue is ignored. {not __server_is_maria_db} (2)
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "ignore_missing_pks" ] , "ddlOnly": True, "showProgress": False })
 
 for table in missing_pks[incompatible_schema]:
     EXPECT_STDOUT_CONTAINS(ignore_missing_pks(incompatible_schema, table).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_definers {not __server_is_maria_db}
+#@<> WL13807-FR16.2.1 - strip_definers {not __server_is_maria_db} (2)
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_definers" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_definers_definer_clause(incompatible_schema, incompatible_view).fixed())
 EXPECT_STDOUT_CONTAINS(strip_definers_security_clause(incompatible_schema, incompatible_view).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_restricted_grants {not __server_is_maria_db}
+#@<> WL13807-FR16.2.1 - strip_restricted_grants {not __server_is_maria_db} (2)
 # WL13807-TSFR16_5
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_restricted_grants" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_restricted_grants(test_user_account, test_privileges).fixed())
 
-#@<> WL13807-FR16.2.1 - strip_tablespaces {not __server_is_maria_db}
+#@<> WL13807-FR16.2.1 - strip_tablespaces {not __server_is_maria_db} (2)
 # WL13807-TSFR16_4
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "strip_tablespaces" ] , "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(strip_tablespaces(incompatible_schema, incompatible_table_tablespace).fixed())
 
-#@<> BUG#32115948 - added `skip_invalid_accounts` - removes users using unsupported authentication plugins {not __server_is_maria_db}
+#@<> BUG#32115948 - added `skip_invalid_accounts` - removes users using unsupported authentication plugins {not __server_is_maria_db} (2)
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "skip_invalid_accounts" ], "targetVersion": target_version, "ddlOnly": True, "showProgress": False })
 
 for plugin in disallowed_authentication_plugins:
@@ -2127,7 +2130,7 @@ for plugin in disallowed_authentication_plugins:
 # BUG#32741098 - users which do not have a passwords are removed from the dump by 'skip_invalid_accounts'
 EXPECT_STDOUT_CONTAINS(skip_invalid_accounts_no_password(test_user_no_pwd).fixed())
 
-#@<> BUG#38237729 - added `lock_invalid_accounts` - updates users using unsupported authentication plugins or empty passwords and locks the account {not __server_is_maria_db}
+#@<> BUG#38237729 - added `lock_invalid_accounts` - updates users using unsupported authentication plugins or empty passwords and locks the account {not __server_is_maria_db} (2)
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "compatibility": [ "lock_invalid_accounts" ], "targetVersion": target_version, "ddlOnly": True, "showProgress": False })
 
 for plugin in disallowed_authentication_plugins:
@@ -2135,17 +2138,17 @@ for plugin in disallowed_authentication_plugins:
 
 EXPECT_STDOUT_CONTAINS(lock_invalid_accounts_no_password(test_user_no_pwd).fixed())
 
-#@<> BUG#38237729 - load the dump {VER(>=8.0.0) and not __server_is_maria_db}
+#@<> BUG#38237729 - load the dump {VER(>=8.0.0) and not __server_is_maria_db} (2)
 wipeout_users(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(test_output_absolute, { "showProgress": False, "loadUsers": True, "loadDdl": False, "loadData": False, "resetProgress": True }), "loading should not throw")
 
-#@<> BUG#38237729 - lock_invalid_accounts and skip_invalid_accounts cannot be used at the same time {not __server_is_maria_db}
+#@<> BUG#38237729 - lock_invalid_accounts and skip_invalid_accounts cannot be used at the same time {not __server_is_maria_db} (2)
 EXPECT_FAIL("ValueError", "Argument #2: The 'lock_invalid_accounts' and 'skip_invalid_accounts' compatibility options cannot be used at the same time.", test_output_relative, { "compatibility": [ "lock_invalid_accounts", "skip_invalid_accounts" ] })
 
-#@<> BUG#38237729 - cleanup {not __server_is_maria_db}
+#@<> BUG#38237729 - cleanup {not __server_is_maria_db} (2)
 create_users()
 
-#@<> WL13807-FR16.2.2 - If the `compatibility` option is not given, a default value of `[]` must be used instead.
+#@<> WL13807-FR16.2.2 - If the `compatibility` option is not given, a default value of `[]` must be used instead. (2)
 # WL13807-TSFR16_6
 EXPECT_SUCCESS([incompatible_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS(force_innodb_unsupported_storage(incompatible_schema, incompatible_table_index_directory).fixed())
@@ -2162,11 +2165,11 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_tablespaces(incompatible_schema, incompatible_t
 # WL13807-FR7.4 - While the data is being written to an output file, the data dump file must be suffixed with a `.dumping` extension. Once writing is finished, the file must be renamed to its original name.
 # Data consistency tests.
 
-#@<> test a single table with no chunking
+#@<> test a single table with no chunking (2)
 EXPECT_SUCCESS([world_x_schema], test_output_absolute, { "chunking": False, "compression": "none", "showProgress": False })
 TEST_LOAD(world_x_schema, world_x_table)
 
-#@<> test multiple tables with chunking
+#@<> test multiple tables with chunking (3)
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "bytesPerChunk": "1M", "compression": "none", "showProgress": False })
 TEST_LOAD(test_schema, test_table_primary)
 TEST_LOAD(test_schema, test_table_unique)
@@ -2174,13 +2177,13 @@ TEST_LOAD(test_schema, test_table_unique)
 TEST_LOAD(test_schema, test_table_non_unique)
 TEST_LOAD(test_schema, test_table_no_index)
 
-#@<> test multiple tables with various data types
+#@<> test multiple tables with various data types (3)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "chunking": False, "compression": "none", "showProgress": False })
 
 for table in types_schema_tables:
     TEST_LOAD(types_schema, table)
 
-#@<> test privileges required to dump an instance
+#@<> test privileges required to dump an instance (3)
 class PrivilegeError:
     def __init__(self, exception_message, error_message="", exception_type="RuntimeError", output_dir_created=False, fatal=True):
         self.exception_message = exception_message
@@ -2294,7 +2297,7 @@ root_session.close()
 setup_session()
 create_users()
 
-#@<> dump table when different character set/SQL mode is used
+#@<> dump table when different character set/SQL mode is used (3)
 # this should be the last test that uses `test_schema`, as it drops it in order to not mess up with test
 # (schema name contains non-ASCII characters, it's difficult to encode it properly in order for it to be excluded)
 session.run_sql("DROP SCHEMA IF EXISTS !;", [ test_schema ])
@@ -2308,7 +2311,7 @@ TEST_LOAD(world_x_schema, world_x_table)
 session.run_sql("SET NAMES 'utf8mb4';")
 session.run_sql("SET GLOBAL SQL_MODE='';")
 
-#@<> BUG#33173739 - lock one of the tables, user has privileges required to execute FTWRL, dry run will execute it do double check the privileges, but will not hang
+#@<> BUG#33173739 - lock one of the tables, user has privileges required to execute FTWRL, dry run will execute it do double check the privileges, but will not hang (3)
 session.run_sql("LOCK TABLES !.! WRITE", [ types_schema, types_schema_tables[0] ])
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "showProgress": False })
@@ -2316,7 +2319,7 @@ EXPECT_STDOUT_CONTAINS("Global read lock acquired")
 
 session.run_sql("UNLOCK TABLES")
 
-#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws access denied error, fallback to LOCK TABLES {__dbug}
+#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws access denied error, fallback to LOCK TABLES {__dbug} (3)
 testutil.set_trap("mysql", ["sql == FLUSH TABLES WITH READ LOCK;"], { "code": 1045, "msg": "Access denied for user ‘root’@‘%’ (using password: YES)", "state": "28000" })
 
 for dry_run in [ True, False ]:
@@ -2326,7 +2329,7 @@ for dry_run in [ True, False ]:
 
 testutil.clear_traps("mysql")
 
-#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws some random error {__dbug}
+#@<> BUG#33173739 - user has privileges required to execute FTWRL, dumper will execute it do double check the privileges, but it throws some random error {__dbug} (3)
 if __server_is_maria_db:
     max_questions_variable = 'max_queries_per_hour'
 else:
@@ -2339,13 +2342,14 @@ EXPECT_STDOUT_CONTAINS(f"ERROR: Failed to acquire global read lock: MySQL Error 
 
 testutil.clear_traps("mysql")
 
-#@<> prepare user privileges, switch user
+#@<> prepare user privileges, switch user (3)
+# balance: begin-block - the chunks up to the reconnect run as the test user
 create_users()
 session.run_sql(f"GRANT ALL ON *.* TO {test_user_account};")
 session.run_sql(f"REVOKE RELOAD /*!80023 , FLUSH_TABLES */ ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> try to run consistent dump using a user which does not have required privileges for FTWRL but LOCK TABLES are ok
+#@<> try to run consistent dump using a user which does not have required privileges for FTWRL but LOCK TABLES are ok (3)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 
@@ -2355,12 +2359,12 @@ EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a 
 if not __server_is_maria_db and __version_num >= 80000:
     EXPECT_STDOUT_CONTAINS("NOTE: Instance locked for backup, skipping mysql system tables locks")
 
-#@<> BUG#37226153 - revoke BACKUP_ADMIN, mysql tables will be locked {VER(>=8.0.0) and not __server_is_maria_db}
+#@<> BUG#37226153 - revoke BACKUP_ADMIN, mysql tables will be locked {VER(>=8.0.0) and not __server_is_maria_db} (3)
 setup_session()
 session.run_sql(f"REVOKE BACKUP_ADMIN ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> BUG#37226153 - user has the privileges to execute LOCK TABLES, but dump fails to lock mysql tables due to access denied {__dbug}
+#@<> BUG#37226153 - user has the privileges to execute LOCK TABLES, but dump fails to lock mysql tables due to access denied {__dbug} (3)
 testutil.set_trap("mysql", ["sql regex LOCK TABLES mysql\\..*"], { "code": 1044, "msg": "Access denied for user 'root'@'%' to database 'mysql'.", "state": "42000" })
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
@@ -2370,7 +2374,7 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: The dump will continue, but the dump may not b
 
 testutil.clear_traps("mysql")
 
-#@<> BUG#32695301 - lock one of the mysql tables, dry run should not attempt to execute LOCK TABLES and dump should succeed
+#@<> BUG#32695301 - lock one of the mysql tables, dry run should not attempt to execute LOCK TABLES and dump should succeed (3)
 setup_session()
 session.run_sql("LOCK TABLES mysql.user WRITE")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
@@ -2381,18 +2385,18 @@ EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a 
 setup_session()
 session.run_sql("UNLOCK TABLES")
 
-#@<> revoke lock tables from mysql.*  {VER(>=8.0.16) and not __server_is_maria_db}
+#@<> revoke lock tables from mysql.*  {VER(>=8.0.16) and not __server_is_maria_db} (3)
 setup_session()
 session.run_sql("SET GLOBAL partial_revokes=1")
 session.run_sql(f"REVOKE LOCK TABLES ON mysql.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> try again, this time it should succeed but without locking mysql.* tables  {VER(>=8.0.16) and not __server_is_maria_db}
+#@<> try again, this time it should succeed but without locking mysql.* tables  {VER(>=8.0.16) and not __server_is_maria_db} (3)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_CONTAINS(f"WARNING: Could not lock mysql system tables: User {test_user_account} is missing the following privilege(s) for schema `mysql`: LOCK TABLES.")
 
-#@<> BUG#32695301 - lock one of the dumped tables, dry run should not attempt to execute LOCK TABLES and dump should succeed  {VER(>=8.0.16)}
+#@<> BUG#32695301 - lock one of the dumped tables, dry run should not attempt to execute LOCK TABLES and dump should succeed  {VER(>=8.0.16)} (3)
 setup_session()
 session.run_sql("LOCK TABLES !.! WRITE", [ types_schema, types_schema_tables[0] ])
 shell.connect(test_user_uri(__mysql_sandbox_port1))
@@ -2409,29 +2413,30 @@ if not __server_is_maria_db:
 setup_session()
 session.run_sql("UNLOCK TABLES")
 
-#@<> revoke lock tables from the rest
+#@<> revoke lock tables from the rest (3)
 setup_session()
 session.run_sql(f"REVOKE LOCK TABLES ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> try to run consistent dump using a user which does not have any required privileges
+#@<> try to run consistent dump using a user which does not have any required privileges (3)
 EXPECT_FAIL("Error: Shell Error (52002)", re.compile(r"While 'Initializing': Unable to lock tables: User {0} is missing the following privilege\(s\) for table `.+`\.`.+`: LOCK TABLES.".format(test_user_account)), test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_CONTAINS("ERROR: Unable to acquire global read lock neither table read locks")
 
-#@<> BUG#32695301 - dry run should fail as well
+#@<> BUG#32695301 - dry run should fail as well (3)
 EXPECT_FAIL("Error: Shell Error (52002)", re.compile(r"While 'Initializing': Unable to lock tables: User {0} is missing the following privilege\(s\) for table `.+`\.`.+`: LOCK TABLES.".format(test_user_account)), test_output_absolute, { "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_CONTAINS("ERROR: Unable to acquire global read lock neither table read locks")
 
-#@<> using the same user, run inconsistent dump
+#@<> using the same user, run inconsistent dump (3)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "consistent": False, "ddlOnly": True, "showProgress": False })
 
-#@<> BUG#32695301 - cleanup
+#@<> BUG#32695301 - cleanup (3)
 setup_session()
 create_users()
 
-#@<> BUG#32695301 - restore partial_revokes {VER(>=8.0.16) and not __server_is_maria_db}
+#@<> BUG#32695301 - restore partial_revokes {VER(>=8.0.16) and not __server_is_maria_db} (3)
+# balance: end-block
 session.run_sql("SET GLOBAL partial_revokes=0")
 
 #@<> BUG#33697289 additional consistency checks if user is missing some of the privileges
@@ -2452,11 +2457,12 @@ constantly_create_tables = Generate_transactions(uri, tested_schema, tested_tabl
 # connect
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> BUG#33697289 create a process which will add tables in the background
+#@<> BUG#33697289 create a process which will add tables in the background (4)
+# balance: begin-block - the background processes below slow each other (and everything else) down when run in parallel groups, keep them in one
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#33697289 test - backup lock is not available
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False, "threads": 1 }, expect_dir_created = True)
+#@<> BUG#33697289 test - backup lock is not available (4)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False, "threads": 1 }, expect_dir_created = True)
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_MATCHES(re.compile(r"NOTE: The value of the gtid_executed system variable has changed during the dump, from: '.+' to: '.+'."))
@@ -2466,13 +2472,13 @@ EXPECT_STDOUT_CONTAINS(f"ERROR: Backup lock is not {reason} and DDL changes were
 EXPECT_STDOUT_CONTAINS("NOTE: In order to overcome this issue, use a read-only replica with replication stopped, or, if dumping from a primary, then enable super_read_only system variable and ensure that any inbound replication channels are stopped.")
 EXPECT_STDOUT_CONTAINS("ERROR: Consistency check has failed")
 
-#@<> BUG#33697289 terminate the process immediately
+#@<> BUG#33697289 terminate the process immediately (4)
 constantly_create_tables.stop()
 
-#@<> BUG#34556560 create a process which will add tables in the background - skipConsistencyChecks
+#@<> BUG#34556560 create a process which will add tables in the background - skipConsistencyChecks (4)
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#34556560 test - backup lock is not available - skipConsistencyChecks
+#@<> BUG#34556560 test - backup lock is not available - skipConsistencyChecks (4)
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "skipConsistencyChecks": True, "showProgress": False, "threads": 1 })
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
@@ -2480,16 +2486,16 @@ EXPECT_STDOUT_MATCHES(re.compile(r"NOTE: The value of the gtid_executed system v
 EXPECT_STDOUT_CONTAINS("NOTE: The 'skipConsistencyChecks' option is set, assuming there were no DDL changes.")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were not blocked. The DDL is consistent, the world may resume now.")
 
-#@<> BUG#34556560 terminate the process immediately - skipConsistencyChecks
+#@<> BUG#34556560 terminate the process immediately - skipConsistencyChecks (4)
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 create a process which will add tables in the background 2 {__dbug}
+#@<> BUG#33697289 create a process which will add tables in the background 2 {__dbug} (4)
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#33697289 fail if gtid is disabled and DDL changes {__dbug}
+#@<> BUG#33697289 fail if gtid is disabled and DDL changes {__dbug} (4)
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False, "threads": 1 }, expect_dir_created = True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False, "threads": 1 }, expect_dir_created = True)
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_MATCHES(re.compile(r"NOTE: The binlog position has changed during the dump, from: '.+' to: '.+'."))
@@ -2501,13 +2507,13 @@ EXPECT_STDOUT_CONTAINS("ERROR: Consistency check has failed")
 
 testutil.dbug_set("")
 
-#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {__dbug}
+#@<> BUG#33697289 terminate the process immediately, it will not stop on its own {__dbug} (4)
 constantly_create_tables.stop()
 
-#@<> BUG#34556560 create a process which will add tables in the background (2) - skipConsistencyChecks {__dbug}
+#@<> BUG#34556560 create a process which will add tables in the background (2) - skipConsistencyChecks {__dbug} (4)
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#34556560 fail if gtid is disabled and DDL changes - skipConsistencyChecks {__dbug}
+#@<> BUG#34556560 fail if gtid is disabled and DDL changes - skipConsistencyChecks {__dbug} (4)
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "skipConsistencyChecks": True, "showProgress": False, "threads": 1 })
@@ -2519,17 +2525,18 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 
 testutil.dbug_set("")
 
-#@<> BUG#34556560 terminate the process immediately, it will not stop on its own - skipConsistencyChecks {__dbug}
+#@<> BUG#34556560 terminate the process immediately, it will not stop on its own - skipConsistencyChecks {__dbug} (4)
 constantly_create_tables.stop(drop_schema=False)
 
-#@<> BUG#33697289 without the process, the dump should succeed
+#@<> BUG#33697289 without the process, the dump should succeed (4)
+# balance: keep-with-previous - uses the schema the process above left behind
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
 EXPECT_STDOUT_CONTAINS(f"NOTE: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK, backup lock is not {reason} and DDL changes cannot be blocked. The DDL consistency will be checked using the binary log.")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were not blocked. The DDL is consistent, the world may resume now.")
 
-#@<> BUG#33697289 fail if binlog and gtid are disabled while SHOW * STATUS privilege is available {__dbug}
+#@<> BUG#33697289 fail if binlog and gtid are disabled while SHOW * STATUS privilege is available {__dbug} (4)
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2549,7 +2556,8 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog is disabled and gtid is enabled while SHOW * STATUS privilege is available  {__dbug}
+#@<> BUG#39035448 fail if binlog is disabled and gtid is enabled while SHOW * STATUS privilege is available  {__dbug} (4)
+# balance: keep-with-previous
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_replication_client_unavailable")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2568,29 +2576,34 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog and gtid are disabled and SHOW * STATUS privilege is missing {__dbug}
+#@<> BUG#39035448 fail if binlog and gtid are disabled and SHOW * STATUS privilege is missing {__dbug} (4)
 testutil.dbug_set("+d,dumper_binlog_disabled,dumper_gtid_disabled,dumper_replication_client_unavailable")
+
+# MariaDB has no gtid_mode: its GTIDs come with the binary log, so enabling that
+# is the whole remedy; its REPLICATION CLIENT is called BINLOG MONITOR
+gtid_mode_disabled = "" if __server_is_maria_db else "\n * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE."
+enable_gtids = "" if __server_is_maria_db else " and set the gtid_mode system variable to ON or ON_PERMISSIVE"
+replication_client = "BINLOG MONITOR" if __server_is_maria_db else "REPLICATION CLIENT"
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
 
 EXPECT_STDOUT_CONTAINS(f"""
 WARNING: The current user does not have required privileges to execute FLUSH TABLES WITH READ LOCK and:
  * Backup lock is not {reason} and DDL changes cannot be blocked.
- * The binary logging is disabled.
- * The gtid_mode system variable is set to OFF or OFF_PERMISSIVE.
+ * The binary logging is disabled.{gtid_mode_disabled}
  * The current user does not have required privileges to execute SHOW {get_binary_log_status_keyword()} STATUS.
 ERROR: The consistency of the dump cannot be guaranteed.
 """)
 
 EXPECT_STDOUT_CONTAINS(f"""
 NOTE: In order to create a consistent dump, either:{"\n * Use an account which has the " + backup_lock_privilege + " privilege." if backup_lock_privilege else ""}
- * Enable binary logging and set the gtid_mode system variable to ON or ON_PERMISSIVE.
- * Enable binary logging and use an account which has the REPLICATION CLIENT or SUPER privileges.
+ * Enable binary logging{enable_gtids}.
+ * Enable binary logging and use an account which has the {replication_client} or SUPER privileges.
 """)
 
 testutil.dbug_set("")
 
-#@<> BUG#39035448 fail if binlog is enabled, gtid is disabled and SHOW * STATUS privilege is missing {__dbug}
+#@<> BUG#39035448 fail if binlog is enabled, gtid is disabled and SHOW * STATUS privilege is missing {__dbug and not __server_is_maria_db} (4)
 testutil.dbug_set("+d,dumper_gtid_disabled,dumper_replication_client_unavailable")
 
 EXPECT_FAIL("Error: Shell Error (52002)", "While 'Initializing': Unable to lock tables: Consistency check has failed.", test_output_absolute, { "includeSchemas": [ tested_schema ], "consistent": True, "showProgress": False })
@@ -2614,10 +2627,10 @@ testutil.dbug_set("")
 #@<> BUG#34556560 GTID-based consistency check if too sensitive - setup
 constantly_update_table = Generate_transactions(uri, tested_schema, tested_table)
 
-#@<> BUG#34556560 create a process which will update a table in the background
+#@<> BUG#34556560 create a process which will update a table in the background (4)
 constantly_update_table.generate_data()
 
-#@<> BUG#34556560 - backup lock is not available
+#@<> BUG#34556560 - backup lock is not available (4)
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False, "threads": 1 })
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes will not be blocked. The dump may fail with an error if schema changes are made while dumping.")
 EXPECT_STDOUT_CONTAINS("WARNING: The current user lacks privileges to acquire a global read lock using 'FLUSH TABLES WITH READ LOCK'. Falling back to LOCK TABLES...")
@@ -2625,13 +2638,13 @@ EXPECT_STDOUT_MATCHES(re.compile(r"NOTE: The value of the gtid_executed system v
 EXPECT_STDOUT_MATCHES(re.compile(r"NOTE: Checking \d+ recent transactions for schema changes, use the 'skipConsistencyChecks' option to skip this check."))
 EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were not blocked. The DDL is consistent, the world may resume now.")
 
-#@<> BUG#34556560 terminate the process immediately
+#@<> BUG#34556560 terminate the process immediately (4)
 constantly_update_table.stop()
 
-#@<> BUG#34556560 create a process which will update a table in the background (2) {__dbug}
+#@<> BUG#34556560 create a process which will update a table in the background (2) {__dbug} (4)
 constantly_update_table.generate_data()
 
-#@<> BUG#34556560 - gtid is disabled {__dbug}
+#@<> BUG#34556560 - gtid is disabled {__dbug} (4)
 testutil.dbug_set("+d,dumper_gtid_disabled")
 
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False, "threads": 1 })
@@ -2643,32 +2656,33 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Backup lock is not {reason} and DDL changes were 
 
 testutil.dbug_set("")
 
-#@<> BUG#34556560 terminate the process immediately, it will not stop on its own {__dbug}
+#@<> BUG#34556560 terminate the process immediately, it will not stop on its own {__dbug} (4)
 constantly_update_table.stop()
 
 #@<> BUG#34556560 reconnect to the user with full privilages, restore test user account
 setup_session()
 create_users()
 
-#@<> BUG#34556560 create a process which will add tables in the background - backup lock works {VER(>=8.0.0)}
+#@<> BUG#34556560 create a process which will add tables in the background - backup lock works {VER(>=8.0.0)} (4)
 constantly_create_tables.generate_ddl()
 
-#@<> BUG#34556560 test - backup lock works {VER(>=8.0.0)}
+#@<> BUG#34556560 test - backup lock works {VER(>=8.0.0)} (4)
 EXPECT_SUCCESS([ tested_schema ], test_output_absolute, { "consistent": True, "showProgress": False, "threads": 1 })
 EXPECT_STDOUT_CONTAINS("Locking instance for backup")
 EXPECT_STDOUT_NOT_CONTAINS("Backup lock is not")
 EXPECT_STDOUT_NOT_CONTAINS("skipConsistencyChecks")
 
-#@<> BUG#34556560 terminate the process immediately - backup lock works {VER(>=8.0.0)}
+#@<> BUG#34556560 terminate the process immediately - backup lock works {VER(>=8.0.0)} (4)
+# balance: end-block
 constantly_create_tables.stop()
 
 #@<> BUG#33697289, BUG#34556560 cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !;", [ tested_schema ])
 
-#@<> An error should occur when dumping using oci+os://
+#@<> An error should occur when dumping using oci+os:// (5)
 EXPECT_FAIL("ValueError", "Directory handling for oci+os protocol is not supported.", 'oci+os://sakila')
 
-#@<> BUG#32490714 - running a dump should not change binlog position
+#@<> BUG#32490714 - running a dump should not change binlog position (5)
 [binlog_file, binlog_position, _, _, _] = session.run_sql(f'SHOW {get_binary_log_status_keyword()} STATUS;').fetch_one()
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
@@ -2678,7 +2692,7 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 EXPECT_EQ(binlog_file, new_binlog_file, "binlog file should not change")
 EXPECT_EQ(binlog_position, new_binlog_position, "binlog position should not change")
 
-#@<> BUG#32515696 dump should not fail if table histograms are not available {VER(>=8.0.0) and __dbug}
+#@<> BUG#32515696 dump should not fail if table histograms are not available {VER(>=8.0.0) and __dbug and not __server_is_maria_db} (5)
 testutil.set_trap("mysql", ["sql regex .*number-of-buckets-specified.*"], { "code": 1109, "msg": "Unknown table 'COLUMN_STATISTICS' in information_schema.", "state": "42S02" })
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
@@ -2686,7 +2700,7 @@ EXPECT_STDOUT_CONTAINS("WARNING: Failed to fetch table histograms.")
 
 testutil.clear_traps("mysql")
 
-#@<> BUG#32430402 metadata should contain information about binlog
+#@<> BUG#32430402 metadata should contain information about binlog (5)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
 with open(os.path.join(test_output_absolute, "@.json"), encoding="utf-8") as json_file:
@@ -2694,7 +2708,7 @@ with open(os.path.join(test_output_absolute, "@.json"), encoding="utf-8") as jso
     EXPECT_EQ(True, "binlogFile" in metadata, "'binlogFile' should be in metadata")
     EXPECT_EQ(True, "binlogPosition" in metadata, "'binlogPosition' should be in metadata")
 
-#@<> BUG#32528110 shell could crash if exception is thrown from the main thread and one of the worker threads is slow to start {__dbug}
+#@<> BUG#32528110 shell could crash if exception is thrown from the main thread and one of the worker threads is slow to start {__dbug} (5)
 testutil.set_trap("mysql", ["sql == SHOW GLOBAL VARIABLES"], { "code": 7777, "msg": "Internal error.", "state": "HY000" })
 testutil.set_trap("dumper", ["op == WORKER_SLEEP_AT_START", "id == 0"], { "sleep": 1000 })
 
@@ -2703,7 +2717,7 @@ EXPECT_FAIL("DBError: MySQL Error (7777)", "Internal error.", test_output_absolu
 testutil.clear_traps("mysql")
 testutil.clear_traps("dumper")
 
-#@<> BUG#33223635 when JSON output is requested, running a dump with showProgress: true should produce only valid JSON
+#@<> BUG#33223635 when JSON output is requested, running a dump with showProgress: true should produce only valid JSON (5)
 shutil.rmtree(test_output_absolute, True)
 os.mkdir(test_output_absolute)
 
@@ -2712,7 +2726,7 @@ EXPECT_EQ(0, testutil.call_mysqlsh([uri, "--json=raw", "--interactive=full", "--
 for line in testutil.fetch_captured_stdout(False).splitlines():
     EXPECT_NO_THROWS(lambda: json.loads(line), f"testing line: {line}")
 
-#@<> BUG#32109967 run a dump when connected via socket {__os_type != 'windows'}
+#@<> BUG#32109967 run a dump when connected via socket {__os_type != 'windows'} (5)
 # connect using socket
 setup_session(get_socket_uri(session, uri))
 # host should not be specified in URI
@@ -2722,7 +2736,9 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "showProgress": False })
 # restore connection
 setup_session()
 
-#@<> BUG#34049624 - dumping users from MariaDB is not supported {__dbug}
+#@<> BUG#34049624 - dumping users from MariaDB is not supported {__dbug and not __mariadb_build} (5)
+# the loop in BUG#33173739 leaves dry_run set to False
+dry_run = False
 testutil.dbug_set("+d,dumper_dump_mariadb")
 
 # trying to dump users results in error
@@ -2735,7 +2751,7 @@ EXPECT_SUCCESS([types_schema], test_output_absolute, { "users": False, "showProg
 
 testutil.dbug_set("")
 
-#@<> WL14244 - help entries
+#@<> WL14244 - help entries (5)
 util.help('dump_instance')
 
 # WL14244-TSFR_1_1
@@ -2808,7 +2824,7 @@ EXPECT_STDOUT_CONTAINS("""
         trigger).
 """)
 
-#@<> WL14244 - helpers
+#@<> WL14244 - helpers (5)
 def dump_and_load(options):
     WIPE_STDOUT()
     # remove everything from the server
@@ -2877,27 +2893,27 @@ def entries(snapshot, keys = []):
         entry = entry[key]
     return sorted(list(entry.keys()))
 
-#@<> WL14244-TSFR_1_2
+#@<> WL14244-TSFR_1_2 (5)
 EXPECT_EQ(["existing_schema_1", "existing_schema_2", "existing_schema_3", "existing_schema_4"], entries(dump_and_load({})))
 EXPECT_EQ(["existing_schema_1", "existing_schema_2", "existing_schema_3", "existing_schema_4"], entries(dump_and_load({ "includeSchemas": [] })))
 
-#@<> WL14244-TSFR_1_3
+#@<> WL14244-TSFR_1_3 (5)
 EXPECT_EQ(["existing_schema_2"], entries(dump_and_load({ "includeSchemas": [ "existing_schema_2", "non_existing_schema" ] })))
 
-#@<> WL16731-TSFR_1_7_2 - schema is filtered out, note about routine using an excluded library is printed {instance_supports_libraries}
+#@<> WL16731-TSFR_1_7_2 - schema is filtered out, note about routine using an excluded library is printed {instance_supports_libraries} (5)
 EXPECT_EQ(["existing_schema_4"], entries(dump_and_load({ "includeSchemas": [ "existing_schema_4" ] })))
 
 EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", "existing_schema_4", "existing_library_routine", "existing_schema_3", "existing_library").note())
 
-#@<> WL14244-TSFR_1_4
+#@<> WL14244-TSFR_1_4 (5)
 # BUG#33502098
 EXPECT_FAIL("Error: Shell Error (52010)", "While 'Gathering information': Filters for schemas result in an empty set.", test_output_relative, { "includeSchemas": [ "non_existing_schema" ], "users": False })
 
-#@<> WL14244 - includeTables - invalid values
+#@<> WL14244 - includeTables - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The table to be included must be in the following form: schema.table, with optional backtick quotes, wrong value: 'table'.", test_output_absolute, { "includeTables": [ "table" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse table to be included 'table.@': Invalid character in identifier", test_output_absolute, { "includeTables": [ "table.@" ] })
 
-#@<> WL14244-TSFR_2_3
+#@<> WL14244-TSFR_2_3 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_table"], entries(snapshot, ["existing_schema_1", "tables"]))
 EXPECT_EQ(["existing_view"], entries(snapshot, ["existing_schema_1", "views"]))
@@ -2910,18 +2926,18 @@ EXPECT_EQ(["existing_view"], entries(snapshot, ["existing_schema_1", "views"]))
 EXPECT_EQ(["existing_table"], entries(snapshot, ["existing_schema_2", "tables"]))
 EXPECT_EQ(["existing_view"], entries(snapshot, ["existing_schema_2", "views"]))
 
-#@<> WL14244-TSFR_2_5
+#@<> WL14244-TSFR_2_5 (5)
 snapshot = dump_and_load({ "includeTables": ['existing_schema_1.existing_table', 'existing_schema_1.non_existing_table', 'existing_schema_1.existing_view', 'existing_schema_1.non_existing_view', 'non_existing_schema.view', 'non_existing_schema.table'] })
 EXPECT_EQ(["existing_table"], entries(snapshot, ["existing_schema_1", "tables"]))
 EXPECT_EQ(["existing_view"], entries(snapshot, ["existing_schema_1", "views"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "tables"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "views"]))
 
-#@<> WL14244 - includeRoutines - invalid values
+#@<> WL14244 - includeRoutines - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The routine to be included must be in the following form: schema.routine, with optional backtick quotes, wrong value: 'routine'.", test_output_absolute, { "includeRoutines": [ "routine" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse routine to be included 'schema.@': Invalid character in identifier", test_output_absolute, { "includeRoutines": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_3_4
+#@<> WL14244-TSFR_3_4 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
@@ -2934,14 +2950,14 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL14244-TSFR_3_7
+#@<> WL14244-TSFR_3_7 (5)
 snapshot = dump_and_load({ "includeRoutines": ['existing_schema_1.existing_routine', 'existing_schema_1.non_existing_routine', 'non_existing_schema.routine'] })
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL16731-TSFR_1_7_1 - dumping without libraries + includeRoutines, note about routine using an excluded library is printed {instance_supports_libraries}
+#@<> WL16731-TSFR_1_7_1 - dumping without libraries + includeRoutines, note about routine using an excluded library is printed {instance_supports_libraries} (5)
 snapshot = dump_and_load({ "includeRoutines": ['existing_schema_4.existing_library_routine'], "libraries": False })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_3", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_3", "procedures"]))
@@ -2952,11 +2968,11 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_4", "procedures"]))
 EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", "existing_schema_4", "existing_library_routine", "existing_schema_3", "existing_library").note())
 EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", "existing_schema_4", "existing_library_routine", "existing_schema_4", "existing_library").note())
 
-#@<> WL14244 - excludeRoutines - invalid values
+#@<> WL14244 - excludeRoutines - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The routine to be excluded must be in the following form: schema.routine, with optional backtick quotes, wrong value: 'routine'.", test_output_absolute, { "excludeRoutines": [ "routine" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse routine to be excluded 'schema.@': Invalid character in identifier", test_output_absolute, { "excludeRoutines": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_4_4
+#@<> WL14244-TSFR_4_4 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
@@ -2969,14 +2985,14 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL14244-TSFR_4_7
+#@<> WL14244-TSFR_4_7 (5)
 snapshot = dump_and_load({ "excludeRoutines": ['existing_schema_1.existing_routine', 'existing_schema_1.non_existing_routine', 'non_existing_schema.routine'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL16731-TSFR_1_7_1 - dumping without libraries + excludeRoutines, note about routine using an excluded library is printed {instance_supports_libraries}
+#@<> WL16731-TSFR_1_7_1 - dumping without libraries + excludeRoutines, note about routine using an excluded library is printed {instance_supports_libraries} (5)
 snapshot = dump_and_load({ "excludeRoutines": ['existing_schema_4.existing_library_routine'], "libraries": False })
 # routine is dumped, but it's skipped by the loader, as it has a missing dependency
 EXPECT_EQ([], entries(snapshot, ["existing_schema_3", "functions"]))
@@ -2986,13 +3002,13 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_4", "procedures"]))
 
 EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Function", "existing_schema_3", "existing_library_routine", "existing_schema_3", "existing_library").note())
 
-#@<> WL16731-TSFR_1_2_1 - includeLibraries - invalid values
+#@<> WL16731-TSFR_1_2_1 - includeLibraries - invalid values (5)
 TEST_ARRAY_OF_STRINGS_OPTION("includeLibraries")
 # WL16731-TSFR_1_4_2 - invalid format of includeLibraries entries
 EXPECT_FAIL("ValueError", "Argument #2: The library to be included must be in the following form: schema.library, with optional backtick quotes, wrong value: 'library'.", test_output_absolute, { "includeLibraries": [ "library" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse library to be included 'schema.@': Invalid character in identifier", test_output_absolute, { "includeLibraries": [ "schema.@" ] })
 
-#@<> WL16731-G4 - includeLibraries - full dump
+#@<> WL16731-G4 - includeLibraries - full dump (5)
 # WL16731-TSFR_1_2_1_2 - includeLibraries not set / set to an empty array
 expected_libraries = []
 if instance_supports_libraries:
@@ -3014,7 +3030,7 @@ if instance_supports_libraries:
 else:
     EXPECT_NO_CAPABILITIES(metadata_file, [ multifile_schema_ddl_capability ])
 
-#@<> WL16731-TSFR_1_4_1 - includeLibraries - filtered dump
+#@<> WL16731-TSFR_1_4_1 - includeLibraries - filtered dump (5)
 # WL16731-G4, WL16731-TSFR_1_5_1 - non-existing objects
 snapshot = dump_and_load({ "includeLibraries": ['existing_schema_3.existing_library', 'existing_schema_3.non_existing_library', 'non_existing_schema.library'] })
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
@@ -3025,13 +3041,13 @@ if instance_supports_libraries:
     EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", "existing_schema_4", "existing_library_routine", "existing_schema_4", "existing_library").note())
     EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `existing_library_routine`", os.path.join(test_output_absolute, schema_ddl_file("existing_schema_4", Schema_ddl.Routines)))
 
-#@<> WL16731-TSFR_1_3_1 - excludeLibraries - invalid values
+#@<> WL16731-TSFR_1_3_1 - excludeLibraries - invalid values (5)
 TEST_ARRAY_OF_STRINGS_OPTION("excludeLibraries")
 # WL16731-TSFR_1_4_2 - invalid format of excludeLibraries entries
 EXPECT_FAIL("ValueError", "Argument #2: The library to be excluded must be in the following form: schema.library, with optional backtick quotes, wrong value: 'library'.", test_output_absolute, { "excludeLibraries": [ "library" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse library to be excluded 'schema.@': Invalid character in identifier", test_output_absolute, { "excludeLibraries": [ "schema.@" ] })
 
-#@<> WL16731-TSFR_1_3_1 - excludeLibraries - full dump
+#@<> WL16731-TSFR_1_3_1 - excludeLibraries - full dump (5)
 # WL16731-TSFR_1_3_1_1 - excludeLibraries not set / set to an empty array
 snapshot = dump_and_load({})
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
@@ -3041,7 +3057,7 @@ snapshot = dump_and_load({ "excludeLibraries": [] })
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_4", "libraries"]))
 
-#@<> WL16731-TSFR_1_4_1 - excludeLibraries - filtered dump
+#@<> WL16731-TSFR_1_4_1 - excludeLibraries - filtered dump (5)
 # WL16731-TSFR_1_3_1, WL16731-TSFR_1_5_1 - non-existing objects
 snapshot = dump_and_load({ "excludeLibraries": ['existing_schema_3.existing_library', 'existing_schema_3.non_existing_library', 'non_existing_schema.library'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_3", "libraries"]))
@@ -3054,11 +3070,11 @@ if instance_supports_libraries:
     EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", "existing_schema_4", "existing_library_routine", "existing_schema_3", "existing_library").note())
     EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `existing_library_routine`", os.path.join(test_output_absolute, schema_ddl_file("existing_schema_4", Schema_ddl.Routines)))
 
-#@<> WL14244 - includeEvents - invalid values
+#@<> WL14244 - includeEvents - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The event to be included must be in the following form: schema.event, with optional backtick quotes, wrong value: 'event'.", test_output_absolute, { "includeEvents": [ "event" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse event to be included 'schema.@': Invalid character in identifier", test_output_absolute, { "includeEvents": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_5_4
+#@<> WL14244-TSFR_5_4 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
@@ -3067,16 +3083,16 @@ snapshot = dump_and_load({ "includeEvents": [] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244-TSFR_5_7
+#@<> WL14244-TSFR_5_7 (5)
 snapshot = dump_and_load({ "includeEvents": ['existing_schema_1.existing_event', 'existing_schema_1.non_existing_event', 'non_existing_schema.event'] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244 - excludeEvents - invalid values
+#@<> WL14244 - excludeEvents - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The event to be excluded must be in the following form: schema.event, with optional backtick quotes, wrong value: 'event'.", test_output_absolute, { "excludeEvents": [ "event" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse event to be excluded 'schema.@': Invalid character in identifier", test_output_absolute, { "excludeEvents": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_6_4
+#@<> WL14244-TSFR_6_4 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
@@ -3085,16 +3101,16 @@ snapshot = dump_and_load({ "excludeEvents": [] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244-TSFR_6_7
+#@<> WL14244-TSFR_6_7 (5)
 snapshot = dump_and_load({ "excludeEvents": ['existing_schema_1.existing_event', 'existing_schema_1.non_existing_event', 'non_existing_schema.event'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244 - includeTriggers - invalid values
+#@<> WL14244 - includeTriggers - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The trigger to be included must be in the following form: schema.table or schema.table.trigger, with optional backtick quotes, wrong value: 'trigger'.", test_output_absolute, { "includeTriggers": [ "trigger" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse trigger to be included 'schema.@': Invalid character in identifier", test_output_absolute, { "includeTriggers": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_7_5
+#@<> WL14244-TSFR_7_5 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
@@ -3103,16 +3119,16 @@ snapshot = dump_and_load({ "includeTriggers": [] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244-TSFR_7_9
+#@<> WL14244-TSFR_7_9 (5)
 snapshot = dump_and_load({ "includeTriggers": ['existing_schema_1.existing_table', 'existing_schema_1.non_existing_table', 'non_existing_schema.table', 'existing_schema_2.existing_table.existing_trigger', 'existing_schema_1.existing_table.non_existing_trigger'] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244 - excludeTriggers - invalid values
+#@<> WL14244 - excludeTriggers - invalid values (5)
 EXPECT_FAIL("ValueError", "Argument #2: The trigger to be excluded must be in the following form: schema.table or schema.table.trigger, with optional backtick quotes, wrong value: 'trigger'.", test_output_absolute, { "excludeTriggers": [ "trigger" ] })
 EXPECT_FAIL("ValueError", "Argument #2: Failed to parse trigger to be excluded 'schema.@': Invalid character in identifier", test_output_absolute, { "excludeTriggers": [ "schema.@" ] })
 
-#@<> WL14244-TSFR_8_5
+#@<> WL14244-TSFR_8_5 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
@@ -3121,18 +3137,19 @@ snapshot = dump_and_load({ "excludeTriggers": [] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244-TSFR_8_9
+#@<> WL14244-TSFR_8_9 (5)
 snapshot = dump_and_load({ "excludeTriggers": ['existing_schema_1.existing_table', 'existing_schema_1.non_existing_table', 'non_existing_schema.table', 'existing_schema_2.existing_table.existing_trigger', 'existing_schema_1.existing_table.non_existing_trigger'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244 - cleanup
+#@<> WL14244 - cleanup (5)
+# balance: keep-with-previous
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_1")
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_2")
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_3")
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_4")
 
-#@<> includeX + excludeX conflicts - helpers
+#@<> includeX + excludeX conflicts - helpers (6)
 def dump_with_conflicts(options, throws = True):
     WIPE_STDOUT()
     # we're only interested in warnings
@@ -3149,7 +3166,7 @@ def dump_with_conflicts(options, throws = True):
         except Exception as e:
             print("Exception:", e)
 
-#@<> includeSchemas + excludeSchemas conflicts
+#@<> includeSchemas + excludeSchemas conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeSchemas": [], "excludeSchemas": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeSchemas")
@@ -3177,7 +3194,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: Both includeSchemas and excludeSchemas options co
 dump_with_conflicts({ "includeSchemas": [ "a" ], "excludeSchemas": [ "a", "b" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: Both includeSchemas and excludeSchemas options contain a schema `a`.")
 
-#@<> includeTables + excludeTables conflicts
+#@<> includeTables + excludeTables conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeTables": [], "excludeTables": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeTables")
@@ -3264,7 +3281,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeTables option contains a table `a`.`t`
 dump_with_conflicts({ "includeSchemas": [ "b" ], "excludeTables": [ "a.t" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeTables option contains a table `a`.`t` which refers to a schema which was not included.")
 
-#@<> includeEvents + excludeEvents conflicts
+#@<> includeEvents + excludeEvents conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeEvents": [], "excludeEvents": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeEvents")
@@ -3351,7 +3368,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeEvents option contains an event `a`.`e
 dump_with_conflicts({ "includeSchemas": [ "b" ], "excludeEvents": [ "a.e" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeEvents option contains an event `a`.`e` which refers to a schema which was not included.")
 
-#@<> includeRoutines + excludeRoutines conflicts
+#@<> includeRoutines + excludeRoutines conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeRoutines": [], "excludeRoutines": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeRoutines")
@@ -3438,7 +3455,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeRoutines option contains a routine `a`
 dump_with_conflicts({ "includeSchemas": [ "b" ], "excludeRoutines": [ "a.r" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeRoutines option contains a routine `a`.`r` which refers to a schema which was not included.")
 
-#@<> WL16731 - includeLibraries + excludeLibraries conflicts
+#@<> WL16731 - includeLibraries + excludeLibraries conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeLibraries": [], "excludeLibraries": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeLibraries")
@@ -3525,7 +3542,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeLibraries option contains a library `a
 dump_with_conflicts({ "includeSchemas": [ "b" ], "excludeLibraries": [ "a.l" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeLibraries option contains a library `a`.`l` which refers to a schema which was not included.")
 
-#@<> includeTriggers + excludeTriggers conflicts
+#@<> includeTriggers + excludeTriggers conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeTriggers": [], "excludeTriggers": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeTriggers")
@@ -3741,7 +3758,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The excludeTriggers option contains a filter `a`.
 dump_with_conflicts({ "includeTables": [ "b.t" ], "excludeTriggers": [ "a.t.t" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeTriggers option contains a trigger `a`.`t`.`t` which refers to a table which was not included.")
 
-#@<> includeUsers + excludeUsers conflicts
+#@<> includeUsers + excludeUsers conflicts (6)
 # no conflicts
 dump_with_conflicts({ "includeUsers": [], "excludeUsers": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeUsers")
@@ -3878,7 +3895,7 @@ session.run_sql("INSERT INTO !.! SELECT * FROM !.!", [ schema_name, no_partition
 for table in all_tables:
     session.run_sql("ANALYZE TABLE !.!;", [ schema_name, table ])
 
-#@<> WL15311_TSFR_3_1
+#@<> WL15311_TSFR_3_1 (6)
 help_text = """
       - where: dictionary (default: not set) - A key-value pair of a table name
         in the format of schema.table and a valid SQL condition expression used
@@ -3886,13 +3903,13 @@ help_text = """
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15311_TSFR_3_1_1, WL15311_TSFR_3_2_1
+#@<> WL15311_TSFR_3_1_1, WL15311_TSFR_3_2_1 (6)
 TEST_MAP_OF_STRINGS_OPTION("where")
 
-#@<> WL15311_TSFR_3_1_1_1
+#@<> WL15311_TSFR_3_1_1_1 (6)
 EXPECT_FAIL("ValueError", "Argument #2: The table name key of the 'where' option must be in the following form: schema.table, with optional backtick quotes, wrong value: 'no_dot'.", test_output_absolute, {"where": { "no_dot": "1 = 1" }})
 
-#@<> WL15311_TSFR_3_1_1_2
+#@<> WL15311_TSFR_3_1_1_2 (6)
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { no_partitions_table_name_quoted: "id > 12345", subpartitions_table_name_quoted: "" } })
 EXPECT_GT(count_rows(schema_name, no_partitions_table_name), count_rows(verification_schema, no_partitions_table_name))
 # WL15311_TSFR_3_2_5_1
@@ -3903,38 +3920,38 @@ TEST_DUMP_AND_LOAD([ schema_name ], { "where": { no_partitions_table_name_quoted
 EXPECT_GT(count_rows(schema_name, no_partitions_table_name), count_rows(verification_schema, no_partitions_table_name))
 EXPECT_GT(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
 
-#@<> WL15311_TSFR_3_1_2_1
+#@<> WL15311_TSFR_3_1_2_1 (6)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "ddlOnly": True, "where": { no_partitions_table_name_quoted: "id > 12345" }, "showProgress": False })
 
-#@<> WL15311_TSFR_3_1_2_2
+#@<> WL15311_TSFR_3_1_2_2 (6)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "dryRun": True, "where": { no_partitions_table_name_quoted: "id > 12345" }, "showProgress": False })
 
-#@<> WL15311_TSFR_3_1_2_3
+#@<> WL15311_TSFR_3_1_2_3 (6)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "includeTables": [ partitions_table_name_quoted ], "where": { no_partitions_table_name_quoted: "id > 12345" }, "showProgress": False })
 
-#@<> WL15311_TSFR_3_1_2_4
+#@<> WL15311_TSFR_3_1_2_4 (6)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "excludeTables": [ no_partitions_table_name_quoted ], "where": { no_partitions_table_name_quoted: "id > 12345" }, "showProgress": False })
 
-#@<> WL15311_TSFR_3_1_2_5
+#@<> WL15311_TSFR_3_1_2_5 (6)
 # a 'where' entry for a table in an excluded schema is harmless - it is never
 # consulted, since that table is never dumped; types_schema is therefore
 # excluded from the list to verify too, it was never part of this dump
 TEST_DUMP_AND_LOAD([ schema_name ], { "excludeSchemas": [ types_schema ], "where": { no_partitions_table_name_quoted: "id > 12345", quote_identifier(types_schema, types_schema_tables[0]): "1=1" }, "showProgress": False })
 
-#@<> WL15311_TSFR_3_1_2_10 - schema or table do not exist
+#@<> WL15311_TSFR_3_1_2_10 - schema or table do not exist (6)
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { quote_identifier("schema", "table"): "1 = 2", quote_identifier(schema_name, "table"): "1 = 2" } })
 
-#@<> WL15311_TSFR_3_2_1_1
+#@<> WL15311_TSFR_3_2_1_1 (6)
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { no_partitions_table_name_quoted: "1 = 2", partitions_table_name_quoted: "1 = 1" } })
 EXPECT_EQ(0, count_rows(verification_schema, no_partitions_table_name))
 EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
 
-#@<> WL15311_TSFR_3_2_3_1
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
+#@<> WL15311_TSFR_3_2_3_1 (7)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()
@@ -3944,7 +3961,7 @@ WIPE_STDOUT()
 EXPECT_FAIL("ValueError", f"Argument #2: Malformed condition used for table '{schema_name}'.'{no_partitions_table_name}': (1 = 1", test_output_absolute, { "where": { no_partitions_table_name_quoted: "(1 = 1" }, "showProgress": False })
 
 
-#@<> WL15311_TSFR_3_2_4_1
+#@<> WL15311_TSFR_3_2_4_1 (7)
 TEST_DUMP_AND_LOAD([ schema_name ], {})
 EXPECT_EQ(count_rows(schema_name, no_partitions_table_name), count_rows(verification_schema, no_partitions_table_name))
 
@@ -3954,7 +3971,7 @@ EXPECT_EQ(count_rows(schema_name, no_partitions_table_name), count_rows(verifica
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { no_partitions_table_name_quoted: "" } })
 EXPECT_EQ(count_rows(schema_name, no_partitions_table_name), count_rows(verification_schema, no_partitions_table_name))
 
-#@<> WL15311_TSFR_4_1
+#@<> WL15311_TSFR_4_1 (7)
 help_text = """
       - partitions: dictionary (default: not set) - A key-value pair of a table
         name in the format of schema.table and a list of valid partition names
@@ -3962,13 +3979,13 @@ help_text = """
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15311_TSFR_4_1_1, WL15311_TSFR_4_2_1, WL15311_TSFR_4_2_2
+#@<> WL15311_TSFR_4_1_1, WL15311_TSFR_4_2_1, WL15311_TSFR_4_2_2 (7)
 TEST_MAP_OF_ARRAY_OF_STRINGS_OPTION("partitions")
 
-#@<> WL15311_TSFR_4_1_1_1
+#@<> WL15311_TSFR_4_1_1_1 (7)
 EXPECT_FAIL("ValueError", "Argument #2: The table name key of the 'partitions' option must be in the following form: schema.table, with optional backtick quotes, wrong value: 'no_dot'.", test_output_absolute, {"partitions": { "no_dot": [ "p0" ] }})
 
-#@<> WL15311_TSFR_4_1_1_2
+#@<> WL15311_TSFR_4_1_1_2 (7)
 TEST_DUMP_AND_LOAD([ schema_name ], { "where": { partitions_table_name_quoted: "1 = 1" }, "partitions": { partitions_table_name_quoted: [ "x1" ] } })
 EXPECT_EQ(count_rows(schema_name, no_partitions_table_name), count_rows(verification_schema, no_partitions_table_name))
 EXPECT_GT(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
@@ -3990,7 +4007,7 @@ EXPECT_EQ(count_rows(schema_name, no_partitions_table_name), count_rows(verifica
 EXPECT_GT(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
 EXPECT_GT(count_rows(schema_name, subpartitions_table_name), count_rows(verification_schema, subpartitions_table_name))
 
-#@<> WL15311_TSFR_4_2_1_1, WL15311_TSFR_4_2_2_1
+#@<> WL15311_TSFR_4_2_1_1, WL15311_TSFR_4_2_2_1 (8)
 TEST_DUMP_AND_LOAD([ schema_name ], { "partitions": { subpartitions_table_name_quoted: [ f"{subpartition_prefix}1", f"{subpartition_prefix}2" ] } })
 EXPECT_GT(count_rows(schema_name, subpartitions_table_name), count_rows(verification_schema, subpartitions_table_name))
 
@@ -4000,25 +4017,25 @@ EXPECT_GT(count_rows(schema_name, subpartitions_table_name), count_rows(verifica
 TEST_DUMP_AND_LOAD([ schema_name ], { "partitions": { subpartitions_table_name_quoted: [ f"{subpartition_prefix}1sp0", f"{subpartition_prefix}2sp0" ] } })
 EXPECT_GT(count_rows(schema_name, subpartitions_table_name), count_rows(verification_schema, subpartitions_table_name))
 
-#@<> WL15311_TSFR_4_1_2_1
+#@<> WL15311_TSFR_4_1_2_1 (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "ddlOnly": True, "partitions": { partitions_table_name_quoted: [ "x1" ] }, "showProgress": False })
 
-#@<> WL15311_TSFR_4_1_2_2
+#@<> WL15311_TSFR_4_1_2_2 (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "dryRun": True, "partitions": { partitions_table_name_quoted: [ "x1" ] }, "showProgress": False })
 
-#@<> WL15311_TSFR_4_1_2_3
+#@<> WL15311_TSFR_4_1_2_3 (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "includeTables": [ subpartitions_table_name_quoted ], "partitions": { partitions_table_name_quoted: [ "x1" ] }, "showProgress": False })
 
-#@<> WL15311_TSFR_4_1_2_4
+#@<> WL15311_TSFR_4_1_2_4 (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "excludeTables": [ partitions_table_name_quoted ], "partitions": { partitions_table_name_quoted: [ "x1" ] }, "showProgress": False })
 
-#@<> WL15311_TSFR_4_1_2_5
+#@<> WL15311_TSFR_4_1_2_5 (8)
 EXPECT_SUCCESS(None, test_output_absolute, { "excludeSchemas": [ types_schema ], "partitions": { partitions_table_name_quoted: [ "x1" ], quote_identifier(types_schema, types_schema_tables[0]): [ "x1" ] }, "showProgress": False })
 
-#@<> WL15311_TSFR_4_1_2_10 - schema or table do not exist
+#@<> WL15311_TSFR_4_1_2_10 - schema or table do not exist (8)
 TEST_DUMP_AND_LOAD([ schema_name ], { "partitions": { quote_identifier("schema", "table"): [ "x1" ], quote_identifier(schema_name, "table"): [ "x1" ] } })
 
-#@<> WL15311_TSFR_4_2_3_1
+#@<> WL15311_TSFR_4_2_3_1 (8)
 EXPECT_FAIL("ValueError", "Invalid partitions", test_output_absolute, { "partitions": { subpartitions_table_name_quoted: [ "SELECT 1" ] }, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"ERROR: Following partitions were not found in table '{schema_name}'.'{subpartitions_table_name}': 'SELECT 1'")
 
@@ -4035,7 +4052,7 @@ EXPECT_FAIL("ValueError", "Invalid partitions", test_output_absolute, { "partiti
 EXPECT_STDOUT_CONTAINS(f"ERROR: Following partitions were not found in table '{schema_name}'.'{subpartitions_table_name}': '{subpartition_prefix}9'")
 EXPECT_STDOUT_CONTAINS(f"ERROR: Following partitions were not found in table '{schema_name}'.'{partitions_table_name}': 'x6'")
 
-#@<> WL15311_TSFR_4_2_4_1, WL15311_TSFR_4_2_5_1
+#@<> WL15311_TSFR_4_2_4_1, WL15311_TSFR_4_2_5_1 (8)
 TEST_DUMP_AND_LOAD([ schema_name ], {})
 EXPECT_EQ(count_rows(schema_name, subpartitions_table_name), count_rows(verification_schema, subpartitions_table_name))
 
@@ -4053,7 +4070,7 @@ EXPECT_EQ(count_rows(schema_name, subpartitions_table_name), count_rows(verifica
 session.run_sql("DROP SCHEMA !;", [schema_name])
 all_schemas.pop()
 
-#@<> BUG#34952027 - ocimds option detects schema-level grants with wildcards {not __server_is_maria_db}
+#@<> BUG#34952027 - ocimds option detects schema-level grants with wildcards {not __server_is_maria_db} (8)
 wild_account = "'test_34952027'@'localhost'"
 
 def account_for_grant():
@@ -4082,7 +4099,7 @@ schema_name_with_unescaped_percent = "all%"
 schema_level_grant_with_unescaped_percent = f"GRANT SELECT ON `{schema_name_with_unescaped_percent}`.* TO {account_for_grant()} WITH GRANT OPTION"
 session.run_sql(schema_level_grant_with_escaped_percent)
 
-#@<> BUG#34952027 - dumping with ocimds fails {not __server_is_maria_db}
+#@<> BUG#34952027 - dumping with ocimds fails {not __server_is_maria_db} (8)
 EXPECT_FAIL("Error: Shell Error (52004)", "Compatibility issues were found", test_output_relative, { "ocimds": True, "targetVersion": target_version, "users": True, "includeUsers": [ wild_account ], "includeSchemas": [ "invalid" ], "dryRun": True, "showProgress": False })
 
 EXPECT_STDOUT_CONTAINS("""
@@ -4113,7 +4130,7 @@ EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_w
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_underscore).warning())
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_percent).warning())
 
-#@<> BUG#36524862 - unescape_wildcard_grants is used, escaped wildcards are replaced with wildcard characters {not __server_is_maria_db}
+#@<> BUG#36524862 - unescape_wildcard_grants is used, escaped wildcards are replaced with wildcard characters {not __server_is_maria_db} (8)
 EXPECT_FAIL("Error: Shell Error (52004)", "Compatibility issues were found", test_output_relative, { "compatibility": [ "unescape_wildcard_grants" ], "ocimds": True, "targetVersion": target_version, "users": True, "includeUsers": [ wild_account ], "includeSchemas": [ "invalid" ], "dryRun": True, "showProgress": False })
 
 EXPECT_STDOUT_CONTAINS("""
@@ -4139,13 +4156,13 @@ EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_e
 EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_with_unescaped_underscore).error())
 EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_with_unescaped_percent).error())
 
-#@<> BUG#34952027 - dumping with ocimds and partial_revokes=ON succeeds {VER(>=8.0.16) and not __server_is_maria_db}
+#@<> BUG#34952027 - dumping with ocimds and partial_revokes=ON succeeds {VER(>=8.0.16) and not __server_is_maria_db} (8)
 session.run_sql("SET @@GLOBAL.partial_revokes = ON")
 EXPECT_SUCCESS([ "invalid" ], test_output_relative, { "ocimds": True, "users": True, "includeUsers": [ wild_account ], "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS("wildcard")
 session.run_sql("SET @@GLOBAL.partial_revokes = OFF")
 
-#@<> BUG#34952027 - dumping with ocimds and ignore_wildcard_grants succeeds {not __server_is_maria_db}
+#@<> BUG#34952027 - dumping with ocimds and ignore_wildcard_grants succeeds {not __server_is_maria_db} (8)
 EXPECT_SUCCESS([ "invalid" ], test_output_relative, { "ocimds": True, "targetVersion": target_version, "compatibility": [ "ignore_wildcard_grants" ],"users": True, "includeUsers": [ wild_account ], "dryRun": True, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant).fixed())
 EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_with_underscore).fixed())
@@ -4156,13 +4173,13 @@ EXPECT_STDOUT_CONTAINS(ignore_wildcard_grants(wild_account, schema_level_grant_w
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_underscore).warning())
 EXPECT_STDOUT_CONTAINS(unescape_wildcard_grants(wild_account, schema_name_with_escaped_percent).warning())
 
-#@<> BUG#34952027 - cleanup {not __server_is_maria_db}
+#@<> BUG#34952027 - cleanup {not __server_is_maria_db} (8)
 session.run_sql(f"DROP USER IF EXISTS {wild_account}")
 
-#@<> Drop roles {VER(>=8.0.0)}
+#@<> Drop roles {VER(>=8.0.0)} (8)
 session.run_sql("DROP ROLE IF EXISTS ?;", [ test_role ])
 
-#@<> BUG#35550282 - exclude `mysql_audit` schema if the `ocimds` option is set {not __server_is_maria_db}
+#@<> BUG#35550282 - exclude `mysql_audit` schema if the `ocimds` option is set {not __server_is_maria_db} (8)
 # BUG#35805866 - exclude `mysql_firewall` schema if the `ocimds` option is set
 # BUG#37023079 - exclude `mysql_option` schema if the `ocimds` option is set
 # BUG#37278169 - exclude `mysql_autopilot` schema if the `ocimds` option is set
@@ -4174,23 +4191,23 @@ for schema_name in schema_names:
     session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
     session.run_sql("CREATE SCHEMA !", [schema_name])
 
-#@<> BUG#35550282 - option is not set, schema is dumped {not __server_is_maria_db}
+#@<> BUG#35550282 - option is not set, schema is dumped {not __server_is_maria_db} (8)
 EXPECT_SUCCESS(None, test_output_absolute, { "ddlOnly": True, "showProgress": False })
 
 for schema_name in schema_names:
     EXPECT_TRUE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema_name, Schema_ddl.Schema))))
 
-#@<> BUG#35550282 - option is set, schema is not dumped {not __server_is_maria_db}
+#@<> BUG#35550282 - option is set, schema is not dumped {not __server_is_maria_db} (8)
 EXPECT_SUCCESS(None, test_output_absolute, { "ocimds": True, "compatibility": ["ignore_missing_pks"], "users": False, "ddlOnly": True, "showProgress": False })
 
 for schema_name in schema_names:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(schema_name, Schema_ddl.Schema))))
 
-#@<> BUG#35550282 - cleanup {not __server_is_maria_db}
+#@<> BUG#35550282 - cleanup {not __server_is_maria_db} (8)
 for schema_name in schema_names:
     session.run_sql("DROP SCHEMA !;", [schema_name])
 
-#@<> WL15887 - setup
+#@<> WL15887 - setup (8)
 schema_name = "wl15887"
 account_name = get_test_user_account("sample_account")
 if __server_is_maria_db:
@@ -4221,22 +4238,22 @@ session.run_sql(f"CREATE USER {account_name} IDENTIFIED BY 'pass'")
 if __version_num >= 80000 or __server_is_maria_db:
     session.run_sql(f"CREATE ROLE {role_name}")
 
-#@<> WL15887-TSFR_1_1
+#@<> WL15887-TSFR_1_1 (8)
 help_text = """
       - targetVersion: string (default: current version of Shell) - Specifies
         version of the destination MySQL server.
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15887-TSFR_1_1_2 - option type
+#@<> WL15887-TSFR_1_1_2 - option type (8)
 TEST_STRING_OPTION("targetVersion")
 
-#@<> WL15887-TSFR_1_1_1 - invalid values
+#@<> WL15887-TSFR_1_1_1 - invalid values (8)
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' option: '8.1.', Error parsing version", test_output_absolute, { "targetVersion": "8.1.", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' option: 'abc', Error parsing version", test_output_absolute, { "targetVersion": "abc", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_FAIL("ValueError", "Argument #2: Invalid value of the 'targetVersion' option: empty", test_output_absolute, { "targetVersion": "", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
-#@<> WL15887-TSFR_1_2_1 - wrong values - greater
+#@<> WL15887-TSFR_1_2_1 - wrong values - greater (8)
 for i in range(3):
     version = newest_target_version.split(".")
     version[i] = str(int(version[i]) + 1)
@@ -4255,15 +4272,15 @@ if not __server_is_maria_db:
     EXPECT_FAIL("ValueError", f"{unsupported_target_version_msg('10.0.0')}", test_output_absolute, { "targetVersion": "10.0.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_FAIL("ValueError", f"{target_version_rejected_msg('26.6.0')}", test_output_absolute, { "targetVersion": "26.6.0", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
-#@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db}
+#@<> WL15887-TSFR_1_3_1 - wrong values - lower {not __server_is_maria_db} (8)
 EXPECT_FAIL("ValueError", "Target MySQL version '8.0.24' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "8.0.24", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 EXPECT_FAIL("ValueError", "Target MySQL version '7.9.26' is older than the minimum version '8.0.25' supported by this version of MySQL Shell", test_output_absolute, { "targetVersion": "7.9.26", "includeSchemas": [ schema_name ], "users": False, "showProgress": False })
 
-#@<> WL15887 - valid values
+#@<> WL15887 - valid values (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": "8.0.25", "dryRun": True, "users": False, "showProgress": False })
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "targetVersion": newest_target_version, "dryRun": True, "users": False, "showProgress": False })
 
-#@<> WL15887-TSFR_1_4_1 - implict value of targetVersion {not __server_is_maria_db}
+#@<> WL15887-TSFR_1_4_1 - implict value of targetVersion {not __server_is_maria_db} (8)
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"Checking for compatibility with MySQL HeatWave Service {__mysh_version}")
 
@@ -4285,7 +4302,14 @@ NOTE: One or more objects with the DEFINER clause were found.
       Loading the dump will fail if it is loaded into an DB System instance that does not support the SET_ANY_DEFINER privilege, which was introduced in 8.2.0.
 """)
 
-#@<> WL15887-TSFR_3_1_1 - restricted accounts {not __server_is_maria_db}
+#@<> WL15887-TSFR_1_4_1 - implict value of targetVersion - MariaDB {__server_is_maria_db} (8)
+# there is no HeatWave Service check to report it, so the default is read from
+# the metadata: the MariaDB version this Shell was built against, as the Shell's
+# own version is not on MariaDB's scale
+EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "ddlOnly": True, "users": False, "showProgress": False })
+EXPECT_EQ(__build_server_version, read_json(os.path.join(test_output_absolute, "@.json"))["targetVersion"].split("-")[0])
+
+#@<> WL15887-TSFR_3_1_1 - restricted accounts {not __server_is_maria_db} (8)
 for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "ocidbm", "ocirpl"]:
     account = f"`{account}`@`localhost`"
     setup_db(account)
@@ -4300,7 +4324,7 @@ for account in ["mysql.infoschema", "mysql.session", "mysql.sys", "ociadmin", "o
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_3_2_1 - valid account {not __server_is_maria_db}
+#@<> WL15887-TSFR_3_2_1 - valid account {not __server_is_maria_db} (8)
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
 
 if __version_num < 80000:
@@ -4326,7 +4350,7 @@ EXPECT_STDOUT_NOT_CONTAINS(strip_definers_security_clause(schema_name, test_view
 # WL15887-TSFR_3_3_1 - no account is not included in the dump
 EXPECT_STDOUT_CONTAINS(definer_clause_uses_unknown_account_once().warning())
 
-#@<> WL15887-TSFR_3_3_1 - user does not exist/is excluded {not __server_is_maria_db}
+#@<> WL15887-TSFR_3_3_1 - user does not exist/is excluded {not __server_is_maria_db} (8)
 for account in [ account_name, "`invalid-account`@`localhost`" ]:
     setup_db(account)
     WIPE_OUTPUT()
@@ -4340,11 +4364,11 @@ for account in [ account_name, "`invalid-account`@`localhost`" ]:
 # restore schema
 setup_db(test_user_account)
 
-#@<> WL15887-TSFR_4_1 - note about strip_definers {not __server_is_maria_db}
+#@<> WL15887-TSFR_4_1 - note about strip_definers {not __server_is_maria_db} (8)
 EXPECT_SUCCESS([ schema_name ], test_output_relative, { "compatibility": [ "strip_definers" ], "targetVersion": __mysh_version, "ocimds": True, "dryRun": True, "users": False, "showProgress": False })
 EXPECT_STDOUT_CONTAINS(f"NOTE: The 'targetVersion' option is set to {__mysh_version}. This version supports the SET_ANY_DEFINER privilege, using the 'strip_definers' compatibility option is unnecessary.")
 
-#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {VER(>=8.2.0) and not __server_is_maria_db}
+#@<> WL15887-TSFR_5_1 - user/role with SET_ANY_DEFINER {VER(>=8.2.0) and not __server_is_maria_db} (8)
 for account in account_names:
     session.run_sql(f"GRANT SET_ANY_DEFINER ON *.* TO {account}")
     WIPE_OUTPUT()
@@ -4352,7 +4376,7 @@ for account in account_names:
     EXPECT_STDOUT_NOT_CONTAINS("SET_ANY_DEFINER")
     session.run_sql(f"REVOKE SET_ANY_DEFINER ON *.* FROM {account}")
 
-#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {VER(>=8.0.0) and VER(<8.0.24) and not __server_is_maria_db}
+#@<> WL15887-TSFR_6_1 - user/role with SET_USER_ID {VER(>=8.0.0) and VER(<8.0.24) and not __server_is_maria_db} (8)
 for account in account_names:
     session.run_sql(f"GRANT SET_USER_ID ON *.* TO {account}")
     WIPE_OUTPUT()
@@ -4360,14 +4384,14 @@ for account in account_names:
     EXPECT_STDOUT_CONTAINS(strip_restricted_grants_set_user_id_replaced(account).fixed())
     session.run_sql(f"REVOKE SET_USER_ID ON *.* FROM {account}")
 
-#@<> WL15887 - cleanup
+#@<> WL15887 - cleanup (8)
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 session.run_sql(f"DROP USER {account_name}")
 
 if __version_num >= 80000 or __server_is_maria_db:
     session.run_sql(f"DROP ROLE {role_name}")
 
-#@<> BUG#35680824 - warnings on grants for system schemas should not be printed {not __server_is_maria_db}
+#@<> BUG#35680824 - warnings on grants for system schemas should not be printed {not __server_is_maria_db} (8)
 # setup
 test_account = "'test_35680824'@'localhost'"
 
@@ -4380,15 +4404,15 @@ session.run_sql(f"GRANT SELECT ON `mysql`.* TO {account_for_grant()}")
 session.run_sql(f"GRANT SELECT ON `performance_schema`.`global_variables` TO {account_for_grant()}")
 session.run_sql(f"GRANT EXECUTE ON FUNCTION `sys`.`version_major` TO {account_for_grant()}")
 
-#@<> BUG#35680824 - test {not __server_is_maria_db}
+#@<> BUG#35680824 - test {not __server_is_maria_db} (8)
 EXPECT_SUCCESS(None, test_output_relative, { "ocimds": True, "targetVersion": target_version, "users": True, "includeUsers": [ test_account ], "includeSchemas": [ "invalid" ], "dryRun": True, "showProgress": False })
 msg = grant_on_excluded_object(account_for_grant(), "").warning()
 EXPECT_STDOUT_NOT_CONTAINS(msg[:msg.find("included")])
 
-#@<> BUG#35680824 - cleanup {not __server_is_maria_db}
+#@<> BUG#35680824 - cleanup {not __server_is_maria_db} (8)
 session.run_sql(f"DROP USER IF EXISTS {test_account}")
 
-#@<> WL15947 - setup
+#@<> WL15947 - setup (8)
 schema_name = "wl15947"
 test_table_unique_null = test_table_non_unique
 test_table_partitioned = "part"
@@ -4427,27 +4451,27 @@ setup_db()
 
 checksum_file = checksum_file_path(test_output_absolute)
 
-#@<> WL15947-TSFR_1_1 - help text
+#@<> WL15947-TSFR_1_1 - help text (8)
 help_text = """
       - checksum: bool (default: false) - Compute and include checksum of the
         dumped data.
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
-#@<> WL15947-TSFR_1_1_1 - no checksum option
+#@<> WL15947-TSFR_1_1_1 - no checksum option (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS("Checksum")
 EXPECT_FALSE(os.path.isfile(checksum_file))
 
-#@<> WL15947-TSFR_1_1_1 - checksum option set to false
+#@<> WL15947-TSFR_1_1_1 - checksum option set to false (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": False, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS("Checksum")
 EXPECT_FALSE(os.path.isfile(checksum_file))
 
-#@<> WL15947-TSFR_1_1_2 - option type
+#@<> WL15947-TSFR_1_1_2 - option type (8)
 TEST_BOOL_OPTION("checksum")
 
-#@<> WL15947-TSFR_1_2_1_1 - checksum option set to true
+#@<> WL15947-TSFR_1_2_1_1 - checksum option set to true (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "showProgress": False })
 # checksums are generated
 # BUG#35983655 - display duration of checksum operation
@@ -4464,59 +4488,59 @@ if __os_type != "windows":
 # checksum file is a valid json
 EXPECT_NO_THROWS(lambda: read_json(checksum_file), "checksum file should be a valid json")
 
-#@<> WL15947-TSFR_1_3_1 - "checksum": True, "ddlOnly": False, "chunking": True, not partitioned table
+#@<> WL15947-TSFR_1_3_1 - "checksum": True, "ddlOnly": False, "chunking": True, not partitioned table (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": False, "chunking": True, "includeTables": [ quote_identifier(schema_name, test_table_primary) ], "showProgress": False })
 checksums = read_json(checksum_file)
 # table is not partitioned - partition name is empty, chunking is enabled - valid chunk ID is used
 EXPECT_TRUE("0" in checksums["data"][schema_name][test_table_primary]["partitions"][""])
 
-#@<> WL15947-TSFR_1_3_2 - "checksum": True, "ddlOnly": False, "chunking": True, partitioned table
+#@<> WL15947-TSFR_1_3_2 - "checksum": True, "ddlOnly": False, "chunking": True, partitioned table (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": False, "chunking": True, "includeTables": [ quote_identifier(schema_name, test_table_partitioned) ], "showProgress": False })
 checksums = read_json(checksum_file)
 # table is partitioned - partition name is used, chunking is enabled - valid chunk ID is used
 EXPECT_TRUE("0" in checksums["data"][schema_name][test_table_partitioned]["partitions"]["p0"])
 
-#@<> WL15947-TSFR_1_4_1 - "checksum": True, "ddlOnly": False, "chunking": False, not partitioned table
+#@<> WL15947-TSFR_1_4_1 - "checksum": True, "ddlOnly": False, "chunking": False, not partitioned table (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": False, "chunking": False, "includeTables": [ quote_identifier(schema_name, test_table_primary) ], "showProgress": False })
 checksums = read_json(checksum_file)
 # table is not partitioned - partition name is empty, chunking is disabled - chunk ID is not used
 EXPECT_TRUE("-1" in checksums["data"][schema_name][test_table_primary]["partitions"][""])
 
-#@<> WL15947-TSFR_1_4_2 - "checksum": True, "ddlOnly": False, "chunking": False, partitioned table
+#@<> WL15947-TSFR_1_4_2 - "checksum": True, "ddlOnly": False, "chunking": False, partitioned table (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": False, "chunking": False, "includeTables": [ quote_identifier(schema_name, test_table_partitioned) ], "showProgress": False })
 checksums = read_json(checksum_file)
 # table is partitioned - partition name is used, chunking is disabled - chunk ID is no used
 EXPECT_TRUE("-1" in checksums["data"][schema_name][test_table_partitioned]["partitions"]["p0"])
 
-#@<> WL15947-TSFR_1_5_1 - "checksum": True, "ddlOnly": True, not partitioned table
+#@<> WL15947-TSFR_1_5_1 - "checksum": True, "ddlOnly": True, not partitioned table (8)
 for chunking in [ True, False ]:
     EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": True, "chunking": chunking, "includeTables": [ quote_identifier(schema_name, test_table_primary) ], "showProgress": False })
     checksums = read_json(checksum_file)
     # table is not partitioned - partition name is empty, data is not dumped - chunk ID is not used
     EXPECT_TRUE("-1" in checksums["data"][schema_name][test_table_primary]["partitions"][""])
 
-#@<> WL15947-TSFR_1_5_2 - "checksum": True, "ddlOnly": True, partitioned table
+#@<> WL15947-TSFR_1_5_2 - "checksum": True, "ddlOnly": True, partitioned table (8)
 for chunking in [ True, False ]:
     EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "ddlOnly": True, "chunking": chunking, "includeTables": [ quote_identifier(schema_name, test_table_partitioned) ], "showProgress": False })
     checksums = read_json(checksum_file)
     # table is partitioned - partition name is used, data is not dumped - chunk ID is no used
     EXPECT_TRUE("-1" in checksums["data"][schema_name][test_table_partitioned]["partitions"]["p0"])
 
-#@<> WL15947-TSFR_1_6_1 - "checksum": True, table without an index
+#@<> WL15947-TSFR_1_6_1 - "checksum": True, table without an index (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_no_index) ], "showProgress": False })
 
 checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_no_index in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_2 - "checksum": True, table with a non-NULL unique index
+#@<> WL15947-TSFR_1_6_2 - "checksum": True, table with a non-NULL unique index (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_unique) ], "showProgress": False })
 
 checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_unique in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_3 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db}
+#@<> WL15947-TSFR_1_6_3 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db} (8)
 session.run_sql("SET @@GLOBAL.show_gipk_in_create_table_and_information_schema = OFF")
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_gipk) ], "showProgress": False })
 
@@ -4524,7 +4548,7 @@ checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_gipk in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_4 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db}
+#@<> WL15947-TSFR_1_6_4 - "checksum": True, GIPK {gipk_supported and not __server_is_maria_db} (8)
 session.run_sql("SET @@GLOBAL.show_gipk_in_create_table_and_information_schema = ON")
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_gipk) ], "showProgress": False })
 
@@ -4532,56 +4556,57 @@ checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_gipk in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_5 - "checksum": True, table without an index, with ignore_missing_pks {not __server_is_maria_db}
+#@<> WL15947-TSFR_1_6_5 - "checksum": True, table without an index, with ignore_missing_pks {not __server_is_maria_db} (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "compatibility": [ "ignore_missing_pks" ], "includeTables": [ quote_identifier(schema_name, test_table_no_index) ], "showProgress": False })
 
 checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_no_index in checksums["data"][schema_name])
 
-#@<> WL15947-TSFR_1_6_6 - "checksum": True, table with a NULL unique index
+#@<> WL15947-TSFR_1_6_6 - "checksum": True, table with a NULL unique index (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_unique_null) ], "showProgress": False })
 
 checksums = read_json(checksum_file)
 # checksum information present
 EXPECT_TRUE(test_table_unique_null in checksums["data"][schema_name])
 
-#@<> WL15947 - dry run
+#@<> WL15947 - dry run (8)
 EXPECT_SUCCESS([ schema_name ], test_output_absolute, { "dryRun": True, "checksum": True, "includeTables": [ quote_identifier(schema_name, test_table_unique_null) ], "showProgress": False })
 EXPECT_STDOUT_CONTAINS("Checksumming enabled.")
 
-#@<> WL15947 - cleanup
+#@<> WL15947 - cleanup (8)
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#36701854 - dumps from a server with a greater minor version are allowed, but a warning is printed {VER(>=8.0.0) and __dbug}
+#@<> BUG#36701854 - dumps from a server with a greater minor version are allowed, but a warning is printed {VER(>=8.0.0) and __dbug} (8)
 testutil.dbug_set("+d,dumper_newer_server_version")
 
-newer_version = __mysh_version.split(".")
+# measured against the MariaDB version this Shell was built from for MariaDB
+newer_version = newest_target_version.split(".")
 newer_version[1] = str(int(newer_version[1]) + 1)
 newer_version[2] = "0"
 newer_version = ".".join(newer_version)
 
 # trying to dump from an newer version results in a warning
 EXPECT_SUCCESS(None, test_output_absolute, { "dryRun": True, "showProgress": False })
-EXPECT_STDOUT_CONTAINS(f"WARNING: MySQL Server {newer_version} detected, which is newer than the MySQL Shell. Please upgrade the MySQL Shell if dump or load operation fails.")
+EXPECT_STDOUT_CONTAINS(f"WARNING: {server_vendor_name} Server {newer_version} detected, which is newer than the MySQL Shell. Please upgrade the MySQL Shell if dump or load operation fails.")
 
 testutil.dbug_set("")
 
-#@<> BUG#37866205 - dumps from a server with a greater major version are disallowed {__dbug}
+#@<> BUG#37866205 - dumps from a server with a greater major version are disallowed {__dbug} (8)
 testutil.dbug_set("+d,dumper_unsupported_server_version")
 
-unsupported_version = __mysh_version.split(".")
+unsupported_version = newest_target_version.split(".")
 unsupported_version[0] = str(int(unsupported_version[0]) + 1)
 unsupported_version[1] = "0"
 unsupported_version[2] = "0"
 unsupported_version = ".".join(unsupported_version)
 
 # trying to dump from an unsupported version results in an error
-EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
+EXPECT_FAIL("RuntimeError", f"Unsupported {server_vendor_name} Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
 
 testutil.dbug_set("")
 
-#@<> BUG#37866205 - dumps from an unsupported calendar-gap server are disallowed {__dbug}
+#@<> BUG#37866205 - dumps from an unsupported calendar-gap server are disallowed {__dbug and not __server_is_maria_db} (8)
 testutil.dbug_set("+d,dumper_unsupported_calendar_gap_server_version")
 
 unsupported_version = "26.6.0"
@@ -4591,13 +4616,13 @@ EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} det
 
 testutil.dbug_set("")
 
-#@<> WL17279-FR1.1 - 'dataMaskingPolicies' option - type
+#@<> WL17279-FR1.1 - 'dataMaskingPolicies' option - type (8)
 TEST_BOOL_OPTION("dataMaskingPolicies")
 
-#@<> WL17279-FR1.2 - 'allowDataMasking' option - type
+#@<> WL17279-FR1.2 - 'allowDataMasking' option - type (8)
 TEST_BOOL_OPTION("allowDataMasking")
 
-#@<> BUG#36247713 - setup {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - setup {VER(>=8.0.19) and not __server_is_maria_db} (8)
 # revoke SELECT ON mysql.*
 setup_session()
 session.run_sql("SET GLOBAL partial_revokes=1")
@@ -4608,20 +4633,20 @@ session.run_sql(f"REVOKE SELECT ON mysql.* FROM {test_user_account}")
 # connect
 shell.connect(test_user_uri(__mysql_sandbox_port1))
 
-#@<> BUG#36247713 - dry run works {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - dry run works {VER(>=8.0.19) and not __server_is_maria_db} (8)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "users": False, "showProgress": False })
 
-#@<> BUG#36247713 - dump works {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - dump works {VER(>=8.0.19) and not __server_is_maria_db} (8)
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "users": False, "showProgress": False })
 
-#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - it's not possible to dump users without SELECT on mysql.* {VER(>=8.0.19) and not __server_is_maria_db} (8)
 EXPECT_FAIL("Error: Shell Error (52008)", f"While 'Initializing': User {test_user_account} is missing the following privilege(s) for schema `mysql`: SELECT.", test_output_absolute, { "users": True, "showProgress": False })
 
-#@<> BUG#36247713 - cleanup {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - cleanup {VER(>=8.0.19) and not __server_is_maria_db} (8)
 setup_session()
 create_users()
 
-#@<> BUG#36247713 - restore partial_revokes {VER(>=8.0.19) and not __server_is_maria_db}
+#@<> BUG#36247713 - restore partial_revokes {VER(>=8.0.19) and not __server_is_maria_db} (8)
 session.run_sql("SET GLOBAL partial_revokes=0")
 
 #@<> Cleanup

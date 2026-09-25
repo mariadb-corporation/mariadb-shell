@@ -1631,6 +1631,12 @@ add_definitions(-DMYSH_VERSION="${MYSH_VERSION}" -DMYSH_BUILD_ID="${MYSH_BUILD_I
 # MARIADB_DUMP_LOAD.md section 7.4.
 IF(MYSQL_VERSION)
   add_definitions(-DMYSH_BUILD_SERVER_VERSION="${MYSQL_VERSION}")
+ELSEIF(MARIADB_BUILD)
+  # without it the reference version falls back to the Shell's own version,
+  # which is not a MariaDB version - e.g. 'targetVersion' would then default to
+  # the Shell's version for a MariaDB source
+  MESSAGE(FATAL_ERROR "The MariaDB server version this Shell is built against "
+    "could not be determined.")
 ENDIF()
 if(WIN32)
   add_definitions(-DMYSH_VERSION_WIN="${MYSH_VERSION_WIN}")

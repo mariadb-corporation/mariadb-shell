@@ -799,6 +799,15 @@ Attempting to reconnect to 'mysql://)";
 TLS/SSL error: unexpected eof while reading (MySQL Error 2026)
 The global session got disconnected..
 Attempting to reconnect to 'mysql://)";
+  // Since CONC-818, Connector/C reports that EOF as CR_SERVER_LOST, which is
+  // also what a connection without TLS gets (i.e. on Windows). Both are
+  // accepted: the fix shipped without a version bump (3.4.10 either way), so
+  // the library version can't tell them apart.
+  static constexpr auto second_execution_server_lost =
+      R"(mysql-js []> session.runSql('select 1');
+Lost connection to server during query (MySQL Error 2013)
+The global session got disconnected..
+Attempting to reconnect to 'mysql://)";
 #endif
   static constexpr auto third_execution =
       R"(The global session was successfully reconnected.
@@ -817,7 +826,12 @@ mysql-js []> session.runSql('select 1');
   // no error, exit code 0
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(first_execution);
+#ifdef MARIADB_BUILD
+  MY_EXPECT_CMD_OUTPUT_CONTAINS_ONE_OF(second_execution,
+                                       second_execution_server_lost);
+#else
   MY_EXPECT_CMD_OUTPUT_CONTAINS(second_execution);
+#endif
   MY_EXPECT_CMD_OUTPUT_CONTAINS(third_execution);
 }
 
@@ -889,6 +903,13 @@ Attempting to reconnect to 'mysql://)";
       R"(MySQL Error (2026): TLS/SSL error: unexpected eof while reading
 The global session got disconnected..
 Attempting to reconnect to 'mysql://)";
+  // Since CONC-818, Connector/C reports that EOF as CR_SERVER_LOST, as on
+  // Windows. Both are accepted: the fix shipped without a version bump (3.4.10
+  // either way), so the library version can't tell them apart.
+  static constexpr auto second_execution_server_lost =
+      R"(MySQL Error (2013): Lost connection to server during query
+The global session got disconnected..
+Attempting to reconnect to 'mysql://)";
 #endif
   static constexpr auto third_execution =
       R"(The global session was successfully reconnected.
@@ -907,7 +928,12 @@ mysql-py []> session.run_sql('select 1');
   // no error, exit code 0
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(first_execution);
+#if defined(MARIADB_BUILD) && !defined(_WIN32)
+  MY_EXPECT_CMD_OUTPUT_CONTAINS_ONE_OF(second_execution,
+                                       second_execution_server_lost);
+#else
   MY_EXPECT_CMD_OUTPUT_CONTAINS(second_execution);
+#endif
   MY_EXPECT_CMD_OUTPUT_CONTAINS(third_execution);
 }
 

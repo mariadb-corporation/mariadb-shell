@@ -1076,6 +1076,33 @@ reclaimed, and intercept `--print-defaults` in the shell — strip it from the a
 handed to `my_load_defaults()` so mysys stays quiet, load the defaults, then print
 the list with `--password*` masked and `exit(0)`, matching MySQL.
 
+### 13.5 InnoDB bulk insert drops rows on `LOAD DATA ... IGNORE`
+
+With both `unique_checks = 0` and `foreign_key_checks = 0`, MariaDB loads the
+first statement into an **empty** InnoDB table through its bulk-insert path
+(MDEV-24621), which does not honour `IGNORE` (MDEV-31985). A duplicate key makes
+it throw away other rows, sometimes the whole statement, and it reports no error
+and no warning. Measured on 12.3.2, primary key `id`, loading into an empty
+table:
+
+| Rows in the file | `IGNORE` (and no keyword, same for `LOCAL`) | `REPLACE` |
+|---|---|---|
+| `1,2,2` | *(none)* | `1,2` |
+| `1,2,3,3,2,1` | `1,2` | `1,2,3` |
+| `1..20000,20000..1` | `1..19999` | — |
+
+Turning off either check alone, loading into a table that isn't empty, or using
+`REPLACE` all give the correct result. MySQL has no such path.
+
+`util.importTable()` ignores duplicates by default, so it hit this on any file
+with a duplicate key. `Load_data_worker::init_session()` therefore leaves
+`unique_checks` on for a MariaDB target unless duplicates are replaced
+(`replaceDuplicates: true`). The cost is the bulk-insert speedup for those
+imports. `util.loadDump()` and the copy utilities load with `REPLACE`, so they keep
+`unique_checks = 0`. They use `IGNORE` only for a table with a `WITHOUT OVERLAPS`
+key, and such a table only receives duplicates on a resumed load, when it's
+no longer empty.
+
 ---
 
 ## 14. Product rename: `mysqlsh` → `mariadb-shell`
@@ -1220,6 +1247,14 @@ normally just reads `shell.options["sandboxDir"]`, but
 [sandboxlib.py](python/plugins/sandbox/sandboxlib.py) duplicates the same default
 as a fallback for when the option is unavailable (unit tests, plugin loaded
 outside the shell) — **the two must be changed together.**
+
+The boilerplates, the bootstrapped data directories every deployment is copied
+from, live under the sandbox directory too, unless the
+`MARIADB_SANDBOX_BOILERPLATE_DIR` environment variable names another one
+(`_boilerplate_base()`). `scripts/run_unit_tests.py` builds one boilerplate per
+run under its logs dir before any worker starts and points every sandbox call and
+test process at it. Each test process has its own `TMPDIR`, which is its sandbox
+directory, so otherwise every process would run `mariadb-install-db` again.
 
 This is not a compatibility-preserving change: sandboxes deployed by an older
 build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed

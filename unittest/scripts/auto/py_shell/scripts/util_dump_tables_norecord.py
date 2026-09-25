@@ -1722,7 +1722,7 @@ for table in missing_pks[incompatible_schema]:
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
 
@@ -1736,7 +1736,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN my_row_id;", [incompatible_schema, 
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
 
@@ -1750,7 +1750,7 @@ session.run_sql("ALTER TABLE !.! DROP COLUMN idx;", [incompatible_schema, table]
 table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
@@ -1767,7 +1767,7 @@ table = missing_pks[incompatible_schema][0]
 session.run_sql("ALTER TABLE !.! ADD COLUMN my_row_id int;", [incompatible_schema, table])
 session.run_sql("ALTER TABLE !.! ADD COLUMN idx int AUTO_INCREMENT UNIQUE NULL;", [incompatible_schema, table])
 
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), incompatible_schema, incompatible_schema_tables + incompatible_schema_views, test_output_relative, { "compatibility": [ "create_invisible_pks" ] }, True)
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_name_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks_auto_increment_conflict(incompatible_schema, table).error())
 EXPECT_STDOUT_CONTAINS("ERROR: Compatibility issues were found")
@@ -1841,6 +1841,7 @@ session.run_sql("SET NAMES 'utf8mb4';")
 session.run_sql("SET GLOBAL SQL_MODE='';")
 
 #@<> prepare user privileges, switch user (5)
+# balance: begin-block - the chunks up to the reconnect run as the test user
 session.run_sql(f"GRANT ALL ON *.* TO {test_user_account};")
 session.run_sql(f"REVOKE RELOAD /*!80023 , FLUSH_TABLES */ ON *.* FROM {test_user_account};")
 shell.connect(test_user_uri(__mysql_sandbox_port1))
@@ -1951,6 +1952,7 @@ NOTE: In order to create a consistent dump, either:{"\n * Use an account which h
 testutil.dbug_set("")
 
 #@<> BUG#33697289 cleanup (5)
+# balance: end-block
 session.run_sql("DROP SCHEMA IF EXISTS !;", [ tested_schema ])
 
 #@<> reconnect to the user with full privilages, restore test user account
@@ -3068,11 +3070,11 @@ EXPECT_EQ(0, count_rows(verification_schema, no_partitions_table_name))
 EXPECT_EQ(count_rows(schema_name, partitions_table_name), count_rows(verification_schema, partitions_table_name))
 
 #@<> WL15311_TSFR_3_2_3_1 (7)
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "THIS_IS_NO_SQL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1054 (42S22): {unknown_column_in_where('THIS_IS_NO_SQL')}")
 
 WIPE_STDOUT()
-EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"While '.*': Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
+EXPECT_FAIL("Error: Shell Error (52006)", re.compile(r"(While '.*': )?Fatal error during dump"), schema_name, all_tables, test_output_absolute, { "where": { no_partitions_table_name_quoted: "1 = 1 ; DROP TABLE mysql.user ; SELECT 1 FROM DUAL" }, "showProgress": False }, True)
 EXPECT_STDOUT_CONTAINS(f"MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near '; DROP TABLE mysql.user ; SELECT 1 FROM DUAL) ORDER BY")
 
 WIPE_STDOUT()
