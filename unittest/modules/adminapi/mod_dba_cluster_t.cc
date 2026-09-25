@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -61,7 +62,12 @@ class Admin_api_cluster_test : public tests::Admin_api_test {
     reset_replayable_shell(
         ::testing::UnitTest::GetInstance()->current_test_info()->name());
 
+    // the statements below are valid in either scripting language
+#ifdef HAVE_JS
     execute("\\js");
+#else
+    execute("\\py");
+#endif
     execute("shell.connect('root:root@localhost:" +
             std::to_string(_mysql_sandbox_ports[0]) + "')");
 

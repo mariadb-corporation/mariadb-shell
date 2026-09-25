@@ -380,15 +380,11 @@ end.)";
   rc = execute(
       {_mysqlsh, _mysql_uri.c_str(), "--sql", "-f", "bad.sql", nullptr});
   EXPECT_EQ(1, rc);
-#ifndef MARIADB_BUILD
-  static const char *result2 = R"(1
-1
-ERROR: 1008 at line 2: Can't drop database 'bogusdb'; database doesn't exist)";
-#else
+  // Upstream runs this over the X protocol, whose errors carry no SQLSTATE;
+  // over the classic protocol used here they do, on either vendor
   static const char *result2 = R"(1
 1
 ERROR: 1008 (HY000) at line 2: Can't drop database 'bogusdb'; database doesn't exist)";
-#endif
   MY_EXPECT_CMD_OUTPUT_CONTAINS(result2);
 }
 

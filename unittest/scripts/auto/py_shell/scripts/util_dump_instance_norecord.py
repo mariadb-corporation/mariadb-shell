@@ -4185,6 +4185,13 @@ session.run_sql("DROP ROLE IF EXISTS ?;", [ test_role ])
 # BUG#37278169 - exclude `mysql_autopilot` schema if the `ocimds` option is set
 # BUG#37637843 - exclude `mysql_rest_service_metadata` and `mysql_tasks` schemas
 # setup
+# The ocimds dump below covers the whole instance. In file order it runs with
+# the test schemas emptied - WL14244's helpers wipe the server, WL15311 - setup
+# re-creates them empty - but a group which runs neither still has the MySQLaaS
+# incompatibilities and fails the compatibility checks, so recreate that state
+drop_all_schemas()
+create_all_schemas()
+
 schema_names = [ "mysql_audit", "mysql_autopilot", "mysql_firewall", "mysql_option", "mysql_rest_service_metadata", "mysql_tasks" ]
 
 for schema_name in schema_names:

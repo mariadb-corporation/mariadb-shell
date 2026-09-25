@@ -119,7 +119,7 @@ TEST_F(Shell_history, check_history_sql_not_connected) {
   EXPECT_STREQ("select 2;", linenoiseHistoryLine(1));
 }
 
-#ifndef MARIADB_BUILD
+#ifdef HAVE_JS
 TEST_F(Shell_history, check_password_history_linenoise) {
   // TS_HM#6 in SQL mode, commands that match the glob patterns IDENTIFIED,
   // PASSWORD or any pattern specified in the
@@ -416,7 +416,7 @@ TEST_F(Shell_history, history_ignore_wildcard_questionmark) {
   shell.process_line(" A\n  ;");
   EXPECT_EQ(1, linenoiseHistorySize());
 }
-#endif
+#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_set_option) {
   // All user input shall be caputered in the history

@@ -29,9 +29,14 @@ for value in ["0", "false", "1", "true"]:
     EXPECT_THROWS(lambda: shell.connect(__uripwd + "?local-infile=" + value), "RuntimeError: X Protocol: LOAD DATA LOCAL INFILE is not supported.")
 
 #@<> classic session with local-infile disabled
-error = "DBError: MySQL Error (3948): Loading local data is disabled; this must be enabled on both the client and server sides"
-if sandbox.vendor() == "MariaDB":
+# libmysqlclient refuses the file request itself, whatever the server; with
+# libmariadb the request reaches the server, so its vendor decides the error
+if not __mariadb_build:
+    error = "DBError: MySQL Error (2068): LOAD DATA LOCAL INFILE file request rejected due to restrictions on access."
+elif sandbox.vendor() == "MariaDB":
     error = "DBError: MySQL Error (4166): The used command is not allowed because the MariaDB server or client has disabled the local infile capability"
+else:
+    error = "DBError: MySQL Error (3948): Loading local data is disabled; this must be enabled on both the client and server sides"
 for value in ["0", "false"]:
     EXPECT_NO_THROWS(lambda: shell.connect(__mysqluripwd + "?local-infile=" + value), "Classic session should be established.")
     EXPECT_THROWS(lambda: session.run_sql("LOAD DATA LOCAL INFILE ? INTO TABLE !.!", [file_name, schema_name, table_name]), error)

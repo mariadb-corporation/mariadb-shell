@@ -1,4 +1,5 @@
 /* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB plc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +50,12 @@ void Admin_api_test::SetUpSampleCluster(const char *context) {
   shell_env.utils()->deploy_sandbox(shell_env.sb_port(1), "root", sandbox_opts);
   shell_env.utils()->deploy_sandbox(shell_env.sb_port(2), "root", sandbox_opts);
 
+  // the statements below are valid in either scripting language
+#ifdef HAVE_JS
   shell_env.execute("\\js");
+#else
+  shell_env.execute("\\py");
+#endif
   shell_env.execute(
       "shell.connect('root:root@localhost:" + shell_env.sb_port_str(0) + "')");
 

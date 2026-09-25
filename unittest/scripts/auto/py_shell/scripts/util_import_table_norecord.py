@@ -73,6 +73,7 @@ session.run_sql("""
 """)
 session.close()
 
+#@<> Setup test - wl12193.cities table
 #/ Create wl12193.cities table
 shell.connect(uri)
 session.run_sql('USE ' + target_schema)

@@ -1016,6 +1016,10 @@ except Exception as e:
     EXPECT_EQ(1193, e.code)
 
 #@<> WL14506: cleanup (2)
+# EXPECT_PK() leaves the global session on the destination server, so drop the
+# schema from the source explicitly as well - otherwise it lingers there and is
+# part of every later whole-instance dump, in this group only
+session1.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 
 #@<> BUG#32734880 progress file is not removed when resetProgress is used (2)
@@ -1228,6 +1232,9 @@ for table in all_tables:
     EXPECT_EQ(checksums[table], compute_checksum(schema_name, table))
 
 #@<> WL14632: cleanup (3)
+# the test above leaves the global session on the destination server; see
+# WL14506: cleanup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 
 #@<> BUG#33144419: setup (4)
@@ -2428,8 +2435,10 @@ shell.connect(__sandbox_uri2)
 # BUG#36197620 - summary should contain more details regarding all executed stages
 indexes_summary = "indexes were built in "
 
-# load with various values of deferTableIndexes
-for deferred in [ ("off", 0), ("fulltext", 1), ("all", 13) ]:
+# load with various values of deferTableIndexes; the dump is the whole instance,
+# so "all" counts every secondary index on it - upstream's 13 included the one
+# on wl14506.no_pk, which WL14506: cleanup used to leave on the source
+for deferred in [ ("off", 0), ("fulltext", 1), ("all", 12) ]:
     # wipe the destination server
     wipeout_server(session2)
     WIPE_OUTPUT()

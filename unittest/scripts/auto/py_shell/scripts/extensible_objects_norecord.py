@@ -168,7 +168,8 @@ def f4(data):
 
 session_classes = ["ClassicSession"]
 if __have_x_protocol:
-  session_classes.append("Session")
+  # upstream's order, which the help lists them in
+  session_classes.insert(0, "Session")
 
 
 shell.add_extension_object_member(testutil.sample_module_p_y, "objectFunction2", f4,

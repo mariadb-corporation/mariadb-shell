@@ -56,8 +56,8 @@ REGISTER_HELP(CLI_OBJECTS, R"*(@li shell - shell global object.
 
 #ifndef MARIADB_BUILD
 REGISTER_HELP(CLI_CASE_SAMPLES,
-              R"*(@li Camel case: (e.g. createCluster, dumpInstance)
-@li Kebab case: (e.g. create-cluster, dump-instance))*");
+              R"*(@li Camel case: (e.g. createCluster, checkForServerUpgrade)
+@li Kebab case: (e.g. create-cluster, check-for-server-upgrade))*");
 #else
 REGISTER_HELP(CLI_CASE_SAMPLES,
               R"*(@li Camel case: (e.g. listCredentialHelpers)

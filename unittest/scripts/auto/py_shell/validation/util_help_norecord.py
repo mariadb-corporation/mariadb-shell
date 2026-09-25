@@ -20,6 +20,7 @@ FUNCTIONS
       check_for_server_upgrade([connectionData][, options])
             Performs series of tests on specified MySQL server to check if the
             upgrade process will succeed.
+
 ?{}
       copy_instance(connectionData[, options])
             Copies a source instance to the target instance. Requires an open
@@ -62,6 +63,7 @@ FUNCTIONS
       import_json(file[, options])
             Import JSON documents from file to collection or table in MySQL
             Server using X Protocol session.
+
 ?{}
       import_table(urls[, options])
             Import table dump stored in files to target table using LOAD DATA

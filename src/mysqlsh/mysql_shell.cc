@@ -1527,10 +1527,10 @@ bool Mysql_shell::cmd_connect(const std::vector<std::string> &args) {
     }
   } else {
 #ifdef HAVE_X_PROTOCOL
-    print_diag("\\connect [--mc|--mysql] [--ssh <sshuri>] <URI>\n");
-#else
     print_diag(
         "\\connect [--mx|--mysqlx|--mc|--mysql] [--ssh <sshuri>] <URI>\n");
+#else
+    print_diag("\\connect [--mc|--mysql] [--ssh <sshuri>] <URI>\n");
 #endif
   }
 

@@ -707,14 +707,19 @@ TEST_F(Interactive_shell_test, shell_function_connect_auto) {
 }
 
 TEST_F(Interactive_shell_test, shell_command_connect_no_parameters) {
+#ifdef HAVE_X_PROTOCOL
+  const char *usage =
+      "\\connect [--mx|--mysqlx|--mc|--mysql] [--ssh <sshuri>] <URI>\n";
+#else
+  // without the X protocol there is no --mx/--mysqlx to offer
+  const char *usage = "\\connect [--mc|--mysql] [--ssh <sshuri>] <URI>\n";
+#endif
   execute("\\connect");
-  MY_EXPECT_STDERR_CONTAINS(
-      "\\connect [--mx|--mysqlx|--mc|--mysql] [--ssh <sshuri>] <URI>\n");
+  MY_EXPECT_STDERR_CONTAINS(usage);
   output_handler.wipe_all();
 
   execute("\\connect   ");
-  MY_EXPECT_STDERR_CONTAINS(
-      "\\connect [--mx|--mysqlx|--mc|--mysql] [--ssh <sshuri>] <URI>\n");
+  MY_EXPECT_STDERR_CONTAINS(usage);
   output_handler.wipe_all();
 }
 
@@ -2684,13 +2689,10 @@ TEST_F(Interactive_shell_test, inline_commands) {
   // ensure behaviour of inline \commands match old cli
   execute(";;");
   EXPECT_EQ("", output_handler.std_out);
-#ifndef MARIADB_BUILD
-  EXPECT_EQ("ERROR: 1065: Query was empty\nERROR: 1065: Query was empty\n",
-            output_handler.std_err);
-#else
+  // Upstream connects over the X protocol, where the server answers 1065; the
+  // classic session used here rejects the empty query itself, on either vendor
   EXPECT_EQ("ERROR: No query specified.\nERROR: No query specified.\n",
             output_handler.std_err);
-#endif
 
   wipe_all();
   execute("select 1\\w");
