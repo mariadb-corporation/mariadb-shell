@@ -432,7 +432,10 @@ TEST_ARRAY_OF_STRINGS_OPTION("sessionInitSql")
 EXPECT_FAIL("RuntimeError", f"Error while executing sessionInitSql: MySQL Error 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your {server_vendor_name} server version for the right syntax to use near 'wrong' at line 1", __sandbox_uri2, { "sessionInitSql": [ "wrong" ] })
 
 #@<> WL15298 - test sessionInitSql option (6)
-EXPECT_SUCCESS(__sandbox_uri2, { "sessionInitSql": [ "INSERT INTO ver.t VALUES (1)" ] }, setup = lambda: tgt_session.run_sql('CREATE SCHEMA ver') and tgt_session.run_sql('CREATE TABLE ver.t (a INT)'))
+# ver.t is seeded so it is not empty: with the loader's unique_checks=0 and
+# foreign_key_checks=0, MariaDB bulk-inserts into an empty InnoDB table under a
+# table lock, and the loader sessions' concurrent INSERTs then deadlock (1213)
+EXPECT_SUCCESS(__sandbox_uri2, { "sessionInitSql": [ "INSERT INTO ver.t VALUES (1)" ] }, setup = lambda: tgt_session.run_sql('CREATE SCHEMA ver') and tgt_session.run_sql('CREATE TABLE ver.t (a INT)') and tgt_session.run_sql('INSERT INTO ver.t VALUES (0)'))
 
 #@<> WL15298_TSFR_4_5_32 (6)
 TEST_BOOL_OPTION("skipBinlog")

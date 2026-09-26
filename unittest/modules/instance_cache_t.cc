@@ -100,9 +100,14 @@ class Instance_cache_test : public Shell_core_test_wrapper {
   }
 
   void TearDown() override {
-    cleanup();
+    // SetUp() throws before assigning the session when the server cannot be
+    // reached, and cleaning up through a null session would crash the whole
+    // test process instead of failing just this test
+    if (m_session) {
+      cleanup();
 
-    m_session->close();
+      m_session->close();
+    }
 
     Shell_core_test_wrapper::TearDown();
   }

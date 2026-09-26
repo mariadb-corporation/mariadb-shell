@@ -432,4 +432,55 @@ TEST_F(Dump_scheduler, non_transactional_engine_chunks_are_not_concurrent) {
     EXPECT_TRUE(has_candidate_with_engine(""));
   }
 }
+
+// see MARIADB_DUMP_LOAD.md section 34
+TEST_F(Dump_scheduler, period_unique_key_chunks_are_not_concurrent) {
+  const std::unordered_set<std::string> transactional_engines{"INNODB"};
+
+  // an InnoDB table with a UNIQUE ... WITHOUT OVERLAPS key and 3 chunks, next
+  // to an ordinary InnoDB table with 3 chunks; the 1st chunk of the former is
+  // "in flight" when `overlaps_in_flight` is set
+  auto table = make_table("overlaps", /* chunks */ 3, 20, 5);
+  auto &overlaps = table.data_info.back();
+  overlaps.table = &table;
+  overlaps.engine = "InnoDB";
+  overlaps.period_unique_key = true;
+
+  auto other_table = make_table("other", /* chunks */ 3, 20, 5);
+  auto &other = other_table.data_info.back();
+  other.table = &other_table;
+  other.engine = "InnoDB";
+
+  const auto schedule = [&](bool overlaps_in_flight,
+                            std::unordered_set<Dump_reader::Table_data_info *>
+                                tables_with_data) {
+    std::unordered_multimap<std::string, size_t> tables_being_loaded;
+
+    if (overlaps_in_flight) {
+      overlaps.chunks_consumed = 1;
+      tables_being_loaded.emplace(overlaps.key(), 20);
+    } else {
+      overlaps.chunks_consumed = 0;
+    }
+
+    const auto it = Dump_reader::schedule_chunk_proportionally(
+        tables_being_loaded, transactional_engines, &tables_with_data, 4);
+    return it == tables_with_data.end() ? nullptr : *it;
+  };
+
+  {
+    SCOPED_TRACE("nothing in flight: the table may be started");
+    EXPECT_EQ(&overlaps, schedule(false, {&overlaps}));
+  }
+
+  {
+    SCOPED_TRACE("a chunk in flight: no second chunk of the same table");
+    EXPECT_EQ(nullptr, schedule(true, {&overlaps}));
+  }
+
+  {
+    SCOPED_TRACE("a chunk in flight: another table is loaded instead");
+    EXPECT_EQ(&other, schedule(true, {&overlaps, &other}));
+  }
+}
 }  // namespace mysqlsh

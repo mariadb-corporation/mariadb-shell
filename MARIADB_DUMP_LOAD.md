@@ -3725,3 +3725,147 @@ dump is unchanged.
   which is why it has needed correcting twice (§26, §30). Asserting agreement
   rather than reimplementing the query would end that, but it is a rewrite of the
   test rather than a fix to it.
+
+---
+
+## 33. Chunks of a non-transactional table are not loaded concurrently
+
+Added in `4f5bf16bd` (2026-09-14). The loader normally spreads the chunks of one
+table across several workers. A table on a storage engine the **target** does not
+report as transactional now never has two of its chunks loading at once: while one
+is in flight, the table is not offered as a candidate, and other tables keep the
+remaining workers busy.
+
+### 33.1 The pieces
+
+- **The dump records each table's engine.** `Dumper::write_table_metadata()`
+  writes an `engine` field for every table (from the instance cache), and
+  `Dump_reader::Table_info::update_metadata()` reads it into
+  `Table_data_info::engine`. A dump that predates the field leaves it empty, and
+  an empty engine is treated as safe - the old behaviour.
+- **The target decides what "transactional" means.** At the start of a load that
+  loads data, `Dump_loader` reads
+  `SELECT ENGINE FROM information_schema.ENGINES WHERE TRANSACTIONS = 'YES'`
+  into `m_transactional_engines`, rather than hard-coding a list, so a plugin
+  engine counts if the server says it does. The column names and the
+  `YES`/`NO`/NULL values are the same on both vendors. On 12.3.2 only `InnoDB`
+  and `SEQUENCE` are transactional; `Aria`, `MyISAM`, `MEMORY`, `CSV` and
+  `MRG_MyISAM` are not.
+- **The scheduler enforces it.** `Dump_reader::schedule_chunk_proportionally()`
+  skips a table whose engine is known and not in that set while one of its
+  chunks is in flight, and returns "nothing now" when every table with data left
+  is such a table mid-chunk. The in-flight key is the table's data key, so the
+  partitions of a partitioned table are tracked separately.
+
+It is not vendor-gated: a MySQL target's MyISAM, MEMORY, CSV or ARCHIVE tables are
+serialized the same way.
+
+### 33.2 Why
+
+The code gives one reason: concurrent loads into the same table **crashed a MariaDB
+Aria system table**. Most of MariaDB's `mysql` schema is Aria - 24 of its 30 base
+tables on 12.3.2, `help_*` and the `*_stats` tables with `TRANSACTIONAL=0`, the
+privilege, `proc`, `event` and `time_zone*` tables with `TRANSACTIONAL=1` - so a
+dump that includes `mysql` loads into Aria. The failure itself - the error, the
+server version, and whether it was the server or the table that crashed - was not
+recorded with the change.
+
+It did **not** reproduce on 12.3.2 (debug) when retried, with the rule disabled:
+
+| Test | Result |
+|---|---|
+| 6 concurrent `LOAD DATA LOCAL ... REPLACE` of disjoint chunks, loader session settings, 20 rounds, into Aria (default, `TRANSACTIONAL=0` and `TRANSACTIONAL=1`), MyISAM and InnoDB | 0 failed loads, row counts right, `CHECK TABLE` OK every round, all five |
+| `loadDump` of a 300K-row Aria `TRANSACTIONAL=0` table, 128K chunks, 8 threads, 3 runs | all complete, 300,000 rows, `CHECK TABLE` OK |
+| `loadDump` of `mysql.help_*` (`help_topic` in 19 chunks) into the target's own tables, `ignoreExistingObjects`, 8 threads, 3 runs | all complete, `CHECK TABLE` OK, server up |
+
+The rule stays regardless, because it costs nothing where it applies. Writes to
+Aria, MyISAM and the other non-transactional engines take a table-level lock, so two
+chunks of one such table cannot load concurrently on the server anyway - a second
+worker only waits. And a non-transactional chunk that fails part-way keeps the rows
+it wrote, so keeping one chunk per table in flight keeps what a failed load leaves
+behind to a single partial chunk.
+
+### 33.3 Verified
+
+- `Dump_scheduler.non_transactional_engine_chunks_are_not_concurrent`: with a
+  chunk in flight, an Aria table is not offered again; an InnoDB table is; the
+  engine name is matched case-insensitively; an empty engine is treated as safe.
+
+### 33.4 Not done here
+
+- **The original failure is unexplained.** If it recurs, the server's error log
+  and version are what is missing here. The retries above used 12.3.2 only.
+- **§34 uses the same rule** for a `UNIQUE ... WITHOUT OVERLAPS` table, on InnoDB,
+  for a reason that *was* measured.
+
+---
+
+## 34. A `WITHOUT OVERLAPS` table aborted a parallel load
+
+§31.2 loads a table with a `UNIQUE ... WITHOUT OVERLAPS` key with `IGNORE`, since
+MariaDB refuses `REPLACE` on it. That was verified on a table small enough to be a
+single chunk. Once such a table has several chunks, the loader loads them
+concurrently, and **concurrent inserts into a period-keyed unique index deadlock
+on that index almost every time**. With `IGNORE` the server does not return the
+victim as 1213: the statement completes and the transaction is refused at commit
+with **error 4060** (*This transaction was rolled back and cannot be committed*).
+Neither deadlock retry (§18's `execute_statement()`, nor the `LOAD DATA` retry in
+`import_table`) knows that code, so the load aborted.
+
+### 34.1 What it costs, measured on 12.3.2
+
+| Test, empty target | Result |
+|---|---|
+| 6 concurrent `LOAD DATA ... IGNORE` into a `WITHOUT OVERLAPS` table, loader session settings | 99 deadlocks in 120 loads |
+| the same with `unique_checks` and `foreign_key_checks` left on | 95 in 120 |
+| `loadDump` of a 300K-row `WITHOUT OVERLAPS` table, 324 chunks, 8 threads | 9 of 13 runs aborted with 4060 |
+| the same load with 1 thread | 2 of 2 succeeded |
+
+So it is the index, not the session settings, and not the empty-table bulk-insert
+path of `MARIADB_PORT.md` §13.5. An ordinary table is unaffected: its chunks load
+with `REPLACE`, which never takes that path - 0 deadlocks in 120 concurrent
+`LOAD DATA ... REPLACE`, and 5 of 5 `loadDump` runs of a 291-chunk table with 8
+threads came out whole.
+
+The table is one whose DDL declares such a key: an application-time `PERIOD FOR`
+over two date/time columns plus a `UNIQUE (..., p WITHOUT OVERLAPS)`. Nothing adds
+one implicitly, it is unrelated to system versioning, and MySQL has no equivalent.
+
+### 34.2 The fix
+
+`Dump_reader::schedule_chunk_proportionally()` no longer offers a table with a
+period unique key while one of its chunks is in flight - the same rule §33 gives a
+table on a non-transactional engine. Its chunks load one at a time, other tables
+keep every other thread busy, and the dump already carries the flag
+(`period_unique_key`, set by `fetch_period_unique_keys()`). The key is the
+table's data key, so the partitions of a partitioned table - separate InnoDB
+indexes - still load concurrently. `util.copy*` uses the same scheduler, and
+there a retry would not have helped anyway: its chunks come from a live stream the
+`LOAD DATA` retry cannot rewind.
+
+The cost is parallelism inside such a table only. At 99 conflicts in 120 it was
+not getting any.
+
+### 34.3 Verified
+
+- `Dump_scheduler.period_unique_key_chunks_are_not_concurrent`: the table may
+  start, gets no second chunk while one loads, and another table is picked
+  instead.
+- `util_dump_and_load_norecord`, *WITHOUT OVERLAPS table loaded in parallel*
+  (MariaDB only): a 60K-row table in 128K chunks, loaded three times with 8
+  threads. Passes; with the scheduler rule disabled it fails in that chunk with
+  4060, and every other group of the suite still passes.
+- MySQL build: `Dump_scheduler.*` and `util_dump_and_load_norecord` pass.
+
+### 34.4 Not done here
+
+- **4060 is still not retried.** Serializing removes the conflict between the
+  loader's own sessions, but anything else writing to the table during a load
+  can still produce one. Treating it like 1213 is the obvious hardening, limited
+  by the same rewind restriction.
+- **`sessionInitSql` runs unprotected.** A user statement there that inserts
+  into an empty table can deadlock the loader's sessions against each other
+  through the §13.5 bulk-insert path - which is what the copy suites'
+  `WL15298 - test sessionInitSql option` kept doing, now avoided by seeding
+  its table. It is not retried, and a real `sessionInitSql` doing that would fail
+  the load the same way.

@@ -835,6 +835,7 @@ class Dump_reader {
 #ifdef FRIEND_TEST
   FRIEND_TEST(Dump_scheduler, load_scheduler);
   FRIEND_TEST(Dump_scheduler, non_transactional_engine_chunks_are_not_concurrent);
+  FRIEND_TEST(Dump_scheduler, period_unique_key_chunks_are_not_concurrent);
 #endif
 };
 

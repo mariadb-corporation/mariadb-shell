@@ -596,6 +596,15 @@ Dump_reader::Candidate Dump_reader::schedule_chunk_proportionally(
         continue;
       }
 
+      if (in_flight && (*it)->period_unique_key) {
+        // a MariaDB UNIQUE ... WITHOUT OVERLAPS key: concurrent loads into the
+        // same table deadlock on that index almost every time, and with IGNORE
+        // (which such a table is loaded with) the server reports the victim as
+        // error 4060 rather than 1213, so the load aborts - load its chunks one
+        // at a time, see MARIADB_DUMP_LOAD.md section 34
+        continue;
+      }
+
       if ((*it)->chunks_consumed) {
         tables_in_progress.emplace_back(it);
       }

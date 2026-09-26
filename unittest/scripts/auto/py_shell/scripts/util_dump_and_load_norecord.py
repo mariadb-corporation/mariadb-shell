@@ -4561,6 +4561,35 @@ EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session
 #@<> BUG#38945132 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
+#@<> WITHOUT OVERLAPS table loaded in parallel - setup {__server_is_maria_db} (8)
+# Concurrent loads into one table with a UNIQUE ... WITHOUT OVERLAPS key
+# deadlock on that index almost every time, and the victim comes back as error
+# 4060, which aborted the load - its chunks must be loaded one at a time. See
+# MARIADB_DUMP_LOAD.md section 34.
+tested_schema = "test_without_overlaps"
+dump_dir = os.path.join(outdir, "without_overlaps")
+
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+session1.run_sql("CREATE TABLE !.t (id INT, s DATE, e DATE, v VARCHAR(200), PERIOD FOR p(s, e), UNIQUE (id, p WITHOUT OVERLAPS))", [tested_schema])
+session1.run_sql("INSERT INTO !.t SELECT seq, '2020-01-01', '2020-12-31', REPEAT('x', 150) FROM !.seq_1_to_60000", [tested_schema, tested_schema])
+
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }), "Dump should not fail")
+
+#@<> WITHOUT OVERLAPS table loaded in parallel - test {__server_is_maria_db} (8)
+shell.connect(__sandbox_uri2)
+
+# the deadlock is timing dependent, so load more than once
+for attempt in range(3):
+    wipeout_server(session2)
+    EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "threads": 8, "resetProgress": True, "showProgress": False }), f"Load #{attempt + 1} should not fail")
+    EXPECT_EQ(60000, session2.run_sql("SELECT COUNT(*) FROM !.t", [tested_schema]).fetch_one()[0], f"rows after load #{attempt + 1}")
+
+#@<> WITHOUT OVERLAPS table loaded in parallel - cleanup {__server_is_maria_db} (8)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+wipeout_server(session2)
+
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
 testutil.destroy_sandbox(__mysql_sandbox_port2)
