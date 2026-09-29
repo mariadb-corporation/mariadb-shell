@@ -129,11 +129,27 @@ jobs:
       # ========================================
       # 2. SETUP VISUAL STUDIO 2022 (WINDOWS ONLY)
       # ========================================
+      # Pinned to the VS 2022 toolset (MSVC 14.44). Since 2026-09-30 the
+      # windows-11-arm label serves a VS 2026 image, and GitHub has no arm64
+      # label with VS 2022; that image still ships the 14.44 ARM64 toolset
+      # side by side, and windows-2022 defaults to it. Unpinned, the arm build
+      # picks MSVC 14.51 (MSVC_VERSION 1951), which cmake/packaging.cmake has
+      # no VC++ redistributable mapping for.
       - name: Setup Visual Studio 2022 Environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
+          toolset: '14.44'
+
+      # vcpkg ignores the environment above: it runs vcvarsall itself with the
+      # newest toolset of the VS it finds. These overlay triplets pin the ports
+      # to the same 14.44 toolset, so everything is built and linked with one
+      # compiler.
+      - name: Pin vcpkg to the VS 2022 toolset
+        if: runner.os == 'Windows'
+        run: echo "VCPKG_OVERLAY_TRIPLETS=${{ github.workspace }}/.github/vcpkg-triplets" >> "$GITHUB_ENV"
+        shell: bash
 
       # ========================================
       # 2b. REMOVE CONFLICTING GIT link.exe (WINDOWS ONLY)
