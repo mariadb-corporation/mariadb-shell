@@ -90,6 +90,13 @@ _SSL_DAYS = "3650"
 # version; every later deployment just copies this initialized data directory.
 _BOILERPLATE_PREFIX = "myboilerplate"
 
+# Environment variable naming a directory to keep the boilerplates in instead
+# of the sandbox base dir, so deployments to different sandbox dirs can share
+# one - e.g. the parallel test workers of scripts/run_unit_tests.py, which
+# would otherwise each bootstrap their own. Building is atomic, so concurrent
+# deployments sharing the directory are safe.
+BOILERPLATE_DIR_ENV = "MARIADB_SANDBOX_BOILERPLATE_DIR"
+
 # InnoDB sizing applied both when bootstrapping the boilerplate and in every
 # sandbox's option file. Keeping the system tablespace and redo log small makes
 # the per-sandbox copy of the data directory cheap. These MUST stay consistent
@@ -165,6 +172,110 @@ def is_listening(host, port, timeout=1.0):
         return False
 
 
+def _is_socket_listening(path, timeout=1.0):
+    """Return True if something accepts connections on the Unix socket 'path'."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect(path)
+            return True
+    except OSError:
+        return False
+
+
+def _configured_mysqld_options(sandbox_dir):
+    """The [mysqld] options in the sandbox's option file.
+
+    Reads the format _write_option_file() writes, plus the 'option = value'
+    lines other tools (e.g. the test suite) add to it. Names are normalized to
+    use '_', and an option given without a value maps to None. An unreadable
+    file yields an empty dict.
+    """
+    section = None
+    options = {}
+    try:
+        with open(_cnf_path(sandbox_dir)) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith(("#", ";")):
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1].strip()
+                elif section == "mysqld":
+                    key, sep, value = line.partition("=")
+                    options[key.strip().replace("-", "_")] = (
+                        value.strip() if sep else None)
+    except OSError:
+        return {}
+    return options
+
+
+def _configured_socket(sandbox_dir):
+    """The [mysqld] socket named in the sandbox's option file, or None.
+
+    The value is normally _socket_path(), but 'mariadbdOptions' may replace it.
+    """
+    return _configured_mysqld_options(sandbox_dir).get("socket") or None
+
+
+def _is_enabled(options, name):
+    """Whether a boolean server option is set, and not to OFF/0/FALSE."""
+    if name not in options:
+        return False
+    value = options[name]
+    return value is None or value.lower() not in ("0", "off", "false")
+
+
+def _networking_disabled(sandbox_dir):
+    """Whether the option file makes the server skip its TCP port.
+
+    MySQL 8.0+ turns networking off along with the grant tables, so that no one
+    can reach an unprotected server remotely; MariaDB does not.
+    """
+    options = _configured_mysqld_options(sandbox_dir)
+    if _is_enabled(options, "skip_networking"):
+        return True
+    return (_is_enabled(options, "skip_grant_tables") and
+            _read_vendor(sandbox_dir) == _VENDOR_MYSQL)
+
+
+def _is_ready(port, sandbox_dir):
+    """Return True once the instance accepts connections on all its endpoints.
+
+    The server starts listening on its TCP port before it creates its Unix
+    socket, so an open port alone does not mean the socket - which root
+    sessions use on POSIX, see _open_root_session() - can be connected to yet.
+    Windows has no socket file (see _build_option_file).
+
+    A server running without networking (see _networking_disabled()) never
+    opens the port, only the socket.
+    """
+    if os.name == "posix" and _networking_disabled(sandbox_dir):
+        socket_path = _configured_socket(sandbox_dir)
+        return socket_path is not None and _is_socket_listening(socket_path)
+    if not is_listening("localhost", port):
+        return False
+    if os.name != "posix":
+        return True
+    socket_path = _configured_socket(sandbox_dir)
+    return socket_path is None or _is_socket_listening(socket_path)
+
+
+def _is_listening_anywhere(port, sandbox_dir):
+    """Whether the instance still accepts connections on any of its endpoints.
+
+    Checks the socket too: a server running without networking (see
+    _networking_disabled()) has no port to close, and the option file may have
+    changed since it was started, so it cannot tell which endpoints it opened.
+    """
+    if is_listening("localhost", port):
+        return True
+    if os.name != "posix":
+        return False
+    socket_path = _configured_socket(sandbox_dir)
+    return socket_path is not None and _is_socket_listening(socket_path)
+
+
 def _wait_until(predicate, timeout):
     """Poll predicate() once per second until it is True or timeout elapses."""
     waited = 0
@@ -226,16 +337,23 @@ def _write_vendor(sandbox_dir, vendor):
 def _vendor_label(sandbox_dir):
     """Human-readable vendor of the sandbox for user-facing messages.
 
-    Read from the marker written at deploy time. Sandboxes created before
-    MySQL support (and any without a readable marker) were always MariaDB, so
-    that is the fallback.
+    See _read_vendor().
+    """
+    return _VENDOR_LABELS.get(_read_vendor(sandbox_dir),
+                              _VENDOR_LABELS[_VENDOR_MARIADB])
+
+
+def _read_vendor(sandbox_dir):
+    """Vendor recorded for the sandbox at deploy time.
+
+    Sandboxes created before MySQL support (and any without a readable marker)
+    were always MariaDB, so that is the fallback.
     """
     try:
         with open(_vendor_file(sandbox_dir)) as f:
-            vendor = f.read().strip()
+            return f.read().strip() or _VENDOR_MARIADB
     except OSError:
-        vendor = _VENDOR_MARIADB
-    return _VENDOR_LABELS.get(vendor, _VENDOR_LABELS[_VENDOR_MARIADB])
+        return _VENDOR_MARIADB
 
 
 def _version_file(sandbox_dir):
@@ -284,6 +402,18 @@ def _pid_path(sandbox_dir, port):
 
 def _datadir(sandbox_dir):
     return os.path.join(sandbox_dir, "sandboxdata")
+
+
+def _tmpdir(sandbox_dir):
+    """The server's private tmpdir, kept inside the sandbox directory.
+
+    Every server deletes all '#sql*' files in its tmpdir at startup (MariaDB's
+    and MySQL's mysql_rm_tmp_tables(), also run by --bootstrap and by the data
+    directory initialization). Sandboxes sharing the system temp directory
+    would therefore wipe the internal temporary tables of any other sandbox
+    that happens to be running a query when one of them starts.
+    """
+    return os.path.join(sandbox_dir, "tmp")
 
 
 def _start_script_path(sandbox_dir):
@@ -527,6 +657,15 @@ def _boilerplate_dir(base, version):
     return os.path.join(base, "{0}-{1}".format(_BOILERPLATE_PREFIX, version))
 
 
+def _boilerplate_base(sandbox_base):
+    """Where the boilerplates live: $MARIADB_SANDBOX_BOILERPLATE_DIR when set,
+    otherwise the sandbox base dir."""
+    override = os.environ.get(BOILERPLATE_DIR_ENV)
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return sandbox_base
+
+
 def _init_data_dir(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
     """Bootstrap a data directory in 'datadir' for the given server vendor.
 
@@ -576,8 +715,11 @@ def _init_data_dir(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
                 "--auth-root-authentication-method=normal",
                 "--skip-test-db"]
     if uses_cnf:
-        _write_option_file(cnf, {"mysqld": dict({"datadir":
-                                 datadir.replace("\\", "/")}, **innodb_opts)})
+        tmpdir = _tmpdir(os.path.dirname(datadir))
+        os.makedirs(tmpdir, exist_ok=True)
+        _write_option_file(cnf, {"mysqld": dict({
+            "datadir": datadir.replace("\\", "/"),
+            "tmpdir": tmpdir.replace("\\", "/")}, **innodb_opts)})
     _log("debug", "Initializing data dir: {0}".format(" ".join(args)))
     result = subprocess.run(args, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT)
@@ -608,6 +750,27 @@ def _clean_boilerplate_data(datadir):
             pass
 
 
+def _boilerplate_is_complete(bp_dir, version):
+    """True if 'bp_dir' holds a finished boilerplate for this server version.
+
+    The version stamp is written last, so its absence means the build did not
+    finish. That case has to be told apart from a finished one by the stamp
+    alone: an interrupted 'mariadb-install-db' leaves a data dir which looks
+    populated - 'mysql', 'performance_schema' and 'sys' are all there - but
+    holds no tables, and a sandbox copied from it dies on start with
+    "Can't open and lock privilege tables: Table 'mysql.db' doesn't exist".
+    """
+    try:
+        with open(os.path.join(bp_dir, "version.txt")) as f:
+            if f.read().strip() != version:
+                return False
+    except OSError:
+        return False
+
+    bp_data = _datadir(bp_dir)
+    return os.path.isdir(bp_data) and bool(os.listdir(bp_data))
+
+
 def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
                          innodb_opts):
     """Ensure a per-version boilerplate data dir exists; return its path.
@@ -620,19 +783,13 @@ def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
     version = _version_token(mariadbd, vendor)
     bp_dir = _boilerplate_dir(base, version)
     bp_data = _datadir(bp_dir)
-    version_file = os.path.join(bp_dir, "version.txt")
 
-    # Reuse only if the boilerplate is complete and matches the server version.
-    if os.path.isdir(bp_data) and os.path.isfile(version_file):
-        try:
-            with open(version_file) as f:
-                if f.read().strip() == version and os.listdir(bp_data):
-                    _log("debug", "Reusing sandbox boilerplate at {0}".format(
-                        bp_dir))
-                    return bp_data
-        except OSError:
-            pass
-        # Incomplete or mismatched: rebuild it.
+    # Reuse only a complete boilerplate for this server version; anything else
+    # is stale and gets removed rather than trusted.
+    if _boilerplate_is_complete(bp_dir, version):
+        _log("debug", "Reusing sandbox boilerplate at {0}".format(bp_dir))
+        return bp_data
+    if os.path.exists(bp_dir):
         shutil.rmtree(bp_dir, ignore_errors=True)
 
     print("Preparing sandbox boilerplate for {0} (one-time per version)..."
@@ -651,15 +808,18 @@ def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
 
-    # Publish atomically. If another deployment won the race, reuse theirs.
-    if os.path.isdir(bp_data):
+    # Publish atomically. If another deployment won the race, reuse theirs -
+    # but only a complete one, so a leftover data dir cannot outrank the
+    # boilerplate we just built.
+    if _boilerplate_is_complete(bp_dir, version):
         shutil.rmtree(tmp_dir, ignore_errors=True)
     else:
+        shutil.rmtree(bp_dir, ignore_errors=True)
         try:
             os.rename(tmp_dir, bp_dir)
         except OSError:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            if not os.path.isdir(bp_data):
+            if not _boilerplate_is_complete(bp_dir, version):
                 raise
     return bp_data
 
@@ -768,7 +928,10 @@ def _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts, auth_plugin):
         "'$.plugin', '{0}', '$.authentication_string', '') "
         "WHERE User = 'root' AND Host IN ({1});\n".format(auth_plugin, hosts))
 
-    args = [mariadbd, "--no-defaults", "--datadir={0}".format(datadir)]
+    tmpdir = _tmpdir(os.path.dirname(datadir))
+    os.makedirs(tmpdir, exist_ok=True)
+    args = [mariadbd, "--no-defaults", "--datadir={0}".format(datadir),
+            "--tmpdir={0}".format(tmpdir)]
     args += ["--{0}={1}".format(k.replace("_", "-"), v)
              for k, v in innodb_opts.items()]
     args.append("--bootstrap")
@@ -974,6 +1137,8 @@ DEFAULTS_FILE={cnf}
 PID_FILE={pidfile}
 
 echo 'Starting MariaDB sandbox...'
+# The option file points the server at this private tmpdir; it must exist.
+mkdir -p {tmpdir}
 export MYSQLD_RESTART_EXIT=16
 # Run the server (and its restart loop) detached in the background so the
 # terminal returns immediately. Output is redirected and the job is disowned so
@@ -1030,6 +1195,8 @@ REM Re-launch ourselves detached (start /B) on the first invocation so the
 REM terminal returns immediately; the restart loop then runs in the background.
 if "%~1"=="--_bg" goto :loop
 echo Starting MariaDB sandbox...
+REM The option file points the server at this private tmpdir; it must exist.
+if not exist "{tmpdir}" mkdir "{tmpdir}"
 start "MariaDB sandbox" /B "%~f0" --_bg
 echo MariaDB sandbox started in the background.
 EXIT /B 0
@@ -1070,18 +1237,21 @@ def _write_scripts(sandbox_dir, port, mariadbd):
     """
     cnf = _cnf_path(sandbox_dir)
     pidfile = _pid_path(sandbox_dir, port)
+    tmpdir = _tmpdir(sandbox_dir)
     start_path = _start_script_path(sandbox_dir)
     stop_path = _stop_script_path(sandbox_dir)
 
     if os.name == "nt":
         start = _WIN_START_SCRIPT.format(mariadbd=os.path.normpath(mariadbd),
-                                         cnf=os.path.normpath(cnf))
+                                         cnf=os.path.normpath(cnf),
+                                         tmpdir=os.path.normpath(tmpdir))
         stop = _WIN_STOP_SCRIPT.format(shell=os.path.normpath(executable),
                                        port=port)
     else:
         start = _UNIX_START_SCRIPT.format(mariadbd=shlex.quote(mariadbd),
                                           cnf=shlex.quote(cnf),
-                                          pidfile=shlex.quote(pidfile))
+                                          pidfile=shlex.quote(pidfile),
+                                          tmpdir=shlex.quote(tmpdir))
         stop = _UNIX_STOP_SCRIPT.format(pidfile=shlex.quote(pidfile))
 
     for path, content in ((start_path, start), (stop_path, stop)):
@@ -1110,6 +1280,8 @@ def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
         "basedir": basedir.replace("\\", "/"),
         "datadir": datadir.replace("\\", "/"),
         "log_error": os.path.join(datadir, "error.log").replace("\\", "/"),
+        # A private tmpdir, see _tmpdir(). The start scripts create it.
+        "tmpdir": _tmpdir(sandbox_dir).replace("\\", "/"),
         "performance_schema": "ON",
     }
     # Only Windows lacks Unix domain sockets: there --socket merely names a named
@@ -1377,8 +1549,9 @@ def create_sandbox(port, options):
 
     # 1) Ensure the per-version boilerplate exists (bootstrapped only once),
     #    then deploy this instance by copying its initialized data directory.
-    boilerplate_data = _prepare_boilerplate(base, install_db, basedir, mariadbd,
-                                            vendor, innodb_opts)
+    boilerplate_data = _prepare_boilerplate(_boilerplate_base(base), install_db,
+                                            basedir, mariadbd, vendor,
+                                            innodb_opts)
 
     datadir = _datadir(sandbox_dir)
     try:
@@ -1459,7 +1632,7 @@ def create_sandbox(port, options):
     # 4) Start the server (root still has no password at this point).
     print("Starting {0} sandbox instance...".format(label))
     _start_server(sandbox_dir)
-    if not _wait_until(lambda: is_listening("localhost", port), timeout):
+    if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
         raise Error("Timeout waiting for the {0} sandbox on port {1} to "
                     "start. Check the error log at '{2}'.".format(
                         label, port, os.path.join(datadir, "error.log")))
@@ -1514,7 +1687,7 @@ def start_sandbox(port, options):
     label = _vendor_label(sandbox_dir)
     print("Starting {0} sandbox instance on port {1}...".format(label, port))
     _start_server(sandbox_dir)
-    if not _wait_until(lambda: is_listening("localhost", port), timeout):
+    if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
         raise Error("Timeout waiting for the {0} sandbox on port {1} to "
                     "start. Check the error log at '{2}'.".format(
                         label, port,
@@ -1579,7 +1752,8 @@ def stop_sandbox(port, options):
             except Exception:
                 pass
 
-    if not _wait_until(lambda: not is_listening("localhost", port), timeout):
+    if not _wait_until(lambda: not _is_listening_anywhere(port, sandbox_dir),
+                       timeout):
         raise Error("Timeout waiting for the {0} sandbox on port {1} to "
                     "stop. You may need to use kill().".format(label, port))
 

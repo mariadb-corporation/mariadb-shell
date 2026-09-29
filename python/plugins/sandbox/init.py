@@ -71,7 +71,9 @@ def deploy(port, options=None):
     deployment for a given server version creates a boilerplate under the
     sandbox directory; later deployments of the same version are created by
     copying that initialized data directory, so only separate data directories
-    are produced.
+    are produced. Set the MARIADB_SANDBOX_BOILERPLATE_DIR environment variable
+    to keep the boilerplates in another directory instead, which lets
+    deployments to different sandbox directories share them.
 
     A start and a stop script are written into the sandbox directory. They
     capture the absolute path to the server binary used for the deployment and
