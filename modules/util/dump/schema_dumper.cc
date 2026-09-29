@@ -51,13 +51,16 @@
 // MariaDB's my_sys.h/m_string.h need my_bool (mysql.h) and the my_global.h
 // typedefs (uchar, longlong, DBUG_ASSERT) first; m_ctype.h is at the include
 // root rather than under mysql/strings/. m_ctype.h's CHARSET_INFO uses an
-// anonymous struct inside an anonymous union, which Clang flags as a GNU
-// extension; these are Clang diagnostic names (GCC would error on them under
-// -Werror=pragmas), so the suppression is Clang-only.
+// anonymous struct inside an anonymous union, which both compilers reject under
+// -Werror -Wpedantic. Clang names the diagnostics individually (GCC would error
+// on those names under -Werror=pragmas); GCC only has -Wpedantic itself.
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 #pragma clang diagnostic ignored "-Wnested-anon-types"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 #include <mysql.h>
 
@@ -66,6 +69,8 @@
 #include <m_ctype.h>
 #if defined(__clang__)
 #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
 #endif
 #include "my_sys.h"
 #else

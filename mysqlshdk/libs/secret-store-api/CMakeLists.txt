@@ -56,8 +56,5 @@ if(WITH_TESTS)
   target_link_libraries(link-test-mysql-secret-store-api
     mysql-secret-store-api
     ${MYSQLX_LIBRARIES}
-    # utils pulls in Mysys_thread_scope (mysys_thread.cc), which calls
-    # my_thread_init()/my_thread_end() from the server's mysys.
-    ${MYSQL_LIBRARIES}
   )
 endif()

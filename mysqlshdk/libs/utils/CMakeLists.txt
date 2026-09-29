@@ -125,7 +125,10 @@ ENDIF()
 add_convenience_library(utils ${utils_SOURCE} DEPENDENCIES ${utils_DEPS})
 ADD_STAN_TARGET(utils ${utils_SOURCE})
 
-target_link_libraries(utils db)
+# Mysys_thread_scope (mysys_thread.cc) calls my_thread_init()/my_thread_end()
+# from the server's mysys. Declaring it here puts mysys after utils on every
+# link line, which single-pass linkers (GNU ld) need.
+target_link_libraries(utils db ${MYSQL_LIBRARIES})
 
 if (WIN32)
   target_link_libraries(utils ws2_32)
