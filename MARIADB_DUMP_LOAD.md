@@ -2662,12 +2662,6 @@ neither was a test:
   `Can't open and lock privilege tables: Table 'mysql.db' doesn't exist`.
   `_boilerplate_is_complete()` now decides both, and six unit tests in
   `test_unit_runtime.py` pin it.
-- **`testutil.import_data()` needs a working client binary.** It shells out to
-  `mysql`/`mariadb` from `PATH` to load the SQL fixtures, and the client in the
-  MariaDB tarballs links `libgnutls`, which was missing locally — every suite died
-  in its Setup chunk. An environment fix (`brew install gnutls` here), but worth
-  knowing: the *server* binaries do not need it, so sandboxes deployed fine while
-  every suite failed.
 
 ### 21.1 `__server_is_maria_db` — the gate the scripts were missing
 

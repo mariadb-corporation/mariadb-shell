@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <regex>
 #include <system_error>
@@ -70,6 +71,7 @@
 #include "mysqlshdk/libs/utils/syslog_system.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_mysql_parsing.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_process.h"
@@ -951,7 +953,8 @@ void Testutils::dump_data(const std::string &uri, const std::string &path,
  * @param path filename of the dump file to write to
  * @param defaultSchema (optional) Default schema name to use during import.
  *
- * Loads a SQL script from a file using mysql cli.
+ * Executes the SQL script in the file, statement by statement, stopping at
+ * the first error.
  */
 #if DOXYGEN_JS
 Undefined Testutils::importData(String uri, String path, String defaultSchema,
@@ -968,81 +971,65 @@ void Testutils::import_data(const std::string &uri, const std::string &path,
   mysqlshdk::db::replay::No_replay dont_record;
   if (_skip_server_interaction) return;
 
-  // use mysql for now, until we support efficient import internally
-#ifdef MARIADB_BUILD
-  // MariaDB installs its client as "mariadb" ("mysql" is an optional symlink),
-  // so prefer it and fall back to a mysql client
-  std::string mysql = shcore::path::search_stdpath("mariadb");
-  if (mysql.empty()) mysql = shcore::path::search_stdpath("mysql");
-  if (mysql.empty()) {
-    throw std::runtime_error(
-        "neither mariadb nor mysql executable found in PATH");
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error(path + ": Input file does not exist");
   }
-#else
-  std::string mysql = shcore::path::search_stdpath("mysql");
-  if (mysql.empty()) {
-    throw std::runtime_error("mysql executable not found in PATH");
-  }
-#endif  // MARIADB_BUILD
 
   auto options = mysqlshdk::db::Connection_options(uri);
-  std::string sport =
-      options.has_port() ? std::to_string(options.get_port()) : "3306";
-  std::vector<const char *> argv;
-  argv.push_back(mysql.c_str());
-  argv.push_back("-u");
-  argv.push_back(options.get_user().c_str());
-  argv.push_back("-h");
-  argv.push_back(options.get_host().c_str());
-  std::string password;
-  if (options.has_password()) {
-    password = "--password=" + options.get_password();
-    // NOTE: If this ever becomes a public (non-test) function, pwd passing must
-    // be done via stdin or temporary file
-    argv.push_back(password.c_str());
-  }
-  if (options.has_port()) {
-    argv.push_back("--protocol=TCP");
-    argv.push_back("-P");
-    argv.push_back(sport.c_str());
-  }
-  std::string defcharset;
-  if (!default_charset.empty()) {
-    defcharset = "--default-character-set=" + default_charset;
-    argv.push_back(defcharset.c_str());
-  }
-  if (!default_schema.empty()) argv.push_back(default_schema.c_str());
+  if (!default_schema.empty()) options.set_schema(default_schema);
 
-  // in case we're loading using >=9.0.0 mysql into a <9.0.0 server, use our
-  // plugin directory, so that mysql_native_password plugin is available
-  std::string plugin_dir_opt;
-  if (const auto plugin_dir = shcore::get_default_mysql_plugin_dir();
-      !plugin_dir.empty()) {
-    plugin_dir_opt = "--plugin-dir=";
-    plugin_dir_opt += plugin_dir;
-    argv.push_back(plugin_dir_opt.c_str());
-  }
+  const auto session = mysqlshdk::db::mysql::Session::create();
+  session->connect(options);
+  shcore::on_leave_scope close_session([&session]() { session->close(); });
 
-  if (g_test_trace_scripts > 0) {
-    std::cerr << shcore::str_join(argv, " ") << "\n";
-  }
-  argv.push_back(nullptr);
+  if (!default_charset.empty()) session->set_character_set(default_charset);
 
-  shcore::Process dump(&argv[0]);
-#ifdef _WIN32
-  dump.set_create_process_group();
-#endif  // _WIN32
-  dump.enable_reader_thread();
-  dump.redirect_file_to_stdin(path);
-  dump.start();
+  const auto script = shcore::path::basename(path);
+  mysqlshdk::utils::Sql_splitter *splitter = nullptr;
 
-  const auto rc = dump.wait();
+  mysqlshdk::utils::iterate_sql_stream(
+      &file, 1024 * 64,
+      [&](std::string_view stmt, std::string_view, size_t line, size_t) {
+        if (g_test_trace_scripts > 0) {
+          std::cerr << script << ":" << line << ": " << stmt << "\n";
+        }
 
-  if (rc != 0) {
-    throw std::runtime_error(shcore::path::basename(mysql) +
-                             " exited with code " + std::to_string(rc) + ": " +
-                             dump.read_all());
-  }
+        try {
+          // drain every result set, so an error in any of them is reported
+          const auto result = session->querys(stmt.data(), stmt.size(), true);
+          do {
+            while (result->fetch_one()) {
+            }
+          } while (result->next_resultset());
+        } catch (const std::exception &e) {
+          throw std::runtime_error(shcore::str_format(
+              "%s:%zu: %s", script.c_str(), line, e.what()));
+        }
+
+        // the server does not always report sql_mode changes (MariaDB never
+        // does), and the splitter needs to know how to handle quotes
+        constexpr std::string_view k_sql_mode = "sql_mode";
+        if (std::search(stmt.begin(), stmt.end(), k_sql_mode.begin(),
+                        k_sql_mode.end(), [](char a, char b) {
+                          return std::tolower(static_cast<unsigned char>(a)) ==
+                                 b;
+                        }) != stmt.end()) {
+          session->refresh_sql_mode();
+          splitter->set_ansi_quotes(session->ansi_quotes_enabled());
+          splitter->set_no_backslash_escapes(
+              session->no_backslash_escapes_enabled());
+        }
+
+        return true;
+      },
+      [&script](std::string_view err) {
+        throw std::runtime_error(shcore::str_format(
+            "%s: %.*s", script.c_str(), static_cast<int>(err.size()),
+            err.data()));
+      },
+      session->ansi_quotes_enabled(), session->no_backslash_escapes_enabled(),
+      session->dollar_quoted_strings(), nullptr, &splitter);
 }
 #ifdef HAVE_ADMIN_API
 //!<  @name InnoDB Cluster Utilities
