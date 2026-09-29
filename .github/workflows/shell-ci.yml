@@ -185,7 +185,7 @@ jobs:
       - name: Execute Unit Tests
         if: env.RUN_TESTS == 'true'
         run: |
-          python3 scripts/run_unit_tests.py -t ~/.cache/ci/test-execution-times.txt --binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell -s Shell_scripted/Auto_script_py --gtest_filter="-*Threaded_file*"
+          python3 scripts/run_unit_tests.py -t test-execution-times.txt --binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell --gtest_filter="-*Threaded_file*"
           python3 scripts/plot_execution_plan.py
           cp test-execution-times.txt ~/.cache/ci
 

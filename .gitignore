@@ -16,3 +16,6 @@ __pycache__/
 .codex/
 .agents/
 .release-prep/
+unittest/rut-filter
+unittest/test-execution-times*.txt
+unittest/test-chunk-times.txt
