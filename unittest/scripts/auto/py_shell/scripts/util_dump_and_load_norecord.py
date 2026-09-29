@@ -404,7 +404,11 @@ session1.run_sql(schema_level_grant_with_escaped_percent)
 
 expected_accounts = snapshot_accounts(session1)
 
+# the root accounts are created by each sandbox's deploy, not by the load, and
+# a salted hash (caching_sha2_password) differs between two sandboxes even for
+# the same password
 del expected_accounts["root@%"]
+del expected_accounts["root@localhost"]
 
 #@<> BUG#34952027 - warnings for grants with excluded objects (1)
 shell.connect(__sandbox_uri1)
@@ -487,6 +491,7 @@ EXPECT_STDOUT_CONTAINS("Total duration: ")
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation, privileges for schema2 are included
 EXPECT_EQ(expected_accounts, actual_accounts)
 
@@ -516,6 +521,7 @@ expected_accounts[tested_user_key]["grants"] = [grant for grant in expected_acco
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation
 EXPECT_EQ(expected_accounts, actual_accounts)
 
@@ -534,6 +540,7 @@ del expected_accounts[tested_user_key]
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation
 EXPECT_EQ(expected_accounts, actual_accounts)
 

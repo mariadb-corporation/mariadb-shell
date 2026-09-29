@@ -601,7 +601,7 @@ session.run_sql("INSERT INTO !.! (`id`, `data`) VALUES (1, 1), (NULL, NULL);", [
 for table in [test_table_primary, test_table_unique, test_table_non_unique, test_table_no_index]:
     session.run_sql("ANALYZE TABLE !.!;", [ test_schema, table ])
 
-#@<> skipUpgradeChecks {__version_num < __mysh_version_num and __version_num < 80000 and not __server_is_maria_db}
+#@<> skipUpgradeChecks {__have_upgrade_checker and __version_num < __mysh_version_num and __version_num < 80000 and not __server_is_maria_db}
 # NOTE: this should be called for 8.0 to 8.4 upgrades (and others) too
 EXPECT_SUCCESS([], test_output_absolute, { "ocimds":True, "dryRun":True, "excludeSchemas":[test_schema, "xtest"], "users":False, "skipUpgradeChecks": True })
 EXPECT_STDOUT_CONTAINS("Skipping upgrade compatibility checks")
@@ -1819,7 +1819,8 @@ if __version_num < 80000:
 
 EXPECT_STDOUT_CONTAINS("Checking for potential upgrade issues.")
 
-if testutil.version_check(target_version, "<=", __version):
+# the note comes from the Upgrade Checker, which is not built everywhere
+if __have_upgrade_checker and testutil.version_check(target_version, "<=", __version):
     EXPECT_STDOUT_CONTAINS(f"NOTE: The value of 'targetVersion' option ({target_version}) is not greater than current version of the server ({__version}), skipping upgrade compatibility checks")
 
 # BUG#37154456 write compatibility issues and applied fixes to the log file

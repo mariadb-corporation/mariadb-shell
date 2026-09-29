@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +30,9 @@
 #include <optional>
 
 #include "mysqlshdk/libs/mysql/instance.h"
+#ifdef HAVE_ADMIN_API
 #include "mysqlshdk/libs/mysql/replication.h"
+#endif  // HAVE_ADMIN_API
 #include "mysqlshdk/libs/utils/logger.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 
@@ -175,6 +178,7 @@ std::string Gtid_range::str() const {
 }
 uint64_t Gtid_range::count() const noexcept { return end - begin + 1; }
 
+#ifdef HAVE_ADMIN_API
 Gtid_set Gtid_set::from_gtid_executed(
     const mysqlshdk::mysql::IInstance &server) {
   return Gtid_set(get_executed_gtid_set(server), true);
@@ -188,6 +192,7 @@ Gtid_set Gtid_set::from_received_transaction_set(
     const mysqlshdk::mysql::IInstance &server, std::string_view channel) {
   return Gtid_set(get_received_gtid_set(server, channel), true);
 }
+#endif  // HAVE_ADMIN_API
 
 Gtid_set &Gtid_set::normalize(const mysqlshdk::mysql::IInstance &server) {
   if (!std::exchange(m_normalized, true)) {

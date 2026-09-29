@@ -955,7 +955,9 @@ topology probing — the MariaDB detection lives here), `server_features.cc`
 (`LOAD DATA LOCAL INFILE`), `mysqlshdk/libs/storage/*` (local + remote backends),
 `mysqlshdk/libs/mysql/user_privileges.cc` (§4.2),
 `mysqlshdk/libs/mysql/mariadb_gtid.cc` (domain GTID positions, §15.2 — the
-counterpart of the MySQL-only `gtid_utils.cc`).
+counterpart of `gtid_utils.cc`, which is built for both vendors too, since either
+build can dump from a MySQL server; only its three `Gtid_set::from_*()` factories,
+which read through the AdminAPI's `replication.cc`, need `HAVE_ADMIN_API`).
 
 **Formerly gated by `HAVE_DUMP_AND_LOAD`** — `modules/util/copy/*` (dump+load in
 memory) now builds for both vendors; `modules/util/binlog/*` moved to its own
@@ -1061,8 +1063,8 @@ not. `ignoreVersion: true` was required for any MariaDB→MariaDB load.
   Removing it means editing ~33 conditionals and their validation files — test
   content, deferred to phase 6.
 - The dump/load unit-test suites are now compiled for MariaDB but **have not been
-  run**; `lock_service_t.cc` and `gtid_utils_t.cc` are excluded there (their
-  sources are MySQL-only).
+  run**; `lock_service_t.cc` is excluded there (its source is MySQL-only).
+  `gtid_utils_t.cc` runs on both builds and skips itself on a MariaDB server.
 - ~~`Load_dump_options::on_set_session` now issues one extra
   `SELECT @@GLOBAL.VERSION` on both vendors.~~ **Fixed in phase 1** — it went
   through `common::server_version()` purely to learn the vendor; that is now
@@ -2806,6 +2808,42 @@ against the MySQL default: they reset the binary log, read its position and size
 the binlog cache against `max_binlog_cache_size`. `deploy_sandbox_with_plugin()`
 therefore passes `log_bin=binlog` for a non-raw sandbox, where a test's own
 `log_bin` still wins. Raw sandboxes are left exactly as the server starts them.
+
+A MariaDB build can also be pointed at a **MySQL** server. The same function then
+does what the libmysqlclient build's `deploy_sandbox_from_boilerplate()` does for
+it, since every suite depends on it:
+
+- **Its own X port and socket** (`loose_mysqlx_port` = port × 10,
+  `loose_mysqlx_socket` in the sandbox directory). Without them every sandbox
+  after the first fails to bind 33060 and `/tmp/mysqlx.sock`.
+- **`component_classic_hashing` on 9.6+**, where WL#16956 moved `MD5()`, `SHA1()`
+  and `SHA()` into a component. Without it `md5_table()` fails with 1046 "No
+  database selected", because `sha1(` then resolves as a stored function.
+  `test_main.cc` installs it on the server the tests probe at startup, too.
+- **`keyring_file` translated to `component_keyring_file` on 8.4+**, which
+  removed the plugin. That configuration lives in files in the data directory,
+  and the data directory does not exist until the plugin has deployed the
+  sandbox. So the options are held back, and `configure_sandbox_keyring_file()`
+  writes the manifests and restarts the server. Passed through as they were,
+  they make mysqld abort at startup. The plugin's readiness check then connects
+  just as the server dies, and that shows up as a misleading
+  `2013 ... handshake ... system error: 35`.
+
+The same pairing found two gaps in the product itself:
+
+- **The dumper's GTID-based DDL check was compiled out of the MariaDB build.**
+  It verifies that no DDL ran during a dump by subtracting the two
+  `gtid_executed` sets server side. It was behind `#ifndef MARIADB_BUILD`, so a
+  MariaDB build dumping from a MySQL server with GTIDs on printed "not supported
+  yet against this server" and gave up on the check. It is now chosen by the
+  server (`supports_gtid_set_functions()`), and `gtid_utils.cc` is built for both
+  vendors.
+- **The sandbox plugin could not start a MySQL sandbox with `skip-grant-tables`.**
+  MySQL 8.0+ turns networking off along with the grant tables, so the TCP port
+  that the readiness check waited for never opened. The check now waits for the
+  socket alone when the option file disables networking. `stop` waits for every
+  endpoint to close, because the option file may have changed since the server
+  started.
 
 ### 21.8 Where the suites stand
 

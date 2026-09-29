@@ -1102,17 +1102,15 @@ TEST_F(Instance_cache_test, schema_collation) {
 
 TEST_F(Instance_cache_test, table_metadata) {
   const auto supports_secondary_engine =
-#ifndef MARIADB_BUILD
+      !target_server_is_maria_db() &&
       m_session->get_server_version().numeric() >= 80013;
-#else
-      false;
-#endif
 
   {
     // setup
-#ifdef MARIADB_BUILD
-    m_session->execute("INSTALL SONAME 'ha_blackhole';");
-#endif
+    if (target_server_is_maria_db()) {
+      // MariaDB ships BLACKHOLE as a plugin which is not loaded by default
+      m_session->execute("INSTALL SONAME 'ha_blackhole';");
+    }
 
     m_session->execute("CREATE SCHEMA first;");
     m_session->execute(
@@ -1615,14 +1613,14 @@ TEST_F(Instance_cache_test, table_indexes) {
         "UNIQUE INDEX b (id, data)"
         ");");
     // generated index
-#ifndef MARIADB_BUILD
-    // MariaDB does not allow primary keys in generated columns
-    m_session->execute(
-        "CREATE TABLE third.seventeen ("
-        "data INT, gen INT GENERATED ALWAYS AS (data + 2) STORED, "
-        "PRIMARY KEY (gen)"
-        ");");
-#endif
+    if (!target_server_is_maria_db()) {
+      // MariaDB does not allow primary keys in generated columns
+      m_session->execute(
+          "CREATE TABLE third.seventeen ("
+          "data INT, gen INT GENERATED ALWAYS AS (data + 2) STORED, "
+          "PRIMARY KEY (gen)"
+          ");");
+    }
     m_session->execute(
         "CREATE TABLE third.eighteen ("
         "data INT, gen INT GENERATED ALWAYS AS (data + 2) STORED, "
@@ -1708,9 +1706,9 @@ TEST_F(Instance_cache_test, table_indexes) {
     validate("third", "fourteen", {"data"}, false);
     validate("third", "fifteen", {"id", "data"}, false);
     validate("third", "sixteen", {"id", "data"}, false);
-#ifndef MARIADB_BUILD
-    validate("third", "seventeen", {"gen"}, true);
-#endif
+    if (!target_server_is_maria_db()) {
+      validate("third", "seventeen", {"gen"}, true);
+    }
     validate("third", "eighteen", {"gen"}, false);
     validate("third", "nineteen", {"id"}, true);
     validate("third", "twenty", {"id"}, true);
@@ -1721,8 +1719,13 @@ TEST_F(Instance_cache_test, table_indexes) {
   }
 }
 
-#ifndef MARIADB_BUILD
 TEST_F(Instance_cache_test, table_histograms) {
+  if (target_server_is_maria_db()) {
+    // MariaDB has no ANALYZE TABLE ... UPDATE HISTOGRAM, it builds its
+    // histograms with ANALYZE TABLE ... PERSISTENT FOR
+    SKIP_TEST("This test requires running against MySQL");
+  }
+
   if (_target_server_version < Version(8, 0, 0)) {
     SKIP_TEST("This test requires running against MySQL server version 8.0");
   }
@@ -1772,7 +1775,6 @@ TEST_F(Instance_cache_test, table_histograms) {
     validate("second", "three", {{"data", 25}, {"id", 25}});
   }
 }
-#endif
 
 #if defined(_WIN32) || defined(__APPLE__)
 TEST_F(Instance_cache_test, filter_schemas_and_tables_case_sensitive) {
@@ -3554,7 +3556,6 @@ TEST_F(Instance_cache_test, filter_routines) {
   }
 }
 
-#ifndef MARIADB_BUILD
 TEST_F(Instance_cache_test, filter_libraries) {
   if (!common::supports_library_ddl(common::server_version(
           _target_server_version, target_server_is_maria_db()))) {
@@ -3816,7 +3817,6 @@ TEST_F(Instance_cache_test, filter_libraries) {
     EXPECT_LIBRARIES(cache, "third", {"two"});
   }
 }
-#endif
 
 // A MariaDB role is an object of its own, so an account filter which names a
 // user does not name the roles granted to it - and those roles are not a

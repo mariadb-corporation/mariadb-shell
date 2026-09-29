@@ -170,10 +170,9 @@ if(WITH_TESTS)
       # for MariaDB (see MARIADB_PORT.md §5), so this test has nothing to load.
       # This is a build-artifact concern, not an AdminAPI/X-protocol feature gate.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/mysqlshdk/libs/yparser/parser_t.cc")
-      # gtid_utils/lock_service are MySQL-only sources (see
-      # mysqlshdk/libs/mysql/CMakeLists.txt), so their tests have nothing to
-      # link against.
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/gtid_utils_t.cc")
+      # lock_service is a MySQL-only source (see
+      # mysqlshdk/libs/mysql/CMakeLists.txt), so its test has nothing to link
+      # against.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/lock_service_t.cc")
     endif()
 

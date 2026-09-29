@@ -937,11 +937,9 @@ TEST_F(User_privileges_test, validate_role_privileges_direct) {
   //  - write_role -> create_role
   session->execute("GRANT read_role TO test_user");
   session->execute("GRANT create_role TO test_user");
-#ifndef MARIADB_BUILD
-  session->execute("SET DEFAULT ROLE create_role TO test_user");
-#else
-  session->execute("SET DEFAULT ROLE create_role FOR test_user");
-#endif
+  session->execute(target_server_is_maria_db()
+                       ? "SET DEFAULT ROLE create_role FOR test_user"
+                       : "SET DEFAULT ROLE create_role TO test_user");
   session->execute("GRANT read_role TO write_role");
   session->execute("GRANT write_role TO create_role");
 

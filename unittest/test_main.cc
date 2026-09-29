@@ -391,6 +391,14 @@ void detect_mysql_environment(int port, const char *pwd) {
       }
     }
   }
+
+  // MariaDB numbers its versions past 9.6 too, but keeps these functions
+  // built-in and has no components
+  if (session->get_server_vendor() == mysqlshdk::db::ServerVendor::MySQL &&
+      g_target_server_version >= mysqlshdk::utils::Version(9, 6, 0)) {
+    // WL#16956 has moved MD5(), SHA1() and SHA() to a component
+    try_query("INSTALL COMPONENT 'file://component_classic_hashing'");
+  }
 #endif  // MARIADB_BUILD
 
 #ifdef HAVE_X_PROTOCOL

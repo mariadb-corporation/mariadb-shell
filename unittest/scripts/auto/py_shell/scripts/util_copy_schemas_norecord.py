@@ -985,7 +985,10 @@ else:
 EXPECT_SUCCESS(__sandbox_uri2, { "ignoreVersion": True })
 EXPECT_STDOUT_CONTAINS(f"WARNING: {msg}")
 
-if __version_num == __mysh_version_num:
+# the notes come from the Upgrade Checker, which is not built everywhere
+if not __have_upgrade_checker:
+    pass
+elif __version_num == __mysh_version_num:
     EXPECT_STDOUT_CONTAINS(f"Source MySQL Server {__version} has the same version as the MySQL Shell, skipping upgrade compatibility checks")
 elif __version_num > __mysh_version_num:
     EXPECT_STDOUT_CONTAINS(f"Source MySQL Server {__version} is newer than the MySQL Shell, skipping upgrade compatibility checks")

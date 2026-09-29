@@ -6726,8 +6726,9 @@ void Dumper::validate_dump_consistency(
         // which of the transactions in the replayed binary log range ran
         // during the dump: MySQL subtracts the two uuid:N-M sets server side,
         // MariaDB - which has no GTID_SUBTRACT() - compares the two
-        // domain-server-sequence positions client side
-#ifndef MARIADB_BUILD
+        // domain-server-sequence positions client side. It is the server
+        // which decides, a Shell built against either vendor can dump from
+        // either server.
         if (common::supports_gtid_set_functions(m_server_version)) {
           // get GTID sets which were executed since the dump has started
           const auto set =
@@ -6764,7 +6765,6 @@ void Dumper::validate_dump_consistency(
               count);
           verified = true;
         }
-#endif  // !MARIADB_BUILD
 
         if (!verified && common::is_maria_db_dialect(m_server_version)) {
           using mysqlshdk::mysql::Mariadb_gtid_position;

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -81,10 +82,13 @@ class Gtid_set {
     return Gtid_set(std::move(gtid_set), true);
   }
 
+#ifdef HAVE_ADMIN_API
+  // read through replication.cc, which is built with the AdminAPI
   static Gtid_set from_gtid_executed(const mysqlshdk::mysql::IInstance &server);
   static Gtid_set from_gtid_purged(const mysqlshdk::mysql::IInstance &server);
   static Gtid_set from_received_transaction_set(
       const mysqlshdk::mysql::IInstance &server, std::string_view channel);
+#endif  // HAVE_ADMIN_API
 
   Gtid_set &normalize(const mysqlshdk::mysql::IInstance &server);
 

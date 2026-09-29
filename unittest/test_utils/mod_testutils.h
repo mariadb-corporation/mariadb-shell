@@ -535,6 +535,10 @@ class Testutils : public mysqlsh::Extensible_object {
   void deploy_sandbox_with_plugin(int port, const std::string &rootpass,
                                   const shcore::Dictionary_t &my_cnf_opts,
                                   const shcore::Dictionary_t &opts, bool raw);
+  void configure_sandbox_keyring_file(
+      int port, const std::shared_ptr<mysqlshdk::db::ISession> &session,
+      const shcore::Dictionary_t &keyring_opts,
+      const shcore::Dictionary_t &opts);
 #endif
   void change_sandbox_uuid(int port, const std::string &server_uuid);
   std::string get_sandbox_datadir(int port);

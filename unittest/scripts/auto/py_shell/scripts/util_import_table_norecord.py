@@ -40,7 +40,7 @@ EXPECT_THROWS(lambda: util.import_table(world_x_cities_dump, { "table": target_t
 
 
 
-#@<> Setup test {__have_x_protocol}
+#@<> Setup test {__have_x_protocol and not __server_is_maria_db}
 testutil.wait_sandbox_alive(xuri)
 shell.connect(xuri)
 #/ Create collection for json import
@@ -49,7 +49,9 @@ schema_ = session.create_schema(target_schema)
 schema_.create_collection('document_store')
 session.close()
 
-#@<> Setup test {__server_is_maria_db}
+#@<> Setup test {not __have_x_protocol or __server_is_maria_db}
+#/ Without X protocol - on the build or on the server - the collection's table is
+#/ created by hand instead
 testutil.wait_sandbox_alive(uri)
 shell.connect(uri)
 session.run_sql("DROP SCHEMA IF EXISTS " + target_schema)
@@ -91,7 +93,7 @@ EXPECT_STDOUT_CONTAINS("The 'local_infile' global system variable must be set to
 session.run_sql('SET GLOBAL local_infile = true')
 
 
-#@<> BUG#34582616 when global session is using X protocol, importTable should still work {__have_x_protocol}
+#@<> BUG#34582616 when global session is using X protocol, importTable should still work {__have_x_protocol and not __server_is_maria_db}
 shell.connect(xuri)
 
 EXPECT_NO_THROWS(lambda: util.import_table(world_x_cities_dump,

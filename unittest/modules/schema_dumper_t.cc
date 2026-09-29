@@ -65,6 +65,29 @@ namespace {
 
 #include "unittest/modules/mapped_collations.inc"
 
+// The expected DDL is what the server prints, so it is the server and not the
+// build which decides the variant.
+std::string by_vendor(const char *mysql, const char *mariadb) {
+  return tests::Shell_test_env::target_server_is_maria_db() ? mariadb : mysql;
+}
+
+// The collation_connection stored with a trigger, view, event or routine is the
+// one of the session which created it. A MariaDB server maps the utf8mb4
+// collation the client asks for in the handshake to its own default
+// (character_set_collations), MySQL keeps it, and the client libraries ask for
+// different ones.
+std::string conn_collation() {
+  if (tests::Shell_test_env::target_server_is_maria_db()) {
+    return "utf8mb4_uca1400_ai_ci";
+  }
+
+#ifdef MARIADB_BUILD
+  return "utf8mb4_general_ci";
+#else
+  return "utf8mb4_0900_ai_ci";
+#endif
+}
+
 std::string quote(const std::string &db, const std::string &object) {
   return shcore::quote_identifier(db) + "." + shcore::quote_identifier(object);
 }
@@ -177,19 +200,19 @@ class Schema_dumper_test : public Shell_core_test_wrapper {
     return session;
   }
 
-  void expect_output_eq(const char *res) {
+  void expect_output_eq(const std::string &res) {
     file->flush();
     file->close();
     EXPECT_EQ(res, testutil->cat_file(file_path));
   }
 
-  void expect_output_contains(std::vector<const char *> items,
+  void expect_output_contains(const std::vector<std::string> &items,
                               std::string *output = nullptr) {
     file->flush();
     file->close();
     auto out = testutil->cat_file(file_path);
     if (output != nullptr) *output = out;
-    for (const auto i : items) {
+    for (const auto &i : items) {
       EXPECT_THAT(out, HasSubstr(i));
     }
   }
@@ -247,15 +270,10 @@ TEST_F(Schema_dumper_test, dump_table) {
   wipe_all();
   if (_target_server_version < mysqlshdk::utils::Version(8, 0, 20)) return;
 
-#ifndef MARIADB_BUILD
-#define INT_TYPE_STR "int unsigned"
-#define COLLATE_STR ";\n"
-#else
-#define INT_TYPE_STR "int(10) unsigned"
-#define COLLATE_STR " COLLATE=latin1_swedish_ci;\n"
-#endif
+#define INT_TYPE_STR by_vendor("int unsigned", "int(10) unsigned")
+#define COLLATE_STR by_vendor(";\n", " COLLATE=latin1_swedish_ci;\n")
 
-  const char *res =
+  const std::string res =
       R"(
 --
 -- Table structure for table `at1`
@@ -266,11 +284,13 @@ DROP TABLE IF EXISTS `at1`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE IF NOT EXISTS `at1` (
   `t1_name` varchar(255) DEFAULT NULL,
-  `t1_id` )" INT_TYPE_STR
+  `t1_id` )" +
+      INT_TYPE_STR +
       R"( NOT NULL AUTO_INCREMENT,
   PRIMARY KEY (`t1_id`),
   KEY `t1_name` (`t1_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=1003 DEFAULT CHARSET=latin1)" COLLATE_STR
+) ENGINE=InnoDB AUTO_INCREMENT=1003 DEFAULT CHARSET=latin1)" +
+      COLLATE_STR +
       R"(/*!40101 SET character_set_client = @saved_cs_client */;
 )";
 
@@ -294,51 +314,47 @@ TEST_F(Schema_dumper_test, dump_table_with_trigger) {
   wipe_all();
   if (_target_server_version < mysqlshdk::utils::Version(8, 0, 20)) return;
 
-#ifndef MARIADB_BUILD
-#define TRG_INT "int"
-#define TRG_BIGINT "bigint"
-#define TRG_COLLATE "utf8mb4_0900_ai_ci"
-#define TRG_SQL_MODE_1                                                   \
-  "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
-  "ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
-#define TRG_SQL_MODE_2                                                  \
-  "STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
-  "ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_ENGINE_SUBSTITUTION"
-#define TRG1_HEAD "TRIGGER `trg1` BEFORE INSERT ON `t1` FOR EACH ROW begin"
-#define TRG2_HEAD "TRIGGER `trg2` BEFORE UPDATE ON `t1` FOR EACH ROW begin"
-#define TRG3_HEAD "TRIGGER `trg3` AFTER UPDATE ON `t1` FOR EACH ROW begin"
-#define TRG4_HEAD "TRIGGER `trg4` BEFORE INSERT ON `t2` FOR EACH ROW begin"
-#define DB_ENCRYPTION " /*!80016 DEFAULT ENCRYPTION='N' */"
-#define RET_COLLATE ""
-#define VW_OPEN "("
-#define VW_CLOSE ")"
-#define TRG_SQL_MODE_ANSI                                                      \
-  "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY," \
-  "ANSI"
-#else
-#define TRG_INT "int(11)"
-#define TRG_BIGINT "bigint(20)"
-#define TRG_COLLATE "utf8mb4_uca1400_ai_ci"
-#define TRG_SQL_MODE_1                                                  \
-  "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER," \
-  "NO_ENGINE_SUBSTITUTION"
-#define TRG_SQL_MODE_2                                                  \
-  "STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
-  "ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,"         \
-  "NO_ENGINE_SUBSTITUTION"
-#define TRG1_HEAD "trigger trg1 before insert on t1 for each row\nbegin"
-#define TRG2_HEAD "trigger trg2 before update on t1 for each row begin"
-#define TRG3_HEAD "trigger trg3 after update on t1 for each row\nbegin"
-#define TRG4_HEAD "trigger trg4 before insert on t2 for each row\nbegin"
-#define DB_ENCRYPTION ""
-#define RET_COLLATE " COLLATE utf8mb4_uca1400_ai_ci"
-#define VW_OPEN ""
-#define VW_CLOSE ""
-#define TRG_SQL_MODE_ANSI \
-  "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ANSI"
-#endif
+#define TRG_INT by_vendor("int", "int(11)")
+#define TRG_BIGINT by_vendor("bigint", "bigint(20)")
+#define TRG_COLLATE by_vendor("utf8mb4_0900_ai_ci", "utf8mb4_uca1400_ai_ci")
+#define CONN_COLLATE conn_collation()
+#define TRG_SQL_MODE_1                                                       \
+  by_vendor(                                                                 \
+      "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
+      "ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",                   \
+      "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,"  \
+      "NO_ENGINE_SUBSTITUTION")
+#define TRG_SQL_MODE_2                                                      \
+  by_vendor(                                                                \
+      "STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
+      "ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_ENGINE_SUBSTITUTION",      \
+      "STRICT_TRANS_TABLES,STRICT_ALL_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE," \
+      "ERROR_FOR_DIVISION_BY_ZERO,TRADITIONAL,NO_AUTO_CREATE_USER,"         \
+      "NO_ENGINE_SUBSTITUTION")
+#define TRG1_HEAD                                                      \
+  by_vendor("TRIGGER `trg1` BEFORE INSERT ON `t1` FOR EACH ROW begin", \
+            "trigger trg1 before insert on t1 for each row\nbegin")
+#define TRG2_HEAD                                                      \
+  by_vendor("TRIGGER `trg2` BEFORE UPDATE ON `t1` FOR EACH ROW begin", \
+            "trigger trg2 before update on t1 for each row begin")
+#define TRG3_HEAD                                                     \
+  by_vendor("TRIGGER `trg3` AFTER UPDATE ON `t1` FOR EACH ROW begin", \
+            "trigger trg3 after update on t1 for each row\nbegin")
+#define TRG4_HEAD                                                      \
+  by_vendor("TRIGGER `trg4` BEFORE INSERT ON `t2` FOR EACH ROW begin", \
+            "trigger trg4 before insert on t2 for each row\nbegin")
+#define DB_ENCRYPTION by_vendor(" /*!80016 DEFAULT ENCRYPTION='N' */", "")
+#define RET_COLLATE by_vendor("", " COLLATE utf8mb4_uca1400_ai_ci")
+#define VW_OPEN by_vendor("(", "")
+#define VW_CLOSE by_vendor(")", "")
+#define TRG_SQL_MODE_ANSI                                                 \
+  by_vendor(                                                              \
+      "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_" \
+      "GROUP_BY,"                                                         \
+      "ANSI",                                                             \
+      "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ANSI")
 
-  const char *res =
+  const std::string res =
       R"(
 --
 -- Table structure for table `t1`
@@ -348,9 +364,12 @@ DROP TABLE IF EXISTS `t1`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE IF NOT EXISTS `t1` (
-  `a` )" TRG_INT R"( DEFAULT NULL,
-  `b` )" TRG_BIGINT R"( DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=)" TRG_COLLATE R"(;
+  `a` )" +
+      TRG_INT + R"( DEFAULT NULL,
+  `b` )" +
+      TRG_BIGINT + R"( DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=)" +
+      TRG_COLLATE + R"(;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -363,12 +382,15 @@ CREATE TABLE IF NOT EXISTS `t1` (
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+      CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+      TRG_SQL_MODE_1 + R"(' */ ;
 /*!50032 DROP TRIGGER IF EXISTS `trg1` */;
 DELIMITER ;;
-/*!50003 CREATE DEFINER=`root`@`localhost` )" TRG1_HEAD R"(
+/*!50003 CREATE DEFINER=`root`@`localhost` )" +
+      TRG1_HEAD + R"(
   if new.a > 10 then
     set new.a := 10;
     set new.a := 11;
@@ -387,12 +409,15 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+      CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+      TRG_SQL_MODE_1 + R"(' */ ;
 /*!50032 DROP TRIGGER IF EXISTS `trg2` */;
 DELIMITER ;;
-/*!50003 CREATE DEFINER=`root`@`localhost` )" TRG2_HEAD R"(
+/*!50003 CREATE DEFINER=`root`@`localhost` )" +
+      TRG2_HEAD + R"(
   if old.a % 2 = 0 then set new.b := 12; end if;
 end */;;
 DELIMITER ;
@@ -408,12 +433,15 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+      CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_2 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+      TRG_SQL_MODE_2 + R"(' */ ;
 /*!50032 DROP TRIGGER IF EXISTS `trg3` */;
 DELIMITER ;;
-/*!50003 CREATE DEFINER=`root`@`localhost` )" TRG3_HEAD R"(
+/*!50003 CREATE DEFINER=`root`@`localhost` )" +
+      TRG3_HEAD + R"(
   if new.a = -1 then
     set @fired:= "Yes";
   end if;
@@ -434,8 +462,10 @@ DROP TABLE IF EXISTS `t2`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE IF NOT EXISTS `t2` (
-  `a` )" TRG_INT R"( DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=)" TRG_COLLATE R"(;
+  `a` )" +
+      TRG_INT + R"( DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=)" +
+      TRG_COLLATE + R"(;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -448,12 +478,15 @@ CREATE TABLE IF NOT EXISTS `t2` (
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+      CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_2 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+      TRG_SQL_MODE_2 + R"(' */ ;
 /*!50032 DROP TRIGGER IF EXISTS `trg4` */;
 DELIMITER ;;
-/*!50003 CREATE DEFINER=`root`@`localhost` )" TRG4_HEAD R"(
+/*!50003 CREATE DEFINER=`root`@`localhost` )" +
+      TRG4_HEAD + R"(
   if new.a > 10 then
     set @fired:= "No";
   end if;
@@ -481,7 +514,7 @@ TEST_F(Schema_dumper_test, dump_schema) {
   wipe_all();
   if (_target_server_version < mysqlshdk::utils::Version(8, 0, 20)) return;
 
-  const char *res =
+  const std::string res =
       R"(/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -498,8 +531,8 @@ TEST_F(Schema_dumper_test, dump_schema) {
 --
 
 -- begin database `mysqldump_test_db`
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE )" TRG_COLLATE
-      R"( */)" DB_ENCRYPTION R"(;
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE )" +
+      TRG_COLLATE + R"( */)" + DB_ENCRYPTION + R"(;
 -- end database `mysqldump_test_db`
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -527,7 +560,7 @@ TEST_F(Schema_dumper_test, dump_view) {
   EXPECT_TRUE(output_handler.std_err.empty());
   wipe_all();
   if (_target_server_version < mysqlshdk::utils::Version(8, 0, 20)) return;
-  const char *res =
+  const std::string res =
       R"(
 --
 -- Temporary view structure for view `v1`
@@ -579,9 +612,10 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = )" TRG_COLLATE R"( */;
-/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `v3`.`a` AS `a`,`v3`.`b` AS `b`,`v3`.`c` AS `c` from `v3` where )" VW_OPEN
-      R"(`v3`.`b` in (1,2,3,4,5,6,7))" VW_CLOSE R"( */;
+/*!50001 SET collation_connection      = )" +
+      CONN_COLLATE + R"( */;
+/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select `v3`.`a` AS `a`,`v3`.`b` AS `b`,`v3`.`c` AS `c` from `v3` where )" +
+      VW_OPEN + R"(`v3`.`b` in (1,2,3,4,5,6,7))" + VW_CLOSE + R"( */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -596,9 +630,11 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = )" TRG_COLLATE R"( */;
-/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v2` AS select `tv2`.`a` AS `a` from `tv2` where )" VW_OPEN
-      R"(`tv2`.`a` like 'a%')" VW_CLOSE R"( WITH CASCADED CHECK OPTION */;
+/*!50001 SET collation_connection      = )" +
+      CONN_COLLATE + R"( */;
+/*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v2` AS select `tv2`.`a` AS `a` from `tv2` where )" +
+      VW_OPEN + R"(`tv2`.`a` like 'a%')" + VW_CLOSE +
+      R"( WITH CASCADED CHECK OPTION */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;
@@ -613,7 +649,8 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = )" TRG_COLLATE R"( */;
+/*!50001 SET collation_connection      = )" +
+      CONN_COLLATE + R"( */;
 /*!50001 CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v3` AS select `tv1`.`a` AS `a`,`tv1`.`b` AS `b`,`tv1`.`c` AS `c` from `tv1` */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -645,9 +682,11 @@ DELIMITER ;;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;;
 /*!50003 SET character_set_client  = utf8mb4 */ ;;
 /*!50003 SET character_set_results = utf8mb4 */ ;;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;;
 /*!50003 SET @saved_time_zone      = @@time_zone */ ;;
 /*!50003 SET time_zone             = 'SYSTEM' */ ;;
 /*!50106 CREATE DEFINER=`root`@`localhost` EVENT IF NOT EXISTS `ee1` ON SCHEDULE AT '2035-12-31 20:01:23' ON COMPLETION NOT PRESERVE ENABLE DO set @a=5 */ ;;
@@ -668,9 +707,11 @@ DELIMITER ;;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;;
 /*!50003 SET character_set_client  = utf8mb4 */ ;;
 /*!50003 SET character_set_results = utf8mb4 */ ;;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;;
 /*!50003 SET @saved_time_zone      = @@time_zone */ ;;
 /*!50003 SET time_zone             = 'SYSTEM' */ ;;
 /*!50106 CREATE DEFINER=`root`@`localhost` EVENT IF NOT EXISTS `ee2` ON SCHEDULE AT '2029-12-31 21:01:23' ON COMPLETION NOT PRESERVE ENABLE DO set @a=5 */ ;;
@@ -710,12 +751,15 @@ TEST_F(Schema_dumper_test, dump_routines) {
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`localhost` FUNCTION `bug9056_func1`(a INT, b INT) RETURNS )" TRG_INT
-      R"(
+CREATE DEFINER=`root`@`localhost` FUNCTION `bug9056_func1`(a INT, b INT) RETURNS )" +
+          TRG_INT +
+          R"(
 RETURN a+b ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -732,12 +776,15 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`localhost` FUNCTION `bug9056_func2`(f1 char binary) RETURNS char(1) CHARSET utf8mb4)" RET_COLLATE
-      R"(
+CREATE DEFINER=`root`@`localhost` FUNCTION `bug9056_func2`(f1 char binary) RETURNS char(1) CHARSET utf8mb4)" +
+          RET_COLLATE +
+          R"(
 begin
   set f1= concat( 'hello', f1 );
   return f1;
@@ -757,9 +804,11 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_ANSI R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_ANSI + R"(' */ ;
 DELIMITER ;;
 CREATE DEFINER="root"@"localhost" PROCEDURE "a'b"()
 select 1 ;;
@@ -778,9 +827,11 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `bug9056_proc1`(IN a INT, IN b INT, OUT c INT)
 BEGIN SELECT a+b INTO c; end ;;
@@ -799,9 +850,11 @@ DELIMITER ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
 /*!50003 SET character_set_client  = utf8mb4 */ ;
 /*!50003 SET character_set_results = utf8mb4 */ ;
-/*!50003 SET collation_connection  = )" TRG_COLLATE R"( */ ;
+/*!50003 SET collation_connection  = )" +
+          CONN_COLLATE + R"( */ ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;
 DELIMITER ;;
 CREATE DEFINER=`root`@`localhost` PROCEDURE `bug9056_proc2`(OUT a INT)
 BEGIN
@@ -839,7 +892,8 @@ TEST_F(Schema_dumper_test, dump_libraries) {
 -- begin library `mysqldump_test_db`.`a'b`
 DROP LIBRARY IF EXISTS `a'b`;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_ANSI R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_ANSI + R"(' */ ;
 DELIMITER ;;
 CREATE LIBRARY "a'b"
     LANGUAGE JAVASCRIPT
@@ -856,7 +910,8 @@ DELIMITER ;
 -- begin library `mysqldump_test_db`.`lib1`
 DROP LIBRARY IF EXISTS `lib1`;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
-/*!50003 SET sql_mode              = ')" TRG_SQL_MODE_1 R"(' */ ;
+/*!50003 SET sql_mode              = ')" +
+          TRG_SQL_MODE_1 + R"(' */ ;
 DELIMITER ;;
 CREATE LIBRARY `lib1`
     LANGUAGE JAVASCRIPT
@@ -1212,9 +1267,12 @@ TEST_F(Schema_dumper_test, dump_filtered_grants) {
       "'pwd';");
   session->execute("GRANT SELECT ON * . * TO 'dumptestuser'@'localhost';");
 
-#ifndef MARIADB_BUILD
+  // partial revokes and these role grants are MySQL 8.0.20+ features
+  const bool test_partial_revokes =
+      !target_server_is_maria_db() &&
+      _target_server_version >= mysqlshdk::utils::Version(8, 0, 20);
   std::string partial_revoke = "ON";
-  if (_target_server_version >= mysqlshdk::utils::Version(8, 0, 20)) {
+  if (test_partial_revokes) {
     partial_revoke = session->query("show variables like 'partial_revokes';")
                          ->fetch_one()
                          ->get_string(1);
@@ -1240,7 +1298,6 @@ TEST_F(Schema_dumper_test, dump_filtered_grants) {
         "'da_dumper';");
     session->execute("GRANT 'da_dumper' TO 'dumptestuser'@'localhost';");
   }
-#endif
 
   auto sd = schema_dumper();
   sd.opt_mysqlaas = true;
@@ -1274,8 +1331,7 @@ TEST_F(Schema_dumper_test, dump_filtered_grants) {
     EXPECT_THAT(out, Not(HasSubstr("ALL PRIVILEGES")));
   }
 
-#ifndef MARIADB_BUILD
-  if (_target_server_version >= mysqlshdk::utils::Version(8, 0, 20)) {
+  if (test_partial_revokes) {
     const std::string da_dumper =
         "CREATE ROLE IF NOT EXISTS 'da_dumper'@'%';\n"
         "ALTER USER 'da_dumper'@'%' IDENTIFIED WITH "
@@ -1301,7 +1357,6 @@ TEST_F(Schema_dumper_test, dump_filtered_grants) {
             "CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, "
             "CREATE USER, EVENT, TRIGGER ON `mysql`.* FROM `dave`@`%`;"));
   }
-#endif
 
   const std::string dumptestuser =
       "CREATE USER IF NOT EXISTS 'dumptestuser'@'localhost'";
@@ -1329,14 +1384,12 @@ TEST_F(Schema_dumper_test, dump_filtered_grants) {
   session->execute("drop user 'admin2'@'localhost';");
   session->execute("drop user 'dumptestuser'@'localhost';");
 
-#ifndef MARIADB_BUILD
-  if (_target_server_version >= mysqlshdk::utils::Version(8, 0, 20)) {
+  if (test_partial_revokes) {
     session->execute("DROP ROLE da_dumper");
     session->execute("DROP USER `dave`@`%`");
     if (partial_revoke != "ON")
       session->execute("set global partial_revokes = 'OFF';");
   }
-#endif
 }
 
 TEST_F(Schema_dumper_test, dump_filtered_grants_super_priv) {
