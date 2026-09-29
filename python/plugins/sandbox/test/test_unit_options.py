@@ -96,6 +96,9 @@ def test_build_option_file_core_and_innodb_keys(sandboxlib):
     assert mysqld["port"] == 3310
     assert mysqld["basedir"] == "/opt/mariadb"
     assert mysqld["datadir"].endswith("/sandboxdata")
+    # Each sandbox has its own tmpdir inside the sandbox directory: servers
+    # sharing one delete each other's '#sql*' files when they start.
+    assert mysqld["tmpdir"] == "/sb/3310/tmp"
     # The server writes its own pid-file only on Windows; on POSIX the start
     # script owns it, so the option is intentionally absent there.
     if os.name == "nt":
@@ -179,3 +182,15 @@ def test_build_option_file_overrides_win_over_ssl(sandboxlib):
         {"ssl_cert": "/custom/cert.pem"}, _innodb(sandboxlib),
         _ssl_files())["mysqld"]
     assert mysqld["ssl_cert"] == "/custom/cert.pem"
+
+
+def test_start_script_creates_the_tmpdir(sandboxlib, tmp_path):
+    sandbox_dir = str(tmp_path / "3310")
+    os.makedirs(sandbox_dir)
+    with open(sandboxlib._write_scripts(sandbox_dir, 3310,
+                                        "/opt/mariadb/bin/mariadbd")) as f:
+        script = f.read()
+    # The option file names the tmpdir but the server does not create it; the
+    # harness starts sandboxes through this script, bypassing deploy/start.
+    assert sandboxlib._tmpdir(sandbox_dir) in script
+    assert "mkdir" in script

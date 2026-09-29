@@ -49,11 +49,28 @@ def test_path_helpers(sandboxlib):
     assert sandboxlib._socket_path(sb) == os.path.join(sb, "mysqld.sock")
     assert sandboxlib._pid_path(sb, 3310) == os.path.join(sb, "3310.pid")
     assert sandboxlib._datadir(sb) == os.path.join(sb, "sandboxdata")
+    assert sandboxlib._tmpdir(sb) == os.path.join(sb, "tmp")
 
 
 def test_boilerplate_dir(sandboxlib):
     got = sandboxlib._boilerplate_dir("/base", "11.4.2-MariaDB")
     assert got == os.path.join("/base", "myboilerplate-11.4.2-MariaDB")
+
+
+def test_boilerplate_base_defaults_to_sandbox_base(sandboxlib, monkeypatch):
+    monkeypatch.delenv(sandboxlib.BOILERPLATE_DIR_ENV, raising=False)
+    assert sandboxlib._boilerplate_base("/sandboxes") == "/sandboxes"
+
+
+def test_boilerplate_base_from_env(sandboxlib, monkeypatch, tmp_path):
+    monkeypatch.setenv(sandboxlib.BOILERPLATE_DIR_ENV, str(tmp_path / "shared"))
+    assert sandboxlib._boilerplate_base("/sandboxes") == str(tmp_path / "shared")
+
+
+def test_boilerplate_base_from_env_expands_user(sandboxlib, monkeypatch):
+    monkeypatch.setenv(sandboxlib.BOILERPLATE_DIR_ENV, "~/shared")
+    assert sandboxlib._boilerplate_base("/sandboxes") == os.path.join(
+        os.path.expanduser("~"), "shared")
 
 
 # --------------------------------------------------------------------------- #
