@@ -15,6 +15,11 @@
 
 """Renders an HTML chart from a test execution plan and timing file.
 
+run_unit_tests.py imports this module to draw the same chart into the report it
+writes at the end of a run, straight from the queues it just executed. Running
+this script is for the other case: looking at a plan on its own, from the files,
+without running anything.
+
 Draws one horizontal stacked bar per worker (from run_unit_tests.py's
 --list-groups / test-execution-plan.txt), sized by the summed execution time
 of the suites assigned to it. Each bar segment is one suite, so a single large
@@ -39,16 +44,19 @@ import zlib
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_unit_tests import TestTaskFactory  # noqa: E402  (path tweak above)
 
 _PLAN_LINE_RE = re.compile(r"^worker(\d+):\s*(.*)$")
+# A plan entry is a filter spec optionally suffixed with "[group N]" (see
+# run_unit_tests.py's _format_task_label), used when a filter spec is split
+# beyond one task per suite and needs its groups told apart.
+_SUITE_ENTRY_RE = re.compile(r"^(.+?)(?:\s\[group\s+(\d+)\])?$")
 
 _PALETTE = [
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
 ]
 _UNKNOWN_COLOR = "#d9d9d9"
+_FAILED_COLOR = "#c0392b"
 
 _BAR_HEIGHT = 32
 _BAR_GAP = 18
@@ -63,13 +71,20 @@ _FONT_SIZE = 12
 class Segment(NamedTuple):
     """One suite's contribution to a worker's bar."""
     suite: str
+    group_id: int  # 0 if the suite isn't split into groups
     duration_ms: float
     known: bool  # False if the suite had no entry in the timing file
+    failed: bool = False  # Only ever set when charting a finished run
+
+    @property
+    def label(self) -> str:
+        return f"{self.suite} [group {self.group_id}]" if self.group_id else self.suite
 
 
-def load_plan(filepath: Path) -> Dict[int, List[str]]:
-    """Parses a test-execution-plan.txt file into {worker_id: [suite, ...]}."""
-    plan: Dict[int, List[str]] = {}
+def load_plan(filepath: Path) -> Dict[int, List[Tuple[str, int]]]:
+    """Parses a test-execution-plan.txt file into
+    {worker_id: [(filter_spec, group_id), ...]}."""
+    plan: Dict[int, List[Tuple[str, int]]] = {}
     with open(filepath, "r", encoding="utf-8") as f:
         for lineno, raw_line in enumerate(f, start=1):
             line = raw_line.strip()
@@ -80,30 +95,39 @@ def load_plan(filepath: Path) -> Dict[int, List[str]]:
                 raise ValueError(f"{filepath}:{lineno}: could not parse line: {raw_line!r}")
             worker_id = int(match.group(1))
             suites_part = match.group(2).strip()
-            suites = [s.strip() for s in suites_part.split(",") if s.strip()]
-            plan[worker_id] = suites
+            entries: List[Tuple[str, int]] = []
+            for token in suites_part.split(","):
+                token = token.strip()
+                if not token:
+                    continue
+                entry_match = _SUITE_ENTRY_RE.match(token)
+                filter_spec = entry_match.group(1)
+                group_id = int(entry_match.group(2)) if entry_match.group(2) else 0
+                entries.append((filter_spec, group_id))
+            plan[worker_id] = entries
     return plan
 
 
 def build_worker_segments(
-    plan: Dict[int, List[str]],
-    times: Dict[str, float]
+    plan: Dict[int, List[Tuple[str, int]]],
+    times: Dict[Tuple[str, int], float]
 ) -> Dict[int, List[Segment]]:
     """Builds each worker's segment list, sorted with the largest suite first."""
     worker_segments: Dict[int, List[Segment]] = {}
-    for worker_id, suites in plan.items():
+    for worker_id, entries in plan.items():
         segments = [
-            Segment(suite, times.get(suite, 0.0), suite in times)
-            for suite in suites
+            Segment(suite, group_id, times.get((suite, group_id), 0.0),
+                    (suite, group_id) in times)
+            for suite, group_id in entries
         ]
         segments.sort(key=lambda s: s.duration_ms, reverse=True)
         worker_segments[worker_id] = segments
     return worker_segments
 
 
-def _suite_color(suite: str) -> str:
+def _suite_color(suite: str, group_id: int) -> str:
     """Deterministic (across runs) color pick, independent of PYTHONHASHSEED."""
-    idx = zlib.crc32(suite.encode("utf-8")) % len(_PALETTE)
+    idx = zlib.crc32(f"{suite}#{group_id}".encode("utf-8")) % len(_PALETTE)
     return _PALETTE[idx]
 
 
@@ -133,7 +157,12 @@ def render_chart_svg(
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{svg_width}" '
         f'height="{chart_height}" font-family="system-ui, sans-serif" '
-        f'font-size="{_FONT_SIZE}">'
+        f'font-size="{_FONT_SIZE}">',
+        '<defs><pattern id="failed" width="8" height="8" patternUnits="userSpaceOnUse" '
+        'patternTransform="rotate(45)">'
+        f'<rect width="8" height="8" fill="{_FAILED_COLOR}"/>'
+        '<line x1="0" y1="0" x2="0" y2="8" stroke="#ffffff" stroke-width="3"/>'
+        '</pattern></defs>',
     ]
 
     # Vertical gridlines with a time axis, every quarter of the widest bar.
@@ -166,7 +195,12 @@ def render_chart_svg(
         x = _LABEL_WIDTH
         for segment in segments:
             width = max(segment.duration_ms * scale, 1.5)
-            color = _UNKNOWN_COLOR if not segment.known else _suite_color(segment.suite)
+            if segment.failed:
+                color = "url(#failed)"
+            elif not segment.known:
+                color = _UNKNOWN_COLOR
+            else:
+                color = _suite_color(segment.suite, segment.group_id)
             share = (segment.duration_ms / total) if total > 0 else 0.0
             is_split_candidate = segment.known and share >= split_share_threshold
             if is_split_candidate:
@@ -174,16 +208,17 @@ def render_chart_svg(
 
             stroke = ' stroke="#c0392b" stroke-width="2"' if is_split_candidate else ' stroke="white" stroke-width="1"'
             title = html.escape(
-                f"{segment.suite}: {segment.duration_ms:,.1f} ms "
+                f"{segment.label}: {segment.duration_ms:,.1f} ms "
                 f"({share * 100:.1f}% of worker{worker_id})"
                 + ("" if segment.known else " [no timing data yet]")
+                + (" [FAILED]" if segment.failed else "")
             )
             parts.append(
                 f'<rect x="{x:.1f}" y="{y}" width="{width:.1f}" height="{_BAR_HEIGHT}" '
                 f'fill="{color}"{stroke}><title>{title}</title></rect>'
             )
 
-            label = segment.suite if segment.known else f"{segment.suite} (?)"
+            label = segment.label if segment.known else f"{segment.label} (?)"
             if _estimated_text_width(label) < width - 6:
                 parts.append(
                     f'<text x="{x + width / 2:.1f}" y="{y + _BAR_HEIGHT / 2 + 4:.1f}" '
@@ -214,7 +249,7 @@ def render_flagged_table(flagged: List[Tuple[int, Segment, float]], split_share_
     for worker_id, segment, share in flagged:
         rows.append(
             "<tr>"
-            f"<td>{html.escape(segment.suite)}</td>"
+            f"<td>{html.escape(segment.label)}</td>"
             f"<td>worker{worker_id}</td>"
             f"<td>{segment.duration_ms:,.1f}</td>"
             f"<td>{share * 100:.1f}%</td>"
@@ -230,39 +265,70 @@ def render_flagged_table(flagged: List[Tuple[int, Segment, float]], split_share_
     )
 
 
+# Shared by this script's own page and by the run report run_unit_tests.py
+# writes, so both look like the same document.
+PAGE_CSS = """  body { margin: 24px; font-family: system-ui, sans-serif; color: #1a1a1a; }
+  h1 { font-size: 18px; }
+  p.source { opacity: 0.6; font-size: 12px; }
+  table { border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 4px 12px; text-align: left; border-bottom: 1px solid #ddd; }
+  th { opacity: 0.7; font-weight: 600; }"""
+
+
+def render_page(title: str, body: str) -> str:
+    """Wraps rendered sections in the standard page shell."""
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{html.escape(title)}</title>
+<style>
+{PAGE_CSS}
+</style>
+</head>
+<body>
+{body}
+</body>
+</html>
+"""
+
+
+def render_plan_sections(
+    worker_segments: Dict[int, List[Segment]],
+    split_share_threshold: float,
+    chart_heading: str = "Per-worker execution time, by suite",
+    source_note: str = ""
+) -> str:
+    """Renders the chart and the split-candidate table as page sections.
+
+    Kept separate from render_page() so run_unit_tests.py can drop these
+    sections into its own run report instead of producing a second file.
+    """
+    chart_svg, flagged = render_chart_svg(worker_segments, split_share_threshold)
+    table_html = render_flagged_table(flagged, split_share_threshold)
+
+    return f"""<h1>{html.escape(chart_heading)}</h1>
+{source_note}
+{chart_svg}
+<h1>Suites recommended for splitting
+  (≥ {split_share_threshold * 100:.0f}% of their worker's total time)</h1>
+{table_html}"""
+
+
 def render_html(
     worker_segments: Dict[int, List[Segment]],
     split_share_threshold: float,
     plan_path: Path,
     timing_path: Path
 ) -> str:
-    chart_svg, flagged = render_chart_svg(worker_segments, split_share_threshold)
-    table_html = render_flagged_table(flagged, split_share_threshold)
-
-    return f"""<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Test execution plan</title>
-<style>
-  body {{ margin: 24px; color: #1a1a1a; }}
-  h1 {{ font-size: 18px; }}
-  p.source {{ opacity: 0.6; font-size: 12px; }}
-  table {{ border-collapse: collapse; margin-top: 12px; }}
-  th, td {{ padding: 4px 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-  th {{ opacity: 0.7; font-weight: 600; }}
-</style>
-</head>
-<body>
-<h1>Per-worker execution time, by suite</h1>
-<p class="source">plan: {html.escape(str(plan_path))} &mdash; timing: {html.escape(str(timing_path))}</p>
-{chart_svg}
-<h1>Suites recommended for splitting
-  (≥ {split_share_threshold * 100:.0f}% of their worker's total time)</h1>
-{table_html}
-</body>
-</html>
-"""
+    source_note = (
+        f'<p class="source">plan: {html.escape(str(plan_path))} &mdash; '
+        f'timing: {html.escape(str(timing_path))}</p>'
+    )
+    return render_page(
+        "Test execution plan",
+        render_plan_sections(worker_segments, split_share_threshold, source_note=source_note),
+    )
 
 
 def parse_args():
@@ -297,6 +363,11 @@ def parse_args():
 
 
 def main():
+    # Imported here, not at module scope: run_unit_tests.py imports this module
+    # to render its run report, and a top-level import back would be circular.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from run_unit_tests import TestTaskFactory
+
     args = parse_args()
 
     plan_path = Path(args.execution_plan_file)

@@ -387,6 +387,10 @@ Shell_script_tester::Shell_script_tester() {
   // Default home folder for scripts
   _shell_scripts_home = shcore::path::join_path(g_test_home, "scripts");
   _new_format = false;
+
+  if (const char *group_id = getenv("GROUP_ID")) {
+    m_group_id = std::stoi(group_id);
+  }
 }
 
 void Shell_script_tester::SetUp() {
@@ -868,7 +872,8 @@ static std::string find_in_parent_dir(std::string dir,
 
 bool Shell_script_tester::load_source_chunks(const std::string &path,
                                              std::istream &stream,
-                                             const std::string &prefix) {
+                                             const std::string &prefix,
+                                             bool is_include) {
   std::string last_id;
 
   auto last_chunk = [this, &last_id]() { return &_chunks.at(last_id); };
@@ -884,7 +889,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
 
     auto line = str_rstrip_view(line_raw, "\r\n");
 
-    auto chunk_def = load_chunk_definition(line);
+    auto chunk_def = load_chunk_definition(line, is_include);
     if (chunk_def.has_value()) {
       if (!prefix.empty()) {
         chunk_def->id = prefix + chunk_def->id;
@@ -953,7 +958,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
                 std::string namespc =
                     std::get<0>(shcore::path::split_extension(include));
                 if (!tag.empty()) namespc = tag + "::" + namespc;
-                load_source_chunks(include, inc_stream, namespc + "::");
+                load_source_chunks(include, inc_stream, namespc + "::", true);
                 return true;
               }
             }
@@ -986,6 +991,7 @@ bool Shell_script_tester::load_source_chunks(const std::string &path,
           chunk.def.id = last_id = prefix + "__global__";
           chunk.def.validation_id = prefix + "__global__";
           chunk.def.validation = ValidationType::Optional;
+          chunk.def.is_include = is_include;
           chunk.code.push_back({linenum, std::string{line}});
           add_source_chunk(path, chunk);
         } else {
@@ -1073,7 +1079,7 @@ void Shell_script_tester::add_validation(Chunk_definition chunk,
  * @returns The chunk definition if the line is in the right format.
  */
 std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
-    std::string_view line) {
+    std::string_view line, bool is_include) {
   if (line.find(get_chunk_token()) != 0) return {};
 
   auto chunk_id = line.substr(get_chunk_token().size());
@@ -1082,6 +1088,30 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
       chunk_id = chunk_id.substr(2);
     else
       chunk_id = chunk_id.substr(1);
+  }
+
+  // Identifies the group for the chunk, defined as a "(N)" suffix on the
+  // chunk identifier, e.g. "my chunk (2)". If found, N becomes the group id
+  // and the "(N)" suffix is removed from the identifier.
+  int group_id = 0;
+  if (!chunk_id.empty() && chunk_id.back() == ')') {
+    auto open_pos = chunk_id.find_last_of('(');
+    if (open_pos != std::string_view::npos) {
+      auto digits =
+          chunk_id.substr(open_pos + 1, chunk_id.size() - open_pos - 2);
+      bool all_digits = !digits.empty();
+      for (char c : digits) {
+        if (c < '0' || c > '9') {
+          all_digits = false;
+          break;
+        }
+      }
+
+      if (all_digits) {
+        group_id = std::stoi(std::string{digits});
+        chunk_id = str_strip_view(chunk_id.substr(0, open_pos));
+      }
+    }
   }
 
   // Identifies the version for the chunk expectations
@@ -1125,6 +1155,14 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   start = chunk_id.find("[USE:");
   end = chunk_id.find("]", start);
 
+  std::optional<bool> process;
+  if (chunk_id.size() > 1) {
+    if (chunk_id[0] == '-' || chunk_id[0] == '+') {
+      process = chunk_id[0] == '+';
+      chunk_id = chunk_id.substr(1);
+    }
+  }
+
   std::string validation_id;
   if (start != std::string::npos && end != std::string::npos) {
     validation_id = chunk_id.substr(start + 5, end - start - 5);
@@ -1134,6 +1172,7 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   }
 
   chunk_id = str_strip_view(chunk_id);
+
   validation_id = str_strip_view(validation_id);
 
   Chunk_definition ret_val;
@@ -1143,6 +1182,9 @@ std::optional<Chunk_definition> Shell_script_tester::load_chunk_definition(
   ret_val.validation = val_type;
   ret_val.stream = std::string{stream};
   ret_val.validation_id = std::string{validation_id};
+  ret_val.process = process;
+  ret_val.is_include = is_include;
+  ret_val.group_id = group_id;
 
   return ret_val;
 }
@@ -1393,8 +1435,37 @@ void Shell_script_tester::execute_script(const std::string &path,
         }
       }
 
+      bool process_all_chunks = true;
+      for (size_t index = 0; process_all_chunks && index < _chunk_order.size();
+           index++) {
+        if (_chunks[_chunk_order[index]].def.process.has_value()) {
+          process_all_chunks = false;
+        }
+      }
+
+      // When CHUNK_TIMINGS_FILE is set, every executed chunk appends a
+      // "<script> <group id> <duration ms> <chunk id>" line to it, which
+      // scripts/balance_chunk_groups.py uses to balance the chunk groups.
+      const char *chunk_timings_file = getenv("CHUNK_TIMINGS_FILE");
+      const std::string script_name = shcore::path::basename(script);
+
       bool skip_until_cleanup = false;
       for (size_t index = 0; index < _chunk_order.size(); index++) {
+        // Recorded on every exit from the iteration (FAIL() returns early),
+        // but only for chunks that actually got executed
+        const auto chunk_start = std::chrono::steady_clock::now();
+        bool record_chunk_time = false;
+        shcore::on_leave_scope record_timing([&]() {
+          if (!chunk_timings_file || !record_chunk_time) return;
+          const std::chrono::duration<double, std::milli> elapsed =
+              std::chrono::steady_clock::now() - chunk_start;
+          std::ofstream timings(chunk_timings_file, std::ofstream::app);
+          timings << script_name << ' '
+                  << _chunks[_chunk_order[index]].def.group_id << ' '
+                  << shcore::str_format("%.2f", elapsed.count()) << ' '
+                  << _chunk_order[index] << '\n';
+        });
+
         // Prints debugging information
         _cout.str("");
         _cout.clear();
@@ -1406,6 +1477,19 @@ void Shell_script_tester::execute_script(const std::string &path,
           output_handler.debug_print(makelblue(chunk_log));
           output_handler.debug_print(makelblue(splitter));
         } else {
+          // Skips chunks that are meant to be excluded
+          if (!_chunks[_chunk_order[index]].def.process.value_or(
+                  process_all_chunks) &&
+              !_chunks[_chunk_order[index]].def.is_include) {
+            continue;
+          }
+          auto group_id = _chunks[_chunk_order[index]].def.group_id;
+          bool group_included = group_id == 0 || !m_group_id.has_value() ||
+                                *m_group_id == group_id;
+          if (!group_included) {
+            continue;
+          }
+
           std::string chunk_log{"CHUNK: "};
           chunk_log += _chunk_order[index];
           auto splitter = makeyellow(std::string(chunk_log.length(), '-'));
@@ -1439,6 +1523,7 @@ void Shell_script_tester::execute_script(const std::string &path,
 
         // Executes the file line by line
         if (enabled) {
+          record_chunk_time = true;
           _custom_context = "while executing chunk \"" + chunk.def.line +
                             "\" at " + chunk.source + ":" +
                             std::to_string(chunk.def.linenum);
@@ -1926,6 +2011,12 @@ void Shell_script_tester::set_defaults() {
   } else {
     def_var("OCI_AUTH_POSITIVE_TESTS",
             getenv("OCI_AUTH_CONFIG_FILE") ? "1" : "0");
+  }
+
+  if (getenv("GROUP_ID")) {
+    def_numeric_var_from_env("GROUP_ID");
+  } else {
+    def_var("GROUP_ID", "0");
   }
 
   // Variables for AWS Tests

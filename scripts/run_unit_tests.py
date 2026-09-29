@@ -25,6 +25,7 @@ import html
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import os
 import sys
@@ -33,14 +34,59 @@ from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
+import balance_chunk_groups
+import plot_execution_plan
+
 _ANSI_GREEN = "\033[32m"
 _ANSI_RED = "\033[31m"
 _ANSI_RESET = "\033[0m"
+
+# Suites split into per-test tasks so the LPT scheduler can spread their cost
+# across workers instead of running them as a single monolithic block.
+_SPLIT_SUITES = ["Shell_scripted/Auto_script_py"]
+
+# Some individual tests within a split suite are themselves too large for a
+# single task. Maps (suite, test) -> N: instead of the usual one task, N
+# tasks are created, running the same filter but with SPLIT_ID set to
+# 1, 2, ..., N so the test itself can shard its work by that value. A test
+# with no entry here gets a single task with SPLIT_ID 0 (the default).
+_SPLIT_TEST_GROUPS: Dict[Tuple[str, str], int] = {
+}
 
 # Firejail (Linux-only process isolation) is used when available, otherwise the
 # test binary is invoked directly. Resolved once at import time to avoid a PATH
 # lookup on every task.
 _FIREJAIL_PATH = shutil.which("firejail")
+
+# The sandbox plugin keeps its boilerplate (the bootstrapped data directory every
+# sandbox is copied from) under the sandbox directory, unless this environment
+# variable names another one (python/plugins/sandbox/sandboxlib.py). Every test
+# process has its own sandbox directory, so without it each one bootstraps its
+# own boilerplate - 5s alone, around 20s with all the workers doing it at once.
+_BOILERPLATE_DIR_ENV = "MARIADB_SANDBOX_BOILERPLATE_DIR"
+
+# A suite taking up at least this share of its worker's total time is called
+# out in the report as a candidate for _SPLIT_SUITES.
+_SPLIT_SHARE_THRESHOLD = 0.30
+
+# The test harness gives a MySQL sandbox on port P its X Protocol port at
+# P * 10 (unittest/test_utils/mod_testutils.cc), so every base port handed out
+# must keep P * 10 a valid, free port too.
+_X_PORT_FACTOR = 10
+
+# Range base ports are drawn from. P * 10 must not exceed 65535, so no base
+# port above 6553 works at all; stopping at 4900 also keeps every X port below
+# 49152, where macOS starts handing out ephemeral ports to outgoing
+# connections that a sandbox could then collide with. 1100 keeps clear of the
+# privileged ports. 18 workers take 126 ports of the ~3800 in the range.
+_BASE_PORT_RANGE = (1100, 4900)
+
+# Unix domain socket paths are limited to ~104 bytes (sun_path), and a
+# scripted test deploys its sandboxes under TMPDIR, whose socket ends up at
+# $TMPDIR/<port>/sandboxdata/mysqld.sock. Per-task TMPDIRs therefore live under
+# a short root of their own rather than inside the (deep) logs dir. Windows has
+# no such limit and no /tmp, so it keeps the system default.
+_SHORT_TMP_PARENT = None if os.name == "nt" else "/tmp"
 
 
 @dataclass
@@ -50,9 +96,21 @@ class TestTask:
     Attributes:
         filter_spec: GTest filter expression (e.g., 'Suite.*' or 'Suite.Test').
         last_execution_time_ms: Measured execution duration from prior run.
+        group_id: Value passed to the test process as the GROUP_ID environment
+            variable, letting a test that is split beyond the granularity of
+            "one task per test" shard its own work. Defaults to 0.
     """
     filter_spec: str
     last_execution_time_ms: float = 0.0
+    group_id: int = 0
+
+
+def _format_task_label(task: "TestTask") -> str:
+    """Formats a task's filter spec for display, disambiguating it with its
+    group id when the same filter spec is split across several groups."""
+    if task.group_id:
+        return f"{task.filter_spec} [group {task.group_id}]"
+    return task.filter_spec
 
 
 @dataclass
@@ -83,14 +141,15 @@ class TestTaskFactory:
     """Handles loading runtime statistics, parsing test lists, and instantiating tasks."""
 
     @staticmethod
-    def load_execution_times(filepath: Path) -> Dict[str, float]:
+    def load_execution_times(filepath: Path) -> Dict[Tuple[str, int], float]:
         """Reads historical test execution times from a simple space-delimited text file.
 
         Args:
             filepath: Path to the timing file.
 
         Returns:
-            Dict mapping filter expressions to their recorded duration in milliseconds.
+            Dict mapping (filter expression, group id) pairs to their recorded
+            duration in milliseconds.
         """
         times = {}
         if not filepath.exists():
@@ -103,37 +162,64 @@ class TestTaskFactory:
                     continue
                 # rsplit from the right: filter_spec itself may contain spaces
                 # (some suite names do), but the trailing duration never does.
-                parts = line.rsplit(maxsplit=1)
-                if len(parts) >= 2:
+                # The group id, when present, is the token just before the
+                # duration; lines from before group ids were tracked have
+                # none, so they're treated as group 0.
+                parts = line.rsplit(maxsplit=2)
+                group_id = 0
+                if len(parts) == 3 and parts[1].isdigit():
+                    filter_spec, group_str, duration = parts
+                    group_id = int(group_str)
+                else:
+                    parts = line.rsplit(maxsplit=1)
+                    if len(parts) < 2:
+                        continue
                     filter_spec, duration = parts
-                    times[filter_spec] = float(duration)
+                times[(filter_spec, group_id)] = float(duration)
         return times
 
     @staticmethod
     def save_execution_times(filepath: Path, tasks: List[TestTask]) -> None:
-        """Persists updated execution times for all processed tasks back to disk.
+        """Merges the execution times of the processed tasks into the timing file.
+
+        A run usually covers only part of the suites (a --gtest_filter), so the
+        file is updated rather than rewritten: the tasks' times replace their
+        existing entries, new tasks are appended, and the entries of suites
+        that weren't run are kept. The only entries dropped are the other
+        groups of a filter spec that was run, which are left over from a
+        different _SPLIT_TEST_GROUPS count and would never be matched again.
 
         Args:
             filepath: Path to the timing file.
             tasks: List of TestTasks containing updated timing metadata.
         """
+        run_specs = {task.filter_spec for task in tasks}
+        times = {
+            key: duration
+            for key, duration in TestTaskFactory.load_execution_times(filepath).items()
+            if key[0] not in run_specs
+        }
+        for task in tasks:
+            times[(task.filter_spec, task.group_id)] = task.last_execution_time_ms
+
         filepath.parent.mkdir(parents=True, exist_ok=True)
         with open(filepath, "w", encoding="utf-8") as f:
-            for task in tasks:
-                f.write(f"{task.filter_spec} {task.last_execution_time_ms:.2f}\n")
+            for (filter_spec, group_id), duration in times.items():
+                f.write(f"{filter_spec} {group_id} {duration:.2f}\n")
 
     @staticmethod
     def create_tasks(
         raw_gtest_output: str,
         split_suites: List[str],
-        exec_times: Dict[str, float]
+        exec_times: Dict[Tuple[str, int], float]
     ) -> List[TestTask]:
         """Parses '--gtest_list_tests' string output into granular TestTask units.
 
         Args:
             raw_gtest_output: Raw stdout from running the binary with --gtest_list_tests.
             split_suites: List of suite names that should be split into individual per-test tasks.
-            exec_times: Map of historical runtimes used to seed task duration properties.
+            exec_times: Map of historical runtimes, keyed by (filter_spec, group_id),
+                used to seed task duration properties.
 
         Returns:
             List of initialized TestTask objects.
@@ -151,16 +237,34 @@ class TestTaskFactory:
                 # not an actual GTest suite header.
                 return
 
+            if current_suite == "GoogleTestVerification":
+                # Synthetic suite GTest injects to report framework-level
+                # errors (e.g. unknown --gtest_ flags); it names no real
+                # test to execute.
+                current_tests = []
+                return
+
             if current_suite in split_suites:
                 # Create individual tasks for every test inside specified split suites
                 for test_name in current_tests:
                     filter_spec = f"{current_suite}.{test_name}"
-                    duration = exec_times.get(filter_spec, 0.0)
-                    tasks.append(TestTask(filter_spec=filter_spec, last_execution_time_ms=duration))
+                    extra_splits = _SPLIT_TEST_GROUPS.get((current_suite, test_name), 0)
+                    if extra_splits:
+                        # Test is too large even for one task per test: run the
+                        # same filter across N tasks, each told its shard via
+                        # GROUP_ID (1..N). Each group has its own timing history,
+                        # since the groups don't take the same amount of time.
+                        for group_id in range(1, extra_splits + 1):
+                            duration = exec_times.get((filter_spec, group_id), 0.0)
+                            tasks.append(TestTask(filter_spec=filter_spec, last_execution_time_ms=duration,
+                                                   group_id=group_id))
+                    else:
+                        duration = exec_times.get((filter_spec, 0), 0.0)
+                        tasks.append(TestTask(filter_spec=filter_spec, last_execution_time_ms=duration))
             else:
                 # Create a single suite-level wildcard task by default
                 filter_spec = f"{current_suite}.*"
-                duration = exec_times.get(filter_spec, 0.0)
+                duration = exec_times.get((filter_spec, 0), 0.0)
                 tasks.append(TestTask(filter_spec=filter_spec, last_execution_time_ms=duration))
 
             current_tests = []
@@ -195,6 +299,8 @@ class TestWorker:
     """Wrapper that executes individual GTest tasks, isolated via Firejail when available."""
 
     OUTPUT_FILE_NAME = "test-output.log"
+    # Where a scripted test records its chunk timings (CHUNK_TIMINGS_FILE)
+    CHUNK_TIMINGS_FILE_NAME = "chunk-timings.txt"
 
     @staticmethod
     def execute_task(binary_path: str, task: TestTask, env: Optional[Dict[str, str]] = None) -> Tuple[float, bool]:
@@ -270,33 +376,63 @@ class TestWorker:
 class SandboxManager:
     """Deploys and tears down the per-worker MariaDB sandbox used as the test target server."""
 
-    def __init__(self, shell_binary: str, env: Optional[Dict[str, str]] = None):
+    def __init__(self, shell_binary: str, env: Optional[Dict[str, str]] = None,
+                 socket_dir: Optional[Path] = None):
         """Initializes the manager with the mariadb-shell binary used to drive the sandbox plugin.
 
         Args:
             shell_binary: Path to the mariadb-shell executable.
             env: Environment variables passed to every 'mariadb-shell' invocation.
                 Defaults to the current process environment.
+            socket_dir: Directory for a MySQL sandbox's X Protocol socket; see
+                deploy(). Defaults to the system temporary directory.
         """
         self.shell_binary = shell_binary
         self.env = env
+        self.socket_dir = socket_dir or Path(tempfile.gettempdir())
 
     @staticmethod
     def find_free_ports(count: int) -> List[int]:
-        """Returns `count` currently unused TCP ports on localhost.
+        """Returns `count` base ports on localhost that are free, as are their X ports.
 
-        The sockets are all kept bound simultaneously until every one of them
-        has been claimed, so the same port can't be handed back twice (which
+        Candidates are tried in order across _BASE_PORT_RANGE, and one is taken
+        only if both it and its X port (port * _X_PORT_FACTOR) can be bound.
+        A base port can never be another base port's X port, since every X
+        port is above the range.
+
+        The sockets are all kept bound simultaneously until every port has
+        been claimed, so the same port can't be handed back twice (which
         binding and releasing them one at a time could otherwise race into).
+        SO_REUSEADDR is deliberately not set: on the BSD socket layer it lets a
+        wildcard bind succeed next to a server listening on one address, which
+        would report a port in use as free.
+
+        Raises:
+            RuntimeError: The range doesn't hold `count` free ports.
         """
         sockets = []
+        ports = []
         try:
-            for _ in range(count):
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind(("", 0))
-                sockets.append(s)
-            return [s.getsockname()[1] for s in sockets]
+            for port in range(_BASE_PORT_RANGE[0], _BASE_PORT_RANGE[1] + 1):
+                if len(ports) == count:
+                    break
+                candidate = []
+                try:
+                    for p in (port, port * _X_PORT_FACTOR):
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        candidate.append(s)
+                        s.bind(("", p))
+                except OSError:
+                    for s in candidate:
+                        s.close()
+                    continue
+                sockets.extend(candidate)
+                ports.append(port)
+            if len(ports) < count:
+                raise RuntimeError(
+                    f"Only {len(ports)} of the {count} ports needed are free in "
+                    f"{_BASE_PORT_RANGE[0]}-{_BASE_PORT_RANGE[1]} (with their X ports free too)")
+            return ports
         finally:
             for s in sockets:
                 s.close()
@@ -307,8 +443,20 @@ class SandboxManager:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=self.env)
 
     def deploy(self, port: int) -> None:
-        """Deploys a base sandbox server instance listening on the given port."""
-        self._run_cli("sandbox", "deploy", str(port), "--password=")
+        """Deploys a base sandbox server instance listening on the given port.
+
+        A MySQL server also loads the X plugin, which otherwise binds the fixed
+        default port 33060 and socket /tmp/mysqlx.sock, so only the first of
+        the parallel workers' sandboxes would get X Protocol. Each one is given
+        the X port the test harness expects (port * _X_PORT_FACTOR) and a
+        socket of its own. The options are 'loose-' so that MariaDB, which has
+        no X plugin, ignores them.
+        """
+        x_socket = self.socket_dir / f"mysqlx-{port}.sock"
+        self._run_cli("sandbox", "deploy", str(port), "--password=",
+                      "--mariadbd-options=performance-schema=ON",
+                      f"--mariadbd-options=loose-mysqlx-port={port * _X_PORT_FACTOR}",
+                      f"--mariadbd-options=loose-mysqlx-socket={x_socket}")
 
     def start(self, port: int) -> None:
         """(Re)starts a previously deployed, currently stopped sandbox instance."""
@@ -419,22 +567,71 @@ class Orchestrator:
             binary_path: Path to the GTest executable.
             shell_binary: Path to the mariadb-shell executable, used to deploy a
                 per-worker sandbox server for the tests to run against.
-            timing_file: Path to load/store timing metrics.
+            timing_file: Path to load/store timing metrics. The scripted tests'
+                per-chunk timings are kept beside it, in test-chunk-times.txt
+                (see scripts/balance_chunk_groups.py).
             num_workers: Worker thread count (defaults to system CPU count).
             gtest_filter: Optional GTest filter pattern passed during discovery and execution.
             execution_plan_file: Path to write the per-worker execution plan to.
             logs_dir: Directory to keep every worker/suite's mariadb-shell.log under.
                 Not cleared between runs; same-numbered suite folders are overwritten.
-            report_file: Path to write the HTML execution report to.
+            report_file: Path to write the HTML execution report to: the
+                per-worker chart of this run's measured durations, then the
+                failures.
         """
         self.binary_path = binary_path
         self.shell_binary = shell_binary
         self.timing_file = Path(timing_file)
+        self.chunk_timing_file = self.timing_file.with_name(balance_chunk_groups.CHUNK_TIMES_FILE_NAME)
         self.num_workers = num_workers or (os.cpu_count() or 4)
         self.gtest_filter = gtest_filter
         self.execution_plan_file = Path(execution_plan_file)
         self.logs_dir = Path(logs_dir)
         self.report_file = Path(report_file)
+
+    def _prepare_sandbox_boilerplate(self, socket_dir: Path) -> Optional[Path]:
+        """Builds the sandbox boilerplate once, before any worker starts.
+
+        Deploys (and then removes) a throw-away sandbox with the boilerplate
+        directed to a fresh folder under the logs dir, so that every worker and
+        test process can copy it instead of bootstrapping its own. The folder
+        is rebuilt on every run rather than trusted from an earlier one: the
+        plugin keys a boilerplate by server version only, and a server rebuilt
+        at the same version would otherwise get a stale one.
+
+        Args:
+            socket_dir: Directory for the throw-away sandbox's X Protocol socket.
+
+        Returns:
+            The boilerplate folder, or None when it could not be built, in which
+            case every sandbox bootstraps its own, as without this step.
+        """
+        boilerplate_dir = (self.logs_dir / "sandbox-boilerplate").resolve()
+        shutil.rmtree(boilerplate_dir, ignore_errors=True)
+        config_home = boilerplate_dir / "config-home"
+        config_home.mkdir(parents=True)
+
+        env = os.environ.copy()
+        env[_BOILERPLATE_DIR_ENV] = str(boilerplate_dir)
+        env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(config_home)
+        sandbox = SandboxManager(self.shell_binary, env=env, socket_dir=socket_dir)
+        port = SandboxManager.find_free_ports(1)[0]
+
+        print(f"Preparing the sandbox boilerplate shared by all workers under '{boilerplate_dir}'...")
+        try:
+            sandbox.deploy(port)
+        except subprocess.CalledProcessError as e:
+            print(f"[WARN] Could not prepare the shared sandbox boilerplate, every sandbox will "
+                  f"bootstrap its own: {e.stderr.decode()}", file=sys.stderr)
+            return None
+        finally:
+            sandbox.teardown(port)
+
+        if not any(boilerplate_dir.glob("myboilerplate-*")):
+            print(f"[WARN] No sandbox boilerplate was created under '{boilerplate_dir}', every "
+                  f"sandbox will bootstrap its own.", file=sys.stderr)
+            return None
+        return boilerplate_dir
 
     def _get_gtest_list(self) -> str:
         """Queries the test binary to list available tests, applying --gtest_filter if provided."""
@@ -461,14 +658,60 @@ class Orchestrator:
         return f'<a href="{href}">{html.escape(str(path))}</a>'
 
     @staticmethod
-    def _write_report(report_path: Path, total_tasks: int, failures: List[FailureRecord]) -> None:
-        """Writes an HTML summary of the run, linking every failed suite to its
-        mariadb-shell.log and captured test output.
+    def _build_worker_segments(
+        queues: List[List[TestTask]],
+        failures: List[FailureRecord]
+    ) -> Dict[int, List["plot_execution_plan.Segment"]]:
+        """Turns the finished queues into chart segments, largest suite first.
+
+        The durations are this run's own measurements (TestWorker.execute_task
+        writes them back onto the task), so the chart shows what actually
+        happened rather than the estimates the plan was built from. A task a
+        worker never got to run - its sandbox failed to come up - still carries
+        the estimate it was scheduled with, so it is charted as untimed.
+        """
+        failed_keys = {(f.worker_id, f.filter_spec) for f in failures}
+        never_ran = {(f.worker_id, f.filter_spec) for f in failures if f.duration_ms == 0.0}
+
+        worker_segments: Dict[int, List[plot_execution_plan.Segment]] = {}
+        for worker_id, queue in enumerate(queues):
+            if not queue:
+                continue
+            segments = [
+                plot_execution_plan.Segment(
+                    suite=task.filter_spec,
+                    group_id=task.group_id,
+                    duration_ms=0.0 if (worker_id, task.filter_spec) in never_ran
+                                else task.last_execution_time_ms,
+                    known=(worker_id, task.filter_spec) not in never_ran,
+                    failed=(worker_id, task.filter_spec) in failed_keys,
+                )
+                for task in queue
+            ]
+            segments.sort(key=lambda s: s.duration_ms, reverse=True)
+            worker_segments[worker_id] = segments
+        return worker_segments
+
+    @staticmethod
+    def _write_report(
+        report_path: Path,
+        total_tasks: int,
+        failures: List[FailureRecord],
+        queues: List[List[TestTask]]
+    ) -> None:
+        """Writes the run's HTML report: the per-worker execution chart and the
+        suites worth splitting, followed by the failure summary, with every
+        failed suite linked to its mariadb-shell.log and captured test output.
+
+        The chart sections come from plot_execution_plan.py, which renders the
+        same thing from test-execution-plan.txt plus a timing file when you want
+        to look at a plan without running it.
 
         Args:
             report_path: File to write the HTML report to.
             total_tasks: Total number of tasks that were executed.
             failures: Failed tasks, in whatever order they were collected.
+            queues: The per-worker queues that were just executed.
         """
         failures = sorted(failures, key=lambda f: (f.worker_id, f.sequence))
 
@@ -484,7 +727,7 @@ class Orchestrator:
                 "</tr>"
                 for f in failures
             )
-            body = (
+            failure_body = (
                 "<table>"
                 "<thead><tr><th>Worker</th><th>Suite</th><th>Duration (ms)</th>"
                 "<th>Test output</th><th>Shell log</th><th>Sandbox log</th></tr></thead>"
@@ -492,27 +735,22 @@ class Orchestrator:
                 "</table>"
             )
         else:
-            body = "<p>All suites passed.</p>"
+            failure_body = "<p>All suites passed.</p>"
 
-        report_path.write_text(f"""<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Test execution report</title>
-<style>
-  body {{ margin: 24px; font-family: system-ui, sans-serif; color: #1a1a1a; }}
-  h1 {{ font-size: 18px; }}
-  table {{ border-collapse: collapse; margin-top: 12px; }}
-  th, td {{ padding: 4px 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-  th {{ opacity: 0.7; font-weight: 600; }}
-</style>
-</head>
-<body>
-<h1>{len(failures)} of {total_tasks} suite(s) failed</h1>
-{body}
-</body>
-</html>
-""", encoding="utf-8")
+        chart_sections = plot_execution_plan.render_plan_sections(
+            Orchestrator._build_worker_segments(queues, failures),
+            _SPLIT_SHARE_THRESHOLD,
+            chart_heading="Per-worker execution time, by suite (this run)",
+            source_note='<p class="source">Hatched segments failed; outlined ones are '
+                        'split candidates.</p>',
+        )
+
+        report_path.write_text(plot_execution_plan.render_page(
+            "Test execution report",
+            f"{chart_sections}\n"
+            f"<h1>{len(failures)} of {total_tasks} suite(s) failed</h1>\n"
+            f"{failure_body}"
+        ), encoding="utf-8")
 
     @staticmethod
     def _write_execution_plan(plan_path: Path, queues: List[List[TestTask]]) -> None:
@@ -524,7 +762,7 @@ class Orchestrator:
         """
         with open(plan_path, "w", encoding="utf-8") as f:
             for worker_id, queue in enumerate(queues):
-                suites = ", ".join(task.filter_spec for task in queue)
+                suites = ", ".join(_format_task_label(task) for task in queue)
                 f.write(f"worker{worker_id}: {suites}\n")
 
     def _partition_tasks(self, tasks: List[TestTask]) -> List[List[TestTask]]:
@@ -593,7 +831,7 @@ class Orchestrator:
                 total_ms = sum(task.last_execution_time_ms for task in queue)
                 print(f"Worker {worker_id}: {len(queue)} task(s), {total_ms:.1f} ms total (prior runs)")
                 for task in queue:
-                    print(f"  {task.filter_spec} ({task.last_execution_time_ms:.1f} ms)")
+                    print(f"  {_format_task_label(task)} ({task.last_execution_time_ms:.1f} ms)")
             return
 
         # Persistent, well-known logs folder (not cleared between runs). Each
@@ -608,6 +846,18 @@ class Orchestrator:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         print(f"Execution logs will be kept under '{self.logs_dir}'.")
 
+        # Short-pathed scratch root for this run (see _SHORT_TMP_PARENT): every
+        # task's TMPDIR and every worker sandbox's X socket live under it. A
+        # failed task's TMPDIR is moved into its logs folder for diagnosis, and
+        # the root itself is removed at the end of the run.
+        short_tmp_root = Path(tempfile.mkdtemp(prefix="rut-", dir=_SHORT_TMP_PARENT))
+
+        # Environment shared by every worker's sandbox calls and test processes
+        base_env = os.environ.copy()
+        boilerplate_dir = self._prepare_sandbox_boilerplate(short_tmp_root)
+        if boilerplate_dir:
+            base_env[_BOILERPLATE_DIR_ENV] = str(boilerplate_dir)
+
         # Worker thread task execution handler
         def worker_loop(worker_id: int, queue: List[TestTask], worker_ports: List[int]) -> List[FailureRecord]:
             failures: List[FailureRecord] = []
@@ -617,10 +867,10 @@ class Orchestrator:
             worker_dir = self.logs_dir / f"worker{worker_id}"
             worker_dir.mkdir(parents=True, exist_ok=True)
 
-            sandbox_env = os.environ.copy()
+            sandbox_env = base_env.copy()
             sandbox_env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(worker_dir.resolve())
 
-            sandbox = SandboxManager(self.shell_binary, env=sandbox_env)
+            sandbox = SandboxManager(self.shell_binary, env=sandbox_env, socket_dir=short_tmp_root)
             # A test may deploy up to NUM_SANDBOX_PORTS-1 extra servers of its own
             # (unittest/test_utils/sandboxes.h k_num_ports), on top of the one main
             # sandbox this worker deploys below. worker_ports were reserved for
@@ -671,9 +921,24 @@ class Orchestrator:
                     task_dir.mkdir(parents=True, exist_ok=True)
                     log_path = task_dir / "mariadb-shell.log"
                     output_path = task_dir / TestWorker.OUTPUT_FILE_NAME
+                    task_tmp_dir = short_tmp_root / f"w{worker_id}-{i}"
+                    task_tmp_dir.mkdir(parents=True, exist_ok=True)
 
-                    env = os.environ.copy()
+                    env = base_env.copy()
                     env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(task_dir.resolve())
+                    env["TMPDIR"] = str(task_tmp_dir.resolve())
+                    # The tester runs only group G's chunks (plus the ungrouped
+                    # ones) when GROUP_ID is set, even to 0; a task that isn't
+                    # split must run every chunk, so it gets no GROUP_ID at all
+                    if task.group_id:
+                        env["GROUP_ID"] = str(task.group_id)
+                    else:
+                        env.pop("GROUP_ID", None)
+                    # Scripted tests time their chunks into this file; any other
+                    # test just ignores it
+                    chunk_timings_path = task_dir / TestWorker.CHUNK_TIMINGS_FILE_NAME
+                    chunk_timings_path.unlink(missing_ok=True)  # left by an earlier failed run
+                    env["CHUNK_TIMINGS_FILE"] = str(chunk_timings_path.resolve())
                     env["MYSQL_PORT"] = str(port)
                     env["MYSQL_SANDBOX_PORT0"] = str(port)
                     for j, extra_port in enumerate(extra_ports, start=1):
@@ -685,8 +950,18 @@ class Orchestrator:
                               else f"{_ANSI_RED}FAILED{_ANSI_RESET}")
                     print(f"[Worker {worker_id}] {status}: {task.filter_spec} ({duration:.1f} ms)")
                     if success:
+                        # A failed run's chunk timings aren't representative
+                        # (its chunks may have been cut short or skipped)
+                        chunk_timings.extend(balance_chunk_groups.read_chunk_timings(chunk_timings_path))
                         shutil.rmtree(task_dir, ignore_errors=True)
+                        shutil.rmtree(task_tmp_dir, ignore_errors=True)
                     else:
+                        # Kept beside the task's other logs, where it always was
+                        try:
+                            shutil.move(str(task_tmp_dir), str(task_dir / "tmp"))
+                        except OSError as e:
+                            print(f"[WARN] Could not keep '{task_tmp_dir}' in '{task_dir}': {e}",
+                                  file=sys.stderr)
                         sandbox_error_log_path = sandbox.copy_error_log(
                             port, task_dir / "sandbox-error.log")
                         failures.append(FailureRecord(
@@ -695,6 +970,7 @@ class Orchestrator:
             finally:
                 print(f"[Worker {worker_id}] Tearing down sandbox on port {port}...")
                 sandbox.teardown(port)
+                print(f"[Worker {worker_id}] DONE: Teared down sandbox on port {port}.")
 
             if not failures:
                 shutil.rmtree(worker_dir, ignore_errors=True)
@@ -707,26 +983,34 @@ class Orchestrator:
         # underlying find_free_ports() guarantee (no port handed out twice
         # while its sockets are still open) covers all workers at once instead
         # of each worker racing the others via its own separate call.
-        all_ports = SandboxManager.find_free_ports(self.num_workers * self.NUM_SANDBOX_PORTS)
-
         all_failures: List[FailureRecord] = []
-        with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            futures = [
-                executor.submit(
-                    worker_loop, i, queues[i],
-                    all_ports[i * self.NUM_SANDBOX_PORTS:(i + 1) * self.NUM_SANDBOX_PORTS],
-                )
-                for i in range(self.num_workers)
-            ]
-            for future in futures:
-                all_failures.extend(future.result())
+        # Chunk timings of the passing scripted tasks, filled in by the workers
+        chunk_timings: List[balance_chunk_groups.ChunkTiming] = []
+        try:
+            all_ports = SandboxManager.find_free_ports(self.num_workers * self.NUM_SANDBOX_PORTS)
+
+            with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                futures = [
+                    executor.submit(
+                        worker_loop, i, queues[i],
+                        all_ports[i * self.NUM_SANDBOX_PORTS:(i + 1) * self.NUM_SANDBOX_PORTS],
+                    )
+                    for i in range(self.num_workers)
+                ]
+                for future in futures:
+                    all_failures.extend(future.result())
+        finally:
+            shutil.rmtree(short_tmp_root, ignore_errors=True)
 
         # Step 5: Save updated metrics back to disk
         TestTaskFactory.save_execution_times(self.timing_file, all_tasks)
         print(f"Completed execution. Updated metrics saved to '{self.timing_file}'.")
+        if chunk_timings:
+            balance_chunk_groups.merge_chunk_times(self.chunk_timing_file, chunk_timings)
+            print(f"Chunk timings merged into '{self.chunk_timing_file}'.")
 
         # Step 6: Summarize failures and write the HTML report
-        self._write_report(self.report_file, len(all_tasks), all_failures)
+        self._write_report(self.report_file, len(all_tasks), all_failures, queues)
         print(f"Execution report written to '{self.report_file}'.")
 
         if all_failures:
@@ -798,20 +1082,15 @@ def parse_args():
         "--report-file",
         default="test-execution-report.html",
         type=str,
-        help="Path to write the HTML execution report to, listing failed suites "
-             "with a link to their log. Default: 'test-execution-report.html'."
+        help="Path to write the HTML execution report to, charting the "
+             "per-worker execution and then listing failed suites with a link "
+             "to their log. Default: 'test-execution-report.html'."
     )
     parser.add_argument(
         "-j", "--jobs",
         default=0,
         type=int,
         help="Number of parallel worker threads. Default: CPU core count."
-    )
-    parser.add_argument(
-        "-s", "--split-suites",
-        nargs="*",
-        default=[],
-        help="Space-separated list of suite names to split into per-test tasks (e.g. -s SuiteA SuiteB)."
     )
     parser.add_argument(
         "-l", "--list-groups",
@@ -854,4 +1133,4 @@ if __name__ == "__main__":
         report_file=args.report_file
     )
 
-    orchestrator.run(split_suites=args.split_suites, list_groups=args.list_groups)
+    orchestrator.run(split_suites=_SPLIT_SUITES, list_groups=args.list_groups)
