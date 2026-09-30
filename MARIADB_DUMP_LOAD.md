@@ -3674,10 +3674,27 @@ builds, so that chunk is gated on `__dbug`.
 - **There is no way to ask for more patience.** A dump which would rather wait an
   hour cannot say so; the bound is a constant, not an option. An option is the
   obvious follow-up, and it would want to cover the MySQL path too.
-- **`FLUSH TABLES WITH READ LOCK` is unbounded on both vendors**, except in a dry
-  run where it is already set to 1 second. It runs before the backup stage, so the
-  same day-long wait is still reachable there - untouched here because it is
-  upstream behaviour on the shared path.
+- **`FLUSH TABLES WITH READ LOCK` waits at the server's `lock_wait_timeout` - by
+  design** (decided 2026-09-30). This is upstream's design, and it was
+  deliberate. `acquire_read_locks()` says so ("This will block until
+  lock_wait_timeout"), and the only place it bounds the wait is a dry run, which
+  sets 1 second (BUG#33173739) because a dry run must never stall a live server.
+  Every comparable tool does the same: `mysqldump` and `mariadb-dump`
+  (`do_flush_tables_read_lock()`, whose comment upstream copied), and
+  `mariadb-backup`, whose `--startup-wait-timeout` defaults to 0, meaning wait
+  forever. Its Percona-era `--ftwrl-wait-*` / `--kill-long-queries-timeout` are
+  disabled now that it uses `BACKUP STAGE`. On MariaDB the default is 86400
+  seconds (a day, against MySQL's year), and it is the DBA's to tighten. The
+  cost is real: while it waits behind a long statement it blocks other
+  sessions' writes server-wide. The first `FLUSH NO_WRITE_TO_BINLOG TABLES`
+  only makes that less likely. The dump has no `sessionInitSql`, so a shorter
+  wait for one dump means lowering `lock_wait_timeout` for the server or the
+  account. It differs from the `BACKUP STAGE` bound above because of who owns
+  the code, not because of what the user sees - both print a line first
+  ("Acquiring global read lock", "Locking instance for backup"). FTWRL is
+  upstream's shared path, used by both vendors, so a bound would change MySQL
+  behaviour. `BACKUP STAGE` is the port's own MariaDB-only code (§14), which
+  could be bounded without touching MySQL.
 - **The five minute bound is not tested**, only what happens once it expires.
   It was exercised by hand with the constant temporarily lowered to three
   seconds.
