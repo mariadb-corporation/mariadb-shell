@@ -28,6 +28,8 @@
 
 #include <mysqld_error.h>
 
+#include "mysqlshdk/libs/utils/utils_string.h"
+
 namespace mysqlsh {
 namespace dump {
 namespace common {
@@ -111,6 +113,13 @@ bool supports_partial_revokes(const Server_version &v) {
 }
 
 bool supports_column_statistics(const Server_version &v) { return v.is_8_0; }
+
+bool engine_manages_external_data(const std::string &engine) {
+  // MED_ENGINES in MariaDB's client/mysqldump.cc; MySQL spells MERGE's engine
+  // MRG_MYISAM, MariaDB MRG_MyISAM
+  return shcore::str_caseeq(engine, "MRG_MyISAM", "MRG_ISAM", "FEDERATED",
+                            "CONNECT", "OQGRAPH", "SPIDER", "VP");
+}
 
 bool is_rolled_back_deadlock(int error_code,
                              mysqlshdk::db::ServerVendor vendor) {

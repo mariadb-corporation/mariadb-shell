@@ -2628,9 +2628,8 @@ char Schema_dumper::check_if_ignore_table(const std::string &db,
     }
   }
 
-  /*  If these two types, we want to skip dumping the table. */
-  if ((shcore::str_caseeq(out_table_type->c_str(), "MRG_MyISAM") ||
-       *out_table_type == "MRG_ISAM" || *out_table_type == "FEDERATED")) {
+  // the same list Dumper::should_dump_data() skips the data of
+  if (common::engine_manages_external_data(*out_table_type)) {
     result = IGNORE_DATA;
   }
 

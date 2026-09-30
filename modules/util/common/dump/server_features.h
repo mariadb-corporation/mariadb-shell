@@ -272,6 +272,20 @@ bool is_rolled_back_deadlock(int error_code,
                              mysqlshdk::db::ServerVendor vendor);
 
 /**
+ * Whether a table on this storage engine holds no data of its own, but reads
+ * and writes data kept elsewhere: a MERGE table is a union of MyISAM tables
+ * which are dumped themselves, FEDERATED / SPIDER / CONNECT / VP tables proxy
+ * remote servers or files, OQGRAPH computes its rows. Dumping their rows copies
+ * that data a second time, and loading them writes it back through the engine -
+ * a MERGE table with INSERT_METHOD=LAST duplicates its last table's rows, one
+ * with INSERT_METHOD=NO refuses the load. So only their definition is dumped.
+ * The list is mariadb-dump's MED_ENGINES (--no-data-med, on by default), a
+ * superset of mysqldump's; the engine names beyond mysqldump's exist only on
+ * MariaDB, so it needs no vendor check.
+ */
+bool engine_manages_external_data(const std::string &engine);
+
+/**
  * MariaDB's ER_ROLLBACK_ONLY, not defined by libmysqlclient's headers.
  */
 inline constexpr int k_maria_db_er_rollback_only = 4060;

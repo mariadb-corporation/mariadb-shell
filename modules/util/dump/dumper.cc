@@ -5345,7 +5345,15 @@ void Dumper::push_table_task(Table_task &&task) {
                          task.quoted_name.c_str());
 
   if (!should_dump_data(task)) {
-    current_console()->print_warning("Skipping " + context);
+    if (common::engine_manages_external_data(task.info->engine)) {
+      current_console()->print_note(shcore::str_format(
+          "Table %s uses the %s engine, which holds no data of its own: only "
+          "its definition is dumped.",
+          task.quoted_name.c_str(), task.info->engine.c_str()));
+    } else {
+      current_console()->print_warning("Skipping " + context);
+    }
+
     return;
   }
 
@@ -6437,6 +6445,13 @@ std::string Dumper::get_query_comment(const Table_data_task &task,
 }
 
 bool Dumper::should_dump_data(const Table_task &table) const {
+  // util.exportTable() reads the rows it was explicitly asked for, through
+  // whichever engine holds them
+  if (!m_options.is_export_only() &&
+      common::engine_manages_external_data(table.info->engine)) {
+    return false;
+  }
+
   if (table.info->columns.empty() ||
       (table.schema == "mysql" &&
        (table.name == "apply_status" || table.name == "general_log" ||

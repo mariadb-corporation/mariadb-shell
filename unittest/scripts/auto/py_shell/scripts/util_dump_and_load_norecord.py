@@ -4568,6 +4568,51 @@ EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session
 #@<> BUG#38945132 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
+#@<> MERGE tables are dumped without their data - setup (8)
+# A MERGE table holds no rows of its own, it is a union of MyISAM tables which
+# are dumped themselves. Its rows used to be dumped too, and loading them wrote
+# them back through the engine: INSERT_METHOD=LAST duplicated the last table's
+# rows, INSERT_METHOD=NO refused the load with 1036 "Table is read only".
+# mysqldump and mariadb-dump never dump the data of such engines.
+tested_schema = "test_merge"
+dump_dir = os.path.join(outdir, "merge_tables")
+merge_engine = "MRG_MyISAM" if __server_is_maria_db else "MRG_MYISAM"
+
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+session1.run_sql("CREATE TABLE !.m1 (id INT NOT NULL, KEY (id)) ENGINE=MyISAM", [tested_schema])
+session1.run_sql("CREATE TABLE !.m2 (id INT NOT NULL, KEY (id)) ENGINE=MyISAM", [tested_schema])
+session1.run_sql("INSERT INTO !.m1 VALUES (1), (2), (3)", [tested_schema])
+session1.run_sql("INSERT INTO !.m2 VALUES (10), (20)", [tested_schema])
+session1.run_sql(f"CREATE TABLE !.u_last (id INT NOT NULL, KEY (id)) ENGINE=MERGE UNION=({tested_schema}.m1, {tested_schema}.m2) INSERT_METHOD=LAST", [tested_schema])
+session1.run_sql(f"CREATE TABLE !.u_no (id INT NOT NULL, KEY (id)) ENGINE=MERGE UNION=({tested_schema}.m1, {tested_schema}.m2) INSERT_METHOD=NO", [tested_schema])
+
+#@<> MERGE tables are dumped without their data - test (8)
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "showProgress": False }), "Dump should not fail")
+for table in ["u_last", "u_no"]:
+    EXPECT_STDOUT_CONTAINS(f"NOTE: Table `{tested_schema}`.`{table}` uses the {merge_engine} engine, which holds no data of its own: only its definition is dumped.")
+    EXPECT_EQ([], [f for f in os.listdir(dump_dir) if f.startswith(f"{tested_schema}@{table}@") and ".tsv" in f], table)
+    with open(os.path.join(dump_dir, f"{tested_schema}@{table}.json"), encoding="utf-8") as f:
+        EXPECT_FALSE(json.load(f)["includesData"], table)
+
+wipeout_server(session2)
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Load should not fail")
+for table, rows in [("m1", 3), ("m2", 2), ("u_last", 5), ("u_no", 5)]:
+    EXPECT_EQ(rows, session2.run_sql("SELECT COUNT(*) FROM !.!", [tested_schema, table]).fetch_one()[0], table)
+
+# exportTable reads the rows it was asked for, through the engine
+export_file = os.path.join(outdir, "merge_export.tsv")
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.export_table(f"{tested_schema}.u_last", export_file, { "showProgress": False }), "Export should not fail")
+with open(export_file, encoding="utf-8") as f:
+    EXPECT_EQ(5, len(f.read().splitlines()))
+
+#@<> MERGE tables are dumped without their data - cleanup (8)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+wipeout_server(session2)
+
 #@<> WITHOUT OVERLAPS table loaded in parallel - setup {__server_is_maria_db} (8)
 # Concurrent loads into one table with a UNIQUE ... WITHOUT OVERLAPS key
 # deadlock on that index almost every time, and the victim comes back as error

@@ -3944,9 +3944,11 @@ where only the period does. `Instance_cache_test`, `Schema_dumper_test` and
 - ~~**Dynamic columns**~~ are covered since 2026-09-30. They are a `BLOB` in
   MariaDB's packed format, including a nested one and a NULL, and a
   `COLUMN_GET()` on the target proves the bytes survived, not only the checksum.
-  **`CONNECT` and `Spider` engines are still not covered.** Neither ships in the
-  13.1.1 or 13.1.0 packages. `ha_spider.so` exists only in a local 13.2-dev
-  build, and `CONNECT` is built nowhere here.
+  **`CONNECT` and `Spider` engines are dumped as DDL only**, like
+  `mariadb-dump` does, since §35 (which also found and fixed MERGE tables having
+  their rows dumped and duplicated on load, on both vendors). They are still not
+  tested: neither ships in the 13.1.1 or 13.1.0 packages, `ha_spider.so` exists
+  only in a local 13.2-dev build, and `CONNECT` is built nowhere here.
 - ~~**The sweep is per-feature, not combinatorial.** Each feature was tested on its
   own table; interactions between them were not.~~ **Combinations are covered
   since 2026-09-30.** `util_dump_and_load_mariadb_norecord`, *feature
@@ -4164,3 +4166,81 @@ not getting any.
   `WL15298 - test sessionInitSql option` kept doing, now avoided by seeding
   its table. It is not retried, and a real `sessionInitSql` doing that would fail
   the load the same way.
+
+---
+
+## 35. A MERGE table's rows were dumped, and loading them duplicated data
+
+Found 2026-09-30 while looking at Spider and CONNECT (§31.4). It is an **upstream
+MySQL Shell bug**, and the port inherited it unchanged. It is not MariaDB-specific.
+
+### 35.1 What happened, measured on both vendors
+
+A MERGE table holds no rows of its own. It is a union of MyISAM tables, which
+are dumped themselves. The shell dumped its rows anyway, and the load wrote them
+back *through* the engine. Two MyISAM tables with 3 and 2 rows, and two MERGE
+tables over them:
+
+| | `m1` | `m2` | `u_last` (`INSERT_METHOD=LAST`) | `u_no` (`INSERT_METHOD=NO`) |
+|---|---|---|---|---|
+| source | 3 | 2 | 5 | 5 |
+| after `dumpSchemas` → `loadDump` | 3 | **7** | 10 | 10 |
+
+`u_last`'s rows were inserted into its last table, so `m2` came back with the
+other tables' rows added. `u_no` is read-only, so its chunk failed with `1036:
+Table 'u_no' is read only` and aborted the load, after the duplication had
+already happened. The results were identical on the MariaDB build against
+13.1.1 and on the MySQL build against 9.7.1.
+
+### 35.2 Why
+
+`mysqldump` and `mariadb-dump` never dump the data of such tables. The shell
+inherited that check: `Schema_dumper::check_if_ignore_table()` returned
+`IGNORE_DATA` for `MRG_MyISAM`, `MRG_ISAM` and `FEDERATED`. But the shell's data
+dump is `Dumper`, and its `should_dump_data()` never read the flag. It was dead
+code. No fixture in the suites had a MERGE or FEDERATED table, which is how it
+went unnoticed.
+
+### 35.3 The fix
+
+`common::engine_manages_external_data()` (`server_features.h`) is
+`mariadb-dump`'s `MED_ENGINES` list (`--no-data-med`, on by default): `MRG_MyISAM`,
+`MRG_ISAM`, `FEDERATED`, `CONNECT`, `OQGRAPH`, `SPIDER`, `VP`, compared
+case-insensitively, since MySQL spells MERGE `MRG_MYISAM`. The names beyond
+`mysqldump`'s list exist only on MariaDB, so it needs no vendor check.
+`Dumper::should_dump_data()` skips such a table's data. Its metadata then says
+`includesData: false`, so it gets no chunk and no checksum, and the load
+creates only its DDL. `Schema_dumper::check_if_ignore_table()` uses the same
+list, so there is one source of truth. The dump says why, for each table: `NOTE:
+Table `db`.`t` uses the MRG_MyISAM engine, which holds no data of its own: only
+its definition is dumped.` The exception is `util.exportTable()`, which exports
+the rows of the table it was explicitly asked for, through the engine, as
+before.
+
+For MariaDB this also settles §31.4's Spider and CONNECT question the way
+`mariadb-dump` does: DDL only, never their data, which would otherwise be read
+through to the remote servers or files and written back to them. It changes
+MySQL behaviour, as a bug fix that brings the shell in line with `mysqldump`.
+
+### 35.4 Verified
+
+`util_dump_and_load_norecord`, *MERGE tables are dumped without their data*, is
+in the shared suite and runs on both vendors. No data file for either MERGE
+table, `includesData: false`, the note for each, a load that succeeds with exact
+row counts, and `exportTable` of a MERGE table still exporting its 5 rows.
+Passes on the MariaDB and MySQL builds, together with `util_export_table` and
+`Schema_dumper_test`.
+
+### 35.5 Not done here
+
+- **Spider, CONNECT, OQGRAPH and VP are listed but not tested.** Neither the
+  13.1.1 nor the 13.1.0 package ships them. `ha_spider.so` exists only in a local
+  13.2-dev build, and `CONNECT` is built nowhere here. FEDERATED is also untested:
+  MySQL disables it by default, and MariaDB's FEDERATEDX is not in the packages.
+- **The remote server definitions are not dumped.** `CREATE SERVER` entries in
+  `mysql.servers`, which Spider and FEDERATED tables name, travel with
+  `mariadb-dump --system=servers` only. A restored Spider or FEDERATED table
+  needs them created on the target.
+- **S3 tables are dumped normally.** `mariadb-dump` skips them entirely unless
+  `--copy-s3-tables`, since the S3 engine keeps read-only data in object
+  storage. Not examined here.
