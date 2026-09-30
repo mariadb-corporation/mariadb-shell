@@ -1771,11 +1771,25 @@ exercised before):
 - **`gtid_binlog_state` is never written.** Setting it needs `RESET MASTER`,
   which would throw away the target's own binary log; `gtid_slave_pos` is the
   documented provisioning path and is what mariabackup uses.
-- **Galera is not detected.** The MySQL branch refuses `updateGtidSet` while
-  group replication runs; the MariaDB branch checks replica threads only. On a
-  Galera node `wsrep_gtid_domain_id` makes the position cluster-wide and
-  assigning it is a node-local action — worth a check, but it needs a Galera
-  cluster to design against.
+- **Galera is not detected - by design** (decided 2026-09-30). The MySQL branch
+  refuses `updateGtidSet` while Group Replication runs, but that refusal is the
+  *server's* rule surfaced early: MySQL rejects changing `gtid_purged` on a
+  running Group Replication member (`ER_UPDATE_GTID_PURGED_WITH_GR`,
+  `sql/sys_vars.cc`). Upstream's commit (f689f8a25, Bug#31627419) states the rule
+  and gives no other reason. MariaDB has no counterpart for Galera. `SET GLOBAL
+  gtid_slave_pos` is refused only while a replica thread runs or inside a
+  transaction (`Sys_var_gtid_slave_pos::do_check`), and 53040 already covers the
+  first. The position is node-local on purpose: `sql/rpl_gtid.cc` sets
+  `wsrep_ignore_table` around writes to `mysql.gtid_slave_pos` ("Do not
+  replicate mysql.gtid_slave_pos table"), because asynchronous replication into
+  a Galera cluster runs on one node. So a load with `updateGtidSet` connected to
+  node A loads the data, which Galera replicates to every node, and sets the
+  position on node A only. That is the normal provisioning workflow: `CHANGE
+  MASTER TO ... master_use_gtid = slave_pos` and `START SLAVE` on node A. The one
+  trap, starting the replica on another node, comes from MariaDB's own design,
+  not from the shell. A refusal would block that workflow, and a note (on
+  `wsrep_on = ON`) was considered and left out: it cannot be tested without a
+  Galera provider, and it would only restate how MariaDB positions work.
 - ~~**`Schema_dumper::process_set_gtid_purged()` was left alone.** §4.6 lists its
   `SET @@GLOBAL.GTID_PURGED` epilogue as MySQL-specific, and it is, but the
   function is **dead code** — inherited from mysqldump, declared and defined,
@@ -3339,11 +3353,24 @@ dumping, then uninstalling the plugin before the load:
 
 ### 25.2 Not done here
 
-- **The dump says nothing.** The source has the plugin installed and its
-  `plugin_library` in `information_schema.PLUGINS`, so `dumpInstance` could warn
-  at dump time - when there is still time to prepare the target - and even name
-  the exact `INSTALL SONAME`. That is the better fix for the same problem and it
-  is not done; the load-side note has to reconstruct the advice generically.
+- **The dump says nothing - by design, for now** (decided 2026-09-30; a possible
+  enhancement is tracked in [AIPL-27](https://jira.mariadb.org/browse/AIPL-27)).
+  The behaviour matches upstream. On MySQL too, a missing authentication plugin
+  aborts the load with the server's error, and upstream's only extra handling is
+  for MySQL HeatWave Service, where a plugin cannot be installed. The user has
+  the same options on both vendors: install the plugin and run the load again
+  (accounts use `IF NOT EXISTS`), `excludeUsers`, or no users. The one exception
+  is `compatibility: ["skip_invalid_accounts" | "lock_invalid_accounts"]`, which
+  is refused for a MariaDB source. Those judge accounts against HeatWave's list
+  of plugins, not the target's, so they do not apply. On top of that, the
+  load-side note above explains the failure, which MySQL does not. What is left
+  is convenience, not correctness. The dump could warn while there is still time
+  to prepare the target, and name the exact `INSTALL SONAME` from the source's
+  `plugin_library`, which the load cannot see. It matters more on MariaDB than
+  on MySQL, because the secure authentication MariaDB recommends (`ed25519`,
+  `parsec`) is loadable, where MySQL's default (`caching_sha2_password`) is
+  built in. AIPL-27 holds the design: a dump-time note, the plugin-to-library
+  mapping recorded in `@.json`, and a load-side note that names the library.
 - **The counter counts completed statement groups**, so an account which the MHS
   path skipped mid-way is still counted as created. That path does not reach this
   note, so it cannot show a wrong number today.
@@ -3891,13 +3918,45 @@ where only the period does. `Instance_cache_test`, `Schema_dumper_test` and
   programs only. `mysql_json`, `BLOB`-based MySQL 5.7 binary JSON that only an
   upgraded table can hold, is unmapped and so stops the dump with the new error.
   It cannot be created to test.
-- **Encrypted and `PAGE_COMPRESSED` tables were not covered**, since neither is
-  enabled on the test server.
+- ~~**Encrypted and `PAGE_COMPRESSED` tables were not covered**, since neither is
+  enabled on the test server.~~ **Covered since 2026-09-30.** `PAGE_COMPRESSED`
+  needs nothing (zlib is built in), and its tests run everywhere. The provider
+  plugins (`provider_lz4` and friends) do not matter to a logical dump, because
+  the algorithm is the target server's `innodb_compression_algorithm`, not part
+  of the table's DDL. Encryption needs a key management plugin, which the
+  trimmed 13.1.1 package does not ship, so those chunks run only where
+  `file_key_management.so` is in `@@plugin_dir`. The test deploys a source and a
+  target with a key file each: encryption is per server, and the dump carries
+  the `ENCRYPTED` / `ENCRYPTION_KEY_ID` options, never encrypted data. Measured
+  on 13.1.0, both tables round-trip, including `ENCRYPTION_KEY_ID=2`, with
+  checksums verified. A target **without** key management refuses the table:
+  `Can't create table ... (errno: 140 "Wrong create options")`, which does not
+  mention encryption. That is the server's own error, and the test pins it.
+  **By design** (decided 2026-09-30). The behaviour matches upstream, which does
+  nothing for encryption except comment out `ENCRYPTION='Y'` for MySQL HeatWave
+  Service (`ocimds`, refused for MariaDB sources). The difference is only the
+  server's message. MySQL refuses with `ER_CANNOT_FIND_KEY_IN_KEYRING`, which
+  names the cause. MariaDB's errno 140 does not. A load-side note explaining it,
+  in the shape of §25's authentication plugin note, is tracked in
+  [AIPL-29](https://jira.mariadb.org/browse/AIPL-29).
 - **`VECTOR` was tested with a vector index but not with `mariadb_vec_distance`
   queries in a view**, which would go through the parser (§28).
-- **Dynamic columns, `CONNECT` and `Spider` engines were not covered.**
-- **The sweep is per-feature, not combinatorial.** Each feature was tested on its
-  own table; interactions between them were not.
+- ~~**Dynamic columns**~~ are covered since 2026-09-30. They are a `BLOB` in
+  MariaDB's packed format, including a nested one and a NULL, and a
+  `COLUMN_GET()` on the target proves the bytes survived, not only the checksum.
+  **`CONNECT` and `Spider` engines are still not covered.** Neither ships in the
+  13.1.1 or 13.1.0 packages. `ha_spider.so` exists only in a local 13.2-dev
+  build, and `CONNECT` is built nowhere here.
+- ~~**The sweep is per-feature, not combinatorial.** Each feature was tested on its
+  own table; interactions between them were not.~~ **Combinations are covered
+  since 2026-09-30.** `util_dump_and_load_mariadb_norecord`, *feature
+  combinations*, covers system versioning with an application-time period and a
+  `WITHOUT OVERLAPS` key; a versioned, partitioned table with a `COMPRESSED` and
+  an `INVISIBLE` column; a sequence `DEFAULT` beside `UUID`, `INET6` and a
+  vector index; a `CHECK` on a generated column over JSON; a versioned Aria
+  table; and `PAGE_COMPRESSED` with subpartitions. Each comes back with
+  identical DDL and data, and the load verifies the checksums. No defect was
+  found.
 
 ---
 

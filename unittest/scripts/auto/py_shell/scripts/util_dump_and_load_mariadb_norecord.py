@@ -741,6 +741,108 @@ EXPECT_EQ([[1, 70, 2, 3], [2, 7, 4, 6]], [list(r) for r in session2.run_sql("SEL
 session1.run_sql("DROP SCHEMA feat")
 wipeout_server(session2)
 
+#@<> feature combinations - setup
+# MARIADB_DUMP_LOAD.md section 31.4 left these uncovered: PAGE_COMPRESSED
+# tables, dynamic columns, and features in combination rather than one per
+# table. Each table must come back with the same DDL and data, and the load
+# verifies the dump's checksums.
+session1.run_sql("CREATE SCHEMA combo")
+combo_setup = [
+    # PAGE_COMPRESSED, also with subpartitions
+    "CREATE TABLE combo.pc (id INT PRIMARY KEY, v TEXT) PAGE_COMPRESSED=1 PAGE_COMPRESSION_LEVEL=9",
+    "INSERT INTO combo.pc SELECT seq, REPEAT('abc', 200) FROM combo.seq_1_to_2000",
+    "CREATE TABLE combo.spc (id INT, d DATE) PAGE_COMPRESSED=1 PARTITION BY RANGE (YEAR(d)) SUBPARTITION BY HASH (id) SUBPARTITIONS 2 (PARTITION p0 VALUES LESS THAN (2020), PARTITION p1 VALUES LESS THAN MAXVALUE)",
+    "INSERT INTO combo.spc VALUES (1, '2019-01-01'), (2, '2021-01-01'), (3, '2022-01-01')",
+    # dynamic columns are a BLOB holding MariaDB's packed format
+    "CREATE TABLE combo.dc (id INT PRIMARY KEY, attrs BLOB)",
+    "INSERT INTO combo.dc VALUES (1, COLUMN_CREATE('color', 'blue', 'size', 10, 'price', 9.99)), (2, COLUMN_CREATE('nested', COLUMN_CREATE('a', 1))), (3, NULL)",
+    # system versioning with an application-time period and a WITHOUT OVERLAPS key
+    "CREATE TABLE combo.vpo (id INT, s DATE, e DATE, v INT, PERIOD FOR p(s, e), UNIQUE (id, p WITHOUT OVERLAPS)) WITH SYSTEM VERSIONING",
+    "INSERT INTO combo.vpo VALUES (1, '2020-01-01', '2020-06-01', 1), (1, '2020-06-01', '2021-01-01', 2)",
+    "UPDATE combo.vpo SET v = 5 WHERE v = 2",
+    # versioned and partitioned, with a COMPRESSED and an INVISIBLE column
+    "CREATE TABLE combo.vpc (id INT PRIMARY KEY, c TEXT COMPRESSED, inv INT INVISIBLE DEFAULT 3) WITH SYSTEM VERSIONING PARTITION BY SYSTEM_TIME (PARTITION h HISTORY, PARTITION c CURRENT)",
+    "INSERT INTO combo.vpc (id, c) VALUES (1, REPEAT('z', 500)), (2, 'x')",
+    "UPDATE combo.vpc SET c = 'y' WHERE id = 2",
+    # a sequence DEFAULT beside UUID, INET6 and a vector index
+    "CREATE SEQUENCE combo.sq NOCACHE",
+    "CREATE TABLE combo.svu (id INT PRIMARY KEY DEFAULT (NEXT VALUE FOR combo.sq), u UUID NOT NULL, i6 INET6, v VECTOR(2) NOT NULL, VECTOR INDEX (v), UNIQUE (u))",
+    "INSERT INTO combo.svu (u, i6, v) VALUES (UUID(), '::1', VEC_FromText('[1,2]')), (UUID(), NULL, VEC_FromText('[3,4]'))",
+    # a CHECK constraint on a generated column over JSON
+    "CREATE TABLE combo.cgj (id INT PRIMARY KEY, j JSON, k INT AS (JSON_VALUE(j, '$.k')) PERSISTENT, CHECK (k > 0))",
+    "INSERT INTO combo.cgj (id, j) VALUES (1, '{\"k\": 5}')",
+    # a system-versioned Aria table
+    "CREATE TABLE combo.av (id INT PRIMARY KEY, a INT) ENGINE=Aria WITH SYSTEM VERSIONING",
+    "INSERT INTO combo.av VALUES (1, 1)",
+]
+for statement in combo_setup:
+    session1.run_sql(statement)
+combo_tables = ["pc", "spc", "dc", "vpo", "vpc", "svu", "cgj", "av"]
+
+#@<> feature combinations - round trip, verified by checksum
+combo_dump = dump_dir_for("combo")
+EXPECT_NO_THROWS(lambda: dump_schema("combo", combo_dump, { "checksum": True }), "dump")
+wipeout_server(session2)
+EXPECT_NO_THROWS(lambda: load(combo_dump, { "checksum": True }), "load")
+EXPECT_STDOUT_NOT_CONTAINS("Checksum verification failed")
+for table in combo_tables:
+    EXPECT_EQ(show_create_table(session1, "combo", table), show_create_table(session2, "combo", table), table)
+    EXPECT_EQ(md5_table(session1, "combo", table), md5_table(session2, "combo", table), table)
+EXPECT_EQ(2000, fetch_value(session2, "SELECT COUNT(*) FROM combo.pc"))
+# the packed format survived as bytes, not only as a checksum
+EXPECT_EQ("blue", fetch_value(session2, "SELECT COLUMN_GET(attrs, 'color' AS CHAR) FROM combo.dc WHERE id = 1"))
+EXPECT_EQ(1, fetch_value(session2, "SELECT COLUMN_GET(COLUMN_GET(attrs, 'nested' AS BINARY), 'a' AS INT) FROM combo.dc WHERE id = 2"))
+
+#@<> feature combinations - cleanup
+session1.run_sql("DROP SCHEMA combo")
+wipeout_server(session2)
+
+#@<> encrypted tables - setup
+# needs the file_key_management plugin, which a trimmed server package does not
+# ship: these chunks run only where the plugin is there. Both the source and the
+# target get their own key file, as encryption is per server - the dump carries
+# the ENCRYPTED / ENCRYPTION_KEY_ID options, never the data encrypted.
+server_has_key_management = os.path.exists(os.path.join(fetch_value(session1, "SELECT @@plugin_dir"), "file_key_management.so"))
+if server_has_key_management:
+    key_file = os.path.join(outdir, "keys.txt")
+    with open(key_file, "w", encoding="ascii") as f:
+        f.write("1;" + "a" * 64 + "\n2;" + "b" * 64 + "\n")
+    for port in [__mysql_sandbox_port3, __mysql_sandbox_port4]:
+        testutil.deploy_sandbox(port, "root", { "local_infile": "1", "plugin_load_add": "file_key_management", "file_key_management_filename": key_file })
+    enc_source = mysql.get_session(__sandbox_uri3)
+    enc_target = mysql.get_session(__sandbox_uri4)
+
+#@<> encrypted tables - round trip {server_has_key_management}
+enc_source.run_sql("CREATE SCHEMA encdb")
+enc_source.run_sql("CREATE TABLE encdb.t1 (id INT PRIMARY KEY, v VARCHAR(20)) ENCRYPTED=YES")
+enc_source.run_sql("CREATE TABLE encdb.t2 (id INT PRIMARY KEY, v VARCHAR(20)) ENCRYPTED=YES ENCRYPTION_KEY_ID=2")
+enc_source.run_sql("INSERT INTO encdb.t1 VALUES (1, 'secret'), (2, 'more')")
+enc_source.run_sql("INSERT INTO encdb.t2 VALUES (1, 'key two')")
+enc_dump = dump_dir_for("encrypted")
+shell.connect(__sandbox_uri3)
+EXPECT_NO_THROWS(lambda: util.dump_schemas(["encdb"], enc_dump, { "checksum": True, "showProgress": False }), "dump")
+shell.connect(__sandbox_uri4)
+EXPECT_NO_THROWS(lambda: util.load_dump(enc_dump, { "checksum": True, "showProgress": False }), "load")
+for table in ["t1", "t2"]:
+    EXPECT_EQ(show_create_table(enc_source, "encdb", table), show_create_table(enc_target, "encdb", table), table)
+    EXPECT_EQ(md5_table(enc_source, "encdb", table), md5_table(enc_target, "encdb", table), table)
+EXPECT_CONTAINS("`ENCRYPTION_KEY_ID`=2", show_create_table(enc_target, "encdb", "t2"))
+
+#@<> encrypted tables - a target without key management refuses them {server_has_key_management}
+# MARIADB_DUMP_LOAD.md section 31.4: the server's own refusal, which does not
+# mention encryption
+wipeout_server(session2)
+shell.connect(__sandbox_uri2)
+EXPECT_THROWS(lambda: util.load_dump(enc_dump, { "showProgress": False, "resetProgress": True }), "Error loading dump")
+EXPECT_STDOUT_CONTAINS("Can't create table `encdb`.`t1` (errno: 140 \"Wrong create options\")")
+
+#@<> encrypted tables - cleanup {server_has_key_management}
+enc_source.close()
+enc_target.close()
+for port in [__mysql_sandbox_port3, __mysql_sandbox_port4]:
+    testutil.destroy_sandbox(port)
+wipeout_server(session2)
+
 #@<> XMLTYPE - setup
 # MariaDB 13.1.1+: stored like a LONGBLOB but with a character set, so it is
 # dumped as text. An unmapped column type used to abort the dump with a bare
