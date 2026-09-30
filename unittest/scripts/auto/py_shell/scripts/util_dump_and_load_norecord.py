@@ -4190,7 +4190,7 @@ session.run_sql(f"DROP USER IF EXISTS {tested_user}")
 shell.connect(__sandbox_uri2)
 session.run_sql("SET @@GLOBAL.log_bin_trust_function_creators = 0")
 
-#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {__dbug and VER(>=8.0.0) and not __server_is_maria_db} (8)
+#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 # MariaDB-only collations are the ones being replaced, and a MariaDB build knows
 # them (is_supported_collation() reads the linked charset table), so nothing is
 # replaced there - which is right, as the dump is loaded back into MariaDB
@@ -4221,7 +4221,7 @@ session1.run_sql("CREATE EVENT !.e ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1
 # restore collations
 session1.run_sql("set names utf8mb4")
 
-#@<> BUG#38089433 - dump {__dbug and VER(>=8.0.0) and not __server_is_maria_db} (8)
+#@<> BUG#38089433 - dump {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 testutil.dbug_set("+d,dumper_unsupported_collation")
 
 shell.connect(__sandbox_uri1)
@@ -4255,7 +4255,7 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had DATABASE_CO
 EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had COLLATION_CONNECTION set to '{unsupported_collation}', it has been replaced with '{supported_collation}'")
 
 
-#@<> BUG#38089433 - load {__dbug and VER(>=8.0.0) and not __server_is_maria_db} (8)
+#@<> BUG#38089433 - load {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 wipeout_server(session2)
 
 shell.connect(__sandbox_uri2)
@@ -4270,7 +4270,7 @@ session1.run_sql(f"CREATE TABLE !.t2 (c TEXT) COLLATE {supported_collation}", [ 
 
 EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session2, tested_schema), "Verifying schema")
 
-#@<> BUG#38089433 - cleanup {__dbug and VER(>=8.0.0) and not __server_is_maria_db} (8)
+#@<> BUG#38089433 - cleanup {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 #@<> BUG#37326937 - if the first load attempt failed with duplicate objects error, the second one should also fail (8)

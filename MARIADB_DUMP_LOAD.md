@@ -926,7 +926,7 @@ predicates without it.
 | 5b | ~~**Check constraints** (§4.5)~~ **DONE** (§17) — the DDL already round-tripped; the load now switches `check_constraint_checks` off, so a table holding rows its own constraints reject can be restored. | Not an object-metadata problem at all: MySQL's non-enforcement is per-constraint DDL, MariaDB's is a session variable, so only the restoring side had a gap. |
 | 5c | ~~**Oracle-mode packages** — `PACKAGE` / `PACKAGE BODY` routines (§4.5).~~ **DONE** (§19) — dumped by the routine pass in mysqldump's order, filtered as routines, dropped and duplicate-checked on load. | Same failure as sequences, not the predicted one: a package was cached as a *function*, so the dump aborted on `SHOW CREATE FUNCTION`. |
 | 5d | ~~**Users, roles and grants** (§4.2, §4.6)~~ **DONE** (§20) — `users: true` works on a MariaDB-dialect dump; roles get `CREATE ROLE` / `DROP ROLE` of their own, `SHOW GRANTS` output is trimmed to its own grantee and the default role moves to its own block. 52037 stays, narrowed to the MySQL-shaped dump it was written for. | Nothing predicted here was the problem. `SHOW CREATE USER` does not *omit* a role, it **fails** for one; `IDENTIFIED VIA x OR y` round-trips verbatim; and the auth plugins only matter if the target lacks one. What did bite: `SHOW GRANTS FOR` a role is *transitive*. |
-| 6 | **Tests — in progress** (§21). The end-to-end suites, deferred on MariaDB until here (§12.6). The component-level tests are green on both vendors, and the `util.copy*` suites this row asked for — the in-memory writer path — are the first ones passing; the four big `util_dump_*` suites are what remains (§21.8). | Needs a MySQL server *and* a MariaDB server in CI to hold both vendor paths. Component-level unit tests are *not* deferred to here; they are tracked per phase. |
+| 6 | ~~**Tests**~~ **DONE** (§21) — every dump, load, copy, import and export suite passes on both vendors (§21.8), plus a MariaDB-only suite for the features MySQL has no counterpart for. The component-level tests are green on both vendors. | Only what the server package lacks fails. The binlog utilities are not built on MariaDB and their suites are not registered (`MARIADB_PORT.md` §4). |
 
 ---
 
@@ -991,8 +991,8 @@ to `mariadb_rpl_*`; it was not.** `git log --all -S mariadb_rpl` finds the strin
 only in `MARIADB_PORT.md` itself — no commit on any branch touches
 `modules/util/binlog/*` or `db/mysql/binary_log.cc`, and those files still
 `#include <mysql/binlog/event/binlog_event.h>`, `<mysql/gtids/gtids.h>` and
-`<sql/rpl_constants.h>`. §4 of that document describes work that was never
-committed and should be corrected.
+`<sql/rpl_constants.h>`. `MARIADB_PORT.md` §4 now records the utilities as
+MySQL-only.
 
 So binlog got its own gate covering `modules/util/binlog/*`,
 `db/mysql/binary_log.cc`, `mysqlshdk/libs/mysql/{gtid_utils,binlog_utils}.cc`,
@@ -1461,23 +1461,23 @@ helper):
 
 ### 13.8 Known-unfixed
 
-- Still failing on the MariaDB build, all pre-existing:
+- ~~Still failing on the MariaDB build, all pre-existing:
   `Instance_cache_test.table_columns` (a column-type mapping difference),
   `Schema_dumper_test.{opt_mysqlaas, compat_ddl, unknown_collations}` (expected
-  output, phase 6).
+  output, phase 6).~~ **Resolved in §21.5** - one product fix, three skips.
 - `Instance_cache_builder::fetch_view_metadata()` hands the real MariaDB version
   to `mysqlshdk::parser::Parser_config`, so MariaDB view definitions are parsed
   with the newest MySQL grammar rather than 5.6's. Closer than before, but
-  MariaDB-only view syntax is still not understood — relevant once §4.5's view
-  handling is revisited.
+  MariaDB-only view syntax is still not understood. A view the parser cannot
+  read no longer aborts the dump (§27.2); a MariaDB grammar is §28.
 - `dumper.cc` keeps one raw `is_8_0` read on purpose, on the `ocimds`
   compatibility path which is refused for a MariaDB source; it is marked as such
   at the site.
 - MySQL → MySQL dumps are **not** byte-identical before and after, as §7.5
   suggested checking: the manifest gained the `vendor` field. That is the only
   difference, and it is the §6.3 requirement.
-- **`targetVersion` error messages lost their `Argument #N:` prefix on the MySQL
-  build** — found while running the phase-3 gate (§14.4), present before phase 3
+- ~~**`targetVersion` error messages lost their `Argument #N:` prefix on the MySQL
+  build**~~ **Settled in §21.9** (not restored, expectations pinned) — found while running the phase-3 gate (§14.4), present before phase 3
   and absent before phase 2. Moving the validation out of the option unpacker
   into `on_validate()` (the trap recorded above) also moved it out of the
   unpacker's error wrapper, so `Target MySQL version '26.9.0' is not
@@ -2068,7 +2068,7 @@ Live, MariaDB 12.3.2 (3313) and MySQL 9.7.1 (3314):
 
 ### 17.5 Not done here
 
-- **`deferTableIndexes` hangs on MariaDB, and it is unrelated to this phase.**
+- ~~**`deferTableIndexes` hangs on MariaDB, and it is unrelated to this phase.**~~
   **Fixed straight after this phase — see §18.** Found while checking whether
   deferred index rebuilding mangles check constraints. It does not — but `loadDump ... --defer-table-indexes=all` never
   returns on MariaDB, while the same dump loads in ~5s on MySQL. Diagnosed:
@@ -2642,12 +2642,12 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
 
 ---
 
-## 21. Phase 6 — in progress
+## 21. Phase 6 — done
 
 Started 2026-08-19. Goal is §9's last row: the end-to-end suites, deferred on
 MariaDB since §12.6. The component-level tests are **done** — the four failures
-every phase since §13.7 has carried are gone (§21.5) — and the scripted suites are
-being brought up one at a time (§21.8).
+every phase since §13.7 has carried are gone (§21.5) — and every scripted dump,
+load, copy, import and export suite passes on both vendors (§21.8).
 
 Two things had to be fixed before a single scripted suite could run at all, and
 neither was a test:
@@ -2847,23 +2847,57 @@ skipped (§21.5). The MySQL build against MySQL 26.7.0 is **42 passed, 0 failed*
 with the MariaDB-only tests skipped, and `util_copy_trx` — the suite whose
 expectations §21.4 touched — still passes there.
 
-Scripted suites on MariaDB, one gtest each:
+Scripted suites on MariaDB, one gtest each (split suites run as parallel chunk
+groups):
 
 | Suite | State |
 |---|---|
-| `util_dump_chunking` | **passes** |
-| `util_dump_instance_corners` | **passes** (already did) |
-| `util_copy_trx` | **passes** — 26 failures at the start of the phase |
-| `util_copy_tables` | **passes** — 96 failures at the start |
-| `util_copy_schemas` | **passes** — 11 after the shared-helper fixes |
-| `util_copy_instance` | in progress |
-| `util_load_dump_trx`, `util_dump_and_load_ddm`, `util_dump_and_load_extra` | in progress |
-| `util_dump_and_load`, `util_dump_instance`, `util_dump_schemas`, `util_dump_tables` | **not yet** — the four big ones (16k lines between them) |
-| `util_dump_binlogs`, `util_dump_binlogs_replication`, `util_load_binlogs` | not registered (§21.6) |
+| `util_dump_chunking`, `util_dump_instance_corners` | **passes** |
+| `util_copy_trx`, `util_copy_tables`, `util_copy_schemas`, `util_copy_instance` | **passes** |
+| `util_load_dump_trx`, `util_dump_and_load_ddm`, `util_dump_and_load_extra` | **passes** |
+| `util_dump_and_load`, `util_dump_instance`, `util_dump_schemas`, `util_dump_tables`, `util_dump_tables_bugfixes` | **passes** - the MySQL-only sections are gated, not deleted |
 | `util_dump_and_load_mariadb` | **passes** - MariaDB only, skips itself on MySQL: the end-to-end counterpart of §14-§20 and §24-§31 |
+| `util_import_table*`, `util_export_table` | **passes** |
+| `util_dump_binlogs`, `util_dump_binlogs_replication`, `util_load_binlogs` | not registered (§21.6) |
 
-The four remaining suites got their first honest run once the environment was
-fixed - `util_dump_and_load` 173 failure blocks, `util_dump_instance` 218,
+**Full runs, 2026-09-30:**
+
+- MariaDB build (Debug) against MariaDB 13.1.1: **295 of 297 tasks pass**. The
+  two failures, `Config_test` and `Config_server_handler_test`, set
+  `lc_messages = 'pt_PT'`. The server on `PATH` was the pruned sandbox package,
+  which ships English error messages only. Against the full 13.1.0 install both
+  pass. `Config_server_handler_test`'s `sql_warnings` assertions are a knock-on
+  failure: the global-variables test throws before restoring the global it set.
+- MySQL build (RelWithDebInfo) against MySQL 9.7.1: **347 of 347 pass**.
+- MariaDB build again, `Config_test` and `Config_server_handler_test` excluded
+  since the pruned package cannot pass them: **294 of 295 pass**. One
+  `util_export_table` group hung in `util.importTable`, and a re-run of the whole
+  suite passes in all 8 groups.
+
+The hang is a MariaDB server bug on macOS, not the shell's. Eight concurrent
+`LOAD DATA LOCAL` into one fresh InnoDB table deadlock inside the server. A
+sample shows a page split holding `LockMultiGuard` in `lock_move_rec_list_end`,
+with the other inserts waiting in `lock_rec_insert_check_and_lock`. It
+reproduces with plain `mariadb` clients on 12.3.2 through 13.2 Release builds,
+but not on Linux. Two or four loaders do not trigger it.
+`util.importTable` is the one path that hits it, because it defaults to 8
+threads on one table; `loadDump` and `util.copy*` default to 4 and spread
+threads across tables. No timeout fires, so a hung run waits until it is killed.
+- MariaDB build (Debug) against MySQL 9.7.1: **295 of 297 pass**, and the two
+  failing suites then pass in all 8 groups when re-run.
+  - `util_dump_and_load`'s BUG#38089433 chunks were gated on the server
+    (`not __server_is_maria_db`), while the difference is the build's:
+    `is_supported_collation()` reads the linked client library's charset table,
+    and libmariadb knows the `uca1400` collations the test expects replaced. They
+    are `__dbug` chunks, so this Debug build was the first to run them in this
+    combination. Now also gated `not __mariadb_build`, as `Schema_dumper_test.unknown_collations` is (§21.5).
+  - `util_dump_schemas`' BUG#36509026 check is an upstream race: another dump
+    worker's warning landed between the lines of the wrong-case note, which
+    `Dumper::handle_mismatched_view_references()` writes with separate console
+    calls from a worker thread.
+
+How the four big suites got there: their first honest run, once the environment was
+fixed, was `util_dump_and_load` 173 failure blocks, `util_dump_instance` 218,
 `util_dump_schemas` 139, `util_dump_tables` 415 - and the causes are catalogued
 rather than unknown. Counting the distinct first causes across all four:
 
@@ -2888,8 +2922,7 @@ note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so th
 
 ### 21.9 Not done here
 
-- **The four big dump suites** (§21.8). They are the bulk of what is left of this
-  phase. Their `targetVersion` sections are done: `__build_server_version` /
+- ~~**The four big dump suites** (§21.8).~~ **Pass on both vendors (§21.8).** Their `targetVersion` sections work like this: `__build_server_version` /
   `__build_server_version_num` carry `mysqlshdk::utils::k_build_server_version`
   into the scripts, and `dump_utils.inc` picks the yardstick off the server's
   vendor per §7.4 (`newest_target_version`, `target_version_rejected_msg()`),
@@ -2909,16 +2942,14 @@ note applies, and fixtures whose `/*!8xxxx*/` clauses are inert on MariaDB so th
   `targetVersion` from the target's `@@version`, not from an option). Decided
   against: the expectations are pinned to the current output instead, in the three
   `util_dump_{instance,schemas,tables}_norecord.py` suites, five assertions each.
-- **The MySQL build has only been spot-checked on the scripted side** —
-  `util_copy_trx` passes there, and both builds compile. The full MySQL scripted
-  run is still the gate this phase has to clear before it can be called done. The
-  12 assertions which made `util_dump_instance` known-red there are the prefix
-  ones above and should go green with them, but that run has not happened yet.
+- ~~**The MySQL build has only been spot-checked on the scripted side.**~~ **Its
+  full run passes, 347 of 347 (§21.8)**, `util_dump_instance` included.
 - **The JavaScript suites are untouched.** `util_load_dump_norecord.js` and the
-  `cli_dump_*` scripts only run where the Shell has JS, which a MariaDB build does
-  not (`HAVE_JS`), so nothing there can be exercised from this side.
-- **`util.importTable`'s own suites were not part of this pass**, only the
-  dump/load and copy ones.
+  `cli_dump_*` scripts only run where the Shell has JS (`HAVE_JS`, which needs the
+  JIT executor). Neither the MariaDB build nor the MySQL build here configures it,
+  so they do not run on either, and that coverage is lost for MySQL too.
+- ~~**`util.importTable`'s own suites were not part of this pass**, only the
+  dump/load and copy ones.~~ They pass in both full runs (§21.8).
 - **`transaction_registry` data is now skipped rather than translated.** Its rows
   are MariaDB's system-versioning bookkeeping, and the load could not write them
   anyway (error 1556), so a dump of the `mysql` schema carries the table's DDL and
@@ -3432,8 +3463,9 @@ one schema. `Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed
   which was filtered out of the dump will not be reported if that view also
   happens to be unparseable. The warning says so, but it is a warning about a
   missing warning.
-- **Partitioned or `WITHOUT SYSTEM VERSIONING`-column tables were not tested**,
-  nor `AS OF` / `BETWEEN` period queries in a view - only `FOR SYSTEM_TIME ALL`.
+- ~~**Partitioned or `WITHOUT SYSTEM VERSIONING`-column tables were not tested**,
+  nor `AS OF` / `BETWEEN` period queries in a view - only `FOR SYSTEM_TIME ALL`.~~
+  **Done in §30**, which found and fixed the partitioned case.
 
 ---
 
