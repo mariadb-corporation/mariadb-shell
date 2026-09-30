@@ -132,6 +132,20 @@ def test_build_option_file_applies_overrides(sandboxlib):
     assert mysqld["max_connections"] == "50"
 
 
+def test_build_option_file_syncs_by_default(sandboxlib):
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mariadb", None, {}, _innodb(sandboxlib))["mysqld"]
+    assert "debug_no_sync" not in mysqld
+
+
+def test_build_option_file_no_sync(sandboxlib):
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mariadb", None, {}, _innodb(sandboxlib),
+        no_sync=True)["mysqld"]
+    assert "debug_no_sync" in mysqld
+    assert mysqld["debug_no_sync"] is None
+
+
 def test_build_option_file_rejects_port_override(sandboxlib):
     with pytest.raises(sandboxlib.Error, match="port"):
         sandboxlib._build_option_file(

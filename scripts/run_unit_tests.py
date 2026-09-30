@@ -74,6 +74,12 @@ _FIREJAIL_PATH = shutil.which("firejail")
 # own boilerplate - 5s alone, around 20s with all the workers doing it at once.
 _BOILERPLATE_DIR_ENV = "MARIADB_SANDBOX_BOILERPLATE_DIR"
 
+# Makes the sandbox plugin deploy MariaDB servers with 'debug-no-sync'
+# (python/plugins/sandbox/sandboxlib.py). On macOS MariaDB syncs with
+# F_FULLFSYNC several times per DDL statement, and with every worker's servers
+# doing that at once the full suite ran ~9x longer than against MySQL.
+_NO_SYNC_ENV = "MARIADB_SANDBOX_NO_SYNC"
+
 # A suite taking up at least this share of its worker's total time is called
 # out in the report as a candidate for _SPLIT_SUITES.
 _SPLIT_SHARE_THRESHOLD = 0.30
@@ -863,6 +869,7 @@ class Orchestrator:
 
         # Environment shared by every worker's sandbox calls and test processes
         base_env = os.environ.copy()
+        base_env[_NO_SYNC_ENV] = "1"
         boilerplate_dir = self._prepare_sandbox_boilerplate(short_tmp_root)
         if boilerplate_dir:
             base_env[_BOILERPLATE_DIR_ENV] = str(boilerplate_dir)

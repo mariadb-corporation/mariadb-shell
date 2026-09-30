@@ -75,6 +75,11 @@ def deploy(port, options=None):
     to keep the boilerplates in another directory instead, which lets
     deployments to different sandbox directories share them.
 
+    Set the MARIADB_SANDBOX_NO_SYNC environment variable to a non-empty value
+    to deploy MariaDB instances with 'debug-no-sync', which makes DDL much
+    faster (on macOS especially) at the cost of crash safety for everything but
+    InnoDB. It is meant for test runs; MySQL instances ignore it.
+
     A start and a stop script are written into the sandbox directory. They
     capture the absolute path to the server binary used for the deployment and
     reference the instance option file, so the sandbox can be started and
