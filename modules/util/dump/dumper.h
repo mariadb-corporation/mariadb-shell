@@ -312,6 +312,8 @@ class Dumper {
 
   void validate_data_masking();
 
+  void warn_about_system_versioned_tables() const;
+
   std::unordered_set<std::string> list_data_masking_policies_in_use();
 
   std::vector<mysqlsh::common::Data_masking::Policy>

@@ -1945,9 +1945,24 @@ Nothing outstanding on the MariaDB → MariaDB path; these are the edges around 
   schema script, so an older shell loading such a dump still creates them; it
   only misses the drop and duplicate-object handling the `sequences` metadata
   drives. Nothing in the layout requires a `Capability` entry.
-- **`cycle_count` is not carried.** It records how many times a cycling sequence
+- ~~**`cycle_count` is not carried.** It records how many times a cycling sequence
   has wrapped; `mysqldump` does not restore it either, and `SETVAL` cannot set
-  it.
+  it.~~ **Carried since 2026-09-30.** `SETVAL` *can* set it: its optional fourth
+  argument is the round (`SETVAL(seq, value, is_used, round)` in
+  `sql/sql_yacc.yy`, `SEQUENCE::set_value()` in `sql/sql_sequence.cc`), which is
+  `cycle_count`. `dump_sequences_for_db()` reads `cycle_option` and `cycle_count`
+  with the position and writes `DO SETVAL(s, v, 0, <cycle_count>)` for a
+  sequence that cycles and has wrapped, and the three-argument form otherwise.
+  The server refuses a round ahead of the current one on a sequence that does
+  not cycle (`ER_SEQUENCE_RUN_OUT`), so the round is left out there. Measured on
+  13.1.1, `ALTER SEQUENCE ... NOCYCLE` resets `cycle_count` to 0, so that case
+  does not arise that way. `mariadb-dump` still writes `DO SETVAL(s, v, 0)`, so
+  here the shell carries more than MariaDB's own tool. The load needed no change:
+  its `DO SETVAL` filter reads only the sequence name. Pinned by
+  `Schema_dumper_test.dump_sequences` (a sequence that wrapped twice, and one
+  altered to `NOCYCLE`, both also replayed by `dump_and_load`) and by
+  `util_dump_and_load_mariadb_norecord`, *a cycling sequence keeps its
+  cycle_count*.
 - ~~**`dumpTables` of a table whose `DEFAULT` names a sequence does not pull the
   sequence in.** The table filters select exactly what was asked for, as they do
   for every other dependency; the resulting dump fails to load unless the
@@ -2619,11 +2634,23 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
   error should say what to install, and the load has by then created some of the
   accounts.~~ **Addressed in §25** — it still aborts, for the reason given here,
   but it now says what to install and what it already did.
-- **`PUBLIC`'s grants are not dropped by `dropExistingObjects`,** because there
-  is no account to drop. A target's pre-existing `GRANT … TO PUBLIC` therefore
-  survives a load that was asked to replace everything. Correct in the narrow
-  sense — `DROP ROLE PUBLIC` is not a statement — but it is the one account whose
-  grants are additive.
+- **`PUBLIC`'s grants are merged, not replaced — by design** (decided
+  2026-09-30). `dropExistingObjects` never drops or revokes anything from
+  `PUBLIC`. The dumped `GRANT … TO PUBLIC` statements are added to the target's
+  own, so a target's pre-existing `PUBLIC` grants survive a load that was asked
+  to replace existing objects. `PUBLIC` cannot be dropped (`DROP ROLE PUBLIC` is
+  not a statement, `CREATE ROLE PUBLIC` is error 1959). The obvious substitute,
+  `REVOKE ALL PRIVILEGES, GRANT OPTION FROM PUBLIC`, was considered and
+  rejected. A named account in the dump belongs to the dump, and replacing it
+  affects that one account. `PUBLIC` is shared state on the target, and it
+  exists there whether or not anything was ever granted to it. Its grants on
+  schemas that exist only on the target are how other applications there get
+  their access, so revoking them would lock every account out of schemas the
+  load never touched. The merge can leave extra access behind, but never
+  removes any. Revoking only the grants on objects in the dump was also
+  considered, and dropped as not worth it: global `*.*` grants and schema
+  renames make "the dump's share" of `PUBLIC` ambiguous. A user who wants a
+  clean `PUBLIC` revokes its grants on the target before loading.
 - **The skip notes say "user" for a role**: `Skipping CREATE ROLE statements for
   user \`r\``. The wording comes from the shared path in
   `preprocess_users_script()`, which is also what makes it worth leaving alone.
@@ -3052,6 +3079,21 @@ MariaDB keeps engine-independent table statistics (EITS) in `mysql.table_stats`,
 excludes the `mysql` schema, so nothing about statistics survives a round trip,
 and a restored instance runs on engine estimates alone.
 
+**It stays a documented limitation, with no ticket and no warning** (decided
+2026-09-30). Two reasons. The statistics are rows in the `mysql` schema, which
+the dump does not carry, and are system state rather than data in the dumped
+schemas. And the right way to restore them would be to recompute them rather
+than copy them (§23.2). Copied rows are tied to the source's schema and table
+names. Recomputing costs one scan per table, which is exactly what running
+`ANALYZE TABLE ... PERSISTENT FOR ALL` after the load already does, and that is
+the recovery below.
+
+`mariadb-dump` does not carry them by default either, but it can:
+`--system=stats` (or `--system=all`) writes the rows of `mysql.column_stats`,
+`index_stats` and `table_stats`, and InnoDB's `innodb_table_stats` /
+`innodb_index_stats`, as `REPLACE INTO mysql.…` statements
+(`client/mysqldump.cc`). The shell has no equivalent.
+
 ### 23.1 What it costs, measured on 12.3.2 defaults
 
 | | |
@@ -3454,9 +3496,19 @@ one schema. `Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed
 
 - **Version history is not carried.** Measured: a source table with 1 current and
   2 historical rows restores with 1 row and no history. The dump reads current
-  rows with an ordinary `SELECT`, which is what `mariadb-dump` does too. Carrying
-  history would mean dumping the period columns and loading them with
-  `system_versioning_insert_history` - a feature, not a fix.
+  rows with an ordinary `SELECT`, which is `mariadb-dump`'s *default*. It is not
+  its only mode: since 10.11 `mariadb-dump --dump-history` reads such a table
+  `FOR SYSTEM_TIME ALL` with its row-start / row-end columns and restores them
+  under `system_versioning_insert_history=1`, refusing transaction-precise
+  history (`client/mysqldump.cc`). The shell has no equivalent - a feature, not
+  a fix, tracked in [AIPL-26](https://jira.mariadb.org/browse/AIPL-26). Until then the loss is not silent: for every
+  system-versioned table whose data is dumped,
+  `Dumper::warn_about_system_versioned_tables()` prints `Table ... is
+  system-versioned: only its current rows are dumped, not its history. The
+  loaded rows start a new history from the time of the load.`, and
+  `util_dump_and_load_mariadb_norecord` asserts it (and its absence under
+  `ddlOnly`). System versioning is MariaDB-only - MySQL's grammar has no
+  `VERSIONING` or `SYSTEM_TIME` at all - so there was no upstream handling to port.
 - **The parser still cannot read MariaDB view syntax** (§13.8). §27.2 is
   containment: the dump survives and loses a check. §28 is the actual fix.
 - **`FOR SYSTEM_TIME` in a view is now silently unchecked.** A view using a table
@@ -3679,7 +3731,7 @@ partitioned versioned table and an ordinary partitioned one in the same schema.
   option of `dumpTables` - is not refused. It would produce the same unloadable
   dump this section removes from the default path.
 - **History is still not carried**, now for the same reason everywhere rather than
-  two different ones (§27.4).
+  two different ones, and the dump warns about it (§27.4, [AIPL-26](https://jira.mariadb.org/browse/AIPL-26)).
 - **Subpartitions of a versioned table were not tested**, only partitions.
 
 ---

@@ -108,25 +108,31 @@ Then relink the shell: `ninja bin/mariadb-shell`.
 ## 2. Dropped features
 
 These are gated out for MariaDB (the rest of the shell — SQL mode, dump/load,
-upgrade checker, etc. — is supported):
+`util.copy*`, import/export, etc. — is supported):
 
 | Feature | Why | Effect on MariaDB build |
 |---|---|---|
 | **JavaScript** | GraalVM/Truffle not provided | `HAVE_JS` off (already the default) |
 | **X protocol / X DevAPI** | libmysqlxclient + protobuf are MySQL-only | `mysqlx://`, collections, X sessions removed; `db/mysqlx/*`, `modules/devapi/*` (X parts), protobuf, lz4 excluded from the build |
 | **AdminAPI** | InnoDB Cluster/ReplicaSet/ClusterSet are MySQL-specific | `dba` global, `cluster`/`rs`/`clusterset`, `modules/adminapi/*` excluded |
+| **Upgrade Checker** | its checks are MySQL's upgrade rules | `util.checkForServerUpgrade()` and `modules/util/upgrade_checker/*` excluded (`HAVE_UPGRADE_CHECKER`) |
+| **Binlog utilities** | MySQL client binlog API and libbinlogevents (§4) | `util.dumpBinlogs()` / `util.loadBinlogs()` excluded (`HAVE_BINLOG_UTILS`); porting them is [AIPL-24](https://jira.mariadb.org/browse/AIPL-24) |
 
 Only the **shared** DevAPI base classes (`base_constants`, `base_resultset`,
 `dynamic_object`) are still compiled — the classic resultset/object model needs
 them.
 
 ### Features that throw "not supported" at runtime
-(Their backends were X/MySQL-specific; they compile but are stubbed.)
+(Their backends are X- or MySQL-specific; they compile but are stubbed or refused.)
 
 - `util.importJson` — used the X document store
 - `--register-factor` — used the MySQL FIDO/WebAuthn auth plugin
 - report `--where` / `--having` filtering — used the X expression parser
 - cluster `--redirect-primary` / `--redirect-secondary` — used AdminAPI
+- the `ocimds` and `compatibility` dump options, when the source is MariaDB —
+  they rewrite DDL and accounts for MySQL HeatWave Service
+  (`Dump_options::on_validate()`). Allowing the DDL-only subset (`force_innodb`,
+  `create_invisible_pks`, …) for MariaDB is [AIPL-25](https://jira.mariadb.org/browse/AIPL-25)
 
 ---
 
@@ -167,7 +173,8 @@ What that costs on MariaDB:
 
 A port needs streaming on `mariadb_rpl_*`, MariaDB event decoding, and a GTID
 model built on domain positions. The last of those exists for dump/load in
-`mysqlshdk/libs/mysql/mariadb_gtid.h` (MARIADB_DUMP_LOAD.md §15.2).
+`mysqlshdk/libs/mysql/mariadb_gtid.h` (MARIADB_DUMP_LOAD.md §15.2). The port is
+tracked in [AIPL-24](https://jira.mariadb.org/browse/AIPL-24).
 
 ---
 
@@ -257,8 +264,8 @@ growth instead of scanning for `----args-separator----`).
 
 ## 8. Open items / to validate
 
-1. **Binlog utilities** — not built for MariaDB (§4). Whether to port them is
-   undecided.
+1. **Binlog utilities** — not built for MariaDB (§4); porting them is
+   [AIPL-24](https://jira.mariadb.org/browse/AIPL-24).
 2. **`ssl-mode=REQUIRED`** — cannot be strictly enforced with this libmariadb
    (warns at runtime); confirm acceptable or use a newer Connector/C.
 3. **Replication channel error mapping** — `ER_REPLICA_CHANNEL_DOES_NOT_EXIST`

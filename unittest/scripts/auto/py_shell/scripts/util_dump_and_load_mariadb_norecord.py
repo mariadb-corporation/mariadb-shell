@@ -148,9 +148,38 @@ EXPECT_STDOUT_CONTAINS("WARNING: Table `seqtest`.`t1` has a column DEFAULT which
 EXPECT_THROWS(lambda: load(seqtable_dump), "Error loading dump")
 EXPECT_STDOUT_CONTAINS("Table 'seqtest.s1' doesn't exist")
 
+#@<> sequences - a cycling sequence keeps its cycle_count
+# the round - how many times a CYCLE sequence wrapped - is SETVAL's fourth
+# argument, which mariadb-dump does not write
+session1.run_sql("CREATE SCHEMA seqcycle")
+session1.run_sql("CREATE SEQUENCE seqcycle.c1 MINVALUE 1 MAXVALUE 3 NOCACHE CYCLE")
+# 1, 2, 3, 1, 2, 3, 1: wrapped twice, 2 is next
+for i in range(7):
+    session1.run_sql("DO NEXTVAL(seqcycle.c1)")
+# wrapped once, then made NOCYCLE: SETVAL refuses a round on a sequence which
+# does not cycle, so none is written for it
+session1.run_sql("CREATE SEQUENCE seqcycle.c2 MINVALUE 1 MAXVALUE 3 NOCACHE CYCLE")
+for i in range(4):
+    session1.run_sql("DO NEXTVAL(seqcycle.c2)")
+session1.run_sql("ALTER SEQUENCE seqcycle.c2 NOCYCLE")
+EXPECT_EQ([2, 2], list(session1.run_sql("SELECT cycle_count, next_not_cached_value FROM seqcycle.c1").fetch_one()))
+# ALTER ... NOCYCLE resets the count, so there is no round to lose
+EXPECT_EQ([0, 2], list(session1.run_sql("SELECT cycle_count, next_not_cached_value FROM seqcycle.c2").fetch_one()))
+
+wipeout_server(session2)
+seqcycle_dump = dump_dir_for("sequences_cycle")
+EXPECT_NO_THROWS(lambda: dump_schema("seqcycle", seqcycle_dump), "dump")
+EXPECT_NO_THROWS(lambda: load(seqcycle_dump), "load")
+
+EXPECT_EQ([2, 2], list(session2.run_sql("SELECT cycle_count, next_not_cached_value FROM seqcycle.c1").fetch_one()))
+EXPECT_EQ(2, fetch_value(session2, "SELECT NEXTVAL(seqcycle.c1)"))
+EXPECT_EQ([0, 2], list(session2.run_sql("SELECT cycle_count, next_not_cached_value FROM seqcycle.c2").fetch_one()))
+EXPECT_EQ(2, fetch_value(session2, "SELECT NEXTVAL(seqcycle.c2)"))
+
 #@<> sequences - cleanup
 session1.run_sql("DROP SCHEMA seqtest")
 session1.run_sql("DROP SCHEMA seqdep")
+session1.run_sql("DROP SCHEMA seqcycle")
 wipeout_server(session2)
 
 #@<> check constraints - setup
@@ -499,7 +528,8 @@ session1.run_sql("DROP SCHEMA locktest")
 
 #@<> system versioning - setup
 # MARIADB_DUMP_LOAD.md sections 27 and 30. History is not carried: the dump
-# reads the current version of every row, as mariadb-dump does.
+# reads the current version of every row, as mariadb-dump does without
+# --dump-history, and says so for every such table.
 session1.run_sql("CREATE SCHEMA sysver")
 session1.run_sql("CREATE TABLE sysver.t1 (id INT PRIMARY KEY, a INT) WITH SYSTEM VERSIONING")
 session1.run_sql("INSERT INTO sysver.t1 VALUES (1, 1), (2, 2)")
@@ -521,6 +551,12 @@ sysver_tables = ["t1", "p1", "t_novers", "t_rowcols"]
 sysver_dump = dump_dir_for("system_versioning")
 EXPECT_NO_THROWS(lambda: dump_schema("sysver", sysver_dump), "dump")
 EXPECT_STDOUT_CONTAINS("WARNING: The definition of view `sysver`.`v_all` could not be parsed, so the tables it uses are unknown")
+for table in sysver_tables:
+    EXPECT_STDOUT_CONTAINS(f"WARNING: Table `sysver`.`{table}` is system-versioned: only its current rows are dumped, not its history. The loaded rows start a new history from the time of the load.")
+
+#@<> system versioning - no history warning when no data is dumped
+EXPECT_NO_THROWS(lambda: dump_schema("sysver", dump_dir_for("system_versioning_ddl"), { "ddlOnly": True }), "dump")
+EXPECT_STDOUT_NOT_CONTAINS("is system-versioned")
 
 #@<> system versioning - a partitioned table is dumped whole, without history
 data_files = [f for f in os.listdir(sysver_dump) if f.startswith("sysver@p1@") and not f.endswith(".json") and not f.endswith(".sql")]

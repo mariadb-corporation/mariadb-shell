@@ -1478,7 +1478,9 @@ std::vector<Compatibility_issue> Schema_dumper::dump_libraries_for_db(
   from SHOW CREATE SEQUENCE, but the position does not - I_S.SEQUENCES only
   describes the sequence, so the current value has to be read from the sequence
   read as a table. SETVAL() with is_used = 0 makes the next NEXT VALUE FOR
-  return exactly that value.
+  return exactly that value. Its fourth argument is the round, the number of
+  times a CYCLE sequence has wrapped (cycle_count), which mysqldump does not
+  carry.
 
   See MARIADB_DUMP_LOAD.md section 4.5.1.
 */
@@ -1522,15 +1524,27 @@ std::vector<Compatibility_issue> Schema_dumper::dump_sequences_for_db(
     // they are on a server restart, so this is the next value which was not
     // handed out yet - never one which was
     std::string position;
+    std::string round;
 
     {
       const auto res = query_log_and_throw(
-          "SELECT next_not_cached_value FROM " + qualified_name);
+          "SELECT next_not_cached_value, cycle_option, cycle_count FROM " +
+          qualified_name);
 
       if (const auto row = res->fetch_one(); row && !row->is_null(0)) {
         // read as a string, the column is a 64 bit integer whose signedness
         // follows the type the sequence was declared with
         position = row->get_as_string(0);
+
+        // SETVAL() refuses a round ahead of the current one on a sequence
+        // which does not cycle (ER_SEQUENCE_RUN_OUT), so the round is carried
+        // only where the sequence cycles. ALTER SEQUENCE ... NOCYCLE resets
+        // cycle_count (measured on 13.1.1), so this is a guard rather than a
+        // case expected to occur.
+        if (!row->is_null(1) && "0" != row->get_as_string(1) &&
+            !row->is_null(2) && "0" != row->get_as_string(2)) {
+          round = row->get_as_string(2);
+        }
       }
     }
 
@@ -1543,8 +1557,13 @@ std::vector<Compatibility_issue> Schema_dumper::dump_sequences_for_db(
     fprintf(sql_file, "%s;\n", ddl.c_str());
 
     if (!position.empty()) {
-      fprintf(sql_file, "DO SETVAL(%s, %s, 0);\n", sequence_name.c_str(),
-              position.c_str());
+      if (round.empty()) {
+        fprintf(sql_file, "DO SETVAL(%s, %s, 0);\n", sequence_name.c_str(),
+                position.c_str());
+      } else {
+        fprintf(sql_file, "DO SETVAL(%s, %s, 0, %s);\n",
+                sequence_name.c_str(), position.c_str(), round.c_str());
+      }
     }
   }
 

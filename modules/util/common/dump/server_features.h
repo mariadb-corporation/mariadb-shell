@@ -176,7 +176,7 @@ bool supports_partial_revokes(const Server_version &v);
  * information_schema.COLUMN_STATISTICS, the source of dumped histograms.
  *
  * MariaDB keeps engine-independent statistics in mysql.column_stats instead;
- * dumping those is MARIADB_DUMP_LOAD.md section 4.5 (phase 5).
+ * a dump does not carry them - MARIADB_DUMP_LOAD.md section 23.
  */
 bool supports_column_statistics(const Server_version &v);
 

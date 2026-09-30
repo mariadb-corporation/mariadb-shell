@@ -3009,6 +3009,7 @@ void Dumper::do_run() {
     initialize_counters();
     validate_mds();
     validate_data_masking();
+    warn_about_system_versioned_tables();
 
     initialize_dump();
 
@@ -4228,6 +4229,27 @@ void Dumper::validate_mds() {
 
   if (status.empty()) {
     console->print_info("Compatibility checks finished.", stage_attrib("end"));
+  }
+}
+
+void Dumper::warn_about_system_versioned_tables() const {
+  // A system-versioned table (MariaDB only) is dumped with an ordinary SELECT,
+  // which returns its current rows only: its history is not in the dump, and
+  // the restored rows start their history at the time they are loaded.
+  if (!m_options.dump_data()) return;
+
+  const auto console = current_console();
+
+  for (const auto &schema : m_schema_infos) {
+    for (const auto &table : schema.tables) {
+      if (table.info->system_versioned && !table.info->columns.empty()) {
+        console->print_warning(
+            "Table " + table.quoted_name +
+            " is system-versioned: only its current rows are dumped, not its "
+            "history. The loaded rows start a new history from the time of "
+            "the load.");
+      }
+    }
   }
 }
 

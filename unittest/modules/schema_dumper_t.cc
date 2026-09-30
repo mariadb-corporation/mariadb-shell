@@ -966,6 +966,23 @@ CREATE SEQUENCE `seq3` start with 1 minvalue 1 maxvalue 1000 increment by 1 cach
 DO SETVAL(`seq3`, 1, 0);
 -- end sequence `mysqldump_test_db`.`seq3`
 )",
+      // wrapped twice: the round (cycle_count) is carried as SETVAL's fourth
+      // argument
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq4`
+DROP SEQUENCE IF EXISTS `seq4`;
+CREATE SEQUENCE `seq4` start with 1 minvalue 1 maxvalue 2 increment by 1 nocache cycle ENGINE=InnoDB;
+DO SETVAL(`seq4`, 2, 0, 2);
+-- end sequence `mysqldump_test_db`.`seq4`
+)",
+      // altered to NOCYCLE, which resets cycle_count: no round is written
+      R"(
+-- begin sequence `mysqldump_test_db`.`seq5`
+DROP SEQUENCE IF EXISTS `seq5`;
+CREATE SEQUENCE `seq5` start with 1 minvalue 1 maxvalue 2 increment by 1 nocache nocycle ENGINE=InnoDB;
+DO SETVAL(`seq5`, 2, 0);
+-- end sequence `mysqldump_test_db`.`seq5`
+)",
       // a name which needs quoting, created while sql_mode was ANSI
       R"(
 -- begin sequence `mysqldump_test_db`.`a'b seq`

@@ -154,6 +154,21 @@ set sql_mode=default;
 
 /*M!100300 CREATE SEQUENCE seq3 MINVALUE 1 MAXVALUE 1000 CYCLE */;
 
+# a cycling sequence which wrapped twice (1, 2, 1, 2, 1): cycle_count is 2
+/*M!100300 CREATE SEQUENCE seq4 MINVALUE 1 MAXVALUE 2 NOCACHE CYCLE */;
+/*M!100300 DO NEXTVAL(seq4) */;
+/*M!100300 DO NEXTVAL(seq4) */;
+/*M!100300 DO NEXTVAL(seq4) */;
+/*M!100300 DO NEXTVAL(seq4) */;
+/*M!100300 DO NEXTVAL(seq4) */;
+
+# wrapped once, then altered to NOCYCLE
+/*M!100300 CREATE SEQUENCE seq5 MINVALUE 1 MAXVALUE 2 NOCACHE CYCLE */;
+/*M!100300 DO NEXTVAL(seq5) */;
+/*M!100300 DO NEXTVAL(seq5) */;
+/*M!100300 DO NEXTVAL(seq5) */;
+/*M!100300 ALTER SEQUENCE seq5 NOCYCLE */;
+
 set sql_mode='ansi';
 /*M!100300 CREATE SEQUENCE `a'b seq` */;
 set sql_mode=default;
