@@ -180,7 +180,14 @@
 #define SHERR_DUMP_SD_SEQUENCE_DDL_ERROR_MSG \
   "Error while dumping sequences for schema '%s': %s"
 
-#define SHERR_DUMP_LAST 52043
+// A column type dbstring_to_type() does not know, MARIADB_DUMP_LOAD.md
+// section 31.4
+#define SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE 52044
+#define SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE_MSG                                \
+  "Column %s of %s has type %s, which this version of the Shell cannot dump " \
+  "safely. Exclude it with the 'excludeTables' option to dump the rest."
+
+#define SHERR_DUMP_LAST 52044
 
 #define SHERR_DUMP_MAX 52999
 

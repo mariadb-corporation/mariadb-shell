@@ -4062,6 +4062,37 @@ TEST_F(Instance_cache_test, mariadb_column_types_and_period_keys) {
   }
 }
 
+// MariaDB 13.1.1 added XMLTYPE, a data type plugin: stored like a LONGBLOB but
+// with a character set, rendered and accepted back as the XML text. An unmapped
+// type used to abort the dump with a bare LogicError - see MARIADB_DUMP_LOAD.md
+// section 31.4.
+TEST_F(Instance_cache_test, mariadb_xmltype) {
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  m_session->execute("CREATE SCHEMA first;");
+
+  try {
+    m_session->execute("CREATE TABLE first.one (x XMLTYPE);");
+  } catch (const mysqlshdk::db::Error &) {
+    SKIP_TEST("This test requires a server with the XMLTYPE data type");
+  }
+
+  Filtering_options filters;
+  filters.schemas().include(std::array{"first"});
+
+  Instance_cache cache;
+  ASSERT_NO_THROW(cache = Instance_cache_builder(m_session, filters)
+                              .metadata({})
+                              .build());
+
+  const auto &columns = cache.schemas.at("first").tables.at("one").all_columns;
+  ASSERT_EQ(1, columns.size());
+  EXPECT_EQ(mysqlshdk::db::Type::String, columns[0].type);
+  EXPECT_FALSE(columns[0].csv_unsafe);
+}
+
 // MariaDB sequences are reported by I_S.TABLES with TABLE_TYPE='SEQUENCE' and
 // share the table namespace, so they are enumerated and filtered as tables but
 // kept out of both the table and the view map - see MARIADB_DUMP_LOAD.md

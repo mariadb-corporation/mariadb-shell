@@ -50,6 +50,7 @@
 #include "modules/util/common/data_masking.h"
 #include "modules/util/common/dump/server_features.h"
 #include "modules/util/dump/dump_errors.h"
+#include "modules/util/dump/errors.h"
 #include "modules/util/dump/schema_dumper.h"
 
 namespace mysqlsh {
@@ -832,9 +833,27 @@ void Instance_cache_builder::fetch_columns() {
     // table
     column.name = row->get_string(2, "");  // COLUMN_NAME
     column.quoted_name = shcore::quote_identifier(column.name);
-    const auto data_type = row->get_string(3, "");  // DATA_TYPE
-    column.type = mysqlshdk::db::dbstring_to_type(
-        data_type, row->get_string(6));  // COLUMN_TYPE
+    auto data_type = row->get_string(3, "");  // DATA_TYPE
+    auto column_type = row->get_string(6);    // COLUMN_TYPE
+
+    DBUG_EXECUTE_IF("dumper_unknown_column_type",
+                    { data_type = column_type = "unknowntype"; });
+
+    try {
+      column.type = mysqlshdk::db::dbstring_to_type(data_type, column_type);
+    } catch (const std::logic_error &) {
+      // The list of types is closed on purpose. The type decides whether the
+      // value travels as text or as bytes, and a type nobody has checked may
+      // not survive either round trip - a guess could change data silently.
+      // So an unknown type still stops the dump, but says where it is and how
+      // to get past it (MARIADB_DUMP_LOAD.md section 31.4).
+      THROW_ERROR(SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE,
+                  column.quoted_name.c_str(),
+                  (shcore::quote_identifier(row->get_string(0)) + "." +
+                   shcore::quote_identifier(row->get_string(1)))
+                      .c_str(),
+                  shcore::str_upper(column_type).c_str());
+    }
     column.csv_unsafe = shcore::str_iendswith(data_type, "binary", "blob") ||
                         mysqlshdk::db::Type::Bit == column.type ||
                         mysqlshdk::db::Type::Geometry == column.type ||

@@ -181,11 +181,13 @@ Type dbstring_to_type(const std::string &data_type,
     return mysqlshdk::db::Type::Json;
   } else if (shcore::str_caseeq(data_type, "vector")) {
     return mysqlshdk::db::Type::Vector;
-  } else if (shcore::str_caseeq(data_type, "uuid", "inet4", "inet6")) {
+  } else if (shcore::str_caseeq(data_type, "uuid", "inet4", "inet6",
+                                "xmltype")) {
     // MariaDB types the server renders as text and accepts back in the same
     // form: a UUID arrives as its 36 character canonical form, INET4 and INET6
-    // as their printable forms. No MySQL server reports these, so nothing there
-    // reaches this branch.
+    // as their printable forms, and XMLTYPE (13.1.1+, stored like a LONGBLOB
+    // but with a character set) as the XML text. No MySQL server reports
+    // these, so nothing there reaches this branch.
     return mysqlshdk::db::Type::String;
   }
 

@@ -721,6 +721,41 @@ EXPECT_EQ([[1, 70, 2, 3], [2, 7, 4, 6]], [list(r) for r in session2.run_sql("SEL
 session1.run_sql("DROP SCHEMA feat")
 wipeout_server(session2)
 
+#@<> XMLTYPE - setup
+# MariaDB 13.1.1+: stored like a LONGBLOB but with a character set, so it is
+# dumped as text. An unmapped column type used to abort the dump with a bare
+# LogicError (MARIADB_DUMP_LOAD.md section 31.4).
+session1.run_sql("CREATE SCHEMA xmldb")
+try:
+    session1.run_sql("CREATE TABLE xmldb.t (id INT PRIMARY KEY, x XMLTYPE)")
+    server_supports_xmltype = True
+except Exception:
+    server_supports_xmltype = False
+    session1.run_sql("DROP SCHEMA xmldb")
+
+#@<> XMLTYPE - round trip, verified by checksum {server_supports_xmltype}
+session1.run_sql("""INSERT INTO xmldb.t VALUES (1, '<a b="c">d</a>'), (2, '<r><n>\u00e9\u00e8 \u4e2d\u6587</n><e/></r>'), (3, NULL)""")
+xml_dump = dump_dir_for("xmltype")
+EXPECT_NO_THROWS(lambda: dump_schema("xmldb", xml_dump, { "checksum": True }), "dump")
+EXPECT_NO_THROWS(lambda: load(xml_dump, { "checksum": True }), "load")
+EXPECT_STDOUT_NOT_CONTAINS("Checksum verification failed")
+EXPECT_EQ(show_create_table(session1, "xmldb", "t"), show_create_table(session2, "xmldb", "t"))
+EXPECT_EQ(md5_table(session1, "xmldb", "t"), md5_table(session2, "xmldb", "t"))
+
+#@<> XMLTYPE - cleanup {server_supports_xmltype}
+session1.run_sql("DROP SCHEMA xmldb")
+wipeout_server(session2)
+
+#@<> an unknown column type stops the dump and says where {__dbug}
+# the list of types is closed on purpose: a type nobody has checked may not
+# round-trip as text or as bytes, and a guess could change data silently
+session1.run_sql("CREATE SCHEMA unk")
+session1.run_sql("CREATE TABLE unk.t (x INT)")
+testutil.dbug_set("+d,dumper_unknown_column_type")
+EXPECT_THROWS(lambda: dump_schema("unk", dump_dir_for("unknown_type")), "Column `x` of `unk`.`t` has type UNKNOWNTYPE, which this version of the Shell cannot dump safely. Exclude it with the 'excludeTables' option to dump the rest.")
+testutil.dbug_set("")
+session1.run_sql("DROP SCHEMA unk")
+
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
 testutil.destroy_sandbox(__mysql_sandbox_port2)

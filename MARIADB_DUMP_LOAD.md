@@ -3831,11 +3831,32 @@ where only the period does. `Instance_cache_test`, `Schema_dumper_test` and
 
 ### 31.4 Not done here
 
-- **The type mapping is still a throw, not a default.** A MariaDB type nobody has
-  thought of yet stops a dump instead of being treated as a string. That is
-  arguably right for MySQL, where the list is closed, and it is how §27 and this
-  section were found - but it is worth knowing that the next new type behaves the
-  same way.
+- **The type mapping is still a throw, not a default - deliberately** (decided
+  2026-09-30). A type nobody has mapped still stops the dump. A default was
+  considered and rejected, because the type decides whether a value travels as
+  text or as bytes, and choosing wrongly corrupts data. Text data carried as
+  bytes skips the conversion back from the session character set, and binary
+  data carried as text passes through character-set handling. Choosing by
+  `COLLATION_NAME` avoids both, but not a type whose text form does not
+  round-trip, and that fails silently. What changed is the error. It used to be
+  a bare `LogicError: Unknown data_type: x and column_type: x`, naming no table.
+  It is now 52044 `SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE`: ``Column `x` of `db`.`t`
+  has type T, which this version of the Shell cannot dump safely. Exclude it with
+  the 'excludeTables' option to dump the rest.`` It is raised in
+  `Instance_cache_builder::fetch_columns()`, the one caller that knows the table.
+  Measured on 13.1.1, the next type had already arrived: **`XMLTYPE`** is an
+  active built-in data type plugin, stored like a `LONGBLOB` but with a
+  character set (`I_S` reports `xmltype` with `utf8mb4_uca1400_ai_ci`), and any
+  schema holding one aborted the dump. It is now mapped to `Type::String` beside
+  `UUID` / `INET4` / `INET6`, after checking that it round-trips.
+  `Instance_cache_test.mariadb_xmltype` pins the typing, and a
+  `util_dump_and_load_mariadb_norecord` chunk round-trips XML with non-ASCII
+  text and a NULL, under `checksum: true` on both dump and load. The error is
+  pinned by a `__dbug` chunk (`dumper_unknown_column_type`). Of MariaDB's other
+  data type plugins, `associative_array` and `sys_refcursor` exist in stored
+  programs only. `mysql_json`, `BLOB`-based MySQL 5.7 binary JSON that only an
+  upgraded table can hold, is unmapped and so stops the dump with the new error.
+  It cannot be created to test.
 - **Encrypted and `PAGE_COMPRESSED` tables were not covered**, since neither is
   enabled on the test server.
 - **`VECTOR` was tested with a vector index but not with `mariadb_vec_distance`
