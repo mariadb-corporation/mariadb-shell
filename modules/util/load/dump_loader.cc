@@ -6936,8 +6936,8 @@ void Dump_loader::execute_grant_and_ignore_errors(std::string_view grant) {
   current_console()->print_note(shcore::str_format(
       "The above error was ignored, applying %ss one by one.", type));
 
-  // is this GRANT or REVOKE?
-  const auto verb = info.grant ? "GRANT" : "REVOKE";
+  // is this GRANT, REVOKE or DENY?
+  const auto verb = info.deny ? "DENY" : info.grant ? "GRANT" : "REVOKE";
   // find the part that immediately follows roles/privileges
   const auto grant_tail = [&grant, is_role]() {
     mysqlshdk::utils::SQL_iterator it(grant, 0, false);

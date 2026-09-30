@@ -2426,7 +2426,7 @@ plugins turned out either wrong or harmless; the role model is where the work is
 | `WITH ADMIN` | not in any `CREATE ROLE` output — it comes back as `` GRANT `r` TO <admin> WITH ADMIN OPTION `` in the *administrator's* `SHOW GRANTS` |
 | `PUBLIC` | a real `mysql.user` row with `is_role='Y'`, appearing once it holds a grant — but `CREATE ROLE PUBLIC` is **error 1959** |
 | `information_schema.USER_PRIVILEGES` | lists every user and **not one role**: a role holds only `USAGE`, and I_S has no row for that |
-| `DENY` (§12.2) | **not in 12.3.2** — `DENY DELETE ON db.* TO u` is a syntax error, so the `parse_grant` handling phase 1 added is still future-proofing |
+| `DENY` (§12.2) | **not in 12.3.2** — `DENY DELETE ON db.* TO u` is a syntax error there. **13.1.1 has it** (13.1.0 does not): see §20.6 |
 | `activate_all_roles_on_login`, `mandatory_roles`, `partial_revokes` | none exist |
 | `mysql.user.account_locked` | **does not exist** — the lock state lives in the `global_priv` JSON and surfaces only through `SHOW CREATE USER` |
 
@@ -2659,9 +2659,30 @@ column, procedure, `PACKAGE` and `PACKAGE BODY` level; `WITH GRANT OPTION`,
   `SELECT` on `mysql` cannot dump users at all now (§20.3), so the fallback is
   reached only for the count — where it undercounts by the number of roles, as
   before. Not worth a second query path.
-- **A DENY is not carried**, because 12.3.2 cannot produce one (§20.1). When it
+- ~~**A DENY is not carried**, because 12.3.2 cannot produce one (§20.1). When it
   can, `parse_grant`'s handling from §12.2 is on the privilege-*reading* side
-  only; `dump_grants` has never seen one.
+  only; `dump_grants` has never seen one.~~ **Carried since 2026-09-30.**
+  13.1.1 has `DENY` (13.1.0 and 12.3.2 do not), and it was not a missing
+  statement but an **aborted dump**. `SHOW GRANTS` reports DENYs next to the
+  GRANTs at every level (global, schema, table, column, routine, `PACKAGE
+  [BODY]`, and for roles), and `compatibility::parse_grant_statement()` threw
+  `Expected GRANT or REVOKE statement` at the first one. So `dumpInstance` with
+  users died at "Writing users DDL" if any dumped account held a DENY. A DENY
+  has the token order of a GRANT (`DENY <privs> ON <level> TO <grantee>`), so
+  the parser now reads it as one (`grant` is set) and marks it with
+  `Privilege_level_info::deny`. Every caller then handles it unchanged: the
+  per-role trimming, the object-inclusion checks, and the loader's
+  one-privilege-at-a-time fallback, which, like `to_grant_statement()`, now
+  rebuilds a `DENY` rather than a `GRANT`. The users script carries the lines
+  as `SHOW GRANTS` prints them, including the `IDENTIFIED BY PASSWORD '…'` that
+  the global-level DENY line repeats, which the server accepts back. A DENY is
+  removed with `REVOKE DENY <privs> …`, not `REVOKE`, and `SHOW GRANTS` never
+  prints that form. Pinned by `Compatibility_test.parse_grant_statement`
+  (every level, a role, the trailing password hash) and by
+  `util_dump_and_load_mariadb_norecord`, *DENY* sections, gated on the server
+  accepting one. Those check `SHOW GRANTS` on both sides and the effect on the
+  target: each DENY overrides a GRANT it is paired with, a second load uses
+  `dropExistingObjects`, and a role holds a DENY too.
 - **Column statistics (`mysql.column_stats`) are still not dumped** — §4.5's last
   open item, and the only remaining piece of §4.5/§4.6. It is data, not ACL, so
   it did not belong here. Now a **documented limitation** rather than pending

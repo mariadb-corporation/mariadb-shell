@@ -2070,8 +2070,13 @@ bool parse_grant_statement(std::string_view statement,
     result.grant = true;
   } else if (shcore::str_caseeq(type, "REVOKE")) {
     result.grant = false;
+  } else if (shcore::str_caseeq(type, "DENY")) {
+    // MariaDB 13.1.1+, reported by SHOW GRANTS next to the GRANTs at every
+    // privilege level; it keeps the token order of a GRANT
+    result.grant = true;
+    result.deny = true;
   } else {
-    throw std::runtime_error("Expected GRANT or REVOKE statement");
+    throw std::runtime_error("Expected GRANT, REVOKE or DENY statement");
   }
 
   Privilege_level_info::Level object_level = Privilege_level_info::Level::TABLE;
@@ -2223,7 +2228,7 @@ bool parse_grant_statement(std::string_view statement,
 std::string to_grant_statement(const Privilege_level_info &info) {
   assert(Privilege_level_info::Level::SCHEMA == info.level);
 
-  std::string result = info.grant ? "GRANT" : "REVOKE";
+  std::string result = info.deny ? "DENY" : info.grant ? "GRANT" : "REVOKE";
 
   result += ' ';
   result += shcore::str_join(std::views::keys(info.privileges), ", ");

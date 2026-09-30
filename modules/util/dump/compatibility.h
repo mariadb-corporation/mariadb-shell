@@ -230,6 +230,10 @@ struct Privilege_level_info {
   std::map<std::string, std::vector<std::string>> privileges;
   std::string account;
   bool with_grant = false;
+  // MariaDB's DENY <privileges> ON <priv_level> TO <account>: parsed like a
+  // GRANT (grant is true, the grantee follows TO), and kept apart so that a
+  // statement rebuilt from this says DENY again
+  bool deny = false;
 };
 
 /**

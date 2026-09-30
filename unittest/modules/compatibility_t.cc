@@ -2801,6 +2801,7 @@ TEST_F(Compatibility_test, parse_grant_statement) {
       EXPECT_EQ(expected.privileges, info.privileges);
       EXPECT_EQ(expected.account, info.account);
       EXPECT_EQ(expected.with_grant, info.with_grant);
+      EXPECT_EQ(expected.deny, info.deny);
     }
   };
 
@@ -2867,6 +2868,33 @@ TEST_F(Compatibility_test, parse_grant_statement) {
          {true, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "`r`"});
   EXPECT("REVOKE EXECUTE ON package body s.pkg FROM u@h", true,
          {false, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "u@h"});
+
+  // MariaDB 13.1.1+ DENY, which SHOW GRANTS reports at every level, in the
+  // token order of a GRANT - a dump of an account holding one used to abort
+  // with "Expected GRANT or REVOKE statement"
+  EXPECT("DENY PROCESS ON *.* TO `u`@`%`", true,
+         {true, Level::GLOBAL, "*", "*", {{"PROCESS", {}}}, "`u`@`%`", false,
+          true});
+  // the global-level line repeats the account's password hash, as the USAGE
+  // line does
+  EXPECT("DENY PROCESS ON *.* TO `u`@`%` IDENTIFIED BY PASSWORD '*975B2CD4'",
+         true,
+         {true, Level::GLOBAL, "*", "*", {{"PROCESS", {}}}, "`u`@`%`", false,
+          true});
+  EXPECT("DENY INSERT ON `s`.* TO `u`@`%`", true,
+         {true, Level::SCHEMA, "s", "*", {{"INSERT", {}}}, "`u`@`%`", false,
+          true});
+  EXPECT("DENY UPDATE (`c2`) ON `s`.`t` TO `u`@`%`", true,
+         {true, Level::TABLE, "s", "t", {{"UPDATE", {"`c2`"}}}, "`u`@`%`",
+          false, true});
+  EXPECT("DENY EXECUTE ON FUNCTION `s`.`f` TO `u`@`%`", true,
+         {true, Level::ROUTINE, "s", "f", {{"EXECUTE", {}}}, "`u`@`%`", false,
+          true});
+  EXPECT("DENY EXECUTE ON PACKAGE BODY `s`.`pkg` TO `r`", true,
+         {true, Level::ROUTINE, "s", "pkg", {{"EXECUTE", {}}}, "`r`", false,
+          true});
+  EXPECT("deny delete on s.* to r", true,
+         {true, Level::SCHEMA, "s", "*", {{"DELETE", {}}}, "r", false, true});
 
   EXPECT("GRANT PROXY ON r TO u@h", false, {});
   EXPECT("GRANT PROXY ON ''@'' TO u@h", false, {});

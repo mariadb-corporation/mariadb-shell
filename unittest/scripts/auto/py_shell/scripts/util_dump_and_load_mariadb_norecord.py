@@ -390,6 +390,74 @@ session1.run_sql("DROP SCHEMA rolesdb")
 wipeout_users(session1)
 wipeout_server(session2)
 
+#@<> DENY - setup
+# MariaDB 13.1.1+ DENY, which SHOW GRANTS reports next to the GRANTs at every
+# level. A dump of an account holding one used to abort with "Expected GRANT or
+# REVOKE statement" (MARIADB_DUMP_LOAD.md section 20.6). Each DENY overrides a
+# GRANT it is paired with, so that the load is checked by effect, not only by
+# SHOW GRANTS.
+def supports_deny(session):
+    session.run_sql("CREATE USER IF NOT EXISTS deny_probe@localhost")
+    try:
+        session.run_sql("DENY SELECT ON deny_probe_db.* TO deny_probe@localhost")
+        return True
+    except Exception:
+        return False
+    finally:
+        # dropping the account drops its DENYs with it
+        session.run_sql("DROP USER IF EXISTS deny_probe@localhost")
+
+server_supports_deny = supports_deny(session1) and supports_deny(session2)
+
+#@<> DENY - dump and load {server_supports_deny}
+session1.run_sql("CREATE SCHEMA denydb")
+session1.run_sql("CREATE TABLE denydb.t1 (c1 INT, c2 INT)")
+session1.run_sql("INSERT INTO denydb.t1 VALUES (1, 1)")
+session1.run_sql("CREATE FUNCTION denydb.f1() RETURNS INT DETERMINISTIC RETURN 1")
+session1.run_sql("CREATE FUNCTION denydb.f2() RETURNS INT DETERMINISTIC RETURN 2")
+session1.run_sql("CREATE USER u_deny@'%' IDENTIFIED BY 'pwd'")
+session1.run_sql("GRANT SELECT, INSERT, UPDATE ON denydb.t1 TO u_deny@'%'")
+session1.run_sql("GRANT EXECUTE ON denydb.* TO u_deny@'%'")
+session1.run_sql("DENY INSERT ON denydb.* TO u_deny@'%'")
+session1.run_sql("DENY UPDATE (c2) ON denydb.t1 TO u_deny@'%'")
+session1.run_sql("DENY EXECUTE ON FUNCTION denydb.f1 TO u_deny@'%'")
+session1.run_sql("DENY PROCESS ON *.* TO u_deny@'%'")
+session1.run_sql("CREATE ROLE r_deny")
+session1.run_sql("GRANT DELETE ON denydb.t1 TO r_deny")
+session1.run_sql("DENY DELETE ON denydb.* TO r_deny")
+
+deny_dump = dump_dir_for("deny")
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_instance(deny_dump, { "includeSchemas": ["denydb"], "includeUsers": ["u_deny", "r_deny"], "showProgress": False }), "dump")
+with open(os.path.join(deny_dump, "@.users.sql"), encoding="utf-8") as f:
+    users_sql = f.read()
+EXPECT_CONTAINS("DENY INSERT ON `denydb`.* TO `u_deny`@`%`", users_sql)
+EXPECT_CONTAINS("DENY DELETE ON `denydb`.* TO `r_deny`", users_sql)
+
+EXPECT_NO_THROWS(lambda: load(deny_dump, { "loadUsers": True }), "load")
+compare_user_grants(session1, session2, "'u_deny'@'%'")
+compare_user_grants(session1, session2, "`r_deny`")
+
+#@<> DENY - the loaded DENYs still override the GRANTs {server_supports_deny}
+deny_user = mysql.get_session(f"u_deny:pwd@localhost:{__mysql_sandbox_port2}")
+EXPECT_EQ(1, fetch_value(deny_user, "SELECT COUNT(*) FROM denydb.t1"))
+EXPECT_THROWS(lambda: deny_user.run_sql("INSERT INTO denydb.t1 VALUES (2, 2)"), "denied")
+EXPECT_NO_THROWS(lambda: deny_user.run_sql("UPDATE denydb.t1 SET c1 = 5"), "update c1")
+EXPECT_THROWS(lambda: deny_user.run_sql("UPDATE denydb.t1 SET c2 = 5"), "denied")
+EXPECT_EQ(2, fetch_value(deny_user, "SELECT denydb.f2()"))
+EXPECT_THROWS(lambda: deny_user.run_sql("SELECT denydb.f1()"), "denied")
+deny_user.close()
+
+#@<> DENY - dropExistingObjects recreates them {server_supports_deny}
+EXPECT_NO_THROWS(lambda: load(deny_dump, { "loadUsers": True, "dropExistingObjects": True }), "load")
+compare_user_grants(session1, session2, "'u_deny'@'%'")
+compare_user_grants(session1, session2, "`r_deny`")
+
+#@<> DENY - cleanup {server_supports_deny}
+session1.run_sql("DROP SCHEMA denydb")
+wipeout_users(session1)
+wipeout_server(session2)
+
 #@<> missing authentication plugin - setup
 # MARIADB_DUMP_LOAD.md section 25: an account whose plugin the target has not
 # installed still aborts the load, which now says what to do about it
