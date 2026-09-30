@@ -4020,10 +4020,30 @@ not getting any.
 
 ### 34.4 Not done here
 
-- **4060 is still not retried.** Serializing removes the conflict between the
+- ~~**4060 is still not retried.** Serializing removes the conflict between the
   loader's own sessions, but anything else writing to the table during a load
   can still produce one. Treating it like 1213 is the obvious hardening, limited
-  by the same rewind restriction.
+  by the same rewind restriction.~~ **Retried since 2026-09-30.** 4060 is
+  `ER_ROLLBACK_ONLY`: InnoDB marks a deadlock victim `TRX_STATE_ABORTED` inside
+  a statement whose errors are suppressed, and the next operation gets
+  `HA_ERR_ROLLBACK` (`ha_innodb.cc`, `sql/handler.cc`). The transaction was
+  rolled back completely, as with 1213, so a retry from the same starting point
+  is safe. `common::is_rolled_back_deadlock()` (`server_features.h`) answers
+  "1213, or 4060 on MariaDB" for both retry loops, `execute_statement()` and
+  `import_table`'s `LOAD DATA`. The vendor gate is essential: on MySQL 4060 is
+  `ER_INVALID_USER_FOR_REGISTRATION`. `util.copy*` still cannot retry, because
+  its stream cannot be rewound. Two measurements on 13.1.1 bound where it
+  matters. `LOAD DATA LOCAL` without `REPLACE` is implicitly `IGNORE`
+  (`sql_load.cc:543`), which is what `util.importTable` sends by default, but
+  deadlocks on an ordinary table under it still come back as 1213: 4 retried
+  in 6 four-thread rounds, all complete. So 4060 is not a general
+  `importTable` gap. And three four-thread `importTable` runs into a `WITHOUT
+  OVERLAPS` table produced no deadlock at all, where §34.1 measured 99 in 120
+  on 12.3.2. Pinned by `Load_dump.is_rolled_back_deadlock` (including "not on
+  MySQL"), and by two `util_dump_and_load_mariadb_norecord` chunks that inject
+  one 4060 with `testutil.set_trap` (`__dbug`) into `importTable`'s `LOAD DATA`
+  and into a `loadDump` DDL statement. Both fail with the predicate reverted to
+  1213 only.
 - **`sessionInitSql` runs unprotected.** A user statement there that inserts
   into an empty table can deadlock the loader's sessions against each other
   through the §13.5 bulk-insert path - which is what the copy suites'

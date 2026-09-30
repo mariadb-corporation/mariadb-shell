@@ -1035,11 +1035,15 @@ void Load_data_worker::execute(
 
           break;
         } catch (const mysqlshdk::db::Error &e) {
-          if (ER_LOCK_DEADLOCK == e.code() &&
+          if (mysqlsh::dump::common::is_rolled_back_deadlock(
+                  e.code(), session->get_server_vendor()) &&
               deadlock_total_sleep_time_ms < k_max_deadlock_retry_time_ms &&
               fi.buffer.try_rewind_for_retry()) {
             mysqlsh::current_console()->print_note(format_error_message(
-                "Deadlock found when trying to get lock, will retry: " +
+                (ER_LOCK_DEADLOCK == e.code()
+                     ? "Deadlock found when trying to get lock, will retry: "
+                     : "The transaction was rolled back by the server, will "
+                       "retry: ") +
                 e.format()));
 
             if (deadlock_total_sleep_time_ms + deadlock_sleep_time_ms >

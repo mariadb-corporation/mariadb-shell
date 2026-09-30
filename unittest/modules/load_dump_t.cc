@@ -26,6 +26,8 @@
 
 #include "unittest/gprod_clean.h"
 
+#include <mysqld_error.h>
+
 #include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/utils.h"
 #include "modules/util/dump/compatibility.h"
@@ -149,6 +151,28 @@ TEST(Load_dump, supports_check_constraint_checks) {
   EXPECT_SUPPORTED(false, Version(10, 1, 48), true);
   EXPECT_SUPPORTED(true, Version(10, 2, 1), true);
   EXPECT_SUPPORTED(true, Version(12, 3, 2), true);
+}
+
+// A deadlock victim inside a statement whose errors are suppressed (LOAD DATA
+// ... IGNORE) is rolled back by MariaDB and refused at commit with
+// ER_ROLLBACK_ONLY (4060) instead of ER_LOCK_DEADLOCK - both are retryable
+// there. On MySQL 4060 is ER_INVALID_USER_FOR_REGISTRATION, which is not.
+// See MARIADB_DUMP_LOAD.md section 34.
+TEST(Load_dump, is_rolled_back_deadlock) {
+  using dump::common::is_rolled_back_deadlock;
+  using mysqlshdk::db::ServerVendor;
+
+  EXPECT_TRUE(is_rolled_back_deadlock(ER_LOCK_DEADLOCK, ServerVendor::MySQL));
+  EXPECT_TRUE(is_rolled_back_deadlock(ER_LOCK_DEADLOCK, ServerVendor::MariaDB));
+
+  EXPECT_TRUE(is_rolled_back_deadlock(4060, ServerVendor::MariaDB));
+  EXPECT_FALSE(is_rolled_back_deadlock(4060, ServerVendor::MySQL));
+
+  // a lock wait timeout rolls back the statement only, not the transaction
+  EXPECT_FALSE(
+      is_rolled_back_deadlock(ER_LOCK_WAIT_TIMEOUT, ServerVendor::MariaDB));
+  EXPECT_FALSE(
+      is_rolled_back_deadlock(ER_LOCK_WAIT_TIMEOUT, ServerVendor::MySQL));
 }
 
 TEST(Load_dump, add_execution_condition) {

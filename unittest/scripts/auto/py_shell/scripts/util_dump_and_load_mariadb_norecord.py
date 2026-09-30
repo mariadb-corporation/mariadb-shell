@@ -213,6 +213,46 @@ EXPECT_EQ(-5, fetch_value(session2, "SELECT a FROM cktest.t WHERE id = 3"))
 session1.run_sql("DROP SCHEMA cktest")
 wipeout_server(session2)
 
+#@<> rolled-back deadlocks are retried - setup {__dbug}
+# MARIADB_DUMP_LOAD.md section 34: a deadlock victim inside a statement whose
+# errors are suppressed - LOAD DATA ... IGNORE, which LOAD DATA LOCAL without
+# REPLACE implies - is refused at commit with 4060 (ER_ROLLBACK_ONLY) rather
+# than 1213. The transaction was rolled back completely, so both are retried.
+# The deadlock itself is timing dependent (none in three 4-thread imports into
+# a WITHOUT OVERLAPS table on 13.1.1), so the error is injected, once.
+rollback_only = { "code": 4060, "msg": "This transaction was rolled back and cannot be committed.", "state": "HY000", "onetime": True }
+retry_file = os.path.join(outdir, "retry.tsv")
+with open(retry_file, "w", encoding="utf-8") as f:
+    for i in range(1, 1001):
+        f.write(f"{i}\tx\n")
+session2.run_sql("CREATE SCHEMA retrydb")
+session2.run_sql("CREATE TABLE retrydb.t (id INT PRIMARY KEY, v VARCHAR(10))")
+
+#@<> rolled-back deadlocks are retried - importTable {__dbug}
+shell.connect(__sandbox_uri2)
+testutil.set_trap("mysql", ["sql regex LOAD DATA LOCAL INFILE .* INTO TABLE `retrydb`.`t`.*"], rollback_only)
+EXPECT_NO_THROWS(lambda: util.import_table(retry_file, { "schema": "retrydb", "table": "t", "showProgress": False }), "import")
+testutil.clear_traps("mysql")
+EXPECT_STDOUT_CONTAINS("The transaction was rolled back by the server, will retry: MySQL Error 4060")
+EXPECT_EQ(1000, fetch_value(session2, "SELECT COUNT(*) FROM retrydb.t"))
+
+#@<> rolled-back deadlocks are retried - loadDump {__dbug}
+session1.run_sql("CREATE SCHEMA retrydb")
+session1.run_sql("CREATE TABLE retrydb.t (id INT PRIMARY KEY, v VARCHAR(10))")
+session1.run_sql("INSERT INTO retrydb.t VALUES (1, 'a'), (2, 'b')")
+retry_dump = dump_dir_for("retry")
+EXPECT_NO_THROWS(lambda: dump_schema("retrydb", retry_dump), "dump")
+session2.run_sql("DROP SCHEMA retrydb")
+testutil.set_trap("mysql", ["sql regex CREATE TABLE IF NOT EXISTS `t`.*"], rollback_only)
+EXPECT_NO_THROWS(lambda: load(retry_dump), "load")
+testutil.clear_traps("mysql")
+EXPECT_STDOUT_CONTAINS("will retry after delay: MySQL Error 4060")
+EXPECT_EQ(2, fetch_value(session2, "SELECT COUNT(*) FROM retrydb.t"))
+
+#@<> rolled-back deadlocks are retried - cleanup {__dbug}
+session1.run_sql("DROP SCHEMA IF EXISTS retrydb")
+wipeout_server(session2)
+
 #@<> packages - setup
 # MARIADB_DUMP_LOAD.md section 19: a package has its own namespace, so a
 # standalone function of the same name is a second object

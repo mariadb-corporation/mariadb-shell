@@ -279,7 +279,9 @@ void execute_statement(const Session_ptr &session, std::string_view stmt,
 
       log_info("Error executing SQL: %s:\n%s", error.c_str(), query.c_str());
 
-      if (ER_LOCK_DEADLOCK == e.code() && total_sleep_time < k_max_retry_time) {
+      if (dump::common::is_rolled_back_deadlock(e.code(),
+                                                session->get_server_vendor()) &&
+          total_sleep_time < k_max_retry_time) {
         current_console()->print_note(
             shcore::str_format("%.*s, will retry after delay: %s",
                                static_cast<int>(error_prefix.length()),

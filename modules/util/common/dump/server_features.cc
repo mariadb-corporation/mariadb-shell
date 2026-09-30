@@ -26,6 +26,8 @@
 
 #include "modules/util/common/dump/server_features.h"
 
+#include <mysqld_error.h>
+
 namespace mysqlsh {
 namespace dump {
 namespace common {
@@ -109,6 +111,13 @@ bool supports_partial_revokes(const Server_version &v) {
 }
 
 bool supports_column_statistics(const Server_version &v) { return v.is_8_0; }
+
+bool is_rolled_back_deadlock(int error_code,
+                             mysqlshdk::db::ServerVendor vendor) {
+  return ER_LOCK_DEADLOCK == error_code ||
+         (mysqlshdk::db::ServerVendor::MariaDB == vendor &&
+          k_maria_db_er_rollback_only == error_code);
+}
 
 bool supports_role_dumping(const Server_version &v) {
   return v.is_maria_db ? v.number.numeric() >= k_maria_db_roles : v.is_8_0;

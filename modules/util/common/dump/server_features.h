@@ -260,6 +260,23 @@ bool supports_library_ddl(const Server_version &v);
 bool supports_check_constraint_checks(const Server_version &v);
 
 /**
+ * Whether a statement failed because its transaction was chosen as a deadlock
+ * victim and rolled back completely, so it can be retried from the same
+ * starting point. That is ER_LOCK_DEADLOCK on both vendors, and on MariaDB
+ * also ER_ROLLBACK_ONLY (4060): a victim inside a statement whose errors are
+ * suppressed, such as LOAD DATA ... IGNORE, is rolled back and the statement
+ * is refused at commit - MARIADB_DUMP_LOAD.md section 34. On MySQL 4060 is
+ * ER_INVALID_USER_FOR_REGISTRATION, which must not be retried.
+ */
+bool is_rolled_back_deadlock(int error_code,
+                             mysqlshdk::db::ServerVendor vendor);
+
+/**
+ * MariaDB's ER_ROLLBACK_ONLY, not defined by libmysqlclient's headers.
+ */
+inline constexpr int k_maria_db_er_rollback_only = 4060;
+
+/**
  * Sequences (CREATE SEQUENCE, I_S.SEQUENCES, TABLE_TYPE='SEQUENCE'). A MariaDB
  * 10.3+ object type with no MySQL counterpart.
  *
