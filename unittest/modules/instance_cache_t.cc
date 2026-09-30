@@ -1105,13 +1105,14 @@ TEST_F(Instance_cache_test, table_metadata) {
       !target_server_is_maria_db() &&
       m_session->get_server_version().numeric() >= 80013;
 
+  // MariaDB ships BLACKHOLE as a loadable plugin, which a minimal server
+  // package may not include at all, while MEMORY is always built in (and,
+  // unlike Aria, reports no implicit CREATE_OPTIONS)
+  const std::string third_engine =
+      target_server_is_maria_db() ? "MEMORY" : "BLACKHOLE";
+
   {
     // setup
-    if (target_server_is_maria_db()) {
-      // MariaDB ships BLACKHOLE as a plugin which is not loaded by default
-      m_session->execute("INSTALL SONAME 'ha_blackhole';");
-    }
-
     m_session->execute("CREATE SCHEMA first;");
     m_session->execute(
         "CREATE TABLE first.one (id INT) "
@@ -1126,7 +1127,9 @@ TEST_F(Instance_cache_test, table_metadata) {
     m_session->execute("CREATE SCHEMA second;");
     m_session->execute(
         "CREATE TABLE second.three (id INT) "
-        "ENGINE = BLACKHOLE "
+        "ENGINE = " +
+        third_engine +
+        " "
         "COMMENT = 'important table'"
         ";");
 
@@ -1163,7 +1166,7 @@ TEST_F(Instance_cache_test, table_metadata) {
 
     {
       const auto &three = cache.schemas.at("second").tables.at("three");
-      EXPECT_EQ("BLACKHOLE", three.engine);
+      EXPECT_EQ(third_engine, three.engine);
       EXPECT_EQ("", three.secondary_engine);
       EXPECT_EQ("important table", three.comment);
       EXPECT_EQ("", three.create_options);

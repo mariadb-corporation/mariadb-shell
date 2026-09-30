@@ -3091,6 +3091,31 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
   const auto default_role_from_grants =
       common::default_role_in_show_grants(m_cache.server.version);
 
+  // A MariaDB role granted to a dumped account is added to the dump without
+  // being named by the user filters (MARIADB_DUMP_LOAD.md section 26), so the
+  // filters alone would report it missing. Such a role is in the cache with no
+  // host, and a grant names it without one.
+  const auto is_dumped_role = [this, hostless_roles](const std::string &role) {
+    if (!hostless_roles) return false;
+
+    shcore::Account account;
+
+    try {
+      account = shcore::split_account(role);
+    } catch (const std::exception &) {
+      return false;
+    }
+
+    return std::any_of(m_cache.roles.begin(), m_cache.roles.end(),
+                       [&account](const shcore::Account &r) {
+                         return r.host.empty() && r.user == account.user;
+                       }) &&
+           std::any_of(m_cache.users.begin(), m_cache.users.end(),
+                       [&account](const shcore::Account &u) {
+                         return u.host.empty() && u.user == account.user;
+                       });
+  };
+
   const auto describe_account = [hostless_roles,
                                  &is_role](const shcore::Account &a) {
     Dumped_account info;
@@ -3588,7 +3613,8 @@ std::vector<Compatibility_issue> Schema_dumper::dump_grants(IFile *file) {
               for (const auto &privilege : priv.privileges) {
                 const auto &role = privilege.first;
 
-                if (!filters.users().is_included(role)) {
+                if (!filters.users().is_included(role) &&
+                    !is_dumped_role(role)) {
                   // BUG#38264847 - grants on MHS roles which are automatically
                   // excluded are downgraded to notes
                   problems.emplace_back(

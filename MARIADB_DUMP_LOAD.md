@@ -2860,6 +2860,7 @@ Scripted suites on MariaDB, one gtest each:
 | `util_load_dump_trx`, `util_dump_and_load_ddm`, `util_dump_and_load_extra` | in progress |
 | `util_dump_and_load`, `util_dump_instance`, `util_dump_schemas`, `util_dump_tables` | **not yet** — the four big ones (16k lines between them) |
 | `util_dump_binlogs`, `util_dump_binlogs_replication`, `util_load_binlogs` | not registered (§21.6) |
+| `util_dump_and_load_mariadb` | **passes** - MariaDB only, skips itself on MySQL: the end-to-end counterpart of §14-§20 and §24-§31 |
 
 The four remaining suites got their first honest run once the environment was
 fixed - `util_dump_and_load` 173 failure blocks, `util_dump_instance` 218,
@@ -3169,12 +3170,13 @@ On the MariaDB build against 12.3.2:
   `seqload4.s1` at load time rather than a silent bind to the source.
 - No warning where the sequence is part of the dump.
 - `Schema_dumper_test` + `Instance_cache_test` - 40 passed, 0 failed.
+- `util_dump_and_load_mariadb_norecord` (MariaDB only), *sequences* sections:
+  the renamed-schema load draws from its own sequence while a same-named one on
+  the target is untouched, the cross-schema qualifier and its warning, and the
+  `dumpTables` warning followed by the 1146 at load time.
 
 ### 24.4 Not done here
 
-- **No scripted-test coverage.** The rename case needs a dump and a load, so it
-  belongs with the end-to-end suites; the `util_dump_tables` sections are where
-  the warning would be asserted, and those are §21.8's four remaining suites.
 - **The MySQL build is untouched but unverified.** `supports_sequences()` gates
   the whole function off there, so it cannot execute; the gate is the argument,
   not a test run.
@@ -3236,6 +3238,10 @@ dumping, then uninstalling the plugin before the load:
 - After `INSTALL SONAME 'auth_ed25519'`, re-running the same load reports
   `2 accounts were loaded` and both accounts exist with the right plugins.
 - `Load_dump*` unit suites - 9 passed, 0 failed.
+- `util_dump_and_load_mariadb_norecord` (MariaDB only), *missing authentication
+  plugin* sections: the same staging, asserting the error, the note and the
+  count of accounts left behind, then a resumed load (`resetProgress: false`)
+  after installing the plugin reporting `2 accounts were loaded`.
 
 ### 25.2 Not done here
 
@@ -3247,8 +3253,6 @@ dumping, then uninstalling the plugin before the load:
 - **The counter counts completed statement groups**, so an account which the MHS
   path skipped mid-way is still counted as created. That path does not reach this
   note, so it cannot show a wrong number today.
-- **No scripted coverage**, for the same reason as §24.4: staging it needs a
-  plugin installed, a dump, and then the plugin removed.
 
 ---
 
@@ -3298,12 +3302,18 @@ WARNING: Role `r_app` is granted to `r_admin` but is excluded from the dump. The
 grant which names it will fail unless the role already exists on the target.
 ```
 
-`dump_grants()` already reports a grant on a role the dump does not carry, but
-only where `parse_grant_statement()` recognizes the grantee - a role granted to a
-role is written without a host (`GRANT `r_app` TO `r_admin``) and is not
-recognized there. That is pre-existing and only reachable now that a role can
-join the dump on its own, which is why the warning is raised in the new code
-rather than by teaching the parser.
+`dump_grants()` reports the same grant again, as a grant on a role which is not
+included in the dump, for a role granted to a user and to a role alike:
+
+```
+WARNING: User `r_admin` has a grant statement on a role `r_app` which is not
+included in the dump (GRANT `r_app` TO `r_admin`)
+```
+
+A role counts as included there when the user filters select it **or** it is a
+hostless role among the dumped accounts, so a role the deduction added is not
+reported (`is_dumped_role` in `dump_grants()`). Checking the filters alone would
+report every role the deduction pulled in as missing, while the dump carries it.
 
 ### 26.2 Verified
 
@@ -3319,6 +3329,12 @@ and `u_app` then connects, activates `r_admin` as its default role, and reads a
 table whose `SELECT` comes only from the transitively granted `r_app`. That is the
 whole point of the change, so it is the test that matters.
 
+`util_dump_and_load_mariadb_norecord` (MariaDB only), *roles* sections, repeats
+that load over a `baserole → midrole → toprole` chain and pins the output: the
+note naming the three added roles, no "not included in the dump" warning for
+any of them, and with `baserole` in `excludeUsers` both warnings above for it
+and none for the roles which were added.
+
 ### 26.3 Not done here
 
 - **MySQL is untouched**, gated on `roles_are_hostless()`. The same argument
@@ -3333,7 +3349,6 @@ whole point of the change, so it is the test that matters.
   role's own object grants are dumped because the role is now a dumped account,
   but a grant on a schema outside the dump is still just a warning, as it is for
   any account.
-- **No scripted coverage**, as with §24 and §25.
 
 ---
 
@@ -3536,6 +3551,15 @@ does complete against the same held stage.
 
 `Instance_cache_test` + `Schema_dumper_test` are 42 passed, 0 failed.
 
+`util_dump_and_load_mariadb_norecord`, *backup lock* sections: a consistent dump
+takes the stage and releases it, and `consistent: false` completes against a
+stage another connection holds. The timeout path is covered by injecting the
+1205 on `BACKUP STAGE BLOCK_DDL` with `testutil.set_trap()`, while a
+`SELECT SLEEP()` runs from another connection. It asserts the note, the listed
+statement and the error, and that the stage can be taken again afterwards. The
+five minute bound itself is not waited out. `set_trap()` exists only in debug
+builds, so that chunk is gated on `__dbug`.
+
 ### 29.4 Not done here
 
 - **MySQL is untouched.** `LOCK INSTANCE FOR BACKUP` still waits at MySQL's
@@ -3549,9 +3573,9 @@ does complete against the same held stage.
   run where it is already set to 1 second. It runs before the backup stage, so the
   same day-long wait is still reachable there - untouched here because it is
   upstream behaviour on the shared path.
-- **No test.** Reproducing it needs a second connection holding a backup stage
-  while a dump runs, which is an end-to-end scenario; the bound was exercised by
-  hand with the constant temporarily lowered to three seconds.
+- **The five minute bound is not tested**, only what happens once it expires.
+  It was exercised by hand with the constant temporarily lowered to three
+  seconds.
 
 ---
 
