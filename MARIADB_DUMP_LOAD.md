@@ -3765,9 +3765,26 @@ partitioned versioned table and an ordinary partitioned one in the same schema.
   holding a system-versioned table failed it once the cache started counting one
   as a table. That is twice now that the test's own counting query has drifted
   from the production one.
-- **Naming a partition of a system-versioned table explicitly** - the `partitions`
+- ~~**Naming a partition of a system-versioned table explicitly** - the `partitions`
   option of `dumpTables` - is not refused. It would produce the same unloadable
-  dump this section removes from the default path.
+  dump this section removes from the default path.~~ **Refused since 2026-09-30.**
+  Measured on 13.1.1, the prediction was out of date. With §30.1 in place the
+  dump was loadable, but the request was **ignored silently**: the instance cache
+  records no partitions for a versioned table, so `partitions: {"db.p1": ["h0"]}`,
+  naming the HISTORY partition, dumped the table's current rows, the opposite of
+  what it holds, while an ordinary table in the same call was honoured.
+  `Dump_options::validate_partitions()` now rejects a system-versioned table in
+  the option, next to its existing check for partitions that do not exist:
+  `Table 'db'.'p1' is system-versioned, and MariaDB does not allow selecting its
+  partitions. Remove it from the 'partitions' option to dump the whole table (its
+  current rows).`, then `Invalid partitions`. Refusing rather than warning
+  follows the option's own convention (an unknown partition is an error) and the
+  server's (partition selection on such a table is error 1726). It costs one
+  `I_S.TABLES` query per table named in the option, and only for a MariaDB
+  source. Pinned by `util_dump_and_load_mariadb_norecord`, *system versioning -
+  its partitions cannot be selected*: the error for `pc` and for `h0`, then a dump
+  without the versioned table in the option, with the table dumped whole and the
+  ordinary one by partition.
 - **History is still not carried**, now for the same reason everywhere rather than
   two different ones, and the dump warns about it (§27.4, [AIPL-26](https://jira.mariadb.org/browse/AIPL-26)).
 - **Subpartitions of a versioned table were not tested**, only partitions.

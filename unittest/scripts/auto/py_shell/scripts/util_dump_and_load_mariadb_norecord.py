@@ -682,6 +682,26 @@ EXPECT_EQ([[1, 10], [2, 2]], [list(r) for r in session2.run_sql("SELECT id, a FR
 for view in ["v_all", "v_asof", "v_between"]:
     EXPECT_EQ(2, fetch_value(session2, "SELECT COUNT(*) FROM !.!", ["sysver", view]), view)
 
+#@<> system versioning - its partitions cannot be selected
+# MariaDB refuses partition selection on a system-versioned table, so the
+# 'partitions' option cannot be honoured for one. It used to be ignored
+# silently: asking for the HISTORY partition h0 dumped the current rows.
+session1.run_sql("CREATE TABLE sysver.r (id INT PRIMARY KEY) PARTITION BY RANGE (id) (PARTITION a VALUES LESS THAN (10), PARTITION b VALUES LESS THAN MAXVALUE)")
+session1.run_sql("INSERT INTO sysver.r VALUES (1), (20)")
+shell.connect(__sandbox_uri1)
+for parts in [["pc"], ["h0"]]:
+    EXPECT_THROWS(lambda: util.dump_tables("sysver", ["p1", "r"], dump_dir_for("sysver_partitions"), { "partitions": { "sysver.p1": parts, "sysver.r": ["a"] }, "showProgress": False }), "Invalid partitions")
+    EXPECT_STDOUT_CONTAINS("ERROR: Table 'sysver'.'p1' is system-versioned, and MariaDB does not allow selecting its partitions. Remove it from the 'partitions' option to dump the whole table (its current rows).")
+
+# without it, the versioned table is dumped whole and the ordinary one by the
+# partition asked for
+sysver_partitions_dump = dump_dir_for("sysver_partitions")
+EXPECT_NO_THROWS(lambda: util.dump_tables("sysver", ["p1", "r"], sysver_partitions_dump, { "partitions": { "sysver.r": ["a"] }, "showProgress": False }), "dump")
+wipeout_server(session2)
+EXPECT_NO_THROWS(lambda: load(sysver_partitions_dump), "load")
+EXPECT_EQ([[1, 10], [2, 2]], [list(r) for r in session2.run_sql("SELECT id, a FROM sysver.p1 ORDER BY id").fetch_all()])
+EXPECT_EQ([[1]], [list(r) for r in session2.run_sql("SELECT id FROM sysver.r").fetch_all()])
+
 #@<> system versioning - cleanup
 session1.run_sql("DROP SCHEMA sysver")
 wipeout_server(session2)

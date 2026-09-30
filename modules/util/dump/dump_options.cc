@@ -346,6 +346,29 @@ void Dump_options::validate_partitions() const {
         continue;
       }
 
+      // MariaDB refuses partition selection on a system-versioned table (error
+      // 1726), so such a table is always dumped whole, as its current rows
+      // (MARIADB_DUMP_LOAD.md section 30). Asking for some of its partitions
+      // cannot be honoured, and ignoring the request would hand back a dump
+      // other than the one asked for - for the HISTORY partition, the opposite
+      // of what it holds.
+      if (m_source_is_maria_db &&
+          session()
+              ->query(shcore::sqlformat(
+                  "SELECT 1 FROM information_schema.tables WHERE "
+                  "TABLE_SCHEMA=? AND TABLE_NAME=? AND "
+                  "TABLE_TYPE='SYSTEM VERSIONED'",
+                  schema.first, table.first))
+              ->fetch_one()) {
+        console->print_error(shcore::str_format(
+            "Table '%s'.'%s' is system-versioned, and MariaDB does not allow "
+            "selecting its partitions. Remove it from the 'partitions' option "
+            "to dump the whole table (its current rows).",
+            schema.first.c_str(), table.first.c_str()));
+        valid = false;
+        continue;
+      }
+
       const auto condition = shcore::sqlformat(
           "PARTITION_NAME IS NOT NULL AND TABLE_SCHEMA=? AND TABLE_NAME=?",
           schema.first, table.first);
