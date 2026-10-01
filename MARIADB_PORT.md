@@ -13,7 +13,7 @@ normal MySQL build is unaffected: every change is wrapped in
 ### Feature-specific gating macros
 
 `MARIADB_BUILD` is still the master switch, but feature exclusions that are
-*not* intrinsic to the build (Connector/C, mysys, Python, binlog port, …) are
+*not* intrinsic to the build (Connector/C, mysys, Python, …) are
 gated on dedicated **`HAVE_*`** macros so the intent of each guard is explicit.
 These are defined in [CMakeLists.txt](CMakeLists.txt) **exactly when
 `MARIADB_BUILD` is not** (i.e. on normal MySQL builds):
@@ -23,12 +23,12 @@ These are defined in [CMakeLists.txt](CMakeLists.txt) **exactly when
 | `HAVE_UPGRADE_CHECKER` | the Upgrade Checker | `#ifdef HAVE_UPGRADE_CHECKER` = MySQL-only code |
 | `HAVE_ADMIN_API` | AdminAPI (`dba`, Cluster/ReplicaSet/ClusterSet, InnoDB Cluster, metadata) | `#ifdef HAVE_ADMIN_API` = MySQL-only code; `#ifndef HAVE_ADMIN_API` = MariaDB stub |
 | `HAVE_X_PROTOCOL` | X protocol / X DevAPI (`mysqlx://`, X sessions, collections, X expr parser, `importJson`) | `#ifdef HAVE_X_PROTOCOL` = MySQL-only code; `#ifndef HAVE_X_PROTOCOL` = MariaDB stub |
-| `HAVE_DUMP_AND_LOAD` | the dump/load utilities | `#ifdef HAVE_DUMP_AND_LOAD` = MySQL-only code |
+| `HAVE_BINLOG_UTILS` | `util.dumpBinlogs()` / `util.loadBinlogs()` and the binlog streaming under them | `#ifdef HAVE_BINLOG_UTILS` = MySQL-only code |
 
 A bare `#ifdef MARIADB_BUILD` / `#ifndef MARIADB_BUILD` now denotes a guard that
 is **neither** AdminAPI nor X-protocol — i.e. an intrinsic build difference
-(Connector/C client-API gaps, mysys lifecycle, Python macro conflicts, the
-binlog port and its native GTID model, version/error-code macros, the
+(Connector/C client-API gaps, mysys lifecycle, Python macro conflicts,
+version/error-code macros, the
 `.mylogin.cnf` implementation behind the login-path helper). See §10 for the
 full inventory.
 
@@ -108,25 +108,31 @@ Then relink the shell: `ninja bin/mariadb-shell`.
 ## 2. Dropped features
 
 These are gated out for MariaDB (the rest of the shell — SQL mode, dump/load,
-upgrade checker, etc. — is supported):
+`util.copy*`, import/export, etc. — is supported):
 
 | Feature | Why | Effect on MariaDB build |
 |---|---|---|
 | **JavaScript** | GraalVM/Truffle not provided | `HAVE_JS` off (already the default) |
 | **X protocol / X DevAPI** | libmysqlxclient + protobuf are MySQL-only | `mysqlx://`, collections, X sessions removed; `db/mysqlx/*`, `modules/devapi/*` (X parts), protobuf, lz4 excluded from the build |
 | **AdminAPI** | InnoDB Cluster/ReplicaSet/ClusterSet are MySQL-specific | `dba` global, `cluster`/`rs`/`clusterset`, `modules/adminapi/*` excluded |
+| **Upgrade Checker** | its checks are MySQL's upgrade rules | `util.checkForServerUpgrade()` and `modules/util/upgrade_checker/*` excluded (`HAVE_UPGRADE_CHECKER`) |
+| **Binlog utilities** | MySQL client binlog API and libbinlogevents (§4) | `util.dumpBinlogs()` / `util.loadBinlogs()` excluded (`HAVE_BINLOG_UTILS`); porting them is [AIPL-24](https://jira.mariadb.org/browse/AIPL-24) |
 
 Only the **shared** DevAPI base classes (`base_constants`, `base_resultset`,
 `dynamic_object`) are still compiled — the classic resultset/object model needs
 them.
 
 ### Features that throw "not supported" at runtime
-(Their backends were X/MySQL-specific; they compile but are stubbed.)
+(Their backends are X- or MySQL-specific; they compile but are stubbed or refused.)
 
 - `util.importJson` — used the X document store
 - `--register-factor` — used the MySQL FIDO/WebAuthn auth plugin
 - report `--where` / `--having` filtering — used the X expression parser
 - cluster `--redirect-primary` / `--redirect-secondary` — used AdminAPI
+- the `ocimds` and `compatibility` dump options, when the source is MariaDB —
+  they rewrite DDL and accounts for MySQL HeatWave Service
+  (`Dump_options::on_validate()`). Allowing the DDL-only subset (`force_innodb`,
+  `create_invisible_pks`, …) for MariaDB is [AIPL-25](https://jira.mariadb.org/browse/AIPL-25)
 
 ---
 
@@ -147,34 +153,29 @@ was adapted to libmariadb, which lacks several MySQL 8.x client APIs:
 
 ---
 
-## 4. Binlog library port (`util.dumpBinlogs` / `util.loadBinlogs`)
+## 4. Binlog utilities (`util.dumpBinlogs` / `util.loadBinlogs`) — MySQL-only
 
-The binlog utility was **ported**, not dropped. The original used MySQL's client
-binlog API (`MYSQL_RPL`, `mysql_binlog_open/fetch/close`) and **libbinlogevents**
-(`mysql::binlog::event`, `mysql::gtids`) — none of which exist in MariaDB.
+Not built for MariaDB. `HAVE_BINLOG_UTILS` is defined only on a MySQL build and
+gates `modules/util/binlog/*`, [db/mysql/binary_log.cc](mysqlshdk/libs/db/mysql/binary_log.cc)
+and the two `util` methods. The code is upstream's, unchanged: it streams with
+MySQL's client binlog API (`MYSQL_RPL`, `mysql_binlog_open/fetch/close`) and
+decodes with **libbinlogevents** (`mysql::binlog::event`, `mysql::gtids`),
+neither of which exists in MariaDB Connector/C or the MariaDB server tree.
+Connector/C's counterpart is `mariadb_rpl_*`; nothing is written against it.
 
-What changed:
+What that costs on MariaDB:
 
-1. **Low-level streaming** ([db/mysql/binary_log.cc](mysqlshdk/libs/db/mysql/binary_log.cc))
-   rewritten against MariaDB Connector/C's `mariadb_rpl_*` API. The parsed GTID
-   (`domain/server/sequence`) is surfaced on `Binary_log_event`, so the utility
-   no longer needs libbinlogevents to decode events.
-2. **GTID model** ([modules/util/binlog/utils.h](modules/util/binlog/utils.h)/`.cc`):
-   a native MariaDB GTID library — `Gtid` (`domain-server-seq`) and `Gtid_set`
-   with interval algebra (`add`, `subtract`, `is_subset`, `contains`,
-   `inplace_union`, parse/format), replacing `mysql::gtids`.
-3. **dumper / loader / options** rewired to read GTIDs from the event fields and
-   use the native set algebra.
+- `util.dumpBinlogs()` / `util.loadBinlogs()` do not exist, and their scripted
+  suites are not registered (`auto_script_py_t.cc`).
 
-> ⚠️ **Needs validation against a live MariaDB.** The GTID set semantics
-> (subtraction, subset/contains, incremental-load file selection) are
-> structurally correct but were not exercised against real binlog dumps. MariaDB
-> GTID *position* strings (`d-s-N`, one per source) cannot express gaps the way
-> MySQL ranges can — `Gtid_set::to_string()` emits the highest covered sequence
-> per source.
+The dumper's own binary log check, which verifies that no DDL ran during a dump
+taken without a lock, does not use this streaming. It reads `SHOW BINLOG EVENTS`
+and works on MariaDB ([MARIADB_DUMP_LOAD.md](MARIADB_DUMP_LOAD.md) §4.4).
 
-The bundled binlog tool is `mariadb-binlog` (MariaDB's `mysqlbinlog`); the loader
-invokes it by that name.
+A port needs streaming on `mariadb_rpl_*`, MariaDB event decoding, and a GTID
+model built on domain positions. The last of those exists for dump/load in
+`mysqlshdk/libs/mysql/mariadb_gtid.h` (MARIADB_DUMP_LOAD.md §4.2). The port is
+tracked in [AIPL-24](https://jira.mariadb.org/browse/AIPL-24).
 
 ---
 
@@ -264,8 +265,8 @@ growth instead of scanning for `----args-separator----`).
 
 ## 8. Open items / to validate
 
-1. **Binlog GTID semantics** — exercise `util.dumpBinlogs` / `util.loadBinlogs`
-   against a live MariaDB (see §4).
+1. **Binlog utilities** — not built for MariaDB (§4); porting them is
+   [AIPL-24](https://jira.mariadb.org/browse/AIPL-24).
 2. **`ssl-mode=REQUIRED`** — cannot be strictly enforced with this libmariadb
    (warns at runtime); confirm acceptable or use a newer Connector/C.
 3. **Replication channel error mapping** — `ER_REPLICA_CHANNEL_DOES_NOT_EXIST`
@@ -340,14 +341,8 @@ These are intentional and should stay as `MARIADB_BUILD`:
 | mysys lifecycle | `shellcore/shell_init.cc`, `shellcore/shell_options.cc` (defaults), `include/shellcore/shell_options.h` | `my_init`/`my_end`/`my_load_defaults`/`free_defaults`, `MEM_ROOT` differences |
 | Python macro conflicts | `include/scripting/python_utils.h`, `libs/utils/debug.h` | `pyconfig.h` vs `my_config.h` `SIZEOF_*` redefinition; DBUG API differences |
 | UUID / version macros | `libs/utils/uuid_gen.cc`, `libs/utils/utils_general.cc`, `shell_script_tester.cc`, `utils_general_t.cc` | `my_rnd_*` rename; `LIBMYSQL_VERSION*` → `MYSQL_*` |
-| Binlog port + GTID model | all of `modules/util/binlog/*` except the AdminAPI metadata lookups | `mariadb_rpl_*` streaming, native `Gtid`/`Gtid_set`, libbinlogevents replacement, `mariadb-binlog` tooling (§4) |
 | Misc build glue | `src/mysqlsh/cmdline_shell.cc` (`STDERR_FILENO`), `src/mysqlsh/main.cc` (FIDO/WebAuthn auth plugin) | not a feature module |
 | Test harness | `unittest/test_main.cc` (raw client probe) | Connector/C environment detection |
-
-Note: a handful of binlog option files (`dump_binlogs_options.cc`,
-`load_binlogs_options.cc`) mix both — their GTID/streaming guards stay
-`MARIADB_BUILD` while the InnoDB-Cluster metadata lookups they perform were
-migrated to `HAVE_ADMIN_API`.
 
 The `unittest/CMakeLists.txt` yparser-grammar exclusion also stays
 `IF(MARIADB_BUILD)` (a build-artifact concern — the per-MySQL-version grammar
@@ -996,10 +991,8 @@ identifiers cannot contain trailing spaces (`1102`). Verified passing against bo
 a `UTF8_IS_UTF8MB3` server (12.3.2) and an empty-`old_mode` server (13.1.0).
 
 Scope note: `Query_helper`'s only product consumers are dump/load and the Upgrade
-Checker, both excluded from MariaDB builds (`HAVE_DUMP_AND_LOAD`,
-`HAVE_UPGRADE_CHECKER`), so today the code is exercised only by its own unit test —
-but the defect is in shared library code and would resurface the moment either
-feature is ported. The 66 SQL-literal expectations in the (MySQL-only)
+Checker. Dump/load is now built for MariaDB too, so this code is live there; the
+Upgrade Checker remains MySQL-only (`HAVE_UPGRADE_CHECKER`). The 66 SQL-literal expectations in the (MySQL-only)
 Upgrade-Checker tests were updated to match the generated SQL.
 
 ### 13.2 `sql_mode` is never reported via session state tracking
@@ -1076,6 +1069,33 @@ Fix: store `m_mariadb_defaults_argv` when rc is 0 **or** 4 so the buffer is alwa
 reclaimed, and intercept `--print-defaults` in the shell — strip it from the argv
 handed to `my_load_defaults()` so mysys stays quiet, load the defaults, then print
 the list with `--password*` masked and `exit(0)`, matching MySQL.
+
+### 13.5 InnoDB bulk insert drops rows on `LOAD DATA ... IGNORE`
+
+With both `unique_checks = 0` and `foreign_key_checks = 0`, MariaDB loads the
+first statement into an **empty** InnoDB table through its bulk-insert path
+(MDEV-24621), which does not honour `IGNORE` (MDEV-31985). A duplicate key makes
+it throw away other rows, sometimes the whole statement, and it reports no error
+and no warning. Measured on 12.3.2, primary key `id`, loading into an empty
+table:
+
+| Rows in the file | `IGNORE` (and no keyword, same for `LOCAL`) | `REPLACE` |
+|---|---|---|
+| `1,2,2` | *(none)* | `1,2` |
+| `1,2,3,3,2,1` | `1,2` | `1,2,3` |
+| `1..20000,20000..1` | `1..19999` | — |
+
+Turning off either check alone, loading into a table that isn't empty, or using
+`REPLACE` all give the correct result. MySQL has no such path.
+
+`util.importTable()` ignores duplicates by default, so it hit this on any file
+with a duplicate key. `Load_data_worker::init_session()` therefore leaves
+`unique_checks` on for a MariaDB target unless duplicates are replaced
+(`replaceDuplicates: true`). The cost is the bulk-insert speedup for those
+imports. `util.loadDump()` and the copy utilities load with `REPLACE`, so they keep
+`unique_checks = 0`. They use `IGNORE` only for a table with a `WITHOUT OVERLAPS`
+key, and such a table only receives duplicates on a resumed load, when it's
+no longer empty.
 
 ---
 

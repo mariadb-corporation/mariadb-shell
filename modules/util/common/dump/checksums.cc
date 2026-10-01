@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -41,9 +42,11 @@
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 #include "mysqlshdk/libs/utils/version.h"
 
+#include "modules/util/common/dump/server_features.h"
 #include "modules/util/common/dump/server_info.h"
 
 namespace mysqlsh {
@@ -267,7 +270,7 @@ void Checksums::configure(
   m_generator_template =
       "sha2(concat_ws('#',{})," + std::to_string(bits(m_hash)) + ')';
 
-  if (server_version(session).is_8_0) {
+  if (supports_wide_bit_xor(server_version(session))) {
     m_select_expr_template = "hex(bit_xor(unhex({})))";
   } else {
     // versions older than 8.0 can only use 64bit unsigned integers in bit_xor()
@@ -1042,10 +1045,11 @@ void Checksums::deserialize(std::unique_ptr<mysqlshdk::storage::IFile> file) {
       m_version.get_major() > k_current_version.get_major() ||
       (m_version.get_major() == k_current_version.get_major() &&
        m_version.get_minor() > k_current_version.get_minor())) {
-    throw std::runtime_error("Checksum format has version " +
-                             m_version.get_full() +
-                             " which is not supported by this version of MySQL "
-                             "Shell. Please upgrade MySQL Shell to load it.");
+    throw std::runtime_error(shcore::str_format(
+        "Checksum format has version %s which is not supported by this version "
+        "of %s. Please upgrade %s to load it.",
+        m_version.get_full().c_str(), shcore::k_shell_product_name,
+        shcore::k_shell_product_name));
   }
 }
 

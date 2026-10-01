@@ -103,7 +103,7 @@ md["version"] = "100.0.0"
 with backup_file(md_file) as backup:
     write_json(md_file, md)
     EXPECT_FAIL("Error: Shell Error (53006)", "Unsupported dump version", default_dump_dir)
-    EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MySQL Shell. Please upgrade MySQL Shell to use it.")
+    EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MariaDB Shell. Please upgrade MariaDB Shell to use it.")
 
 #@<> WL15977-FR3.1.1.3 - dump is incompatible with the current version of Shell - one of the dumps
 full_path, dir_name = get_subdir(default_dump_dir)
@@ -114,7 +114,7 @@ md["version"] = "100.0.0"
 with backup_file(md_file) as backup:
     write_json(md_file, md)
     EXPECT_FAIL("RuntimeError", f"Failed to read '{absolute_path_for_output(md_file)}': Unsupported dump version", default_dump_dir)
-    EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MySQL Shell. Please upgrade MySQL Shell to use it.")
+    EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MariaDB Shell. Please upgrade MariaDB Shell to use it.")
 
 #@<> WL15977-FR3.1.1.4 - dump is incomplete
 full_path, dir_name = get_subdir(default_dump_dir)

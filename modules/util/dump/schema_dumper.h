@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -59,6 +60,10 @@ class Schema_dumper {
     enum class Type {
       UNKNOWN,
       CREATE_USER,
+      // a MariaDB role, which is not an account and needs CREATE ROLE /
+      // DROP ROLE rather than CREATE USER / DROP USER - see
+      // common::roles_are_hostless()
+      CREATE_ROLE,
       GRANT,
       DEFAULT_ROLE,
     };
@@ -115,6 +120,10 @@ class Schema_dumper {
                                                       const std::string &db);
   const std::unordered_set<std::string> &get_libraries(const std::string &db);
 
+  std::vector<Compatibility_issue> dump_sequences_ddl(IFile *file,
+                                                      const std::string &db);
+  const std::unordered_set<std::string> &get_sequences(const std::string &db);
+
   std::vector<Compatibility_issue> dump_grants(IFile *file);
 
   void dump_data_masking_policies(IFile *file);
@@ -148,6 +157,7 @@ class Schema_dumper {
   bool opt_drop_event = true;
   bool opt_drop_routine = true;
   bool opt_drop_library = true;
+  bool opt_drop_sequence = true;
   bool opt_drop_trigger = true;
   bool opt_reexecutable = true;
   bool opt_create_options = true;
@@ -177,13 +187,6 @@ class Schema_dumper {
   bool opt_unescape_wildcard_grants = false;
   bool opt_target_has_mysql_native_password = false;
   std::string opt_character_set_results = "utf8mb4";
-
-  enum enum_set_gtid_purged_mode {
-    SET_GTID_PURGED_OFF = 0,
-    SET_GTID_PURGED_AUTO = 1,
-    SET_GTID_PURGED_ON = 2,
-    SET_GTID_PURGED_COMMENTED = 3
-  } opt_set_gtid_purged_mode = SET_GTID_PURGED_AUTO;
 
  private:
 #ifdef FRIEND_TEST
@@ -254,6 +257,13 @@ class Schema_dumper {
   std::vector<Compatibility_issue> dump_libraries_for_db(IFile *sql_file,
                                                          const std::string &db);
 
+  std::vector<Compatibility_issue> dump_sequences_for_db(IFile *sql_file,
+                                                         const std::string &db);
+
+  void resolve_sequence_defaults(std::string *create_table,
+                                 const std::string &db,
+                                 const std::string &table);
+
   std::vector<Compatibility_issue> check_ct_for_mysqlaas(
       const std::string &db, const std::string &table,
       std::string *create_table);
@@ -306,11 +316,6 @@ class Schema_dumper {
                              const std::string &table_name,
                              std::string *out_table_type);
 
-  void set_session_binlog(IFile *sql_file, bool flag);
-
-  bool add_set_gtid_purged(IFile *sql_file);
-
-  bool process_set_gtid_purged(IFile *sql_file);
   std::vector<Compatibility_issue> get_view_structure(IFile *sql_file,
                                                       const std::string &table,
                                                       const std::string &db);
@@ -353,12 +358,11 @@ class Schema_dumper {
   bool m_users_not_dumped_reported = false;
 
   // version information
-  mysqlshdk::utils::Version m_target_version;
+  common::Server_version m_target_version;
   bool m_supports_set_any_definer_privilege = false;
   bool m_supports_pke_as_pk = false;
 
   // leftovers from original code
-  bool is_binlog_disabled = false;
   bool stats_tables_included = false;
 };
 

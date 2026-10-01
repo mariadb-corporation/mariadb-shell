@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +35,14 @@ namespace common {
 
 inline constexpr auto k_dumper_version = "2.0.1";
 
-void validate_dumper_version(const mysqlshdk::utils::Version &version);
+/**
+ * Checks that this Shell can load a dump in the given format version.
+ *
+ * created_by_maria_db_shell tells which Shell produced the dump, so a note
+ * about an older format names the right one - see Server_info::has_vendor.
+ */
+void validate_dumper_version(const mysqlshdk::utils::Version &version,
+                             bool created_by_maria_db_shell = false);
 
 }  // namespace common
 }  // namespace dump

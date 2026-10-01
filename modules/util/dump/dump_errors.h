@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -174,7 +175,19 @@
 #define SHERR_DUMP_CONTAINS_MASKED_TABLE_DATA_MSG \
   "Unable to dump unmasked table data"
 
-#define SHERR_DUMP_LAST 52042
+// MariaDB sequences, MARIADB_DUMP_LOAD.md section 5.1
+#define SHERR_DUMP_SD_SEQUENCE_DDL_ERROR 52043
+#define SHERR_DUMP_SD_SEQUENCE_DDL_ERROR_MSG \
+  "Error while dumping sequences for schema '%s': %s"
+
+// A column type dbstring_to_type() does not know, MARIADB_DUMP_LOAD.md
+// section 5.5
+#define SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE 52044
+#define SHERR_DUMP_UNSUPPORTED_COLUMN_TYPE_MSG                                \
+  "Column %s of %s has type %s, which this version of the Shell cannot dump " \
+  "safely. Exclude it with the 'excludeTables' option to dump the rest."
+
+#define SHERR_DUMP_LAST 52044
 
 #define SHERR_DUMP_MAX 52999
 

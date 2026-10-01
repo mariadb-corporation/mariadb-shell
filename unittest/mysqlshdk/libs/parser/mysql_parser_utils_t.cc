@@ -388,8 +388,8 @@ TEST(MysqlParserUtils, extract_table_references_respects_ansi_quotes_mode) {
 TEST(MysqlParserUtils, quoted_identifier_escapes) {
   // An identifier escapes its quote character by doubling it, and gives a back
   // slash no special meaning - unlike a string literal. The view definitions
-  // below are what the server itself prints for such names, and a dump of a
-  // schema holding one used to fail on them.
+  // below are what the server itself prints for such names, which a dump of
+  // the view's schema hands to the parser.
   const auto EXPECT = [](const std::string &stmt,
                          const std::vector<Table_reference> &expected,
                          bool ansi_quotes = false) {

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -876,8 +877,7 @@ bool check_statement_for_sqlsecurity_clause(const std::string &statement,
 
   if (func_or_proc) {
     // find starting parenthesis
-    while (!shcore::str_caseeq((token = it.next_token()), "("))
-      ;
+    while (!shcore::str_caseeq((token = it.next_token()), "("));
 
     const auto find_closing_parenthesis = [&it, &token]() {
       assert(shcore::str_caseeq(token, "("));
@@ -2070,8 +2070,13 @@ bool parse_grant_statement(std::string_view statement,
     result.grant = true;
   } else if (shcore::str_caseeq(type, "REVOKE")) {
     result.grant = false;
+  } else if (shcore::str_caseeq(type, "DENY")) {
+    // MariaDB 13.1.1+, reported by SHOW GRANTS next to the GRANTs at every
+    // privilege level; it keeps the token order of a GRANT
+    result.grant = true;
+    result.deny = true;
   } else {
-    throw std::runtime_error("Expected GRANT or REVOKE statement");
+    throw std::runtime_error("Expected GRANT, REVOKE or DENY statement");
   }
 
   Privilege_level_info::Level object_level = Privilege_level_info::Level::TABLE;
@@ -2170,6 +2175,18 @@ bool parse_grant_statement(std::string_view statement,
       object_level = Privilege_level_info::Level::ROUTINE;
       // priv_level follows
       priv_level = it.next_token();
+    } else if (shcore::str_caseeq(priv_level, "PACKAGE")) {
+      // MariaDB's Oracle-mode packages, which SHOW GRANTS reports as
+      // GRANT EXECUTE ON PACKAGE [BODY] `db`.`pkg` - the BODY is a second
+      // token, as in add_execution_condition(), and an unquoted one can only be
+      // the keyword. Both halves are routines to information_schema.ROUTINES
+      // and to the routine filters, so they need no level of their own.
+      object_level = Privilege_level_info::Level::ROUTINE;
+      priv_level = it.next_token();
+
+      if (shcore::str_caseeq(priv_level, "BODY")) {
+        priv_level = it.next_token();
+      }
     } else if (shcore::str_caseeq(priv_level, "LIBRARY")) {
       object_level = Privilege_level_info::Level::LIBRARY;
       // priv_level follows
@@ -2211,7 +2228,7 @@ bool parse_grant_statement(std::string_view statement,
 std::string to_grant_statement(const Privilege_level_info &info) {
   assert(Privilege_level_info::Level::SCHEMA == info.level);
 
-  std::string result = info.grant ? "GRANT" : "REVOKE";
+  std::string result = info.deny ? "DENY" : info.grant ? "GRANT" : "REVOKE";
 
   result += ' ';
   result += shcore::str_join(std::views::keys(info.privileges), ", ");
@@ -2227,30 +2244,6 @@ std::string to_grant_statement(const Privilege_level_info &info) {
   }
 
   return result;
-}
-
-bool supports_set_any_definer_privilege(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 80200;
-}
-
-bool supports_library_ddl(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90200;
-}
-
-bool supports_vector_store_conversion(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90401;
-}
-
-bool supports_gipks(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 80030;
-}
-
-bool supports_pke_as_pk(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90700;
-}
-
-bool supports_dynamic_data_masking(const mysqlshdk::utils::Version &v) {
-  return v.numeric() >= 90700;
 }
 
 bool replace_keyword(std::string_view stmt, std::string_view from,

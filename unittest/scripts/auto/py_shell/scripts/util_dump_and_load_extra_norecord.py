@@ -38,14 +38,19 @@ def prepare(sbport, options={}):
         testutil.mkdir(datadir+"/test datadir")
     options.update({
         "loose_innodb_directories": datadir,
-        "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
-        "keyring_file_data": datadir+"/keyring",
         "local_infile": "1",
         "tmpdir": mysql_tmpdir,
         "innodb_doublewrite": "OFF",
         # small sort buffer to force stray filesorts to be triggered even if we don't have much data
         "sort_buffer_size": 32768
     })
+    if not __server_is_maria_db:
+        # keyring_file is a MySQL plugin; MariaDB refuses to start with an
+        # unknown early_plugin_load and has no keyring_file_data variable
+        options.update({
+            "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
+            "keyring_file_data": datadir+"/keyring",
+        })
     testutil.deploy_sandbox(sbport, "root", options)
 
 
@@ -65,7 +70,7 @@ session2 = mysql.get_session(__sandbox_uri2)
 session2.run_sql("set names utf8mb4")
 session2.run_sql("/*!80021 alter instance disable innodb redo_log */")
 
-#@<> load while dump is still running (prepare)
+#@<> load while dump is still running (prepare) (1)
 # We test this artificially by manually assembling the loaded dump
 wipeout_server(session2)
 
@@ -120,7 +125,7 @@ def copy_rest():
     for f in datafiles[n:]:
         copy(f)
 
-#@<> load dump while dump still running
+#@<> load dump while dump still running (1)
 
 shell.connect(__sandbox_uri2)
 
@@ -130,14 +135,14 @@ threading.Thread(target=copy_rest).start()
 # Now at least half of the DDL files would be loaded
 EXPECT_THROWS(lambda: util.load_dump(target, {"waitDumpTimeout": 5}), "Dump timeout")
 
-#@<> load dump after it's done
+#@<> load dump after it's done (1)
 
 copy("@.done.json")
 util.load_dump(target, {"waitDumpTimeout": 10})
 
 compare_servers(session1, session2, check_rows=True, check_users=False)
 
-#@<> load incomplete dumps by retrying
+#@<> load incomplete dumps by retrying (1)
 testutil.rmfile(target+"/*")
 
 shell.connect(__sandbox_uri2)
@@ -183,7 +188,7 @@ for f in ordered:
         if not EXPECT_THROWS(lambda: util.load_dump(target, {"waitDumpTimeout": 0.001}), "Dump timeout"):
             break
 
-#@<> BUG#BUG33332497 ensure progress reporting is correct
+#@<> BUG#BUG33332497 ensure progress reporting is correct (1)
 # clean up after the previous test
 testutil.rmfile(target+"/*")
 
@@ -215,21 +220,24 @@ compare_servers(session1, session2, check_rows=True, check_users=False)
 
 ### BUG#32430402 showMetadata option
 
-#@<> setup showMetadata tests
+#@<> setup showMetadata tests (1)
+# balance: keep-with-previous (reads the fulldump written by 'load while dump is still running (prepare)')
 binlog_info_header = "---"
 binlog_file = ""
 binlog_position = 0
 gtid_executed = ""
-if __version_num < 80200:
-    binlog_info = session1.run_sql("SHOW MASTER STATUS").fetch_one()
-else:
-    binlog_info = session1.run_sql("SHOW BINARY LOG STATUS").fetch_one()
+binlog_info = session1.run_sql(f"SHOW {get_binary_log_status_keyword()} STATUS").fetch_one()
 
 if binlog_info is not None:
     if len(binlog_info[0]) > 0:
         binlog_file = binlog_info[0]
         binlog_position = str(binlog_info[1])
-    if len(binlog_info[4]) > 0:
+    if __server_is_maria_db:
+        # MariaDB has no GTID set: the dump carries gtid_current_pos, the
+        # server's GTID position, rather than SHOW MASTER STATUS'
+        # Gtid_Binlog_Pos column (MARIADB_DUMP_LOAD.md section 4.1)
+        gtid_executed = session1.run_sql("SELECT @@GLOBAL.gtid_current_pos").fetch_one()[0]
+    elif len(binlog_info[4]) > 0:
         gtid_executed = binlog_info[4]
 
 metadata_file = os.path.join(outdir, "fulldump", "@.json")
@@ -266,45 +274,48 @@ def EXPECT_BINLOG_INFO(file, position, gtid, options = {}):
             options[option] = True
     WIPE_SHELL_LOG()
     util.load_dump(os.path.join(outdir, "fulldump"), options)
-    yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "Executed_GTID_set": gtid } })
+    if __server_is_maria_db:
+        yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "GTID_position": gtid } })
+    else:
+        yaml = testutil.yaml({ "Dump_metadata": { "Binlog_file": file, "Binlog_position": position, "Executed_GTID_set": gtid } })
     EXPECT_STDOUT_CONTAINS(binlog_info_header)
     EXPECT_STDOUT_CONTAINS(yaml)
     # BUG#35883344 - binlog info should be written to the log file
     for line in yaml.splitlines():
         EXPECT_SHELL_LOG_CONTAINS(line)
 
-#@<> showMetadata defaults to false
+#@<> showMetadata defaults to false (1)
 util.load_dump(os.path.join(outdir, "fulldump"), { "dryRun": True })
 EXPECT_STDOUT_NOT_CONTAINS(binlog_info_header)
 
-#@<> showMetadata displays expected information
+#@<> showMetadata displays expected information (1)
 EXPECT_BINLOG_INFO(binlog_file, binlog_position, gtid_executed)
 
-#@<> create backup of @.json
+#@<> create backup of @.json (1)
 testutil.cpfile(metadata_file, metadata_file + ".bak")
 
-#@<> no binary log information
+#@<> no binary log information (1)
 set_binlog_info(None)
 EXPECT_BINLOG_INFO("", 0, "", { "loadData": True, "loadDdl": False, "loadUsers": False })
 
-#@<> executed GTID set + empty binlog file + zero binlog position
+#@<> executed GTID set + empty binlog file + zero binlog position (1)
 set_binlog_info(Binlog("", 0, "gtid_executed"))
 EXPECT_BINLOG_INFO("", 0, "gtid_executed", { "loadData": False, "loadDdl": False, "loadUsers": True })
 
-#@<> executed GTID set + empty binlog file + non-zero binlog position
+#@<> executed GTID set + empty binlog file + non-zero binlog position (1)
 set_binlog_info(Binlog("", 5, "gtid_executed"))
 EXPECT_BINLOG_INFO("", 5, "gtid_executed")
 
-#@<> everything is available
+#@<> everything is available (1)
 set_binlog_info(Binlog("binlog.file", 1234, "gtid_executed"))
 EXPECT_BINLOG_INFO("binlog.file", "1234", "gtid_executed")
 
-#@<> restore backup of @.json
+#@<> restore backup of @.json (1)
 testutil.cpfile(metadata_file + ".bak", metadata_file)
 
 ### BUG#32430402 showMetadata option -- END
 
-#@<> Check that dumping lots of things won't trigger a filesort, which could be a problem if the source has no disk space left
+#@<> Check that dumping lots of things won't trigger a filesort, which could be a problem if the source has no disk space left (2)
 session1.run_sql("set global sort_buffer_size=32768")
 
 # create lots of users
@@ -329,7 +340,9 @@ session1.run_sql(f"create table {dbname}.bug_33976259 (a int, b int, c int, PRIM
 session1.run_sql(f"insert into {dbname}.bug_33976259 values {','.join([f'(1, 1, {i})' for i in range(1000)])}")
 session1.run_sql(f"analyze table {dbname}.bug_33976259")
 
-if __version_num > 80000:
+# histograms are MySQL's; MariaDB collects its own column statistics with
+# ANALYZE TABLE ... PERSISTENT FOR, and has no UPDATE HISTOGRAM syntax
+if not __server_is_maria_db and __version_num > 80000:
     for t in range(500):
         sql = f"ANALYZE TABLE {dbname}.table{t} UPDATE HISTOGRAM ON `column0`;"
         session1.run_sql(sql)
@@ -345,7 +358,11 @@ for i in range(500):
     session1.run_sql(sql)
 
 with ExitStack() as stack:
-    if __os_type != "windows":
+    # MariaDB materializes information_schema queries into internal Aria tables in
+    # tmpdir, so a read-only tmpdir stops the dump for a reason which has nothing
+    # to do with a filesort ("Can't create/write to file '#sql-temptable-....MAI'")
+    # - the dump and load below still run, they just cannot prove that much there
+    if __os_type != "windows" and not __server_is_maria_db:
         # make the tmpdir read-only to force an error when tmpfiles are created (like when filesort is used) during dump
         os.chmod(mysql_tmpdir, 0o550)
         # allow writing to tmpdir for loading (executed when leaving the 'with' scope)
@@ -359,7 +376,7 @@ wipeout_server(session2)
 
 util.load_dump(dump_dir)
 
-#@<> cleanup the schemas with lots of things
+#@<> cleanup the schemas with lots of things (2)
 for i in range(500):
     session1.run_sql(f"drop user if exists rando_____________________{i}@'l{'o'*user_length}calhost'")
 

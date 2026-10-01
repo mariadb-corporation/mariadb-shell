@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -323,8 +324,14 @@ void Import_table::scan_file() {
 
   Scanner scanner{m_opt.dialect(), m_skip_rows_count};
   const auto make_chunk = [this]() {
-    return std::make_unique<Allocated_file>(m_opt.single_file(),
-                                            m_allocator.get(), true);
+    auto file = std::make_unique<Allocated_file>(m_opt.single_file(),
+                                                 m_allocator.get());
+    // a chunk is fully in memory before it's scheduled, releasing its blocks
+    // while it's being sent would only make it impossible to resend it when
+    // LOAD DATA deadlocks and is retried; the worker releases the chunk once
+    // it's loaded
+    file->retain_data();
+    return file;
   };
   std::unique_ptr<Allocated_file> chunk;
   File_import_info info;

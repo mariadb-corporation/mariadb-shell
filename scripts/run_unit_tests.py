@@ -51,6 +51,15 @@ _SPLIT_SUITES = ["Shell_scripted/Auto_script_py"]
 # 1, 2, ..., N so the test itself can shard its work by that value. A test
 # with no entry here gets a single task with SPLIT_ID 0 (the default).
 _SPLIT_TEST_GROUPS: Dict[Tuple[str, str], int] = {
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_copy_instance_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_copy_schemas_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_copy_tables_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_dump_and_load_extra_norecord"): 2,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_dump_and_load_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_dump_instance_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_dump_schemas_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_dump_tables_norecord"): 8,
+    ("Shell_scripted/Auto_script_py", "run_and_check/util_export_table_norecord"): 8,
 }
 
 # Firejail (Linux-only process isolation) is used when available, otherwise the

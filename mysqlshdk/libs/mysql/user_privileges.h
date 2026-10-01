@@ -191,6 +191,15 @@ class User_privileges {
   void read_user_roles(const mysqlshdk::mysql::IInstance &instance);
 
   /**
+   * Read the role granted to the user which MariaDB activates on login.
+   *
+   * Called when the server has roles but not MySQL's role model.
+   *
+   * @param instance The Instance object used to query the database.
+   */
+  void read_maria_db_user_roles(const mysqlshdk::mysql::IInstance &instance);
+
+  /**
    * Read the value of partial_revokes system variable.
    *
    * @param instance The Instance object used to query the database.
@@ -270,6 +279,14 @@ class User_privileges {
 
   // Is partial_revokes system variable enabled?
   bool m_partial_revokes = false;
+
+  // Does the server use MariaDB's role model instead of MySQL's? Roles are
+  // then hostless, only the default role is active, and SHOW GRANTS has no
+  // USING clause.
+  bool m_maria_db_roles = false;
+
+  // Is the target account the account this session is connected as?
+  bool m_is_current_user = false;
 
 #ifdef FRIEND_TEST
   FRIEND_TEST(User_privileges_test, parse_grants);

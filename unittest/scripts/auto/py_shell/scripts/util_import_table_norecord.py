@@ -29,7 +29,7 @@ def truncate_table():
     session.run_sql('TRUNCATE TABLE ' + qualified_table_name())
 
 def primary_key_prefix(table_name):
-    if __version_num < 80019:
+    if __version_num < 80019 or __server_is_maria_db:
         return ""
     else:
         return table_name + "."
@@ -39,9 +39,9 @@ EXPECT_THROWS(lambda: util.import_table(world_x_cities_dump, { "table": target_t
     "An open session is required to perform this operation.")
 
 
-testutil.wait_sandbox_alive(xuri)
 
-#@<> Setup test
+#@<> Setup test {__have_x_protocol and not __server_is_maria_db}
+testutil.wait_sandbox_alive(xuri)
 shell.connect(xuri)
 #/ Create collection for json import
 session.drop_schema(target_schema)
@@ -49,6 +49,33 @@ schema_ = session.create_schema(target_schema)
 schema_.create_collection('document_store')
 session.close()
 
+#@<> Setup test {not __have_x_protocol or __server_is_maria_db}
+#/ Without X protocol - on the build or on the server - the collection's table is
+#/ created by hand instead
+testutil.wait_sandbox_alive(uri)
+shell.connect(uri)
+session.run_sql("DROP SCHEMA IF EXISTS " + target_schema)
+session.run_sql("CREATE SCHEMA " + target_schema)
+session.run_sql("USE " + target_schema)
+#/ A generated column can't be a PRIMARY KEY on MariaDB (error 1903), so populate
+#/ _id via a BEFORE INSERT trigger instead - portable across both vendors, and still
+#/ gets "Duplicate entry ... for key 'PRIMARY'" on re-import, like an X protocol
+#/ collection's server-generated schema does.
+session.run_sql("""
+    CREATE TABLE document_store (
+        _id VARBINARY(32) NOT NULL DEFAULT '',
+        doc JSON,
+        PRIMARY KEY (_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+""")
+session.run_sql("""
+    CREATE TRIGGER document_store_bi BEFORE INSERT ON document_store
+    FOR EACH ROW
+    SET NEW._id = JSON_UNQUOTE(JSON_EXTRACT(NEW.doc, '$._id'))
+""")
+session.close()
+
+#@<> Setup test - wl12193.cities table
 #/ Create wl12193.cities table
 shell.connect(uri)
 session.run_sql('USE ' + target_schema)
@@ -66,7 +93,7 @@ EXPECT_STDOUT_CONTAINS("The 'local_infile' global system variable must be set to
 session.run_sql('SET GLOBAL local_infile = true')
 
 
-#@<> BUG#34582616 when global session is using X protocol, importTable should still work
+#@<> BUG#34582616 when global session is using X protocol, importTable should still work {__have_x_protocol and not __server_is_maria_db}
 shell.connect(xuri)
 
 EXPECT_NO_THROWS(lambda: util.import_table(world_x_cities_dump,

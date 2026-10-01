@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +37,13 @@ constexpr inline std::array k_excluded_users = {
     "mysql.infoschema",
     "mysql.session",
     "mysql.sys",
+};
+
+// MariaDB's counterpart of the above: the internal account which owns the
+// mysql.user / mysql.host views over mysql.global_priv. It is locked and holds
+// grants on mysql.global_priv, so it is neither useful nor safe to carry.
+constexpr inline std::array k_maria_db_excluded_users = {
+    "mariadb.sys",
 };
 
 constexpr inline std::array k_mhs_excluded_users = {
