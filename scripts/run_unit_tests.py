@@ -803,13 +803,16 @@ class Orchestrator:
 
         return queues
 
-    def run(self, split_suites: List[str] = None, list_groups: bool = False) -> None:
+    def run(self, split_suites: List[str] = None, list_groups: bool = False) -> int:
         """Executes the complete orchestration workflow.
 
         Args:
             split_suites: Suite names to split into per-test tasks.
             list_groups: If true, print the balanced per-worker task groups and
                 return without deploying any sandbox or running any test.
+
+        Returns:
+            The number of failed tasks (0 when list_groups is set).
         """
         split_suites = split_suites or []
 
@@ -838,7 +841,7 @@ class Orchestrator:
                 print(f"Worker {worker_id}: {len(queue)} task(s), {total_ms:.1f} ms total (prior runs)")
                 for task in queue:
                     print(f"  {_format_task_label(task)} ({task.last_execution_time_ms:.1f} ms)")
-            return
+            return 0
 
         # Persistent, well-known logs folder (not cleared between runs). Each
         # worker gets its own subfolder, and each suite it runs gets a further
@@ -1030,6 +1033,8 @@ class Orchestrator:
         else:
             print("All suites passed.")
 
+        return len(all_failures)
+
 
 def parse_args():
     """Parses command-line arguments for the parallel test runner CLI."""
@@ -1140,4 +1145,6 @@ if __name__ == "__main__":
         report_file=args.report_file
     )
 
-    orchestrator.run(split_suites=_SPLIT_SUITES, list_groups=args.list_groups)
+    failed = orchestrator.run(split_suites=_SPLIT_SUITES, list_groups=args.list_groups)
+    # the report is written either way; the exit code is what fails a CI job
+    sys.exit(1 if failed else 0)
