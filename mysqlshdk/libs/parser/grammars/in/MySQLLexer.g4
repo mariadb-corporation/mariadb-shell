@@ -1159,6 +1159,11 @@ fragment BACK_TICK:    '`';
 fragment SINGLE_QUOTE: '\'';
 fragment DOUBLE_QUOTE: '"';
 
+// This rule is wrong for an identifier, and MySQLBaseLexer::nextToken() scans back tick quoted
+// identifiers itself instead of relying on it: an identifier escapes the quote character by doubling
+// it and gives a backslash no special meaning, so `a``b` is the single name a`b and `a\` is the name
+// a\, while this rule reads the first as two adjacent identifiers and runs past the closing quote of
+// the second. Regenerating the parser does not change that - fix the rule and the override together.
 BACK_TICK_QUOTED_ID:
     BACK_TICK (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? BACK_TICK;
 
