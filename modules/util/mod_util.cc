@@ -991,7 +991,7 @@ server.
 bytesPerChunk (+ bytes to end of the row) in single LOAD DATA call. Unit
 suffixes, k - for Kilobytes (n * 1'000 bytes), M - for Megabytes (n * 1'000'000
 bytes), G - for Gigabytes (n * 1'000'000'000 bytes), bytesPerChunk="2k" - ~2
-kilobyte data chunk will send to the MySQL Server. Not available for multiple
+kilobyte data chunk will be sent to the server. Not available for multiple
 files import.
 @li <b>maxBytesPerTransaction</b>: string (default: empty) - Specifies the
 maximum number of bytes that can be loaded from a dump data file per single
@@ -1275,7 +1275,7 @@ more threads than tables, then chunks from larger tables will be proportionally
 assigned more threads.
 
 LOAD DATA LOCAL INFILE is used to load table data and thus, the 'local_infile'
-MySQL global setting must be enabled.
+global system variable must be enabled on the server.
 
 If target MySQL server supports BULK LOAD, the load operation of compatible
 tables can be offloaded to the target server, which parallelizes and loads data
@@ -1455,7 +1455,7 @@ information stored in the dump files, i.e. binary log file name and position.
 @li <b>showProgress</b>: bool (default: true if stdout is a tty, false
 otherwise) - Enable or disable import progress information.
 @li <b>skipBinlog</b>: bool (default: false) - Disables the binary log
-for the MySQL sessions used by the loader (set sql_log_bin=0).
+for the sessions used by the loader (set sql_log_bin=0).
 @li <b>threads</b>: int (default: 4) - Number of threads to use to import table
 data.
 @li <b>updateGtidSet</b>: "off", "replace", "append" (default: off) - if set to
@@ -1873,8 +1873,8 @@ values: "create_invisible_pks", "force_innodb", "force_non_standard_fks",
 "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
 "strip_restricted_grants", "strip_tablespaces",
 "target_has_mysql_native_password", "unescape_wildcard_grants".
-@li <b>targetVersion</b>: string (default: current version of %Shell) -
-Specifies version of the destination MySQL server.
+@li <b>targetVersion</b>: string (default: the MariaDB version %Shell was built
+against) - Specifies the version of the destination MariaDB server.
 )*" UTIL_DUMP_SKIP_UPGRADE_CHECKS_HELP
     R"*(@li <b>lakehouseTarget</b>: dictionary (default: not set) - Specifies where the
 data of InnoDB based vector store tables will be written.)*");
@@ -1918,7 +1918,7 @@ as compression, ssl-mode, etc., to establish additional connections.
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_EXPORT_COMMON_REQUIREMENTS, R"*(
 <b>Requirements</b>
-@li MySQL Server 5.7 or newer is required.
+@li MariaDB 10.11 or newer is required.
 @li Size limit for individual files uploaded to the cloud storage is 1.2 TiB.
 @li Columns with data types which are not safe to be stored in text form (i.e.
 BLOB) are converted to Base64, hence the size of such columns cannot exceed
@@ -1972,7 +1972,7 @@ NULL values encoded as unquoted NULL string, compatible with RFC4180.
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_DDL_COMMON_OPTION_DETAILS, R"*(
 The names given in the <b>exclude{object}</b>, <b>include{object}</b>,
-<b>where</b> or <b>partitions</b> options should be valid MySQL identifiers,
+<b>where</b> or <b>partitions</b> options should be valid identifiers,
 quoted using backtick characters when required.
 
 If the <b>exclude{object}</b>, <b>include{object}</b>, <b>where</b> or
@@ -2526,7 +2526,7 @@ schema. This option can only be used when copying just one schema.
 @li <b>sessionInitSql</b>: list of strings (default: []) - execute the given
 list of SQL statements in each session about to copy data.
 @li <b>skipBinlog</b>: bool (default: false) - Disables the binary log
-for the MySQL sessions used by the loader (set sql_log_bin=0).
+for the sessions used by the loader (set sql_log_bin=0).
 @li <b>updateGtidSet</b>: "off", "replace", "append" (default: off) - if set to
 a value other than 'off' updates GTID_PURGED by either replacing its contents
 or appending to it the gtid set present in the copy. On MariaDB the gtid

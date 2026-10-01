@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -429,8 +430,13 @@ std::string Import_table_options::target_import_info() const {
     info_msg += '\'';
   }
 
-  info_msg += " to table `" + schema() + "`.`" + table() +
-              "` in MySQL Server at " + uri + " using " +
+  const auto vendor =
+      mysqlshdk::db::ServerVendor::MariaDB == session()->get_server_vendor()
+          ? "MariaDB"
+          : "MySQL";
+
+  info_msg += " to table `" + schema() + "`.`" + table() + "` in " + vendor +
+              " Server at " + uri + " using " +
               std::to_string(threads_size()) + " thread";
 
   if (1 != threads_size()) {

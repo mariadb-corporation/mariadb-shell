@@ -345,7 +345,7 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
         contents or appending to it the gtid set present in the copy. On
@@ -504,7 +504,7 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
         contents or appending to it the gtid set present in the copy. On
@@ -646,7 +646,7 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
         contents or appending to it the gtid set present in the copy. On
@@ -816,8 +816,8 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
@@ -964,7 +964,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -1008,8 +1008,8 @@ DESCRIPTION
       not included in the dump or does not exist, it is ignored.
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -1305,8 +1305,8 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
@@ -1437,7 +1437,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -1470,8 +1470,8 @@ DESCRIPTION
       Options
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -1768,8 +1768,8 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
@@ -1881,7 +1881,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -1919,8 +1919,8 @@ DESCRIPTION
       exception is thrown.
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -2277,7 +2277,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -2470,8 +2470,8 @@ DESCRIPTION
         bytesPerChunk (+ bytes to end of the row) in single LOAD DATA call.
         Unit suffixes, k - for Kilobytes (n * 1'000 bytes), M - for Megabytes
         (n * 1'000'000 bytes), G - for Gigabytes (n * 1'000'000'000 bytes),
-        bytesPerChunk="2k" - ~2 kilobyte data chunk will send to the MySQL
-        Server. Not available for multiple files import.
+        bytesPerChunk="2k" - ~2 kilobyte data chunk will be sent to the server.
+        Not available for multiple files import.
       - maxBytesPerTransaction: string (default: empty) - Specifies the maximum
         number of bytes that can be loaded from a dump data file per single
         LOAD DATA statement. If a content size of data file is bigger than this
@@ -2720,7 +2720,7 @@ DESCRIPTION
       chunks from larger tables will be proportionally assigned more threads.
 
       LOAD DATA LOCAL INFILE is used to load table data and thus, the
-      'local_infile' MySQL global setting must be enabled.
+      'local_infile' global system variable must be enabled on the server.
 
       If target MySQL server supports BULK LOAD, the load operation of
       compatible tables can be offloaded to the target server, which
@@ -2905,7 +2905,7 @@ DESCRIPTION
       - showProgress: bool (default: true if stdout is a tty, false otherwise)
         - Enable or disable import progress information.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - threads: int (default: 4) - Number of threads to use to import table
         data.
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a

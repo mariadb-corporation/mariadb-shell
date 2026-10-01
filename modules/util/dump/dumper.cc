@@ -7096,8 +7096,8 @@ void Dumper::handle_mismatched_view_references(issues::Status_set status,
               "were found.",
               IConsole::Json_attributes{});
   console->print_info(
-      "Loading them in a system that uses lower_case_table_names=0 (such as "
-      "in the MySQL HeatWave Service) will fail unless they are fixed.");
+      "Loading them in a system that uses lower_case_table_names=0 (the "
+      "default on Linux) will fail unless they are fixed.");
 }
 
 std::string Dumper::gtid_executed(

@@ -2115,8 +2115,9 @@ void Dump_loader::Worker::do_run() {
     m_reconnect_callback = [this]() { connect(); };
     m_reconnect_callback();
   } catch (const shcore::Error &e) {
-    handle_current_exception("Error opening connection to MySQL: " +
-                             e.format());
+    handle_current_exception(
+        std::string{"Error opening connection to "} +
+        m_owner->m_options.target_server().vendor_name() + ": " + e.format());
     return;
   }
 
@@ -3689,30 +3690,31 @@ void Dump_loader::check_server_version() {
       mysqlshdk::utils::version::major_difference(source_server, target_server);
 
   if (0 != diff) {
-    if (diff < 0) {
-      msg =
-          "Destination MySQL version is older than the one where the dump was "
-          "created.";
-    } else {
-      msg =
-          "Destination MySQL version is newer than the one where the dump was "
-          "created.";
-    }
+    // a cross-vendor load was refused above, so source and target share
+    // target's vendor
+    const auto vendor = target.vendor_name();
+
+    msg = shcore::str_format(
+        "Destination %s version is %s than the one where the dump was "
+        "created.",
+        vendor, diff < 0 ? "older" : "newer");
 
     if (1 != abs(diff)) {
       if (m_options.ignore_version()) {
-        msg +=
-            " Source and destination have non-consecutive major MySQL "
+        msg += shcore::str_format(
+            " Source and destination have non-consecutive major %s "
             "versions. The 'ignoreVersion' option is enabled, so loading "
-            "anyway.";
+            "anyway.",
+            vendor);
         console->print_warning(msg);
       } else {
-        msg +=
-            " Loading dumps from non-consecutive major MySQL versions is not "
+        msg += shcore::str_format(
+            " Loading dumps from non-consecutive major %s versions is not "
             "fully supported and may not work. Enable the 'ignoreVersion' "
-            "option to load anyway.";
+            "option to load anyway.",
+            vendor);
         console->print_error(msg);
-        THROW_ERROR(SHERR_LOAD_SERVER_VERSION_MISMATCH);
+        THROW_ERROR(SHERR_LOAD_SERVER_VERSION_MISMATCH, vendor);
       }
     } else {
       console->print_note(msg);
@@ -4372,8 +4374,7 @@ void Dump_loader::setup_progress_file(bool *out_is_resuming) {
             "was left, assuming no external updates were made.");
         console->print_info(
             "You may enable the 'resetProgress' option to discard progress "
-            "for this MySQL instance and force it to be completely "
-            "reloaded.");
+            "for this instance and force it to be completely reloaded.");
         *out_is_resuming = true;
 
         log_info("Resuming load, last loaded %s bytes (%s rows)",

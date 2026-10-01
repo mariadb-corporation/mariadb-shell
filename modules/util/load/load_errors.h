@@ -68,7 +68,7 @@
   "Dump is not compatible with MySQL HeatWave Service"
 
 #define SHERR_LOAD_SERVER_VERSION_MISMATCH 53011
-#define SHERR_LOAD_SERVER_VERSION_MISMATCH_MSG "MySQL version mismatch"
+#define SHERR_LOAD_SERVER_VERSION_MISMATCH_MSG "%s version mismatch"
 
 #define SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING 53012
 #define SHERR_LOAD_UPDATE_GTID_GR_IS_RUNNING_MSG                              \

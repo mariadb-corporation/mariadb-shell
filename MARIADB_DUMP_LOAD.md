@@ -176,6 +176,22 @@ dataMaskingPolicies hasMaskedTableDdl maybeHasMaskedTableData vectorStore
 Several of these are MySQL-shaped (`gtidExecuted`, `partialRevokes`,
 `hasLibraryDdl`, `vectorStore`, data masking). See §6 for format policy.
 
+`source` holds `vendor`, `binlog`, `topology` and `sysvars`: the source's whole
+`SHOW GLOBAL VARIABLES` result, unfiltered
+([server_info.cc:374](modules/util/common/dump/server_info.cc#L374), upstream
+since WL#15977). Only six values are read back: `version`, `hostname`, `port`
+and `server_uuid` as the source's identity, and `lower_case_table_names` (the load
+refuses a mismatch) and `partial_revokes` (the load warns on a mismatch), in
+[dump_loader.cc:3746-3774](modules/util/load/dump_loader.cc#L3746-L3774). The rest
+is a record of the source's configuration; the load does not act on it.
+
+Because nothing is filtered, the manifest carries paths, host names, the SSL file
+paths, `init_connect`, `wsrep_cluster_address` and `wsrep_provider_options`, and
+`report_password` as it is when the server was started with one. Both vendors
+show that variable unmasked; MariaDB masks `wsrep_sst_auth` as `********`. Read
+from the code, not reproduced. Masking these in `serialize()` is a small change
+that has not been made.
+
 ---
 
 ## 4. MySQL-specific dependencies, step by step

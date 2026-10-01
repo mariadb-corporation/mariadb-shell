@@ -76,6 +76,13 @@ struct Server_version {
   bool is_5_7 = false;
   bool is_8_0 = false;
   bool is_maria_db = false;
+
+  /**
+   * The vendor's name, for messages shown to the user.
+   */
+  const char *vendor_name() const noexcept {
+    return is_maria_db ? "MariaDB" : "MySQL";
+  }
 };
 
 struct Server_variables {

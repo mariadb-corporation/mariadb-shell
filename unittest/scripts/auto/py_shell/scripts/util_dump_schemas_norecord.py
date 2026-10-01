@@ -2863,8 +2863,8 @@ setup_db(test_user_account)
 
 #@<> WL15887-TSFR_1_1 (8)
 help_text = """
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
 """
 EXPECT_TRUE(help_text in util.help("dump_schemas"))
 
@@ -3193,7 +3193,7 @@ if 2 == lower_case_table_names:
     EXPECT_STDOUT_CONTAINS(view_references_invalid_table(schema_name, "v3", schema_name, "t3").warning())
     EXPECT_STDOUT_CONTAINS("""
 NOTE: One or more views that reference tables using the wrong case were found.
-Loading them in a system that uses lower_case_table_names=0 (such as in the MySQL HeatWave Service) will fail unless they are fixed.
+Loading them in a system that uses lower_case_table_names=0 (the default on Linux) will fail unless they are fixed.
 """)
 
 #@<> BUG#36509026 - test with ocimds:true on MacOS {2 == lower_case_table_names and not __server_is_maria_db} (8)
@@ -3205,7 +3205,7 @@ EXPECT_STDOUT_CONTAINS(view_references_excluded_table(schema_name, "v2", schema_
 EXPECT_STDOUT_CONTAINS(view_references_invalid_table(schema_name, "v3", schema_name, "t3").error())
 EXPECT_STDOUT_CONTAINS("""
 ERROR: One or more views that reference tables using the wrong case were found.
-Loading them in a system that uses lower_case_table_names=0 (such as in the MySQL HeatWave Service) will fail unless they are fixed.
+Loading them in a system that uses lower_case_table_names=0 (the default on Linux) will fail unless they are fixed.
 """)
 
 #@<> BUG#36509026 - cleanup (8)

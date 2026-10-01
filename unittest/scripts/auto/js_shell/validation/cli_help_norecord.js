@@ -525,8 +525,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -741,8 +741,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -918,8 +918,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -1312,8 +1312,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -1573,8 +1573,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -1794,8 +1794,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -2033,7 +2033,7 @@ OPTIONS
             call. Unit suffixes, k - for Kilobytes (n * 1'000 bytes), M - for
             Megabytes (n * 1'000'000 bytes), G - for Gigabytes (n *
             1'000'000'000 bytes), bytesPerChunk="2k" - ~2 kilobyte data chunk
-            will send to the MySQL Server. Not available for multiple files
+            will be sent to the server. Not available for multiple files
             import. Default: minimum: "131072", default: "50M".
 
 --characterSet=<str>
@@ -2575,8 +2575,8 @@ OPTIONS
             stdout is a tty, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --threads=<uint>
             Number of threads to use to import table data. Default: 4.

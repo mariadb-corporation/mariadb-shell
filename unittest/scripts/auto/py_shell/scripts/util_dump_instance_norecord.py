@@ -4248,8 +4248,8 @@ if __version_num >= 80000 or __server_is_maria_db:
 
 #@<> WL15887-TSFR_1_1 (8)
 help_text = """
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
 """
 EXPECT_TRUE(help_text in util.help("dump_instance"))
 
