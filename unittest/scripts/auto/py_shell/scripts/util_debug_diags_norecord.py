@@ -177,7 +177,7 @@ RESET(outpath)
 outpath = run_collect_hl(hostname_uri, None, {"delay":{}})
 EXPECT_STDOUT_CONTAINS("'delay' is expected to be an integer")
 
-#@<> bogus value for options TSFR_1_1_3, TSFR_9_0_3, TSFR_9_0_4
+#@<> bogus value for options TSFR_1_1_3, TSFR_9_0_3, TSFR_9_0_4 {__have_js}
 args = [hostname_uri, "--passwords-from-stdin", "--js", "-e", "util.debug.collectDiagnostics('x', false)"]
 testutil.call_mysqlsh(args, "\n", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 
@@ -422,6 +422,10 @@ def check(outpath):
     EXPECT_GE(dif/(c-1), 1, outpath+" time between collections")
     # non-deterministic, can vary too much randomly under high loads
     # EXPECT_LT(dif, 2, outpath) # ensure iterations are spaced by more than the specified delay, but not too much more
+    # Start the next collection from an empty table: leftover rows would let its
+    # CALL test.waitrows(3) return at once (one 'during' row) and be averaged in
+    # with this collection's, so the check passed or failed on timing alone
+    session1.run_sql("delete from test.preamble")
 
 CHECK_ALL(check, options, nobasic=True, query="CALL test.waitrows(3)")
 
@@ -553,7 +557,10 @@ CHECK_DIAGPACK(outpath, [(None, session1)], innodbMutex=False, allMembers=0, sch
 #@<> invalid slowQuery - TSFR_9_0_15
 outpath = run_collect_sq(__sandbox_uri1, None, "drop schema information_schema")
 EXPECT_STDOUT_CONTAINS("ERROR running query:  EXPLAIN drop schema information_schema MySQL Error (1064):")
-EXPECT_STDOUT_CONTAINS("Access denied for user 'root'@'localhost' to database 'information_schema' (MySQL Error 1044)")
+# the plugin re-raises the error, and here it surfaces as a mysqlsh.DBError
+# ("MySQL Error (1044): <message>") rather than upstream's
+# "<message> (MySQL Error 1044)"
+EXPECT_STDOUT_CONTAINS("MySQL Error (1044): Access denied for user 'root'@'localhost' to database 'information_schema'")
 EXPECT_NO_FILE(outpath)
 RESET(outpath)
 

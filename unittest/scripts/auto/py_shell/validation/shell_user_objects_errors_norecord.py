@@ -301,6 +301,7 @@ A global named 'shell' already exists.
 
 ?{__have_admin_api}
 A global named 'dba' already exists.
+
 ?{}
 A global named 'util' already exists.
 
@@ -308,6 +309,7 @@ The name 'mysql' is reserved.
 
 ?{__have_x_protocol}
 The name 'mysqlx' is reserved.
+
 ?{}
 A global named 'session' already exists.
 

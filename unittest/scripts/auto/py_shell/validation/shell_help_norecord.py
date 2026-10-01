@@ -26,6 +26,7 @@ FUNCTIONS
       connect_to_primary([connectionData][, password])
             Establishes the shell global session, connecting to a primary of an
             InnoDB cluster or ReplicaSet.
+
 ?{}
       create_context(options)
             Create a shell context wrapper used in multiuser environments. The

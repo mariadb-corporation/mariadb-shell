@@ -314,13 +314,9 @@ TEST_F(Command_line_test, bug28814112_py) {
   // SESSION
   int rc = execute({_mysqlsh, "-e", "shell.set_current_schema('mysql')", NULL});
   EXPECT_EQ(1, rc);
-#ifndef MARIADB_BUILD
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "An open session is required to perform this "
-      "operation.");
-#else
+  // Python reports the missing session as "Not connected." on every build; the
+  // JS variant above gets the "An open session is required..." message
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Not connected.");
-#endif
 }
 #endif
 

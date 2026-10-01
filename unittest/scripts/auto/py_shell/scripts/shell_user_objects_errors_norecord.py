@@ -645,12 +645,10 @@ shell.register_global("goodName", obj)
 #@ Registering global using existing global names
 shell.connect(__mysql_uri + "/mysql")
 other = shell.create_extension_object()
-global_names = ["shell", "util", "mysql", "session", "db", "sys", "os", "goodName"]
-if __have_admin_api:
-  global_names.append("dba")
-
-if __have_x_protocol:
-  global_names.append("mysqlx")
+# upstream's order, with the globals a build may lack left out
+global_names = (["shell"] + (["dba"] if __have_admin_api else []) + ["util", "mysql"] +
+                (["mysqlx"] if __have_x_protocol else []) +
+                ["session", "db", "sys", "os", "goodName"])
 
 for name in global_names:
   try:

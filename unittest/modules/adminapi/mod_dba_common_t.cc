@@ -319,7 +319,11 @@ TEST_F(Admin_api_common_test, resolve_instance_ssl_cluster_with_ssl_required) {
 
   testutil->deploy_sandbox(_mysql_sandbox_ports[0], "root", sandbox_opts);
   testutil->deploy_sandbox(_mysql_sandbox_ports[1], "root", sandbox_opts);
+#ifdef HAVE_JS
   execute("\\js");
+#else
+  execute("\\py");
+#endif
   execute("shell.connect('root:root@localhost:" +
           std::to_string(_mysql_sandbox_ports[0]) + "')");
 
@@ -332,7 +336,7 @@ TEST_F(Admin_api_common_test, resolve_instance_ssl_cluster_with_ssl_required) {
 #else
   execute(
       "c = dba.create_cluster('sample', {'memberSslMode':'REQUIRED', "
-      "gtidSetIsComplete: true})");
+      "'gtidSetIsComplete': True})");
 #endif
   execute("c.disconnect()");
   execute("session.close()");
