@@ -42,6 +42,8 @@
 
 #include "shellcore/shell_init.h"
 
+#include "shellcore/interrupt_handler.h"
+
 #include <curl/curl.h>
 #include <mysql.h>
 #include <openssl/opensslv.h>
@@ -135,6 +137,16 @@ void global_init() {
 }
 
 void global_end() {
+  // Every thread which registered itself with mysys has to be gone before
+  // my_end() below: it waits five seconds for them all and then reports
+  // "Error in my_thread_global_end(): N threads didn't exit". The interrupt
+  // helper thread is the one that lives this long - it is spawned through
+  // spawn_scoped_thread(), so it holds a registration for as long as it runs -
+  // and by now the shell it serves has already been destroyed.
+  if (const auto interrupt = shcore::current_interrupt(true)) {
+    interrupt->stop_background_thread();
+  }
+
   thread_end();
   mysql_library_end();
 #ifdef MARIADB_BUILD

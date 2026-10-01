@@ -216,6 +216,22 @@ library the shell links separately. Handled in
 - A stub `FI_DEFINE(mysqlx)` fault-injection handler is provided in session.cc
   (the X session normally defines it) so the `FI_SUPPRESS(mysqlx)` calls in
   shared code paths have a valid target.
+- **Threads registered with mysys have to be gone before `my_end()`.**
+  `my_end()` calls `my_thread_global_end()`, which waits `my_thread_end_wait_time`
+  seconds — **five** by default — for every thread that called `my_thread_init()`,
+  then prints `Error in my_thread_global_end(): N threads didn't exit`, suppresses
+  the leak report and leaves mysys' internal mutexes undestroyed
+  ([mysys/my_thr_init.c](https://github.com/MariaDB/server/blob/main/mysys/my_thr_init.c)).
+  `mysqlshdk::utils::Mysys_thread_scope` registers every thread spawned through
+  `spawn_scoped_thread()`, and `Interrupts`' background helper thread runs for the
+  whole session — so **every** shell process paid a flat five seconds at exit, and
+  every scripted test that spawns child shells paid it once per child
+  (`util_dump_chunking` took 25s instead of 4s; a trivial `-e "print(1)"` took
+  5.2s instead of 0.15s). `global_end()` now calls
+  `Interrupts::stop_background_thread()` before `mysql_library_end()`, which is
+  also what the pre-existing `mysqlsh_module_norecord.py` assertion
+  ("`EXPECT_STDOUT_NOT_CONTAINS("Error in my_thread_global_end()")`") is there to
+  catch. Any future long-lived thread needs the same treatment.
 
 ### Python scripting (`-DHAVE_PYTHON=1`)
 
