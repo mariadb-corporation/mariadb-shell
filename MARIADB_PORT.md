@@ -588,8 +588,7 @@ the env var (`set VCPKG_ROOT=`) for the configure shell.
 Configure the shell (and therefore the auto-bootstrapped server) with
 **`-G Ninja`** on Windows. The shell links the server's static libraries by
 **explicit path at configure time** (`FIND_LIBRARY` +
-`${MARIADB_BUILD_DIR}/mysys/mysys.lib`, … — see CMakeLists.txt ~L1247/L1262), and
-the `bootstrap_mariadb.cmake` fast-path probes the same paths. A **multi-config**
+`${MARIADB_BUILD_DIR}/mysys/mysys.lib`, … — see CMakeLists.txt ~L1247/L1262). A **multi-config**
 generator (the Windows default, Visual Studio / MSBuild) writes every library
 into a per-config subdirectory (`…/libmariadb/libmariadb/RelWithDebInfo/mariadbclient.lib`),
 which those lookups don't search — configure dies with `Could not find
