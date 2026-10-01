@@ -878,6 +878,25 @@ EXPECT_THROWS(lambda: dump_schema("unk", dump_dir_for("unknown_type")), "Column 
 testutil.dbug_set("")
 session1.run_sql("DROP SCHEMA unk")
 
+#@<> an older dump format names the Shell which created the dump
+# only MariaDB Shell records the source vendor, so its presence tells the two
+# Shells' dumps apart
+session1.run_sql("CREATE SCHEMA oldfmt")
+session1.run_sql("CREATE TABLE oldfmt.t (id INT PRIMARY KEY)")
+old_format_dump = dump_dir_for("old_format")
+dump_schema("oldfmt", old_format_dump)
+with open(os.path.join(old_format_dump, "oldfmt.sql"), encoding="utf-8") as f:
+    EXPECT_TRUE(f.readline().startswith("-- MariaDB Shell dump "), "SQL file header names MariaDB Shell")
+manifest = read_manifest(old_format_dump)
+EXPECT_EQ("mariadb", manifest["source"]["vendor"])
+manifest["version"] = "1.0.0"
+with open(os.path.join(old_format_dump, "@.json"), "w", encoding="utf-8") as f:
+    json.dump(manifest, f)
+EXPECT_NO_THROWS(lambda: load(old_format_dump), "load")
+EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MariaDB Shell. If you experience problems using it, please recreate the dump using the current version of MariaDB Shell and try again.")
+session1.run_sql("DROP SCHEMA oldfmt")
+wipeout_server(session2)
+
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
 testutil.destroy_sandbox(__mysql_sandbox_port2)

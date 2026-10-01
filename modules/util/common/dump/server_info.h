@@ -109,6 +109,13 @@ struct Server_info {
   Binlog binlog;
   Server_variables sysvars;
   Replication_topology topology;
+
+  /**
+   * Whether the metadata this was read from names the vendor explicitly. Only
+   * MariaDB Shell writes that field, so it tells a MariaDB Shell dump from an
+   * upstream MySQL Shell one, whatever the vendor of its source.
+   */
+  bool has_vendor = false;
 };
 
 /**

@@ -81,6 +81,10 @@ class Dump_reader {
     return m_contents.dump.version;
   }
 
+  bool created_by_maria_db_shell() const {
+    return m_contents.dump.source.has_vendor;
+  }
+
   bool mds_compatibility() const { return m_contents.dump.mds_compatibility; }
 
   bool partial_revokes() const {

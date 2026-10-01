@@ -1187,11 +1187,11 @@ write_json(metadata_file, metadata)
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Unsupported dump capabilities")
 EXPECT_STDOUT_CONTAINS("""
-ERROR: Dump is using capabilities which are not supported by this version of MySQL Shell:
+ERROR: Dump is using capabilities which are not supported by this version of MariaDB Shell:
 
 * Makes toasts, yummy.
 
-The minimum required version of MySQL Shell to load this dump is: 8.0.28.
+The minimum required version of MariaDB Shell to load this dump is: 8.0.28.
 """)
 
 #@<> BUG#33063035 reuse previous dump, hack metadata with another fake capability, check if the correct version is suggested (3)
@@ -1205,13 +1205,13 @@ write_json(metadata_file, metadata)
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Unsupported dump capabilities")
 EXPECT_STDOUT_CONTAINS("""
-ERROR: Dump is using capabilities which are not supported by this version of MySQL Shell:
+ERROR: Dump is using capabilities which are not supported by this version of MariaDB Shell:
 
 * Makes toasts, yummy.
 
 * Makes more toasts, great!
 
-The minimum required version of MySQL Shell to load this dump is: 8.0.29.
+The minimum required version of MariaDB Shell to load this dump is: 8.0.29.
 """)
 
 #@<> WL14632-TSFR_3_1 (3)
@@ -2713,7 +2713,7 @@ if __version_num >= 90000:
 
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "ignoreVersion": True, "showProgress": False }), "Loading should not throw")
 EXPECT_STDOUT_CONTAINS(f"Loading DDL, Data and Users from '{dump_dir}' using 4 threads.")
-EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MySQL Shell. If you experience problems using it, please recreate the dump using the current version of MySQL Shell and try again.")
+EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MySQL Shell. If you experience problems using it, please recreate the dump using the current version of MariaDB Shell and try again.")
 EXPECT_STDOUT_CONTAINS("62 chunks (5.45K rows, 199.62 KB) for 62 tables in 8 schemas were loaded")
 
 if __version_num < 90000:

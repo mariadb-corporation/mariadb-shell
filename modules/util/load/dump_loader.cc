@@ -65,6 +65,7 @@
 #include "mysqlshdk/libs/storage/compressed_file.h"
 #include "mysqlshdk/libs/utils/debug.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/strformat.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
@@ -3439,7 +3440,8 @@ void Dump_loader::open_dump(
     }
   }
 
-  dump::common::validate_dumper_version(m_dump->dump_version());
+  dump::common::validate_dumper_version(m_dump->dump_version(),
+                                        m_dump->created_by_maria_db_shell());
 
   std::string missing_capabilities;
   // 8.0.27 is the version where capabilities were added
@@ -3459,11 +3461,11 @@ void Dump_loader::open_dump(
 
   if (!missing_capabilities.empty()) {
     current_console()->print_error(
-        "Dump is using capabilities which are not supported by this version of "
-        "MySQL Shell:\n\n" +
-        missing_capabilities +
-        "The minimum required version of MySQL Shell to load this dump is: " +
-        minimum_version.get_base() + ".");
+        std::string{"Dump is using capabilities which are not supported by "
+                    "this version of "} +
+        shcore::k_shell_product_name + ":\n\n" + missing_capabilities +
+        "The minimum required version of " + shcore::k_shell_product_name +
+        " to load this dump is: " + minimum_version.get_base() + ".");
     THROW_ERROR(SHERR_LOAD_UNSUPPORTED_DUMP_CAPABILITIES);
   }
 

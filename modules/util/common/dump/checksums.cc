@@ -42,6 +42,7 @@
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_json.h"
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 #include "mysqlshdk/libs/utils/version.h"
 
@@ -1044,10 +1045,11 @@ void Checksums::deserialize(std::unique_ptr<mysqlshdk::storage::IFile> file) {
       m_version.get_major() > k_current_version.get_major() ||
       (m_version.get_major() == k_current_version.get_major() &&
        m_version.get_minor() > k_current_version.get_minor())) {
-    throw std::runtime_error("Checksum format has version " +
-                             m_version.get_full() +
-                             " which is not supported by this version of MySQL "
-                             "Shell. Please upgrade MySQL Shell to load it.");
+    throw std::runtime_error(shcore::str_format(
+        "Checksum format has version %s which is not supported by this version "
+        "of %s. Please upgrade %s to load it.",
+        m_version.get_full().c_str(), shcore::k_shell_product_name,
+        shcore::k_shell_product_name));
   }
 }
 

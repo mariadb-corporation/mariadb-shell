@@ -4596,7 +4596,7 @@ newer_version = ".".join(newer_version)
 
 # trying to dump from an newer version results in a warning
 EXPECT_SUCCESS(None, test_output_absolute, { "dryRun": True, "showProgress": False })
-EXPECT_STDOUT_CONTAINS(f"WARNING: {server_vendor_name} Server {newer_version} detected, which is newer than the MySQL Shell. Please upgrade the MySQL Shell if dump or load operation fails.")
+EXPECT_STDOUT_CONTAINS(f"WARNING: {server_vendor_name} Server {newer_version} detected, which is newer than the MariaDB Shell. Please upgrade the MariaDB Shell if dump or load operation fails.")
 
 testutil.dbug_set("")
 
@@ -4610,7 +4610,7 @@ unsupported_version[2] = "0"
 unsupported_version = ".".join(unsupported_version)
 
 # trying to dump from an unsupported version results in an error
-EXPECT_FAIL("RuntimeError", f"Unsupported {server_vendor_name} Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
+EXPECT_FAIL("RuntimeError", f"Unsupported {server_vendor_name} Server {unsupported_version} detected, please upgrade the MariaDB Shell first", test_output_absolute, { "showProgress": False })
 
 testutil.dbug_set("")
 
@@ -4620,7 +4620,7 @@ testutil.dbug_set("+d,dumper_unsupported_calendar_gap_server_version")
 unsupported_version = "26.6.0"
 
 # trying to dump from an unsupported version results in an error
-EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MySQL Shell first", test_output_absolute, { "showProgress": False })
+EXPECT_FAIL("RuntimeError", f"Unsupported MySQL Server {unsupported_version} detected, please upgrade the MariaDB Shell first", test_output_absolute, { "showProgress": False })
 
 testutil.dbug_set("")
 

@@ -1246,7 +1246,7 @@ std::shared_ptr<shcore::Log_sql> log_sql_for_dump_and_load() {
 
 REGISTER_HELP_FUNCTION(loadDump, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_LOADDUMP, R"*(
-Loads database dumps created by MySQL %Shell.
+Loads database dumps created by MariaDB %Shell.
 
 @param url defines the location of the dump to be loaded
 @param options Optional dictionary with load options

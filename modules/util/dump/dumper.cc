@@ -78,6 +78,7 @@
 #include "mysqlshdk/libs/utils/utils_mysql_parsing.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/mod_utils.h"
@@ -6919,8 +6920,9 @@ void Dumper::fetch_server_information() {
   const auto unsupported_server_error = [this, vendor]() {
     return std::runtime_error(
         shcore::str_format("Unsupported %s Server %s detected, please "
-                           "upgrade the MySQL Shell first",
-                           vendor, m_server_version.number.get_base().c_str()));
+                           "upgrade the %s first",
+                           vendor, m_server_version.number.get_base().c_str(),
+                           shcore::k_shell_product_name));
   };
 
   if (m_server_version.number.get_major() > reference.get_major()) {
@@ -6942,9 +6944,10 @@ void Dumper::fetch_server_information() {
 
   if (m_server_version.number >= newer_version) {
     current_console()->print_warning(shcore::str_format(
-        "%s Server %s detected, which is newer than the MySQL Shell. Please "
-        "upgrade the MySQL Shell if dump or load operation fails.",
-        vendor, m_server_version.number.get_base().c_str()));
+        "%s Server %s detected, which is newer than the %s. Please upgrade the "
+        "%s if dump or load operation fails.",
+        vendor, m_server_version.number.get_base().c_str(),
+        shcore::k_shell_product_name, shcore::k_shell_product_name));
   }
 
   if (common::supports_dynamic_data_masking(m_server_version)) {

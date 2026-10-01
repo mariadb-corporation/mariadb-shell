@@ -76,7 +76,7 @@ FUNCTIONS
 
 ?{}
       load_dump(url[, options])
-            Loads database dumps created by MySQL Shell.
+            Loads database dumps created by MariaDB Shell.
 
       upgrade_auth_method([options])
             Upgrades authentication plugin of an account.
@@ -2694,7 +2694,7 @@ DESCRIPTION
 
 #@<OUT> util load_dump help
 NAME
-      load_dump - Loads database dumps created by MySQL Shell.
+      load_dump - Loads database dumps created by MariaDB Shell.
 
 SYNTAX
       util.load_dump(url[, options])

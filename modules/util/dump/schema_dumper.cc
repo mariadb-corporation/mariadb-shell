@@ -85,6 +85,7 @@
 #include "mysqlshdk/libs/mysql/instance.h"
 #include "mysqlshdk/libs/mysql/replication.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_lexing.h"
 #include "mysqlshdk/libs/utils/utils_sqlstring.h"
@@ -785,9 +786,9 @@ void Schema_dumper::write_comment(IFile *sql_file, const std::string &db_name,
                                   const std::string &table_name) {
   if (!opt_compact) {
     print_comment(sql_file, false,
-                  "-- MySQLShell dump %s  Distrib %s, for %s (%s)\n--\n",
-                  common::k_dumper_version, shcore::get_long_version(),
-                  SYSTEM_TYPE, MACHINE_TYPE);
+                  "-- %s dump %s  Distrib %s, for %s (%s)\n--\n",
+                  shcore::k_shell_product_name, common::k_dumper_version,
+                  shcore::get_long_version(), SYSTEM_TYPE, MACHINE_TYPE);
 
     std::string host;
     const auto &co = m_mysql->get_connection_options();

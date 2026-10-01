@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +27,8 @@
 #include "modules/util/common/dump/dump_version.h"
 
 #include "mysqlshdk/include/shellcore/console.h"
+#include "mysqlshdk/libs/utils/shell_naming.h"
+#include "mysqlshdk/libs/utils/utils_string.h"
 
 #include "modules/util/load/load_errors.h"
 
@@ -39,23 +42,28 @@ const mysqlshdk::utils::Version k_supported_dumper{k_dumper_version};
 
 }  // namespace
 
-void validate_dumper_version(const mysqlshdk::utils::Version &version) {
+void validate_dumper_version(const mysqlshdk::utils::Version &version,
+                             bool created_by_maria_db_shell) {
   if (version.get_major() > k_supported_dumper.get_major() ||
       (version.get_major() == k_supported_dumper.get_major() &&
        version.get_minor() > k_supported_dumper.get_minor())) {
-    current_console()->print_error(
-        "Dump format has version " + version.get_full() +
-        " which is not supported by this version of MySQL Shell. Please "
-        "upgrade MySQL Shell to use it.");
+    current_console()->print_error(shcore::str_format(
+        "Dump format has version %s which is not supported by this version of "
+        "%s. Please upgrade %s to use it.",
+        version.get_full().c_str(), shcore::k_shell_product_name,
+        shcore::k_shell_product_name));
     THROW_ERROR(SHERR_LOAD_UNSUPPORTED_DUMP_VERSION);
   }
 
   if (version < k_supported_dumper) {
-    current_console()->print_note(
-        "Dump format has version " + version.get_full() +
-        " and was created by an older version of MySQL Shell. If you "
-        "experience problems using it, please recreate the dump using the "
-        "current version of MySQL Shell and try again.");
+    current_console()->print_note(shcore::str_format(
+        "Dump format has version %s and was created by an older version of "
+        "%s. If you experience problems using it, please recreate the dump "
+        "using the current version of %s and try again.",
+        version.get_full().c_str(),
+        created_by_maria_db_shell ? shcore::k_shell_product_name
+                                  : "MySQL Shell",
+        shcore::k_shell_product_name));
   }
 }
 

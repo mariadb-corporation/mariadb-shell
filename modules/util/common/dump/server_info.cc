@@ -426,6 +426,8 @@ Server_info server_info(const shcore::json::Value &object) {
   }
 
   if (const auto vendor = optional_string(object, "vendor"); !vendor.empty()) {
+    info.has_vendor = true;
+
     // an explicit vendor field wins over whatever the version string suggested
     if (const auto is_maria_db = shcore::str_caseeq(vendor, "mariadb");
         is_maria_db != info.version.is_maria_db) {

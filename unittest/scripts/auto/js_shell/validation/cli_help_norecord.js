@@ -127,7 +127,7 @@ The following operations are available at 'util':
       directory.
 
    load-dump
-      Loads database dumps created by MySQL Shell.
+      Loads database dumps created by MariaDB Shell.
 
 //@<OUT> CLI --help Unexisting Objects
 ERROR: There is no object registered under name 'test'
@@ -2286,7 +2286,7 @@ OPTIONS
 
 //@<OUT> CLI util load-dump --help
 NAME
-      load-dump - Loads database dumps created by MySQL Shell.
+      load-dump - Loads database dumps created by MariaDB Shell.
 
 SYNTAX
       util load-dump <url> [<options>]

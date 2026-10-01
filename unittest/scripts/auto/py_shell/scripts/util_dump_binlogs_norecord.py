@@ -227,7 +227,7 @@ md["version"] = "100.0.0"
 write_json(md_file, md)
 
 EXPECT_FAIL("Error: Shell Error (53006)", "Unsupported dump version", options={"since": default_since_dir})
-EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MySQL Shell. Please upgrade MySQL Shell to use it.")
+EXPECT_STDOUT_CONTAINS("ERROR: Dump format has version 100.0.0 which is not supported by this version of MariaDB Shell. Please upgrade MariaDB Shell to use it.")
 
 wipe_dir(default_since_dir)
 

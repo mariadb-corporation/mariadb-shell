@@ -68,7 +68,7 @@ FUNCTIONS
             remote directory.
 
       loadDump(url[, options])
-            Loads database dumps created by MySQL Shell.
+            Loads database dumps created by MariaDB Shell.
 
       upgradeAuthMethod([options])
             Upgrades authentication plugin of an account.
@@ -2679,7 +2679,7 @@ DESCRIPTION
 
 //@<OUT> util loadDump help
 NAME
-      loadDump - Loads database dumps created by MySQL Shell.
+      loadDump - Loads database dumps created by MariaDB Shell.
 
 SYNTAX
       util.loadDump(url[, options])
