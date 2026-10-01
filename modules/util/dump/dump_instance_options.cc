@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -87,6 +88,19 @@ void Dump_instance_options::on_unpacked_options() {
 
   m_filter_conflicts |= filters().schemas().error_on_conflicts();
   m_filter_conflicts |= filters().users().error_on_conflicts();
+}
+
+void Dump_instance_options::on_set_session(
+    const std::shared_ptr<mysqlshdk::db::ISession> &session) {
+  Dump_schemas_options::on_set_session(session);
+
+  // MariaDB's internal account, the counterpart of the mysql.* ones the
+  // constructor excludes. It can only be excluded here, because the vendor is
+  // not known until the session is set - and options are unpacked before that,
+  // so this does not disturb the excludeUsers conflict check above.
+  if (source_is_maria_db() && dump_users()) {
+    filters().users().exclude(common::k_maria_db_excluded_users);
+  }
 }
 
 void Dump_instance_options::on_validate() const {

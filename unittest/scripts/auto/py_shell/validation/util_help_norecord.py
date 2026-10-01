@@ -20,8 +20,8 @@ FUNCTIONS
       check_for_server_upgrade([connectionData][, options])
             Performs series of tests on specified MySQL server to check if the
             upgrade process will succeed.
+
 ?{}
-?{__have_dump_and_load}
       copy_instance(connectionData[, options])
             Copies a source instance to the target instance. Requires an open
             global Shell session to the source instance, if there is none, an
@@ -37,10 +37,12 @@ FUNCTIONS
             target instance. Requires an open global Shell session to the
             source instance, if there is none, an exception is raised.
 
+?{__have_binlog_utils}
       dump_binlogs(outputUrl[, options])
             Dumps binary logs generated since a specific point in time to the
             given local or remote directory.
 
+?{}
       dump_instance(outputUrl[, options])
             Dumps the whole database to files in the output directory.
 
@@ -53,7 +55,7 @@ FUNCTIONS
 
       export_table(table, outputUrl[, options])
             Exports the specified table to the data dump file.
-?{}
+
       help([member])
             Provides help about this object and it's members
 
@@ -61,19 +63,21 @@ FUNCTIONS
       import_json(file[, options])
             Import JSON documents from file to collection or table in MySQL
             Server using X Protocol session.
-${}
-?{__have_dump_and_load}
+
+?{}
       import_table(urls[, options])
             Import table dump stored in files to target table using LOAD DATA
             LOCAL INFILE calls in parallel connections.
 
+?{__have_binlog_utils}
       load_binlogs(url[, options])
             Loads binary log dumps created by MySQL Shell from a local or
             remote directory.
 
-      load_dump(url[, options])
-            Loads database dumps created by MySQL Shell.
 ?{}
+      load_dump(url[, options])
+            Loads database dumps created by MariaDB Shell.
+
       upgrade_auth_method([options])
             Upgrades authentication plugin of an account.
 
@@ -349,10 +353,12 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dump_instance() and load_dump().
 
@@ -506,10 +512,12 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dump_schemas() and load_dump().
 
@@ -646,10 +654,12 @@ DESCRIPTION
       - sessionInitSql: list of strings (default: []) - execute the given list
         of SQL statements in each session about to copy data.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the copy.
+        contents or appending to it the gtid set present in the copy. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
 
       For discussion of all options see: dump_tables() and load_dump().
 
@@ -815,12 +825,14 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
+?{__have_upgrade_checker}
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
         Checker separately.
+?{}
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
       - dataMaskingPolicies: bool (default: true) - Include data masking
@@ -963,7 +975,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -991,6 +1003,7 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Dumps cannot be created for the following schemas:
 
@@ -1006,8 +1019,8 @@ DESCRIPTION
       not included in the dump or does not exist, it is ignored.
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -1303,12 +1316,14 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
+?{__have_upgrade_checker}
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
         Checker separately.
+?{}
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
       - excludeTables: list of strings (default: empty) - List of tables or
@@ -1435,7 +1450,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -1463,12 +1478,13 @@ DESCRIPTION
       - mysql.general_log
       - mysql.schema
       - mysql.slow_log
+      - mysql.transaction_registry
 
       Options
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -1765,12 +1781,14 @@ DESCRIPTION
         "skip_invalid_accounts", "strip_definers", "strip_invalid_grants",
         "strip_restricted_grants", "strip_tablespaces",
         "target_has_mysql_native_password", "unescape_wildcard_grants".
-      - targetVersion: string (default: current version of Shell) - Specifies
-        version of the destination MySQL server.
+      - targetVersion: string (default: the MariaDB version Shell was built
+        against) - Specifies the version of the destination MariaDB server.
+?{__have_upgrade_checker}
       - skipUpgradeChecks: bool (default: false) - Do not execute the upgrade
         check utility. Compatibility issues related to MySQL version upgrades
         will not be checked. Use this option only when executing the Upgrade
         Checker separately.
+?{}
       - lakehouseTarget: dictionary (default: not set) - Specifies where the
         data of InnoDB based vector store tables will be written.
       - all: bool (default: false) - Dump all views and tables from the
@@ -1878,7 +1896,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -1916,8 +1934,8 @@ DESCRIPTION
       exception is thrown.
 
       The names given in the exclude{object}, include{object}, where or
-      partitions options should be valid MySQL identifiers, quoted using
-      backtick characters when required.
+      partitions options should be valid identifiers, quoted using backtick
+      characters when required.
 
       If the exclude{object}, include{object}, where or partitions options
       contain an object which does not exist, or an object which belongs to a
@@ -2274,7 +2292,7 @@ DESCRIPTION
 
       Requirements
 
-      - MySQL Server 5.7 or newer is required.
+      - MariaDB 10.11 or newer is required.
       - Size limit for individual files uploaded to the cloud storage is 1.2
         TiB.
       - Columns with data types which are not safe to be stored in text form
@@ -2467,8 +2485,8 @@ DESCRIPTION
         bytesPerChunk (+ bytes to end of the row) in single LOAD DATA call.
         Unit suffixes, k - for Kilobytes (n * 1'000 bytes), M - for Megabytes
         (n * 1'000'000 bytes), G - for Gigabytes (n * 1'000'000'000 bytes),
-        bytesPerChunk="2k" - ~2 kilobyte data chunk will send to the MySQL
-        Server. Not available for multiple files import.
+        bytesPerChunk="2k" - ~2 kilobyte data chunk will be sent to the server.
+        Not available for multiple files import.
       - maxBytesPerTransaction: string (default: empty) - Specifies the maximum
         number of bytes that can be loaded from a dump data file per single
         LOAD DATA statement. If a content size of data file is bigger than this
@@ -2576,6 +2594,8 @@ DESCRIPTION
       - SET NAMES ?; -- Set to characterSet option if provided by user.
       - SET unique_checks = 0
       - SET foreign_key_checks = 0
+      - SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
+        constraints per session rather than per constraint.
       - SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED
 
       Note: because of storage engine limitations, table locks held by MyISAM
@@ -2674,7 +2694,7 @@ DESCRIPTION
 
 #@<OUT> util load_dump help
 NAME
-      load_dump - Loads database dumps created by MySQL Shell.
+      load_dump - Loads database dumps created by MariaDB Shell.
 
 SYNTAX
       util.load_dump(url[, options])
@@ -2715,7 +2735,7 @@ DESCRIPTION
       chunks from larger tables will be proportionally assigned more threads.
 
       LOAD DATA LOCAL INFILE is used to load table data and thus, the
-      'local_infile' MySQL global setting must be enabled.
+      'local_infile' global system variable must be enabled on the server.
 
       If target MySQL server supports BULK LOAD, the load operation of
       compatible tables can be offloaded to the target server, which
@@ -2778,7 +2798,8 @@ DESCRIPTION
       - createInvisiblePKs: bool (default taken from dump) - Automatically
         create an invisible Primary Key for each table which does not have one.
         By default, set to true if dump was created with create_invisible_pks
-        compatibility option, false otherwise. Requires server 8.0.24 or newer.
+        compatibility option, false otherwise. Requires MySQL 8.0.24+ or
+        MariaDB 10.3+.
       - deferTableIndexes: "off", "fulltext", "all" (default: fulltext) - If
         "all", creation of "all" indexes except PRIMARY is deferred until after
         table data is loaded, which in many cases can reduce load times. If
@@ -2899,12 +2920,14 @@ DESCRIPTION
       - showProgress: bool (default: true if stdout is a tty, false otherwise)
         - Enable or disable import progress information.
       - skipBinlog: bool (default: false) - Disables the binary log for the
-        MySQL sessions used by the loader (set sql_log_bin=0).
+        sessions used by the loader (set sql_log_bin=0).
       - threads: int (default: 4) - Number of threads to use to import table
         data.
       - updateGtidSet: "off", "replace", "append" (default: off) - if set to a
         value other than 'off' updates GTID_PURGED by either replacing its
-        contents or appending to it the gtid set present in the dump.
+        contents or appending to it the gtid set present in the dump. On
+        MariaDB the gtid position is written to gtid_slave_pos instead, which
+        the server only allows while it is not replicating.
       - waitDumpTimeout: float (default: 0) - Loads a dump while it's still
         being created. Once all uploaded tables are processed the command will
         either wait for more data, the dump is marked as completed or the given

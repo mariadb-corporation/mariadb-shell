@@ -127,7 +127,7 @@ The following operations are available at 'util':
       directory.
 
    load-dump
-      Loads database dumps created by MySQL Shell.
+      Loads database dumps created by MariaDB Shell.
 
 //@<OUT> CLI --help Unexisting Objects
 ERROR: There is no object registered under name 'test'
@@ -525,8 +525,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -547,7 +547,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --users=<bool>
             Include users, roles and grants in the copy. Default: true.
@@ -739,8 +741,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -761,7 +763,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --where=<key>[:<type>]=<value>
             A key-value pair of a table name in the format of schema.table and
@@ -914,8 +918,8 @@ OPTIONS
             stdout is a TTY device, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --skipConsistencyChecks=<bool>
             Skips additional consistency checks which are executed when running
@@ -936,7 +940,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the copy.
+            appending to it the gtid set present in the copy. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --where=<key>[:<type>]=<value>
             A key-value pair of a table name in the format of schema.table and
@@ -1306,8 +1312,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -1567,8 +1573,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -1788,8 +1794,8 @@ OPTIONS
             false.
 
 --targetVersion=<str>
-            Specifies version of the destination MySQL server. Default: current
-            version of Shell.
+            Specifies the version of the destination MariaDB server. Default:
+            the MariaDB version Shell was built against.
 
 --threads=<uint>
             Use N threads to dump data chunks from the server. Default: 4.
@@ -2027,7 +2033,7 @@ OPTIONS
             call. Unit suffixes, k - for Kilobytes (n * 1'000 bytes), M - for
             Megabytes (n * 1'000'000 bytes), G - for Gigabytes (n *
             1'000'000'000 bytes), bytesPerChunk="2k" - ~2 kilobyte data chunk
-            will send to the MySQL Server. Not available for multiple files
+            will be sent to the server. Not available for multiple files
             import. Default: minimum: "131072", default: "50M".
 
 --characterSet=<str>
@@ -2280,7 +2286,7 @@ OPTIONS
 
 //@<OUT> CLI util load-dump --help
 NAME
-      load-dump - Loads database dumps created by MySQL Shell.
+      load-dump - Loads database dumps created by MariaDB Shell.
 
 SYNTAX
       util load-dump <url> [<options>]
@@ -2339,7 +2345,7 @@ OPTIONS
             Automatically create an invisible Primary Key for each table which
             does not have one. By default, set to true if dump was created with
             create_invisible_pks compatibility option, false otherwise.
-            Requires server 8.0.24 or newer. Default: taken from dump.
+            Requires MySQL 8.0.24+ or MariaDB 10.3+. Default: taken from dump.
 
 --deferTableIndexes=<str>
             "off", "fulltext", "all" (default: fulltext) - If "all", creation
@@ -2569,8 +2575,8 @@ OPTIONS
             stdout is a tty, false otherwise.
 
 --skipBinlog=<bool>
-            Disables the binary log for the MySQL sessions used by the loader
-            (set sql_log_bin=0). Default: false.
+            Disables the binary log for the sessions used by the loader (set
+            sql_log_bin=0). Default: false.
 
 --threads=<uint>
             Number of threads to use to import table data. Default: 4.
@@ -2578,7 +2584,9 @@ OPTIONS
 --updateGtidSet=<str>
             "off", "replace", "append" (default: off) - if set to a value other
             than 'off' updates GTID_PURGED by either replacing its contents or
-            appending to it the gtid set present in the dump.
+            appending to it the gtid set present in the dump. On MariaDB the
+            gtid position is written to gtid_slave_pos instead, which the
+            server only allows while it is not replicating.
 
 --waitDumpTimeout=<float>
             Loads a dump while it's still being created. Once all uploaded

@@ -1,5 +1,8 @@
 #@<OUT> Normal Dump
 Initializing...
+?{server_newer_than_shell}
+[[*]]Server [[*]] detected, which is newer than the MariaDB Shell. Please upgrade the MariaDB Shell if dump or load operation fails.
+?{}
 Acquiring global read lock
 Global read lock acquired
 Initializing - done
@@ -12,10 +15,12 @@ Locking instance for backup
 Global read lock has been released
 Writing global DDL files
 Writing users DDL
+?{not __server_is_maria_db}
 ${*}
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
 {{NOTE: |}}Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.
+?{}
 ${*}
 Dump duration: [[*]]
 Total duration: [[*]]
@@ -32,6 +37,9 @@ Average compressed throughput: [[*]]
 
 #@<OUT> JSON Dump
 {"status":"Initializing...\n"}
+?{server_newer_than_shell}
+{"warning":"[[*]]Server [[*]] detected, which is newer than the MariaDB Shell. Please upgrade the MariaDB Shell if dump or load operation fails.\n"}
+?{}
 {"info":"Acquiring global read lock\n"}
 {"info":"Global read lock acquired\n"}
 {"status":"Initializing - done\n"}
@@ -44,12 +52,14 @@ Average compressed throughput: [[*]]
 {"info":"Global read lock has been released\n"}
 {"status":"Writing global DDL files\n"}
 {"status":"Writing users DDL\n"}
+?{not __server_is_maria_db}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
 ${*}
 {"note":"Table statistics not available for `schema_c`.`table_[[*]]`, chunking operation may be not optimal. Please consider running 'ANALYZE TABLE `schema_c`.`table_[[*]]`;' first.\n"}
+?{}
 ${*}
 {"status":"Dump duration: [[*]]\n"}
 {"status":"Total duration: [[*]]\n"}

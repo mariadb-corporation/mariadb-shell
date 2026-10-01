@@ -33,14 +33,20 @@ def prepare(sbport, options={}):
         testutil.mkdir(os.path.join(datadir, "test datadir"))
     options.update({
         "loose_innodb_directories": datadir,
-        "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
-        "keyring_file_data": os.path.join(datadir, "keyring"),
         "local_infile": "1",
         "tmpdir": mysql_tmpdir,
         "innodb_doublewrite": "OFF",
         # small sort buffer to force stray filesorts to be triggered even if we don't have much data
         "sort_buffer_size": 32768,
     })
+    if not __server_is_maria_db:
+        # keyring_file is a MySQL plugin; MariaDB refuses to start with an
+        # unknown early_plugin_load and has no keyring_file_data variable (its
+        # counterpart is the file_key_management plugin)
+        options.update({
+            "early_plugin_load": "keyring_file."+("dll" if __os_type == "windows" else "so"),
+            "keyring_file_data": os.path.join(datadir, "keyring"),
+        })
     if __os_type == "windows":
         options.update({
             "named_pipe": "1",
@@ -118,7 +124,7 @@ mhs_excluded_users = [
 
 ## Tests to ensure restricted users dumped with strip_restricted_grants can be loaded with a restricted user and not just with root
 
-#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and __dbug}
+#@<> ensure accounts dumped in compat mode can be loaded {VER(>=8.0.16) and __dbug and not __server_is_maria_db} (1)
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -212,7 +218,7 @@ util.dump_instance(os.path.join(outdir, "dump_admin"), {"compatibility":["strip_
 
 # load with admin user
 reset_server(session2)
-util.load_dump(os.path.join(outdir, "dump_admin"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root@%","root@localhost"]})
+util.load_dump(os.path.join(outdir, "dump_admin"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root"]})
 
 EXPECT_EQ("""GRANT USAGE ON *.* TO `myuser`@`%`
 GRANT SELECT, SHOW VIEW ON `mysql`.* TO `myuser`@`%`
@@ -234,7 +240,7 @@ REVOKE CREATE, DROP, REFERENCES, INDEX, ALTER, CREATE TEMPORARY TABLES, LOCK TAB
           format_rows(session2.run_sql("show grants for myuser3@'%'").fetch_all()))
 
 reset_server(session2)
-util.load_dump(os.path.join(outdir, "dump_root"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root@%","root@localhost","myuser4"]})
+util.load_dump(os.path.join(outdir, "dump_root"), {"loadUsers":1, "loadDdl":0, "loadData":0, "excludeUsers":["root","myuser4"]})
 
 EXPECT_EQ("""GRANT USAGE ON *.* TO `myuser`@`%`
 GRANT SELECT, SHOW VIEW ON `mysql`.* TO `myuser`@`%`
@@ -266,24 +272,25 @@ util.dump_instance(outdir+"/ddlonly", {"ddlOnly": True})
 
 shell.connect(__sandbox_uri2)
 
-#@<> load data which is not in the dump (fail)
+#@<> load data which is not in the dump (fail) (1)
+# balance: begin-block - these load the ddlonly/dataonly dumps into the state the previous one left
 EXPECT_THROWS(lambda: util.load_dump(outdir+"/ddlonly",
                                      {"loadData": True, "loadDdl": False, "excludeSchemas":["all_features","all_features2","xtest"]}), "Error: Shell Error (53005): Error loading dump")
 EXPECT_STDOUT_MATCHES(re.compile(r"ERROR: \[Worker00\d\]: While executing DDL script for `.+`\.`.+`: Unknown database 'world'"))
 
 testutil.rmfile(outdir+"/ddlonly/load-progress*.json")
 
-#@<> load ddl normally
+#@<> load ddl normally (1)
 util.load_dump(outdir+"/ddlonly")
 
 compare_servers(session1, session2, check_rows=False, check_users=False)
-#@<> Dump dataOnly
+#@<> Dump dataOnly (1)
 shell.connect(__sandbox_uri1)
 util.dump_instance(outdir+"/dataonly", {"dataOnly": True})
 
 shell.connect(__sandbox_uri2)
 
-#@<> load data assuming tables already exist
+#@<> load data assuming tables already exist (1)
 
 # WL14841-TSFR_2_1
 # will fail because tables already exist
@@ -300,10 +307,11 @@ compare_servers(session1, session2, check_users=False)
 wipeout_server(session2)
 
 
-#@<> load ddl which is not in the dump (fail/no-op)
+#@<> load ddl which is not in the dump (fail/no-op) (1)
+# balance: end-block
 util.load_dump(outdir+"/dataonly", {"loadData": False, "loadDdl": True})
 
-#@<> BUG#33502098 - dump which does not include any schemas but includes users should succeed
+#@<> BUG#33502098 - dump which does not include any schemas but includes users should succeed (1)
 dump_dir = os.path.join(outdir, "bug_33502098")
 
 # dump
@@ -319,7 +327,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers":True }), "Load")
 # validation
 compare_users(session1, session2)
 
-#@<> Bug #32526496 - ensure dumps with users that have grants on specific objects (tables, SPs etc) can be loaded
+#@<> Bug #32526496 - ensure dumps with users that have grants on specific objects (tables, SPs etc) can be loaded (1)
 
 shell.connect(__sandbox_uri1)
 # first create all objects that can reference a user, since the load has to create accounts last
@@ -349,7 +357,7 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir), "Dump")
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"loadUsers":True, "excludeUsers":["root@%"]}), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"loadUsers":True, "excludeUsers":["root"]}), "Load")
 
 compare_servers(session1, session2)
 
@@ -361,7 +369,7 @@ session.run_sql("DROP USER uuuuuser@localhost")
 session.run_sql("DROP USER uuuuuuser@localhost")
 session.run_sql("DROP USER uuuuuuuser@localhost")
 
-#@<> BUG#34952027 - privileges are no longer filtered based on object filters
+#@<> BUG#34952027 - privileges are no longer filtered based on object filters (1)
 # NOTE: this removes filtering introduced by fix for BUG#33406711
 # setup
 dump_dir = os.path.join(outdir, "bug_34952027")
@@ -395,9 +403,14 @@ schema_level_grant_with_escaped_percent = f"GRANT SELECT ON `all\\%`.* TO {teste
 session1.run_sql(schema_level_grant_with_escaped_percent)
 
 expected_accounts = snapshot_accounts(session1)
-del expected_accounts["root@%"]
 
-#@<> BUG#34952027 - warnings for grants with excluded objects
+# the root accounts are created by each sandbox's deploy, not by the load, and
+# a salted hash (caching_sha2_password) differs between two sandboxes even for
+# the same password
+del expected_accounts["root@%"]
+del expected_accounts["root@localhost"]
+
+#@<> BUG#34952027 - warnings for grants with excluded objects (1)
 shell.connect(__sandbox_uri1)
 
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ "schema2" ], "showProgress": False }), "Dump")
@@ -418,7 +431,7 @@ EXPECT_STDOUT_NOT_CONTAINS(grant_on_excluded_object(tested_user, schema_level_gr
 
 wipe_dir(dump_dir)
 
-#@<> BUG#34952027 - warnings for grants with excluded objects with partial_revokes ON {VER(>=8.0.16)}
+#@<> BUG#34952027 - warnings for grants with excluded objects with partial_revokes ON {VER(>=8.0.16) and not __server_is_maria_db} (1)
 shell.connect(__sandbox_uri1)
 session.run_sql("SET @@GLOBAL.partial_revokes = ON")
 
@@ -441,7 +454,7 @@ EXPECT_STDOUT_CONTAINS(grant_on_excluded_object(tested_user, schema_level_grant_
 wipe_dir(dump_dir)
 session.run_sql("SET @@GLOBAL.partial_revokes = OFF")
 
-#@<> WL16731-TSFR_1_8_1 - libraries are not dumped, warn on grant on excluded library {instance_supports_libraries}
+#@<> WL16731-TSFR_1_8_1 - libraries are not dumped, warn on grant on excluded library {instance_supports_libraries} (1)
 shell.connect(__sandbox_uri1)
 
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "libraries": False, "showProgress": False }), "Dump")
@@ -449,7 +462,7 @@ EXPECT_STDOUT_CONTAINS(grant_on_excluded_object(tested_user, grant_on_library).w
 
 wipe_dir(dump_dir)
 
-#@<> BUG#34952027 - dump excluding one of the schemas, load with no filters, schema-related privilege is present
+#@<> BUG#34952027 - dump excluding one of the schemas, load with no filters, schema-related privilege is present (1)
 wipeout_server(session2)
 
 shell.connect(__sandbox_uri1)
@@ -457,10 +470,20 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "excludeSchemas": [ "sch
 EXPECT_STDOUT_CONTAINS(grant_on_excluded_object(tested_user, grant_on_excluded_schema).warning())
 
 shell.connect(__sandbox_uri2)
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 
 # BUG#36197620 - summary should contain more details regarding all executed stages
-EXPECT_STDOUT_CONTAINS(f"{65 if instance_supports_libraries else 60 if __version_num >= 84000 else 59} DDL files were executed in ")
+if __server_is_maria_db:
+    # the instance holds three fewer tables than it does on MySQL: MariaDB skips
+    # any /*!NNNNN ... */ comment numbered in the MySQL 5.7-9.x range, so
+    # misc_features.sql's findextable, findextable2 and findextable3 are never
+    # created (functional and multi-value indexes are MySQL-only anyway). It does
+    # get fieldtypes_all.sql's t_vector, which MySQL only has from 9.0 on.
+    expected_ddl_files = 57 if __version_num >= 110700 else 56
+else:
+    expected_ddl_files = 65 if instance_supports_libraries else 60 if __version_num >= 84000 else 59
+
+EXPECT_STDOUT_CONTAINS(f"{expected_ddl_files} DDL files were executed in ")
 EXPECT_STDOUT_CONTAINS("1 accounts were loaded")
 EXPECT_STDOUT_CONTAINS("Data load duration: ")
 EXPECT_STDOUT_CONTAINS("Total duration: ")
@@ -468,23 +491,24 @@ EXPECT_STDOUT_CONTAINS("Total duration: ")
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation, privileges for schema2 are included
 EXPECT_EQ(expected_accounts, actual_accounts)
 
-#@<> BUG#34952027 - use the same dump, exclude a table when loading, throws because there's a grant which refers to an excluded table
+#@<> BUG#34952027 - use the same dump, exclude a table when loading, throws because there's a grant which refers to an excluded table (1)
 wipeout_server(session2)
 testutil.rmfile(os.path.join(dump_dir, "load-progress*.json"))
 
 shell.connect(__sandbox_uri2)
 
-EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
 # 'abort' is the default value for handleGrantErrors
-EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "abort", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "abort", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Table 'schema1.table1' doesn't exist")
 # invalid value for handleGrantErrors
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "invalid", "showProgress": False }), "ValueError: Argument #2: The value of the 'handleGrantErrors' option must be set to one of: 'abort', 'drop_account', 'ignore'.")
 
-#@<> BUG#34952027 - same as above, ignore the error
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+#@<> BUG#34952027 - same as above, ignore the error (1)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 # BUG#38624926 - ERROR has been downgraded to a WARNING
 EXPECT_STDOUT_CONTAINS(f"""
 WARNING: While applying grants to user accounts: MySQL Error 1146 (42S02): Table 'schema1.table1' doesn't exist: {grant_on_table};
@@ -497,11 +521,12 @@ expected_accounts[tested_user_key]["grants"] = [grant for grant in expected_acco
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation
 EXPECT_EQ(expected_accounts, actual_accounts)
 
-#@<> BUG#34952027 - same as above, drop the account
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+#@<> BUG#34952027 - same as above, drop the account (1)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 EXPECT_STDOUT_CONTAINS(f"""
 ERROR: While applying grants to user accounts: MySQL Error 1146 (42S02): Table 'schema1.table1' doesn't exist: {grant_on_table};
 NOTE: Due to the above error the account 'user_34952027'@'localhost' was dropped, the load operation will continue.
@@ -515,20 +540,21 @@ del expected_accounts[tested_user_key]
 # root is not re-created
 actual_accounts = snapshot_accounts(session2)
 del actual_accounts["root@%"]
+del actual_accounts["root@localhost"]
 # validation
 EXPECT_EQ(expected_accounts, actual_accounts)
 
-#@<> BUG#34952027 - a warning if the value of partial_revoke differs between source and target {VER(>=8.0.16)}
+#@<> BUG#34952027 - a warning if the value of partial_revoke differs between source and target {VER(>=8.0.16) and not __server_is_maria_db} (1)
 session.run_sql("SET GLOBAL partial_revokes=1")
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root@%" ], "showProgress": False }), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "drop_account", "excludeTables": [ "schema1.table1" ], "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "Load")
 EXPECT_STDOUT_CONTAINS("WARNING: The dump was created on an instance where the 'partial_revokes' system variable was disabled, however the target instance has it enabled. GRANT statements on object names with wildcard characters (% or _) will behave differently.")
 session.run_sql("SET GLOBAL partial_revokes=0")
 
-#@<> BUG#34952027 - cleanup
+#@<> BUG#34952027 - cleanup (1)
 shell.connect(__sandbox_uri1)
 session.run_sql(f"DROP USER {tested_user}")
 
-#@ Source data is utf8mb4, but double-encoded in latin1 (preparation)
+#@ Source data is utf8mb4, but double-encoded in latin1 (preparation) (1)
 session1.run_sql("create schema dblenc")
 testutil.import_data(__sandbox_uri1, __data_path+"/sql/double_encoded_utf8mb4_with_latin1.sql", "dblenc")
 
@@ -540,7 +566,7 @@ shell.dump_rows(session1.run_sql("SELECT * FROM dblenc.client_latin1_table_utf8m
 session1.run_sql("SET NAMES utf8mb4")
 shell.dump_rows(session1.run_sql("SELECT * FROM dblenc.client_latin1_table_utf8mb4"), "tabbed")
 
-#@ Preserve double-encoding as latin1
+#@ Preserve double-encoding as latin1 (1)
 # Dump and load with defaults should leave the data double-encoded in the same way, so select output should be identical as long as client charsets is latin1 in both
 shell.connect(__sandbox_uri1)
 util.dump_schemas(["dblenc"], outdir+"/dblenc-defaults")
@@ -553,7 +579,7 @@ shell.dump_rows(session2.run_sql("SELECT * FROM dblenc.client_latin1_table_utf8m
 
 session2.run_sql("drop schema dblenc")
 
-#@ Fix double-encoding so it can be queried as utf8mb4
+#@ Fix double-encoding so it can be queried as utf8mb4 (1)
 # Dump as latin1 and load as utf8mb4 should fix the double-encoding, so select output will be correct in the loaded copy, even when client charset is utf8mb4
 shell.connect(__sandbox_uri1)
 util.dump_schemas(["dblenc"], outdir+"/dblenc-latin1", {"defaultCharacterSet": "latin1"})
@@ -565,7 +591,7 @@ util.load_dump(outdir+"/dblenc-latin1", {"characterSet": "utf8mb4"})
 session2.run_sql("SET NAMES utf8mb4")
 shell.dump_rows(session2.run_sql("SELECT * FROM dblenc.client_latin1_table_utf8mb4"), "tabbed")
 
-#@<> setup tests with include/exclude users
+#@<> setup tests with include/exclude users (1)
 shell.connect(__sandbox_uri1)
 session.run_sql("CREATE USER IF NOT EXISTS 'first'@'localhost' IDENTIFIED BY 'pwd';")
 session.run_sql("CREATE USER IF NOT EXISTS 'first'@'10.11.12.13' IDENTIFIED BY 'pwd';")
@@ -617,11 +643,11 @@ def EXPECT_INCLUDE_EXCLUDE(options, included, excluded, expected_exception=None,
         if u.find('mysql.') != -1:
             session.run_sql("DROP USER IF EXISTS {0};".format(u))
 
-#@<> the `includeUsers` and `excludeUsers` options cannot be used when `loadUsers` is false
+#@<> the `includeUsers` and `excludeUsers` options cannot be used when `loadUsers` is false (1)
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": False, "includeUsers": ["third"] }), "ValueError: Argument #2: The 'includeUsers' option cannot be used if the 'loadUsers' option is set to false.")
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": False, "excludeUsers": ["third"] }), "ValueError: Argument #2: The 'excludeUsers' option cannot be used if the 'loadUsers' option is set to false.")
 
-#@<> test invalid user names
+#@<> test invalid user names (1)
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": True, "includeUsers": [""] }), "ValueError: Argument #2: User name must not be empty.")
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": True, "excludeUsers": [""] }), "ValueError: Argument #2: User name must not be empty.")
 
@@ -634,87 +660,87 @@ EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": True, "exclude
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": True, "includeUsers": ["foo@''nope"] }), "ValueError: Argument #2: Malformed hostname. Cannot use \"'\" or '\"' characters on the hostname without quotes")
 EXPECT_THROWS(lambda: util.load_dump(users_outdir, { "loadUsers": True, "includeUsers": ["foo@''nope"] }), "ValueError: Argument #2: Malformed hostname. Cannot use \"'\" or '\"' characters on the hostname without quotes")
 
-#@<> don't include or exclude any users, all accounts are loaded (error from duplicates)
+#@<> don't include or exclude any users, all accounts are loaded (error from duplicates) (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": [], "excludeUsers": [] }, [], [], "Duplicate objects found in destination database")
 
 EXPECT_STDOUT_CONTAINS("ERROR: Account 'root'@'%' already exists")
 
-#@<> don't include or exclude any users, all accounts are loaded
+#@<> don't include or exclude any users, all accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "ignoreExistingObjects":True, "includeUsers": [], "excludeUsers": [] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
 
 EXPECT_STDOUT_CONTAINS("NOTE: Account 'root'@'%' already exists")
 
-#@<> include non-existent user, no accounts are loaded
+#@<> include non-existent user, no accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["third"] }, [], ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> exclude non-existent user (and root@%), all accounts are loaded, mysql.sys is always excluded (and it already exists)
-EXPECT_INCLUDE_EXCLUDE({ "excludeUsers": ["third", "'root'@'%'"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
+#@<> exclude non-existent user (and root@%), all accounts are loaded, mysql.sys is always excluded (and it already exists) (1)
+EXPECT_INCLUDE_EXCLUDE({ "excludeUsers": ["third", "root"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"], [])
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping CREATE/ALTER USER statements for user 'mysql.sys'@'localhost'")
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping GRANT/REVOKE statements for user 'mysql.sys'@'localhost'")
 
-#@<> include an existing user, one account is loaded
+#@<> include an existing user, one account is loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first@localhost"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is loaded - single quotes
+#@<> include an existing user, one account is loaded - single quotes (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["'first'@'localhost'"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is loaded - double quotes
+#@<> include an existing user, one account is loaded - double quotes (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ['"first"@"localhost"'] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include an existing user, one account is loaded - backticks
+#@<> include an existing user, one account is loaded - backticks (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["`first`@`localhost`"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, two accounts are loaded
+#@<> include using just the username, two accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the same username twice, two accounts are loaded
+#@<> include using just the same username twice, two accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "first"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude different accounts using just the username, two accounts are loaded
+#@<> include using just the username, exclude different accounts using just the username, two accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["second"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include and exclude the same username, conflicting options -> exception
+#@<> include and exclude the same username, conflicting options -> exception (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["first"] }, [], [], "Argument #2: Conflicting filtering options")
 
-#@<> include using just the username, exclude one of the accounts, one account is loaded
+#@<> include using just the username, exclude one of the accounts, one account is loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["first@10.11.12.13"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is loaded - single quotes
+#@<> include using just the username, exclude one of the accounts, one account is loaded - single quotes (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["'first'@'10.11.12.13'"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is loaded - double quotes
+#@<> include using just the username, exclude one of the accounts, one account is loaded - double quotes (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ['"first"@"10.11.12.13"'] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using just the username, exclude one of the accounts, one account is loaded - backticks
+#@<> include using just the username, exclude one of the accounts, one account is loaded - backticks (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first"], "excludeUsers": ["`first`@`10.11.12.13`"] }, ["'first'@'localhost'"], ["'first'@'10.11.12.13'", "'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using two usernames, four accounts are loaded
+#@<> include using two usernames, four accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'localhost'", "'second'@'10.11.12.14'"], ["'firstfirst'@'localhost'"])
 
-#@<> include using two usernames, exclude one of them, conflicting options ->exception
+#@<> include using two usernames, exclude one of them, conflicting options ->exception (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"], "excludeUsers": ["second"] }, [], [], "Argument #2: Conflicting filtering options")
 
-#@<> include using two usernames, exclude one of the accounts, three accounts are loaded
+#@<> include using two usernames, exclude one of the accounts, three accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second"], "excludeUsers": ["second@localhost"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'10.11.12.14'"], ["'firstfirst'@'localhost'", "'second'@'localhost'"])
 
-#@<> include using an username and an account, three accounts are loaded
+#@<> include using an username and an account, three accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"] }, ["'first'@'localhost'", "'first'@'10.11.12.13'", "'second'@'localhost'"], ["'firstfirst'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> include using an username and an account, exclude using username, conflicting options -> exception
+#@<> include using an username and an account, exclude using username, conflicting options -> exception (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"], "excludeUsers": ["second"]  }, [], [], "Argument #2: Conflicting filtering options")
 
-#@<> include using an username and an account, exclude using an account, conflicting options -> exception
+#@<> include using an username and an account, exclude using an account, conflicting options -> exception (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "second@localhost"], "excludeUsers": ["second@localhost"]  }, [], [], "Argument #2: Conflicting filtering options")
 
-#@<> include using an username and non-existing username, exclude using a non-existing username, two accounts are loaded
+#@<> include using an username and non-existing username, exclude using a non-existing username, two accounts are loaded (1)
 EXPECT_INCLUDE_EXCLUDE({ "includeUsers": ["first", "third"], "excludeUsers": ["fourth"]  }, ["'first'@'localhost'", "'first'@'10.11.12.13'"], ["'firstfirst'@'localhost'", "'second'@'localhost'", "'second'@'10.11.12.14'"])
 
-#@<> don't include or exclude anything, mysql.sys is always excluded (and it already exists)
+#@<> don't include or exclude anything, mysql.sys is always excluded (and it already exists) (1)
 EXPECT_INCLUDE_EXCLUDE({ "ignoreExistingObjects": True }, [], [])
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping CREATE/ALTER USER statements for user 'mysql.sys'@'localhost'")
 EXPECT_STDOUT_CONTAINS("NOTE: Skipping GRANT/REVOKE statements for user 'mysql.sys'@'localhost'")
 
-#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and __dbug}
+#@<> BUG#36159820 - don't include or exclude anything when loading into MHS, some accounts are always excluded {VER(>=8.0.16) and __dbug and not __server_is_maria_db} (1)
 testutil.dbug_set("+d,dump_loader_force_mds")
 session2.run_sql("SET global partial_revokes=1")
 
@@ -726,7 +752,7 @@ wipeout_server(session2)
 session2.run_sql("SET global partial_revokes=0")
 testutil.dbug_set("")
 
-#@<> cleanup tests with include/exclude users
+#@<> cleanup tests with include/exclude users (1)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP USER 'first'@'localhost';")
 session.run_sql("DROP USER 'first'@'10.11.12.13';")
@@ -738,13 +764,27 @@ session.run_sql("DROP USER 'mysql.sys-ex'@'localhost';")
 for u in mhs_excluded_users:
     session.run_sql(f"DROP USER '{u}'@'localhost'")
 
-#@<> Bug#33128803 default roles {VER(>= 8.0.11)}
+#@<> Bug#33128803 default roles {VER(>= 8.0.11)} (2)
 shell.connect(__sandbox_uri1)
 session.run_sql("CREATE ROLE IF NOT EXISTS 'aaabra';")
 session.run_sql("CREATE ROLE IF NOT EXISTS aaabby;")
-session.run_sql("CREATE ROLE IF NOT EXISTS 'local'@'localhost';")
-session.run_sql("create user IF NOT EXISTS wolodia@localhost default role 'aaabra', local@localhost, aaabby;")
-session.run_sql("create user IF NOT EXISTS zenon@localhost default role aaabby;")
+
+if not __server_is_maria_db:
+    session.run_sql("CREATE ROLE IF NOT EXISTS 'local'@'localhost';")
+    session.run_sql("create user IF NOT EXISTS wolodia@localhost default role 'aaabra', local@localhost, aaabby;")
+    session.run_sql("create user IF NOT EXISTS zenon@localhost default role aaabby;")
+else:
+    session.run_sql("CREATE ROLE IF NOT EXISTS 'local';")
+    session.run_sql("CREATE USER IF NOT EXISTS 'wolodia'@'localhost';")
+    session.run_sql("GRANT aaabra TO 'wolodia'@'localhost';")
+    session.run_sql("GRANT local TO 'wolodia'@'localhost';")
+    session.run_sql("GRANT aaabby TO 'wolodia'@'localhost';")
+    session.run_sql("SET DEFAULT ROLE aaabra FOR 'wolodia'@'localhost';")
+    session.run_sql("create user IF NOT EXISTS zenon@localhost;")
+    session.run_sql("GRANT aaabby TO 'zenon'@'localhost';")
+    session.run_sql("SET DEFAULT ROLE aaabby FOR 'zenon'@'localhost';")
+
+
 
 default_roles_dir = os.path.join(outdir, "default_roles_dir")
 util.dump_instance(default_roles_dir, { "users": True, "showProgress": False })
@@ -752,18 +792,22 @@ util.dump_instance(default_roles_dir, { "users": True, "showProgress": False })
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(default_roles_dir, {"loadUsers":True, "excludeUsers":["root@%"]}), "Load")
+EXPECT_NO_THROWS(lambda: util.load_dump(default_roles_dir, {"loadUsers":True, "excludeUsers":["root"]}), "Load")
 
 compare_servers(session1, session2)
 
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP ROLE 'aaabra';")
 session.run_sql("DROP ROLE aaabby;")
-session.run_sql("DROP ROLE 'local'@'localhost';")
+if not __server_is_maria_db:
+    session.run_sql("DROP ROLE 'local'@'localhost';")
+else:
+    session.run_sql("DROP ROLE local")
+
 session.run_sql("DROP user wolodia@localhost;")
 session.run_sql("DROP user zenon@localhost;")
 
-#@<> BUG#31748786 {__dbug}
+#@<> BUG#31748786 {__dbug and not __server_is_maria_db} (2)
 # create a MDS-compatible dump
 shell.connect(__sandbox_uri1)
 
@@ -795,7 +839,7 @@ EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "skipBinlog": True, "showProgre
 
 testutil.dbug_set("")
 
-#@<> BUG#32140970 {__dbug}
+#@<> BUG#32140970 {__dbug and not __server_is_maria_db} (2)
 # create a MDS-compatible dump but without 'ocimds' option
 shell.connect(__sandbox_uri1)
 
@@ -821,7 +865,7 @@ EXPECT_STDOUT_CONTAINS("WARNING: Destination is a MySQL HeatWave Service DB Syst
 
 testutil.dbug_set("")
 
-#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option
+#@<> WL14506: create tables and dumps with and without 'create_invisible_pks' compatibility option (2)
 dump_pks_dir = os.path.join(outdir, "invisible_pks")
 dump_no_pks_dir = os.path.join(outdir, "no_invisible_pks")
 dump_just_pk_dir = os.path.join(outdir, "just_pk")
@@ -847,12 +891,18 @@ session.run_sql("ANALYZE TABLE !.!;", [ schema_name, pk_table_name ])
 session.run_sql("ANALYZE TABLE !.!;", [ schema_name, no_pk_table_name ])
 
 # small 'bytesPerChunk' value to force chunking
-util.dump_schemas([schema_name], dump_pks_dir, { "ocimds": True, "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
-util.dump_schemas([schema_name], dump_no_pks_dir, { "ocimds": True, "compatibility": ["ignore_missing_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+if not __server_is_maria_db:
+    # the 'compatibility' option only resolves MySQL HeatWave Service
+    # restrictions, none of which apply to a MariaDB source, so
+    # Dump_options::on_validate() refuses it outright when dumping from
+    # MariaDB - there is no way to produce a dump with the 'create_invisible_pks'
+    # metadata flag on that vendor
+    util.dump_schemas([schema_name], dump_pks_dir, { "compatibility": ["create_invisible_pks"], "bytesPerChunk" : "128k", "showProgress": False })
+util.dump_schemas([schema_name], dump_no_pks_dir, { "bytesPerChunk" : "128k", "showProgress": False })
 # dump which has only table with a primary key
 util.dump_tables(schema_name, [ pk_table_name ], dump_just_pk_dir, { "bytesPerChunk" : "128k", "showProgress": False })
 
-# helper function
+#@<> helper function
 def EXPECT_PK(dump_dir, options, pk_created, expected_exception=None, wipeout=True):
     opts = { "showProgress": False, "resetProgress": True }
     opts.update(options)
@@ -873,7 +923,9 @@ def EXPECT_PK(dump_dir, options, pk_created, expected_exception=None, wipeout=Tr
         # WL14506-TSFR_4.7_1
         EXPECT_EQ(1, len(pk), "Primary key should have been created using a single column")
         EXPECT_EQ("my_row_id", pk[0][0], "Primary key should be named `my_row_id`")
-        EXPECT_EQ("BIGINT UNSIGNED", pk[0][1].upper(), "Primary key should be a BIGINT UNSIGNED")
+        # MariaDB's information_schema still reports the display width which
+        # MySQL 8.0 dropped, so the same column reads as BIGINT(20) UNSIGNED
+        EXPECT_EQ("BIGINT(20) UNSIGNED" if __server_is_maria_db else "BIGINT UNSIGNED", pk[0][1].upper(), "Primary key should be a BIGINT UNSIGNED")
         EXPECT_NE(-1, pk[0][2].upper().find("AUTO_INCREMENT"), "Primary key should have the AUTO_INCREMENT attribute")
         EXPECT_NE(-1, pk[0][2].upper().find("INVISIBLE"), "Primary key should have the INVISIBLE attribute")
     else:
@@ -882,31 +934,31 @@ def EXPECT_PK(dump_dir, options, pk_created, expected_exception=None, wipeout=Tr
 # WL14506-FR4 - The util.loadDump() function must support a new boolean option, createInvisiblePKs, which allows for automatic creation of invisible primary keys.
 # WL14506-FR4.1 - The default value of this option must depend on the dump which is being loaded: if it was created using the create_invisible_pks value given to the compatibility option, it must be set to true. Otherwise it must be set to false.
 
-#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should not be created {VER(>= 8.0.24)}
+#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should not be created {VER(>= 8.0.24)} (2)
 EXPECT_PK(dump_no_pks_dir, {}, False)
 
-#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24)}
+#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24)} (2)
 # WL14506-TSFR_4_2
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": False }, False)
 
-#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24)}
+#@<> dump created without 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24)} (2)
 # WL14506-TSFR_4_3
 # WL14506-TSFR_4_8
 EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, True)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' not given, primary key should be created {VER(>= 8.0.24) and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_1
 EXPECT_PK(dump_pks_dir, {}, True)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is false, primary key should not be created {VER(>= 8.0.24) and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_6
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False }, False)
 
-#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24)}
+#@<> dump created with 'create_invisible_pks', 'createInvisiblePKs' is true, primary key should be created {VER(>= 8.0.24) and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_1
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": True }, True)
 
-#@<> WL14506-FR4.2 - If the createInvisiblePKs option is set to true and the loadDdl option is set to false, a warning must be printed, the value of createInvisiblePks must be ignored and the load process must continue. {VER(>= 8.0.24)}
+#@<> WL14506-FR4.2 - If the createInvisiblePKs option is set to true and the loadDdl option is set to false, a warning must be printed, the value of createInvisiblePks must be ignored and the load process must continue. {VER(>= 8.0.24) and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_4
 # first load just DDL
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, False)
@@ -914,22 +966,25 @@ EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, Fals
 EXPECT_PK(dump_pks_dir, { "loadDdl": False }, False, wipeout=False)
 EXPECT_STDOUT_CONTAINS("WARNING: The 'createInvisiblePKs' option is set to true, but the 'loadDdl' option is false, Primary Keys are not going to be created.")
 
-#@<> WL14506-TSFR_4_4 {VER(>= 8.0.24)}
+#@<> WL14506-TSFR_4_4 {VER(>= 8.0.24) and not __server_is_maria_db} (2)
 # first load just DDL
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False, "loadData": False }, False)
 # then load data with 'createInvisiblePKs' set to true
 EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": True, "loadDdl": False }, False, wipeout=False)
 EXPECT_STDOUT_CONTAINS("WARNING: The 'createInvisiblePKs' option is set to true, but the 'loadDdl' option is false, Primary Keys are not going to be created.")
 
-#@<> WL14506-FR4.3 - If the createInvisiblePKs option is set to true and the target instance has version lower than 8.0.24, an error must be reported and the load process must be aborted. {VER(< 8.0.24)}
+#@<> WL14506-FR4.3 - If the createInvisiblePKs option is set to true and the target instance has version lower than 8.0.24, an error must be reported and the load process must be aborted. {VER(< 8.0.24)} (2)
 # 'createInvisiblePKs' is true implicitly
 # WL14506-TSFR_4.3_1
-EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
+if not __server_is_maria_db:
+    # dump_pks_dir does not exist on MariaDB, see the 'not __server_is_maria_db'
+    # guard around its creation above
+    EXPECT_PK(dump_pks_dir, {}, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
 
 # 'createInvisiblePKs' is true explicitly
-EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires server 8.0.24 or newer.")
+EXPECT_PK(dump_no_pks_dir, { "createInvisiblePKs": True }, False, "The 'createInvisiblePKs' option requires MySQL 8.0.24+ or MariaDB 10.3+.")
 
-#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
+#@<> WL14506-FR4.4 - If the createInvisiblePKs option is set to false and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that MDS HA cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_5
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -942,7 +997,7 @@ EXPECT_STDOUT_NOT_CONTAINS("createInvisiblePKs")
 
 testutil.dbug_set("")
 
-#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug}
+#@<> WL14506-FR4.5 - If the createInvisiblePKs option is set to true and the dump which contains tables without primary keys is loaded into MDS, a warning must be reported stating that Inbound Replication into an MDS HA instance cannot be used with this dump and the load process must continue. {VER(>= 8.0.24) and __dbug and not __server_is_maria_db} (2)
 # WL14506-TSFR_4_7
 testutil.dbug_set("+d,dump_loader_force_mds")
 
@@ -958,7 +1013,7 @@ EXPECT_STDOUT_NOT_CONTAINS("createInvisiblePKs")
 
 testutil.dbug_set("")
 
-#@<> if SQL_GENERATE_INVISIBLE_PRIMARY_KEY is globally ON and createInvisiblePKs is false, primary key should not be created {VER(>= 8.0.24)}
+#@<> if SQL_GENERATE_INVISIBLE_PRIMARY_KEY is globally ON and createInvisiblePKs is false, primary key should not be created {VER(>= 8.0.24)} (2)
 try:
     session.run_sql("SET @@GLOBAL.SQL_GENERATE_INVISIBLE_PRIMARY_KEY = ON")
     EXPECT_PK(dump_pks_dir, { "createInvisiblePKs": False }, False)
@@ -967,10 +1022,14 @@ except Exception as e:
     # server does not support SQL_GENERATE_INVISIBLE_PRIMARY_KEY
     EXPECT_EQ(1193, e.code)
 
-#@<> WL14506: cleanup
+#@<> WL14506: cleanup (2)
+# EXPECT_PK() leaves the global session on the destination server, so drop the
+# schema from the source explicitly as well - otherwise it lingers there and is
+# part of every later whole-instance dump, in this group only
+session1.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 
-#@<> BUG#32734880 progress file is not removed when resetProgress is used
+#@<> BUG#32734880 progress file is not removed when resetProgress is used (2)
 # create a dump
 shell.connect(__sandbox_uri1)
 
@@ -1003,7 +1062,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed 
 # ensure data was loaded
 EXPECT_SHELL_LOG_CONTAINS(".tsv.zst: Records: 4079  Deleted: 0  Skipped: 0  Warnings: 0")
 
-#@<> WL14632: create tables with partitions
+#@<> WL14632: create tables with partitions (3)
 dump_dir = os.path.join(outdir, "part")
 metadata_file = os.path.join(dump_dir, "@.json")
 schema_name = "wl14632"
@@ -1090,15 +1149,15 @@ checksums = {}
 for table in all_tables:
     checksums[table] = compute_checksum(schema_name, table)
 
-#@<> WL14632-TSFR_1_1
+#@<> WL14632-TSFR_1_1 (3)
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_instance(dump_dir, { "showProgress": False }))
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_instance(dump_dir, { "bytesPerChunk": "128k", "showProgress": False }))
 
-#@<> WL14632-TSFR_1_2
+#@<> WL14632-TSFR_1_2 (3)
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_schemas([ schema_name ], dump_dir, { "showProgress": False }))
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_schemas([ schema_name ], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }))
 
-#@<> WL14632-TSFR_1_3
+#@<> WL14632-TSFR_1_3 (3)
 # test table with partitions
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_tables(schema_name, [ partitions_table_name ], dump_dir, { "showProgress": False }), [ partitions_table_name ])
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_tables(schema_name, [ partitions_table_name ], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }), [ partitions_table_name ])
@@ -1113,11 +1172,11 @@ EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_tables(schema_name, [ subpart
 # BUG#33063035 check if the metadata file has the partition awareness capability
 EXPECT_CAPABILITIES(metadata_file, [ partition_awareness_capability ])
 
-#@<> BUG#33063035 dump table without partitions, metadata should not have the partition awareness capability
+#@<> BUG#33063035 dump table without partitions, metadata should not have the partition awareness capability (3)
 EXPECT_DUMP_AND_LOAD_PARTITIONED(lambda: util.dump_tables(schema_name, [ no_partitions_table_name ], dump_dir, { "showProgress": False }), [ ])
 EXPECT_NO_CAPABILITIES(metadata_file, [ partition_awareness_capability ])
 
-#@<> BUG#33063035 reuse previous dump, hack metadata with some fake capability
+#@<> BUG#33063035 reuse previous dump, hack metadata with some fake capability (3)
 metadata = read_json(metadata_file)
 metadata["capabilities"].append({
     "id": "make_toast",
@@ -1128,14 +1187,14 @@ write_json(metadata_file, metadata)
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Unsupported dump capabilities")
 EXPECT_STDOUT_CONTAINS("""
-ERROR: Dump is using capabilities which are not supported by this version of MySQL Shell:
+ERROR: Dump is using capabilities which are not supported by this version of MariaDB Shell:
 
 * Makes toasts, yummy.
 
-The minimum required version of MySQL Shell to load this dump is: 8.0.28.
+The minimum required version of MariaDB Shell to load this dump is: 8.0.28.
 """)
 
-#@<> BUG#33063035 reuse previous dump, hack metadata with another fake capability, check if the correct version is suggested
+#@<> BUG#33063035 reuse previous dump, hack metadata with another fake capability, check if the correct version is suggested (3)
 metadata = read_json(metadata_file)
 metadata["capabilities"].append({
     "id": "make_another_toast",
@@ -1146,16 +1205,16 @@ write_json(metadata_file, metadata)
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Unsupported dump capabilities")
 EXPECT_STDOUT_CONTAINS("""
-ERROR: Dump is using capabilities which are not supported by this version of MySQL Shell:
+ERROR: Dump is using capabilities which are not supported by this version of MariaDB Shell:
 
 * Makes toasts, yummy.
 
 * Makes more toasts, great!
 
-The minimum required version of MySQL Shell to load this dump is: 8.0.29.
+The minimum required version of MariaDB Shell to load this dump is: 8.0.29.
 """)
 
-#@<> WL14632-TSFR_3_1
+#@<> WL14632-TSFR_3_1 (3)
 exported_file = os.path.join(outdir, "part.tsv")
 
 for table in all_tables:
@@ -1179,10 +1238,13 @@ for table in all_tables:
     util.import_table(exported_file, { "schema": schema_name, "table": table, "columns": [ "id", "data" ], "decodeColumns": { "data": "FROM_BASE64" } })
     EXPECT_EQ(checksums[table], compute_checksum(schema_name, table))
 
-#@<> WL14632: cleanup
+#@<> WL14632: cleanup (3)
+# the test above leaves the global session on the destination server; see
+# WL14506: cleanup
+session1.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 session.run_sql("DROP SCHEMA IF EXISTS !", [schema_name])
 
-#@<> BUG#33144419: setup
+#@<> BUG#33144419: setup (4)
 dumper_user = "dumper_33144419"
 loader_user = "loader_33144419"
 password = "pass"
@@ -1206,18 +1268,18 @@ wipeout_server(session2)
 shell.connect(__sandbox_uri2)
 create_account_with_netmask(loader_user)
 
-#@<> BUG#33144419: dump
+#@<> BUG#33144419: dump (4)
 shell.connect(f"{dumper_user}:{password}@127.0.0.1:{__mysql_sandbox_port1}")
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "users": True, "ddlOnly": True, "showProgress": False }), "dump should succeed")
 
-#@<> BUG#33144419: load
+#@<> BUG#33144419: load (4)
 # dumper user does not exist
 shell.connect(__sandbox_uri2)
 EXPECT_EQ([], session.run_sql("select 1 from mysql.user where user = ?", [ dumper_user ]).fetch_all())
 
 # load the dump, users are created
 shell.connect(f"{loader_user}:{password}@127.0.0.1:{__mysql_sandbox_port2}")
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root@%", "root@localhost" ], "showProgress": False }), "load should succeed")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "showProgress": False }), "load should succeed")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Skipping CREATE/ALTER USER statements for user '{loader_user}'@'{host_with_netmask}'")
 EXPECT_STDOUT_CONTAINS(f"NOTE: Skipping GRANT/REVOKE statements for user '{loader_user}'@'{host_with_netmask}'")
 
@@ -1225,26 +1287,29 @@ EXPECT_STDOUT_CONTAINS(f"NOTE: Skipping GRANT/REVOKE statements for user '{loade
 shell.connect(__sandbox_uri2)
 EXPECT_NE([], session.run_sql("select 1 from mysql.user where user = ?", [ dumper_user ]).fetch_all())
 
-#@<> BUG#33144419: cleanup
+#@<> BUG#33144419: cleanup (4)
 shell.connect(__sandbox_uri1)
 session.run_sql(f"DROP USER IF EXISTS '{dumper_user}'@'{host_with_netmask}'")
 session.run_sql(f"DROP USER IF EXISTS '{loader_user}'@'{host_with_netmask}'")
 
-#@<> BUG#32561035: setup
+#@<> BUG#32561035: setup (4)
+# balance: keep-with-previous - reuses the BUG#33144419 dump and its load progress
 # reuse dump dir from one of the tests above
 dump_dir = os.path.join(outdir, "host_with_netmask")
 
+server_id_var = "server_id" if __server_is_maria_db else "server_uuid"
+
 shell.connect(__sandbox_uri2)
-saved_uuid = session.run_sql("SELECT @@server_uuid").fetch_one()[0]
+saved_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
 
 shell.connect(__sandbox_uri1)
-new_uuid = session.run_sql("SELECT @@server_uuid").fetch_one()[0]
+new_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
 
-#@<> BUG#32561035: test
+#@<> BUG#32561035: test (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": os.path.join(dump_dir, f"load-progress.{saved_uuid}.json"),"showProgress": False }), f"Progress file was created for a server with UUID {saved_uuid}, while the target server has UUID: {new_uuid}")
 EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed from where it was left, assuming no external updates were made.")
 
-#@<> WL14244 - help entries
+#@<> WL14244 - help entries (4)
 util.help('load_dump')
 
 # WL14244-TSFR_3_3
@@ -1381,11 +1446,11 @@ def entries(snapshot, keys = []):
         entry = entry[key]
     return sorted(list(entry.keys()))
 
-#@<> WL14244 - includeRoutines - invalid values
+#@<> WL14244 - includeRoutines - invalid values (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeRoutines": [ "routine" ] }), "ValueError: Argument #2: The routine to be included must be in the following form: schema.routine, with optional backtick quotes, wrong value: 'routine'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeRoutines": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse routine to be included 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_3_6
+#@<> WL14244-TSFR_3_6 (4)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
@@ -1398,18 +1463,18 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL14244-TSFR_3_9
+#@<> WL14244-TSFR_3_9 (4)
 snapshot = dump_and_load({ "includeRoutines": ['existing_schema_1.existing_routine', 'existing_schema_1.non_existing_routine', 'non_existing_schema.routine'] })
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL14244 - excludeRoutines - invalid values
+#@<> WL14244 - excludeRoutines - invalid values (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeRoutines": [ "routine" ] }), "ValueError: Argument #2: The routine to be excluded must be in the following form: schema.routine, with optional backtick quotes, wrong value: 'routine'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeRoutines": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse routine to be excluded 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_4_6
+#@<> WL14244-TSFR_4_6 (4)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
@@ -1422,22 +1487,22 @@ EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL14244-TSFR_4_9
+#@<> WL14244-TSFR_4_9 (4)
 snapshot = dump_and_load({ "excludeRoutines": ['existing_schema_1.existing_routine', 'existing_schema_1.non_existing_routine', 'non_existing_schema.routine'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "functions"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "procedures"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "functions"]))
 EXPECT_EQ(["existing_routine"], entries(snapshot, ["existing_schema_2", "procedures"]))
 
-#@<> WL16731-TSFR_2_1_1-G1 - includeLibraries - invalid values
+#@<> WL16731-TSFR_2_1_1-G1 - includeLibraries - invalid values (4)
 TEST_ARRAY_OF_STRINGS_OPTION("includeLibraries")
 
-#@<> WL16731-TSFR_2_1_1-G1 - invalid format of includeLibraries entries
+#@<> WL16731-TSFR_2_1_1-G1 - invalid format of includeLibraries entries (4)
 # WL16731-TSFR_2_3_1 - invalid format
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeLibraries": [ "library" ] }), "ValueError: Argument #2: The library to be included must be in the following form: schema.library, with optional backtick quotes, wrong value: 'library'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeLibraries": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse library to be included 'schema.@': Invalid character in identifier")
 
-#@<> WL16731 - includeLibraries - full dump
+#@<> WL16731 - includeLibraries - full dump (4)
 expected_libraries = []
 if instance_supports_libraries:
     expected_libraries.append("existing_library")
@@ -1452,14 +1517,14 @@ snapshot = dump_and_load({ "includeLibraries": [] })
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_4", "libraries"]))
 
-#@<> WL16731-TSFR_2_5_1 - includeLibraries - full dump {instance_supports_libraries and __dbug}
+#@<> WL16731-TSFR_2_5_1 - includeLibraries - full dump {instance_supports_libraries and __dbug} (4)
 testutil.dbug_set("+d,dump_loader_libraries_unsupported_version")
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Error: Shell Error (53032): The dump contains library DDL which requires server 9.2.0 or newer.")
 
 testutil.dbug_set("")
 
-#@<> WL16731 - includeLibraries - filtered dump
+#@<> WL16731 - includeLibraries - filtered dump (4)
 # WL16731-TSFR_2_1_1-G4 - includeLibraries - non-existing objects
 # WL16731-TSFR_2_3_1 - valid format, non-existing objects
 snapshot = dump_and_load({ "includeLibraries": ['existing_schema_3.existing_library', 'existing_schema_3.non_existing_library', 'non_existing_schema.library'] })
@@ -1471,15 +1536,15 @@ if instance_supports_libraries:
     EXPECT_STDOUT_CONTAINS(routine_uses_missing_library("procedure", "existing_schema_4", "existing_library_routine", "existing_schema_4", "existing_library"))
     EXPECT_STDOUT_CONTAINS(routine_skipped_due_to_missing_deps("procedure", "existing_schema_4", "existing_library_routine"))
 
-#@<> WL16731-TSFR_2_2_1-G1 - excludeLibraries - invalid values
+#@<> WL16731-TSFR_2_2_1-G1 - excludeLibraries - invalid values (4)
 TEST_ARRAY_OF_STRINGS_OPTION("excludeLibraries")
 
-#@<> WL16731-TSFR_2_2_1-G1 - invalid format of excludeLibraries entries
+#@<> WL16731-TSFR_2_2_1-G1 - invalid format of excludeLibraries entries (4)
 # WL16731-TSFR_2_3_1 - invalid format
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeLibraries": [ "library" ] }), "ValueError: Argument #2: The library to be excluded must be in the following form: schema.library, with optional backtick quotes, wrong value: 'library'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeLibraries": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse library to be excluded 'schema.@': Invalid character in identifier")
 
-#@<> WL16731 - excludeLibraries - full dump
+#@<> WL16731 - excludeLibraries - full dump (4)
 # WL16731-TSFR_2_2_1-G3 - excludeLibraries - default value
 snapshot = dump_and_load({})
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
@@ -1490,7 +1555,7 @@ snapshot = dump_and_load({ "excludeLibraries": [] })
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_3", "libraries"]))
 EXPECT_EQ(expected_libraries, entries(snapshot, ["existing_schema_4", "libraries"]))
 
-#@<> WL16731 - excludeLibraries - filtered dump
+#@<> WL16731 - excludeLibraries - filtered dump (4)
 # WL16731-TSFR_2_2_1-G4 - excludeLibraries - non-existing objects
 # WL16731-TSFR_2_3_1 - valid format, non-existing objects
 snapshot = dump_and_load({ "excludeLibraries": ['existing_schema_3.existing_library', 'existing_schema_3.non_existing_library', 'non_existing_schema.library'] })
@@ -1504,11 +1569,11 @@ if instance_supports_libraries:
     EXPECT_STDOUT_CONTAINS(routine_skipped_due_to_missing_deps("function", "existing_schema_3", "existing_library_routine"))
     EXPECT_STDOUT_CONTAINS(routine_skipped_due_to_missing_deps("procedure", "existing_schema_4", "existing_library_routine"))
 
-#@<> WL14244 - includeEvents - invalid values
+#@<> WL14244 - includeEvents - invalid values (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeEvents": [ "event" ] }), "ValueError: Argument #2: The event to be included must be in the following form: schema.event, with optional backtick quotes, wrong value: 'event'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeEvents": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse event to be included 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_5_6
+#@<> WL14244-TSFR_5_6 (4)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
@@ -1517,16 +1582,16 @@ snapshot = dump_and_load({ "includeEvents": [] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244-TSFR_5_9
+#@<> WL14244-TSFR_5_9 (4)
 snapshot = dump_and_load({ "includeEvents": ['existing_schema_1.existing_event', 'existing_schema_1.non_existing_event', 'non_existing_schema.event'] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244 - excludeEvents - invalid values
+#@<> WL14244 - excludeEvents - invalid values (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeEvents": [ "event" ] }), "ValueError: Argument #2: The event to be excluded must be in the following form: schema.event, with optional backtick quotes, wrong value: 'event'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeEvents": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse event to be excluded 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_6_6
+#@<> WL14244-TSFR_6_6 (4)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
@@ -1535,16 +1600,16 @@ snapshot = dump_and_load({ "excludeEvents": [] })
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244-TSFR_6_9
+#@<> WL14244-TSFR_6_9 (4)
 snapshot = dump_and_load({ "excludeEvents": ['existing_schema_1.existing_event', 'existing_schema_1.non_existing_event', 'non_existing_schema.event'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "events"]))
 EXPECT_EQ(["existing_event"], entries(snapshot, ["existing_schema_2", "events"]))
 
-#@<> WL14244 - includeTriggers - invalid values
+#@<> WL14244 - includeTriggers - invalid values (4)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeTriggers": [ "trigger" ] }), "ValueError: Argument #2: The trigger to be included must be in the following form: schema.table or schema.table.trigger, with optional backtick quotes, wrong value: 'trigger'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "includeTriggers": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse trigger to be included 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_7_8
+#@<> WL14244-TSFR_7_8 (4)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
@@ -1553,16 +1618,16 @@ snapshot = dump_and_load({ "includeTriggers": [] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244-TSFR_7_12
+#@<> WL14244-TSFR_7_12 (5)
 snapshot = dump_and_load({ "includeTriggers": ['existing_schema_1.existing_table', 'existing_schema_1.non_existing_table', 'non_existing_schema.table', 'existing_schema_2.existing_table.existing_trigger', 'existing_schema_1.existing_table.non_existing_trigger'] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244 - excludeTriggers - invalid values
+#@<> WL14244 - excludeTriggers - invalid values (5)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTriggers": [ "trigger" ] }), "ValueError: Argument #2: The trigger to be excluded must be in the following form: schema.table or schema.table.trigger, with optional backtick quotes, wrong value: 'trigger'.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "excludeTriggers": [ "schema.@" ] }), "ValueError: Argument #2: Failed to parse trigger to be excluded 'schema.@': Invalid character in identifier")
 
-#@<> WL14244-TSFR_8_8
+#@<> WL14244-TSFR_8_8 (5)
 snapshot = dump_and_load({})
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
@@ -1571,12 +1636,13 @@ snapshot = dump_and_load({ "excludeTriggers": [] })
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ(["existing_trigger"], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> WL14244-TSFR_8_12
+#@<> WL14244-TSFR_8_12 (5)
 snapshot = dump_and_load({ "excludeTriggers": ['existing_schema_1.existing_table', 'existing_schema_1.non_existing_table', 'non_existing_schema.table', 'existing_schema_2.existing_table.existing_trigger', 'existing_schema_1.existing_table.non_existing_trigger'] })
 EXPECT_EQ([], entries(snapshot, ["existing_schema_1", "tables", "existing_table", "triggers"]))
 EXPECT_EQ([], entries(snapshot, ["existing_schema_2", "tables", "existing_table", "triggers"]))
 
-#@<> BUG#35102738 - additional fixes: existing duplicate triggers were not reported, excluded objects were reported as duplicates
+#@<> BUG#35102738 - additional fixes: existing duplicate triggers were not reported, excluded objects were reported as duplicates (5)
+# balance: begin-block - the conflict tests below reuse the dump this one leaves in dump_dir
 # prepare the instance
 dump_and_load({})
 
@@ -1632,7 +1698,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {
     "loadData": False,
     "showProgress": False }), "load works")
 
-#@<> WL14244 - cleanup
+#@<> WL14244 - cleanup (5)
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_1")
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_2")
 session.run_sql("DROP SCHEMA IF EXISTS existing_schema_3")
@@ -1654,7 +1720,7 @@ def load_with_conflicts(options, throws = True):
         except Exception as e:
             print("Exception:", e)
 
-#@<> includeSchemas + excludeSchemas conflicts
+#@<> includeSchemas + excludeSchemas conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeSchemas": [], "excludeSchemas": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeSchemas")
@@ -1682,7 +1748,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: Both includeSchemas and excludeSchemas options co
 load_with_conflicts({ "includeSchemas": [ "a" ], "excludeSchemas": [ "a", "b" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: Both includeSchemas and excludeSchemas options contain a schema `a`.")
 
-#@<> includeTables + excludeTables conflicts
+#@<> includeTables + excludeTables conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeTables": [], "excludeTables": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeTables")
@@ -1769,7 +1835,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeTables option contains a table `a`.`t`
 load_with_conflicts({ "includeSchemas": [ "b" ], "excludeTables": [ "a.t" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeTables option contains a table `a`.`t` which refers to a schema which was not included.")
 
-#@<> includeEvents + excludeEvents conflicts
+#@<> includeEvents + excludeEvents conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeEvents": [], "excludeEvents": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeEvents")
@@ -1856,7 +1922,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeEvents option contains an event `a`.`e
 load_with_conflicts({ "includeSchemas": [ "b" ], "excludeEvents": [ "a.e" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeEvents option contains an event `a`.`e` which refers to a schema which was not included.")
 
-#@<> includeRoutines + excludeRoutines conflicts
+#@<> includeRoutines + excludeRoutines conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeRoutines": [], "excludeRoutines": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeRoutines")
@@ -1943,7 +2009,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeRoutines option contains a routine `a`
 load_with_conflicts({ "includeSchemas": [ "b" ], "excludeRoutines": [ "a.r" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeRoutines option contains a routine `a`.`r` which refers to a schema which was not included.")
 
-#@<> WL16731 - includeLibraries + excludeLibraries conflicts
+#@<> WL16731 - includeLibraries + excludeLibraries conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeLibraries": [], "excludeLibraries": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeLibraries")
@@ -2030,7 +2096,7 @@ EXPECT_STDOUT_CONTAINS("ERROR: The includeLibraries option contains a library `a
 load_with_conflicts({ "includeSchemas": [ "b" ], "excludeLibraries": [ "a.l" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeLibraries option contains a library `a`.`l` which refers to a schema which was not included.")
 
-#@<> includeTriggers + excludeTriggers conflicts
+#@<> includeTriggers + excludeTriggers conflicts (5)
 # no conflicts
 load_with_conflicts({ "includeTriggers": [], "excludeTriggers": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeTriggers")
@@ -2246,7 +2312,8 @@ EXPECT_STDOUT_CONTAINS("ERROR: The excludeTriggers option contains a filter `a`.
 load_with_conflicts({ "includeTables": [ "b.t" ], "excludeTriggers": [ "a.t.t" ] })
 EXPECT_STDOUT_CONTAINS("ERROR: The excludeTriggers option contains a trigger `a`.`t`.`t` which refers to a table which was not included.")
 
-#@<> includeUsers + excludeUsers conflicts
+#@<> includeUsers + excludeUsers conflicts (5)
+# balance: end-block
 # no conflicts
 load_with_conflicts({ "loadUsers": True, "includeUsers": [], "excludeUsers": [] }, False)
 EXPECT_STDOUT_NOT_CONTAINS("includeUsers")
@@ -2338,7 +2405,7 @@ load_with_conflicts({ "loadUsers": True, "includeUsers": [ "u@h" ], "excludeUser
 EXPECT_STDOUT_CONTAINS("ERROR: The includeUsers option contains a user 'u'@'h' which is excluded by the value of the excludeUsers option: 'u'@''.")
 EXPECT_STDOUT_CONTAINS("ERROR: Both includeUsers and excludeUsers options contain a user 'u'@'h'.")
 
-#@<> BUG#33414321 - table with a secondary engine {VER(>=8.0.21)}
+#@<> BUG#33414321 - table with a secondary engine {not __server_is_maria_db and VER(>=8.0.21)} (6)
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -2375,8 +2442,10 @@ shell.connect(__sandbox_uri2)
 # BUG#36197620 - summary should contain more details regarding all executed stages
 indexes_summary = "indexes were built in "
 
-# load with various values of deferTableIndexes
-for deferred in [ ("off", 0), ("fulltext", 1), ("all", 13) ]:
+# load with various values of deferTableIndexes; the dump is the whole instance,
+# so "all" counts every secondary index on it - upstream's 13 included the one
+# on wl14506.no_pk, which WL14506: cleanup used to leave on the source
+for deferred in [ ("off", 0), ("fulltext", 1), ("all", 12) ]:
     # wipe the destination server
     wipeout_server(session2)
     WIPE_OUTPUT()
@@ -2389,7 +2458,7 @@ for deferred in [ ("off", 0), ("fulltext", 1), ("all", 13) ]:
     # verify correctness
     compare_servers(session1, session2, check_users=False)
 
-#@<> BUG#33414321 - table with a secondary engine with resume {VER(>=8.0.21) and (__dbug)}
+#@<> BUG#33414321 - table with a secondary engine with resume {not __server_is_maria_db and VER(>=8.0.21) and (__dbug)} (6)
 # connect to the destination server
 shell.connect(__sandbox_uri2)
 wipeout_server(session2)
@@ -2410,7 +2479,7 @@ EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed 
 # verify correctness
 compare_servers(session1, session2, check_users=False)
 
-#@<> BUG#33976718 - retry in case of full innodb_tmpdir {(__dbug)}
+#@<> BUG#33976718 - retry in case of full innodb_tmpdir {(__dbug)} (6)
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -2469,7 +2538,7 @@ compare_servers(session1, session2, check_users=False)
 # cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#33976718 - test scheduling {(__dbug)}
+#@<> BUG#33976718 - test scheduling {(__dbug)} (6)
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -2518,7 +2587,7 @@ for threads in [2, 4, 8]:
 
 testutil.dbug_set("")
 
-#@<> BUG#33592520 dump when --skip-grant-tables is active
+#@<> BUG#33592520 dump when --skip-grant-tables is active (7)
 # prepare the server
 shell.connect(__sandbox_uri2)
 wipeout_server(session)
@@ -2569,7 +2638,10 @@ shell.connect(__sandbox_uri2)
 wipeout_server(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Loading should not throw")
 
-#@<> BUG#33640887 - routine created while ANSI_QUOTES was in effect
+#@<> session2 used by the tests below
+session2 = mysql.get_session(__sandbox_uri2)
+
+#@<> BUG#33640887 - routine created while ANSI_QUOTES was in effect (7)
 # setup
 tested_schema = '"test\'schema"'
 tested_procedure = '"test\'procedure"'
@@ -2610,7 +2682,7 @@ session.run_sql("SET sql_mode = ANSI_QUOTES")
 session.run_sql(f"DROP SCHEMA IF EXISTS {tested_schema}")
 session.run_sql("SET sql_mode = @saved_sql_mode")
 
-#@<> BUG#33497745 - load a dump created by shell 8.0.21
+#@<> BUG#33497745 - load a dump created by shell 8.0.21 {not __server_is_maria_db} (7)
 # prepare the server
 shell.connect(__sandbox_uri2)
 wipeout_server(session)
@@ -2639,9 +2711,9 @@ if __version_num >= 90000:
     with open(users_file, "w") as f:
         f.write(users_contents)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "'root'@'%'" ], "ignoreVersion": True, "showProgress": False }), "Loading should not throw")
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "ignoreVersion": True, "showProgress": False }), "Loading should not throw")
 EXPECT_STDOUT_CONTAINS(f"Loading DDL, Data and Users from '{dump_dir}' using 4 threads.")
-EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MySQL Shell. If you experience problems using it, please recreate the dump using the current version of MySQL Shell and try again.")
+EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by an older version of MySQL Shell. If you experience problems using it, please recreate the dump using the current version of MariaDB Shell and try again.")
 EXPECT_STDOUT_CONTAINS("62 chunks (5.45K rows, 199.62 KB) for 62 tables in 8 schemas were loaded")
 
 if __version_num < 90000:
@@ -2651,7 +2723,7 @@ if __version_num < 90000:
 # restore log_bin_trust_function_creators
 session.run_sql("SET @@global.log_bin_trust_function_creators = @old_log_bin_trust_function_creators")
 
-#@<> BUG#33743612 - issues when dumping/loading data using an account with user name containing '@' character
+#@<> BUG#33743612 - issues when dumping/loading data using an account with user name containing '@' character (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_33743612")
 first_user = "'admin@domain.com'"
@@ -2700,7 +2772,7 @@ def TEST_STRING_OPTION(option):
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { option: {} }), f"TypeError: Argument #2: Option '{option}' is expected to be of type String, but is Map")
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { option: False }), f"TypeError: Argument #2: Option '{option}' is expected to be of type String, but is Bool")
 
-#@<> WL15884-TSFR_1_1 - `ociAuth` help text
+#@<> WL15884-TSFR_1_1 - `ociAuth` help text {not __server_is_maria_db} (7)
 help_text = """
       - ociAuth: string (default: not set) - Use the specified authentication
         method when connecting to the OCI. Allowed values: api_key (used when
@@ -2709,85 +2781,85 @@ help_text = """
 """
 EXPECT_TRUE(help_text in util.help("load_dump"))
 
-#@<> WL15884-TSFR_1_2 - `ociAuth` is a string option
+#@<> WL15884-TSFR_1_2 - `ociAuth` is a string option (7)
 TEST_STRING_OPTION("ociAuth")
 
-#@<> WL15884-TSFR_2_1 - `ociAuth` set to an empty string is ignored
+#@<> WL15884-TSFR_2_1 - `ociAuth` set to an empty string is ignored (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "ociAuth": "", "resetProgress": True }), "should not fail")
 
-#@<> WL15884-TSFR_3_1 - `ociAuth` cannot be used without `osBucketName`
+#@<> WL15884-TSFR_3_1 - `ociAuth` cannot be used without `osBucketName` (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "", "ociAuth": "api_key" }), "ValueError: Argument #2: The option 'ociAuth' cannot be used when the value of 'osBucketName' option is not set")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "ociAuth": "api_key" }), "ValueError: Argument #2: The option 'ociAuth' cannot be used when the value of 'osBucketName' option is not set")
 
-#@<> WL15884-TSFR_6_1_1 - `ociAuth` set to instance_principal cannot be used with `ociConfigFile` or `ociProfile`
+#@<> WL15884-TSFR_6_1_1 - `ociAuth` set to instance_principal cannot be used with `ociConfigFile` or `ociProfile` (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "bucket", "ociAuth": "instance_principal", "ociConfigFile": "file" }), "ValueError: Argument #2: The option 'ociConfigFile' cannot be used when the 'ociAuth' option is set to: instance_principal.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "bucket", "ociAuth": "instance_principal", "ociProfile": "profile" }), "ValueError: Argument #2: The option 'ociProfile' cannot be used when the 'ociAuth' option is set to: instance_principal.")
 
-#@<> WL15884-TSFR_7_1_1 - `ociAuth` set to resource_principal cannot be used with `ociConfigFile` or `ociProfile`
+#@<> WL15884-TSFR_7_1_1 - `ociAuth` set to resource_principal cannot be used with `ociConfigFile` or `ociProfile` (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "bucket", "ociAuth": "resource_principal", "ociConfigFile": "file" }), "ValueError: Argument #2: The option 'ociConfigFile' cannot be used when the 'ociAuth' option is set to: resource_principal.")
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "bucket", "ociAuth": "resource_principal", "ociProfile": "profile" }), "ValueError: Argument #2: The option 'ociProfile' cannot be used when the 'ociAuth' option is set to: resource_principal.")
 
-#@<> WL15884-TSFR_9_1 - `ociAuth` set to an invalid value
+#@<> WL15884-TSFR_9_1 - `ociAuth` set to an invalid value (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "osBucketName": "bucket", "ociAuth": "unknown" }), "ValueError: Argument #2: Invalid value of 'ociAuth' option, expected one of: api_key, instance_obo_user, instance_principal, resource_principal, security_token, but got: unknown.")
 
-#@<> WL14387-TSFR_1_1_1 - s3BucketName - string option
+#@<> WL14387-TSFR_1_1_1 - s3BucketName - string option (7)
 TEST_STRING_OPTION("s3BucketName")
 
-#@<> WL14387-TSFR_1_2_1 - s3BucketName and osBucketName cannot be used at the same time
+#@<> WL14387-TSFR_1_2_1 - s3BucketName and osBucketName cannot be used at the same time (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "one", "osBucketName": "two" }), "ValueError: Argument #2: The option 's3BucketName' cannot be used when the value of 'osBucketName' option is set")
 
-#@<> WL14387-TSFR_1_1_3 - s3BucketName set to an empty string loads from a local directory
+#@<> WL14387-TSFR_1_1_3 - s3BucketName set to an empty string loads from a local directory (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "", "resetProgress": True }), "should not fail")
 
-#@<> s3CredentialsFile - string option
+#@<> s3CredentialsFile - string option (7)
 TEST_STRING_OPTION("s3CredentialsFile")
 
-#@<> WL14387-TSFR_3_1_1_1 - s3CredentialsFile cannot be used without s3BucketName
+#@<> WL14387-TSFR_3_1_1_1 - s3CredentialsFile cannot be used without s3BucketName (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3CredentialsFile": "file" }), "ValueError: Argument #2: The option 's3CredentialsFile' cannot be used when the value of 's3BucketName' option is not set")
 
-#@<> s3BucketName and s3CredentialsFile both set to an empty string loads from a local directory
+#@<> s3BucketName and s3CredentialsFile both set to an empty string loads from a local directory (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "", "s3CredentialsFile": "", "resetProgress": True }), "should not fail")
 
-#@<> s3ConfigFile - string option
+#@<> s3ConfigFile - string option (7)
 TEST_STRING_OPTION("s3ConfigFile")
 
-#@<> WL14387-TSFR_4_1_1_1 - s3ConfigFile cannot be used without s3BucketName
+#@<> WL14387-TSFR_4_1_1_1 - s3ConfigFile cannot be used without s3BucketName (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3ConfigFile": "file" }), "ValueError: Argument #2: The option 's3ConfigFile' cannot be used when the value of 's3BucketName' option is not set")
 
-#@<> s3BucketName and s3ConfigFile both set to an empty string loads from a local directory
+#@<> s3BucketName and s3ConfigFile both set to an empty string loads from a local directory (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "", "s3ConfigFile": "", "resetProgress": True }), "should not fail")
 
-#@<> WL14387-TSFR_2_1_1 - s3Profile - string option
+#@<> WL14387-TSFR_2_1_1 - s3Profile - string option (7)
 TEST_STRING_OPTION("s3Profile")
 
-#@<> WL14387-TSFR_2_1_1_2 - s3Profile cannot be used without s3BucketName
+#@<> WL14387-TSFR_2_1_1_2 - s3Profile cannot be used without s3BucketName (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3Profile": "profile" }), "ValueError: Argument #2: The option 's3Profile' cannot be used when the value of 's3BucketName' option is not set")
 
-#@<> WL14387-TSFR_2_1_2_1 - s3BucketName and s3Profile both set to an empty string loads from a local directory
+#@<> WL14387-TSFR_2_1_2_1 - s3BucketName and s3Profile both set to an empty string loads from a local directory (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "", "s3Profile": "", "resetProgress": True }), "should not fail")
 
-#@<> s3EndpointOverride - string option
+#@<> s3EndpointOverride - string option (7)
 TEST_STRING_OPTION("s3EndpointOverride")
 
-#@<> WL14387-TSFR_6_1_1 - s3EndpointOverride cannot be used without s3BucketName
+#@<> WL14387-TSFR_6_1_1 - s3EndpointOverride cannot be used without s3BucketName (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3EndpointOverride": "http://example.org" }), "ValueError: Argument #2: The option 's3EndpointOverride' cannot be used when the value of 's3BucketName' option is not set")
 
-#@<> s3BucketName and s3EndpointOverride both set to an empty string loads from a local directory
+#@<> s3BucketName and s3EndpointOverride both set to an empty string loads from a local directory (7)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "", "s3EndpointOverride": "", "resetProgress": True }), "should not fail")
 
-#@<> s3EndpointOverride is missing a scheme
+#@<> s3EndpointOverride is missing a scheme (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "bucket", "s3EndpointOverride": "endpoint" }), "ValueError: Argument #2: The value of the option 's3EndpointOverride' is missing a scheme, expected: http:// or https://.")
 
-#@<> s3EndpointOverride is using wrong scheme
+#@<> s3EndpointOverride is using wrong scheme (7)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "s3BucketName": "bucket", "s3EndpointOverride": "FTp://endpoint" }), "ValueError: Argument #2: The value of the option 's3EndpointOverride' uses an invalid scheme 'FTp://', expected: http:// or https://.")
 
-#@<> BUG#33788895 - log errors even if shell.options["logSql"] is "off"
+#@<> BUG#33788895 - log errors even if shell.options["logSql"] is "off" (7)
 old_log_sql = shell.options["logSql"]
 shell.options["logSql"] = "off"
 
@@ -2803,7 +2875,13 @@ session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 100")
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_instance(dump_dir, { "users": False }), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpInstance\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 100\), SQL: "))
+
+if __server_is_maria_db:
+    max_questions_variable = 'max_queries_per_hour'
+else:
+    max_questions_variable = 'max_questions'
+
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpInstance\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 100\), SQL: "))
 
 # dump schemas
 wipe_dir(dump_dir)
@@ -2811,7 +2889,7 @@ session1.run_sql("ALTER USER admin@'%' WITH MAX_QUERIES_PER_HOUR 90")
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_schemas(["world"], dump_dir), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpSchemas\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 90\), SQL: "))
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpSchemas\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 90\), SQL: "))
 
 # dump tables
 wipe_dir(dump_dir)
@@ -2822,7 +2900,7 @@ if __os_type == "windows":
     tables = [ t.lower() for t in tables ]
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.dump_tables("world", tables, dump_dir), "")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.dumpTables\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 80\), SQL: "))
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.dumpTables\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 80\), SQL: "))
 
 session1.run_sql("DROP USER admin@'%'")
 
@@ -2836,13 +2914,13 @@ shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2)
 WIPE_SHELL_LOG()
 # we don't specify the error message here, it can vary depending on when the error is reported
 EXPECT_THROWS(lambda: util.load_dump(dump_dir), "")
-EXPECT_STDOUT_CONTAINS("User 'admin' has exceeded the 'max_questions' resource (current value: 70)")
-EXPECT_SHELL_LOG_MATCHES(re.compile(r"Info: util.loadDump\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the 'max_questions' resource \(current value: 70\), SQL: "))
+EXPECT_STDOUT_CONTAINS(f"User 'admin' has exceeded the '{max_questions_variable}' resource (current value: 70)")
+EXPECT_SHELL_LOG_MATCHES(re.compile(rf"Info: util.loadDump\(\): tid=\d+: MySQL Error 1226 \(42000\): User 'admin' has exceeded the '{max_questions_variable}' resource \(current value: 70\), SQL: "))
 
-#@<> BUG#33788895 - cleanup
+#@<> BUG#33788895 - cleanup (7)
 shell.options["logSql"] = old_log_sql
 
-#@<> BUG#34141432 - shell may expose sensitive information via error messages
+#@<> BUG#34141432 - shell may expose sensitive information via error messages {not __server_is_maria_db} (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34141432")
 
@@ -2897,48 +2975,48 @@ def do_load(create_pks):
 def has_primary_key(s, t) -> bool:
     return "PRIMARY KEY" in session2.run_sql("SHOW CREATE TABLE !.!", [ s, t ]).fetch_one()[1]
 
-#@<> BUG#34408669 - setup {VER(>= 8.0.30)}
+#@<> BUG#34408669 - setup {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql("CREATE SCHEMA IF NOT EXISTS !", [tested_schema])
 session1.run_sql("SET @@SESSION.sql_generate_invisible_primary_key = OFF")
 session1.run_sql("CREATE TABLE !.! (data INT)", [ tested_schema, tested_table ])
 
-#@<> BUG#34408669 - dump DDL, we're not interested in data {VER(>= 8.0.30)}
+#@<> BUG#34408669 - dump DDL, we're not interested in data {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "ddlOnly": True, "showProgress": False }), "Dump should not fail")
 
-#@<> BUG#34408669 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>= 8.0.30)}
+#@<> BUG#34408669 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 wipeout_server(session2)
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
 session2.run_sql("GRANT ALL ON *.* TO admin@'%'")
 session2.run_sql("REVOKE SUPER,SYSTEM_VARIABLES_ADMIN,SESSION_VARIABLES_ADMIN ON *.* FROM admin@'%'")
 
-#@<> BUG#34408669 - connect as the created user {VER(>= 8.0.30)}
+#@<> BUG#34408669 - connect as the created user {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2))
 
-#@<> BUG#34408669 - load the dump, ask for PKs to be created {VER(>= 8.0.30)}
+#@<> BUG#34408669 - load the dump, ask for PKs to be created {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
 EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")
 
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - load again, this time PKs should not be created {VER(>= 8.0.30)}
+#@<> BUG#34408669 - load again, this time PKs should not be created {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_FALSE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30)}
+#@<> BUG#34408669 - enable the global variable {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = ON")
 
-#@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests PKs to be created, this should work {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 EXPECT_NO_THROWS(do_load(True), "Load should not fail")
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - dump was created without 'create_invisible_pks', but since user doesn't have required privileges it fails {VER(>= 8.0.30)}
+#@<> BUG#34408669 - dump was created without 'create_invisible_pks', but since user doesn't have required privileges it fails {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 EXPECT_THROWS(do_load(None), "Error: Shell Error (53037): Insufficient privileges to disable automatic invisible primary key creation.")
 
-# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it
+# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_STDOUT_CONTAINS("""
 WARNING: The dump was created without the 'create_invisible_pks' compatibility option, while the 'sql_generate_invisible_primary_key' option is enabled on the destination server, and the current account lacks privileges to disable it at the session level.
 
@@ -2949,10 +3027,10 @@ To load this dump, you can either:
  * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
-#@<> BUG#34408669 - user requests no primary keys to be created, but since they don't have required privileges it fails {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests no primary keys to be created, but since they don't have required privileges it fails {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 EXPECT_THROWS(do_load(False), "Error: Shell Error (53037): Insufficient privileges to disable automatic invisible primary key creation.")
 
-# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it
+# BUG#38560511 - provide a solution if sql_generate_invisible_primary_key is enabled, and user cannot disable it {VER(>= 8.0.30) and not __server_is_maria_db}
 EXPECT_STDOUT_CONTAINS("""
 WARNING: The 'createInvisiblePKs' load option is set to false, while the 'sql_generate_invisible_primary_key' option is enabled on the destination server, and the current account lacks privileges to disable it at the session level.
 
@@ -2963,18 +3041,18 @@ To load this dump, you can either:
  * Set the 'MARIADB_SHELL_ALLOW_ALWAYS_GIPK' environment variable to any value to always allow primary key creation.
 """)
 
-#@<> BUG#34408669 - user requests no primary keys to be created, env var is set, keys are created anyway {VER(>= 8.0.30)}
+#@<> BUG#34408669 - user requests no primary keys to be created, env var is set, keys are created anyway {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"] = "1"
 
 EXPECT_NO_THROWS(do_load(False), "Load should not fail")
 EXPECT_TRUE(has_primary_key(tested_schema, tested_table))
 
-#@<> BUG#34408669 - cleanup {VER(>= 8.0.30)}
+#@<> BUG#34408669 - cleanup {VER(>= 8.0.30) and not __server_is_maria_db} (7)
 del os.environ["MARIADB_SHELL_ALLOW_ALWAYS_GIPK"]
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 
-#@<> BUG#34173126 - loading a dump when global auto-commit is off
+#@<> BUG#34173126 - loading a dump when global auto-commit is off (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34173126")
 tested_schema = "tested_schema"
@@ -2998,13 +3076,13 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "L
 # verification
 compare_schema(session1, session2, tested_schema, check_rows=True)
 
-#@<> BUG#34173126 - cleanup
+#@<> BUG#34173126 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 shell.connect(__sandbox_uri2)
 session.run_sql("SET @@GLOBAL.autocommit = ?", [original_global_autocommit])
 
-#@<> BUG#34768224 - loading a view which uses another view with DEFINER set
+#@<> BUG#34768224 - loading a view which uses another view with DEFINER set (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34768224")
 tested_schema = "tested_schema"
@@ -3034,12 +3112,12 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProg
 # verification
 compare_schema(session1, session2, tested_schema, check_rows=True)
 
-#@<> BUG#34768224 - cleanup
+#@<> BUG#34768224 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> BUG#34764157 - setup
+#@<> BUG#34764157 - setup (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34764157")
 tested_schema = "tested_schema"
@@ -3063,7 +3141,7 @@ session.run_sql(f"GRANT SELECT ON !.! TO {tested_user}", [tested_schema, tested_
 session.run_sql(f"GRANT SELECT ON !.! TO {tested_user}", [tested_schema, tested_view])
 session.run_sql(f"GRANT EXECUTE ON PROCEDURE !.! TO {tested_user}", [tested_schema, tested_routine])
 
-#@<> BUG#34764157 - dumper commented out grants for included, existing views and routines
+#@<> BUG#34764157 - dumper commented out grants for included, existing views and routines (7)
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [tested_schema], "users": True, "excludeUsers": ["root"], "showProgress": False }), "Dump should not fail")
 
@@ -3076,7 +3154,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProg
 compare_schema(session1, session2, tested_schema, check_rows=True)
 compare_user_grants(session1, session2, tested_user)
 
-#@<> BUG#34764157 - dumper should detect invalid grants - table/view
+#@<> BUG#34764157 - dumper should detect invalid grants - table/view {not __server_is_maria_db} (7)
 # NOTE: it's not possible to test routine, as when routine is removed, grant is removed as well
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP VIEW !.!", [ tested_schema, tested_view ])
@@ -3112,7 +3190,7 @@ wipeout_server(session)
 WIPE_OUTPUT()
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProgress": False }), "Load should not fail")
 
-#@<> BUG#34764157 - dumper should detect invalid grants - view is missing but grant is valid
+#@<> BUG#34764157 - dumper should detect invalid grants - view is missing but grant is valid (7)
 shell.connect(__sandbox_uri1)
 session.run_sql(f"GRANT CREATE ON !.! TO {tested_user}", [tested_schema, tested_view])
 
@@ -3123,12 +3201,12 @@ shell.connect(__sandbox_uri2)
 wipeout_server(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProgress": False }), "Load should not fail")
 
-#@<> BUG#34764157 - cleanup
+#@<> BUG#34764157 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> BUG#34876423 - load failed if table contained multiple indexes and one of them was specified on an AUTO_INCREMENT column
+#@<> BUG#34876423 - load failed if table contained multiple indexes and one of them was specified on an AUTO_INCREMENT column (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34876423")
 tested_schema = "tested_schema"
@@ -3155,11 +3233,11 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "deferTableIndexes": "all", 
 # verification
 compare_schema(session1, session2, tested_schema, check_rows=True)
 
-#@<> BUG#34876423 - cleanup
+#@<> BUG#34876423 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#34566034 - load failed if "deferTableIndexes": "all", "ignoreExistingObjects": True options were set and instance contained existing tables with indexes
+#@<> BUG#34566034 - load failed if "deferTableIndexes": "all", "ignoreExistingObjects": True options were set and instance contained existing tables with indexes (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_34566034")
 tested_schema = "tested_schema"
@@ -3193,11 +3271,11 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "deferTableIndexes": "all", 
 EXPECT_STDOUT_CONTAINS(f"NOTE: Schema `{tested_schema}` already contains a table named `{tested_table}`")
 EXPECT_STDOUT_CONTAINS("NOTE: One or more objects in the dump already exist in the destination database but will be ignored because the 'ignoreExistingObjects' option was enabled.")
 
-#@<> BUG#34566034 - cleanup
+#@<> BUG#34566034 - cleanup (7)
 shell.connect(__sandbox_uri2)
 wipeout_server(session)
 
-#@<> BUG#35304391 - loader should notify if rows were replaced during load
+#@<> BUG#35304391 - loader should notify if rows were replaced during load (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_35304391")
 tested_schema = "tested_schema"
@@ -3229,17 +3307,17 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadDdl": False, "resetProg
 # verification
 EXPECT_STDOUT_CONTAINS("1 rows were replaced")
 
-#@<> BUG#35304391 - cleanup
+#@<> BUG#35304391 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> WL#15887 - warning when loading to a different version than requested during dump {__dbug}
+#@<> WL#15887 - warning when loading to a different version than requested during dump {__dbug} (7)
 # constants
 dump_dir = os.path.join(outdir, "wl_15887")
 
 # dump
 shell.connect(__sandbox_uri1)
-EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "targetVersion": __mysh_version, "ddlOnly": True, "showProgress": False }), "Dump should not fail")
+EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "targetVersion": newest_target_version, "ddlOnly": True, "showProgress": False }), "Dump should not fail")
 
 # setup
 testutil.dbug_set("+d,dump_loader_force_mds")
@@ -3250,16 +3328,16 @@ wipeout_server(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "ignoreVersion": True, "showProgress": False }), "Load should not fail")
 
 # verification
-if __mysh_version == __version:
+if newest_target_version == __version:
     # version match, no warning
     EXPECT_STDOUT_NOT_CONTAINS("'targetVersion'")
 else:
-    EXPECT_STDOUT_CONTAINS(f"Destination MySQL version is different than the value of the 'targetVersion' option set when the dump was created: {__mysh_version}")
+    EXPECT_STDOUT_CONTAINS(f"Destination {server_vendor_name} version is different than the value of the 'targetVersion' option set when the dump was created: {newest_target_version}")
 
 # cleanup
 testutil.dbug_set("")
 
-#@<> BUG#35822020 - loader is stuck if metadata files are missing
+#@<> BUG#35822020 - loader is stuck if metadata files are missing (7)
 # constants
 dump_dir = os.path.join(outdir, "bug_35822020")
 tested_schema = "tested_schema"
@@ -3295,9 +3373,9 @@ session.run_sql("CREATE TRIGGER !.tested_trigger AFTER DELETE ON !.! FOR EACH RO
 
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [ tested_schema ], "users": True, "showProgress": False }), "Dump should not fail")
 
-#@<> BUG#35822020 - test
+#@<> BUG#35822020 - test (7)
 shell.connect(__sandbox_uri2)
-l = lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "'root'@'%'" ], "resetProgress": True, "showProgress": False })
+l = lambda: util.load_dump(dump_dir, { "loadUsers": True, "excludeUsers": [ "root" ], "resetProgress": True, "showProgress": False })
 
 for f in os.listdir(dump_dir):
     print("------->", f)
@@ -3318,11 +3396,11 @@ for f in os.listdir(dump_dir):
         EXPECT_THROWS(l, e.msg)
     os.rename(p + ".bak", p)
 
-#@<> BUG#35822020 - cleanup
+#@<> BUG#35822020 - cleanup (7)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> WL15947 - setup
+#@<> WL15947 - setup (8)
 schema_name = "wl15947"
 test_table_primary = "pk"
 test_table_unique = "uni"
@@ -3366,27 +3444,27 @@ util.dump_schemas([ "xtest", schema_name ], dump_dir, { "checksum": True, "where
 util.dump_schemas([ "xtest", schema_name ], no_data_dump_dir, { "ddlOnly": True, "checksum": True, "showProgress": False })
 shell.connect(__sandbox_uri2)
 
-#@<> WL15947-TSFR_2_1 - help text
+#@<> WL15947-TSFR_2_1 - help text (8)
 help_text = """
       - checksum: bool (default: false) - Verify tables against checksums that
         were computed during dump.
 """
 EXPECT_TRUE(help_text in util.help("load_dump"))
 
-#@<> WL15947-TSFR_2_1_1 - load without checksum option
+#@<> WL15947-TSFR_2_1_1 - load without checksum option (8)
 wipeout_server(session2)
 util.load_dump(dump_dir, { "resetProgress": True, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS("checksum")
 
-#@<> WL15947-TSFR_2_1_1 - load with checksum option set to False
+#@<> WL15947-TSFR_2_1_1 - load with checksum option set to False (8)
 wipeout_server(session2)
 util.load_dump(dump_dir, { "checksum": False, "resetProgress": True, "showProgress": False })
 EXPECT_STDOUT_NOT_CONTAINS("checksum")
 
-#@<> WL15947-TSFR_2_1_2 - option type
+#@<> WL15947-TSFR_2_1_2 - option type (8)
 TEST_BOOL_OPTION("checksum")
 
-#@<> WL15947-TSFR_2_2_2 - manipulate checksum to contain data errors, load with dryRun
+#@<> WL15947-TSFR_2_2_2 - manipulate checksum to contain data errors, load with dryRun (8)
 wipeout_server(session2)
 
 checksum_file = checksum_file_path(dump_dir)
@@ -3402,7 +3480,7 @@ with backup_file(checksum_file) as backup:
     # regular run - throws
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "checksum": True, "resetProgress": True, "showProgress": False }), "Error: Shell Error (53031): Checksum verification failed")
 
-#@<> WL15947-TSFR_2_3_1 - file-related errors
+#@<> WL15947-TSFR_2_3_1 - file-related errors (8)
 wipeout_server(session2)
 
 checksum_file = checksum_file_path(dump_dir)
@@ -3425,7 +3503,7 @@ with backup_file(checksum_file) as backup:
         f.write("error!")
     EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "checksum": True, "resetProgress": True, "showProgress": False }), "RuntimeError: Failed to parse")
 
-#@<> WL15947 - load dump with no data
+#@<> WL15947 - load dump with no data (8)
 test = lambda: util.load_dump(no_data_dump_dir, { "checksum": True, "loadDdl": False, "resetProgress": True, "showProgress": False })
 
 # load the full dump first
@@ -3466,7 +3544,7 @@ EXPECT_STDOUT_CONTAINS(f"ERROR: Could not verify checksum of `{schema_name}`.`{t
 EXPECT_STDOUT_CONTAINS(f"ERROR: Could not verify checksum of `{schema_name}`.`{test_table_no_index}`: table does not exist")
 EXPECT_STDOUT_CONTAINS("ERROR: 7 checksum verification errors were reported during the load.")
 
-#@<> WL15947 - checking checksum without loading the data
+#@<> WL15947 - checking checksum without loading the data (8)
 test = lambda: util.load_dump(dump_dir, { "checksum": True, "loadData": False, "loadDdl": False, "resetProgress": True, "showProgress": False })
 
 # load the full dump first
@@ -3504,17 +3582,17 @@ EXPECT_STDOUT_CONTAINS(f"ERROR: Could not verify checksum of `{schema_name}`.`{t
 EXPECT_STDOUT_CONTAINS(f"ERROR: Could not verify checksum of `{schema_name}`.`{test_table_no_index}`: table does not exist")
 EXPECT_STDOUT_CONTAINS("ERROR: 7 checksum verification errors were reported during the load.")
 
-#@<> BUG#38034277 - loading with "schema" option set should not throw
+#@<> BUG#38034277 - loading with "schema" option set should not throw (8)
 renamed_schema_name = schema_name + "-renamed"
 
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "includeSchemas": [schema_name], "schema": renamed_schema_name, "checksum": True, "resetProgress": True, "showProgress": False }))
 
-#@<> WL15947 - cleanup
+#@<> WL15947 - cleanup (8)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !;", [schema_name])
 
-#@<> BUG#35830920 mysql_audit and mysql_firewall schemas should be automatically excluded when loading a dump into MHS - setup {__dbug}
+#@<> BUG#35830920 mysql_audit and mysql_firewall schemas should be automatically excluded when loading a dump into MHS - setup {__dbug} (8)
 # BUG#37023079 - exclude mysql_option schema
 # BUG#37278169 - exclude mysql_autopilot schema
 # BUG#37637843 - exclude `mysql_rest_service_metadata` and `mysql_tasks` schemas
@@ -3536,7 +3614,7 @@ shell.connect(__sandbox_uri1)
 dump_dir = os.path.join(outdir, "bug_35830920")
 EXPECT_NO_THROWS(lambda: util.dump_schemas(schema_names, dump_dir, { "ddlOnly": True, "showProgress": False }), "Dumping the instance should not fail")
 
-#@<> BUG#35830920 - test {__dbug}
+#@<> BUG#35830920 - test {__dbug} (8)
 shell.connect(__sandbox_uri2)
 
 # loading into non-MHS should fail, because schemas already exist
@@ -3548,11 +3626,11 @@ testutil.dbug_set("+d,dump_loader_force_mds")
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "ignoreVersion": True, "showProgress": False }), "Loading should not fail")
 testutil.dbug_set("")
 
-#@<> BUG#35830920 - cleanup {__dbug}
+#@<> BUG#35830920 - cleanup {__dbug} (8)
 for schema_name in schema_names:
     session.run_sql("DROP SCHEMA !;", [schema_name])
 
-#@<> BUG#35860654 - cannot dump a table with single generated column
+#@<> BUG#35860654 - cannot dump a table with single generated column (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_35860654")
 tested_schema = "tested_schema"
@@ -3563,13 +3641,13 @@ session1.run_sql("DROP SCHEMA IF EXISTS !", [ tested_schema ])
 session1.run_sql("CREATE SCHEMA !", [ tested_schema ])
 session1.run_sql("CREATE TABLE !.! (a date GENERATED ALWAYS AS (50399) STORED)", [ tested_schema, tested_table ])
 
-#@<> BUG#35860654 - dumping with ocimds should fail, complaining that table doesn't have a PK
+#@<> BUG#35860654 - dumping with ocimds should fail, complaining that table doesn't have a PK {not __server_is_maria_db} (8)
 shell.connect(__sandbox_uri1)
 EXPECT_THROWS(lambda: util.dump_schemas([ tested_schema ], dump_dir, { "ocimds": True, "showProgress": False }), "Compatibility issues were found")
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, tested_table).error())
 wipe_dir(dump_dir)
 
-#@<> BUG#35860654 - test
+#@<> BUG#35860654 - test {not __server_is_maria_db} (8)
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([ tested_schema ], dump_dir, { "ocimds": True, "compatibility": [ "create_invisible_pks" ], "showProgress": False }), "dump should not throw")
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, tested_table).fixed())
@@ -3578,10 +3656,10 @@ shell.connect(__sandbox_uri2)
 wipeout_server(session)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "createInvisiblePKs": True if __version_num > 80024 else False,"showProgress": False }), "load should not throw")
 
-#@<> BUG#35860654 - cleanup
+#@<> BUG#35860654 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [ tested_schema ])
 
-#@<> BUG#36119568 - load fails on Windows if global sql_mode is set to STRICT_ALL_TABLES
+#@<> BUG#36119568 - load fails on Windows if global sql_mode is set to STRICT_ALL_TABLES (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_36119568")
 
@@ -3600,7 +3678,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "L
 # cleanup
 session.run_sql("SET @@global.sql_mode = @saved_sql_mode")
 
-#@<> BUG#36127633 - reconnect session when connection is lost {__dbug}
+#@<> BUG#36127633 - reconnect session when connection is lost {__dbug} (8)
 # setup
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -3651,7 +3729,7 @@ testutil.clear_traps("mysql")
 # cleanup
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#37593239 - load hanged when rebuilding indexes if user running the load didn't have SELECT privilege on performance_schema
+#@<> BUG#37593239 - load hanged when rebuilding indexes if user running the load didn't have SELECT privilege on performance_schema (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_37593239")
 tested_schema = "tested_schema"
@@ -3691,11 +3769,11 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "deferTableIndexes": "all", 
 # verification
 compare_schema(session1, session2, tested_schema, check_rows=True)
 
-#@<> BUG#37593239 - cleanup
+#@<> BUG#37593239 - cleanup (8)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#36470302 - use JSON output when executing EXPLAIN statements
+#@<> BUG#36470302 - use JSON output when executing EXPLAIN statements {not __server_is_maria_db} (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_36470302")
 test_schema = "test_schema"
@@ -3717,12 +3795,12 @@ session.run_sql(f"INSERT INTO !.! (data) VALUES {','.join(['(RANDOM_BYTES(1024))
 session.run_sql(f"INSERT INTO !.! (id, data) VALUES ({row_count * row_count}, RANDOM_BYTES(1024))", [ test_schema, test_table ])
 session.run_sql("ANALYZE TABLE !.!", [ test_schema, test_table ])
 
-#@<> BUG#36470302 - test
+#@<> BUG#36470302 - test {not __server_is_maria_db} (8)
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(lambda: util.dump_schemas([ test_schema ], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }), "Dump should not throw")
 EXPECT_SHELL_LOG_CONTAINS(f"Chunking {quote_identifier(test_schema, test_table)} using integer algorithm with adaptive step")
 
-#@<> BUG#36470302 - test with JSON output version 2 {VER(>=8.3.0)}
+#@<> BUG#36470302 - test with JSON output version 2 {VER(>=8.3.0) and not __server_is_maria_db} (8)
 shutil.rmtree(dump_dir, True)
 
 session.run_sql("SET @saved_explain_json_format_version = @@GLOBAL.explain_json_format_version")
@@ -3734,11 +3812,11 @@ EXPECT_SHELL_LOG_CONTAINS(f"Chunking {quote_identifier(test_schema, test_table)}
 
 session.run_sql("SET @@GLOBAL.explain_json_format_version = @saved_explain_json_format_version")
 
-#@<> BUG#36470302 - cleanup
+#@<> BUG#36470302 - cleanup {not __server_is_maria_db} (8)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 
-#@<> composite integer key chunking uses later key parts
+#@<> composite integer key chunking uses later key parts (8)
 # constants
 dump_dir = os.path.join(outdir, "composite_integer_chunking")
 test_schema = "test_composite_integer_chunking"
@@ -3761,7 +3839,7 @@ values = ",".join([f"(1,{i},REPEAT('x', 1024))" for i in range(row_count)])
 session1.run_sql(f"INSERT INTO !.! (a, b, payload) VALUES {values}", [ test_schema, test_table ])
 session1.run_sql("ANALYZE TABLE !.!", [ test_schema, test_table ])
 
-#@<> composite integer key chunking uses later key parts - test
+#@<> composite integer key chunking uses later key parts - test (8)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([ test_schema ], dump_dir, { "bytesPerChunk": "128k", "compression": "none", "showProgress": False }), "Dump should not throw")
 
 table_basename = encode_table_basename(test_schema, test_table)
@@ -3790,12 +3868,12 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "L
 
 compare_schema(session1, session2, test_schema, check_rows=True)
 
-#@<> composite integer key chunking uses later key parts - cleanup
+#@<> composite integer key chunking uses later key parts - cleanup (8)
 shell.connect(__sandbox_uri1)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 wipe_dir(dump_dir)
 
-#@<> BUG#36509026 - warn if there's mismatch between source's and target's lower_case_table_names
+#@<> BUG#36509026 - warn if there's mismatch between source's and target's lower_case_table_names (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_36509026")
 test_schema = "test_schema"
@@ -3814,7 +3892,7 @@ j = read_json(os.path.join(dump_dir, "@.json"))
 j["source"]["sysvars"]["lower_case_table_names"] = "-1"
 write_json(os.path.join(dump_dir, "@.json"), j)
 
-#@<> BUG#36509026 - test
+#@<> BUG#36509026 - test (8)
 wipeout_server(session2)
 shell.connect(__sandbox_uri2)
 
@@ -3822,7 +3900,7 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "l
 EXPECT_STDOUT_CONTAINS(lower_case_table_names_message)
 EXPECT_STDOUT_NOT_CONTAINS(invalid_view_message)
 
-#@<> BUG#36509026 - test simulating a dump with an invalid view
+#@<> BUG#36509026 - test simulating a dump with an invalid view (8)
 # alter the @.done.json, insert the issue
 j = read_json(os.path.join(dump_dir, "@.done.json"))
 j.setdefault("issues", {})["hasInvalidViewReferences"] = True
@@ -3832,11 +3910,11 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "l
 EXPECT_STDOUT_CONTAINS(lower_case_table_names_message)
 EXPECT_STDOUT_CONTAINS(invalid_view_message)
 
-#@<> BUG#36509026 - cleanup
+#@<> BUG#36509026 - cleanup (8)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 
-#@<> BUG#36561962 - add 'dropExistingObjects' option to drop existing objects before loading the dump
+#@<> BUG#36561962 - add 'dropExistingObjects' option to drop existing objects before loading the dump (8)
 dump_dir = os.path.join(outdir, "bug_36561962")
 progress_file = os.path.join(dump_dir, "progress.json")
 test_schema = "test_schema"
@@ -3890,13 +3968,13 @@ EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [test_
 
 shell.connect(__sandbox_uri2)
 
-#@<> BUG#36561962 - 'dropExistingObjects' is mutually exclusive with 'ignoreExistingObjects'
+#@<> BUG#36561962 - 'dropExistingObjects' is mutually exclusive with 'ignoreExistingObjects' (8)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "ignoreExistingObjects": True, "showProgress": False }), "The 'dropExistingObjects' and 'ignoreExistingObjects' options cannot be both set to true.")
 
-#@<> BUG#36561962 - 'dropExistingObjects' requires 'loadDdl': True
+#@<> BUG#36561962 - 'dropExistingObjects' requires 'loadDdl': True (8)
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "loadDdl": False, "showProgress": False }), "The 'dropExistingObjects' option cannot be set to true when the 'loadDdl' option is set to false.")
 
-#@<> BUG#36561962 - load normally, then load with 'dropExistingObjects': True and resetting the progress, dropping all the objects
+#@<> BUG#36561962 - load normally, then load with 'dropExistingObjects': True and resetting the progress, dropping all the objects (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProgress": False }), "Load should not throw")
 
@@ -3925,7 +4003,7 @@ if instance_supports_libraries:
 EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
 EXPECT_JSON_EQ(accounts, snapshot_accounts(session2), "Verifying accounts")
 
-#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when trigger DDL was not completed
+#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when trigger DDL was not completed (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_file, "showProgress": False }), "Load should not throw")
 
@@ -3953,7 +4031,7 @@ EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
 
 os.remove(progress_file)
 
-#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when schema DDL was not completed
+#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when schema DDL was not completed (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_file, "showProgress": False }), "Load should not throw")
 
@@ -3980,7 +4058,7 @@ EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
 
 os.remove(progress_file)
 
-#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when schema DDL and table DDL was not completed
+#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when schema DDL and table DDL was not completed (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_file, "showProgress": False }), "Load should not throw")
 
@@ -4004,15 +4082,15 @@ EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
 
 os.remove(progress_file)
 
-#@<> BUG#38249362 - using 'dropExistingObjects' when schema did not exist failed with an error
+#@<> BUG#38249362 - using 'dropExistingObjects' when schema did not exist failed with an error (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "resetProgress": True, "loadUsers": True, "showProgress": False }), "Load should not throw")
 
-#@<> BUG#36561962 - cleanup
+#@<> BUG#36561962 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 session1.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> WL16731-TSFR_2_4_2 - dump without libraries, load into instance with an existing library {instance_supports_libraries}
+#@<> WL16731-TSFR_2_4_2 - dump without libraries, load into instance with an existing library {instance_supports_libraries} (8)
 # constants
 dump_dir = os.path.join(outdir, "wl16731")
 tested_schema = "wl16731"
@@ -4059,7 +4137,7 @@ session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 wipe_dir(dump_dir)
 
-#@<> BUG#37669785 - load would fail if user loading the dump doesn't have ALLOW_NONEXISTENT_DEFINER {VER(>=8.2.0)}
+#@<> BUG#37669785 - load would fail if user loading the dump doesn't have ALLOW_NONEXISTENT_DEFINER {VER(>=8.2.0) and not __server_is_maria_db} (8)
 # constants
 dump_dir = os.path.join(outdir, "bug_37669785")
 tested_schema = "tested_schema"
@@ -4104,7 +4182,7 @@ session.run_sql("SET @@GLOBAL.log_bin_trust_function_creators = 1")
 shell.connect(test_user_uri(__mysql_sandbox_port2))
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "loadUsers": True, "showProgress": False }), "Load should not fail")
 
-#@<> BUG#37669785 - cleanup
+#@<> BUG#37669785 - cleanup  {not __server_is_maria_db} (8)
 shell.connect(__sandbox_uri1)
 session.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session.run_sql(f"DROP USER IF EXISTS {tested_user}")
@@ -4112,7 +4190,10 @@ session.run_sql(f"DROP USER IF EXISTS {tested_user}")
 shell.connect(__sandbox_uri2)
 session.run_sql("SET @@GLOBAL.log_bin_trust_function_creators = 0")
 
-#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {__dbug and VER(>=8.0.0)}
+#@<> BUG#38089433 - replace unsupported collations with closest compatible collation available in MySQL {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
+# MariaDB-only collations are the ones being replaced, and a MariaDB build knows
+# them (is_supported_collation() reads the linked charset table), so nothing is
+# replaced there - which is right, as the dump is loaded back into MariaDB
 # constants
 tested_schema = "test_schema"
 dump_dir = os.path.join(outdir, "bug_38089433")
@@ -4140,7 +4221,7 @@ session1.run_sql("CREATE EVENT !.e ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1
 # restore collations
 session1.run_sql("set names utf8mb4")
 
-#@<> BUG#38089433 - dump {__dbug and VER(>=8.0.0)}
+#@<> BUG#38089433 - dump {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 testutil.dbug_set("+d,dumper_unsupported_collation")
 
 shell.connect(__sandbox_uri1)
@@ -4174,7 +4255,7 @@ EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had DATABASE_CO
 EXPECT_STDOUT_CONTAINS(f"WARNING: Trigger `test_schema`.`t`.`tt` had COLLATION_CONNECTION set to '{unsupported_collation}', it has been replaced with '{supported_collation}'")
 
 
-#@<> BUG#38089433 - load {__dbug and VER(>=8.0.0)}
+#@<> BUG#38089433 - load {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 wipeout_server(session2)
 
 shell.connect(__sandbox_uri2)
@@ -4189,10 +4270,10 @@ session1.run_sql(f"CREATE TABLE !.t2 (c TEXT) COLLATE {supported_collation}", [ 
 
 EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session2, tested_schema), "Verifying schema")
 
-#@<> BUG#38089433 - cleanup {__dbug and VER(>=8.0.0)}
+#@<> BUG#38089433 - cleanup {__dbug and VER(>=8.0.0) and not __server_is_maria_db and not __mariadb_build} (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#37326937 - if the first load attempt failed with duplicate objects error, the second one should also fail
+#@<> BUG#37326937 - if the first load attempt failed with duplicate objects error, the second one should also fail (8)
 # constants
 tested_schema = "test_schema"
 tested_table = "test_table"
@@ -4212,7 +4293,7 @@ wipeout_server(session2)
 shell.connect(__sandbox_uri2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Load should not fail")
 
-#@<> BUG#37326937 - test
+#@<> BUG#37326937 - test (8)
 # remove progress file and load again, load fails due to duplicate objects
 testutil.rmfile(os.path.join(dump_dir, "load-progress*.json"))
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Duplicate objects found in destination database")
@@ -4220,10 +4301,10 @@ EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Dupl
 # load once again, load still fails for the same reason
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Duplicate objects found in destination database")
 
-#@<> BUG#37326937 - cleanup
+#@<> BUG#37326937 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
-#@<> BUG#38566495 - retrying a load with the 'dropExistingObjects' option enabled attempted to drop accounts created in the previous run {VER(>=8.2.0)}
+#@<> BUG#38566495 - retrying a load with the 'dropExistingObjects' option enabled attempted to drop accounts created in the previous run {VER(>=8.2.0)} (8)
 # constants
 tested_schema = "test_schema"
 tested_user = "'user'@'localhost'"
@@ -4244,31 +4325,38 @@ session2.run_sql(f"DROP USER IF EXISTS {test_user_account}")
 session2.run_sql(f"CREATE USER {test_user_account} IDENTIFIED BY ?", [test_user_pwd])
 session2.run_sql(f"GRANT ALL ON *.* TO {test_user_account} WITH GRANT OPTION")
 # without this privilege, if an account which is a definer would be dropped, DROP will error out instead
-session2.run_sql(f"REVOKE ALLOW_NONEXISTENT_DEFINER ON *.* FROM {test_user_account}")
+if not __server_is_maria_db:
+    session2.run_sql(f"REVOKE ALLOW_NONEXISTENT_DEFINER ON *.* FROM {test_user_account}")
 
 # create the dump
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [tested_schema], "users": True, "excludeUsers": ["root"], "showProgress": False }), "Dump should not fail")
 
-#@<> BUG#38566495 - test {VER(>=8.2.0)}
+#@<> BUG#38566495 - test {VER(>=8.2.0)} (8)
 shell.connect(test_user_uri(__mysql_sandbox_port2))
 
 # load twice, second load is going to resume the load, 'dropExistingObjects' should not cause accounts to be recreated
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "loadUsers": True, "showProgress": False }), "Load should not fail")
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "loadUsers": True, "showProgress": False }), "Load should not fail")
 
-#@<> BUG#38566495 - cleanup {VER(>=8.2.0)}
+#@<> BUG#38566495 - cleanup {VER(>=8.2.0)} (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> BUG#38624926 - when loading with 'handleGrantErrors':'ignore' apply as many privileges as possible {VER(>=8.0.0)}
+#@<> BUG#38624926 - when loading with 'handleGrantErrors':'ignore' apply as many privileges as possible {VER(>=8.0.0)} (8)
 # constants
 tested_schema = "test_schema"
 tested_user = "'user'@'localhost'"
 
 dump_dir = os.path.join(outdir, "bug_38624926")
 
-privileges = ["BACKUP_ADMIN", "BINLOG_ADMIN", "CONNECTION_ADMIN"]
+if __server_is_maria_db:
+    privileges = ["RELOAD", "PROCESS", "LOCK TABLES", "BINLOG MONITOR", "BINLOG ADMIN"]
+    separator = ", "
+else:
+    privileges = ["BACKUP_ADMIN", "BINLOG_ADMIN", "CONNECTION_ADMIN"]
+    separator = ","
+
 privileges_count = len(privileges)
 
 # setup
@@ -4290,7 +4378,7 @@ session2.run_sql(f"CREATE USER {test_user_account} IDENTIFIED BY ?", [test_user_
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_instance(dump_dir, { "includeSchemas": [tested_schema], "users": True, "includeUsers": [tested_user], "showProgress": False }), "Dump should not fail")
 
-#@<> BUG#38624926 - test {VER(>=8.0.0)}
+#@<> BUG#38624926 - test {VER(>=8.0.0)} (8)
 shell.connect(test_user_uri(__mysql_sandbox_port2))
 
 # for each privilege: user loading the dump is missing GRANT OPTION for that privilege
@@ -4308,21 +4396,27 @@ for i in range(privileges_count):
     WIPE_OUTPUT()
     WIPE_SHELL_LOG()
     EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "handleGrantErrors": "ignore", "loadUsers": True, "showProgress": False }), "Load should not fail")
-    EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation: GRANT {','.join(privileges)} ON *.* TO ")
+    if __server_is_maria_db:
+        EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1045 (28000): Access denied for user {test_user_account} (using password: YES): GRANT {separator.join(privileges)} ON *.* TO ")
+    else:
+        EXPECT_STDOUT_CONTAINS(f"WARNING: While applying grants to user accounts: MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation: GRANT {separator.join(privileges)} ON *.* TO ")
     EXPECT_STDOUT_CONTAINS("NOTE: The above error was ignored, applying privileges one by one.")
     for j in range(privileges_count):
         if i == j:
             EXPECT_STDOUT_CONTAINS(f"NOTE: Failed to apply {privileges[j]} privilege.")
-            EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation, SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
+            if __server_is_maria_db:
+                EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1045 (28000): Access denied for user {test_user_account} (using password: YES), SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
+            else:
+                EXPECT_SHELL_LOG_CONTAINS(f"MySQL Error 1227 (42000): Access denied; you need (at least one of) the GRANT OPTION privilege(s) for this operation, SQL: GRANT {privileges[j]}  ON *.* TO {get_user_account_for_output(tested_user)}")
         else:
             EXPECT_STDOUT_CONTAINS(f"NOTE: Successfully applied {privileges[j]} privilege.")
     EXPECT_STDOUT_CONTAINS("1 accounts were loaded, 1 GRANT statement errors were ignored")
 
-#@<> BUG#38624926 - cleanup {VER(>=8.0.0)}
+#@<> BUG#38624926 - cleanup {VER(>=8.0.0)} (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 session1.run_sql(f"DROP USER IF EXISTS {tested_user}")
 
-#@<> BUG#38907890 - allow tables with PKE-only if 'targetVersion' >= 9.7.0
+#@<> BUG#38907890 - allow tables with PKE-only if 'targetVersion' >= 9.7.0 {not __server_is_maria_db} (8)
 # constants
 tested_schema = "test_schema"
 tested_user = "'user'@'localhost'"
@@ -4339,7 +4433,7 @@ session1.run_sql("CREATE TABLE !.t2 (id INT NOT NULL AUTO_INCREMENT UNIQUE)", [t
 session1.run_sql("CREATE TABLE !.t3 (id INT)", [tested_schema])
 session1.run_sql("/*80030 SET @@SESSION.sql_generate_invisible_primary_key = ON */")
 
-#@<> BUG#38907890 - 'targetVersion' is 9.6.0, table with PKE is reported as an error
+#@<> BUG#38907890 - 'targetVersion' is 9.6.0, table with PKE is reported as an error {not __server_is_maria_db} (8)
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4348,7 +4442,7 @@ EXPECT_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "targetVers
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t2", False).error())
 EXPECT_STDOUT_CONTAINS(create_invisible_pks(tested_schema, "t3", False).error())
 
-#@<> BUG#38907890 - 'targetVersion' is 9.7.0, table with PKE is not reported as an error
+#@<> BUG#38907890 - 'targetVersion' is 9.7.0, table with PKE is not reported as an error {not __server_is_maria_db} (8)
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4378,7 +4472,7 @@ ERROR: One or more tables without Primary Keys were found.
          It will not be possible to load the dump in an HA enabled DB System instance.
 """)
 
-#@<> BUG#38907890 - 'targetVersion' defaults to mysqlsh version, PK errors are fixed
+#@<> BUG#38907890 - 'targetVersion' defaults to mysqlsh version, PK errors are fixed {not __server_is_maria_db} (8)
 wipe_dir(dump_dir)
 shell.connect(__sandbox_uri1)
 
@@ -4394,7 +4488,7 @@ NOTE: One or more tables without Primary Keys were found.
       Missing Primary Keys will be created automatically when this dump is loaded.
 """)
 
-#@<> BUG#38907890 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>=9.7.0)}
+#@<> BUG#38907890 - create a user which cannot change the sql_generate_invisible_primary_key variable {VER(>=9.7.0) and not __server_is_maria_db} (8)
 wipeout_server(session2)
 session2.run_sql("SET @@GLOBAL.sql_generate_invisible_primary_key = OFF")
 session2.run_sql("SET @@GLOBAL.sql_require_primary_key = ON")
@@ -4402,10 +4496,10 @@ session2.run_sql("CREATE USER IF NOT EXISTS admin@'%' IDENTIFIED BY 'pass'")
 session2.run_sql("GRANT ALL ON *.* TO admin@'%'")
 session2.run_sql("REVOKE SUPER,SYSTEM_VARIABLES_ADMIN,SESSION_VARIABLES_ADMIN ON *.* FROM admin@'%'")
 
-#@<> BUG#38907890 - connect as the created user {VER(>=9.7.0)}
+#@<> BUG#38907890 - connect as the created user {VER(>=9.7.0) and not __server_is_maria_db} (8)
 shell.connect("mysql://admin:pass@{0}:{1}".format(__host, __mysql_sandbox_port2))
 
-#@<> BUG#38907890 - load the dump, PKs should be created where applicable because dump was created with 'create_invisible_pks' {VER(>=9.7.0)}
+#@<> BUG#38907890 - load the dump, PKs should be created where applicable because dump was created with 'create_invisible_pks' {VER(>=9.7.0) and not __server_is_maria_db} (8)
 WIPE_SHELL_LOG()
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"showProgress": False}), "Load should not fail")
 EXPECT_SHELL_LOG_CONTAINS("The current user cannot set the 'sql_generate_invisible_primary_key' session variable")
@@ -4417,7 +4511,7 @@ EXPECT_FALSE(has_primary_key(tested_schema, "t2"))
 # PK is created
 EXPECT_TRUE(has_primary_key(tested_schema, "t3"))
 
-#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {__dbug and VER(>=9.7.0)}
+#@<> BUG#38907890 - load the dump with 'createInvisiblePKs':False, check the output {__dbug and VER(>=9.7.0) and not __server_is_maria_db} (8)
 testutil.dbug_set("+d,dump_loader_force_mds")
 
 EXPECT_THROWS(lambda: util.load_dump(dump_dir, {"createInvisiblePKs": False, "dropExistingObjects": True, "showProgress": False}), "sql_require_primary_key enabled at destination server")
@@ -4439,7 +4533,7 @@ You must do one of the following to be able to load this dump:
 - Disable the sql_require_primary_key sysvar at the server (note that the underlying reason for the option to be enabled may still prevent your database from functioning properly)
 """)
 
-#@<> BUG#38907890 - cleanup
+#@<> BUG#38907890 - cleanup {not __server_is_maria_db} (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
 
 if __version_num >= 90700:
@@ -4447,7 +4541,7 @@ if __version_num >= 90700:
     session2.run_sql("SET @@GLOBAL.sql_require_primary_key = OFF")
     session2.run_sql("DROP USER IF EXISTS admin@'%'")
 
-#@<> BUG#38945132 - load a view which uses an index with 'deferTableIndexes':'all'
+#@<> BUG#38945132 - load a view which uses an index with 'deferTableIndexes':'all' (8)
 # constants
 tested_schema = "test_38945132"
 tested_table = "t1"
@@ -4460,7 +4554,7 @@ session1.run_sql("CREATE SCHEMA !", [tested_schema])
 session1.run_sql("CREATE TABLE !.! (`a1` int NOT NULL AUTO_INCREMENT, `a2` int, PRIMARY KEY (`a1`), KEY `a2` (`a2`))", [tested_schema, tested_table])
 session1.run_sql("CREATE VIEW !.v1 AS SELECT a1, a2 FROM !.! USE INDEX (a2);", [tested_schema, tested_schema, tested_table])
 
-#@<> BUG#38945132 - test
+#@<> BUG#38945132 - test (8)
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "showProgress": False }), "Dump should not fail")
 
@@ -4471,8 +4565,82 @@ EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, {"deferTableIndexes": "all", "
 
 EXPECT_JSON_EQ(snapshot_schema(session1, tested_schema), snapshot_schema(session2, tested_schema), "Verifying schemas")
 
-#@<> BUG#38945132 - cleanup
+#@<> BUG#38945132 - cleanup (8)
 session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+
+#@<> MERGE tables are dumped without their data - setup (8)
+# A MERGE table holds no rows of its own, it is a union of MyISAM tables which
+# are dumped themselves. Loading its rows would write them back through the
+# engine: INSERT_METHOD=LAST duplicates the last table's rows, INSERT_METHOD=NO
+# refuses the load with 1036 "Table is read only".
+# mysqldump and mariadb-dump never dump the data of such engines.
+tested_schema = "test_merge"
+dump_dir = os.path.join(outdir, "merge_tables")
+merge_engine = "MRG_MyISAM" if __server_is_maria_db else "MRG_MYISAM"
+
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+session1.run_sql("CREATE TABLE !.m1 (id INT NOT NULL, KEY (id)) ENGINE=MyISAM", [tested_schema])
+session1.run_sql("CREATE TABLE !.m2 (id INT NOT NULL, KEY (id)) ENGINE=MyISAM", [tested_schema])
+session1.run_sql("INSERT INTO !.m1 VALUES (1), (2), (3)", [tested_schema])
+session1.run_sql("INSERT INTO !.m2 VALUES (10), (20)", [tested_schema])
+session1.run_sql(f"CREATE TABLE !.u_last (id INT NOT NULL, KEY (id)) ENGINE=MERGE UNION=({tested_schema}.m1, {tested_schema}.m2) INSERT_METHOD=LAST", [tested_schema])
+session1.run_sql(f"CREATE TABLE !.u_no (id INT NOT NULL, KEY (id)) ENGINE=MERGE UNION=({tested_schema}.m1, {tested_schema}.m2) INSERT_METHOD=NO", [tested_schema])
+
+#@<> MERGE tables are dumped without their data - test (8)
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "showProgress": False }), "Dump should not fail")
+for table in ["u_last", "u_no"]:
+    EXPECT_STDOUT_CONTAINS(f"NOTE: Table `{tested_schema}`.`{table}` uses the {merge_engine} engine, which holds no data of its own: only its definition is dumped.")
+    EXPECT_EQ([], [f for f in os.listdir(dump_dir) if f.startswith(f"{tested_schema}@{table}@") and ".tsv" in f], table)
+    with open(os.path.join(dump_dir, f"{tested_schema}@{table}.json"), encoding="utf-8") as f:
+        EXPECT_FALSE(json.load(f)["includesData"], table)
+
+wipeout_server(session2)
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "showProgress": False }), "Load should not fail")
+for table, rows in [("m1", 3), ("m2", 2), ("u_last", 5), ("u_no", 5)]:
+    EXPECT_EQ(rows, session2.run_sql("SELECT COUNT(*) FROM !.!", [tested_schema, table]).fetch_one()[0], table)
+
+# exportTable reads the rows it was asked for, through the engine
+export_file = os.path.join(outdir, "merge_export.tsv")
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.export_table(f"{tested_schema}.u_last", export_file, { "showProgress": False }), "Export should not fail")
+with open(export_file, encoding="utf-8") as f:
+    EXPECT_EQ(5, len(f.read().splitlines()))
+
+#@<> MERGE tables are dumped without their data - cleanup (8)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+wipeout_server(session2)
+
+#@<> WITHOUT OVERLAPS table loaded in parallel - setup {__server_is_maria_db} (8)
+# Concurrent loads into one table with a UNIQUE ... WITHOUT OVERLAPS key
+# deadlock on that index almost every time, and the victim comes back as error
+# 4060, which aborted the load - its chunks must be loaded one at a time. See
+# MARIADB_DUMP_LOAD.md section 7.2.
+tested_schema = "test_without_overlaps"
+dump_dir = os.path.join(outdir, "without_overlaps")
+
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+session1.run_sql("CREATE SCHEMA !", [tested_schema])
+session1.run_sql("CREATE TABLE !.t (id INT, s DATE, e DATE, v VARCHAR(200), PERIOD FOR p(s, e), UNIQUE (id, p WITHOUT OVERLAPS))", [tested_schema])
+session1.run_sql("INSERT INTO !.t SELECT seq, '2020-01-01', '2020-12-31', REPEAT('x', 150) FROM !.seq_1_to_60000", [tested_schema, tested_schema])
+
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.dump_schemas([tested_schema], dump_dir, { "bytesPerChunk": "128k", "showProgress": False }), "Dump should not fail")
+
+#@<> WITHOUT OVERLAPS table loaded in parallel - test {__server_is_maria_db} (8)
+shell.connect(__sandbox_uri2)
+
+# the deadlock is timing dependent, so load more than once
+for attempt in range(3):
+    wipeout_server(session2)
+    EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "threads": 8, "resetProgress": True, "showProgress": False }), f"Load #{attempt + 1} should not fail")
+    EXPECT_EQ(60000, session2.run_sql("SELECT COUNT(*) FROM !.t", [tested_schema]).fetch_one()[0], f"rows after load #{attempt + 1}")
+
+#@<> WITHOUT OVERLAPS table loaded in parallel - cleanup {__server_is_maria_db} (8)
+session1.run_sql("DROP SCHEMA IF EXISTS !", [tested_schema])
+wipeout_server(session2)
 
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)

@@ -36,6 +36,7 @@
 #include <utility>
 
 #include "modules/adminapi/common/server_features.h"
+#include "modules/util/common/dump/server_features.h"
 #include "mysqlshdk/libs/textui/textui.h"
 #include "mysqlshdk/shellcore/shell_console.h"
 #include "shellcore/interrupt_handler.h"
@@ -1823,6 +1824,21 @@ void Shell_script_tester::set_defaults() {
                          mysqlshdk::utils::k_shell_version.numeric());
   exec_and_out_equals(code);
 
+  // The newest server version this Shell understands. The Shell and MySQL share
+  // a version scale, so for a MySQL server that is the Shell's own version; a
+  // MariaDB server is measured against the MariaDB version this build was made
+  // from instead (MARIADB_DUMP_LOAD.md section 2.4), which is what the
+  // 'targetVersion' option is validated against.
+  code = shcore::str_format(
+      "%s__build_server_version = '%s'", var_prefix.c_str(),
+      mysqlshdk::utils::k_build_server_version.get_base().c_str());
+  exec_and_out_equals(code);
+
+  code = shcore::str_format("%s__build_server_version_num = %" PRIu32,
+                            var_prefix.c_str(),
+                            mysqlshdk::utils::k_build_server_version.numeric());
+  exec_and_out_equals(code);
+
   code = shcore::str_format("%s__version = '%s'", var_prefix.c_str(),
                             _target_server_version.get_base().c_str());
   exec_and_out_equals(code);
@@ -1841,6 +1857,18 @@ void Shell_script_tester::set_defaults() {
   // "has what MySQL 8.0 has". Keyed on the server and not on __mariadb_build,
   // since a Shell built against either vendor can be pointed at either server.
   def_bool_var("__server_is_maria_db", target_server_is_maria_db());
+
+  // Single source of truth for the dump/load "does this server support X"
+  // questions below - reuse this instead of re-deriving them from
+  // __version_num, which is not on the same scale for MariaDB.
+  const auto target_server = mysqlsh::dump::common::server_version(
+      _target_server_version, target_server_is_maria_db());
+
+  // Whether the dumper can use a MySQL 8+ optimizer hint
+  // (/*+ SET_VAR(...) */) instead of falling back to SQL_NO_CACHE - see
+  // common::supports_optimizer_hints().
+  def_bool_var("__server_supports_optimizer_hints",
+               mysqlsh::dump::common::supports_optimizer_hints(target_server));
 
   // Set terminology related variables
   if (version_num > 80025) {
@@ -1905,10 +1933,10 @@ void Shell_script_tester::set_defaults() {
   def_bool_var("__have_upgrade_checker", false);
 #endif
 
-#ifdef HAVE_DUMP_AND_LOAD
-  def_bool_var("__have_dump_and_load", true);
+#ifdef HAVE_BINLOG_UTILS
+  def_bool_var("__have_binlog_utils", true);
 #else
-  def_bool_var("__have_dump_and_load", false);
+  def_bool_var("__have_binlog_utils", false);
 #endif
 
   def_var("__user_config_path",

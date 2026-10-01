@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -923,6 +924,12 @@ std::string_view to_string(Compatibility_issue::Object_type object) {
 
     case Compatibility_issue::Object_type::PROCEDURE:
       return "procedure";
+
+    case Compatibility_issue::Object_type::PACKAGE_SPEC:
+      return "package";
+
+    case Compatibility_issue::Object_type::PACKAGE_BODY:
+      return "package body";
 
     case Compatibility_issue::Object_type::PARAMETER:
       return "parameter";

@@ -43,6 +43,11 @@ constexpr const char k_shell_binary_name[] = "mariadb-shell";
 constexpr const char k_shell_vendor_name[] = "MariaDB";
 
 /**
+ * Display name of this shell, for messages shown to the user.
+ */
+constexpr const char k_shell_product_name[] = "MariaDB Shell";
+
+/**
  * Leaf name of the per-user configuration directory, as created directly under
  * $HOME on Unix (i.e. "~/.mariadb-shell").
  */

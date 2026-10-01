@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -91,8 +92,9 @@ off64_t Allocated_file::seek(off64_t offset) {
 
   m_offset = new_offset;
   m_reading_from_beginning =
-      m_offset == m_bytes_consumed ||
-      (m_consume_if_first && m_offset < m_bytes_consumed + m_block_size);
+      !m_retain_data &&
+      (m_offset == m_bytes_consumed ||
+       (m_consume_if_first && m_offset < m_bytes_consumed + m_block_size));
 
   return tell();
 }

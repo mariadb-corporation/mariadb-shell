@@ -41,6 +41,7 @@ using off64_t = off_t;
 #endif
 
 #include <mysql.h>
+#include <mysqld_error.h>  // ER_LOCK_DEADLOCK
 #ifdef MARIADB_BUILD
 #include <errmsg.h>  // CR_* client error codes
 #endif
@@ -53,6 +54,8 @@ using off64_t = off_t;
 #include <type_traits>
 #include <utility>
 
+#include "modules/util/common/dump/server_features.h"
+#include "modules/util/common/dump/server_info.h"
 #include "modules/util/import_table/helpers.h"
 #include "mysqlshdk/include/scripting/types.h"
 #include "mysqlshdk/include/shellcore/console.h"
@@ -143,9 +146,53 @@ void Transaction_buffer::flush_done(bool *out_has_more_data) {
   m_trx_end_offset = 0;
   m_partial_row_sent = false;
   m_oversized_rows = 0;
+  // the counters are per transaction, so an oversized row spanning two of them is
+  // reported in each - as it was before, when the report came from the size of a
+  // single read
+  m_oversized_row_counted = false;
 
   *out_has_more_data =
       m_options.max_trx_size > 0 && (!m_eof || !m_data.empty());
+}
+
+void Transaction_buffer::mark_retry_point() {
+  m_retry_point_valid = false;
+
+  if (m_options.fast_sub_chunking) {
+    // fed by a live producer (Synchronized_file), nothing to seek back to
+    return;
+  }
+
+  try {
+    m_retry_offset = m_file->tell() - static_cast<off64_t>(m_data.size());
+    m_retry_point_valid = true;
+  } catch (const std::exception &) {
+    // tell() unsupported; try_rewind_for_retry() will simply refuse to retry
+  }
+}
+
+bool Transaction_buffer::try_rewind_for_retry() {
+  if (!m_retry_point_valid) {
+    return false;
+  }
+
+  try {
+    m_file->seek(m_retry_offset);
+  } catch (const std::exception &) {
+    // not seekable (e.g. a streamed/compressed source, or a memory-reclaiming
+    // buffer whose already-consumed bytes no longer exist); can't retry safely
+    return false;
+  }
+
+  m_data.clear();
+  m_trx_size = 0;
+  m_trx_end_offset = 0;
+  m_partial_row_sent = false;
+  m_oversized_rows = 0;
+  m_oversized_row_counted = false;
+  m_eof = false;
+
+  return true;
 }
 
 bool Transaction_buffer::flush_pending() const {
@@ -173,17 +220,6 @@ int Transaction_buffer::consume(char *buffer, unsigned int length) {
     }
 
     m_trx_size += length;
-
-    if (length > m_options.max_trx_size) {
-      // in a single read, we got more bytes than the transaction limit, either
-      // we have the whole row in the buffer and its end is past the limit or
-      // end was not found in the buffer
-      ++m_oversized_rows;
-
-      if (m_on_oversized_row) {
-        m_on_oversized_row(m_oversized_rows);
-      }
-    }
   }
 
   return length;
@@ -267,6 +303,10 @@ retry:
         }
       }
 
+      // whichever way this ends, the row being sent reaches past the transaction
+      // limit while no earlier row is left to flush: it is longer than the limit
+      mark_oversized_row();
+
       auto row_end = (this->*find_first_row_boundary_after)();
       if (row_end > 0) {
         // we found EOR, send the rest of the row and flush
@@ -286,6 +326,7 @@ retry:
       if (last_row_end > 0) {
         // EOR found, if we sent a partial row, it's complete now
         m_partial_row_sent = false;
+        m_oversized_row_counted = false;
 
         return consume(buffer, last_row_end);
       }
@@ -676,9 +717,33 @@ void Load_data_worker::init_session(
 
   // BUG#34173126, BUG#33360787 - loading when global auto-commit is OFF fails
   execute("SET autocommit = 1");
+  const bool is_maria_db =
+      mysqlshdk::db::ServerVendor::MariaDB == session->get_server_vendor();
+
   // set session variables
-  execute("SET unique_checks = 0");
+  // MariaDB loads into an empty table with InnoDB's bulk insert when both
+  // checks are off, and that path does not honour IGNORE: a duplicate row
+  // silently discards other rows, up to the whole statement, with no error or
+  // warning (MDEV-31985). REPLACE is handled correctly, so unique checks stay
+  // on only when duplicates are ignored. See MARIADB_PORT.md section 13.5.
+  if (!is_maria_db ||
+      Duplicate_handling::Replace == options.duplicate_handling()) {
+    execute("SET unique_checks = 0");
+  }
+
   execute("SET foreign_key_checks = 0");
+
+  // MariaDB expresses "this CHECK constraint is not enforced" as a session
+  // variable rather than as part of the constraint, so imported data which the
+  // table's own DDL rejects needs it off - which is what mariadb-import does
+  // for every import. Both accessors read cached handshake data, so this costs
+  // no round trip. See MARIADB_DUMP_LOAD.md section 5.2.
+  if (dump::common::supports_check_constraint_checks(
+          dump::common::server_version(session->get_server_version(),
+                                       is_maria_db))) {
+    execute("SET check_constraint_checks = 0");
+  }
+
   execute("SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
 
   try {
@@ -930,51 +995,105 @@ void Load_data_worker::execute(
         }
       });
 
-      try {
-        session->set_local_infile_userdata(static_cast<void *>(&fi));
-        session->set_local_infile_init(local_infile_init);
-        session->set_local_infile_read(local_infile_read);
-        session->set_local_infile_end(local_infile_end);
-        session->set_local_infile_error(local_infile_error);
+      // A deadlock between two worker threads loading into the same table
+      // concurrently rolls the whole LOAD DATA statement back atomically, so
+      // retrying it from the same starting point is always safe - nothing
+      // from this attempt was committed. Bounded and backed off the same way
+      // Dump_loader::execute_statement() retries a deadlocked statement.
+      constexpr uint32_t k_max_deadlock_retry_time_ms = 30000;
+      uint32_t deadlock_sleep_time_ms = 200;
+      uint32_t deadlock_total_sleep_time_ms = 0;
 
-        const shcore::on_leave_scope restore_local_infile{
-            [&session]() { session->reject_local_infile(); }};
+      fi.buffer.mark_retry_point();
+      // a range read also counts down the bytes left in its range, a retry has
+      // to send the whole range again
+      const auto retry_bytes_left = fi.bytes_left;
 
-        set_state(Thread_state::READING);
-        fi.buffer.before_query();
-        load_result = query(m_query_comment + full_query);
-        set_state(Thread_state::IDLE);
-        fi.buffer.flush_done(&fi.continuation);
-        m_load_stats->data_bytes += fi.data_bytes;
-        m_load_stats->file_bytes += fi.file_bytes;
+      while (true) {
+        try {
+          session->set_local_infile_userdata(static_cast<void *>(&fi));
+          session->set_local_infile_init(local_infile_init);
+          session->set_local_infile_read(local_infile_read);
+          session->set_local_infile_end(local_infile_end);
+          session->set_local_infile_error(local_infile_error);
 
-        if (!fi.continuation) {
-          // increase the counter only when there are no more subchunks
-          ++m_load_stats->files_processed;
+          const shcore::on_leave_scope restore_local_infile{
+              [&session]() { session->reject_local_infile(); }};
+
+          set_state(Thread_state::READING);
+          fi.buffer.before_query();
+          load_result = query(m_query_comment + full_query);
+          set_state(Thread_state::IDLE);
+          fi.buffer.flush_done(&fi.continuation);
+          m_load_stats->data_bytes += fi.data_bytes;
+          m_load_stats->file_bytes += fi.file_bytes;
+
+          if (!fi.continuation) {
+            // increase the counter only when there are no more subchunks
+            ++m_load_stats->files_processed;
+          }
+
+          break;
+        } catch (const mysqlshdk::db::Error &e) {
+          if (mysqlsh::dump::common::is_rolled_back_deadlock(
+                  e.code(), session->get_server_vendor()) &&
+              deadlock_total_sleep_time_ms < k_max_deadlock_retry_time_ms &&
+              fi.buffer.try_rewind_for_retry()) {
+            mysqlsh::current_console()->print_note(format_error_message(
+                (ER_LOCK_DEADLOCK == e.code()
+                     ? "Deadlock found when trying to get lock, will retry: "
+                     : "The transaction was rolled back by the server, will "
+                       "retry: ") +
+                e.format()));
+
+            if (deadlock_total_sleep_time_ms + deadlock_sleep_time_ms >
+                k_max_deadlock_retry_time_ms) {
+              deadlock_sleep_time_ms =
+                  k_max_deadlock_retry_time_ms - deadlock_total_sleep_time_ms;
+            }
+
+            fi.bytes_left = retry_bytes_left;
+            // the rolled back attempt was already counted by the progress,
+            // local_infile_init() resets the per-attempt counters
+            *fi.prog_data_bytes -= fi.data_bytes;
+            *fi.prog_file_bytes -= fi.file_bytes;
+
+            shcore::sleep_ms(deadlock_sleep_time_ms);
+            deadlock_total_sleep_time_ms += deadlock_sleep_time_ms;
+            deadlock_sleep_time_ms *= 2;
+            continue;
+          }
+
+          handle_exception();
+          const auto error_msg = format_error_message(e.format(), full_query);
+          mysqlsh::current_console()->print_error(error_msg);
+
+          if (fi.buffer.oversized_rows()) {
+            mysqlsh::current_console()->print_note(format_error_message(
+                "This error has been reported for a sub-chunk which has at "
+                "least one row longer than maxBytesPerTransaction (" +
+                std::to_string(options.max_trx_size) + " bytes)."));
+          }
+
+          throw std::runtime_error(error_msg);
+        } catch (const mysqlshdk::rest::Connection_error &e) {
+          handle_exception();
+          const auto error_msg = format_error_message(e.what());
+          mysqlsh::current_console()->print_error(error_msg);
+          throw std::runtime_error(error_msg);
+        } catch (const std::exception &e) {
+          handle_exception();
+          const auto error_msg = format_error_message(e.what());
+          mysqlsh::current_console()->print_error(error_msg);
+          throw std::exception(e);
         }
-      } catch (const mysqlshdk::db::Error &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.format(), full_query);
-        mysqlsh::current_console()->print_error(error_msg);
+      }
 
-        if (fi.buffer.oversized_rows()) {
-          mysqlsh::current_console()->print_note(format_error_message(
-              "This error has been reported for a sub-chunk which has at least "
-              "one row longer than maxBytesPerTransaction (" +
-              std::to_string(options.max_trx_size) + " bytes)."));
-        }
-
-        throw std::runtime_error(error_msg);
-      } catch (const mysqlshdk::rest::Connection_error &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.what());
-        mysqlsh::current_console()->print_error(error_msg);
-        throw std::runtime_error(error_msg);
-      } catch (const std::exception &e) {
-        handle_exception();
-        const auto error_msg = format_error_message(e.what());
-        mysqlsh::current_console()->print_error(error_msg);
-        throw std::exception(e);
+      if (fi.range_read && !fi.continuation) {
+        // the range is loaded and won't be resent, release it now instead of
+        // when the next one is fetched - an in-memory chunk keeps its data
+        // until it's destroyed
+        fi.filehandler.reset();
       }
 
       const auto warnings_num =

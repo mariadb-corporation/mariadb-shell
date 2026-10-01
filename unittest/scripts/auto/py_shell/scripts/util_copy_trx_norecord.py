@@ -123,7 +123,14 @@ TEST_LOAD(trx_size_limit*3, trx_size_limit)
 #@<> net_buffer > trx_limit 3
 TEST_LOAD(trx_size_limit*4, trx_size_limit*2)
 
-EXPECT_SHELL_LOG_CONTAINS("testdb@data0.tsv: Records: 1  Deleted: 0  Skipped: 0  Warnings: 0 - loading finished in 9 sub-chunks")
+# data0 splits into one more sub-chunk when linked against libmariadb: it hands
+# the LOAD DATA LOCAL read callback a fixed 4096-byte buffer (ma_loaddata.c),
+# while libmysqlclient sizes that buffer from the connection's net buffer
+# (MY_ALIGN(net.max_packet - 16, IO_SIZE), libmysql.cc). data0's rows are crafted
+# to sit exactly on the transaction limit, so the smaller reads put one of them
+# into a sub-chunk of its own. Which client library is linked is a property of
+# the build, not of the server. The data itself is checksummed in TEST_LOAD.
+EXPECT_SHELL_LOG_CONTAINS(f"testdb@data0.tsv: Records: 1  Deleted: 0  Skipped: 0  Warnings: 0 - loading finished in {10 if __mariadb_build else 9} sub-chunks")
 EXPECT_SHELL_LOG_CONTAINS("testdb@data1.tsv: Records: 1  Deleted: 0  Skipped: 0  Warnings: 0 - loading finished in 9 sub-chunks")
 EXPECT_SHELL_LOG_CONTAINS("testdb@data2.tsv: Records: 382  Deleted: 0  Skipped: 0  Warnings: 0 - loading finished in 14 sub-chunks")
 EXPECT_SHELL_LOG_CONTAINS("testdb@data3.tsv: Records: 5  Deleted: 0  Skipped: 0  Warnings: 0")

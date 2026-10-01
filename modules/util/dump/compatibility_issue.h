@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2025, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -92,6 +93,10 @@ struct Compatibility_issue {
     COLUMN,
     FUNCTION,
     PROCEDURE,
+    // MariaDB only, Oracle-mode packages. PACKAGE alone cannot be used here,
+    // the server headers define it as a macro
+    PACKAGE_SPEC,
+    PACKAGE_BODY,
     PARAMETER,
     RETURN_VALUE,
     EVENT,

@@ -134,6 +134,13 @@ struct Instance_cache {
     std::vector<Partition> partitions;
     bool is_innodb_vector_store_table = false;
     bool has_masking_policy = false;
+    // MariaDB, I_S.TABLES reports TABLE_TYPE='SYSTEM VERSIONED' - the table
+    // keeps superseded row versions of its own
+    bool system_versioned = false;
+    // MariaDB, I_S.KEY_PERIOD_USAGE - a unique constraint declared WITHOUT
+    // OVERLAPS over an application-time period, which makes the table refuse
+    // REPLACE
+    bool period_unique_key = false;
   };
 
   struct View : public Table {
@@ -169,6 +176,15 @@ struct Instance_cache {
     std::unordered_map<std::string, Routine> functions;
     std::unordered_map<std::string, Routine> procedures;
     std::unordered_set<std::string> libraries;
+    // MariaDB only, Oracle-mode packages. They are routines - I_S.ROUTINES
+    // reports them and the routine filters select them - but they have their
+    // own namespace, so a package and a function may share a name, and they
+    // take no parameters of their own
+    std::unordered_set<std::string> packages;
+    std::unordered_set<std::string> package_bodies;
+    // MariaDB only, sequences share the table namespace and are filtered as
+    // tables, but they hold no data of their own
+    std::unordered_set<std::string> sequences;
   };
 
   struct Stats {
@@ -178,6 +194,7 @@ struct Instance_cache {
     uint64_t events = 0;
     uint64_t routines = 0;
     uint64_t libraries = 0;
+    uint64_t sequences = 0;
     uint64_t triggers = 0;
     uint64_t users = 0;
   };
@@ -250,6 +267,12 @@ class Instance_cache_builder final {
   using Iterate_schema = mysqlshdk::db::Iterate_schema;
   using Iterate_table = mysqlshdk::db::Iterate_table;
 
+  // schema -> table (or view) -> ordinal position -> column
+  using Column_map = std::unordered_map<
+      std::string,
+      std::unordered_map<std::string,
+                         std::map<uint64_t, Instance_cache::Column>>>;
+
   void filter_schemas();
 
   void filter_tables();
@@ -265,6 +288,8 @@ class Instance_cache_builder final {
   void fetch_view_metadata();
 
   void fetch_columns();
+
+  void fetch_json_check_constraints(Column_map *table_columns);
 
   void fetch_table_indexes();
 
@@ -356,8 +381,14 @@ class Instance_cache_builder final {
 
   std::vector<shcore::Account> fetch_roles() const;
 
+  void add_granted_roles();
+
+  void fetch_period_unique_keys();
+
   std::vector<shcore::Account> fetch_users(const std::string &select,
                                            const std::string &where) const;
+
+  uint64_t count_users() const;
 
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
 

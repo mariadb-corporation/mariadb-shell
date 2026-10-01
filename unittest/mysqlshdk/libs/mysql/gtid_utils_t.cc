@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -37,7 +38,17 @@ class Gtid_utils : public tests::Shell_test_env {
  public:
 };
 
+// Gtid_set is MySQL's uuid:N-M model, and its operations run on the server
+// (GTID_SUBTRACT() and friends), which a MariaDB server does not have - see
+// mariadb_gtid_t.cc for its counterpart
+#define SKIP_ON_MARIADB_SERVER()                           \
+  if (target_server_is_maria_db()) {                       \
+    SKIP_TEST("This test requires running against MySQL"); \
+  }
+
 TEST_F(Gtid_utils, gtid_set_basics) {
+  SKIP_ON_MARIADB_SERVER();
+
   Gtid_set gs1;
   Gtid_set gs2_r(Gtid_range{"8b8dc2ba-8803-11eb-af3d-a1178d81dccc", {}, 1, 43});
   Gtid_set gs2_s(
@@ -49,6 +60,7 @@ TEST_F(Gtid_utils, gtid_set_basics) {
   Gtid_set gs6(Gtid_set::from_string(
       "8b8dc2ba-8803-11eb-af3d-a1178d81dccc:1-43:45-50:99"));
 
+#ifdef HAVE_ADMIN_API
   {
     auto session = std::make_shared<testing::Mock_mysql_session>();
     mysqlshdk::mysql::Instance server(session);
@@ -78,6 +90,7 @@ TEST_F(Gtid_utils, gtid_set_basics) {
     gs = Gtid_set::from_received_transaction_set(server, "channel");
     EXPECT_EQ("8b8dc2ba-8803-11eb-af3d-a1178d81dccc:xpto:10", gs.str());
   }
+#endif  // HAVE_ADMIN_API
 
   EXPECT_THROW(gs2_s.count(), std::invalid_argument);
 
@@ -129,6 +142,8 @@ TEST_F(Gtid_utils, gtid_set_basics) {
 }
 
 TEST_F(Gtid_utils, gtid_set_basics_tag_support) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
   mysqlshdk::mysql::Instance server(session);
@@ -202,6 +217,8 @@ TEST_F(Gtid_utils, gtid_set_basics_tag_support) {
 }
 
 TEST_F(Gtid_utils, gtid_set_ops) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
 
@@ -318,6 +335,8 @@ TEST_F(Gtid_utils, gtid_set_ops) {
 }
 
 TEST_F(Gtid_utils, gtid_set_ops_tag_support) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
   mysqlshdk::mysql::Instance server(session);
@@ -454,6 +473,8 @@ TEST_F(Gtid_utils, gtid_set_ops_tag_support) {
 }
 
 TEST_F(Gtid_utils, gtid_set_enumerate) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
 
@@ -505,6 +526,8 @@ TEST_F(Gtid_utils, gtid_set_enumerate) {
 }
 
 TEST_F(Gtid_utils, gtid_set_enumerate_tag_support) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
   mysqlshdk::mysql::Instance server(session);
@@ -578,6 +601,8 @@ TEST_F(Gtid_utils, gtid_set_enumerate_tag_support) {
 }
 
 TEST_F(Gtid_utils, gtid_set_enumerate_ranges) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
 
@@ -641,6 +666,8 @@ TEST_F(Gtid_utils, gtid_set_enumerate_ranges) {
 }
 
 TEST_F(Gtid_utils, gtid_set_enumerate_ranges_tag_support) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
   mysqlshdk::mysql::Instance server(session);
@@ -686,6 +713,8 @@ TEST_F(Gtid_utils, gtid_set_enumerate_ranges_tag_support) {
 }
 
 TEST_F(Gtid_utils, subtract_view_changes) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
 
@@ -709,6 +738,8 @@ TEST_F(Gtid_utils, subtract_view_changes) {
 }
 
 TEST_F(Gtid_utils, subtract_view_changes_tag_support) {
+  SKIP_ON_MARIADB_SERVER();
+
   auto session = db::mysql::Session::create();
   session->connect(db::Connection_options(_mysql_uri));
   mysqlshdk::mysql::Instance server(session);

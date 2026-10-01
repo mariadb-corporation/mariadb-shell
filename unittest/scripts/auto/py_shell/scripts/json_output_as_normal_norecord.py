@@ -1,4 +1,4 @@
-#@ {VER(>=8.0.27) and __have_dump_and_load}
+#@ {VER(>=8.0.27)}
 #@<> Initialization
 import os
 import json
@@ -10,6 +10,14 @@ def callMysqlsh(additional_args):
 def rmdir(path):
     if os.path.exists(path):
         testutil.rmdir(path, True)
+
+# the dump warns about a server from a newer minor release than the version it
+# measures itself against: the MariaDB version this Shell was built from for
+# MariaDB, the Shell's own for MySQL
+def major_minor(version):
+    return tuple(int(part) for part in version.split(".")[:2])
+
+server_newer_than_shell = major_minor(__version) > major_minor(__build_server_version if __server_is_maria_db else __mysh_version)
 
 
 testutil.deploy_sandbox(__mysql_sandbox_port1, 'root')
