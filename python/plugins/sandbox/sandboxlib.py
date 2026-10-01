@@ -97,6 +97,17 @@ _BOILERPLATE_PREFIX = "myboilerplate"
 # deployments sharing the directory are safe.
 BOILERPLATE_DIR_ENV = "MARIADB_SANDBOX_BOILERPLATE_DIR"
 
+# Environment variable that, when set to a non-empty value, deploys MariaDB
+# sandboxes with 'debug-no-sync': the server skips every mysys my_sync() call.
+# On macOS that call is fcntl(F_FULLFSYNC), a full drive cache flush serialized
+# across processes, issued several times per DDL statement (.frm, DDL log,
+# backup log), so parallel test workers queue behind each other's syncs. InnoDB
+# syncs its own files and is unaffected, but the rest of the instance is no
+# longer safe against an OS crash or power loss, so this is meant for test runs
+# only (such as scripts/run_unit_tests.py). MySQL has no such option, and its
+# my_sync() is a plain fsync(), so it is left alone.
+NO_SYNC_ENV = "MARIADB_SANDBOX_NO_SYNC"
+
 # InnoDB sizing applied both when bootstrapping the boilerplate and in every
 # sandbox's option file. Keeping the system tablespace and redo log small makes
 # the per-sandbox copy of the data directory cheap. These MUST stay consistent
@@ -1263,7 +1274,8 @@ def _write_scripts(sandbox_dir, port, mariadbd):
 
 
 def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
-                       innodb_opts, ssl_files=None, disable_ssl=False):
+                       innodb_opts, ssl_files=None, disable_ssl=False,
+                       no_sync=False):
     """Build the option file for a raw (plain) MariaDB sandbox instance.
 
     No replication/GTID configuration is written: these are simple standalone
@@ -1322,6 +1334,10 @@ def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
         # to be turned off explicitly or the server won't start. (Only applied
         # for MariaDB; MySQL auto-generates its own certs and starts fine.)
         mysqld["skip_ssl"] = None
+
+    # See NO_SYNC_ENV. Before the overrides, which can still turn it back off.
+    if no_sync:
+        mysqld["debug_no_sync"] = None
 
     if overrides:
         if "port" in overrides:
@@ -1623,7 +1639,9 @@ def create_sandbox(port, options):
         cnf_path,
         _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
                            innodb_opts, ssl_files,
-                           disable_ssl=(not ssl and vendor == _VENDOR_MARIADB)))
+                           disable_ssl=(not ssl and vendor == _VENDOR_MARIADB),
+                           no_sync=(vendor == _VENDOR_MARIADB
+                                    and bool(os.environ.get(NO_SYNC_ENV)))))
     _write_scripts(sandbox_dir, port, mariadbd)
     # Record the vendor and version so later operations can report them.
     _write_vendor(sandbox_dir, vendor)

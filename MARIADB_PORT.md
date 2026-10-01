@@ -1207,6 +1207,14 @@ normally just reads `shell.options["sandboxDir"]`, but
 as a fallback for when the option is unavailable (unit tests, plugin loaded
 outside the shell) — **the two must be changed together.**
 
+The boilerplates, the bootstrapped data directories every deployment is copied
+from, live under the sandbox directory too, unless the
+`MARIADB_SANDBOX_BOILERPLATE_DIR` environment variable names another one
+(`_boilerplate_base()`). `scripts/run_unit_tests.py` builds one boilerplate per
+run under its logs dir before any worker starts and points every sandbox call and
+test process at it. Each test process has its own `TMPDIR`, which is its sandbox
+directory, so otherwise every process would run `mariadb-install-db` again.
+
 This is not a compatibility-preserving change: sandboxes deployed by an older
 build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed
 or found by `mariadbSandbox.*` unless the old path is passed explicitly
