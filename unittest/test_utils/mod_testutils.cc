@@ -26,8 +26,10 @@
 
 #include "unittest/test_utils/mod_testutils.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <regex>
 #include <system_error>
@@ -69,6 +71,7 @@
 #include "mysqlshdk/libs/utils/syslog_system.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_mysql_parsing.h"
 #include "mysqlshdk/libs/utils/utils_net.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_process.h"
@@ -235,10 +238,14 @@ void handle_remote_root_user(const std::string &rootpass,
     session->execute("SET sql_log_bin = 1");
   }
 }
+#endif  // MARIADB_BUILD
 
 void install_hashing_component(
     const std::shared_ptr<mysqlshdk::db::ISession> &session) {
-  if (session->get_server_version() < mysqlshdk::utils::Version(9, 6, 0)) {
+  // MariaDB numbers its versions past 9.6 too, but keeps these functions
+  // built-in and has no components
+  if (session->get_server_vendor() != mysqlshdk::db::ServerVendor::MySQL ||
+      session->get_server_version() < mysqlshdk::utils::Version(9, 6, 0)) {
     return;
   }
 
@@ -248,7 +255,6 @@ void install_hashing_component(
   } catch (...) {
   }
 }
-#endif  // MARIADB_BUILD
 
 }  // namespace
 
@@ -947,7 +953,8 @@ void Testutils::dump_data(const std::string &uri, const std::string &path,
  * @param path filename of the dump file to write to
  * @param defaultSchema (optional) Default schema name to use during import.
  *
- * Loads a SQL script from a file using mysql cli.
+ * Executes the SQL script in the file, statement by statement, stopping at
+ * the first error.
  */
 #if DOXYGEN_JS
 Undefined Testutils::importData(String uri, String path, String defaultSchema,
@@ -964,69 +971,65 @@ void Testutils::import_data(const std::string &uri, const std::string &path,
   mysqlshdk::db::replay::No_replay dont_record;
   if (_skip_server_interaction) return;
 
-  // use mysql for now, until we support efficient import internally
-  std::string mysql = shcore::path::search_stdpath("mysql");
-  if (mysql.empty()) {
-    throw std::runtime_error("mysql executable not found in PATH");
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error(path + ": Input file does not exist");
   }
 
   auto options = mysqlshdk::db::Connection_options(uri);
-  std::string sport =
-      options.has_port() ? std::to_string(options.get_port()) : "3306";
-  std::vector<const char *> argv;
-  argv.push_back(mysql.c_str());
-  argv.push_back("-u");
-  argv.push_back(options.get_user().c_str());
-  argv.push_back("-h");
-  argv.push_back(options.get_host().c_str());
-  std::string password;
-  if (options.has_password()) {
-    password = "--password=" + options.get_password();
-    // NOTE: If this ever becomes a public (non-test) function, pwd passing must
-    // be done via stdin or temporary file
-    argv.push_back(password.c_str());
-  }
-  if (options.has_port()) {
-    argv.push_back("--protocol=TCP");
-    argv.push_back("-P");
-    argv.push_back(sport.c_str());
-  }
-  std::string defcharset;
-  if (!default_charset.empty()) {
-    defcharset = "--default-character-set=" + default_charset;
-    argv.push_back(defcharset.c_str());
-  }
-  if (!default_schema.empty()) argv.push_back(default_schema.c_str());
+  if (!default_schema.empty()) options.set_schema(default_schema);
 
-  // in case we're loading using >=9.0.0 mysql into a <9.0.0 server, use our
-  // plugin directory, so that mysql_native_password plugin is available
-  std::string plugin_dir_opt;
-  if (const auto plugin_dir = shcore::get_default_mysql_plugin_dir();
-      !plugin_dir.empty()) {
-    plugin_dir_opt = "--plugin-dir=";
-    plugin_dir_opt += plugin_dir;
-    argv.push_back(plugin_dir_opt.c_str());
-  }
+  const auto session = mysqlshdk::db::mysql::Session::create();
+  session->connect(options);
+  shcore::on_leave_scope close_session([&session]() { session->close(); });
 
-  if (g_test_trace_scripts > 0) {
-    std::cerr << shcore::str_join(argv, " ") << "\n";
-  }
-  argv.push_back(nullptr);
+  if (!default_charset.empty()) session->set_character_set(default_charset);
 
-  shcore::Process dump(&argv[0]);
-#ifdef _WIN32
-  dump.set_create_process_group();
-#endif  // _WIN32
-  dump.enable_reader_thread();
-  dump.redirect_file_to_stdin(path);
-  dump.start();
+  const auto script = shcore::path::basename(path);
+  mysqlshdk::utils::Sql_splitter *splitter = nullptr;
 
-  const auto rc = dump.wait();
+  mysqlshdk::utils::iterate_sql_stream(
+      &file, 1024 * 64,
+      [&](std::string_view stmt, std::string_view, size_t line, size_t) {
+        if (g_test_trace_scripts > 0) {
+          std::cerr << script << ":" << line << ": " << stmt << "\n";
+        }
 
-  if (rc != 0) {
-    throw std::runtime_error("mysql exited with code " + std::to_string(rc) +
-                             ": " + dump.read_all());
-  }
+        try {
+          // drain every result set, so an error in any of them is reported
+          const auto result = session->querys(stmt.data(), stmt.size(), true);
+          do {
+            while (result->fetch_one()) {
+            }
+          } while (result->next_resultset());
+        } catch (const std::exception &e) {
+          throw std::runtime_error(shcore::str_format(
+              "%s:%zu: %s", script.c_str(), line, e.what()));
+        }
+
+        // the server does not always report sql_mode changes (MariaDB never
+        // does), and the splitter needs to know how to handle quotes
+        constexpr std::string_view k_sql_mode = "sql_mode";
+        if (std::search(stmt.begin(), stmt.end(), k_sql_mode.begin(),
+                        k_sql_mode.end(), [](char a, char b) {
+                          return std::tolower(static_cast<unsigned char>(a)) ==
+                                 b;
+                        }) != stmt.end()) {
+          session->refresh_sql_mode();
+          splitter->set_ansi_quotes(session->ansi_quotes_enabled());
+          splitter->set_no_backslash_escapes(
+              session->no_backslash_escapes_enabled());
+        }
+
+        return true;
+      },
+      [&script](std::string_view err) {
+        throw std::runtime_error(shcore::str_format(
+            "%s: %.*s", script.c_str(), static_cast<int>(err.size()),
+            err.data()));
+      },
+      session->ansi_quotes_enabled(), session->no_backslash_escapes_enabled(),
+      session->dollar_quoted_strings(), nullptr, &splitter);
 }
 #ifdef HAVE_ADMIN_API
 //!<  @name InnoDB Cluster Utilities
@@ -1525,12 +1528,17 @@ void Testutils::run_sandbox_plugin(const std::string &operation, int port,
   if (g_test_trace_scripts)
     std::cerr << "Running MariaDB sandbox plugin: " << code << "\n";
 
-  const int rc = call_mysqlsh_c({"--py", "--quiet-start=2", "-e", code});
+  // the output is also echoed to the test's stdout, but that is only shown when
+  // an expectation fails, not when this exception aborts the chunk - keep it
+  // in the message so the cause of the failure makes it to the log
+  std::string output;
+  const int rc = call_mysqlsh_c({"--py", "--quiet-start=2", "-e", code}, "",
+                                {}, "", &output);
   if (rc != 0)
-    throw std::runtime_error(
-        shcore::str_format("MariaDB sandbox plugin operation '%s' on port %d "
-                           "failed (exit code %d)",
-                           operation.c_str(), port, rc));
+    throw std::runtime_error(shcore::str_format(
+        "MariaDB sandbox plugin operation '%s' on port %d failed (exit code "
+        "%d), output:\n%s",
+        operation.c_str(), port, rc, shcore::str_strip(output).c_str()));
 }
 
 // Shared deploy path for deploy_sandbox()/deploy_raw_sandbox(): builds the
@@ -1560,32 +1568,190 @@ void Testutils::deploy_sandbox_with_plugin(
   if (!raw) (*options)["serverId"] = shcore::Value(port);
   if (timeout > 0) (*options)["timeout"] = shcore::Value(timeout);
 
+  auto extra = shcore::make_array();
+
+  // A MySQL 8.0+ instance starts with binary logging on, MariaDB's default is
+  // off, and the scripted tests were written against the MySQL default: they
+  // reset the binary log, read its position and size the binlog cache. Give a
+  // MariaDB sandbox a binary log too, so the tests mean the same thing on both
+  // servers. A raw sandbox is left exactly as the server would start it, and a
+  // test which passes its own log_bin still wins - the plugin keeps the last
+  // value for a repeated option.
+  if (!raw) extra->push_back(shcore::Value("log_bin=binlog"));
+
+  // A MySQL server loads the X plugin, which listens on port 33060 and
+  // /tmp/mysqlx.sock unless told otherwise, so every sandbox after the first
+  // fails to bind them. Give each one its own, as the libmysqlclient build does
+  // in deploy_sandbox_from_boilerplate(). The options are 'loose_' so that
+  // MariaDB, which has no X plugin, ignores them.
+  extra->push_back(
+      shcore::Value("loose_mysqlx_port=" + std::to_string(port * 10)));
+  extra->push_back(
+      shcore::Value("loose_mysqlx_socket=" +
+                    shcore::str_replace(
+                        shcore::path::join_path(
+                            _sandbox_dir, std::to_string(port), "mysqlx.sock"),
+                        "\\", "/")));
+
+  // MySQL 8.4 removed the keyring_file plugin the tests ask for, and its
+  // replacement is configured through files in the data directory, which does
+  // not exist until the plugin has deployed the sandbox. These options are
+  // therefore held back and applied once the server is up, see
+  // configure_sandbox_keyring_file().
+  auto keyring_opts = shcore::make_dict();
+
   // Forward any extra my.cnf options as 'option=value' strings.
-  if (my_cnf_opts && !my_cnf_opts->empty()) {
-    auto extra = shcore::make_array();
+  if (my_cnf_opts) {
     for (const auto &kv : *my_cnf_opts) {
       const std::string value =
           kv.second.get_type() == shcore::Value_type::String
               ? kv.second.get_string()
               : kv.second.descr();
+      const auto name = shcore::str_replace(kv.first, "-", "_");
+
+      if (name == "keyring_file_data" ||
+          (name == "early_plugin_load" &&
+           std::string::npos != value.find("keyring_file."))) {
+        keyring_opts->set(name, shcore::Value(value));
+        continue;
+      }
+
       extra->push_back(shcore::Value(kv.first + "=" + value));
     }
-    (*options)["mariadbdOptions"] = shcore::Value(extra);
   }
+
+  if (!extra->empty()) (*options)["mariadbdOptions"] = shcore::Value(extra);
 
   run_sandbox_plugin("deploy", port, options);
 
+  std::shared_ptr<mysqlshdk::db::ISession> session;
+
   // Record the general_log_file path so read_general_log() keeps working.
   try {
-    auto session = connect_to_sandbox(port);
+    session = connect_to_sandbox(port);
     _general_log_files[port] = session->query("select @@general_log_file")
                                    ->fetch_one_or_throw()
                                    ->get_string(0);
-    session->close();
   } catch (const std::exception &e) {
     log_warning("Could not determine general_log_file for sandbox %d: %s", port,
                 e.what());
   }
+
+  if (session) install_hashing_component(session);
+
+  if (keyring_opts->empty()) {
+    if (session) session->close();
+    return;
+  }
+
+  if (!session) {
+    throw std::runtime_error(shcore::str_format(
+        "Could not connect to sandbox %d to configure the keyring", port));
+  }
+
+  configure_sandbox_keyring_file(port, session, keyring_opts, opts);
+}
+
+// Applies the keyring_file options held back by deploy_sandbox_with_plugin()
+// and restarts the sandbox to load the keyring, closing the given session. On
+// MySQL 8.4+ they are translated to component_keyring_file, the same way
+// deploy_sandbox_from_boilerplate() does it; elsewhere they are written to the
+// option file as they are.
+void Testutils::configure_sandbox_keyring_file(
+    int port, const std::shared_ptr<mysqlshdk::db::ISession> &session,
+    const shcore::Dictionary_t &keyring_opts,
+    const shcore::Dictionary_t &opts) {
+  using mysqlshdk::utils::Version;
+
+  const bool use_keyring_component =
+      session->get_server_vendor() == mysqlshdk::db::ServerVendor::MySQL &&
+      session->get_server_version() >= Version(8, 4, 0);
+
+  const auto keyring_file_data = keyring_opts->get_string("keyring_file_data");
+
+  if (!keyring_file_data.empty()) {
+    const auto keyring_file_dir = shcore::path::dirname(keyring_file_data);
+    shcore::create_directory(keyring_file_dir);
+    // server may be running as another user, make sure it's able to write to
+    // the keyring file
+    shcore::ch_mod(keyring_file_dir, 0777);
+  }
+
+  if (use_keyring_component) {
+    // remove the plugin from the list of plugins to be loaded early
+    if (keyring_opts->has_key("early_plugin_load")) {
+      auto plugins =
+          shcore::str_split(keyring_opts->get_string("early_plugin_load"), ";");
+      plugins.erase(std::remove_if(plugins.begin(), plugins.end(),
+                                   [](const auto &plugin) {
+                                     return std::string::npos !=
+                                            plugin.find("keyring_file.");
+                                   }),
+                    plugins.end());
+
+      if (!plugins.empty()) {
+        change_sandbox_conf(port, "early_plugin_load",
+                            shcore::str_join(plugins, ";"), "mysqld");
+      }
+    }
+
+    // the global manifest is read from the directory of the server binary
+    auto mysqld_path = opts ? opts->get_string("mysqldPath", "") : "";
+
+    if (mysqld_path.empty()) {
+      mysqld_path = get_executable_path("mysqld");
+    } else if (shcore::is_folder(mysqld_path)) {
+      mysqld_path = shcore::path::join_path(mysqld_path, "bin", "mysqld");
+    }
+
+    const auto global_manifest = shcore::path::join_path(
+        shcore::path::dirname(mysqld_path), "mysqld.my");
+
+    if (!shcore::is_file(global_manifest)) {
+      shcore::create_file(global_manifest, R"({"read_local_manifest": true})");
+    }
+
+    const auto datadir = get_sandbox_datadir(port);
+
+    shcore::create_file(shcore::path::join_path(datadir, "mysqld.my"),
+                        R"({"components": "file://component_keyring_file"})");
+
+    // loader which is used by mysqld to load the components uses only
+    // 'datadir' and 'plugin_dir' options and does not construct the latter
+    // from 'basedir', we need to set it explicitly
+    const auto plugin_dir =
+        shcore::str_rstrip(session->query("SELECT @@plugin_dir")
+                               ->fetch_one_or_throw()
+                               ->get_string(0),
+                           "\\/");
+    change_sandbox_conf(port, "plugin_dir", plugin_dir, "mysqld");
+
+    if (!keyring_file_data.empty()) {
+      // we need to create both global and local configuration files to not
+      // interfere with the existing server configuration
+      const auto global_config =
+          shcore::path::join_path(plugin_dir, "component_keyring_file.cnf");
+
+      if (!shcore::is_file(global_config)) {
+        shcore::create_file(global_config, R"({"read_local_config": true})");
+      }
+
+      shcore::create_file(
+          shcore::path::join_path(datadir, "component_keyring_file.cnf"),
+          shcore::str_format(
+              R"({"path": "%s","read_only": false})",
+              shcore::str_replace(keyring_file_data, "\\", "\\\\").c_str()));
+    }
+  } else {
+    for (const auto &option : *keyring_opts) {
+      change_sandbox_conf(port, option.first, option.second.get_string(),
+                          "mysqld");
+    }
+  }
+
+  session->close();
+  stop_sandbox(port, shcore::make_dict("wait", true));
+  start_sandbox(port, shcore::make_dict());
 }
 #endif  // MARIADB_BUILD
 
@@ -4481,7 +4647,8 @@ int Testutils::call_mysqlsh(const shcore::Array_t &args,
 int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
                               const std::string &std_input,
                               const std::vector<std::string> &env,
-                              const std::string &executable_path) {
+                              const std::string &executable_path,
+                              std::string *out_output) {
   char c;
   int exit_code = 1;
   std::string output;
@@ -4528,6 +4695,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
       if (c == '\r') continue;
       if (c == '\n') {
         if (shell) mysqlsh::current_console()->println(output);
+        if (out_output) out_output->append(output).append(1, '\n');
         output.clear();
       } else {
         output += c;
@@ -4535,6 +4703,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
     }
     if (!output.empty()) {
       if (shell) mysqlsh::current_console()->println(output);
+      if (out_output) out_output->append(output);
       if (expect == output) {
         process.write(&std_input[0], std_input.size());
         process.finish_writing();  // Reader will see EOF
@@ -4545,6 +4714,7 @@ int Testutils::call_mysqlsh_c(const std::vector<std::string> &args,
     exit_code = process.wait();
   } catch (const std::system_error &e) {
     output = e.what();
+    if (out_output) out_output->append(output);
     if (shell)
       mysqlsh::current_console()->println(
           ("Exception calling mysqlsh: " + output).c_str());

@@ -163,6 +163,15 @@ class Shell_test_env : public ::testing::Test {
     return _target_server_version;
   }
 
+  /**
+   * Whether the server the tests are running against is MariaDB.
+   *
+   * Keyed on the *server*, not on MARIADB_BUILD: a Shell built against either
+   * vendor can be pointed at either server, and feature gates in the product
+   * code are decided the same way.
+   */
+  static bool target_server_is_maria_db();
+
   std::string query_replace_hook(std::string_view sql);
   std::unique_ptr<mysqlshdk::db::IRow> set_replay_row_hook(
       const mysqlshdk::db::Connection_options &target, const std::string &sql,
