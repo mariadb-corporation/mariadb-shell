@@ -62,35 +62,14 @@ ELSE()
   SET(_mdb_build_type "RelWithDebInfo")
 ENDIF()
 
-# Static-library names differ by platform (libmysys.a vs mysys.lib). Use CMake's
-# prefix/suffix so the "already built?" probe matches on every toolchain.
-SET(_slp "${CMAKE_STATIC_LIBRARY_PREFIX}")
-SET(_sls "${CMAKE_STATIC_LIBRARY_SUFFIX}")
-SET(_mdb_client_lib_dir "${_mdb_bld}/libmariadb/libmariadb")
-SET(_mdb_mysys_lib "${_mdb_bld}/mysys/${_slp}mysys${_sls}")
-
-##############################################################################
-# Fast path: already bootstrapped. If the server cache and the key static libs
-# exist, skip the (expensive) clone/configure/build and just export the dirs.
-##############################################################################
-IF(EXISTS "${_mdb_bld}/CMakeCache.txt"
-   AND EXISTS "${_mdb_mysys_lib}"
-   AND (EXISTS "${_mdb_client_lib_dir}/${_slp}mariadbclient${_sls}"
-        OR EXISTS "${_mdb_client_lib_dir}/mariadbclient${_sls}"))
-  MESSAGE(STATUS "MariaDB server already bootstrapped at ${MARIADB_BOOTSTRAP_DIR}; "
-    "reusing it. Delete that directory (or set MARIADB_SOURCE_DIR) to change this.")
-  SET(MARIADB_SOURCE_DIR "${_mdb_src}" CACHE PATH "Auto-fetched MariaDB server source" FORCE)
-  SET(MARIADB_BUILD_DIR  "${_mdb_bld}" CACHE PATH "Auto-built MariaDB server build"  FORCE)
-  RETURN()
-ENDIF()
-
 MESSAGE(STATUS "==========================================================")
 MESSAGE(STATUS "No MYSQL/MARIADB source dir given -- bootstrapping MariaDB.")
 MESSAGE(STATUS "  repo    : ${MARIADB_GIT_REPOSITORY}")
 MESSAGE(STATUS "  ref     : ${MARIADB_GIT_TAG}")
 MESSAGE(STATUS "  location: ${MARIADB_BOOTSTRAP_DIR}")
 MESSAGE(STATUS "  (override with -DMARIADB_SOURCE_DIR / -DMARIADB_GIT_TAG /")
-MESSAGE(STATUS "   -DMARIADB_BOOTSTRAP_DIR; this runs once and is then cached)")
+MESSAGE(STATUS "   -DMARIADB_BOOTSTRAP_DIR; an existing checkout is updated to the")
+MESSAGE(STATUS "   ref and rebuilt incrementally on every fresh configure)")
 MESSAGE(STATUS "==========================================================")
 
 FIND_PACKAGE(Git REQUIRED)
@@ -98,7 +77,7 @@ FIND_PACKAGE(Git REQUIRED)
 FILE(MAKE_DIRECTORY "${MARIADB_BOOTSTRAP_DIR}")
 
 ##############################################################################
-# 1. Clone (or reuse) the server source and check out the requested ref.
+# 1. Clone the server source, or update an existing checkout, to the ref.
 ##############################################################################
 IF(NOT EXISTS "${_mdb_src}/.git")
   MESSAGE(STATUS "Cloning MariaDB server (this can take a while)...")
@@ -131,7 +110,26 @@ IF(NOT EXISTS "${_mdb_src}/.git")
     ENDIF()
   ENDIF()
 ELSE()
-  MESSAGE(STATUS "Reusing existing MariaDB checkout at ${_mdb_src}")
+  # Bring an existing checkout to the current tip of the ref, so a branch such
+  # as "main" does not stay at whatever it was when the directory was first
+  # cloned. Either step failing is fatal: carrying on would build the shell
+  # against a server other than the one asked for, without anyone noticing.
+  MESSAGE(STATUS "Updating the MariaDB checkout at ${_mdb_src} to '${MARIADB_GIT_TAG}'...")
+  EXECUTE_PROCESS(
+    COMMAND "${GIT_EXECUTABLE}" -C "${_mdb_src}" fetch --progress --depth 1
+            --no-tags origin "${MARIADB_GIT_TAG}"
+    RESULT_VARIABLE _rc)
+  IF(NOT _rc EQUAL 0)
+    MESSAGE(FATAL_ERROR "Could not fetch '${MARIADB_GIT_TAG}' into ${_mdb_src}. "
+      "To build against that tree as it is (e.g. offline), configure with "
+      "-DMARIADB_SOURCE_DIR=${_mdb_src} -DMARIADB_BUILD_DIR=${_mdb_bld} instead.")
+  ENDIF()
+  EXECUTE_PROCESS(
+    COMMAND "${GIT_EXECUTABLE}" -C "${_mdb_src}" checkout --detach FETCH_HEAD
+    RESULT_VARIABLE _rc)
+  IF(NOT _rc EQUAL 0)
+    MESSAGE(FATAL_ERROR "Failed to check out '${MARIADB_GIT_TAG}' in ${_mdb_src}")
+  ENDIF()
 ENDIF()
 
 # The Connector/C (libmariadb) lives in a git submodule; the shell links it.
