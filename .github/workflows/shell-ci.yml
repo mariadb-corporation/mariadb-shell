@@ -184,8 +184,15 @@ jobs:
       # ============
       - name: Execute Unit Tests
         if: env.RUN_TESTS == 'true'
+        id: tests
         run: |
           python3 scripts/run_unit_tests.py -t test-execution-times.txt --binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell --gtest_filter="-*Threaded_file*"
+
+      # The runner exits non-zero when a suite fails, failing the step above;
+      # the plot and the timing profile are still wanted from such a run.
+      - name: Plot Execution and Cache Timings
+        if: always() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
+        run: |
           python3 scripts/plot_execution_plan.py
           cp test-execution-times.txt ~/.cache/ci
 
