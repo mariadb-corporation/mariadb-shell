@@ -262,12 +262,18 @@ TEST_F(Db_tests, connect_read_timeout) {
 #if defined(_WIN32)
   EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
                     "Lost connection to server during query");
-#elif defined(__linux__)
-  EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
-                    "TLS/SSL error: Connection timed out (110)");
 #else
+  // Connector/C reported a TLS read timeout as CR_SSL_CONNECTION_ERROR with the
+  // platform's errno text until CONC-818, and as CR_SERVER_LOST since then -
+  // as on Windows. Both are accepted: the fix shipped without a version bump
+  // (3.4.10 either way), so the library version can't tell them apart.
+#if defined(__linux__)
+  constexpr auto k_tls_timeout = "TLS/SSL error: Connection timed out (110)";
+#else
+  constexpr auto k_tls_timeout = "Operation timed out";
+#endif
   EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,
-                    "Operation timed out");
+                    "Lost connection to server during query", k_tls_timeout);
 #endif
 #else
   EXPECT_THROW_LIKE(session->execute("SELECT SLEEP(2)"), mysqlshdk::db::Error,

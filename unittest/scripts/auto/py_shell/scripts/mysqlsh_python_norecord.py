@@ -19,7 +19,10 @@ with open(subproc_script, "w+") as f:
         """
 import multiprocessing
 def run_proc(arg):
-    print("".join(list(reversed("dlrow olleh"))).upper() + str(arg+1))
+    # a worker started by forkserver or spawn (the Python 3.14 default on
+    # Linux, and macOS/Windows) buffers its own stdout, and leaving the Pool
+    # terminates it, so the line has to be written before map() returns
+    print("".join(list(reversed("dlrow olleh"))).upper() + str(arg+1), flush=True)
 
 if __name__ == "__main__":
     with multiprocessing.Pool(3) as p:

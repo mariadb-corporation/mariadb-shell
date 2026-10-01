@@ -36,11 +36,14 @@ namespace {
 
 class Oci_regions_test : public Shell_core_test_wrapper {};
 
-#ifndef MARIADB_BUILD
-// PORT-TODO: The port is not including the OCI SDK
 TEST_F(Oci_regions_test, short_region_names) {
   execute("\\py");
+  output_handler.wipe_all();
   execute("import oci");
+  // Not every build bundles the OCI Python SDK (the port's builds don't)
+  if (!output_handler.std_err.empty()) {
+    SKIP_TEST("The OCI Python SDK is not available: " + output_handler.std_err);
+  }
 
   output_handler.wipe_all();
   execute("oci.regions.REGIONS_SHORT_NAMES");
@@ -57,7 +60,6 @@ TEST_F(Oci_regions_test, short_region_names) {
     EXPECT_EQ(full_name, regions::from_short_name(s.first));
   }
 }
-#endif
 
 }  // namespace
 }  // namespace oci

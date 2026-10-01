@@ -222,8 +222,8 @@ if __have_x_protocol:
     call_mysqlsh([__uripwd, "-i", "--tabbed", "--py",
                 "-e", "session.run_sql('showme')"])
     EXPECT_STDOUT_CONTAINS("""====> SQL HANDLER: showme
-    Database
-    """)
+Database
+""")
     EXPECT_STDOUT_NOT_CONTAINS("====> SQL HANDLER: show databases")
     WIPE_OUTPUT()
 

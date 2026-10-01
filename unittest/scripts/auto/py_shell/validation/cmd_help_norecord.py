@@ -141,7 +141,7 @@ use the following wildcards:
 The following are the main help categories:
 
 ?{__have_admin_api}
-- AdminAPI       The AdminAPI is an API that enables configuring and managing
+ - AdminAPI       The AdminAPI is an API that enables configuring and managing
                   InnoDB Clusters, ReplicaSets, ClusterSets, among other
                   things.
 ?{}
@@ -487,6 +487,19 @@ The following topics were found at the AdminAPI category:
 - dba.start_sandbox_instance
 - dba.stop_sandbox_instance
 
+The following topics were found at the sandbox category:
+
+- sandbox
+- sandbox.delete
+- sandbox.deploy
+- sandbox.get_path
+- sandbox.help
+- sandbox.kill
+- sandbox.start
+- sandbox.stop
+- sandbox.vendor
+- sandbox.version
+
 For help on a specific topic use: \? <topic>
 
 e.g.: \? dba.delete_sandbox_instance
@@ -663,10 +676,12 @@ $ mysqlsh root@localhost:1234 -- dba create-cluster mycluster
 
 $ mysqlsh root@localhost:1234 -- cluster status
       mysql-js> cluster.status()
+
 ?{}
 $ mysqlsh -- shell.options set-persist history.autoSave true
       mysql-js> shell.options.setPersist("history.autoSave", true)
 ?{__have_upgrade_checker}
+
 $ mysqlsh -- util checkForServerUpgrade root@localhost --outputFormat=JSON
       mysql-js> util.checkForServerUpgrade("root@localhost",{outputFormat:
       "JSON"})

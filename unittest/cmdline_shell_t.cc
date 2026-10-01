@@ -208,8 +208,8 @@ TEST(Cmdline_shell, help) {
   current_console()->remove_print_handler(&handler);
 }
 
-// PORT-TODO: Disabling this test, not critical
-#ifndef MARIADB_BUILD
+// Edits and runs JavaScript, so it needs a build with JS
+#ifdef HAVE_JS
 TEST(Cmdline_shell, cmd_edit_with_history) {
   shcore::setenv("EDITOR",
                  shcore::path::join_path(shcore::get_binary_folder(),

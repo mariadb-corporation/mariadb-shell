@@ -16,6 +16,7 @@ The following objects provide command line operations:
 
    rs
       Represents an InnoDB ReplicaSet.
+
 ?{}
    shell
       Gives access to general purpose functions and properties.
