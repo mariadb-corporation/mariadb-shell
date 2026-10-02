@@ -866,6 +866,57 @@ EXPECT_EQ(md5_table(session1, "xmldb", "t"), md5_table(session2, "xmldb", "t"))
 session1.run_sql("DROP SCHEMA xmldb")
 wipeout_server(session2)
 
+#@<> schema case of routines and events - setup
+# MARIADB_DUMP_LOAD.md section 5.9: with lower_case_table_names=2, MariaDB
+# reports the schema of a routine and of an event lower-cased, the schema of a
+# table as given
+lower_case_table_names_2 = 2 == fetch_value(session1, "SELECT @@lower_case_table_names")
+
+if lower_case_table_names_2:
+    session1.run_sql("CREATE SCHEMA CaseT")
+    session1.run_sql("CREATE TABLE CaseT.Contacts (id INT PRIMARY KEY, f_name VARCHAR(45), l_name VARCHAR(45))")
+    session1.run_sql("INSERT INTO CaseT.Contacts VALUES (1, 'John', 'Doe')")
+    session1.run_sql("CREATE FUNCTION CaseT.format_name(a VARCHAR(45), b VARCHAR(45)) RETURNS VARCHAR(91) DETERMINISTIC RETURN CONCAT(a, ' ', b)")
+    session1.run_sql("CREATE PROCEDURE CaseT.Proc1() SELECT 1")
+    session1.run_sql("CREATE EVENT CaseT.Ev1 ON SCHEDULE EVERY 1 DAY DISABLE DO SELECT 1")
+    # the symptom: the load fails on a view which calls a routine left out
+    session1.run_sql("CREATE SQL SECURITY INVOKER VIEW CaseT.CN AS SELECT CaseT.format_name(f_name, l_name) AS name, id FROM CaseT.Contacts")
+
+def EXPECT_CASE_SCHEMA_OBJECTS(session):
+    EXPECT_EQ([["format_name", "FUNCTION"], ["Proc1", "PROCEDURE"]], [list(r) for r in session.run_sql("SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = 'CaseT' ORDER BY ROUTINE_NAME").fetch_all()])
+    EXPECT_EQ(["Ev1"], [r[0] for r in session.run_sql("SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA = 'CaseT'").fetch_all()])
+    EXPECT_EQ("John Doe", fetch_value(session, "SELECT name FROM CaseT.CN"))
+
+#@<> schema case of routines and events - the dump carries them {lower_case_table_names_2}
+case_dump = dump_dir_for("schema_case")
+EXPECT_NO_THROWS(lambda: dump_schema("CaseT", case_dump), "dump")
+manifest = read_manifest(case_dump, "CaseT.json")
+EXPECT_EQ(["format_name"], manifest["functions"])
+EXPECT_EQ(["Proc1"], manifest["procedures"])
+EXPECT_EQ(["Ev1"], manifest["events"])
+
+#@<> schema case of routines and events - round trip {lower_case_table_names_2}
+EXPECT_NO_THROWS(lambda: load(case_dump), "load")
+EXPECT_CASE_SCHEMA_OBJECTS(session2)
+
+#@<> schema case of routines and events - the routine and event filters match the schema {lower_case_table_names_2}
+filtered_dump = dump_dir_for("schema_case_filtered")
+EXPECT_NO_THROWS(lambda: dump_schema("CaseT", filtered_dump, { "includeRoutines": ["CaseT.format_name"], "excludeEvents": ["CaseT.Ev1"] }), "dump")
+manifest = read_manifest(filtered_dump, "CaseT.json")
+EXPECT_EQ(["format_name"], manifest["functions"])
+EXPECT_EQ([], manifest["procedures"])
+EXPECT_EQ([], manifest["events"])
+
+#@<> schema case of routines and events - util.copySchemas carries them {lower_case_table_names_2}
+wipeout_server(session2)
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.copy_schemas(["CaseT"], __sandbox_uri2, { "showProgress": False }), "copy")
+EXPECT_CASE_SCHEMA_OBJECTS(session2)
+
+#@<> schema case of routines and events - cleanup {lower_case_table_names_2}
+session1.run_sql("DROP SCHEMA CaseT")
+wipeout_server(session2)
+
 #@<> an unknown column type stops the dump and says where {__dbug}
 # the list of types is closed on purpose: a type nobody has checked may not
 # round-trip as text or as bytes, and a guess could change data silently

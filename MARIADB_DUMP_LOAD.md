@@ -544,6 +544,39 @@ note explaining it is [AIPL-29](https://jira.mariadb.org/browse/AIPL-29). The
 compression algorithm of a `PAGE_COMPRESSED` table is the target's
 `innodb_compression_algorithm`, not part of the DDL.
 
+### 5.9 Schema case of routines and events
+
+With `lower_case_table_names=2`, which is the macOS default, MariaDB keeps the case of
+a schema's name in `I_S.SCHEMATA`, `TABLES`, `VIEWS` and `TRIGGERS`. It stores the
+schema of a routine or an event lower-cased (`mysql.proc.db`, `mysql.event.db`), so
+`I_S.ROUTINES.ROUTINE_SCHEMA`, `PARAMETERS.SPECIFIC_SCHEMA` and
+`EVENTS.EVENT_SCHEMA` report `t1` for schema `T1`. The server lower-cases the
+name whenever `lower_case_table_names` is non-zero (`sp.cc`, `events.cc`). With 1
+the tables are lower-cased as well, so the two agree, and only 2 has the mismatch.
+MySQL 8.0+ reports the data dictionary's name everywhere (verified on 9.7.1).
+
+The instance cache matches schema names exactly, both in SQL
+(`includeSchemas`/`excludeSchemas` and the schema part of
+`includeRoutines`/`includeEvents`, which are binary compares) and when looking up
+the schema of each row. So every function, procedure, package and event of a
+schema with an upper-case name was left out of `dumpSchemas()`,
+`dumpInstance()` and `copy*()`, with no warning. The first sign was
+`loadDump()` failing on a view that called one of the missing functions.
+
+`Instance_cache_builder::use_schemata_case()` handles this. On MariaDB with
+`lower_case_table_names=2`, it joins those three views to `I_S.SCHEMATA` on
+`CAST(LOWER(SCHEMA_NAME) AS BINARY)` and reads the schema name from there, so
+the filters and the lookup see `T1`. The compare is binary because the
+information_schema collation, `utf8mb3_general_ci`, would also join `café` to
+`cafe`. Two schemas whose names differ only in case cannot exist under
+`lower_case_table_names=2`. `SHOW CREATE` and the loader's existence checks
+(`routine_schema = ?`) already compare case-insensitively and needed no change.
+Triggers, sequences (which are reported by `I_S.TABLES`) and tables were never
+affected. Libraries do not exist on MariaDB.
+
+`Instance_cache_test.maria_db_lower_case_routine_schema` covers it. It is skipped
+unless the server is MariaDB with `lower_case_table_names=2`.
+
 ---
 
 ## 6. Accounts and roles

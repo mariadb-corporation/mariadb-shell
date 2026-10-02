@@ -292,6 +292,7 @@ Instance_cache_builder &Instance_cache_builder::events() {
       "EVENT_NAME"  // NOT NULL
   };
   info.table_name = "events";
+  use_schemata_case(&info);
   // event names are case insensitive
   info.where = m_query_helper.event_filter(info);
 
@@ -319,6 +320,7 @@ Instance_cache_builder &Instance_cache_builder::routines() {
       "ROUTINE_TYPE",  // NOT NULL
   };
   info.table_name = "routines";
+  use_schemata_case(&info);
   // routine names are case insensitive
   info.where = m_query_helper.routine_filter(info);
 
@@ -1450,6 +1452,38 @@ void Instance_cache_builder::initialize_lowercase_names() {
   }
 }
 
+void Instance_cache_builder::use_schemata_case(Iterate_schema *info) const {
+  // MySQL reports a routine and an event with the schema name the data
+  // dictionary holds, whatever lower_case_table_names is, and with 0 or 1
+  // MariaDB stores a table's schema the same way as a routine's. See
+  // MARIADB_DUMP_LOAD.md section 5.9.
+  if (!m_cache.server.version.is_maria_db) {
+    return;
+  }
+
+  // the system variables are only fetched with the metadata
+  const auto &sysvar = m_cache.server.sysvars.lower_case_table_names;
+  const auto lower_case_table_names =
+      sysvar.has_value()
+          ? *sysvar
+          : query("SELECT @@lower_case_table_names")->fetch_one()->get_int(0);
+
+  if (2 != lower_case_table_names) {
+    return;
+  }
+
+  // The server lower-cases the name with the system character set, which is
+  // also what LOWER() of a schemata column uses. The comparison is binary,
+  // because the general_ci collation of information_schema would also match
+  // names which differ in accents only. Two schemas whose names differ in case
+  // only cannot coexist when lower_case_table_names=2.
+  info->table_name +=
+      " AS o JOIN information_schema.schemata AS s ON "
+      "CAST(LOWER(s.SCHEMA_NAME) AS BINARY)=CAST(o." +
+      info->schema_column + " AS BINARY)";
+  info->schema_column = "s.SCHEMA_NAME";
+}
+
 void Instance_cache_builder::fetch_routine_parameters() {
   Profiler profiler{"fetching routine parameters"};
 
@@ -1463,6 +1497,7 @@ void Instance_cache_builder::fetch_routine_parameters() {
       "COLLATION_NAME",    // can be NULL
   };
   info.table_name = "parameters";
+  use_schemata_case(&info);
   // routine names are case insensitive
   info.where = m_query_helper.routine_filter(info);
 

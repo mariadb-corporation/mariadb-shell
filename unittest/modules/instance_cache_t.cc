@@ -4351,6 +4351,164 @@ TEST_F(Instance_cache_test, filter_packages) {
   }
 }
 
+TEST_F(Instance_cache_test, maria_db_lower_case_routine_schema) {
+  // With lower_case_table_names=2, MariaDB reports the schema of a routine and
+  // of an event lower-cased, while the schema of a table keeps its case. The
+  // routines and events of a schema with an upper-case name used to be left
+  // out, see MARIADB_DUMP_LOAD.md section 5.9.
+  if (!target_server_is_maria_db()) {
+    SKIP_TEST("This test requires running against MariaDB");
+  }
+
+  if (2 != m_session->query("SELECT @@lower_case_table_names")
+               ->fetch_one()
+               ->get_int(0)) {
+    SKIP_TEST("This test requires lower_case_table_names=2");
+  }
+
+  const auto packages = common::supports_packages(common::server_version(
+      _target_server_version, target_server_is_maria_db()));
+
+  {
+    // setup
+    m_session->execute("CREATE SCHEMA First;");
+    m_session->execute("CREATE TABLE First.one (id INT);");
+    m_session->execute(
+        "CREATE FUNCTION First.Fun(a VARCHAR(10)) RETURNS VARCHAR(10) "
+        "DETERMINISTIC RETURN a;");
+    m_session->execute("CREATE PROCEDURE First.proc() SELECT 1;");
+    m_session->execute(
+        "CREATE EVENT First.ev ON SCHEDULE EVERY 1 DAY DISABLE DO SELECT 1;");
+
+    if (packages) {
+      m_session->execute("SET sql_mode=ORACLE;");
+      m_session->execute(
+          "CREATE PACKAGE First.pkg AS FUNCTION f() RETURN INT; END;");
+      m_session->execute(
+          "CREATE PACKAGE BODY First.pkg AS FUNCTION f() RETURN INT AS BEGIN "
+          "RETURN 1; END; END;");
+      m_session->execute("SET sql_mode=DEFAULT;");
+    }
+  }
+
+  const auto keys = [](const auto &m) {
+    std::set<std::string> s;
+
+    for (const auto &e : m) {
+      s.emplace(e.first);
+    }
+
+    return s;
+  };
+
+  const auto EXPECT_OBJECTS = [&keys, packages](
+                                  const Instance_cache &cache,
+                                  const std::set<std::string> &functions,
+                                  const std::set<std::string> &procedures,
+                                  const std::unordered_set<std::string> &events,
+                                  bool has_package) {
+    const auto it = cache.schemas.find("First");
+    ASSERT_TRUE(cache.schemas.end() != it)
+        << "cache does not contain schema `First`";
+
+    const auto &schema = it->second;
+
+    EXPECT_EQ(functions, keys(schema.functions));
+    EXPECT_EQ(procedures, keys(schema.procedures));
+    EXPECT_EQ(events, schema.events);
+
+    if (packages) {
+      const auto expected = has_package ? std::unordered_set<std::string>{"pkg"}
+                                        : std::unordered_set<std::string>{};
+      EXPECT_EQ(expected, schema.packages);
+      EXPECT_EQ(expected, schema.package_bodies);
+    }
+  };
+
+  {
+    SCOPED_TRACE("include the schema");
+
+    Filtering_options filters;
+    filters.schemas().include("First");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().events().build();
+
+    EXPECT_OBJECTS(cache, {"Fun"}, {"proc"}, {"ev"}, true);
+
+    EXPECT_EQ(packages ? 4 : 2, cache.total.routines);
+    EXPECT_EQ(packages ? 4 : 2, cache.filtered.routines);
+    EXPECT_EQ(1, cache.total.events);
+    EXPECT_EQ(1, cache.filtered.events);
+
+    // the parameters are fetched the same way
+    const auto &fun = cache.schemas.at("First").functions.at("Fun");
+    ASSERT_EQ(1, fun.parameters.size());
+    EXPECT_EQ("a", fun.parameters[0].name);
+    EXPECT_FALSE(fun.return_value.collation.empty());
+  }
+
+  {
+    SCOPED_TRACE("no schema filter - the schema is matched by name");
+
+    const auto cache =
+        Instance_cache_builder(m_session, {}).routines().events().build();
+
+    EXPECT_OBJECTS(cache, {"Fun"}, {"proc"}, {"ev"}, true);
+  }
+
+  {
+    SCOPED_TRACE("the metadata is fetched first, as the dumper does");
+
+    Filtering_options filters;
+    filters.schemas().include("First");
+    const auto cache = Instance_cache_builder(m_session, filters)
+                           .metadata({})
+                           .routines()
+                           .events()
+                           .build();
+
+    EXPECT_OBJECTS(cache, {"Fun"}, {"proc"}, {"ev"}, true);
+  }
+
+  {
+    SCOPED_TRACE("include objects of the schema");
+
+    Filtering_options filters;
+    filters.schemas().include("First");
+    // routine names are case insensitive
+    filters.routines().include("First", "fun");
+    filters.events().include("First", "ev");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().events().build();
+
+    EXPECT_OBJECTS(cache, {"Fun"}, {}, {"ev"}, false);
+  }
+
+  {
+    SCOPED_TRACE("exclude objects of the schema");
+
+    Filtering_options filters;
+    filters.schemas().include("First");
+    filters.routines().exclude("First", "proc");
+    filters.events().exclude("First", "ev");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().events().build();
+
+    EXPECT_OBJECTS(cache, {"Fun"}, {}, {}, true);
+  }
+
+  {
+    SCOPED_TRACE("exclude the schema");
+
+    Filtering_options filters;
+    filters.schemas().exclude("First");
+    const auto cache =
+        Instance_cache_builder(m_session, filters).routines().events().build();
+
+    EXPECT_TRUE(cache.schemas.end() == cache.schemas.find("First"));
+  }
+}
+
 TEST_F(Instance_cache_test, filter_triggers) {
   {
     // setup

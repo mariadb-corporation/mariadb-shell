@@ -377,6 +377,23 @@ class Instance_cache_builder final {
 
   void initialize_lowercase_names();
 
+  /**
+   * MariaDB stores the schema of a routine or an event lower-cased whenever
+   * lower_case_table_names is non-zero, while with lower_case_table_names=2 the
+   * schema of a table keeps its case. Then the schema column of such a view
+   * does not match the schema names in the cache or in the filters, and
+   * everything in a schema with an upper-case name is silently left out.
+   *
+   * In that case, this changes the query to read the schema name from
+   * information_schema.schemata, which holds the case the schema was created
+   * with. Otherwise the query is left unchanged.
+   *
+   * @param info Information about the information_schema table, its
+   *        schema_column holds the lower-cased schema name. Must be called
+   *        before any filter is built from it.
+   */
+  void use_schemata_case(Iterate_schema *info) const;
+
   std::vector<shcore::Account> fetch_users() const;
 
   std::vector<shcore::Account> fetch_roles() const;
