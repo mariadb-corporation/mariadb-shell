@@ -56,10 +56,17 @@ def check_mysql_native_method(session, account_data):
     return True
 
 
+def password_extension_unsupported(session, functionality: str) -> Error:
+    if session.server_vendor == "MySQL":
+        return Error(f"{functionality} functionality is only supported from server version at least 8.0.")
+    return Error(f"{functionality} functionality is not supported by {session.server_vendor} servers.")
+
+
 def discard_dual_if_present(discardOld: bool, account_data: dict):
     if discardOld:
-        if not accountlib.is_password_extensions_supported(globals.shell.get_session()):
-            raise Error("Dual password functionality is only supported from server version at least 8.0.")
+        session = globals.shell.get_session()
+        if not accountlib.is_password_extensions_supported(session):
+            raise password_extension_unsupported(session, "Dual password")
         try:
             if accountlib.discard_dual_password(account_data):
                 globals.shell.print("Old (dual) password was succesfully discarded.", "note")
@@ -73,8 +80,13 @@ def discard_dual_if_present(discardOld: bool, account_data: dict):
 
 
 def check_dual_password(session, account_data: dict, dual: bool, auth_replace : bool = False):
-    if dual and not accountlib.is_password_extensions_supported(session):
-        raise Error("Dual password functionality is only supported from server version at least 8.0.")
+    if not accountlib.is_password_extensions_supported(session):
+        if dual:
+            raise password_extension_unsupported(session, "Dual password")
+        # No dual passwords on this server, and has_dual_password() would query
+        # a mysql.user column that does not exist on it.
+        return
+
     has_dual = False
     try:
         has_dual = accountlib.has_dual_password(session, account_data)
@@ -100,7 +112,11 @@ def check_dual_password(session, account_data: dict, dual: bool, auth_replace : 
 
 
 def check_before_change_password(session, account_data: dict, dual: bool, random : bool):
-    if accountlib.is_auth_mysql_native(session, account_data) and accountlib.is_server_auth_method_upgradable(session):
+    # The MariaDB build does not register util.upgradeAuthMethod (see below), so
+    # there is nothing to point the user to. Keep is_auth_mysql_native() first:
+    # its SHOW CREATE USER is also what rejects an unprivileged caller before the
+    # new password is prompted for.
+    if accountlib.is_auth_mysql_native(session, account_data) and accountlib.is_server_auth_method_upgradable(session) and not common.is_mariadb_build():
         globals.shell.print("The account " + account_data["account"] +
             " is using the deprecated mysql_native_password authentication plugin. "
             "Please use the \"util.<<<changeAuthMethod>>>\" function to upgrade it to caching_sha2_password.", "warning")
@@ -108,7 +124,7 @@ def check_before_change_password(session, account_data: dict, dual: bool, random
     check_dual_password(session, account_data, dual)
 
     if random and not accountlib.is_password_extensions_supported(session):
-        raise Error("Random password functionality is only supported from server version at least 8.0.")
+        raise password_extension_unsupported(session, "Random password")
 
 
 def internal_change_password(
@@ -183,6 +199,9 @@ def internal_upgrade_auth_method(
         return
 
     if not accountlib.is_server_auth_method_upgradable(session):
+        if session.server_vendor != "MySQL":
+            raise Error(f"Upgrading the authentication method is not needed on {session.server_vendor} servers: "
+                        "mysql_native_password is their default authentication plugin and is not deprecated.")
         raise Error("Unsupported server version. "
                     "To upgrade authentication method to caching_sha2_password, please upgrade the server to version at least 8.0.")
 
@@ -218,45 +237,83 @@ def internal_upgrade_auth_method(
     raise Error(f"Failed to change authentication method: {description}")
 
 
-@plugin_function("util.changePassword")
-def change_password(**options) -> str:
-    """Changes password for an account.
+# The random, dual and discardOld options rely on MySQL 8.0 statements that
+# MariaDB does not have (RANDOM PASSWORD, RETAIN CURRENT PASSWORD, DISCARD OLD
+# PASSWORD), so the MariaDB build registers util.changePassword without them;
+# the registrar then rejects them as invalid options.
+if common.is_mariadb_build():
+    @plugin_function("util.changePassword")
+    def change_password(**options):
+        """Changes password for an account.
 
-    Changes the password of an account.
-    If no account is specified, currently authenticated user is used.
+        Changes the password of an account. If no account is specified, the
+        currently authenticated user is used. The new password is prompted for,
+        twice, unless it is given in the newPassword option.
 
-    Examples:
-        util.<<<changePassword>>>() - changes the password of current user.
-        util.<<<changePassword>>>({"account":"user@localhost", "random":True}) - changes the password of "user@localhost" to a random one.
-        util.<<<changePassword>>>({"newPassword":"xxxx", "dual":True"}) - changes password to newPassword without prompting, retains current as dual password.
-        util.<<<changePassword>>>({"discardOld": True, "account": "other@localhost"}) - Discard retained password for account "other@localhost".
+        Changing the password of another account requires the CREATE USER
+        privilege, or the UPDATE privilege on the mysql schema.
 
-    Args:
-        **options (dict): Optional arguments
+        Examples:
+            util.<<<changePassword>>>() - changes the password of the current user.
 
-    Keyword Args:
-        account (str): account of wchich password will be changed. If not set, currently authenticated user will be used (default not set)
-        random (bool): changes password to a random one and returns it. Cannot be used with "newPassword" option (default False)
-        dual (bool): retains current password after changing (default False)
-        discardOld (bool):  discards retained old password if present. If True, will ignore other options (beside account) and not change current password. (default False)
-        newPassword (str): password to change to for the specified account. If not set, it will be prompted. Cannot be used with "random" option (default not set)
-    """
-    return internal_change_password(**options)
+            util.<<<changePassword>>>({"account":"user@localhost"}) - changes the password of "user@localhost".
+
+            util.<<<changePassword>>>({"newPassword":"xxxx"}) - changes the password of the current user to "xxxx" without prompting.
+
+        Args:
+            **options (dict): Optional arguments
+
+        Keyword Args:
+            account (str): account whose password will be changed. If not set, the currently authenticated user is used (default not set)
+            newPassword (str): password to change to for the specified account. If not set, it will be prompted (default not set)
+        """
+        internal_change_password(**options)
+else:
+    @plugin_function("util.changePassword")
+    def change_password(**options) -> str:
+        """Changes password for an account.
+
+        Changes the password of an account.
+        If no account is specified, currently authenticated user is used.
+
+        Examples:
+            util.<<<changePassword>>>() - changes the password of current user.
+            util.<<<changePassword>>>({"account":"user@localhost", "random":True}) - changes the password of "user@localhost" to a random one.
+            util.<<<changePassword>>>({"newPassword":"xxxx", "dual":True"}) - changes password to newPassword without prompting, retains current as dual password.
+            util.<<<changePassword>>>({"discardOld": True, "account": "other@localhost"}) - Discard retained password for account "other@localhost".
+
+        Args:
+            **options (dict): Optional arguments
+
+        Keyword Args:
+            account (str): account of wchich password will be changed. If not set, currently authenticated user will be used (default not set)
+            random (bool): changes password to a random one and returns it. Cannot be used with "newPassword" option (default False)
+            dual (bool): retains current password after changing (default False)
+            discardOld (bool):  discards retained old password if present. If True, will ignore other options (beside account) and not change current password. (default False)
+            newPassword (str): password to change to for the specified account. If not set, it will be prompted. Cannot be used with "random" option (default not set)
+        """
+        return internal_change_password(**options)
 
 
-@plugin_function("util.upgradeAuthMethod")
-def upgrade_auth_method(**options):
-    """Upgrades authentication plugin of an account.
+# util.upgradeAuthMethod is MySQL-only: it migrates accounts off
+# mysql_native_password, which MySQL deprecated in 8.0 and removed in 9.0, to
+# caching_sha2_password. In MariaDB mysql_native_password is the default and is
+# not deprecated, so the MariaDB build does not register it - the same as the
+# \help mysql_native_password topic in modules/util/mod_util.cc.
+if not common.is_mariadb_build():
+    @plugin_function("util.upgradeAuthMethod")
+    def upgrade_auth_method(**options):
+        """Upgrades authentication plugin of an account.
 
-    Checks and upgrades authentication method of an account from deprecated mysql_native_password to caching_sha2_password.
-    If no account is specified, currently authenticated user is used.
-    If targeted account does not use mysql_native_password as its authentication method, function exits.
+        Checks and upgrades authentication method of an account from deprecated mysql_native_password to caching_sha2_password.
+        If no account is specified, currently authenticated user is used.
+        If targeted account does not use mysql_native_password as its authentication method, function exits.
 
-    Args:
-        **options (dict): Optional arguments
+        Args:
+            **options (dict): Optional arguments
 
-    Keyword Args:
-        account (str): account to wchich upgrade will be performed; if not set, currently authenticated user will be used (default not set)
-        password (str): password of currently authenticated user, that will be making changes; if not set, it will be prompted (default not set)
-    """
-    internal_upgrade_auth_method(**options)
+        Keyword Args:
+            account (str): account to wchich upgrade will be performed; if not set, currently authenticated user will be used (default not set)
+            password (str): password of currently authenticated user, that will be making changes; if not set, it will be prompted (default not set)
+        """
+        internal_upgrade_auth_method(**options)

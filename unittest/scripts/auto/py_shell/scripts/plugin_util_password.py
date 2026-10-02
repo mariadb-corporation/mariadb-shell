@@ -78,7 +78,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 
 
-#@<> Change password to a random one {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Change password to a random one {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "testother")
 shell.options["useWizards"] = 1
@@ -99,7 +99,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 
 
-#@<> Change password and retain old one (dual) {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Change password and retain old one (dual) {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -117,7 +117,7 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
-#@<> Warn about dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Warn about dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -142,7 +142,7 @@ shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
 
-#@<> Error when dual a dual password account {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Error when dual a dual password account {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -160,7 +160,7 @@ shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
 
-#@<> Discard old password from dual account {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Discard old password from dual account {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -190,7 +190,7 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
-#@<> Check if account has dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Check if account has dual password {VER(>=8.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234")
 shell.options["useWizards"] = 1
@@ -217,7 +217,7 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
-#@<> Error when passing new pasword and random arguments
+#@<> Error when passing new pasword and random arguments {not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test")
 shell.connect(get_test_user_uri(test_user1, "test"))
@@ -227,8 +227,27 @@ shell.options["useWizards"] = 0
 EXPECT_OUTPUT_NOT_CONTAINS("NOTE: Password has been successfully updated.")
 testutil.assert_no_prompts()
 
+#@<> random, dual and discardOld are not available in the MariaDB build {__mariadb_build}
+shell.connect(__mysql_uri)
+recreate_test_user(test_user1, "test")
+for option in ["random", "dual", "discardOld"]:
+    EXPECT_THROWS(lambda: util.change_password({"account": test_account1, option: True}),
+                  f"Invalid options at Argument #1: {option}")
+testutil.assert_no_prompts()
 
-#@<> Check for mysql_native_password {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> random, dual and discardOld are refused by a MariaDB server {not __mariadb_build and __server_is_maria_db}
+shell.connect(__mysql_uri)
+recreate_test_user(test_user1, "test")
+EXPECT_THROWS(lambda: util.change_password({"account": test_account1, "random": True}),
+              "Random password functionality is not supported by MariaDB servers.")
+EXPECT_THROWS(lambda: util.change_password({"account": test_account1, "newPassword": "1234", "dual": True}),
+              "Dual password functionality is not supported by MariaDB servers.")
+EXPECT_THROWS(lambda: util.change_password({"account": test_account1, "discardOld": True}),
+              "Dual password functionality is not supported by MariaDB servers.")
+testutil.assert_no_prompts()
+
+
+#@<> Check for mysql_native_password {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.connect(get_test_user_uri(test_user1, "test"))
@@ -259,7 +278,34 @@ EXPECT_OUTPUT_NOT_CONTAINS(
     "Please use the \"util.changeAuthMethod\" function to upgrade it to caching_sha2_password.")
 testutil.assert_no_prompts()
 
-#@<> Simple authentication plugin update {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> upgrade_auth_method is not available in the MariaDB build {__mariadb_build}
+EXPECT_FALSE("upgrade_auth_method" in dir(util))
+
+#@<> No mysql_native_password warning in the MariaDB build {__mariadb_build and (__server_is_maria_db or VER(<9.0.0))}
+shell.connect(__mysql_uri)
+recreate_test_user(test_user1, "test", "mysql_native_password")
+shell.connect(get_test_user_uri(test_user1, "test"))
+WIPE_OUTPUT()
+EXPECT_NO_THROWS(lambda: util.change_password(
+    {"newPassword": "1234"}))
+EXPECT_OUTPUT_NOT_CONTAINS("mysql_native_password")
+testutil.assert_no_prompts()
+
+#@<> mysql_native_password is not deprecated on a MariaDB server {not __mariadb_build and __server_is_maria_db}
+# the MySQL build judged a MariaDB server by its version number, which is not
+# on MySQL's scale
+shell.connect(__mysql_uri)
+recreate_test_user(test_user1, "test", "mysql_native_password")
+shell.connect(get_test_user_uri(test_user1, "test"))
+WIPE_OUTPUT()
+EXPECT_NO_THROWS(lambda: util.change_password(
+    {"newPassword": "1234"}))
+EXPECT_OUTPUT_NOT_CONTAINS("mysql_native_password")
+EXPECT_THROWS(lambda: util.upgrade_auth_method({"password": "1234"}),
+              "Upgrading the authentication method is not needed on MariaDB servers: mysql_native_password is their default authentication plugin and is not deprecated.")
+testutil.assert_no_prompts()
+
+#@<> Simple authentication plugin update {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 # required privilege to update auth
@@ -280,7 +326,7 @@ EXPECT_OUTPUT_CONTAINS("caching_sha2_password")
 shell.connect(__mysql_uri)
 testutil.assert_no_prompts()
 
-#@<> Authentication update fail because of server version {VER(<8.0.0)}
+#@<> Authentication update fail because of server version {VER(<8.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 # required privilege to update auth
@@ -290,7 +336,7 @@ EXPECT_THROWS(lambda: util.upgrade_auth_method(), "Unsupported server version. T
 shell.connect(__mysql_uri)
 testutil.assert_no_prompts()
 
-#@<> Account already has been updated to caching_sha2_password {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Account already has been updated to caching_sha2_password {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test")
 # required privilege to update auth
@@ -304,7 +350,7 @@ shell.options["useWizards"] = 0
 shell.connect(__mysql_uri)
 testutil.assert_no_prompts()
 
-#@<> Failed authentication plugin update due to privileges {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Failed authentication plugin update due to privileges {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.connect(get_test_user_uri(test_user1, "test"))
@@ -315,7 +361,7 @@ EXPECT_THROWS(lambda: util.upgrade_auth_method(), "Failed to change authenticati
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Authentication plugin update of another account {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Authentication plugin update of another account {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.options["useWizards"] = 1
@@ -329,7 +375,7 @@ EXPECT_OUTPUT_NOT_CONTAINS("mysql_native_password")
 EXPECT_OUTPUT_CONTAINS("caching_sha2_password")
 testutil.assert_no_prompts()
 
-#@<> Failed authentication plugin update of another account {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Failed authentication plugin update of another account {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.connect(get_test_user_uri(test_user1, "test"))
@@ -340,7 +386,7 @@ EXPECT_THROWS(lambda: util.upgrade_auth_method({"account": test_account1}), "Fai
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Changing auth plugin with password arg {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Changing auth plugin with password arg {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test", "mysql_native_password")
 shell.options["useWizards"] = 1
@@ -405,7 +451,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Error when auth method upgrading a dual password account {VER(>=8.0.0) and VER(<9.0.0)}
+#@<> Error when auth method upgrading a dual password account {VER(>=8.0.0) and VER(<9.0.0) and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "1234", "mysql_native_password")
 shell.options["useWizards"] = 1
@@ -479,7 +525,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation above 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Entering password for mysql_native_password upgrade for policy validation above 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)
@@ -496,7 +542,7 @@ EXPECT_THROWS(lambda: util.upgrade_auth_method(),
 shell.options["useWizards"] = 0
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation max 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Entering password for mysql_native_password upgrade for policy validation max 3 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)
@@ -516,7 +562,7 @@ session.run_sql("select current_user();")
 EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
-#@<> Entering password for mysql_native_password upgrade for policy validation max 2 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL"}
+#@<> Entering password for mysql_native_password upgrade for policy validation max 2 times {VER(>=8.0.0) and VER(<9.0.0) and sandbox.vendor() == "MySQL" and not __mariadb_build}
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "Testpass1234?", "mysql_native_password")
 session.run_sql("grant create user on *.* to " + test_account1)

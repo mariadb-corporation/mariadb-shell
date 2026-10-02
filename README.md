@@ -45,7 +45,7 @@ The following global objects are available in Python mode:
 | `shell` | Connections and sessions, `shell.options`, credential store, reports, SQL handlers, extension objects, prompts, pager |
 | `session` / `db` | The current session and its default schema |
 | `mysql` | Classic sessions, SQL parsing/tokenizing helpers, identifier and account quoting |
-| `util` | The dump, load and copy utilities, `importTable` / `exportTable`, `changePassword`, `upgradeAuthMethod`, and the `util.debug` diagnostics collectors |
+| `util` | The dump, load and copy utilities, `importTable` / `exportTable`, `changePassword`, and the `util.debug` diagnostics collectors |
 | `sandbox` | Deploy and manage local server sandboxes (see below) |
 | `plugins` | Install, list, update and remove shell plugins |
 
@@ -163,6 +163,7 @@ were MySQL-specific still exist but raise a "not supported" error. Either way,
 | **AdminAPI** (`dba`, InnoDB Cluster / ReplicaSet / ClusterSet) | Built on MySQL Group Replication and the MySQL metadata schema |
 | **Upgrade Checker** (`util.checkForServerUpgrade`) | Encodes MySQL Server upgrade rules |
 | **Binlog utilities** (`util.dumpBinlogs`, `util.loadBinlogs`) | Built on MySQL's client binlog API and binlog event library |
+| **`util.upgradeAuthMethod`**, and the `random`, `dual` and `discardOld` options of `util.changePassword` | Migrate off, or rely on, MySQL 8.0 account features MariaDB does not have |
 | **MySQL REST Service (MRS) management** | MySQL Router plugin specific |
 | **`--register-factor`** | Uses the MySQL FIDO/WebAuthn authentication plugin |
 
