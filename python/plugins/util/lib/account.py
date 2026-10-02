@@ -95,11 +95,20 @@ def get_server_major_version(session) -> int:
 
 
 def is_server_auth_method_upgradable(session) -> bool:
+    # mysql_native_password is deprecated from MySQL 8.0. In MariaDB it is the
+    # default authentication plugin and is not deprecated, and its version
+    # numbers are not on MySQL's scale.
+    if session.server_vendor != "MySQL":
+        return False
     major_version = get_server_major_version(session)
     return major_version >= 8
 
 
 def is_password_extensions_supported(session) -> bool:
-    # support for dual and random password is from version 8.0
+    # support for dual and random password is from MySQL 8.0. MariaDB has neither
+    # (no RANDOM PASSWORD, RETAIN CURRENT PASSWORD or DISCARD OLD PASSWORD), and
+    # its version numbers are not on MySQL's scale.
+    if session.server_vendor != "MySQL":
+        return False
     major_version = get_server_major_version(session)
     return major_version >= 8

@@ -78,9 +78,11 @@ FUNCTIONS
       load_dump(url[, options])
             Loads database dumps created by MariaDB Shell.
 
+?{not __mariadb_build}
       upgrade_auth_method([options])
             Upgrades authentication plugin of an account.
 
+?{}
 #@<OUT> util check_for_server_upgrade help
 NAME
       check_for_server_upgrade - Performs series of tests on specified MySQL

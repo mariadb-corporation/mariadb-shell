@@ -26,6 +26,16 @@ from mysqlsh import globals, Error
 from mysqlsh.mysql import split_account
 
 
+def is_mariadb_build() -> bool:
+    """Whether the running shell is the MariaDB build (links MariaDB's Connector/C).
+
+    'shell.version' names the client library the shell was built against, e.g.
+    "... - for MariaDB 13.2.0-MariaDB (...)" versus "... - for MySQL 9.7.0 (...)".
+    This is the Python counterpart of the C++ MARIADB_BUILD macro.
+    """
+    return " for MariaDB" in globals.shell.version
+
+
 def get_current_user(session):
     result = session.run_sql("SELECT current_user()")
     return result.fetch_one()[0]
