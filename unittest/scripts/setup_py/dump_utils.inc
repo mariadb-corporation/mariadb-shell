@@ -952,10 +952,16 @@ class Generate_transactions:
         self.__tables_to_create = tables_to_create
         self.__session = self.__pid = None
     def generate_ddl(self):
-        self.__setup(f"""v = {self.__tables_to_create}
+        # The pause keeps DDL running throughout a dump while bounding how many
+        # tables pile up: unthrottled, a fast disk (tmpfs) lets this create tens
+        # of thousands of tables across a few chunks, and the next dump's LOCK
+        # TABLES over all of them never finishes.
+        self.__setup(f"""import time
+v = {self.__tables_to_create}
 while True:
     session.run_sql("CREATE TABLE {self.__schema}.{self.__table}_{{0}} (a int)".format(v))
     v = v + 1
+    time.sleep(0.01)
 session.close()
 """, f"SELECT 1 FROM information_schema.tables WHERE table_schema='{self.__schema}' and table_name='{self.__table}_{self.__tables_to_create}'")
     def generate_data(self):
