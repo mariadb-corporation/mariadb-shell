@@ -604,32 +604,34 @@ class Orchestrator:
         self.logs_dir = Path(logs_dir)
         self.report_file = Path(report_file)
 
-    def _prepare_sandbox_boilerplate(self, socket_dir: Path) -> Optional[Path]:
+    def _prepare_sandbox_boilerplate(self, tmp_root: Path) -> Optional[Path]:
         """Builds the sandbox boilerplate once, before any worker starts.
 
         Deploys (and then removes) a throw-away sandbox with the boilerplate
-        directed to a fresh folder under the logs dir, so that every worker and
-        test process can copy it instead of bootstrapping its own. The folder
-        is rebuilt on every run rather than trusted from an earlier one: the
-        plugin keys a boilerplate by server version only, and a server rebuilt
-        at the same version would otherwise get a stale one.
+        directed to a fresh folder under the run's scratch root, so that every
+        worker and test process can copy it instead of bootstrapping its own.
+        It goes there and not under the logs dir because it is no diagnostic:
+        the scratch root is removed at the end of the run, while the logs dir
+        is kept, and archived by CI. Being per run, it is never trusted from an
+        earlier one: the plugin keys a boilerplate by server version only, and
+        a server rebuilt at the same version would otherwise get a stale one.
 
         Args:
-            socket_dir: Directory for the throw-away sandbox's X Protocol socket.
+            tmp_root: The run's scratch root; it also holds the throw-away
+                sandbox's X Protocol socket.
 
         Returns:
             The boilerplate folder, or None when it could not be built, in which
             case every sandbox bootstraps its own, as without this step.
         """
-        boilerplate_dir = (self.logs_dir / "sandbox-boilerplate").resolve()
-        shutil.rmtree(boilerplate_dir, ignore_errors=True)
+        boilerplate_dir = (tmp_root / "sandbox-boilerplate").resolve()
         config_home = boilerplate_dir / "config-home"
         config_home.mkdir(parents=True)
 
         env = os.environ.copy()
         env[_BOILERPLATE_DIR_ENV] = str(boilerplate_dir)
         env["MARIADB_SHELL_USER_CONFIG_HOME"] = str(config_home)
-        sandbox = SandboxManager(self.shell_binary, env=env, socket_dir=socket_dir)
+        sandbox = SandboxManager(self.shell_binary, env=env, socket_dir=tmp_root)
         port = SandboxManager.find_free_ports(1)[0]
 
         print(f"Preparing the sandbox boilerplate shared by all workers under '{boilerplate_dir}'...")
@@ -865,9 +867,10 @@ class Orchestrator:
         print(f"Execution logs will be kept under '{self.logs_dir}'.")
 
         # Short-pathed scratch root for this run (see _SHORT_TMP_PARENT): every
-        # task's TMPDIR and every worker sandbox's X socket live under it. A
-        # failed task's TMPDIR is moved into its logs folder for diagnosis, and
-        # the root itself is removed at the end of the run.
+        # task's TMPDIR, every worker sandbox's X socket and the shared sandbox
+        # boilerplate live under it. A failed task's TMPDIR is moved into its
+        # logs folder for diagnosis, and the root itself is removed at the end
+        # of the run.
         short_tmp_root = Path(tempfile.mkdtemp(prefix="rut-", dir=_SHORT_TMP_PARENT))
 
         # Environment shared by every worker's sandbox calls and test processes

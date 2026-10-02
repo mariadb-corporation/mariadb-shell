@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@v4
 
       # ==========
-      # 0b. CCACHE
+      # 1. CCACHE
       # ==========
       - name: Setup ccache
         if: env.RUN_BUILD == 'true'
@@ -113,7 +113,7 @@ jobs:
           ccache --zero-stats
 
       # ============
-      # 1. CONFIGURE
+      # 2. CONFIGURE
       # ============
       - name: Configure MariaDB Shell
         if: env.RUN_BUILD == 'true'
@@ -122,7 +122,7 @@ jobs:
           MARIADB_BIN=$(echo ~/.cache/ci/mariadb*/bin)
 
           # Add to GitHub Actions global PATH for all subsequent steps
-          echo "$MARIADB_BIN" >> $GITHUB_PATH
+          echo "$MARIADB_BIN" >> "$GITHUB_PATH"
 
           mkdir -p ${{ env.MARIADB_SHELL_BUILD_DIR }}
           cd ${{ env.MARIADB_SHELL_BUILD_DIR }}
@@ -142,7 +142,7 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       # ============
-      # 1. BUILD
+      # 3. BUILD
       # ============
       - name: Build MariaDB Shell
         if: env.RUN_BUILD == 'true'
@@ -165,11 +165,10 @@ jobs:
 
 
       # ============
-      # 2. SETUP TEST ENVIRONMENT
+      # 4. SETUP TEST ENVIRONMENT
       # ============
       - name: Setup Test Environment
         if: env.RUN_TESTS == 'true'
-        id: setup
         run: |
           # Seed this run's timing profile from the previous run's, cached on
           # the self-hosted runner, so the LPT partitioning has historical
@@ -180,7 +179,7 @@ jobs:
 
 
       # ============
-      # 3. EXECUTE TESTS
+      # 5. EXECUTE TESTS
       # ============
       - name: Execute Unit Tests
         if: env.RUN_TESTS == 'true'
@@ -189,15 +188,18 @@ jobs:
           python3 scripts/run_unit_tests.py -t test-execution-times.txt --binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/run_unit_tests --shell-binary ${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-shell --gtest_filter="-*Threaded_file*"
 
       # The runner exits non-zero when a suite fails, failing the step above;
-      # the plot and the timing profile are still wanted from such a run.
-      - name: Plot Execution and Cache Timings
-        if: always() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
-        run: |
-          python3 scripts/plot_execution_plan.py
-          cp test-execution-times.txt ~/.cache/ci
+      # the timing profile it saved is still wanted from such a run. The
+      # execution chart needs no step of its own: the runner already puts it in
+      # test-execution-report.html, drawn from this run's own timings.
+      #
+      # Self-hosted only, like the package cache below: ~/.cache/ci is that
+      # machine's shared cache, and a hosted runner is wiped after the job.
+      - name: Cache Test Timings
+        if: always() && runner.environment == 'self-hosted' && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure')
+        run: cp test-execution-times.txt ~/.cache/ci
 
       # =====================
-      # 4. PACKAGE AND CACHE
+      # 6. PACKAGE AND CACHE
       # =====================
       - name: Package and cache MariaDB Shell
         # After the tests, and inheriting the default "only if every earlier
@@ -259,7 +261,7 @@ jobs:
           find "$STAGING" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + || true
 
       # ============
-      # 5. ARCHIVE
+      # 7. ARCHIVE
       # ============
       - name: Archive Test Execution Artifacts
         # always(), and not gated on success, so the plan/report/logs are still
