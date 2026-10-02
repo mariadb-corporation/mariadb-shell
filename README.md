@@ -45,7 +45,7 @@ The following global objects are available in Python mode:
 | `shell` | Connections and sessions, `shell.options`, credential store, reports, SQL handlers, extension objects, prompts, pager |
 | `session` / `db` | The current session and its default schema |
 | `mysql` | Classic sessions, SQL parsing/tokenizing helpers, identifier and account quoting |
-| `util` | `changePassword`, `upgradeAuthMethod`, and the `util.debug` diagnostics collectors |
+| `util` | The dump, load and copy utilities, `importTable` / `exportTable`, `changePassword`, `upgradeAuthMethod`, and the `util.debug` diagnostics collectors |
 | `sandbox` | Deploy and manage local server sandboxes (see below) |
 | `plugins` | Install, list, update and remove shell plugins |
 
@@ -53,11 +53,41 @@ Every API is also reachable from the operating system shell through **API
 Command Line integration**, so no scripting is needed for one-off calls:
 
 ```bash
+$ mariadb-shell root@localhost -- util dump-schemas sakila --outputUrl=/tmp/sakila
 $ mariadb-shell root@localhost -- util debug collect-diagnostics /tmp/diag.zip
 $ mariadb-shell -- shell status
 ```
 
 Run `\? cmdline` inside the shell for the full mapping rules.
+
+### Dump, Load and Copy
+
+`util.dumpInstance`, `util.dumpSchemas` and `util.dumpTables` write logical
+dumps in parallel, with tables split into chunks and compressed, to a local
+directory or to OCI, AWS S3 or Azure object storage. `util.loadDump` loads them
+back in parallel, can resume an interrupted load, and can defer index creation
+until the data is in. `util.copyInstance`, `util.copySchemas` and
+`util.copyTables` stream the same way straight from one server to another, with
+no dump files in between. `util.importTable` and `util.exportTable` move a
+single table's data to and from delimited files.
+
+The utilities handle MariaDB's own objects and semantics:
+
+- sequences, including their current position
+- PACKAGE and PACKAGE BODY (Oracle mode)
+- check constraints, users, roles and the roles granted to them
+- system-versioned tables, dumped as their current rows (history is not dumped,
+  and the dump warns about it)
+- UUID, INET4 and INET6 columns
+- a consistent snapshot taken under `BACKUP STAGE`, with the GTID position
+  (`gtid_current_pos`) recorded in the dump; `loadDump`'s `updateGtidSet`
+  option writes it to `gtid_slave_pos` on the target
+
+A dump taken from a MariaDB server loads into a MariaDB server; loading it into
+a server of another vendor is refused before any DDL runs. The `ocimds` and
+`compatibility` options, which adapt a dump for MySQL HeatWave Service, are not
+available for MariaDB sources. See [MARIADB_DUMP_LOAD.md](MARIADB_DUMP_LOAD.md)
+for the full behaviour and the reasons behind it.
 
 ### Local Server Sandboxes
 
@@ -87,8 +117,9 @@ Passwords can be stored in and retrieved from the platform's own secret store,
 so they do not need to be retyped or embedded in scripts. The available helpers
 depend on the platform:
 
-- **macOS** — Keychain
-- **Linux** — Secret Service (GNOME Keyring, KWallet)
+- **macOS** — Keychain (default), or `login-path`
+- **Linux** — `login-path` (default), which keeps passwords in
+  `~/.mylogin.cnf`, or Secret Service (GNOME Keyring, KWallet)
 - **Windows** — Windows Credential Manager
 - **All platforms** — a `plaintext` helper, for testing only
 
@@ -128,10 +159,10 @@ were MySQL-specific still exist but raise a "not supported" error. Either way,
 | Feature | Reason |
 |---|---|
 | **JavaScript mode** (`--js`) | Requires the GraalVM/Truffle JIT executor, which is not shipped |
-| **X Protocol / X DevAPI** | `mysqlx://` URIs, X sessions, collections and the document store depend on MySQL's `libmysqlxclient` |
+| **X Protocol / X DevAPI** | `mysqlx://` URIs, X sessions, collections and the document store (including `util.importJson`) depend on MySQL's `libmysqlxclient` |
 | **AdminAPI** (`dba`, InnoDB Cluster / ReplicaSet / ClusterSet) | Built on MySQL Group Replication and the MySQL metadata schema |
 | **Upgrade Checker** (`util.checkForServerUpgrade`) | Encodes MySQL Server upgrade rules |
-| **Dump, load and copy utilities** (`util.dumpInstance`, `util.loadDump`, `util.copySchemas`, `util.importTable`, `util.dumpBinlogs`, …) | Depend on MySQL-specific DDL handling, capabilities and binlog semantics |
+| **Binlog utilities** (`util.dumpBinlogs`, `util.loadBinlogs`) | Built on MySQL's client binlog API and binlog event library |
 | **MySQL REST Service (MRS) management** | MySQL Router plugin specific |
 | **`--register-factor`** | Uses the MySQL FIDO/WebAuthn authentication plugin |
 
