@@ -104,6 +104,18 @@ How to deploy and manage local MariaDB and MySQL servers for testing and develop
 
 {% columns %}
 {% column %}
+{% content-ref url="mcp-server/" %}
+[mcp-server](mcp-server/)
+{% endcontent-ref %}
+{% endcolumn %}
+
+{% column %}
+How to configure, start, and secure the MCP server that gives AI agents access to your MariaDB servers.
+{% endcolumn %}
+{% endcolumns %}
+
+{% columns %}
+{% column %}
 {% content-ref url="extending-mariadb-shell/" %}
 [extending-mariadb-shell](extending-mariadb-shell/)
 {% endcontent-ref %}

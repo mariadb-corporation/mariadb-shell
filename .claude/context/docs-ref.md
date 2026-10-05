@@ -6,7 +6,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 
 - **`docs-ref/` copies the ai-plugins setup exactly.** The source is `/Users/mzinner/git/ai-plugins/docs-ref`: same packages, lockfile, theme (`src/css/mariadb-gitbook.css`), remark extras and npm scripts. Only the names were changed: the REPO URL, the tagline, the announcement bar, and the `static/index.html` redirect to `tools/mariadb-shell/`. Keep the two copies in step.
 - **`content/SUMMARY.md` is the only definition of the page tree.** `sidebars.js` generates the sidebar from it.
-- **Excluded features.** Docs cover only what the build ships. JavaScript, X DevAPI/mysqlx, AdminAPI, the upgrade checker, the binlog utils, `upgradeAuthMethod`, and HeatWave options (`ocimds`, `compatibility`, lakehouse, data masking) appear only on `getting-started/differences-from-mysql-shell.md`. The `mcp`/`mrs`/`msm` globals come from the AI Plugins, not the shell, and are never documented.
+- **Excluded features.** Docs cover only what the build ships. JavaScript, X DevAPI/mysqlx, AdminAPI, the upgrade checker, the binlog utils, `upgradeAuthMethod`, and HeatWave options (`ocimds`, `compatibility`, lakehouse, data masking) appear only on `getting-started/differences-from-mysql-shell.md`. The `mrs`/`msm` globals are never documented. `mcp` IS documented since 2026-10-05 (user's request): `shell-release.yml` bundles `mcp_plugin`/`mrs_plugin`/`msm_plugin` from the private mariadb-shell-plugins repo into the release packages' `lib/mariadb-shell/plugins`; a source build (`build/`) lacks them, and locally they come from symlinks in `~/.mariadb-shell/plugins`.
 - **MariaDB additions are documented:**
   - the `mariadb://` scheme (`mysql://` is a synonym) and `mariadb+ssh://`
   - the `sandbox` global and `%vendor%`
@@ -22,6 +22,12 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 ### Further decisions (added later)
 
 - **Space placement is an assumption.** The docs are in the Enterprise Tools space (`tools/mariadb-shell`) only to mirror the AI Plugins; the user has not confirmed it. Server › Clients & Utilities is the alternative.
+- **MCP Server section (`mcp-server/`, 2026-10-05).** Scope is setting up, running and securing the server; tool usage stays in the ai-plugins docs (linked as absolute `https://mariadb.com/docs/tools/mariadb-ai-plugins` URLs, which won't resolve until those docs are ported). Pages: README (overview, `mcp` object, groups), Configuring Access (`mcp setup`), Automated Setup (CLI options), Starting the MCP Server (transports, `--functionGroups`, log), Connecting MCP Clients (Claude Code, Codex, VS Code, Claude Desktop, Windows `cmd /c`), Security and Session Handling.
+  - Sources: mcp_plugin `README.md`, `server.py`, `lib/server.py`, `lib/general.py`, `lib/setup*.py`, and the generated `--help`.
+  - Verified live on 26.9.5 in a scratch config home: `setup --show/--json/--addPaths`, every CLI refusal message, the walkthrough and menu rendering under a pty (`[Y/n]`, `[6]`), HTTP `/mcp` 200, 421 on a foreign Host, 403 on a foreign Origin, `--allowedHosts` (bare name 200, name:port 421), the 0.0.0.0 warning, transport/group errors, the port-in-use error, stdio tool sets per group (db 8, msm 12; `msm.deploy_schema` only with db), and `claude mcp add` / `codex mcp add` (`CODEX_HOME` scratch) keeping the second `--`.
+  - Unverified: the VS Code and Claude Desktop JSON formats (from those products' documented formats), Windows `cmd /c mariadb-shell.cmd`, the SSH host-key prompt in `mcp setup`, and the stderr connection-event log lines (taken from the README).
+  - Deviates from the ai-plugins rule "passwords only at the prompt": Automated Setup documents `--passwordEnv` and `--passwordStdin` for CI and secret managers, and names `--password` only to discourage it. Ask the user if this should be aligned.
+  - `--gui` is listed once, as reserved for the VS Code extension; nothing else GUI-specific.
 - **Two-level Utilities.** Utilities contains a **Dump and Load** subsection, structured after the Confluence pages:
   - overview (`README.md`), Quick Start, How Dump and Load Work
   - the dump, load and copy option references
@@ -106,5 +112,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
   - Without `--disable-plugins`, the AI Plugins' `mcp`/`mrs`/`msm` show up.
 - **Sandbox location.** Sandbox tests deploy into the real `~/.mariadb-shell/sandboxes`. The user's sandboxes there (3313, `myboilerplate-*`) must not be touched.
 - **The Confluence page is login-gated.** WebFetch can't read it and the Atlassian MCP was unauthorized in the session, so ask the user for an export.
+- **`MARIADB_SHELL_USER_CONFIG_HOME` doesn't isolate MCP connections.** They live in the macOS keychain, so a scratch config home still shows the user's real `mariadb://root@127.0.0.1:3311`. Never add or delete MCP connections in tests.
+- **The MCP Inspector mangles `mariadb-shell -- mcp start-server ...`** (the shell ended up evaluating `true` as Python), so the docs don't recommend it.
 - **Credential tests use the real keychain.** On macOS they default to the user's own keychain, so pass `--credential-store-helper=plaintext` or clean up afterwards. One test stored and then deleted `app@db1:3306` there.
 - **Build output is ignored.** `docs-ref/build/` and `.docusaurus/` are in `.gitignore`. A clean `npm run build` with no warnings is the check before committing, because broken links and anchors fail it.
