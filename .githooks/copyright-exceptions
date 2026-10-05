@@ -11,3 +11,8 @@
 # Python files under any unittest/ directory are test fixtures and must not
 # get a copyright notice.
 (.*/)?unittest/.*\.py$
+
+# Reference documentation pages quote the shell's welcome banner, Oracle
+# copyright line included, as sample output; a notice added there would make
+# the sample wrong.
+docs-ref/content/.*\.md$

@@ -19,3 +19,9 @@ __pycache__/
 unittest/rut-filter
 unittest/test-execution-times*.txt
 unittest/test-chunk-times.txt
+
+# Docusaurus preview of the reference docs (docs-ref/) — dependencies, build
+# output and cache. Its package-lock.json is committed for reproducible builds.
+docs-ref/node_modules/
+docs-ref/build/
+docs-ref/.docusaurus/
