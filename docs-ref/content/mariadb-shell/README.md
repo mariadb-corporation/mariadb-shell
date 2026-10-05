@@ -104,6 +104,18 @@ How to deploy and manage local MariaDB and MySQL servers for testing and develop
 
 {% columns %}
 {% column %}
+{% content-ref url="schema-management/" %}
+[schema-management](schema-management/)
+{% endcontent-ref %}
+{% endcolumn %}
+
+{% column %}
+How to develop, release, and deploy a versioned database schema with MariaDB Schema Management.
+{% endcolumn %}
+{% endcolumns %}
+
+{% columns %}
+{% column %}
 {% content-ref url="mcp-server/" %}
 [mcp-server](mcp-server/)
 {% endcontent-ref %}
