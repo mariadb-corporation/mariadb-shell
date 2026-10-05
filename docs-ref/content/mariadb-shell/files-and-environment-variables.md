@@ -31,6 +31,7 @@ The directory can contain the following files and subdirectories:
 | `mariadb-shellrc.py` | A Python startup script. It runs when Python mode is first initialized, either at startup or at the first switch to Python mode. See [Startup Scripts](customizing/startup-scripts.md). |
 | `init.d/` | Python files that the shell loads at startup, for example to register [reports](extending-mariadb-shell/reports.md). |
 | `plugins/` | User plugins, one subdirectory per plugin. See [Plugins](extending-mariadb-shell/plugins.md). |
+| `plugin_data/` | Data that plugins store, one subdirectory per plugin. `plugin_data/mcp_plugin/settings.json` holds the allowed paths of the [MCP server](mcp-server/configuring-access.md). |
 | `mariadb-shell.log` | The shell log. Use `--log-file` to write it elsewhere. See [Logging and Debugging](logging-and-debugging.md). |
 
 ### Sandbox Directory
