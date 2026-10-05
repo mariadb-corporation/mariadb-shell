@@ -82,7 +82,7 @@ Specific to MariaDB Shell:
 
 - Document only what this build ships. JavaScript mode, the X DevAPI,
   AdminAPI, the upgrade checker and the binlog utilities are not part of
-  MariaDB Shell; [`differences-from-mysql-shell.md`](content/mariadb-shell/differences-from-mysql-shell.md)
+  MariaDB Shell; [`differences-from-mysql-shell.md`](content/mariadb-shell/getting-started/differences-from-mysql-shell.md)
   is the one page that names them.
 - Python is the only scripting language, so API names are snake_case
   (`util.dump_instance`), while option dictionary keys stay camelCase

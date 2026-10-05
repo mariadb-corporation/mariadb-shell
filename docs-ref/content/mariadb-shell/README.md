@@ -32,18 +32,6 @@ What MariaDB Shell is, its main features, the platforms it runs on, and the serv
 
 {% columns %}
 {% column %}
-{% content-ref url="differences-from-mysql-shell.md" %}
-[differences-from-mysql-shell.md](differences-from-mysql-shell.md)
-{% endcontent-ref %}
-{% endcolumn %}
-
-{% column %}
-The MySQL Shell features that MariaDB Shell leaves out, and what it adds or renames.
-{% endcolumn %}
-{% endcolumns %}
-
-{% columns %}
-{% column %}
 {% content-ref url="installation/" %}
 [installation](installation/)
 {% endcontent-ref %}
@@ -62,7 +50,7 @@ How to install, upgrade, and remove MariaDB Shell on Linux, macOS, and Windows w
 {% endcolumn %}
 
 {% column %}
-How to start the shell, open a session, and use the global objects.
+How to start the shell, open a session, use the global objects, and what differs from MySQL Shell.
 {% endcolumn %}
 {% endcolumns %}
 
