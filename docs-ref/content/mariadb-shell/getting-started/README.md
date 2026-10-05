@@ -44,3 +44,15 @@ How the global session works, how to open additional sessions, and the methods o
 The objects available in Python mode, such as `shell`, `session`, `util`, and `sandbox`.
 {% endcolumn %}
 {% endcolumns %}
+
+{% columns %}
+{% column %}
+{% content-ref url="differences-from-mysql-shell.md" %}
+[differences-from-mysql-shell.md](differences-from-mysql-shell.md)
+{% endcontent-ref %}
+{% endcolumn %}
+
+{% column %}
+The MySQL Shell features that MariaDB Shell leaves out, and what it adds or renames.
+{% endcolumn %}
+{% endcolumns %}
