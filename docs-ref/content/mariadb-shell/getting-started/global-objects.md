@@ -1,7 +1,7 @@
 ---
 description: >-
   The objects that MariaDB Shell makes available in Python mode: shell,
-  session, db, mysql, util, sandbox, plugins, and mcp.
+  session, db, mysql, util, sandbox, plugins, msm, and mcp.
 ---
 
 # Global Objects
@@ -17,6 +17,7 @@ When the shell starts in Python mode, or when you switch to it with `\py`, a set
 | `util` | The dump, load, copy, export, import, password change, and diagnostics utilities. |
 | `sandbox` | Deploys and manages local MariaDB and MySQL test servers. |
 | `plugins` | Installs, lists, updates, and removes shell plugins. |
+| `msm` | Develops, releases, and deploys versioned database schemas with [Schema Management](../schema-management/README.md). Included in the release packages. |
 | `mcp` | Configures and starts the [MCP server](../mcp-server/README.md). Included in the release packages. |
 
 Plugins and the [extension object](../extending-mariadb-shell/extension-objects.md) API can register additional global objects.
