@@ -26,7 +26,11 @@ Configure the connections and directories the server may access before you start
 | `--port=<number>` | `8080` | The TCP port of the HTTP server. Only used by `streamable-http`. |
 | `--functionGroups=<list>` | All groups | The tool groups to provide, as a comma-separated list of `db`, `msm`, `sandbox`, and `migrator`. See [Function Groups](#function-groups). |
 | `--allowedHosts=<list>` | None | Additional values of the HTTP `Host` header to accept, for a server that clients reach under another name, for example through a reverse proxy. Only used by `streamable-http`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
-| `--gui` | Off | Reserved for the MariaDB extension for Visual Studio Code, which starts the server with it. Don't use it for other clients: in this mode, the server allows access to every local path. |
+| `--sslCertfile=<file>` | None | A certificate, or certificate chain, in PEM format to serve HTTPS with. Requires `--sslKeyfile`. Only used by `streamable-http`. |
+| `--sslKeyfile=<file>` | None | The private key of `--sslCertfile`, in PEM format. |
+| `--maxConnections=<number>` | `64` | The maximum number of database connections the server holds open for all clients together. See [Connection Limits](security-and-session-handling.md#connection-limits). |
+| `--publicUrl=<url>` | The configured URL | The URL clients reach the MCP endpoint at, which OAuth2 tokens are issued for. Overrides the URL set with `mcp setup-oauth --publicUrl` for this run. See [OAuth Authentication](oauth-authentication.md#the-public-url). |
+| `--gui` | Off | Reserved for the MariaDB extension for Visual Studio Code, which starts the server with it. Don't use it for other clients: in this mode, the server allows access to every local path. Not available in multi-tenant mode. |
 
 To show the built-in help for the options, run:
 
@@ -71,8 +75,19 @@ Clients connect to `http://127.0.0.1:8080/mcp`. Press Ctrl+C to stop the server.
 Use HTTP when the client can't start a command, when several clients share one server, or when you want to watch the server's output while you work. The HTTP server writes its startup messages to standard error and one access log line for each request to standard output.
 
 {% hint style="danger" %}
-The MCP server has no authentication. Every client that can reach the HTTP port can open the configured connections with the stored passwords. Keep the default `--host=127.0.0.1`, which accepts connections from the local machine only. See [Security and Session Handling](security-and-session-handling.md#network-exposure).
+Unless it runs in [multi-tenant mode](multi-tenant-mode.md), the MCP server has no authentication. Every client that can reach the HTTP port can open the configured connections with the stored passwords. Keep the default `--host=127.0.0.1`, which accepts connections from the local machine only. See [Security and Session Handling](security-and-session-handling.md#network-exposure).
 {% endhint %}
+
+### Serve HTTPS
+
+To serve HTTPS instead of HTTP, pass a certificate and its private key in PEM format:
+
+```bash
+mariadb-shell -- mcp start-server --port=8443 \
+  --sslCertfile=/etc/mariadb-mcp/server.pem --sslKeyfile=/etc/mariadb-mcp/server-key.pem
+```
+
+Clients then connect to `https://<host>:8443/mcp`. A [multi-tenant](multi-tenant-mode.md) server, whose requests carry the users' credentials, warns when it listens on a non-loopback address without HTTPS.
 
 ### Which Transport to Use
 
@@ -83,6 +98,7 @@ The MCP server has no authentication. Every client that can reach the HTTP port 
 | Network port | None | `--port`, on `127.0.0.1` by default |
 | Ends | When the client exits | When you stop it |
 | Idle sessions closed after 30 minutes | No | Yes |
+| Multi-tenant mode | Not available | Available |
 
 ## Function Groups
 
@@ -107,6 +123,10 @@ When the migration tooling isn't installed, the server writes this message to st
 2026-10-05T20:25:50+0200 [mcp] migration tools not registered: the MySQL-to-MariaDB migration tooling (v1.5.0) is not installed in '/home/dev/.local/share/mariadb-migrator'
 ```
 
+## Multi-Tenant Servers
+
+When [multi-tenant mode](multi-tenant-mode.md) is on, `mcp start-server` serves authenticated users: it refuses `--transport=stdio` and `--gui`, provides only the `db` and `msm` groups, and refuses to start if `--functionGroups` names another group or if there is no enabled user. In an [OAuth2](oauth-authentication.md) mode, it also needs a public URL. Everything else on this page applies unchanged.
+
 ## Log Output
 
 The server writes one line to standard error for each event that concerns a database connection, with either transport:
@@ -115,6 +135,13 @@ The server writes one line to standard error for each event that concerns a data
 * a use of a connection refused, because the request came from another client
 * a connection refused, because the client couldn't be identified
 * an idle session closed, or a session that failed to close
+
+A multi-tenant server adds the user to each line, by the first eight characters of the user ID, and also logs refused API keys and tokens, sign-ins to the [built-in authorization server](oauth-authentication.md#using-the-built-in-authorization-server), and the end of each sign-in:
+
+```text
+2026-10-06T16:34:24+0200 [mcp] db.connect: opened connection 048c5223... on 'mariadb://ada@db.example.com:3306' (mcp) for address=203.0.113.24 session=- user=ac28066a...
+2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24 for user=ac28066a...
+```
 
 ```text
 2026-08-07T14:03:11+0200 [mcp] db.connect: opened connection 6f2a91c4... on 'mariadb://mcp@db.example.com:3306' for address=127.0.0.1 session=0123abcd...
@@ -141,3 +168,5 @@ For a `stdio` server, the MCP client captures standard error. Check the MCP log 
 | *error while attempting to bind on address ('127.0.0.1', 8080): … address already in use* | Another process uses the port. | Choose another port with `--port`. |
 | A client receives HTTP status `421 Misdirected Request`. | The client uses a host name that the server doesn't accept. | Add the name with `--allowedHosts`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
 | No `migrator` tools | The migration tooling isn't installed, or the server was started before it was installed. | Install it with `mcp setup --installMigrator`, then restart the server. |
+| *This server is configured for multi-tenant mode, which serves authenticated users over HTTP only* | Multi-tenant mode is on, and the server was started with `--transport=stdio`. | Use `--transport=streamable-http`, or turn multi-tenant mode off. See [Multi-Tenant Mode](multi-tenant-mode.md). |
+| *Give both --sslCertfile and --sslKeyfile to serve HTTPS, or neither.* | Only one of `--sslCertfile` and `--sslKeyfile` was given. | Pass both. |

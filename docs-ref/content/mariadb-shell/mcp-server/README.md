@@ -41,6 +41,8 @@ You set up the MCP server in two steps, and then let the MCP client start it:
 
 The agent never sees the passwords. It lists the configured connections, asks the server to open one, and receives a connection ID that it uses for further calls.
 
+This setup serves one person. To share one server among several users, each authenticated and each with their own connections, use [multi-tenant mode](multi-tenant-mode.md). Its users authenticate with an API key or with [OAuth2](oauth-authentication.md), through Keycloak or by signing in with their MariaDB account.
+
 ## Tool Groups
 
 The server's tools are organized in function groups. By default, the server provides all of them. To provide only some, use the `--functionGroups` option of `mcp start-server`, as described in [Starting the MCP Server](starting-the-mcp-server.md#function-groups).
@@ -52,13 +54,17 @@ The server's tools are organized in function groups. By default, the server prov
 | `sandbox` | List the server versions that can be deployed, and deploy, start, stop, and delete local sandbox instances. |
 | `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the migration tooling with `mcp setup`. |
 
+A [multi-tenant](multi-tenant-mode.md) server provides only the `db` and `msm` groups.
+
 ## The mcp Global Object
 
 The plugin adds the `mcp` global object to Python mode, and the `mcp` object to [command line integration](../using-mariadb-shell/command-line-integration.md):
 
 | Python | Command line | Description |
 | --- | --- | --- |
-| `mcp.setup()` | `mcp setup` | Configures the connections and directories the server may access, and installs or removes the migration tooling. |
+| `mcp.setup()` | `mcp setup` | Configures the connections and directories the server may access, and installs or removes the migration tooling. In multi-tenant mode, also manages the users. |
+| `mcp.setup_oauth()` | `mcp setup-oauth` | Configures how a [multi-tenant](multi-tenant-mode.md) server accepts OAuth2 tokens. See [OAuth Authentication](oauth-authentication.md). |
+| `mcp.setup_keycloak_realm()` | `mcp setup-keycloak-realm` | Prepares a Keycloak realm to issue tokens for the server. See [OAuth Authentication](oauth-authentication.md#using-keycloak). |
 | `mcp.start_server()` | `mcp start-server` | Starts the MCP server. It runs in the foreground until it is stopped. |
 | `mcp.info()` | `mcp info` | Returns a short description of the plugin. |
 | `mcp.version()` | `mcp version` | Returns the version of the plugin. |
@@ -81,6 +87,14 @@ To show the built-in help, run `\? mcp` in Python mode, or `mariadb-shell -- mcp
 
 {% content-ref url="connecting-mcp-clients.md" %}
 [connecting-mcp-clients.md](connecting-mcp-clients.md)
+{% endcontent-ref %}
+
+{% content-ref url="multi-tenant-mode.md" %}
+[multi-tenant-mode.md](multi-tenant-mode.md)
+{% endcontent-ref %}
+
+{% content-ref url="oauth-authentication.md" %}
+[oauth-authentication.md](oauth-authentication.md)
 {% endcontent-ref %}
 
 {% content-ref url="security-and-session-handling.md" %}

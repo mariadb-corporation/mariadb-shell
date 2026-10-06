@@ -11,6 +11,7 @@ The MCP server gives an AI agent access to databases and files with your credent
 
 | Layer | What it limits | Configured with |
 | --- | --- | --- |
+| Authentication | Who can use the server at all; only in [multi-tenant mode](multi-tenant-mode.md) | `mcp setup`, `mcp setup-oauth` |
 | Network binding | Which machines can reach an HTTP server | `--host`, `--allowedHosts` |
 | Connection allow-list | Which servers and accounts the agent can open | `mcp setup` |
 | Account privileges | What the agent can do on a server | `CREATE USER` and `GRANT` on the server |
@@ -21,7 +22,9 @@ None of these layers restricts the SQL statements themselves. Within a configure
 
 ## Network Exposure
 
-The MCP server has no authentication: no token, no password, and no client certificate. Any client that can reach the server can list the configured connections and open them, and the server signs in with the stored passwords. With the `sandbox` and `msm` tools, such a client can also start database servers and write files in the allowed paths.
+A server in [multi-tenant mode](multi-tenant-mode.md) authenticates every request with an API key or an [OAuth2](oauth-authentication.md) access token, and serves each user only their own connections and directories. Serve it over HTTPS. The rest of this section applies to a single-user server.
+
+A single-user MCP server has no authentication: no token, no password, and no client certificate. Any client that can reach the server can list the configured connections and open them, and the server signs in with the stored passwords. With the `sandbox` and `msm` tools, such a client can also start database servers and write files in the allowed paths.
 
 Where the server listens is therefore its only access control:
 
@@ -89,9 +92,24 @@ When an agent opens a configured connection with `db.connect`, it receives a con
 * **The MCP session ID.** The server assigns this ID when a client initializes its MCP session, and only that client knows it. It keeps clients apart even when they share an IP address, as all local clients do.
 * **The IP address** of the network connection that the request arrived on. The server never takes the address from a header such as `X-Forwarded-For`, which a client could forge.
 
-A request with a connection ID that doesn't match both is answered as if the ID didn't exist, so another client can't take over a connection by guessing its ID. Behind a reverse proxy, all clients share the proxy's address, and the MCP session ID keeps them apart.
+* **The user**, on a multi-tenant server: the user that the request was authenticated as.
+
+A request with a connection ID that doesn't match all of these is answered as if the ID didn't exist, so another client can't take over a connection by guessing its ID. Behind a reverse proxy, all clients share the proxy's address, and the MCP session ID or the user keeps them apart.
 
 Over `stdio`, the server has only one client, which always matches.
+
+### Clients Without MCP Sessions
+
+Revision 2026-07-28 of the MCP specification has no sessions, so clients that use it, such as current versions of Claude Code, never send an MCP session ID. How the server binds their connections depends on the mode:
+
+* On a **multi-tenant server**, the authenticated user takes the place of the session ID. The connection is bound to the address and the user, and no other user can use it.
+* On a **single-user server**, which doesn't authenticate, the session ID is the only thing that tells clients on the same machine apart. Over HTTP, the server therefore refuses to open a connection for such a client:
+
+  ```text
+  This client uses MCP without sessions (protocol revision 2026-07-28), and this server does not authenticate its clients, so a connection opened over HTTP could not be bound to this client. Connect over stdio, or have the server run in multi-tenant mode (mcp setup --multiTenant=true), where every client signs in.
+  ```
+
+  Connect such clients over `stdio`, or use multi-tenant mode for HTTP.
 
 {% hint style="info" %}
 The binding prevents one client from using another client's connection. It isn't authentication: any client that can reach the server can open connections of its own.
@@ -116,7 +134,7 @@ A database session can also end without the MCP server closing it, for example w
 
 ## Connection Limits
 
-A client can have at most 16 open connections, and the server at most 64 for all clients together. A `db.connect` call over either limit is refused before the server opens a database session, with a message that tells the agent to close connections with `db.close`. Over `stdio`, the limit of 16 applies, because all requests come from one client.
+A client can have at most 16 open connections, and the server at most 64 for all clients together. On a multi-tenant server, each user can also have at most 32 open connections across all their clients. To raise the limit for all clients, start the server with `--maxConnections`. A `db.connect` call over either limit is refused before the server opens a database session, with a message that tells the agent to close connections with `db.close`. Over `stdio`, the limit of 16 applies, because all requests come from one client.
 
 The limits protect the database server's `max_connections` and the memory of the MCP server from an agent that opens connections in a loop. To also limit the sessions on the database server, set `MAX_USER_CONNECTIONS` on the account.
 
@@ -127,6 +145,8 @@ When you remove a connection with `mcp setup`, the server refuses to open new se
 A session that is in continuous use isn't checked for every statement, so it can outlive the removal by up to its 12-hour lifetime. If a removal must take effect immediately, restart the MCP server. To take away access completely, also lock the account or change its password on the database server.
 
 Removing a directory from the allowed paths takes effect with the next tool call.
+
+On a multi-tenant server, removing or disabling a user, or replacing their API key, takes effect with the user's next request, without a restart, and closes the user's open connections. To end a user's OAuth2 access, see [Revoking Access](oauth-authentication.md#revoking-access).
 
 ## Connections Created by Sandboxes
 
@@ -143,6 +163,7 @@ The server's log output contains neither passwords nor SQL statements, and it sh
 ## Checklist
 
 * Use `stdio` when the client can start a command.
+* To share a server among several people, use [multi-tenant mode](multi-tenant-mode.md) over HTTPS, and run the server under an operating system account of its own.
 * Keep an HTTP server on `127.0.0.1`. For remote clients, use an SSH port forward or an authenticating reverse proxy.
 * Create a dedicated account for each connection, with read-only access to production schemas and resource limits.
 * Allow only the project directories the agent works in.

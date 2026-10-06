@@ -186,6 +186,13 @@ Restart Claude Desktop after you change the file.
 
 Most other clients, such as Cursor and Windsurf, use the same `mcpServers` format as Claude Desktop, in a file of their own. Register the [server command](#the-server-command) under a name such as `mariadb`. For a client that supports only HTTP, start the server with `--transport=streamable-http` and register `http://127.0.0.1:8080/mcp`, with the port you chose.
 
+## Multi-Tenant Servers
+
+A [multi-tenant](multi-tenant-mode.md) server only serves over HTTP, and every request must carry the user's credentials:
+
+* **With an API key**, register the URL with an `Authorization: Bearer <API key>` header. See [Connect a Client with an API Key](multi-tenant-mode.md#connect-a-client-with-an-api-key).
+* **With OAuth2**, register only the URL. The client discovers the authorization server and runs the sign-in in your browser. In Claude Code, run `/mcp`, select the server, and choose **Authenticate**. See [OAuth Authentication](oauth-authentication.md#connecting-a-client-with-oauth2).
+
 ## Environment of the Server
 
 A server that the client starts inherits the client's environment. This matters in the following cases:
@@ -210,5 +217,6 @@ To restrict the databases themselves, use accounts with different privileges, as
 | --- | --- | --- |
 | The client reports that the server failed to start, or that `mariadb-shell` wasn't found. | The client doesn't see the directory of `mariadb-shell` on its `PATH`. | Use the absolute path. On Windows, start `mariadb-shell.cmd` through `cmd /c`. |
 | The client connects, but every `db.connect` call fails with *not a configured connection*. | No connection is configured, or the agent asked for a URI that differs from the configured one, for example with an added schema. | Configure the connection with `mcp setup`. The agent finds the configured URIs with `db.list_connections`. |
+| `db.connect` fails with *This client uses MCP without sessions (protocol revision 2026-07-28)…* | The client uses the current MCP revision, which has no sessions, over HTTP with a server that doesn't authenticate. | Register the server over `stdio`, or use [multi-tenant mode](multi-tenant-mode.md). See [Clients Without MCP Sessions](security-and-session-handling.md#clients-without-mcp-sessions). |
 | Tools that take a path fail with *Access to path '…' is not allowed*. | The directory isn't an allowed path, and the client doesn't support the confirmation question. | Add the directory with `mcp setup --addPaths`. |
 | The `stdio` server stops immediately after it starts. | The client closed the server's standard input, or the command has wrong arguments. | Run the command in a terminal to see its error output, and check the client's MCP log. |
