@@ -182,7 +182,7 @@ mariadb-shell -- mcp setup --user=ada@example.com --deletePaths=/srv/projects/ad
 A user's connections behave like the connections of a single-user server, described in [Configuring Access](configuring-access.md#connections), with these differences:
 
 * A user lists and opens only their own connections. The same URI can be configured for several users, each with their own password.
-* A connection that a user opens is bound to that user, and no other user can use it, even from the same address.
+* A connection that a user opens is bound to that user and to the client authorization they opened it with. No other user, and no other client of the same user, can use it. The binding doesn't depend on the MCP session or the address, so a gateway that opens a new session for every tool call keeps using the connection. See [Connections Belong to the Client That Opened Them](security-and-session-handling.md#connections-belong-to-the-client-that-opened-them).
 * Each user can have at most 32 open connections, across all their clients.
 
 Use a separate database account for each user wherever possible, so that the database's own privileges and audit logs apply per person.

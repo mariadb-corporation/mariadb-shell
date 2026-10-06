@@ -92,9 +92,14 @@ When an agent opens a configured connection with `db.connect`, it receives a con
 * **The MCP session ID.** The server assigns this ID when a client initializes its MCP session, and only that client knows it. It keeps clients apart even when they share an IP address, as all local clients do.
 * **The IP address** of the network connection that the request arrived on. The server never takes the address from a header such as `X-Forwarded-For`, which a client could forge.
 
-* **The user**, on a multi-tenant server: the user that the request was authenticated as.
+A request with a connection ID that doesn't match both is answered as if the ID didn't exist, so another client can't take over a connection by guessing its ID. Behind a reverse proxy, all clients share the proxy's address, and the MCP session ID keeps them apart.
 
-A request with a connection ID that doesn't match all of these is answered as if the ID didn't exist, so another client can't take over a connection by guessing its ID. Behind a reverse proxy, all clients share the proxy's address, and the MCP session ID or the user keeps them apart.
+On a [multi-tenant server](multi-tenant-mode.md), every request is authenticated, and the server binds a connection to these instead:
+
+* **The user** that the request was authenticated as.
+* **The authorization** that the request's access token belongs to. For the built-in authorization server, that is the user's grant to one client. For a Keycloak token or an API key, it is the client that the token was issued to.
+
+The MCP session and the IP address aren't part of the binding on a multi-tenant server, because a gateway such as Arcade opens a new MCP session for every tool call, and can call from different addresses. Another user, or another client of the same user, can't use the connection.
 
 Over `stdio`, the server has only one client, which always matches.
 
@@ -102,7 +107,7 @@ Over `stdio`, the server has only one client, which always matches.
 
 Revision 2026-07-28 of the MCP specification has no sessions, so clients that use it, such as current versions of Claude Code, never send an MCP session ID. How the server binds their connections depends on the mode:
 
-* On a **multi-tenant server**, the authenticated user takes the place of the session ID. The connection is bound to the address and the user, and no other user can use it.
+* On a **multi-tenant server**, the session ID isn't needed: the connection is bound to the user and their authorization, as described above.
 * On a **single-user server**, which doesn't authenticate, the session ID is the only thing that tells clients on the same machine apart. Over HTTP, the server therefore refuses to open a connection for such a client:
 
   ```text

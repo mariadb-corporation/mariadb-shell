@@ -123,6 +123,16 @@ When the migration tooling isn't installed, the server writes this message to st
 2026-10-05T20:25:50+0200 [mcp] migration tools not registered: the MySQL-to-MariaDB migration tooling (v1.5.0) is not installed in '/home/dev/.local/share/mariadb-migrator'
 ```
 
+### Tool Names
+
+Each tool is named after its group and its function, separated by a dot, for example `db.list_connections`. The MCP specification allows dots in tool names, but some gateways and model APIs accept only letters, digits, hyphens, and underscores. Arcade is one of them. For these, publish the tool names with another separator:
+
+```bash
+mariadb-shell -- mcp setup --toolNameSeparator=_
+```
+
+The server then provides `db_list_connections`, `msm_create_project`, and so on. The tools' descriptions and error messages refer to the other tools by the same names, so an agent is never told to call a tool that doesn't exist. The setting takes effect when the server starts. To return to dots, run `mcp setup --toolNameSeparator=.`.
+
 ## Multi-Tenant Servers
 
 When [multi-tenant mode](multi-tenant-mode.md) is on, `mcp start-server` serves authenticated users: it refuses `--transport=stdio` and `--gui`, provides only the `db` and `msm` groups, and refuses to start if `--functionGroups` names another group or if there is no enabled user. In an [OAuth2](oauth-authentication.md) mode, it also needs a public URL. Everything else on this page applies unchanged.
@@ -169,4 +179,5 @@ For a `stdio` server, the MCP client captures standard error. Check the MCP log 
 | A client receives HTTP status `421 Misdirected Request`. | The client uses a host name that the server doesn't accept. | Add the name with `--allowedHosts`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
 | No `migrator` tools | The migration tooling isn't installed, or the server was started before it was installed. | Install it with `mcp setup --installMigrator`, then restart the server. |
 | *This server is configured for multi-tenant mode, which serves authenticated users over HTTP only* | Multi-tenant mode is on, and the server was started with `--transport=stdio`. | Use `--transport=streamable-http`, or turn multi-tenant mode off. See [Multi-Tenant Mode](multi-tenant-mode.md). |
+| A gateway refuses the server's tools with *tool name must only contain ASCII letters, numbers, and the dash and underscore characters*. | The gateway doesn't accept dots in tool names. | Run `mcp setup --toolNameSeparator=_` and restart the server. See [Tool Names](#tool-names). |
 | *Give both --sslCertfile and --sslKeyfile to serve HTTPS, or neither.* | Only one of `--sslCertfile` and `--sslKeyfile` was given. | Pass both. |
