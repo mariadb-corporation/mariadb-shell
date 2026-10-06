@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +57,13 @@ struct Secret_spec {
 
   Secret_type type; /**< Secret's type. */
   std::string id;   /**< Secret's ID. */
+
+  /**
+   * Group of a GENERIC secret: a lower-case UUID, or empty for the default
+   * group. It is passed to the helper in place of the type, so secrets of
+   * different groups never see each other. Must be empty for PASSWORD.
+   */
+  std::string group = {};
 };
 
 /**
@@ -174,11 +182,14 @@ class Helper_interface final {
    *
    * @param specs Retrieved list of secret specifications.
    * @param type If given, only secrets of this type are retrieved.
+   * @param group If type is GENERIC, only secrets of this group are retrieved
+   *              (empty means the default group). Must be empty otherwise.
    *
    * @returns true if list was successfully retrieved.
    */
   bool list(std::vector<Secret_spec> *specs,
-            std::optional<Secret_type> type = {}) const noexcept;
+            std::optional<Secret_type> type = {},
+            const std::string &group = {}) const noexcept;
 
   /**
    * Provides error message of the previous operation (store/get/erase/list)

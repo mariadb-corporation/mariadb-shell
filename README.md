@@ -123,6 +123,14 @@ depend on the platform:
 - **Windows** — Windows Credential Manager
 - **All platforms** — a `plaintext` helper, for testing only
 
+The same store also keeps arbitrary secrets under a key (`shell.storeSecret`,
+`shell.readSecret`, `shell.listSecrets`, …). Secrets can be kept apart in
+groups: pass `{group: <uuid>}` to any of these functions to work in that group
+only, so different applications or users can each use the same keys. Without a
+group they use the default group, `generic`, and `shell.listSecrets({allGroups:
+true})` lists every group. Groups separate secrets, they do not protect them:
+anyone who can read one group can read all of them.
+
 See [docs/CREDENTIAL_STORE.md](docs/CREDENTIAL_STORE.md) for details, and
 `shell.storeCredential` / `shell.listCredentials` for the API.
 

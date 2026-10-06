@@ -36,13 +36,13 @@ FUNCTIONS
       deleteAllCredentials()
             Deletes all credentials managed by the configured helper.
 
-      deleteAllSecrets()
-            Deletes all secrets managed by the configured helper.
+      deleteAllSecrets([options])
+            Deletes all secrets of a group managed by the configured helper.
 
       deleteCredential(url)
             Deletes credential for the given URL using the configured helper.
 
-      deleteSecret(key)
+      deleteSecret(key[, options])
             Deletes secret for the given key using the configured helper.
 
       disablePager()
@@ -71,9 +71,9 @@ FUNCTIONS
       listCredentials()
             Retrieves a list of all URLs stored by the configured helper.
 
-      listSecrets()
-            Retrieves a list of all secrets' keys stored by the configured
-            helper.
+      listSecrets([options])
+            Retrieves a list of the keys of a group's secrets stored by the
+            configured helper.
 
       listSqlHandlers()
             Lists the name and description of any registered SQL handlers.
@@ -96,7 +96,7 @@ FUNCTIONS
       prompt(message[, options])
             Utility function to prompt data from the user.
 
-      readSecret(key)
+      readSecret(key[, options])
             Reads secret for the given key using the configured helper.
 
       reconnect()
@@ -124,7 +124,7 @@ FUNCTIONS
       storeCredential(url[, password])
             Stores given credential using the configured helper.
 
-      storeSecret(key[, value])
+      storeSecret(key[, value][, options])
             Stores given secret using the configured helper.
 
       unparseUri(options)
@@ -667,10 +667,32 @@ EXCEPTIONS
 
 //@<OUT> Help on deleteAllSecrets
 NAME
-      deleteAllSecrets - Deletes all secrets managed by the configured helper.
+      deleteAllSecrets - Deletes all secrets of a group managed by the
+                         configured helper.
 
 SYNTAX
-      shell.deleteAllSecrets()
+      shell.deleteAllSecrets([options])
+
+WHERE
+      options: Dictionary with options for the operation.
+
+DESCRIPTION
+      The following options are supported:
+
+      - group: string (default: "generic") - The group whose secrets are
+        deleted. Secrets of other groups are not affected.
+
+      Secret groups
+
+      Every secret belongs to a group, and a key is unique only within its
+      group. The group is selected with the group option: either a UUID, or
+      "generic", the default group used when no group is given. A function only
+      sees the secrets of the group it is given.
+
+      Groups keep the secrets of different applications or users apart, they do
+      not protect them from each other: the group of a secret is not secret,
+      and anyone who can read the secrets of one group can read the secrets of
+      every group.
 
 //@<OUT> Help on deleteCredential
 NAME
@@ -700,10 +722,28 @@ NAME
                      helper.
 
 SYNTAX
-      shell.deleteSecret(key)
+      shell.deleteSecret(key[, options])
 
 WHERE
       key: A key of the secret to delete.
+      options: Dictionary with options for the operation.
+
+DESCRIPTION
+      The following options are supported:
+
+      - group: string (default: "generic") - The group of the secret.
+
+      Secret groups
+
+      Every secret belongs to a group, and a key is unique only within its
+      group. The group is selected with the group option: either a UUID, or
+      "generic", the default group used when no group is given. A function only
+      sees the secrets of the group it is given.
+
+      Groups keep the secrets of different applications or users apart, they do
+      not protect them from each other: the group of a secret is not secret,
+      and anyone who can read the secrets of one group can read the secrets of
+      every group.
 
 //@<OUT> Help on disablePager
 NAME
@@ -813,11 +853,37 @@ EXCEPTIONS
 
 //@<OUT> Help on listSecrets
 NAME
-      listSecrets - Retrieves a list of all secrets' keys stored by the
-                    configured helper.
+      listSecrets - Retrieves a list of the keys of a group's secrets stored by
+                    the configured helper.
 
 SYNTAX
-      shell.listSecrets()
+      shell.listSecrets([options])
+
+WHERE
+      options: Dictionary with options for the operation.
+
+RETURNS
+      A list of keys, or a list of dictionaries if allGroups is set.
+
+DESCRIPTION
+      The following options are supported:
+
+      - group: string (default: "generic") - The group whose keys are listed.
+      - allGroups: bool (default: false) - List the secrets of every group.
+        Each secret is then returned as a dictionary with the key and the group
+        of the secret. Cannot be used together with group.
+
+      Secret groups
+
+      Every secret belongs to a group, and a key is unique only within its
+      group. The group is selected with the group option: either a UUID, or
+      "generic", the default group used when no group is given. A function only
+      sees the secrets of the group it is given.
+
+      Groups keep the secrets of different applications or users apart, they do
+      not protect them from each other: the group of a secret is not secret,
+      and anyone who can read the secrets of one group can read the secrets of
+      every group.
 
 //@<OUT> Help on listSshConnections
 NAME
@@ -1000,13 +1066,31 @@ NAME
       readSecret - Reads secret for the given key using the configured helper.
 
 SYNTAX
-      shell.readSecret(key)
+      shell.readSecret(key[, options])
 
 WHERE
       key: A key of the secret to read.
+      options: Dictionary with options for the operation.
 
 RETURNS
       Secret associated with the given key.
+
+DESCRIPTION
+      The following options are supported:
+
+      - group: string (default: "generic") - The group of the secret.
+
+      Secret groups
+
+      Every secret belongs to a group, and a key is unique only within its
+      group. The group is selected with the group option: either a UUID, or
+      "generic", the default group used when no group is given. A function only
+      sees the secrets of the group it is given.
+
+      Groups keep the secrets of different applications or users apart, they do
+      not protect them from each other: the group of a secret is not secret,
+      and anyone who can read the secrets of one group can read the secrets of
+      every group.
 
 //@<OUT> Help on reconnect
 NAME
@@ -1345,11 +1429,12 @@ NAME
       storeSecret - Stores given secret using the configured helper.
 
 SYNTAX
-      shell.storeSecret(key[, value])
+      shell.storeSecret(key[, value][, options])
 
 WHERE
       key: A key that uniquely identifies the secret.
       value: Value for the given key.
+      options: Dictionary with options for the operation.
 
 DESCRIPTION
       If value is not provided, displays a prompt to enter the secret.
@@ -1361,6 +1446,22 @@ DESCRIPTION
 
       The limitations of helpers on allowed characters do not apply to secrets
       stored by storeSecret().
+
+      The following options are supported:
+
+      - group: string (default: "generic") - The group to store the secret in.
+
+      Secret groups
+
+      Every secret belongs to a group, and a key is unique only within its
+      group. The group is selected with the group option: either a UUID, or
+      "generic", the default group used when no group is given. A function only
+      sees the secrets of the group it is given.
+
+      Groups keep the secrets of different applications or users apart, they do
+      not protect them from each other: the group of a secret is not secret,
+      and anyone who can read the secrets of one group can read the secrets of
+      every group.
 
 //@<OUT> BUG28393119 UNABLE TO GET HELP ON CONNECTION DATA, before session
 Information about the data used to create sessions.

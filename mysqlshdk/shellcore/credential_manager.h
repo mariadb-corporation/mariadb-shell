@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +29,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "mysql-secret-store/include/mysql-secret-store/secret_type.h"
@@ -100,19 +102,33 @@ class Credential_manager : public NotificationObserver {
     return list_secrets(Secret_type::PASSWORD);
   }
 
-  void store_secret(const std::string &id, const std::string &secret);
+  // the group of a secret is a lower-case UUID, or empty for the default group
 
-  std::string read_secret(const std::string &id);
+  void store_secret(const std::string &id, const std::string &secret,
+                    const std::string &group = {});
 
-  inline void delete_secret(const std::string &id) {
-    delete_secret(Secret_type::GENERIC, id);
+  std::string read_secret(const std::string &id, const std::string &group = {});
+
+  inline void delete_secret(const std::string &id,
+                            const std::string &group = {}) {
+    delete_secret(Secret_type::GENERIC, id, group);
   }
 
-  inline void delete_all_secrets() { delete_all_secrets(Secret_type::GENERIC); }
-
-  inline std::vector<std::string> list_secrets() const {
-    return list_secrets(Secret_type::GENERIC);
+  inline void delete_all_secrets(const std::string &group = {}) {
+    delete_all_secrets(Secret_type::GENERIC, group);
   }
+
+  inline std::vector<std::string> list_secrets(
+      const std::string &group = {}) const {
+    return list_secrets(Secret_type::GENERIC, group);
+  }
+
+  /**
+   * Lists the secrets of every group, as (key, group) pairs; the default group
+   * is reported by its name.
+   */
+  std::vector<std::pair<std::string, std::string>> list_secrets_of_all_groups()
+      const;
 
  private:
   using Secret_type = ::mysql::secret_store::api::Secret_type;
@@ -127,15 +143,18 @@ class Credential_manager : public NotificationObserver {
   bool is_ignored_url(const std::string &url) const;
 
   void store_secret(Secret_type type, const std::string &id,
-                    const std::string &secret);
+                    const std::string &secret, const std::string &group = {});
 
-  std::string read_secret(Secret_type type, const std::string &id);
+  std::string read_secret(Secret_type type, const std::string &id,
+                          const std::string &group = {});
 
-  void delete_secret(Secret_type type, const std::string &id);
+  void delete_secret(Secret_type type, const std::string &id,
+                     const std::string &group = {});
 
-  void delete_all_secrets(Secret_type type);
+  void delete_all_secrets(Secret_type type, const std::string &group = {});
 
-  std::vector<std::string> list_secrets(Secret_type type) const;
+  std::vector<std::string> list_secrets(Secret_type type,
+                                        const std::string &group = {}) const;
 
   std::unique_ptr<::mysql::secret_store::api::Helper_interface> m_helper;
   std::string m_helper_string;

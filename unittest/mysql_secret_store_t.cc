@@ -239,6 +239,8 @@ class Mysql_secret_store_api_tester : public Helper_tester {
 
   std::string name() const { return m_helper->name().get(); }
 
+  Helper_interface *helper() const { return m_helper.get(); }
+
  private:
   std::unique_ptr<Helper_interface> m_helper;
 };
@@ -1668,6 +1670,18 @@ TEST(Helpers, Mysql_secret_store_api_test_secret_spec_operators) {
 
   EXPECT_TRUE(one == two);
   EXPECT_FALSE(one != two);
+
+  Secret_spec three{Secret_type::GENERIC, "key"};
+  Secret_spec four{Secret_type::GENERIC, "key",
+                   "3f2a8c1e-0b6d-4e7a-9c1f-5d2e8b7a4c60"};
+
+  EXPECT_FALSE(three == four);
+  EXPECT_TRUE(three != four);
+
+  three.group = four.group;
+
+  EXPECT_TRUE(three == four);
+  EXPECT_FALSE(three != four);
 }
 
 TEST(Helpers, Mysql_secret_store_api_test_get_available_helpers_custom_dir) {
@@ -1706,6 +1720,84 @@ TEST_P(Mysql_secret_store_api_test, get_nullptr) {
 TEST_P(Mysql_secret_store_api_test, list_nullptr) {
   EXPECT_FALSE(tester.list(nullptr));
   expect_error("Invalid pointer");
+}
+
+TEST_P(Mysql_secret_store_api_test, groups) {
+  const std::string group = "3f2a8c1e-0b6d-4e7a-9c1f-5d2e8b7a4c60";
+  const std::string id = "key";
+  auto helper = tester.helper();
+
+  // the same ID in the default group and in another group
+  EXPECT_TRUE(helper->store({Secret_type::GENERIC, id}, "default"));
+  expect_no_error();
+  EXPECT_TRUE(helper->store({Secret_type::GENERIC, id, group}, "group"));
+  expect_no_error();
+  EXPECT_TRUE(helper->store({Secret_type::PASSWORD, "user@host"}, "pass"));
+  expect_no_error();
+
+  std::string secret;
+  EXPECT_TRUE(helper->get({Secret_type::GENERIC, id}, &secret));
+  EXPECT_EQ("default", secret);
+  EXPECT_TRUE(helper->get({Secret_type::GENERIC, id, group}, &secret));
+  EXPECT_EQ("group", secret);
+
+  {
+    // each group lists its own secrets
+    std::vector<Secret_spec> specs;
+    EXPECT_TRUE(helper->list(&specs, Secret_type::GENERIC));
+    expect_no_error();
+    EXPECT_THAT(specs, ::testing::UnorderedElementsAre(
+                           Secret_spec{Secret_type::GENERIC, id}));
+
+    specs.clear();
+    EXPECT_TRUE(helper->list(&specs, Secret_type::GENERIC, group));
+    expect_no_error();
+    EXPECT_THAT(specs, ::testing::UnorderedElementsAre(
+                           Secret_spec{Secret_type::GENERIC, id, group}));
+  }
+
+  {
+    // a list without a type returns every group
+    std::vector<Secret_spec> specs;
+    EXPECT_TRUE(helper->list(&specs));
+    expect_no_error();
+    EXPECT_THAT(specs, ::testing::UnorderedElementsAre(
+                           Secret_spec{Secret_type::GENERIC, id},
+                           Secret_spec{Secret_type::GENERIC, id, group},
+                           Secret_spec{Secret_type::PASSWORD, "user@host"}));
+  }
+
+  // erasing in one group leaves the other one alone
+  EXPECT_TRUE(helper->erase({Secret_type::GENERIC, id, group}));
+  expect_no_error();
+  EXPECT_FALSE(helper->get({Secret_type::GENERIC, id, group}, &secret));
+  EXPECT_TRUE(helper->get({Secret_type::GENERIC, id}, &secret));
+  EXPECT_EQ("default", secret);
+}
+
+TEST_P(Mysql_secret_store_api_test, invalid_groups) {
+  auto helper = tester.helper();
+  std::string secret;
+
+  for (const auto &group : {"3F2A8C1E-0B6D-4E7A-9C1F-5D2E8B7A4C60", "generic",
+                            "password", "not-a-uuid"}) {
+    SCOPED_TRACE(group);
+    EXPECT_FALSE(helper->store({Secret_type::GENERIC, "key", group}, "s"));
+    expect_error("Invalid secret group");
+    EXPECT_FALSE(helper->get({Secret_type::GENERIC, "key", group}, &secret));
+    expect_error("Invalid secret group");
+  }
+
+  // only generic secrets can have a group
+  const std::string group = "3f2a8c1e-0b6d-4e7a-9c1f-5d2e8b7a4c60";
+  EXPECT_FALSE(helper->store({Secret_type::PASSWORD, "user@host", group}, "s"));
+  expect_error("Only generic secrets can have a group");
+
+  std::vector<Secret_spec> specs;
+  EXPECT_FALSE(helper->list(&specs, Secret_type::PASSWORD, group));
+  expect_error("Only generic secrets can have a group");
+  EXPECT_FALSE(helper->list(&specs, {}, group));
+  expect_error("A group requires the generic secret type");
 }
 
 ADD_SEPARATION_TESTS(Mysql_secret_store_api_test);
