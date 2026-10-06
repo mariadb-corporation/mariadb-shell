@@ -24,6 +24,10 @@
 //     under the page title.
 //  3. Directory links (`[x](some-dir/)`), which GitBook resolves to the
 //     directory's README.md and Docusaurus does not.
+//  4. Images in raw HTML. GitBook stores a resized image as
+//     `<figure><img src=".gitbook/assets/x" width="…"></figure>`; the plugin
+//     rewrites only Markdown images, so the src is pointed at the served
+//     assets here (pass `{ baseUrl }` as the plugin's options).
 //
 // The plugin's tokenizer only accepts `\w+` tag names, so `content-ref` is
 // never recognized as a block. `remarkGitBookPrepare` renames it to
@@ -133,9 +137,17 @@ function hasClass(node, className) {
   return node.attributes?.some((a) => a.name === 'className' && String(a.value).split(/\s+/).includes(className));
 }
 
-export default function remarkGitBookExtras() {
+export default function remarkGitBookExtras({ baseUrl = '/' } = {}) {
   return (tree, vfile) => {
     const file = vfile.path;
+
+    // 4. Raw HTML images → the assets content/.gitbook serves.
+    visit(tree, 'html', (node) => {
+      node.value = node.value.replace(
+        /(<img\b[^>]*\bsrc=")(?:\.\.\/)*\.gitbook\/assets\//g,
+        `$1${baseUrl}assets/`,
+      );
+    });
 
     // 3. Directory links → README.md, so Docusaurus can resolve them.
     visit(tree, 'link', (link) => {

@@ -45,6 +45,8 @@ The options follow the rules of [command line integration](../using-mariadb-shel
 | `--show` | Prints the current configuration and changes nothing. Can't be combined with options that change the configuration. |
 | `--json` | Prints the output of `--show` as JSON. Only valid together with `--show`. |
 
+The options for [multi-tenant mode](multi-tenant-mode.md), which manage users, API keys, and each user's connections and directories, are described in [Options of mcp setup for Multi-Tenant Mode](multi-tenant-mode.md#options-of-mcp-setup-for-multi-tenant-mode). OAuth2 has its own command, `mcp setup-oauth`, described in [OAuth Authentication](oauth-authentication.md#options-of-mcp-setup-oauth).
+
 Options that take a list expect the values separated by commas, without spaces. Giving the same option more than once isn't supported; put all values into one option:
 
 ```bash
