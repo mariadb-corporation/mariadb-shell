@@ -1,4 +1,5 @@
 # Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +39,7 @@ set(SHELLCORE_SOURCES
   base_session.cc
   completer.cc
   credential_manager.cc
+  secret_options.cc
   provider_script.cc
   ishell_core.cc
   shell_cli_operation.cc

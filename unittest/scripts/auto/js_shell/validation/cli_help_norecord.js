@@ -32,7 +32,7 @@ The following operations are available at 'shell':
       Deletes all credentials managed by the configured helper.
 
    delete-all-secrets
-      Deletes all secrets managed by the configured helper.
+      Deletes all secrets of a group managed by the configured helper.
 
    delete-credential
       Deletes credential for the given URL using the configured helper.
@@ -48,7 +48,8 @@ The following operations are available at 'shell':
       Retrieves a list of all URLs stored by the configured helper.
 
    list-secrets
-      Retrieves a list of all secrets' keys stored by the configured helper.
+      Retrieves a list of the keys of a group's secrets stored by the
+      configured helper.
 
    list-sql-handlers
       Lists the name and description of any registered SQL handlers.
@@ -2596,11 +2597,16 @@ OPTIONS
 
 //@<OUT> CLI shell delete-all-secrets --help
 NAME
-      delete-all-secrets - Deletes all secrets managed by the configured
-                           helper.
+      delete-all-secrets - Deletes all secrets of a group managed by the
+                           configured helper.
 
 SYNTAX
-      shell delete-all-secrets
+      shell delete-all-secrets [<options>]
+
+OPTIONS
+--group=<str>
+            The group whose secrets are deleted. Secrets of other groups are
+            not affected. Default: "generic".
 
 //@<OUT> CLI shell delete-secret --help
 NAME
@@ -2608,25 +2614,41 @@ NAME
                       helper.
 
 SYNTAX
-      shell delete-secret <key>
+      shell delete-secret <key> [<options>]
 
 WHERE
       key: A key of the secret to delete.
 
+OPTIONS
+--group=<str>
+            The group of the secret. Default: "generic".
+
 //@<OUT> CLI shell list-secrets --help
 NAME
-      list-secrets - Retrieves a list of all secrets' keys stored by the
-                     configured helper.
+      list-secrets - Retrieves a list of the keys of a group's secrets stored
+                     by the configured helper.
 
 SYNTAX
-      shell list-secrets
+      shell list-secrets [<options>]
+
+RETURNS
+      A list of keys, or a list of dictionaries if allGroups is set.
+
+OPTIONS
+--allGroups=<bool>
+            List the secrets of every group. Each secret is then returned as a
+            dictionary with the key and the group of the secret. Cannot be used
+            together with group. Default: false.
+
+--group=<str>
+            The group whose keys are listed. Default: "generic".
 
 //@<OUT> CLI shell read-secret --help
 NAME
       read-secret - Reads secret for the given key using the configured helper.
 
 SYNTAX
-      shell read-secret <key>
+      shell read-secret <key> [<options>]
 
 WHERE
       key: A key of the secret to read.
@@ -2634,13 +2656,21 @@ WHERE
 RETURNS
       Secret associated with the given key.
 
+OPTIONS
+--group=<str>
+            The group of the secret. Default: "generic".
+
 //@<OUT> CLI shell store-secret --help
 NAME
       store-secret - Stores given secret using the configured helper.
 
 SYNTAX
-      shell store-secret <key> [<value>]
+      shell store-secret <key> [<value>] [<options>]
 
 WHERE
       key: A key that uniquely identifies the secret.
       value: Value for the given key.
+
+OPTIONS
+--group=<str>
+            The group to store the secret in. Default: "generic".

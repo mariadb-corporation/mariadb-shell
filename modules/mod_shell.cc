@@ -224,11 +224,12 @@ void Shell::init() {
       ->cli(false);
   expose("listSqlHandlers", &Shell::list_sql_handlers)->cli(true);
   expose("createResult", &Shell::create_result, "?data")->cli(false);
-  expose("storeSecret", &Shell::store_secret, "key", "?value")->cli();
-  expose("readSecret", &Shell::read_secret, "key")->cli();
-  expose("deleteSecret", &Shell::delete_secret, "key")->cli();
-  expose("deleteAllSecrets", &Shell::delete_all_secrets)->cli();
-  expose("listSecrets", &Shell::list_secrets)->cli();
+  expose("storeSecret", &Shell::store_secret, "key", "?value", "?options")
+      ->cli();
+  expose("readSecret", &Shell::read_secret, "key", "?options")->cli();
+  expose("deleteSecret", &Shell::delete_secret, "key", "?options")->cli();
+  expose("deleteAllSecrets", &Shell::delete_all_secrets, "?options")->cli();
+  expose("listSecrets", &Shell::list_secrets, "?options")->cli();
 }
 
 Shell::~Shell() {}
@@ -2520,12 +2521,26 @@ void validate_key(const std::string &key) {
 
 }  // namespace
 
+REGISTER_HELP_DETAIL_TEXT(TOPIC_SECRET_GROUP, R"*(
+<b>Secret groups</b>
+
+Every secret belongs to a group, and a key is unique only within its group. The
+group is selected with the <b>group</b> option: either a UUID, or "generic",
+the default group used when no group is given. A function only sees the secrets
+of the group it is given.
+
+Groups keep the secrets of different applications or users apart, they do not
+protect them from each other: the group of a secret is not secret, and anyone
+who can read the secrets of one group can read the secrets of every group.
+)*");
+
 REGISTER_HELP_FUNCTION(storeSecret, shell);
 REGISTER_HELP_FUNCTION_TEXT(SHELL_STORESECRET, R"*(
 Stores given secret using the configured helper.
 
 @param key A key that uniquely identifies the secret.
 @param value Optional value for the given key.
+@param options Optional dictionary with options for the operation.
 
 If value is not provided, displays a prompt to enter the secret.
 
@@ -2535,6 +2550,12 @@ The current helper is set by the <b>credentialStore.helper</b> %Shell option.
 
 The limitations of helpers on allowed characters do not apply to secrets stored
 by <<<storeSecret>>>().
+
+The following options are supported:
+@li <b>group</b>: string (default: "generic") - The group to store the secret
+in.
+
+${TOPIC_SECRET_GROUP}
 )*");
 
 /**
@@ -2543,12 +2564,13 @@ by <<<storeSecret>>>().
  * $(SHELL_STORESECRET)
  */
 #if DOXYGEN_JS
-Undefined Shell::storeSecret(String key, String value) {}
+Undefined Shell::storeSecret(String key, String value, Dictionary options) {}
 #elif DOXYGEN_PY
-None Shell::store_secret(str key, str value) {}
+None Shell::store_secret(str key, str value, dict options) {}
 #endif
 void Shell::store_secret(const std::string &key,
-                         std::optional<std::string> value) {
+                         std::optional<std::string> value,
+                         const shcore::Secret_options &options) {
   validate_key(key);
 
   std::string secret_to_store;
@@ -2563,7 +2585,8 @@ void Shell::store_secret(const std::string &key,
     secret_to_store = std::move(*value);
   }
 
-  shcore::Credential_manager::get().store_secret(key, secret_to_store);
+  shcore::Credential_manager::get().store_secret(key, secret_to_store,
+                                                 options.group());
 }
 
 REGISTER_HELP_FUNCTION(readSecret, shell);
@@ -2571,8 +2594,14 @@ REGISTER_HELP_FUNCTION_TEXT(SHELL_READSECRET, R"*(
 Reads secret for the given key using the configured helper.
 
 @param key A key of the secret to read.
+@param options Optional dictionary with options for the operation.
 
 @returns Secret associated with the given key.
+
+The following options are supported:
+@li <b>group</b>: string (default: "generic") - The group of the secret.
+
+${TOPIC_SECRET_GROUP}
 )*");
 
 /**
@@ -2581,13 +2610,14 @@ Reads secret for the given key using the configured helper.
  * $(SHELL_READSECRET)
  */
 #if DOXYGEN_JS
-String Shell::readSecret(String key) {}
+String Shell::readSecret(String key, Dictionary options) {}
 #elif DOXYGEN_PY
-str Shell::read_secret(str key) {}
+str Shell::read_secret(str key, dict options) {}
 #endif
-std::string Shell::read_secret(const std::string &key) {
+std::string Shell::read_secret(const std::string &key,
+                               const shcore::Secret_options &options) {
   validate_key(key);
-  return shcore::Credential_manager::get().read_secret(key);
+  return shcore::Credential_manager::get().read_secret(key, options.group());
 }
 
 REGISTER_HELP_FUNCTION(deleteSecret, shell);
@@ -2595,6 +2625,12 @@ REGISTER_HELP_FUNCTION_TEXT(SHELL_DELETESECRET, R"*(
 Deletes secret for the given key using the configured helper.
 
 @param key A key of the secret to delete.
+@param options Optional dictionary with options for the operation.
+
+The following options are supported:
+@li <b>group</b>: string (default: "generic") - The group of the secret.
+
+${TOPIC_SECRET_GROUP}
 )*");
 
 /**
@@ -2603,46 +2639,89 @@ Deletes secret for the given key using the configured helper.
  * $(SHELL_DELETESECRET)
  */
 #if DOXYGEN_JS
-Undefined Shell::deleteSecret(String key) {}
+Undefined Shell::deleteSecret(String key, Dictionary options) {}
 #elif DOXYGEN_PY
-None Shell::delete_secret(str key) {}
+None Shell::delete_secret(str key, dict options) {}
 #endif
-void Shell::delete_secret(const std::string &key) {
+void Shell::delete_secret(const std::string &key,
+                          const shcore::Secret_options &options) {
   validate_key(key);
-  shcore::Credential_manager::get().delete_secret(key);
+  shcore::Credential_manager::get().delete_secret(key, options.group());
 }
 
 REGISTER_HELP_FUNCTION(deleteAllSecrets, shell);
-REGISTER_HELP(SHELL_DELETEALLSECRETS_BRIEF,
-              "Deletes all secrets managed by the configured helper.");
+REGISTER_HELP_FUNCTION_TEXT(SHELL_DELETEALLSECRETS, R"*(
+Deletes all secrets of a group managed by the configured helper.
+
+@param options Optional dictionary with options for the operation.
+
+The following options are supported:
+@li <b>group</b>: string (default: "generic") - The group whose secrets are
+deleted. Secrets of other groups are not affected.
+
+${TOPIC_SECRET_GROUP}
+)*");
 
 /**
  * $(SHELL_DELETEALLSECRETS_BRIEF)
+ *
+ * $(SHELL_DELETEALLSECRETS)
  */
 #if DOXYGEN_JS
-Undefined Shell::deleteAllSecrets() {}
+Undefined Shell::deleteAllSecrets(Dictionary options) {}
 #elif DOXYGEN_PY
-None Shell::delete_all_secrets() {}
+None Shell::delete_all_secrets(dict options) {}
 #endif
-void Shell::delete_all_secrets() {
-  shcore::Credential_manager::get().delete_all_secrets();
+void Shell::delete_all_secrets(const shcore::Secret_options &options) {
+  shcore::Credential_manager::get().delete_all_secrets(options.group());
 }
 
 REGISTER_HELP_FUNCTION(listSecrets, shell);
-REGISTER_HELP(
-    SHELL_LISTSECRETS_BRIEF,
-    "Retrieves a list of all secrets' keys stored by the configured helper.");
+REGISTER_HELP_FUNCTION_TEXT(SHELL_LISTSECRETS, R"*(
+Retrieves a list of the keys of a group's secrets stored by the configured
+helper.
+
+@param options Optional dictionary with options for the operation.
+
+@returns A list of keys, or a list of dictionaries if <b>allGroups</b> is set.
+
+The following options are supported:
+@li <b>group</b>: string (default: "generic") - The group whose keys are listed.
+@li <b>allGroups</b>: bool (default: false) - List the secrets of every group.
+Each secret is then returned as a dictionary with the <b>key</b> and the
+<b>group</b> of the secret. Cannot be used together with <b>group</b>.
+
+${TOPIC_SECRET_GROUP}
+)*");
 
 /**
  * $(SHELL_LISTSECRETS_BRIEF)
+ *
+ * $(SHELL_LISTSECRETS)
  */
 #if DOXYGEN_JS
-List Shell::listSecrets() {}
+List Shell::listSecrets(Dictionary options) {}
 #elif DOXYGEN_PY
-list Shell::list_secrets() {}
+list Shell::list_secrets(dict options) {}
 #endif
-shcore::Array_t Shell::list_secrets() {
-  return shcore::make_array(shcore::Credential_manager::get().list_secrets());
+shcore::Array_t Shell::list_secrets(
+    const shcore::List_secrets_options &options) {
+  auto &manager = shcore::Credential_manager::get();
+
+  if (!options.all_groups()) {
+    return shcore::make_array(manager.list_secrets(options.group()));
+  }
+
+  auto ret = shcore::make_array();
+
+  for (auto &[key, group] : manager.list_secrets_of_all_groups()) {
+    auto secret = shcore::make_dict();
+    secret->emplace("key", std::move(key));
+    secret->emplace("group", std::move(group));
+    ret->emplace_back(std::move(secret));
+  }
+
+  return ret;
 }
 
 }  // namespace mysqlsh

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +29,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <algorithm>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -40,6 +43,7 @@
 #include "mysqlshdk/libs/db/uri_parser.h"
 #include "mysqlshdk/libs/db/utils_connection.h"
 #include "mysqlshdk/libs/secret-store-api/helper_invoker.h"
+#include "mysqlshdk/libs/utils/utils_uuid.h"
 
 using mysql::secret_store::common::k_scheme_name_file;
 using mysql::secret_store::common::k_scheme_name_ssh;
@@ -151,18 +155,51 @@ std::string to_string(Secret_type type) {
   throw std::runtime_error{"Unknown secret type"};
 }
 
-Secret_type to_secret_type(const std::string &type) {
-  if (type == k_secret_type_password) {
-    return Secret_type::PASSWORD;
+bool is_valid_group(const std::string &group) {
+  return shcore::is_uuid(group) &&
+         std::none_of(group.begin(), group.end(),
+                      [](char c) { return c >= 'A' && c <= 'F'; });
+}
+
+/**
+ * The type string sent to the helper: a group takes the place of the type, so
+ * the helpers store and filter it like any other type, unchanged.
+ */
+std::string to_string(Secret_type type, const std::string &group) {
+  if (group.empty()) {
+    return to_string(type);
   }
 
-  if (type == k_secret_type_generic) {
-    return Secret_type::GENERIC;
+  if (Secret_type::GENERIC != type) {
+    throw std::runtime_error{"Only generic secrets can have a group"};
   }
 
-  throw_json_error("Unknown secret type: \"" + type + "\"");
-  // to silence compiler's complains
-  return Secret_type::PASSWORD;
+  if (!is_valid_group(group)) {
+    throw std::runtime_error{"Invalid secret group: \"" + group + "\""};
+  }
+
+  return group;
+}
+
+/**
+ * Reverses to_string(type, group), false if the type string is not known.
+ */
+bool to_secret_type(const std::string &str, Secret_type *type,
+                    std::string *group) {
+  group->clear();
+
+  if (str == k_secret_type_password) {
+    *type = Secret_type::PASSWORD;
+  } else if (str == k_secret_type_generic) {
+    *type = Secret_type::GENERIC;
+  } else if (is_valid_group(str)) {
+    *type = Secret_type::GENERIC;
+    *group = str;
+  } else {
+    return false;
+  }
+
+  return true;
 }
 
 std::string to_string(rapidjson::Document *doc) {
@@ -204,12 +241,12 @@ rapidjson::Document parse(const std::string &json) {
   return doc;
 }
 
-rapidjson::Document to_object(Secret_type type) {
+rapidjson::Document to_object(Secret_type type, const std::string &group) {
   rapidjson::Document doc{rapidjson::Type::kObjectType};
   auto &allocator = doc.GetAllocator();
 
   doc.AddMember(rapidjson::StringRef(k_secret_type),
-                {to_string(type).c_str(), allocator}, allocator);
+                {to_string(type, group).c_str(), allocator}, allocator);
 
   return doc;
 }
@@ -218,7 +255,7 @@ rapidjson::Document to_object(const Secret_spec &spec) {
   const auto &spec_id =
       Secret_type::PASSWORD == spec.type ? validate_url(spec.id) : spec.id;
 
-  auto doc = to_object(spec.type);
+  auto doc = to_object(spec.type, spec.group);
   auto &allocator = doc.GetAllocator();
 
   doc.AddMember(rapidjson::StringRef(k_secret_id), {spec_id.c_str(), allocator},
@@ -229,8 +266,8 @@ rapidjson::Document to_object(const Secret_spec &spec) {
   return doc;
 }
 
-std::string to_json(Secret_type type) {
-  auto doc = to_object(type);
+std::string to_json(Secret_type type, const std::string &group) {
+  auto doc = to_object(type, group);
   return to_string(&doc);
 }
 
@@ -250,7 +287,10 @@ std::string to_json(const Secret_spec &spec) {
   return to_string(&doc);
 }
 
-Secret_spec to_secret_spec(const rapidjson::Value &spec) {
+/**
+ * Returns nothing if the type of the secret is not known.
+ */
+std::optional<Secret_spec> to_secret_spec(const rapidjson::Value &spec) {
   validate_object(spec);
 
   std::string id;
@@ -263,7 +303,14 @@ Secret_spec to_secret_spec(const rapidjson::Value &spec) {
     id = required(spec, k_secret_id);
   }
 
-  return {to_secret_type(required(spec, k_secret_type)), std::move(id)};
+  Secret_spec result{Secret_type::PASSWORD, std::move(id)};
+
+  if (!to_secret_type(required(spec, k_secret_type), &result.type,
+                      &result.group)) {
+    return {};
+  }
+
+  return result;
 }
 
 void to_secret_spec_list(const std::string &spec,
@@ -275,7 +322,11 @@ void to_secret_spec_list(const std::string &spec,
   }
 
   for (const auto &s : doc.GetArray()) {
-    list->emplace_back(to_secret_spec(s));
+    // secrets of types we don't know about (i.e. stored by some other program)
+    // are skipped, a list without a type filter returns all of them
+    if (auto parsed = to_secret_spec(s)) {
+      list->emplace_back(std::move(*parsed));
+    }
   }
 }
 
@@ -284,7 +335,14 @@ std::pair<Secret_spec, std::string> to_secret(const std::string &secret) {
 
   validate_object(doc);
 
-  return std::make_pair(to_secret_spec(doc), required(doc, k_secret));
+  auto spec = to_secret_spec(doc);
+
+  if (!spec) {
+    throw_json_error("Unknown secret type: \"" + required(doc, k_secret_type) +
+                     "\"");
+  }
+
+  return std::make_pair(std::move(*spec), required(doc, k_secret));
 }
 
 }  // namespace
@@ -356,8 +414,8 @@ class Helper_interface::Helper_interface_impl {
     }
   }
 
-  bool list(std::vector<Secret_spec> *specs,
-            std::optional<Secret_type> type = {}) const noexcept {
+  bool list(std::vector<Secret_spec> *specs, std::optional<Secret_type> type,
+            const std::string &group) const noexcept {
     if (nullptr == specs) {
       set_last_error("Invalid pointer");
       return false;
@@ -367,7 +425,9 @@ class Helper_interface::Helper_interface_impl {
       std::string input;
 
       if (type.has_value()) {
-        input = to_json(*type);
+        input = to_json(*type, group);
+      } else if (!group.empty()) {
+        throw std::runtime_error{"A group requires the generic secret type"};
       }
 
       std::string output;
@@ -420,8 +480,9 @@ bool Helper_interface::erase(const Secret_spec &spec) noexcept {
 }
 
 bool Helper_interface::list(std::vector<Secret_spec> *specs,
-                            std::optional<Secret_type> type) const noexcept {
-  return m_impl->list(specs, type);
+                            std::optional<Secret_type> type,
+                            const std::string &group) const noexcept {
+  return m_impl->list(specs, type, group);
 }
 
 std::string Helper_interface::get_last_error() const noexcept {

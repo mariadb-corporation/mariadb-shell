@@ -38,6 +38,7 @@
 #include "mysqlshdk/libs/utils/utils_encoding.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
+#include "mysqlshdk/shellcore/secret_options.h"
 
 namespace shcore {
 
@@ -393,11 +394,12 @@ bool Credential_manager::get_credential(const std::string &url,
 }
 
 void Credential_manager::store_secret(const std::string &id,
-                                      const std::string &secret) {
+                                      const std::string &secret,
+                                      const std::string &group) {
   // we prepend 'r' for a unmodified secret and 'b' for a base64-encoded secret
   // we encode the secret if helper reports an error when storing the raw secret
   try {
-    store_secret(Secret_type::GENERIC, id, "r" + secret);
+    store_secret(Secret_type::GENERIC, id, "r" + secret, group);
   } catch (const std::exception &e) {
     if (std::string::npos ==
         std::string_view{e.what()}.find(k_invalid_secret_error)) {
@@ -411,15 +413,16 @@ void Credential_manager::store_secret(const std::string &id,
       throw;
     }
 
-    store_secret(Secret_type::GENERIC, id, "b" + base64);
+    store_secret(Secret_type::GENERIC, id, "b" + base64, group);
   }
 }
 
 void Credential_manager::store_secret(Secret_type type, const std::string &id,
-                                      const std::string &secret) {
+                                      const std::string &secret,
+                                      const std::string &group) {
   check_helper(str_format("save the %s", to_message(type)));
 
-  if (!m_helper->store({type, id}, secret)) {
+  if (!m_helper->store({type, id, group}, secret)) {
     const auto error = m_helper->get_last_error();
 
     if (std::string::npos != error.find(k_invalid_url_error)) {
@@ -431,8 +434,9 @@ void Credential_manager::store_secret(Secret_type type, const std::string &id,
   }
 }
 
-std::string Credential_manager::read_secret(const std::string &id) {
-  auto secret = read_secret(Secret_type::GENERIC, id);
+std::string Credential_manager::read_secret(const std::string &id,
+                                            const std::string &group) {
+  auto secret = read_secret(Secret_type::GENERIC, id, group);
 
   if (secret.empty()) {
     return secret;
@@ -459,12 +463,13 @@ std::string Credential_manager::read_secret(const std::string &id) {
 }
 
 std::string Credential_manager::read_secret(Secret_type type,
-                                            const std::string &id) {
+                                            const std::string &id,
+                                            const std::string &group) {
   check_helper(str_format("read the %s", to_message(type)));
 
   std::string secret;
 
-  if (!m_helper->get({type, id}, &secret)) {
+  if (!m_helper->get({type, id, group}, &secret)) {
     const auto error = m_helper->get_last_error();
 
     if (std::string::npos != error.find(k_invalid_url_error)) {
@@ -478,11 +483,11 @@ std::string Credential_manager::read_secret(Secret_type type,
   return secret;
 }
 
-void Credential_manager::delete_secret(Secret_type type,
-                                       const std::string &id) {
+void Credential_manager::delete_secret(Secret_type type, const std::string &id,
+                                       const std::string &group) {
   check_helper(str_format("delete the %s", to_message(type)));
 
-  if (!m_helper->erase({type, id})) {
+  if (!m_helper->erase({type, id, group})) {
     const auto error = m_helper->get_last_error();
 
     if (std::string::npos != error.find(k_invalid_url_error)) {
@@ -494,12 +499,13 @@ void Credential_manager::delete_secret(Secret_type type,
   }
 }
 
-void Credential_manager::delete_all_secrets(Secret_type type) {
+void Credential_manager::delete_all_secrets(Secret_type type,
+                                            const std::string &group) {
   check_helper(str_format("delete all %ss", to_message(type)));
 
   std::vector<Secret_spec> specs;
 
-  if (!m_helper->list(&specs, type)) {
+  if (!m_helper->list(&specs, type, group)) {
     throw Exception::runtime_error(
         str_format("Failed to obtain list of %ss to delete: %s",
                    to_message(type), m_helper->get_last_error().c_str()));
@@ -508,7 +514,7 @@ void Credential_manager::delete_all_secrets(Secret_type type) {
   std::vector<std::string> errors;
 
   for (const auto &s : specs) {
-    if (type == s.type) {
+    if (type == s.type && group == s.group) {
       if (!m_helper->erase(s)) {
         errors.emplace_back("Failed to delete '" + s.id +
                             "': " + m_helper->get_last_error());
@@ -524,12 +530,12 @@ void Credential_manager::delete_all_secrets(Secret_type type) {
 }
 
 std::vector<std::string> Credential_manager::list_secrets(
-    Secret_type type) const {
+    Secret_type type, const std::string &group) const {
   check_helper(str_format("list %ss", to_message(type)));
 
   std::vector<Secret_spec> specs;
 
-  if (!m_helper->list(&specs, type)) {
+  if (!m_helper->list(&specs, type, group)) {
     throw Exception::runtime_error(
         str_format("Failed to list %ss: %s", to_message(type),
                    m_helper->get_last_error().c_str()));
@@ -540,8 +546,32 @@ std::vector<std::string> Credential_manager::list_secrets(
   for (auto &s : specs) {
     // type was added to the list() command by WL#16958, helpers may not support
     // it, double check the type
-    if (type == s.type) {
+    if (type == s.type && group == s.group) {
       ret.emplace_back(std::move(s.id));
+    }
+  }
+
+  return ret;
+}
+
+std::vector<std::pair<std::string, std::string>>
+Credential_manager::list_secrets_of_all_groups() const {
+  check_helper("list secrets");
+
+  std::vector<Secret_spec> specs;
+
+  // no type filter: the groups are stored as types
+  if (!m_helper->list(&specs)) {
+    throw Exception::runtime_error(str_format(
+        "Failed to list secrets: %s", m_helper->get_last_error().c_str()));
+  }
+
+  std::vector<std::pair<std::string, std::string>> ret;
+
+  for (auto &s : specs) {
+    if (Secret_type::GENERIC == s.type) {
+      ret.emplace_back(std::move(s.id),
+                       s.group.empty() ? k_default_secret_group : s.group);
     }
   }
 

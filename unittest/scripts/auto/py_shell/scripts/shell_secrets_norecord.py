@@ -17,6 +17,8 @@ if has_secret_service:
 
 test_key = "my-key"
 test_secret = "my-secret"
+test_group = "3f2a8c1e-0b6d-4e7a-9c1f-5d2e8b7a4c60"
+other_group = "8d1c7b2a-4e5f-4a6b-9c8d-7e6f5a4b3c2d"
 actual_secret = ""
 actual_all_secrets = []
 
@@ -30,7 +32,8 @@ def wipe_all_secrets():
             print("--> removing all secrets from:", helper)
             set_helper(helper)
             shell.delete_all_credentials()
-            shell.delete_all_secrets()
+            for s in shell.list_secrets({"allGroups": True}):
+                shell.delete_secret(s["key"], {"group": s["group"]})
 
 def read_secret(key):
     global actual_secret
@@ -231,6 +234,81 @@ with TEST("plaintext"):
     EXPECT_NO_THROWS(lambda: read_secret(test_key))
     # test
     EXPECT_EQ(test_secret, actual_secret)
+
+#@<> groups keep the same key apart
+for helper in used_helpers:
+    with TEST(helper):
+        print("--> helper:", helper)
+        # the same key in the default group and in two other groups
+        EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "default"))
+        EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "group", {"group": test_group}))
+        EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "other", {"group": other_group}))
+        # each group reads its own value
+        EXPECT_EQ("default", shell.read_secret(test_key))
+        EXPECT_EQ("default", shell.read_secret(test_key, {"group": "generic"}))
+        EXPECT_EQ("group", shell.read_secret(test_key, {"group": test_group}))
+        EXPECT_EQ("other", shell.read_secret(test_key, {"group": other_group}))
+        # each group lists its own keys
+        EXPECT_NO_THROWS(lambda: shell.store_secret(2 * test_key, test_secret, {"group": test_group}))
+        EXPECT_EQ([test_key], shell.list_secrets())
+        EXPECT_EQ({test_key, 2 * test_key}, set(shell.list_secrets({"group": test_group})))
+        EXPECT_EQ([test_key], shell.list_secrets({"group": other_group}))
+        # deleting in one group leaves the others alone
+        EXPECT_NO_THROWS(lambda: shell.delete_secret(test_key, {"group": other_group}))
+        EXPECT_EQ("default", shell.read_secret(test_key))
+        EXPECT_EQ("group", shell.read_secret(test_key, {"group": test_group}))
+        EXPECT_THROWS(lambda: shell.read_secret(test_key, {"group": other_group}), "RuntimeError: Failed to read the secret: Could not find the secret")
+        # there is no fallback to the default group
+        EXPECT_THROWS(lambda: shell.read_secret(2 * test_key), "RuntimeError: Failed to read the secret: Could not find the secret")
+
+#@<> groups - delete all secrets of a group
+with TEST("plaintext"):
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "default"))
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "group", {"group": test_group}))
+    EXPECT_NO_THROWS(lambda: shell.store_secret(2 * test_key, "group", {"group": test_group}))
+    EXPECT_NO_THROWS(lambda: shell.delete_all_secrets({"group": test_group}))
+    EXPECT_EQ([], shell.list_secrets({"group": test_group}))
+    EXPECT_EQ([test_key], shell.list_secrets())
+    # and the other way around
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "group", {"group": test_group}))
+    EXPECT_NO_THROWS(lambda: shell.delete_all_secrets())
+    EXPECT_EQ([], shell.list_secrets())
+    EXPECT_EQ([test_key], shell.list_secrets({"group": test_group}))
+
+#@<> groups - list the secrets of all groups
+with TEST("plaintext"):
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "default"))
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "group", {"group": test_group}))
+    EXPECT_NO_THROWS(lambda: shell.store_credential("user@host", "pass"))
+    secrets = shell.list_secrets({"allGroups": True})
+    EXPECT_EQ(2, len(secrets))
+    EXPECT_EQ({(test_key, "generic"), (test_key, test_group)}, {(s["key"], s["group"]) for s in secrets})
+    # credentials are not secrets, and they are not affected by groups
+    EXPECT_EQ(["user@host"], shell.list_credentials())
+
+#@<> groups - a group is normalized to lower case
+with TEST("plaintext"):
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, "group", {"group": test_group.upper()}))
+    EXPECT_EQ("group", shell.read_secret(test_key, {"group": test_group}))
+    EXPECT_EQ([{"key": test_key, "group": test_group}], shell.list_secrets({"allGroups": True}))
+
+#@<> groups - prompt for the value
+with TEST("plaintext"):
+    testutil.expect_password("Please provide the secret to store: ", test_secret)
+    EXPECT_NO_THROWS(lambda: shell.store_secret(test_key, None, {"group": test_group}))
+    EXPECT_EQ(test_secret, shell.read_secret(test_key, {"group": test_group}))
+
+#@<> groups - invalid options
+with TEST("plaintext"):
+    for group in ["", "password", "my-group", test_group + "0", test_group.replace("-", "")]:
+        EXPECT_THROWS(lambda: shell.store_secret(test_key, test_secret, {"group": group}), f"ValueError: Argument #3: Option 'group' must be 'generic' or a UUID, got: '{group}'.")
+        EXPECT_THROWS(lambda: shell.read_secret(test_key, {"group": group}), f"ValueError: Argument #2: Option 'group' must be 'generic' or a UUID, got: '{group}'.")
+    EXPECT_THROWS(lambda: shell.read_secret(test_key, {"group": 1}), "TypeError: Argument #2: Option 'group' is expected to be of type String, but is Integer")
+    EXPECT_THROWS(lambda: shell.list_secrets({"group": test_group, "allGroups": True}), "ValueError: Argument #1: The 'group' and 'allGroups' options cannot be used together.")
+    EXPECT_THROWS(lambda: shell.list_secrets({"group": "generic", "allGroups": True}), "ValueError: Argument #1: The 'group' and 'allGroups' options cannot be used together.")
+    # allGroups is only an option of list_secrets()
+    EXPECT_THROWS(lambda: shell.read_secret(test_key, {"allGroups": True}), "ValueError: Argument #2: Invalid options: allGroups")
+    EXPECT_THROWS(lambda: shell.delete_all_secrets({"allGroups": True}), "ValueError: Argument #1: Invalid options: allGroups")
 
 #@<> Cleanup
 wipe_all_secrets()

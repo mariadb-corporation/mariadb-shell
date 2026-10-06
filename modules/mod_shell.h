@@ -38,6 +38,7 @@
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/parser/code-completion/mysql_code_completion_api.h"
 #include "mysqlshdk/libs/utils/debug.h"
+#include "mysqlshdk/shellcore/secret_options.h"
 #include "mysqlshdk/shellcore/shell_prompt_options.h"
 #include "scripting/types/cpp.h"
 #include "shellcore/base_session.h"
@@ -100,11 +101,11 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   List listSqlHandlers();
   ShellResult createResult(Dictionary data);
   ShellResult createResult(List data);
-  Undefined storeSecret(String key, String value);
-  String readSecret(String key);
-  Undefined deleteSecret(String key);
-  Undefined deleteAllSecrets();
-  List listSecrets();
+  Undefined storeSecret(String key, String value, Dictionary options);
+  String readSecret(String key, Dictionary options);
+  Undefined deleteSecret(String key, Dictionary options);
+  Undefined deleteAllSecrets(Dictionary options);
+  List listSecrets(Dictionary options);
 
  private:
 #elif DOXYGEN_PY
@@ -148,11 +149,11 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   list list_sql_handlers();
   ShellResult create_result(dict data);
   ShellResult create_result(list data);
-  None store_secret(str key, str value);
-  str read_secret(str key);
-  None delete_secret(str key);
-  None delete_all_secrets();
-  list list_secrets();
+  None store_secret(str key, str value, dict options);
+  str read_secret(str key, dict options);
+  None delete_secret(str key, dict options);
+  None delete_all_secrets(dict options);
+  list list_secrets(dict options);
 
  private:
 #endif
@@ -261,11 +262,15 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
       const std::string &statement,
       const mysqlshdk::Auto_complete_sql_options &options) const;
 
-  void store_secret(const std::string &key, std::optional<std::string> value);
-  std::string read_secret(const std::string &key);
-  void delete_secret(const std::string &key);
-  void delete_all_secrets();
-  shcore::Array_t list_secrets();
+  void store_secret(const std::string &key, std::optional<std::string> value,
+                    const shcore::Secret_options &options = {});
+  std::string read_secret(const std::string &key,
+                          const shcore::Secret_options &options = {});
+  void delete_secret(const std::string &key,
+                     const shcore::Secret_options &options = {});
+  void delete_all_secrets(const shcore::Secret_options &options = {});
+  shcore::Array_t list_secrets(
+      const shcore::List_secrets_options &options = {});
 
  protected:
   void init();
