@@ -12,7 +12,11 @@ A new MCP server has no access to any database or directory. You decide what it 
 * **Connections**: the MariaDB servers and accounts that the server may open sessions with. The password of each connection is stored in the MariaDB Shell [credential store](../connecting/credential-store.md).
 * **Allowed paths**: the local directories that tools may read from and write to, for example for SQL script files, schema projects, and sandbox directories.
 
-The configuration is per user and applies to every MCP server that the user starts, regardless of the MCP client. You configure it once, and run the setup again only to change it. A running server reads the allow-lists each time it needs them, so changes take effect without a restart, except for the installation of the migration tooling.
+The configuration is per operating system user and applies to every MCP server that the user starts, regardless of the MCP client. You configure it once, and run the setup again only to change it. A running server reads the allow-lists each time it needs them, so changes take effect without a restart, except for the installation of the migration tooling.
+
+{% hint style="info" %}
+This page describes the configuration of a single-user server. In [multi-tenant mode](multi-tenant-mode.md), each user of the server has their own connections and allowed directories, which you configure with the same options and `--user`.
+{% endhint %}
 
 ## Run the Setup
 

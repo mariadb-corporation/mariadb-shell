@@ -125,7 +125,7 @@ const config = {
           exclude: ['**/SUMMARY.md', '**/.gitbook/**'],
           editUrl: `${REPO}/edit/main/docs-ref/`,
           showLastUpdateTime: false,
-          beforeDefaultRemarkPlugins: [remarkGitBookPrepare, remarkGitBook, remarkGitBookExtras],
+          beforeDefaultRemarkPlugins: [remarkGitBookPrepare, remarkGitBook, [remarkGitBookExtras, { baseUrl: BASE_URL }]],
           rehypePlugins: [rehypeGitBook],
         },
         blog: false,
