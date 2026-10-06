@@ -306,12 +306,25 @@ A gateway, such as [Arcade](https://docs.arcade.dev/), connects to the MCP serve
 
 To set it up:
 
-1. Register the client, and note the client ID and secret.
-2. In Arcade, add the MCP server with its public URL, and enter the client ID and secret. Leave the authorization and token URLs empty.
-3. Set the redirect URI that Arcade shows as the client's redirect URI.
-4. Grant the required role to the database accounts of the users, and make it their default role.
+1. Publish the tool names without dots, because Arcade refuses them, and restart the server:
+
+   ```bash
+   mariadb-shell -- mcp setup --toolNameSeparator=_
+   ```
+
+   See [Tool Names](starting-the-mcp-server.md#tool-names).
+2. Register the client, and note the client ID and secret.
+3. In Arcade, add the MCP server with its public URL, and enter the client ID and secret in the advanced settings. Leave the authorization and token URLs empty.
+4. Set the redirect URI that Arcade shows as the client's redirect URI, before you authorize the server in Arcade. Until then, the sign-in fails with *Redirect URI '…' not registered for client*.
+5. Grant the required role to the database accounts of the users, and make it their default role.
+
+Arcade must be able to reach the server's public URL over HTTPS. A server on your own machine needs a tunnel or a reverse proxy for that, and its public URL must be the address that Arcade uses.
 
 All of a gateway's requests come from its own addresses. Raise `--maxConnections` of `mcp start-server` for the number of users you expect. A gateway discovers the server's tools once, with the administrator's sign-in, so grant both scopes in that sign-in.
+
+After that, each Arcade user signs in to the database separately, the first time they call a tool: Arcade answers the tool call with a link to the server's sign-in page. With Arcade's default user verification, the sign-in completes only for the Arcade account that the call's `user_id` names. For another user ID, Arcade abandons the sign-in after the user returns from the sign-in page.
+
+Arcade opens a new MCP session for every tool call. The server binds a connection to the user and their grant, not to the session, so a connection opened with `db_connect` stays usable for the user's later calls through Arcade. See [Connections Belong to the Client That Opened Them](security-and-session-handling.md#connections-belong-to-the-client-that-opened-them).
 
 ## Connecting a Client with OAuth2
 
