@@ -46,10 +46,9 @@
   it already names the release to install.
   Environment: MARIADB_SHELL_TAG
 
-.PARAMETER Token
-  GitHub token, for installing from a private repository. GH_TOKEN, GITHUB_TOKEN
-  and `gh auth token` are also consulted, in that order.
-  Environment: MARIADB_SHELL_TOKEN
+.PARAMETER Repo
+  The owner/repo to install from. It has to be public.
+  Environment: MARIADB_SHELL_REPO
 
 .PARAMETER AddToPath
   Add the shim directory to the user PATH. Off by default: editing a user's
@@ -63,8 +62,7 @@ param(
     [string] $Tag,
     [string] $Repo,
     [string] $Prefix,
-    [string] $BinDir,
-    [string] $Token
+    [string] $BinDir
 )
 
 Set-StrictMode -Version Latest
@@ -107,7 +105,6 @@ function Fallback([string] $Value, [string] $EnvName, [scriptblock] $Default) {
 
 $Repo   = Fallback $Repo   'MARIADB_SHELL_REPO'   { 'mariadb-corporation/mariadb-shell' }
 $Tag    = Fallback $Tag    'MARIADB_SHELL_TAG'    $null
-$Token  = Fallback $Token  'MARIADB_SHELL_TOKEN'  $null
 $Prefix = Fallback $Prefix 'MARIADB_SHELL_PREFIX' {
     if (-not $env:LOCALAPPDATA) {
         Die "LOCALAPPDATA is not set, so there is no default install location.
@@ -117,33 +114,8 @@ $Prefix = Fallback $Prefix 'MARIADB_SHELL_PREFIX' {
 }
 $BinDir = Fallback $BinDir 'MARIADB_SHELL_BINDIR' { Join-Path $Prefix 'bin' }
 
-if (-not $Token)      { $Token      = Fallback '' 'GH_TOKEN' $null }
-if (-not $Token)      { $Token      = Fallback '' 'GITHUB_TOKEN' $null }
 if (-not $PreRelease) { $PreRelease = [bool] (Fallback '' 'MARIADB_SHELL_PRERELEASE' $null) }
 if (-not $AddToPath)  { $AddToPath  = [bool] (Fallback '' 'MARIADB_SHELL_ADDTOPATH' $null) }
-
-# Advice worth acting on: gh is only offered when it is actually installed.
-$ghAvailable = [bool] (Get-Command gh -ErrorAction SilentlyContinue)
-if ($ghAvailable) {
-    $AuthHint = @'
-  The simplest fix is to log in:
-
-      gh auth login
-
-  Or hand this script a token directly:
-
-      $env:MARIADB_SHELL_TOKEN = '<token>'
-'@
-} else {
-    $AuthHint = @'
-  Give this script a token to read the repository with:
-
-      $env:MARIADB_SHELL_TOKEN = '<token>'
-
-  A token is not needed if you install the GitHub CLI and run 'gh auth login',
-  which this script will then pick up on its own.
-'@
-}
 
 if ($PreRelease) {
     $PreReleaseHint = @'
@@ -189,113 +161,63 @@ if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
 # --------------------------------------------------------------------------
 # Release resolution
 # --------------------------------------------------------------------------
+# A pinned tag and the latest stable release are both reachable by a plain
+# download URL: /releases/latest/download/ is a permanent URL GitHub redirects to
+# the newest non-prerelease release, so nothing here needs to know the version
+# and this script never goes stale. Only the newest prerelease has to be looked
+# up first, because it is invisible to /releases/latest: the releases are listed
+# through the GitHub API and the newest one taken.
+$ResolvePreRelease = $false
 if ($Tag) {
     $Base        = "https://github.com/$Repo/releases/download/$Tag"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases/tags/$Tag"
     $ReleaseDesc = $Tag
 } elseif ($PreRelease) {
-    $Base        = "https://github.com/$Repo/releases/latest/download"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases?per_page=20"
+    $ResolvePreRelease = $true
+    $Base        = ''   # known once the release is resolved
     $ReleaseDesc = 'newest, prereleases included'
 } else {
     $Base        = "https://github.com/$Repo/releases/latest/download"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases/latest"
     $ReleaseDesc = 'latest'
 }
 
-# Two separate things force the API: a token can only be spent there, and a
-# prerelease is invisible to /releases/latest in both its URL and its API form --
-# the only way to reach one is to list the releases and take the newest.
-$UseApi  = [bool] $Token -or [bool] $PreRelease
-$Assets  = @{}   # asset name -> numeric id
-
-function Invoke-Api([string] $Uri, [string] $WithToken) {
-    $headers = @{ 'Accept' = 'application/vnd.github+json' }
-    if ($WithToken) { $headers['Authorization'] = "Bearer $WithToken" }
-    Invoke-RestMethod -Uri $Uri -Headers $headers -UseBasicParsing
-}
-
+# Every release is public, so once the tag is known the assets are downloaded by
+# name like on the other paths -- the GitHub API is only asked for the listing.
+# Its anonymous requests are limited to 60 an hour per address, so the API is
+# never asked for anything the plain download URLs can provide.
+#
 # Returns what it resolved rather than assigning across scopes. A $script:
 # qualifier would look right and work when this file is run directly, yet bind
 # to the caller's scope under [scriptblock]::Create() -- which is exactly how the
 # documented one-liner runs it.
-function Resolve-Release([string] $WithToken) {
-    $tok = $WithToken
+function Resolve-PreRelease {
     try {
-        $release = Invoke-Api $ReleaseApi $tok
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=20" `
+            -Headers @{ 'Accept' = 'application/vnd.github+json' } -UseBasicParsing
     } catch {
-        # A private repository answers 404 here, indistinguishable from a
-        # missing one, so try gh's login before giving up -- the same discovery
-        # the anonymous download path makes further down.
-        if (-not $tok -and $ghAvailable) {
-            $fromGh = (& gh auth token 2>$null)
-            if ($LASTEXITCODE -eq 0 -and $fromGh) { $tok = $fromGh.Trim() }
-        }
-        if (-not $tok) {
-            [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
-            Die "could not resolve a release to install from $Repo
-  (asked for: $ReleaseDesc).
+        [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
+        Die "could not list the releases of $Repo.
 
-  The repository may be private, or that release may not exist.
+  The GitHub API limits anonymous requests to 60 an hour per address, so a
+  shared address may have used them up. Naming a release avoids the API:
 
-$AuthHint
-
-$PreReleaseHint
+      `$env:MARIADB_SHELL_TAG = '<tag>'
 "
-        }
-        try {
-            $release = Invoke-Api $ReleaseApi $tok
-        } catch {
-            Die "could not resolve a release to install from $Repo
-  (asked for: $ReleaseDesc), even with a token.
-
-  Does that release exist, and does the token grant read access to this
-  repository?
-
-$PreReleaseHint
-"
-        }
     }
 
-    # The listing endpoint returns an array, the others a single release.
-    # Accepting both here is what lets a pinned tag, the latest stable and the
-    # newest prerelease share one resolution path instead of three.
-    if ($release -is [array]) {
-        $release = $release | Where-Object { -not $_.draft } | Select-Object -First 1
+    $release = @($releases) | Where-Object { -not $_.draft } | Select-Object -First 1
+    if (-not $release) {
+        Die "could not find a published release in $Repo -- is every release a draft?"
     }
-    if (-not $release) { Die "no published release found in $Repo (all drafts?)." }
-
-    $found = @{}
-    foreach ($a in $release.assets) { $found[$a.name] = $a.id }
-    if ($found.Count -eq 0) {
-        Die "release $($release.tag_name) of $Repo has no assets."
-    }
-
-    return @{ Token = $tok; Tag = $release.tag_name; Assets = $found }
+    return $release.tag_name
 }
 
-# One accessor for both paths: assets go by name when anonymous, by id when
-# authenticated, because the plain download URLs are not credential-aware -- they
-# answer 404 to a valid token rather than 401.
 function Get-Asset([string] $Name, [string] $OutFile) {
-    if (-not $UseApi) {
-        Invoke-WebRequest -Uri "$Base/$Name" -OutFile $OutFile -UseBasicParsing
-        return
-    }
-    if (-not $Assets.ContainsKey($Name)) {
-        throw "release $ReleaseDesc of $Repo has no asset named $Name"
-    }
-    $headers = @{ 'Accept' = 'application/octet-stream' }
-    if ($Token) { $headers['Authorization'] = "Bearer $Token" }
-    Invoke-WebRequest -Uri "https://api.github.com/repos/$Repo/releases/assets/$($Assets[$Name])" `
-        -Headers $headers -OutFile $OutFile -UseBasicParsing
+    Invoke-WebRequest -Uri "$Base/$Name" -OutFile $OutFile -UseBasicParsing
 }
 
-if ($UseApi) {
-    $resolved    = Resolve-Release $Token
-    $Token       = $resolved.Token
-    $ReleaseDesc = $resolved.Tag
-    $Assets      = $resolved.Assets
+if ($ResolvePreRelease) {
+    $ReleaseDesc = Resolve-PreRelease
+    $Base        = "https://github.com/$Repo/releases/download/$ReleaseDesc"
 }
 
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("mariadb-shell-install-" + [Guid]::NewGuid().ToString('N'))
@@ -309,32 +231,21 @@ try {
     # ----------------------------------------------------------------------
     Info "Fetching package list from the $ReleaseDesc release"
     $sumsFile = Join-Path $Tmp 'SHA256SUMS'
-    $firstError = $null
     try {
         Get-Asset 'SHA256SUMS' $sumsFile
     } catch {
-        $firstError = $_.Exception.Message
-        if (-not $UseApi -and -not $Token -and $ghAvailable) {
-            $fromGh = (& gh auth token 2>$null)
-            if ($LASTEXITCODE -eq 0 -and $fromGh) {
-                $Token       = $fromGh.Trim()
-                $UseApi      = $true
-                $resolved    = Resolve-Release $Token
-                $Token       = $resolved.Token
-                $ReleaseDesc = $resolved.Tag
-                $Assets      = $resolved.Assets
-                Get-Asset 'SHA256SUMS' $sumsFile
-            }
-        }
-    }
+        [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
+        # A release that was just found in the listing exists; one that was
+        # named or implied may not.
+        if ($ResolvePreRelease) {
+            Die "could not download SHA256SUMS from release $ReleaseDesc of $Repo.
 
-    if (-not (Test-Path $sumsFile)) {
-        if ($firstError) { [Console]::Error.WriteLine("  $firstError`n") }
+  The release exists but has no SHA256SUMS file. A release that is still being
+  published does not have its files yet; try again in a few minutes."
+        }
         Die "could not download SHA256SUMS from the $ReleaseDesc release of $Repo.
 
-  The repository may be private, or that release may not exist.
-
-$AuthHint
+  That release may not exist.
 
 $PreReleaseHint
 "

@@ -455,13 +455,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The install command is derived from the repo's own visibility rather
-          # than hardcoded, so the notes can never advertise a command the reader
-          # cannot run: while the repo is private, nothing can be fetched from it
-          # anonymously, and the command has to carry credentials. The day the
-          # repo goes public this flips to the plain one on its own.
-          PRIVATE=$(gh api "repos/$REPO" --jq .private)
-
           # /releases/latest/ skips prereleases, so a prerelease has to be
           # installed by an explicitly pinned tag. A stable release needs no pin,
           # and gets a command with no version in it at all -- one that keeps
@@ -476,30 +469,8 @@ jobs:
             PS_PIN=""
           fi
 
-          if [ "$PRIVATE" = "false" ]; then
-            SH_CMD="curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER"
-            PS_CMD="irm https://github.com/$REPO/raw/$INSTALLER_REF/install.ps1 | iex"
-            PRIVATE_NOTE=""
-          else
-            # Two credentialed hops, and only the first needs saying: the script
-            # has to be fetched by hand, from raw.githubusercontent.com because
-            # github.com/<owner>/<repo>/raw/ answers 404 to a bearer token. The
-            # packages need no flag -- the installer finds gh's login by itself.
-            SH_CMD="curl -fsSL -H \"Authorization: Bearer \$(gh auth token)\" \\
-               https://raw.githubusercontent.com/$REPO/$INSTALLER_REF/install.sh \\
-            | $RUN_INSTALLER"
-            PS_CMD="\$h = @{ Authorization = \"Bearer \$(gh auth token)\" }
-          irm https://raw.githubusercontent.com/$REPO/$INSTALLER_REF/install.ps1 -Headers \$h | iex"
-            PRIVATE_NOTE="This repository is private, so the installer itself has
-          to be fetched with credentials -- the commands below assume the GitHub
-          CLI is logged in (\`gh auth login\`). They name raw.githubusercontent.com
-          rather than github.com because only that host honours a token. The
-          packages need no extra flag: the installer picks up the same login on
-          its own. Without gh, set \`MARIADB_SHELL_TOKEN\` to a token with read
-          access and send that same token in the header.
-
-          "
-          fi
+          SH_CMD="curl -fsSL https://github.com/$REPO/raw/$INSTALLER_REF/install.sh | $RUN_INSTALLER"
+          PS_CMD="irm https://github.com/$REPO/raw/$INSTALLER_REF/install.ps1 | iex"
 
           # PowerShell needs the tag pinned on its own line, so the block is
           # assembled rather than interpolated -- an always-present pin would
@@ -516,7 +487,7 @@ jobs:
 
           ## Install
 
-          ${PRIVATE_NOTE}### Linux and macOS
+          ### Linux and macOS
 
           \`\`\`sh
           $SH_CMD
