@@ -42,7 +42,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 
   Table export/import, password change and diagnostics are pages directly under Utilities.
 - **Unwanted options are named, not taught.** HeatWave and MySQL-only options that the help still lists are mentioned once, in a hint, as "not available for MariaDB sources". They are never presented as usable.
-- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, DECIMAL in JSON, sandbox exposure, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md).
+- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, sandbox exposure, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md).
 - **No Release Notes or Bug Reports pages.** The ai-plugins docs have both. They were left out here because no verified content was available (release-notes source, issue tracker).
 - **Install page.** The main command is the latest-release form. A hint explains that it fails today because every release is a prerelease, and documents `--pre-release` and `MARIADB_SHELL_TAG=v26.9.5`.
 

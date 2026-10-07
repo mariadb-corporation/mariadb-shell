@@ -15,7 +15,6 @@ The original summary, carried over verbatim:
   - `util.debug.collect_*` fail on MariaDB because they read `@@server_uuid`.
   - `util.change_password({"account":…})` uses `ALTER USER … IDENTIFIED BY`, which switches ed25519 accounts to `mysql_native_password`.
   - `\show threads` always fails ('where' parameter unsupported); `\show thread --vars/--raw-locks` also fail on MariaDB.
-  - JSON result formats turn DECIMAL into floats.
   - Sandboxes:
     - they ignore `MARIADB_SHELL_USER_CONFIG_HOME` and always use `~/.mariadb-shell/sandboxes`
     - they listen on all interfaces
@@ -59,7 +58,6 @@ The full list, by area:
 
 ### Shell, Output and Reports
 
-- **JSON result formats turn DECIMAL into low-precision floats.** `24.90` prints as `24.899999618530273`, and `12345678.91` as `12345679`. [using-mariadb-shell/output-formats.md, warning]
 - **`\show threads` always fails** with "The 'where' parameter is not supported in this build". `o.where` defaults to "TRUE" and then hits the `#ifndef HAVE_X_PROTOCOL` throw. [extending-mariadb-shell/reports.md, using-mariadb-shell/shell-commands.md]
 - **`\show thread --vars`, `--raw-locks` and `--all` fail on MariaDB**, which has no `variables_by_thread` or `data_locks` tables. The `thread` report also needs `performance_schema=ON`. [extending-mariadb-shell/reports.md]
 - **A report function gets `argv`/`options` only if the report declares them**; without defaults, the call fails. [extending-mariadb-shell/reports.md]
