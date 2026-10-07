@@ -114,7 +114,7 @@ mariadb-shell -- mcp setup --addUser=bob@example.com --scopes=mcp:db
 mariadb-shell -- mcp setup --user=bob@example.com --setScopes=mcp:db,mcp:msm
 ```
 
-A client sees only the tools of the scopes its token grants, and a call to another tool fails.
+A client sees only the tools of the scopes its token grants, and a call to another tool fails. A change of a user's scopes applies at once, to API keys and to existing OAuth2 sign-ins alike: a token never grants a scope that the user doesn't have at the time of the request.
 
 ### Default Role
 
@@ -234,7 +234,7 @@ Start the server as described in [Starting the MCP Server](starting-the-mcp-serv
 * serves only over `streamable-http`, and refuses to start with `--transport=stdio`, because a `stdio` server has no request that could carry a user's credentials;
 * refuses `--gui`;
 * provides the `db` and `msm` groups by default, and refuses to start if `--functionGroups` names `sandbox` or `migrator`, whose tools run local servers and long jobs on the server's machine;
-* refuses to start if there is no enabled user.
+* refuses to start if there is no enabled user, unless an [OAuth2](oauth-authentication.md) mode creates users at their first sign-in (`--autoProvision`, the default), because then the first sign-in adds the first user.
 
 ```text
 ERROR: Error: Shell Error: This server is configured for multi-tenant mode, which serves authenticated users over HTTP only: stdio has no request to carry a user's credentials. Use --transport=streamable-http, or turn multi-tenant mode off with mcp setup --multiTenant=false.
@@ -344,7 +344,7 @@ Each refused token is logged with the address it came from, without the token an
 2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24
 ```
 
-After 10 refused tokens within a minute from one address for one user, the server answers that address and user with status `429 Too Many Requests` for the rest of the minute. One address can cause at most 200 refusals a minute in total. The limits apply per address and user, so that one user's wrong key doesn't lock out other users who reach the server through the same gateway or proxy.
+After 10 refused tokens within a minute from one address for one user (for an OAuth2 token, the user it names), the server answers that address and user with status `429 Too Many Requests` for the rest of the minute. One address can cause at most 200 refusals a minute in total. The limits apply per address and user, so that one user's wrong key doesn't lock out other users who reach the server through the same gateway or proxy.
 
 ## Secrets Are Separated, Not Protected
 
@@ -394,7 +394,7 @@ The setup carries the options out in this order: the mode, user removals, user a
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
 | *Multi-tenant mode needs a MariaDB Shell that keeps secrets in groups* | The shell doesn't support secret groups. | Upgrade MariaDB Shell. |
-| *Multi-tenant mode is on, but there is no enabled user to serve.* | No user exists, or all users are disabled. | Add a user with `--addUser`, or enable one. |
+| *Multi-tenant mode is on, but there is no enabled user to serve.* | No user exists, or all users are disabled, and no OAuth2 mode creates users at sign-in. | Add a user with `--addUser`, enable one, or turn on `--autoProvision` of the OAuth2 mode. |
 | *In multi-tenant mode connections and allowed paths belong to a user* | A connection or path option was given without `--user`. | Add `--user`. |
 | *--user only applies to … in multi-tenant mode, which is off.* | `--user` was given while multi-tenant mode is off. | Turn on multi-tenant mode, or leave out `--user`. |
 | *The function group(s) sandbox, migrator are not available in multi-tenant mode* | `--functionGroups` names a group that tenants can't use. | Leave out `--functionGroups`, or pass `db`, `msm`, or both. |
