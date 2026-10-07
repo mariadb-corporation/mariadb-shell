@@ -12,8 +12,7 @@ MariaDB Shell runs an embedded Python interpreter, and the same Python APIs that
 The extension mechanisms build on each other:
 
 * A **report** is a Python function registered with `shell.register_report()`. It returns rows or a structured document, and the shell formats the output.
-* An **extension object** is a container for functions and properties that you register as a global object, so it appears next to `shell` and `util` and is documented by `\?`.
-* A **plugin** is a directory with an `init.py` file that the shell loads at startup. Plugins usually register extension objects, reports, or SQL handlers, and the plugin decorators generate the help text from your docstrings.
+* A **plugin** is a directory with an `init.py` file that the shell loads at startup. Plugins add global objects with documented functions, which appear next to `shell` and `util` and are documented by `\?`, and they register reports and SQL handlers. The plugin decorators generate the help text from your docstrings.
 * An **SQL handler** intercepts SQL statements that start with a given prefix and returns a result that the shell displays like a server result.
 
 To load your code automatically, put it in a plugin directory, in the `init.d` directory of the user configuration directory, or in the [startup script](../customizing/startup-scripts.md).
@@ -32,25 +31,13 @@ The built-in `query`, `thread`, and `threads` reports, the `\show` and `\watch` 
 
 {% columns %}
 {% column %}
-{% content-ref url="extension-objects.md" %}
-[extension-objects.md](extension-objects.md)
-{% endcontent-ref %}
-{% endcolumn %}
-
-{% column %}
-How to build global objects with documented functions and properties using the low-level extension API.
-{% endcolumn %}
-{% endcolumns %}
-
-{% columns %}
-{% column %}
 {% content-ref url="plugins.md" %}
 [plugins.md](plugins.md)
 {% endcontent-ref %}
 {% endcolumn %}
 
 {% column %}
-The plugin directory layout, the plugin decorators, the built-in plugins, and the `plugins` global object.
+The plugin directory layout, the plugin decorators, the built-in plugins, the `plugins` global object, and the extension object API that the decorators build on.
 {% endcolumn %}
 {% endcolumns %}
 

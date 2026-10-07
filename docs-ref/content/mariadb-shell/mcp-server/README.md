@@ -52,7 +52,7 @@ The server's tools are organized in function groups. By default, the server prov
 | `db` | List the configured connections, open and close sessions, list schemas and objects, describe objects, and run SQL statements and scripts. |
 | `msm` | Create and work with versioned schema projects of [MariaDB Schema Management](../schema-management/README.md), prepare releases, and deploy schemas. |
 | `sandbox` | List the server versions that can be deployed, and deploy, start, stop, and delete local sandbox instances. |
-| `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the migration tooling with `mcp setup`. |
+| `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the [migration tooling](migration-tooling.md) with `mcp setup`. |
 
 A [multi-tenant](multi-tenant-mode.md) server provides only the `db` and `msm` groups.
 
@@ -75,6 +75,10 @@ To show the built-in help, run `\? mcp` in Python mode, or `mariadb-shell -- mcp
 
 {% content-ref url="configuring-access.md" %}
 [configuring-access.md](configuring-access.md)
+{% endcontent-ref %}
+
+{% content-ref url="migration-tooling.md" %}
+[migration-tooling.md](migration-tooling.md)
 {% endcontent-ref %}
 
 {% content-ref url="automated-setup.md" %}

@@ -1,8 +1,7 @@
 ---
 description: >-
   Configure the database connections and local directories that the MariaDB
-  MCP server may access with mcp setup, and install the optional MySQL to
-  MariaDB migration tooling.
+  MCP server may access with mcp setup.
 ---
 
 # Configuring Access
@@ -12,7 +11,7 @@ A new MCP server has no access to any database or directory. You decide what it 
 * **Connections**: the MariaDB servers and accounts that the server may open sessions with. The password of each connection is stored in the MariaDB Shell [credential store](../connecting/credential-store.md).
 * **Allowed paths**: the local directories that tools may read from and write to, for example for SQL script files, schema projects, and sandbox directories.
 
-The configuration is per operating system user and applies to every MCP server that the user starts, regardless of the MCP client. You configure it once, and run the setup again only to change it. A running server reads the allow-lists each time it needs them, so changes take effect without a restart, except for the installation of the migration tooling.
+The configuration is per operating system user and applies to every MCP server that the user starts, regardless of the MCP client. You configure it once, and run the setup again only to change it. A running server reads the allow-lists each time it needs them, so changes take effect without a restart.
 
 {% hint style="info" %}
 This page describes the configuration of a single-user server. In [multi-tenant mode](multi-tenant-mode.md), each user of the server has their own connections and allowed directories, which you configure with the same options and `--user`.
@@ -89,7 +88,7 @@ Migration tooling not downloaded yet (configured release: v1.5.0).
 What would you like to do? [6]:
 ```
 
-When the migration tooling is installed, choice 5 removes it instead. On Windows, the menu has no entry for the migration tooling, so `Finish` is choice 5.
+Choice 5 installs the [migration tooling](migration-tooling.md), or removes it when it is installed. On Windows, the menu has no entry for the migration tooling, so `Finish` is choice 5.
 
 ## Connections
 
@@ -177,28 +176,6 @@ Access to path '/home/dev/scratch' is not allowed. Add it (or a parent directory
 
 To avoid the question, add the directories you work in beforehand. Allow project directories, not your home directory or the root directory, because the agent can read and write every file within an allowed directory.
 
-## Migration Tooling
-
-On Linux and macOS, the setup can install the [MySQL to MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration), which the `migrator` tools use. The first run doesn't offer it; choose it from the menu of a later run, or run:
-
-```bash
-mariadb-shell -- mcp setup --installMigrator
-```
-
-The setup installs the release that the plugin is pinned to:
-
-1. It downloads the release and extracts it to `~/.local/share/mariadb-migrator/<version>`, or to `$XDG_DATA_HOME/mariadb-migrator/<version>` when `XDG_DATA_HOME` is set.
-2. It creates a Python virtual environment for the tooling, with the Python runtime included in MariaDB Shell, so no system Python is required.
-3. It installs a `mariadb-migrator` command in `~/.local/bin`. If that directory isn't on your `PATH`, the setup prints the line to add.
-
-Restart the MCP server after the installation. The server registers the `migrator` tools only if the tooling is installed when it starts; otherwise, it writes a message to standard error and serves the other groups.
-
-To remove all installed releases and the `mariadb-migrator` command, choose the removal from the menu, or run:
-
-```bash
-mariadb-shell -- mcp setup --removeMigrator
-```
-
 ## Show the Configuration
 
 To print the current configuration without changing anything, run:
@@ -232,7 +209,6 @@ Add `--json` for machine-readable output.
 | --- | --- |
 | Allowed paths | `settings.json` in the plugin data directory: `~/.mariadb-shell/plugin_data/mcp_plugin/` on Linux and macOS, `%AppData%\MariaDB\mariadb-shell\plugin_data\mcp_plugin\` on Windows. The directory follows `MARIADB_SHELL_USER_CONFIG_HOME`. |
 | Connections and passwords | The MariaDB Shell credential store, which uses the secret storage of the operating system by default. The entries start with `MCP:CONN:`. |
-| Migration tooling | `~/.local/share/mariadb-migrator/<version>/`, with the `mariadb-migrator` command in `~/.local/bin/`. |
 
 {% hint style="info" %}
 `MARIADB_SHELL_USER_CONFIG_HOME` moves the allowed paths. When the credential store uses the secret storage of the operating system, which is the default on macOS and Windows, it doesn't move the connections, because that storage is shared by all configuration directories of the same user.

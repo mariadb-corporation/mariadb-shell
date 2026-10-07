@@ -85,7 +85,6 @@ The shell also reads these variables:
 | --- | --- |
 | `PAGER` | The default value of the `pager` option. See [Pager](using-mariadb-shell/pager.md). |
 | `EDITOR`, `VISUAL` | The editor that `\edit` starts. When neither is set, the shell uses `vi`, or `notepad.exe` on Windows. |
-| `MYSQL_TEST_LOGIN_FILE` | An alternative location of the login file used by the `login-path` helper. |
 | `MARIADB_SANDBOX_BOILERPLATE_DIR`, `MARIADB_SANDBOX_NO_SYNC` | Settings for sandbox deployment. See [Sandbox Instances](sandbox-instances.md). |
 
 The installation scripts read their own `MARIADB_SHELL_TAG`, `MARIADB_SHELL_PREFIX`, `MARIADB_SHELL_BINDIR`, and related variables, which the shell itself ignores. See [Linux and macOS](installation/linux-and-macos.md#installation-options) and [Windows](installation/windows.md#installation-options).

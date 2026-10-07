@@ -113,7 +113,7 @@ mariadb-shell -- mcp start-server --transport=stdio --functionGroups=db
 | `db` | Tools for the configured database connections. |
 | `msm` | Tools for MariaDB Schema Management projects. The `msm.deploy_schema` tool deploys onto a connection opened with the `db` tools, so the server provides it only when `db` is enabled as well. |
 | `sandbox` | Tools for local sandbox instances. |
-| `migrator` | Tools for the migration from MySQL to MariaDB. The server registers them only if the migration tooling is installed; see [Migration Tooling](configuring-access.md#migration-tooling). |
+| `migrator` | Tools for the migration from MySQL to MariaDB. The server registers them only if the migration tooling is installed; see [Migration Tooling](migration-tooling.md). |
 
 For example, a server for an agent that should only read schemas and run queries on configured servers provides `db`. A server for schema development on local sandboxes provides `db,msm,sandbox`.
 
