@@ -29,7 +29,7 @@
 #   MARIADB_SHELL_TAG     install a specific release tag instead of the newest
 #   MARIADB_SHELL_PREFIX  where to unpack        (default $HOME/.local/share/mariadb-shell)
 #   MARIADB_SHELL_BINDIR  where to symlink       (default $HOME/.local/bin)
-#   MARIADB_SHELL_REPO    owner/repo to install from
+#   MARIADB_SHELL_REPO    owner/repo to install from; it has to be public
 #
 # Options:
 #   --pre-release  install the newest release even if it is a prerelease
@@ -78,17 +78,6 @@ USAGE
   shift
 done
 
-# Only a prerelease forces the API path: it is invisible to /releases/latest in
-# both its URL and its API form -- the only way to reach one is to list the
-# releases and take the newest. That needs the asset listing parsed, hence a JSON
-# reader; the default path, which is not interested in prereleases, needs no
-# such thing.
-if [ "$ENABLE_PRERELEASE" = 1 ]; then
-  USE_API=1
-else
-  USE_API=0
-fi
-
 if [ "$ENABLE_PRERELEASE" = 1 ]; then
   PRERELEASE_HINT="Prereleases are already enabled. Name a release outright if
   the one you want is not the newest:
@@ -101,14 +90,20 @@ else
       export MARIADB_SHELL_TAG=<tag>"
 fi
 
-# With no tag pinned, resolve through /releases/latest/download/ -- a permanent
-# URL GitHub redirects to the newest non-prerelease release. Nothing here needs
-# to know the version, so this script never goes stale.
+# A pinned tag and the latest stable release are both reachable by a plain
+# download URL: /releases/latest/download/ is a permanent URL GitHub redirects to
+# the newest non-prerelease release, so nothing here needs to know the version
+# and this script never goes stale. Only the newest prerelease has to be looked
+# up first, because it is invisible to /releases/latest: the releases are listed
+# through the GitHub API and the newest one taken. That needs the listing
+# parsed, hence a JSON reader; the other two paths need no such thing.
+RESOLVE_PRERELEASE=0
 if [ -n "${MARIADB_SHELL_TAG:-}" ]; then
   BASE="https://github.com/$REPO/releases/download/$MARIADB_SHELL_TAG"
   RELEASE_DESC="$MARIADB_SHELL_TAG"
 elif [ "$ENABLE_PRERELEASE" = 1 ]; then
-  BASE="https://github.com/$REPO/releases/latest/download"
+  RESOLVE_PRERELEASE=1
+  BASE=""   # known once the release is resolved
   RELEASE_DESC="newest, prereleases included"
 else
   BASE="https://github.com/$REPO/releases/latest/download"
@@ -188,40 +183,27 @@ TMP=$(mktemp -d)
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT INT TERM
 
-api_get() {
-  curl -fsSL --retry 3 -H "Accept: application/vnd.github+json" -o "$2" "$1"
-}
-
-# Reduces a release -- or a whole list of them, newest first -- to its tag on the
-# first line and one "id name" asset line after it. Accepting both shapes here is
-# what lets a pinned tag, the latest stable and the newest prerelease share one
-# resolution path instead of three.
-read_release() {
+# Reduces the release listing, newest first, to the tag of the newest release
+# that is not a draft.
+newest_tag() {
   if command -v jq >/dev/null 2>&1; then
-    jq -er 'if type == "array" then [.[] | select(.draft == false)][0] else . end
-            | .tag_name, (.assets[] | "\(.id) \(.name)")'
+    jq -er '[.[] | select(.draft == false)][0].tag_name'
   elif command -v python3 >/dev/null 2>&1; then
     python3 -c 'import json,sys
-d = json.load(sys.stdin)
-if isinstance(d, list): d = next(r for r in d if not r["draft"])
-print(d["tag_name"])
-for a in d["assets"]: print(a["id"], a["name"])'
+print(next(r for r in json.load(sys.stdin) if not r["draft"])["tag_name"])'
   else
     die "this install needs jq or python3 to read the release listing"
   fi
 }
 
-# Addressing assets by id means reading the release JSON once up front.
-api_init() {
-  if [ -n "${MARIADB_SHELL_TAG:-}" ]; then
-    _url="https://api.github.com/repos/$REPO/releases/tags/$MARIADB_SHELL_TAG"
-  elif [ "$ENABLE_PRERELEASE" = 1 ]; then
-    _url="https://api.github.com/repos/$REPO/releases?per_page=20"
-  else
-    _url="https://api.github.com/repos/$REPO/releases/latest"
-  fi
-
-  if ! api_get "$_url" "$TMP/release.json" 2>"$TMP/api.err"; then
+# Every release is public, so once the tag is known the assets are downloaded by
+# name like on the other paths -- the GitHub API is only asked for the listing.
+# Its anonymous requests are limited to 60 an hour per address, so the API is
+# never asked for anything the plain download URLs can provide.
+resolve_prerelease() {
+  _url="https://api.github.com/repos/$REPO/releases?per_page=20"
+  if ! curl -fsSL --retry 3 -H "Accept: application/vnd.github+json" \
+            -o "$TMP/releases.json" "$_url" 2>"$TMP/api.err"; then
     # What the transport actually said, kept above the advice and set apart
     # from it -- a bare 'curl: (56)' butted against a formatted block reads
     # like the start of the message rather than evidence for it.
@@ -229,47 +211,26 @@ api_init() {
       sed 's/^/  /' "$TMP/api.err" >&2
       echo "" >&2
     fi
-    die "could not resolve a release to install from $REPO
-  (asked for: $RELEASE_DESC).
+    die "could not list the releases of $REPO.
 
-  That release may not exist. The GitHub API also limits anonymous requests
-  to 60 an hour per address, so a shared address may have used them up.
+  The GitHub API limits anonymous requests to 60 an hour per address, so a
+  shared address may have used them up. Naming a release avoids the API:
 
-  $PRERELEASE_HINT
+      export MARIADB_SHELL_TAG=<tag>
 "
   fi
 
-  read_release < "$TMP/release.json" > "$TMP/release.txt" \
-    || die "could not read the release listing for $RELEASE_DESC -- is every
-  release in it a draft?"
-
-  # From here on the release is known by the tag it resolved to, not by the
-  # placeholder that was asked for, so every later message names a real release.
-  RELEASE_DESC=$(head -n 1 "$TMP/release.txt")
-  tail -n +2 "$TMP/release.txt" > "$TMP/assets"
-  [ -s "$TMP/assets" ] || die "release $RELEASE_DESC of $REPO has no assets"
+  RELEASE_DESC=$(newest_tag < "$TMP/releases.json") \
+    || die "could not find a published release in $REPO -- is every release a
+  draft?"
+  BASE="https://github.com/$REPO/releases/download/$RELEASE_DESC"
 }
 
-# One accessor for both paths, so everything downstream is written once: assets
-# go by name on the download path, by id on the API path.
 fetch() {
-  if [ "$USE_API" = 0 ]; then
-    curl -fL --retry 3 ${3:-} -o "$2" "$BASE/$1"
-    return
-  fi
-
-  # Reports and returns rather than dying: this runs inside a probe whose stderr
-  # is captured, and a die here would take its own message to the grave with it.
-  _id=$(awk -v n="$1" '$2 == n {print $1; exit}' "$TMP/assets")
-  if [ -z "${_id:-}" ]; then
-    echo "release $RELEASE_DESC of $REPO has no asset named $1" >&2
-    return 1
-  fi
-  curl -fL --retry 3 ${3:-} -H "Accept: application/octet-stream" -o "$2" \
-       "https://api.github.com/repos/$REPO/releases/assets/$_id"
+  curl -fL --retry 3 ${3:-} -o "$2" "$BASE/$1"
 }
 
-[ "$USE_API" = 0 ] || api_init
+[ "$RESOLVE_PRERELEASE" = 0 ] || resolve_prerelease
 
 info "Fetching package list from the $RELEASE_DESC release"
 # Silent, and its stderr kept aside, so that what curl said is printed above the
@@ -278,6 +239,14 @@ if ! fetch SHA256SUMS "$TMP/SHA256SUMS" -sS 2>"$TMP/fetch.err"; then
   if [ -s "$TMP/fetch.err" ]; then
     sed 's/^/  /' "$TMP/fetch.err" >&2
     echo "" >&2
+  fi
+  # A release that was just found in the listing exists; one that was named or
+  # implied may not.
+  if [ "$RESOLVE_PRERELEASE" = 1 ]; then
+    die "could not download SHA256SUMS from release $RELEASE_DESC of $REPO.
+
+  The release exists but has no SHA256SUMS file. A release that is still being
+  published does not have its files yet; try again in a few minutes."
   fi
   die "could not download SHA256SUMS from the $RELEASE_DESC release
   of $REPO.

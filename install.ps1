@@ -46,6 +46,10 @@
   it already names the release to install.
   Environment: MARIADB_SHELL_TAG
 
+.PARAMETER Repo
+  The owner/repo to install from. It has to be public.
+  Environment: MARIADB_SHELL_REPO
+
 .PARAMETER AddToPath
   Add the shim directory to the user PATH. Off by default: editing a user's
   environment is not something a piped installer should do uninvited.
@@ -157,81 +161,63 @@ if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
 # --------------------------------------------------------------------------
 # Release resolution
 # --------------------------------------------------------------------------
+# A pinned tag and the latest stable release are both reachable by a plain
+# download URL: /releases/latest/download/ is a permanent URL GitHub redirects to
+# the newest non-prerelease release, so nothing here needs to know the version
+# and this script never goes stale. Only the newest prerelease has to be looked
+# up first, because it is invisible to /releases/latest: the releases are listed
+# through the GitHub API and the newest one taken.
+$ResolvePreRelease = $false
 if ($Tag) {
     $Base        = "https://github.com/$Repo/releases/download/$Tag"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases/tags/$Tag"
     $ReleaseDesc = $Tag
 } elseif ($PreRelease) {
-    $Base        = "https://github.com/$Repo/releases/latest/download"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases?per_page=20"
+    $ResolvePreRelease = $true
+    $Base        = ''   # known once the release is resolved
     $ReleaseDesc = 'newest, prereleases included'
 } else {
     $Base        = "https://github.com/$Repo/releases/latest/download"
-    $ReleaseApi  = "https://api.github.com/repos/$Repo/releases/latest"
     $ReleaseDesc = 'latest'
 }
 
-# Only a prerelease forces the API: it is invisible to /releases/latest in both
-# its URL and its API form -- the only way to reach one is to list the releases
-# and take the newest.
-$UseApi  = [bool] $PreRelease
-$Assets  = @{}   # asset name -> numeric id
-
+# Every release is public, so once the tag is known the assets are downloaded by
+# name like on the other paths -- the GitHub API is only asked for the listing.
+# Its anonymous requests are limited to 60 an hour per address, so the API is
+# never asked for anything the plain download URLs can provide.
+#
 # Returns what it resolved rather than assigning across scopes. A $script:
 # qualifier would look right and work when this file is run directly, yet bind
 # to the caller's scope under [scriptblock]::Create() -- which is exactly how the
 # documented one-liner runs it.
-function Resolve-Release {
+function Resolve-PreRelease {
     try {
-        $release = Invoke-RestMethod -Uri $ReleaseApi -UseBasicParsing `
-            -Headers @{ 'Accept' = 'application/vnd.github+json' }
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=20" `
+            -Headers @{ 'Accept' = 'application/vnd.github+json' } -UseBasicParsing
     } catch {
         [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
-        Die "could not resolve a release to install from $Repo
-  (asked for: $ReleaseDesc).
+        Die "could not list the releases of $Repo.
 
-  That release may not exist. The GitHub API also limits anonymous requests
-  to 60 an hour per address, so a shared address may have used them up.
+  The GitHub API limits anonymous requests to 60 an hour per address, so a
+  shared address may have used them up. Naming a release avoids the API:
 
-$PreReleaseHint
+      `$env:MARIADB_SHELL_TAG = '<tag>'
 "
     }
 
-    # The listing endpoint returns an array, the others a single release.
-    # Accepting both here is what lets a pinned tag, the latest stable and the
-    # newest prerelease share one resolution path instead of three.
-    if ($release -is [array]) {
-        $release = $release | Where-Object { -not $_.draft } | Select-Object -First 1
+    $release = @($releases) | Where-Object { -not $_.draft } | Select-Object -First 1
+    if (-not $release) {
+        Die "could not find a published release in $Repo -- is every release a draft?"
     }
-    if (-not $release) { Die "no published release found in $Repo (all drafts?)." }
-
-    $found = @{}
-    foreach ($a in $release.assets) { $found[$a.name] = $a.id }
-    if ($found.Count -eq 0) {
-        Die "release $($release.tag_name) of $Repo has no assets."
-    }
-
-    return @{ Tag = $release.tag_name; Assets = $found }
+    return $release.tag_name
 }
 
-# One accessor for both paths: assets go by name on the download path, by id on
-# the API path.
 function Get-Asset([string] $Name, [string] $OutFile) {
-    if (-not $UseApi) {
-        Invoke-WebRequest -Uri "$Base/$Name" -OutFile $OutFile -UseBasicParsing
-        return
-    }
-    if (-not $Assets.ContainsKey($Name)) {
-        throw "release $ReleaseDesc of $Repo has no asset named $Name"
-    }
-    Invoke-WebRequest -Uri "https://api.github.com/repos/$Repo/releases/assets/$($Assets[$Name])" `
-        -Headers @{ 'Accept' = 'application/octet-stream' } -OutFile $OutFile -UseBasicParsing
+    Invoke-WebRequest -Uri "$Base/$Name" -OutFile $OutFile -UseBasicParsing
 }
 
-if ($UseApi) {
-    $resolved    = Resolve-Release
-    $ReleaseDesc = $resolved.Tag
-    $Assets      = $resolved.Assets
+if ($ResolvePreRelease) {
+    $ReleaseDesc = Resolve-PreRelease
+    $Base        = "https://github.com/$Repo/releases/download/$ReleaseDesc"
 }
 
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("mariadb-shell-install-" + [Guid]::NewGuid().ToString('N'))
@@ -249,6 +235,14 @@ try {
         Get-Asset 'SHA256SUMS' $sumsFile
     } catch {
         [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
+        # A release that was just found in the listing exists; one that was
+        # named or implied may not.
+        if ($ResolvePreRelease) {
+            Die "could not download SHA256SUMS from release $ReleaseDesc of $Repo.
+
+  The release exists but has no SHA256SUMS file. A release that is still being
+  published does not have its files yet; try again in a few minutes."
+        }
         Die "could not download SHA256SUMS from the $ReleaseDesc release of $Repo.
 
   That release may not exist.
