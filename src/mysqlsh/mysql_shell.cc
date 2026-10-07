@@ -2059,16 +2059,16 @@ std::string Mysql_shell::slash_command_as_backslash(
     const std::string &line) const {
   if (!options().slash_commands || line.length() < 2 || line[0] != '/' ||
       std::isspace(static_cast<unsigned char>(line[1])))
-    return {};
+    return line;
 
   auto command = "\\" + line.substr(1);
-  if (!_shell->is_shell_command(command)) return {};
-
-  return command;
+  return _shell->is_shell_command(command) ? command : line;
 }
 
 bool Mysql_shell::do_shell_command(const std::string &line) {
-  if (const auto command = slash_command_as_backslash(line); !command.empty()) {
+  // a known command, even when run by the language's own handler, which
+  // reports it as not handled
+  if (const auto command = slash_command_as_backslash(line); command != line) {
     _shell->handle_shell_command(command);
     return true;
   }

@@ -122,7 +122,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
   /**
    * If the line is a shell command written with a / prefix (e.g. /status) and
    * the slashCommands option is enabled, returns it with the \ prefix the
-   * command handlers expect, otherwise returns an empty string.
+   * command handlers expect, otherwise returns the line unchanged.
    *
    * Only a known command counts: anything else starting with / (SQL comments,
    * JS regular expressions, a lone / used as a statement delimiter) is left as

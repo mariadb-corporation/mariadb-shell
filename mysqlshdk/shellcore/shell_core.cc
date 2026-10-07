@@ -508,41 +508,37 @@ std::string first_word(const std::string &command_line) {
 }
 }  // namespace
 
+const Shell_command *Shell_command_handler::find_command(
+    const std::string &command_line, IShell_core::Mode mode) const {
+  const auto item = _command_dict.find(first_word(command_line));
+  if (item == _command_dict.end() || !item->second->mode.is_set(mode) ||
+      !item->second->function)
+    return nullptr;
+  return item->second;
+}
+
 bool Shell_command_handler::has_command(const std::string &command_line,
                                         IShell_core::Mode mode) const {
-  const auto item = _command_dict.find(first_word(command_line));
-  return item != _command_dict.end() && item->second->mode.is_set(mode) &&
-         item->second->function;
+  return find_command(command_line, mode) != nullptr;
 }
 
 bool Shell_command_handler::process(const std::string &command_line,
                                     IShell_core::Mode mode) {
-  bool ret_val = false;
+  // Identifies if the line is a registered command
+  const auto command = find_command(command_line, mode);
+  if (!command) return false;
+
+  // Parses the command
   std::vector<std::string> tokens;
+  if (command->auto_parse_arguments)
+    tokens = split_command_line(command_line, command->argument_quotes);
+  else
+    tokens.resize(1);
 
-  if (!_command_dict.empty()) {
-    // Identifies if the line is a registered command
-    std::string command = first_word(command_line);
+  // Updates the first element to contain the whole command line
+  tokens[0] = command_line;
 
-    // Srearch on the registered command list and processes it if it exists
-    Command_registry::iterator item = _command_dict.find(command);
-    if (item != _command_dict.end() && item->second->mode.is_set(mode) &&
-        item->second->function) {
-      // Parses the command
-      if (item->second->auto_parse_arguments)
-        tokens =
-            split_command_line(command_line, item->second->argument_quotes);
-      else
-        tokens.resize(1);
-
-      // Updates the first element to contain the whole command line
-      tokens[0] = command_line;
-
-      ret_val = item->second->function(tokens);
-    }
-  }
-
-  return ret_val;
+  return command->function(tokens);
 }
 
 size_t Shell_command_handler::process_inline(const std::string &command,

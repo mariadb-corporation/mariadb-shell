@@ -88,6 +88,9 @@ class SHCORE_PUBLIC Shell_command_handler {
  private:
   std::vector<std::string> split_command_line(
       const std::string &command_line, const std::string &allowed_quotes);
+  // The command named by the first word of the line, if it runs in the mode
+  const Shell_command *find_command(const std::string &command_line,
+                                    IShell_core::Mode mode) const;
   Command_registry _command_dict;
   Command_list _commands;
   bool m_use_help;
