@@ -28,6 +28,12 @@ MariaDB Shell provides an interactive console for **SQL** and **Python**, and
 switches between them at runtime with `\sql` and `\py`. It connects over the
 classic MariaDB client/server protocol.
 
+Shell commands such as `\quit`, `\status` or `\connect` can also be typed with a
+`/` prefix (`/quit`, `/status`, `/connect`). Only a known command at the start
+of an input is taken this way, so SQL comments, a lone `/` delimiter and other
+code are unaffected; the `slashCommands` option turns it off. Commands used
+inside a statement, such as `\G`, keep the `\` prefix.
+
 The SQL mode offers multi-line editing, persistent history, autocompletion of
 schema/table/column names, result formats (table, vertical, tab-separated, JSON
 and NDJSON), pager support, and column type information.

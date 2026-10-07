@@ -917,6 +917,9 @@ Shell_options::Shell_options(
         "Checks version compatibility for asynchronous replication when "
         "managing a ReplicaSet, ClusterSet, or a Cluster with Read-Replicas.")
     (&storage.wizards, true, SHCORE_USE_WIZARDS, "Enables wizard mode.")
+    (&storage.slash_commands, true, SHCORE_SLASH_COMMANDS,
+        "Accepts shell commands with a / prefix as well as a \\ prefix, "
+        "e.g. /quit or /status.")
     (&storage.initial_mode, shcore::IShell_core::Mode::None,
         "defaultMode", "Specifies the shell mode to use when shell is started "
         "- one of sql, js or py.", std::bind(&shcore::parse_mode, _1),

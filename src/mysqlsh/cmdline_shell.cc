@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <sstream>
@@ -109,8 +110,21 @@ int auto_complete_start_cb(const char32_t *text, int pos) {
     return *ascii_prefix == '\0';
   };
 
+  // a \source or \. command, or its / form where a /command can start
+  const auto is_source_command = [&]() {
+    if (*text != '\\' && (*text != '/' || !g_instance->slash_command_allowed()))
+      return false;
+    for (const char *name : {"source", "."}) {
+      if (begins_with(text + 1, name)) {
+        const auto next = text[1 + strlen(name)];
+        if (next == ' ' || next == '\0') return true;
+      }
+    }
+    return false;
+  };
+
   // Perform context-sensitive tokenization for the auto-completer
-  if (begins_with(text, "\\source") || begins_with(text, "\\.")) {
+  if (is_source_command()) {
     const char32_t *p = text;
     while (*p != ' ' && *p != '\0') ++p;  // skip \cmd
     while (*p == ' ' && *p != '\0') ++p;  // skip spcs
@@ -1305,10 +1319,15 @@ void Command_line_shell::handle_notification(
   if (name == "SN_STATEMENT_EXECUTED") {
     const auto executed = shcore::str_strip(data->get_string("statement"));
     auto mode = interactive_mode();
-    auto sql = executed;
-    if (shcore::str_beginswith(executed, "\\sql ") && executed.length() > 5) {
+    // a /command is checked, and logged, as the \command it ran as
+    auto sql = data->has_key("command")
+                   ? shcore::str_strip(data->get_string("command"))
+                   : executed;
+    // any whitespace ends the command name, as it does when \sql runs
+    if (sql.length() > 5 && shcore::str_beginswith(sql, "\\sql") &&
+        std::isspace(static_cast<unsigned char>(sql[4]))) {
       mode = shcore::Shell_core::Mode::SQL;
-      sql = executed.substr(5);
+      sql = sql.substr(5);
     }
     if (mode != shcore::Shell_core::Mode::SQL || sql_safe_for_logging(sql)) {
       _history.add(executed);
@@ -1496,8 +1515,15 @@ void Command_line_shell::pause_history(bool flag) {
 
 std::vector<std::string> Command_line_shell::auto_complete(
     const std::string &line, size_t *completion_offset) {
+  // the arguments of a /command complete as those of the \command it runs as
+  const auto command = slash_command_as_backslash(line);
+  const bool complete_as_command =
+      command != line && command.find(' ') != std::string::npos;
+
   return completer()->complete(shell_context()->interactive_mode(),
-                               _input_buffer, line, completion_offset);
+                               _input_buffer,
+                               complete_as_command ? command : line,
+                               completion_offset);
 }
 
 }  // namespace mysqlsh

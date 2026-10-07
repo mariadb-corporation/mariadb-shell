@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +73,9 @@ class SHCORE_PUBLIC Base_shell {
   shcore::Input_state input_state() const { return _input_mode; }
   void clear_input();
 
-  void notify_executed_statement(const std::string &line);
+  // command is the \command the line ran as, when it differs from the line
+  void notify_executed_statement(const std::string &line,
+                                 const std::string &command = {});
   virtual std::string prompt();
   std::map<std::string, std::string> *prompt_variables();
 

@@ -156,4 +156,4 @@ To change the list permanently, persist the option:
 MariaDB localhost:3306 ssl  SQL > \option --persist history.sql.ignorePattern *IDENTIFIED*:*PASSWORD*:*AES_ENCRYPT*
 ```
 
-The filter applies to SQL statements, including statements that you run with `\sql` from Python mode. Python code isn't filtered: avoid literal passwords in Python lines, and use the credential store or `shell.prompt()` instead. See [Credential Store](../connecting/credential-store.md).
+The filter applies to SQL statements, including statements that you run with `\sql` (or `/sql`) from Python mode. Python code isn't filtered: avoid literal passwords in Python lines, and use the credential store or `shell.prompt()` instead. See [Credential Store](../connecting/credential-store.md).

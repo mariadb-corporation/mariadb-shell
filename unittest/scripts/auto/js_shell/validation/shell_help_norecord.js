@@ -220,6 +220,9 @@ DESCRIPTION
         protocol.
       - showWarnings: boolean value to indicate whether warnings shall be
         included when printing a SQL result
+      - slashCommands: boolean value, default true, to indicate whether shell
+        commands are also accepted with a / prefix, e.g. /quit or /status, as
+        well as with the \ prefix
       - ssh.bufferSize integer, default 10240 bytes, used for tunnel data
         transfer
       - ssh.configFile string, default empty, custom path for SSH

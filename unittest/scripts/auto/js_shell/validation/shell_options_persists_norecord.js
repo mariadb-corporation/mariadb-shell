@@ -306,6 +306,7 @@
  sandboxDir                      <<<_defaultSandboxDir>>>
  showColumnTypeInfo              false
  showWarnings                    true
+ slashCommands                   true
  ssh.bufferSize                  10240
  ssh.configFile                  ""
  useWizards                      true
@@ -456,6 +457,7 @@
  sandboxDir                      <<<_defaultSandboxDir>>>
  showColumnTypeInfo              false
  showWarnings                    true
+ slashCommands                   true
  ssh.bufferSize                  10240
  ssh.configFile                  ""
  useWizards                      true

@@ -2463,6 +2463,78 @@ TEST_F(Interactive_shell_test, multi_line_command) {
   wipe_all();
 }
 
+TEST_F(Interactive_shell_test, slash_commands) {
+  // a known command can be written with / in place of \ in every mode
+  execute("\\sql");
+  wipe_all();
+  execute("/py");
+  MY_EXPECT_STDOUT_CONTAINS("Switching to Python mode...");
+
+  wipe_all();
+  execute("/warnings");
+  MY_EXPECT_STDOUT_CONTAINS("Show warnings enabled.");
+
+  // leading whitespace is skipped, as it is before a \command
+  wipe_all();
+  execute("  /nowarnings");
+  MY_EXPECT_STDOUT_CONTAINS("Show warnings disabled.");
+
+  // help on a /command is that of the \command
+  wipe_all();
+  execute("/help /quit");
+  MY_EXPECT_STDOUT_CONTAINS("\\quit");
+  MY_EXPECT_STDOUT_NOT_CONTAINS("No help items found");
+
+  // anything else starting with / is input for the language, not an unknown
+  // command
+  wipe_all();
+  execute("/invalid");
+  MY_EXPECT_STDERR_CONTAINS("SyntaxError");
+  MY_EXPECT_STDERR_NOT_CONTAINS("Unknown command");
+
+  // only the first line of a statement can be a command
+  wipe_all();
+  execute("warnings = 2");
+  execute("print(10");
+  execute("/warnings)");
+  execute("");
+  MY_EXPECT_STDOUT_CONTAINS("5.0");
+  MY_EXPECT_STDOUT_NOT_CONTAINS("Show warnings");
+
+  wipe_all();
+  execute("/sql");
+  MY_EXPECT_STDOUT_CONTAINS("Switching to SQL mode...");
+
+  wipe_all();
+  execute("/nowarnings");
+  MY_EXPECT_STDOUT_CONTAINS("Show warnings disabled.");
+
+  // SQL comments and a lone / (a common DELIMITER) are SQL
+  wipe_all();
+  execute("/* comment */ select 1;");
+  MY_EXPECT_STDERR_CONTAINS("ERROR: Not connected.");
+
+  wipe_all();
+  execute("/");
+  MY_EXPECT_STDERR_CONTAINS("ERROR: Not connected.");
+
+  // the option turns the / prefix off, leaving \ as the only one
+  wipe_all();
+  execute("\\option slashCommands = false");
+  execute("\\py");
+  wipe_all();
+  execute("/warnings");
+  MY_EXPECT_STDERR_CONTAINS("SyntaxError");
+  MY_EXPECT_STDOUT_NOT_CONTAINS("Show warnings");
+
+  wipe_all();
+  execute("\\warnings");
+  MY_EXPECT_STDOUT_CONTAINS("Show warnings enabled.");
+
+  execute("\\option slashCommands = true");
+  wipe_all();
+}
+
 TEST_F(Interactive_shell_test, pager_command) {
   // get the initial pager
   execute("print(shell.options.pager)");

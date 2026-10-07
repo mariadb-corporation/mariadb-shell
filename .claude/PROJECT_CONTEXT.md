@@ -21,6 +21,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | --- | --- |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
+| [context/slash-commands.md](context/slash-commands.md) | Branch `wip/slash-commands`: shell commands with a `/` prefix (`slashCommands` option): behaviour, design, files, state, next steps |
 
 ## Current State
 
@@ -28,7 +29,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Code fixes that came out of the review, all merged:** `--login-path` out of `--help` (#61), exact DECIMAL/FLOAT in the JSON formats (#62), installers without a GitHub token (#63), MCP server log without any part of an ID (mariadb-shell-plugins #37). [context/product-issues.md](context/product-issues.md) marks them fixed.
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
-- **PR #64 (`docs/mcp-review-sync`, open 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`. This checkpoint rides on it.
+- **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
+- **Branch `wip/slash-commands` (2026-10-07, not pushed):** shell commands also run as `/quit`, `/status` and so on. 4 commits rebased on `main` `0af379c0a`. Simplify, code and security reviews done; the push needs `--force-with-lease`. A follow-up PR is due for `\connect` password filtering in history. See [context/slash-commands.md](context/slash-commands.md).
 - **Open:**
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
@@ -49,10 +51,12 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **PRs are squash-merged** into `main` with `Title (#N)` subjects. `main` requires the `Shell-CI-Verification` check; `shell-ci.yml` runs on PRs against any branch since #62.
 - **Scripted-test chunk names must not start with `-` or `+`.** `#@<> -foo` is parsed as "exclude this chunk", which switches the tester to only-marked mode and silently skips every chunk; the test passes without running. `unittest/scripts/auto/py_shell/scripts/mysqlsh_mycnf_options.py` hit this. Check with `--show-skipped` or by breaking an assertion on purpose.
 - **Run the scripted tests** with `MYSQL_PORT=<port> build/bin/run_unit_tests --gtest_filter='*/<name>'` against a sandbox deployed with `mariadb-shell -- sandbox deploy <port> --password= --sandboxDir=<scratch>`; rebuild `run_unit_tests` too, not just `mariadb-shell`, or in-process checks run old code.
+- **Unit tests via `npm run rut`** (`RUT_FILTER="Suite.*:Other.*"`) need the MariaDB server on `PATH`: `PATH="/Users/juanram/servers/12.3.2/bin:$PATH"`. Without it every worker fails with "Could not find a MariaDB server binary". The runner deploys and removes its own sandboxes. The local build is in `bld/` (`cmake --build bld --target mariadb-shell run_unit_tests -j 10`).
+- **`main` is checked out in the `~/dev/workflow-test` worktree**, so `git fetch origin main:main` is refused. Fast-forward it there with `git -C ~/dev/workflow-test merge --ff-only origin/main`.
 - **The pre-commit copyright hook** adds `Copyright (c) 2026, MariaDB plc.` to touched C++ files and aborts the commit; re-`git add` and commit again.
 - **GitHub returned HTTP 500 on four squash-merge attempts of #62** (2026-10-07) while the PR was clean; the user merged it later from the web UI.
 - **Windows testing:** a Windows 11 ARM64 box with OpenSSH, PowerShell 5.1 and 7 is in the project memory (`windows-test-machine`); used to verify `install.ps1`.
 
 ## Git state
 
-Branch `docs/mcp-review-sync` off `main` (`5d0333dd6`, PR #59 merged), pushed, PR #64 open; `git status --short` is clean after this checkpoint commit. The other session branches (`wip/docs-ref`, `fix/drop-login-path-option`, `fix/json-decimal-precision`, `fix/drop-installer-token`) are merged and deleted locally.
+Branch `wip/slash-commands`, 4 commits on `main` (`0af379c0a`, fast-forwarded 2026-10-07). It is ahead 6 and behind 2 compared with `origin/wip/slash-commands`, a stale copy that the rebase supersedes. `git status --short` was clean before this checkpoint; the checkpoint itself changes the three `.claude/` files, which are not committed. PR #64 (`docs/mcp-review-sync`) is in `main`.

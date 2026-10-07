@@ -37,6 +37,7 @@
 #define SHCORE_SHOW_WARNINGS "showWarnings"
 #define SHCORE_BATCH_CONTINUE_ON_ERROR "batchContinueOnError"
 #define SHCORE_USE_WIZARDS "useWizards"
+#define SHCORE_SLASH_COMMANDS "slashCommands"
 
 #define SHCORE_SANDBOX_DIR "sandboxDir"
 #define SHCORE_DBA_GTID_WAIT_TIMEOUT "dba.gtidWaitTimeout"
@@ -162,6 +163,7 @@ class Shell_options final : public shcore::Options {
     std::string log_file;
     int verbose_level = 0;
     bool wizards = true;
+    bool slash_commands = true;
     bool admin_mode = false;
     std::string histignore;
     int history_max_size = 1000;
