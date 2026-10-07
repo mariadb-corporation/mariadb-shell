@@ -25,6 +25,7 @@ A sandbox is a self-contained MariaDB server deployment living under a single
 directory ``<sandboxDir>/<port>``, suitable only for local testing.
 """
 
+import contextlib
 import hashlib
 import os
 import re
@@ -44,6 +45,12 @@ SANDBOX_TIMEOUT = 60
 
 # The address a sandbox listens on unless 'mariadbdOptions' says otherwise.
 _LOOPBACK_ADDRESS = "127.0.0.1"
+
+# How often a wait polls, and how long one loopback probe may take. A loopback
+# connect is answered by the kernel at once; the short timeout matters on
+# Windows, where a refused connect only fails when the timeout runs out.
+_POLL_INTERVAL = 0.1
+_PROBE_TIMEOUT = 0.25
 
 # Tool names tried in order: prefer the MariaDB-branded names, fall back to the
 # legacy mysql* names shared by MariaDB and MySQL packages. The server binary
@@ -76,14 +83,7 @@ _SSL_FILES = {
 # directory (auto_generate_certs, on by default), keyed by the same roles. Note
 # the CA is named 'ca.pem', not MariaDB's 'ca-cert.pem'. They live in the data
 # directory rather than the sandbox root.
-_MYSQL_AUTO_SSL_FILES = {
-    "ca_key": "ca-key.pem",
-    "ca_cert": "ca.pem",
-    "server_key": "server-key.pem",
-    "server_cert": "server-cert.pem",
-    "client_key": "client-key.pem",
-    "client_cert": "client-cert.pem",
-}
+_MYSQL_AUTO_SSL_FILES = dict(_SSL_FILES, ca_cert="ca.pem")
 
 # Validity of the self-signed sandbox certificates, in days (10 years).
 _SSL_DAYS = "3650"
@@ -172,9 +172,14 @@ def _find_in_dirs(names, base_dir):
 def _find_in_path(names):
     for name in names:
         found = shutil.which(name)
-        if found and _is_executable(found):
+        if found:
             return found
     return None
+
+
+def _cnf_value(path):
+    """'path' with forward slashes, the form option files take on every OS."""
+    return path.replace("\\", "/")
 
 
 def is_listening(host, port, timeout=1.0):
@@ -184,6 +189,16 @@ def is_listening(host, port, timeout=1.0):
             return True
     except (OSError, ValueError):
         return False
+
+
+def _port_open(port):
+    """Whether a sandbox accepts TCP connections on 'port' of this machine.
+
+    Probes 127.0.0.1, where a sandbox listens by default, before ::1, rather
+    than 'localhost', which may resolve to ::1 first.
+    """
+    return any(is_listening(host, port, timeout=_PROBE_TIMEOUT)
+               for host in (_LOOPBACK_ADDRESS, "::1"))
 
 
 def _is_socket_listening(path, timeout=1.0):
@@ -267,7 +282,7 @@ def _is_ready(port, sandbox_dir):
     if os.name == "posix" and _networking_disabled(sandbox_dir):
         socket_path = _configured_socket(sandbox_dir)
         return socket_path is not None and _is_socket_listening(socket_path)
-    if not is_listening("localhost", port):
+    if not _port_open(port):
         return False
     if os.name != "posix":
         return True
@@ -282,7 +297,7 @@ def _is_listening_anywhere(port, sandbox_dir):
     _networking_disabled()) has no port to close, and the option file may have
     changed since it was started, so it cannot tell which endpoints it opened.
     """
-    if is_listening("localhost", port):
+    if _port_open(port):
         return True
     if os.name != "posix":
         return False
@@ -291,13 +306,12 @@ def _is_listening_anywhere(port, sandbox_dir):
 
 
 def _wait_until(predicate, timeout):
-    """Poll predicate() once per second until it is True or timeout elapses."""
-    waited = 0
-    while waited < timeout:
+    """Poll predicate() every _POLL_INTERVAL until it is True or timeout
+    seconds of polling have passed."""
+    for _ in range(int(timeout / _POLL_INTERVAL)):
         if predicate():
             return True
-        time.sleep(1)
-        waited += 1
+        time.sleep(_POLL_INTERVAL)
     return predicate()
 
 
@@ -342,17 +356,29 @@ def _cnf_path(sandbox_dir):
     return os.path.join(sandbox_dir, "my.cnf")
 
 
-def _vendor_file(sandbox_dir):
-    return os.path.join(sandbox_dir, "vendor")
+def _error_log_path(sandbox_dir):
+    return os.path.join(_datadir(sandbox_dir), "error.log")
+
+
+def _write_marker(sandbox_dir, name, value):
+    """Record 'value' in the one-line file 'name' (best effort)."""
+    with contextlib.suppress(OSError):
+        with open(os.path.join(sandbox_dir, name), "w") as f:
+            f.write(value)
+
+
+def _read_marker(sandbox_dir, name):
+    """The value recorded by _write_marker(), or None when there is none."""
+    try:
+        with open(os.path.join(sandbox_dir, name)) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 def _write_vendor(sandbox_dir, vendor):
     """Persist the server vendor so later operations can report it."""
-    try:
-        with open(_vendor_file(sandbox_dir), "w") as f:
-            f.write(vendor)
-    except OSError:
-        pass
+    _write_marker(sandbox_dir, "vendor", vendor)
 
 
 def _vendor_label(sandbox_dir):
@@ -370,34 +396,12 @@ def _read_vendor(sandbox_dir):
     Sandboxes created before MySQL support (and any without a readable marker)
     were always MariaDB, so that is the fallback.
     """
-    try:
-        with open(_vendor_file(sandbox_dir)) as f:
-            return f.read().strip() or _VENDOR_MARIADB
-    except OSError:
-        return _VENDOR_MARIADB
-
-
-def _version_file(sandbox_dir):
-    return os.path.join(sandbox_dir, "version")
+    return _read_marker(sandbox_dir, "vendor") or _VENDOR_MARIADB
 
 
 def _write_version(sandbox_dir, version):
     """Persist the server version so later operations can report it."""
-    try:
-        with open(_version_file(sandbox_dir), "w") as f:
-            f.write(version)
-    except OSError:
-        pass
-
-
-def _read_version(sandbox_dir):
-    """Version recorded for the sandbox at deploy time, or None if absent."""
-    try:
-        with open(_version_file(sandbox_dir)) as f:
-            version = f.read().strip()
-    except OSError:
-        return None
-    return version or None
+    _write_marker(sandbox_dir, "version", version)
 
 
 def _socket_path(sandbox_dir):
@@ -447,16 +451,30 @@ def _stop_script_path(sandbox_dir):
                         "stop.bat" if os.name == "nt" else "stop.sh")
 
 
-def _validate_port(port, name="port"):
+def _validate_port(port):
     try:
         port = int(port)
     except (TypeError, ValueError):
-        raise Error("Invalid value for '{0}': a port number is required."
-                    "".format(name))
+        raise Error("Invalid value for 'port': a port number is required.")
     if port < 1024 or port > 65535:
-        raise Error("Invalid '{0}' value {1}: it must be >= 1024 and <= 65535."
-                    "".format(name, port))
+        raise Error("Invalid 'port' value {0}: it must be >= 1024 and <= 65535."
+                    "".format(port))
     return port
+
+
+def _existing_sandbox(port, options, need_cnf=False):
+    """(port, sandbox_dir) of the sandbox at 'port', raising if there is none.
+
+    'need_cnf' asks for its option file too, not just its directory.
+    """
+    port = _validate_port(port)
+    _, sandbox_dir = _sandbox_dir(port, options)
+    exists = os.path.isfile(_cnf_path(sandbox_dir)) if need_cnf \
+        else os.path.isdir(sandbox_dir)
+    if not exists:
+        raise Error("There is no sandbox at '{0}'. Deploy it first."
+                    "".format(sandbox_dir))
+    return port, sandbox_dir
 
 
 # --------------------------------------------------------------------------- #
@@ -498,17 +516,26 @@ def _resolve_mariadbd(mariadbd_path):
     return found, basedir
 
 
-def _server_vendor(server):
-    """Return the server vendor ('mariadb' or 'mysql') for a server binary.
+def _server_identity(server):
+    """(vendor, version) of a server binary, from one ``--version`` run.
 
-    Detection is based on the ``--version`` banner: MariaDB servers include
-    "MariaDB" in it, MySQL servers do not. Falls back to MariaDB when the
-    version cannot be read, matching the plugin's historical behavior.
+    The vendor is 'mariadb' or 'mysql': MariaDB servers include "MariaDB" in
+    the banner, MySQL servers do not, and an unreadable banner counts as
+    MariaDB, matching the plugin's historical behavior. The version is the
+    token after "Ver" (e.g. '9.7.1', '11.4.2-MariaDB-debug'), vendor/build
+    suffix included so the boilerplate key stays specific to the exact build
+    (_short_version() gives the numeric form), or 'unknown'.
     """
     text = _server_version(server)
-    if not text:
-        return _VENDOR_MARIADB
-    return _VENDOR_MARIADB if "mariadb" in text.lower() else _VENDOR_MYSQL
+    vendor = _VENDOR_MYSQL if text and "mariadb" not in text.lower() \
+        else _VENDOR_MARIADB
+    match = re.search(r"Ver\s+([0-9][^\s]*)", text)
+    return vendor, (match.group(1) if match else "unknown")
+
+
+def _server_vendor(server):
+    """The vendor of a server binary, see _server_identity()."""
+    return _server_identity(server)[0]
 
 
 def _supported_variables(server):
@@ -518,10 +545,10 @@ def _supported_variables(server):
     set is returned when the help output cannot be produced.
     """
     try:
-        out = subprocess.run([server, "--no-defaults", "--verbose", "--help"],
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             timeout=30)
-        text = out.stdout.decode("utf-8", "replace")
+        text = subprocess.run([server, "--no-defaults", "--verbose", "--help"],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              encoding="utf-8", errors="replace",
+                              timeout=30).stdout
     except Exception as err:
         _log("warning", "Unable to read server variables: {0}".format(err))
         return set()
@@ -536,19 +563,11 @@ def _innodb_opts(server, vendor):
     correct one is chosen from the variables the server actually supports; the
     vendor is used only as a fallback when the probe yields nothing.
     """
-    opts = dict(_INNODB_OPTS)
     supported = _supported_variables(server)
-    for name, value in _INNODB_REDO_OPTS.items():
-        if name in supported:
-            opts[name] = value
-            return opts
-    # Probe produced nothing usable: fall back on the vendor default.
-    if vendor == _VENDOR_MYSQL:
-        opts["innodb_redo_log_capacity"] = _INNODB_REDO_OPTS[
-            "innodb_redo_log_capacity"]
-    else:
-        opts["innodb_log_file_size"] = _INNODB_REDO_OPTS["innodb_log_file_size"]
-    return opts
+    fallback = "innodb_redo_log_capacity" if vendor == _VENDOR_MYSQL \
+        else "innodb_log_file_size"
+    name = next((n for n in _INNODB_REDO_OPTS if n in supported), fallback)
+    return dict(_INNODB_OPTS, **{name: _INNODB_REDO_OPTS[name]})
 
 
 def _resolve_install_db(basedir):
@@ -626,25 +645,12 @@ def _resolve_openssl(basedir, openssl_path):
 def _server_version(mariadbd):
     """Return the version string reported by the server binary (best effort)."""
     try:
-        out = subprocess.run([mariadbd, "--version"], stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, timeout=30)
-        text = out.stdout.decode("utf-8", "replace").strip()
-        return text
+        return subprocess.run([mariadbd, "--version"], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, encoding="utf-8",
+                              errors="replace", timeout=30).stdout.strip()
     except Exception as err:
         _log("warning", "Unable to read server version: {0}".format(err))
         return ""
-
-
-def _version_number(mariadbd):
-    """The version token reported by the server binary (e.g. '9.7.1',
-    '11.4.2-MariaDB-debug'), or 'unknown' when it cannot be read.
-
-    Includes any vendor/build suffix so the boilerplate key stays specific to
-    the exact build; use _short_version() for the numeric-only form.
-    """
-    text = _server_version(mariadbd)
-    match = re.search(r"Ver\s+([0-9][^\s]*)", text)
-    return match.group(1) if match else "unknown"
 
 
 def _short_version(version):
@@ -659,7 +665,7 @@ def _short_version(version):
     return match.group(0) if match else version
 
 
-def _version_token(mariadbd, vendor):
+def _version_token(vendor, version):
     """A filesystem-safe identifier for the server vendor + version.
 
     Used to key the per-version boilerplate directory so that mixing server
@@ -667,7 +673,7 @@ def _version_token(mariadbd, vendor):
     not reuse an incompatible data directory. Example: ``mysql-9.7.1`` or
     ``mariadb-11.4.2-MariaDB``.
     """
-    token = "{0}-{1}".format(vendor, _version_number(mariadbd))
+    token = "{0}-{1}".format(vendor, version)
     return re.sub(r"[^A-Za-z0-9._-]", "_", token)
 
 
@@ -709,7 +715,7 @@ def _init_data_dir(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
         # --initialize-insecure requires.
         args = [mariadbd, "--defaults-file={0}".format(cnf),
                 "--initialize-insecure", "--basedir={0}".format(basedir),
-                "--datadir={0}".format(datadir.replace("\\", "/"))]
+                "--datadir={0}".format(_cnf_value(datadir))]
     elif os.name == "nt":
         # Windows ships mariadb-install-db.exe as a native C++ tool (not the
         # POSIX shell script) with a different, smaller option set: it infers
@@ -739,21 +745,18 @@ def _init_data_dir(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
         tmpdir = _tmpdir(os.path.dirname(datadir))
         os.makedirs(tmpdir, exist_ok=True)
         _write_option_file(cnf, {"mysqld": dict({
-            "datadir": datadir.replace("\\", "/"),
-            "tmpdir": tmpdir.replace("\\", "/")}, **innodb_opts)})
+            "datadir": _cnf_value(datadir),
+            "tmpdir": _cnf_value(tmpdir)}, **innodb_opts)})
     _log("debug", "Initializing data dir: {0}".format(" ".join(args)))
     result = subprocess.run(args, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT, encoding="utf-8",
+                            errors="replace")
     if uses_cnf:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(cnf)
-        except OSError:
-            pass
     if result.returncode != 0:
-        vendor_name = "MySQL" if vendor == _VENDOR_MYSQL else "MariaDB"
         raise Error("Failed to initialize the {0} data directory.\n{1}"
-                    "".format(vendor_name,
-                              result.stdout.decode("utf-8", "replace").strip()))
+                    "".format(_VENDOR_LABELS[vendor], result.stdout.strip()))
 
 
 def _clean_boilerplate_data(datadir):
@@ -765,10 +768,8 @@ def _clean_boilerplate_data(datadir):
     the removal is a no-op there.
     """
     for name in ("error.log", "mysqld.sock", "ib_buffer_pool", "auto.cnf"):
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(os.path.join(datadir, name))
-        except OSError:
-            pass
 
 
 def _boilerplate_is_complete(bp_dir, version):
@@ -781,27 +782,23 @@ def _boilerplate_is_complete(bp_dir, version):
     holds no tables, and a sandbox copied from it dies on start with
     "Can't open and lock privilege tables: Table 'mysql.db' doesn't exist".
     """
-    try:
-        with open(os.path.join(bp_dir, "version.txt")) as f:
-            if f.read().strip() != version:
-                return False
-    except OSError:
+    if _read_marker(bp_dir, "version.txt") != version:
         return False
 
     bp_data = _datadir(bp_dir)
     return os.path.isdir(bp_data) and bool(os.listdir(bp_data))
 
 
-def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
+def _prepare_boilerplate(base, version, install_db, basedir, mariadbd, vendor,
                          innodb_opts):
-    """Ensure a per-version boilerplate data dir exists; return its path.
+    """Ensure a boilerplate data dir exists for the server 'version' (see
+    _version_token()); return its path.
 
     The expensive bootstrap runs only the first time for a given server
     version. Subsequent deployments reuse the directory. Building is done in a
     temporary directory and atomically renamed into place, so a half-built
     boilerplate is never reused.
     """
-    version = _version_token(mariadbd, vendor)
     bp_dir = _boilerplate_dir(base, version)
     bp_data = _datadir(bp_dir)
 
@@ -824,7 +821,7 @@ def _prepare_boilerplate(base, install_db, basedir, mariadbd, vendor,
                        innodb_opts)
         _clean_boilerplate_data(tmp_data)
         with open(os.path.join(tmp_dir, "version.txt"), "w") as f:
-            f.write(version)
+            f.write(version)  # last: it marks the boilerplate complete
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise
@@ -925,11 +922,10 @@ def _root_auth_plugin(vendor):
 
 
 def _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts, auth_plugin):
-    """Switch the local root accounts to 'auth_plugin' before the server starts.
+    """Switch the root accounts to 'auth_plugin' before the server starts.
 
-    Needed because the mismatch handled by _root_auth_plugin() bites on the very
-    first connection: the shell cannot log in to change anything, so this cannot
-    be done over SQL like the password is. 'mariadbd --bootstrap' runs statements
+    The mismatch _root_auth_plugin() describes bites on the very first
+    connection, so this cannot be done over SQL like the password is. 'mariadbd --bootstrap' runs statements
     against the data directory directly, with no client and no listening server.
     The accounts are left password-less (as mariadb-install-db leaves them);
     deploy() then sets the real password through the normal path, keeping this
@@ -942,12 +938,10 @@ def _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts, auth_plugin):
     mysql.global_priv; an empty authentication_string means "no password", which
     is the state deploy() expects here.
     """
-    hosts = ", ".join("'{0}'".format(h)
-                      for h in ("localhost", "127.0.0.1", "::1"))
     statements = (
         "UPDATE mysql.global_priv SET Priv = JSON_SET(Priv, "
         "'$.plugin', '{0}', '$.authentication_string', '') "
-        "WHERE User = 'root' AND Host IN ({1});\n".format(auth_plugin, hosts))
+        "WHERE User = 'root';\n".format(auth_plugin))
 
     tmpdir = _tmpdir(os.path.dirname(datadir))
     os.makedirs(tmpdir, exist_ok=True)
@@ -957,13 +951,13 @@ def _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts, auth_plugin):
              for k, v in innodb_opts.items()]
     args.append("--bootstrap")
 
-    result = subprocess.run(args, input=statements.encode("utf-8"),
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(args, input=statements, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, encoding="utf-8",
+                            errors="replace")
     if result.returncode != 0:
         raise Error("Could not switch the sandbox root accounts to '{0}' "
-                    "authentication:\n{1}".format(
-                        auth_plugin,
-                        result.stdout.decode("utf-8", "replace").strip()))
+                    "authentication:\n{1}".format(auth_plugin,
+                                                    result.stdout.strip()))
 
 
 def _mysql_auto_ssl_paths(datadir):
@@ -990,11 +984,11 @@ def _mysql_auto_ssl_paths(datadir):
 def _run_openssl(openssl, args):
     """Run one openssl sub-command, raising with its output on failure."""
     result = subprocess.run([openssl] + args, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
+                            stderr=subprocess.STDOUT, encoding="utf-8",
+                            errors="replace")
     if result.returncode != 0:
         raise Error("openssl '{0}' command failed:\n{1}".format(
-            args[0] if args else "",
-            result.stdout.decode("utf-8", "replace").strip()))
+            args[0] if args else "", result.stdout.strip()))
 
 
 def _generate_ssl_certs(sandbox_dir, openssl):
@@ -1088,21 +1082,13 @@ def _generate_ssl_certs(sandbox_dir, openssl):
     finally:
         for tmp in (ext_path, client_ext_path, server_req, client_req,
                     req_cnf):
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
 
     # Keep private keys readable only by the owner; the server runs as the same
     # user, so it can still read them.
-    if os.name == "posix":
-        for role, mode in (("ca_key", 0o600), ("server_key", 0o600),
-                           ("client_key", 0o600), ("ca_cert", 0o644),
-                           ("server_cert", 0o644), ("client_cert", 0o644)):
-            try:
-                os.chmod(paths[role], mode)
-            except OSError:
-                pass
+    _set_modes({path: 0o600 if role.endswith("_key") else 0o644
+                for role, path in paths.items()})
 
     return paths
 
@@ -1127,12 +1113,16 @@ def _generate_caching_sha2_keypair(datadir, openssl):
     _run_openssl(openssl, ["genrsa", "-out", private_key, "2048"])
     _run_openssl(openssl, ["rsa", "-in", private_key, "-pubout",
                            "-out", public_key])
-    if os.name == "posix":
-        for path, mode in ((private_key, 0o600), (public_key, 0o644)):
-            try:
-                os.chmod(path, mode)
-            except OSError:
-                pass
+    _set_modes({private_key: 0o600, public_key: 0o644})
+
+
+def _set_modes(modes):
+    """chmod each {path: mode}. POSIX only; best effort."""
+    if os.name != "posix":
+        return
+    for path, mode in modes.items():
+        with contextlib.suppress(OSError):
+            os.chmod(path, mode)
 
 
 # --------------------------------------------------------------------------- #
@@ -1283,6 +1273,13 @@ def _write_scripts(sandbox_dir, port, mariadbd):
     return start_path
 
 
+def _option_name(key):
+    """An option name in the form the server matches it in: '-' and '_' are
+    the same, and a 'loose' prefix only changes how unknown options fail."""
+    name = key.strip().replace("-", "_")
+    return name[len("loose_"):] if name.startswith("loose_") else name
+
+
 def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
                        innodb_opts, ssl_files=None, disable_ssl=False,
                        no_sync=False, x_plugin=False):
@@ -1296,40 +1293,36 @@ def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
     TLS is enabled by pointing the server at the CA/server certificate pair and
     the bundled clients at the CA/client pair.
     """
-    datadir = _datadir(sandbox_dir)
     mysqld = {
         "port": port,
-        "basedir": basedir.replace("\\", "/"),
-        "datadir": datadir.replace("\\", "/"),
-        "log_error": os.path.join(datadir, "error.log").replace("\\", "/"),
+        "basedir": _cnf_value(basedir),
+        "datadir": _cnf_value(_datadir(sandbox_dir)),
+        "log_error": _cnf_value(_error_log_path(sandbox_dir)),
         # A private tmpdir, see _tmpdir(). The start scripts create it.
-        "tmpdir": _tmpdir(sandbox_dir).replace("\\", "/"),
+        "tmpdir": _cnf_value(_tmpdir(sandbox_dir)),
         "performance_schema": "ON",
         # Loopback only: without it the server listens on every interface, and
         # the instance is meant for this machine. 'mariadbdOptions' can widen it
         # (bind_address=* or an address), as the test harness does.
         "bind_address": _LOOPBACK_ADDRESS,
     }
-    # MySQL's X plugin has an address of its own, also every interface by
-    # default.
+    # MySQL's X plugin has an address of its own. Not written for MariaDB, which
+    # would log an "unknown variable" warning at every start even for 'loose_'.
     if x_plugin:
         mysqld["mysqlx_bind_address"] = _LOOPBACK_ADDRESS
-    # Only Windows lacks Unix domain sockets: there --socket merely names a named
-    # pipe, and then only when the server is started with --named-pipe (it is
-    # not), so the value is inert and the sandbox connects over TCP. Omit it there
-    # rather than writing a meaningless Unix-style path (the server reports
-    # socket: '' for it anyway). On Linux and macOS the socket is the primary
-    # local connection endpoint, so keep it.
-    if os.name != "nt":
-        mysqld["socket"] = _socket_path(sandbox_dir).replace("\\", "/")
-    # On POSIX the start script owns the PID file: it captures the server PID
-    # and writes the file itself, so the server must NOT also manage it (a
-    # pre-existing pid-file with a live PID makes the server refuse to start).
-    # On Windows the batch start script cannot easily capture the child PID, so
-    # the server writes the pid-file via this option (no conflict: the server
-    # runs in the foreground there and the script does not pre-write it).
+    client = {"port": port, "user": "root", "protocol": "TCP"}
     if os.name == "nt":
-        mysqld["pid_file"] = _pid_path(sandbox_dir, port).replace("\\", "/")
+        # The batch start script cannot easily capture the child PID, so the
+        # server writes the pid-file itself (it runs in the foreground there).
+        # There is no Unix socket: --socket would only name a named pipe, which
+        # the server does not open without --named-pipe, so it is left out.
+        mysqld["pid_file"] = _cnf_value(_pid_path(sandbox_dir, port))
+    else:
+        # The start script owns the PID file, so the server must NOT manage it
+        # too (a pre-existing pid-file with a live PID makes it refuse to
+        # start). The socket is the primary local endpoint.
+        mysqld["socket"] = client["socket"] = _cnf_value(
+            _socket_path(sandbox_dir))
     # InnoDB sizing must match the boilerplate the data dir was copied from.
     mysqld.update(innodb_opts)
 
@@ -1341,40 +1334,31 @@ def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
     # Enable TLS with the generated certificates. These come before the
     # user-supplied overrides so a caller can still tune or replace them.
     if ssl_files:
-        mysqld["ssl_ca"] = ssl_files["ca_cert"].replace("\\", "/")
-        mysqld["ssl_cert"] = ssl_files["server_cert"].replace("\\", "/")
-        mysqld["ssl_key"] = ssl_files["server_key"].replace("\\", "/")
+        for section, peer in ((mysqld, "server"), (client, "client")):
+            section["ssl_ca"] = _cnf_value(ssl_files["ca_cert"])
+            section["ssl_cert"] = _cnf_value(ssl_files[peer + "_cert"])
+            section["ssl_key"] = _cnf_value(ssl_files[peer + "_key"])
     elif disable_ssl:
         # MariaDB 12.x brings up TLS by default and aborts at startup when it
         # cannot load a key ("Failed to setup SSL: Unable to get private key"),
-        # even with no ssl_* options configured. So when the sandbox is deployed
-        # without certificates, omitting the cert options is not enough - TLS has
-        # to be turned off explicitly or the server won't start. (Only applied
-        # for MariaDB; MySQL auto-generates its own certs and starts fine.)
+        # even with no ssl_* options configured, so a certless sandbox has to
+        # turn it off explicitly. (MySQL auto-generates its own certs.)
         mysqld["skip_ssl"] = None
 
     # See NO_SYNC_ENV. Before the overrides, which can still turn it back off.
     if no_sync:
         mysqld["debug_no_sync"] = None
 
-    if overrides:
-        if "port" in overrides:
+    # An override replaces the default it names, however it spells it.
+    for key, value in (overrides or {}).items():
+        name = _option_name(key)
+        if name == "port":
             raise Error("Overriding the 'port' value is not supported. Use the "
                         "'port' argument to choose a different port.")
-        mysqld.update(overrides)
+        for default in [k for k in mysqld if _option_name(k) == name]:
+            del mysqld[default]
+        mysqld[key] = value
 
-    client = {
-        "port": port,
-        "user": "root",
-        "protocol": "TCP",
-    }
-    # See the [mysqld] socket note above: omitted on Windows, kept elsewhere.
-    if os.name != "nt":
-        client["socket"] = _socket_path(sandbox_dir).replace("\\", "/")
-    if ssl_files:
-        client["ssl_ca"] = ssl_files["ca_cert"].replace("\\", "/")
-        client["ssl_cert"] = ssl_files["client_cert"].replace("\\", "/")
-        client["ssl_key"] = ssl_files["client_key"].replace("\\", "/")
     return {"mysqld": mysqld, "client": client}
 
 
@@ -1422,6 +1406,16 @@ def _quote_host(host):
     return "'{0}'".format(host.replace("\\", "\\\\").replace("'", "''"))
 
 
+@contextlib.contextmanager
+def _no_binlog(session):
+    """Keep the statements run inside out of the binary log."""
+    session.run_sql("SET sql_log_bin = 0")
+    try:
+        yield
+    finally:
+        session.run_sql("SET sql_log_bin = 1")
+
+
 def _set_root_password(session, password, auth_plugin=None):
     """Set the password for every root account, with binlog disabled.
 
@@ -1432,15 +1426,12 @@ def _set_root_password(session, password, auth_plugin=None):
     """
     hosts = [row[0] for row in session.run_sql(
         "SELECT Host FROM mysql.user WHERE User = 'root'").fetch_all()]
-    session.run_sql("SET sql_log_bin = 0")
-    try:
+    with _no_binlog(session):
         for host in hosts:
             session.run_sql(
                 "ALTER USER 'root'@{0} {1}"
                 "".format(_quote_host(host), _identified_clause(auth_plugin)),
                 [password])
-    finally:
-        session.run_sql("SET sql_log_bin = 1")
 
 
 def _create_remote_root(session, allow_root_from, password, auth_plugin=None):
@@ -1450,8 +1441,7 @@ def _create_remote_root(session, allow_root_from, password, auth_plugin=None):
     if not re.match(r"^[A-Za-z0-9_.%:\-]+$", allow_root_from):
         raise Error("Invalid 'allowRootFrom' value '{0}'.".format(
             allow_root_from))
-    session.run_sql("SET sql_log_bin = 0")
-    try:
+    with _no_binlog(session):
         session.run_sql(
             "CREATE USER IF NOT EXISTS 'root'@'{0}' {1}"
             "".format(allow_root_from, _identified_clause(auth_plugin)),
@@ -1459,15 +1449,13 @@ def _create_remote_root(session, allow_root_from, password, auth_plugin=None):
         session.run_sql(
             "GRANT ALL ON *.* TO 'root'@'{0}' WITH GRANT OPTION"
             "".format(allow_root_from))
-    finally:
-        session.run_sql("SET sql_log_bin = 1")
 
 
 # --------------------------------------------------------------------------- #
 # Process control
 # --------------------------------------------------------------------------- #
 def _spawn_detached(args):
-    """Launch a command detached so it outlives the shell. Returns the PID."""
+    """Launch a command detached so it outlives the shell."""
     kwargs = {"stdin": subprocess.DEVNULL,
               "stdout": subprocess.DEVNULL,
               "stderr": subprocess.DEVNULL}
@@ -1481,35 +1469,42 @@ def _spawn_detached(args):
         # still outlives the shell - it has its own console, independent of the
         # shell's.
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return subprocess.Popen(args, **kwargs).pid
+    subprocess.Popen(args, **kwargs)
 
 
 def _start_server(sandbox_dir):
     """Start the sandbox by running its generated start script, detached.
 
-    The server runs under the start script's restart loop (mysqld_safe-like),
-    and writes its own PID to the pid_file; the returned PID is the wrapper's
-    and is not used for process control (stop/kill go through the pid_file).
+    The server runs under the start script's restart loop (mysqld_safe-like).
+    Process control goes through the PID file, which the script writes on
+    POSIX and the server on Windows.
     """
     script = _start_script_path(sandbox_dir)
-    args = ["cmd", "/c", script] if os.name == "nt" else [script]
-    return _spawn_detached(args)
+    _spawn_detached(["cmd", "/c", script] if os.name == "nt" else [script])
+
+
+def _start_and_wait(port, sandbox_dir, label, timeout):
+    """Start the sandbox and wait until it accepts connections."""
+    _start_server(sandbox_dir)
+    if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
+        raise Error("Timeout waiting for the {0} sandbox on port {1} to "
+                    "start. Check the error log at '{2}'.".format(
+                        label, port, _error_log_path(sandbox_dir)))
 
 
 def _read_pid(sandbox_dir, port):
-    pid_path = _pid_path(sandbox_dir, port)
-    if not os.path.isfile(pid_path):
-        return None
     try:
-        with open(pid_path) as f:
+        with open(_pid_path(sandbox_dir, port)) as f:
             return int(f.readline().strip())
     except (OSError, ValueError):
         return None
 
 
 def _signal_pid(pid, sig):
+    """Send 'sig' to 'pid', ignoring a process that is already gone."""
     if os.name == "posix":
-        os.kill(pid, sig)
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, sig)
     else:
         # On Windows only forceful termination is available without extra deps.
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
@@ -1541,20 +1536,14 @@ def create_sandbox(port, options):
                     "empty.".format(sandbox_dir))
 
     mariadbd, basedir = _resolve_mariadbd(options.get("mariadbdPath"))
-    vendor = _server_vendor(mariadbd)
+    vendor, version = _server_identity(mariadbd)
     label = _VENDOR_LABELS[vendor]
 
     if ssl is None:
-        # TLS is enabled by default everywhere except MariaDB on Windows.
-        # MariaDB's Windows builds bundle wolfSSL, whose server-side TLS does not
-        # complete a handshake with the shell's OpenSSL connector (nor with
-        # Windows Schannel): every ClientHello is rejected regardless of TLS
-        # version or key-exchange group, so a TLS-enabled sandbox is undeployable
-        # (deploy() can't connect to set the password) and unusable. Default TLS
-        # off there so deploy works out of the box. An explicit ssl:true is still
-        # honored - e.g. for a MariaDB built against OpenSSL rather than the
-        # bundled wolfSSL. MySQL on Windows uses OpenSSL and is unaffected; POSIX
-        # keeps TLS on for both vendors.
+        # TLS is on by default, except for MariaDB on Windows: its bundled
+        # wolfSSL cannot complete a handshake with the shell's client, so a TLS
+        # sandbox could not even be deployed (MARIADB_PORT.md §11.5). An explicit
+        # ssl:true is honored, for a MariaDB built against OpenSSL.
         ssl = not (os.name == "nt" and vendor == _VENDOR_MARIADB)
         if not ssl:
             print("Note: deploying without TLS. MariaDB's bundled wolfSSL on "
@@ -1572,23 +1561,27 @@ def create_sandbox(port, options):
          "".format(vendor, mariadbd, basedir, install_db or "mysqld "
                    "--initialize-insecure"))
 
-    # Resolve openssl up-front so deployment fails before doing any work when
-    # SSL is requested but the tool is unavailable. MariaDB only: MySQL generates
-    # its own CA/server/client certificates while initializing the data directory
-    # (auto_generate_certs), so it needs no openssl CLI - and requiring one would
-    # break deployment where none is usable (macOS ships LibreSSL, whose 'req'
-    # rejects our config, and the build bundles the CLI for MariaDB only).
+    # MariaDB only: MySQL generates its own certificates and RSA keypair while
+    # initializing the data directory, so it needs no openssl CLI - and
+    # requiring one would break deployment where none is usable (macOS ships
+    # LibreSSL, whose 'req' rejects our config). Resolved up-front so that a
+    # deployment with SSL fails before doing any work when it is missing; the
+    # keypair alone is best effort.
     openssl = None
-    if ssl and vendor == _VENDOR_MARIADB:
-        openssl = _resolve_openssl(basedir, options.get("opensslPath"))
-        if not openssl:
+    if vendor == _VENDOR_MARIADB:
+        try:
+            openssl = _resolve_openssl(basedir, options.get("opensslPath"))
+        except Error:
+            if ssl:
+                raise
+        if ssl and not openssl:
             raise Error("Could not find the 'openssl' tool needed to generate "
                         "the sandbox SSL certificates. Install OpenSSL and make "
                         "sure it is on the PATH, point to it with the "
                         "'opensslPath' option, or disable SSL by setting the "
                         "'ssl' option to false.")
 
-    if is_listening("localhost", port):
+    if _port_open(port):
         raise Error("Port '{0}' is already in use; cannot deploy the sandbox."
                     "".format(port))
 
@@ -1597,9 +1590,9 @@ def create_sandbox(port, options):
 
     # 1) Ensure the per-version boilerplate exists (bootstrapped only once),
     #    then deploy this instance by copying its initialized data directory.
-    boilerplate_data = _prepare_boilerplate(_boilerplate_base(base), install_db,
-                                            basedir, mariadbd, vendor,
-                                            innodb_opts)
+    boilerplate_data = _prepare_boilerplate(
+        _boilerplate_base(base), _version_token(vendor, version), install_db,
+        basedir, mariadbd, vendor, innodb_opts)
 
     datadir = _datadir(sandbox_dir)
     try:
@@ -1610,65 +1603,47 @@ def create_sandbox(port, options):
         raise Error("Unable to deploy the sandbox data directory '{0}': {1}"
                     "".format(datadir, err))
 
-    # 2) Point the instance at the SSL certificates (CA + server + client) it will
-    #    serve TLS with. MySQL already generated its own set into the data
-    #    directory while initializing it, so only MariaDB needs them created here
-    #    - done per sandbox, so each gets its own CA.
-    ssl_files = None
-    if ssl:
-        if vendor == _VENDOR_MARIADB:
-            print("Generating SSL certificates for the sandbox...")
-            try:
-                ssl_files = _generate_ssl_certs(sandbox_dir, openssl)
-            except Exception:
-                shutil.rmtree(sandbox_dir, ignore_errors=True)
-                raise
-        else:
-            ssl_files = _mysql_auto_ssl_paths(datadir)
-
-    # 2b) MariaDB only: provision the caching_sha2_password RSA keypair the
-    #     built-in plugin expects, so it stops logging a spurious startup error
-    #     and a caching_sha2 account can authenticate over non-TLS. Best-effort
-    #     and needed regardless of TLS, so resolve openssl on its own (it may be
-    #     unresolved when ssl is off); if it can't be found or generation fails,
-    #     carry on - the missing keypair is only cosmetic (MySQL auto-generates
-    #     its own during --initialize-insecure, so this is MariaDB-only).
-    if vendor == _VENDOR_MARIADB:
-        try:
-            keypair_openssl = openssl or _resolve_openssl(
-                basedir, options.get("opensslPath"))
-            if keypair_openssl:
-                _generate_caching_sha2_keypair(datadir, keypair_openssl)
-            else:
-                _log("debug", "openssl not found; skipping caching_sha2_password"
-                     " keypair generation (the server logs a harmless startup "
-                     "error).")
-        except Exception as err:
-            _log("warning", "Could not provision the caching_sha2_password RSA "
-                 "keypair (non-fatal): {0}".format(err))
-
-    # 2c) A MySQL-built shell cannot authenticate to a stock MariaDB instance
-    #     (MySQL 9 dropped mysql_native_password), and it fails on the very first
-    #     connection - before any SQL can fix it. Switch the root accounts over
-    #     offline, straight against the copied data directory, so the session
-    #     opened below can log in. No-op for every matching client/server pair.
     root_auth_plugin = _root_auth_plugin(vendor)
-    if root_auth_plugin:
-        _log("info", "Switching the sandbox root accounts to '{0}': this shell "
-             "links the MySQL client library, which cannot authenticate with "
-             "MariaDB's default plugin.".format(root_auth_plugin))
-        try:
+    ssl_files = None
+    try:
+        # 2) The SSL certificates (CA + server + client) the instance serves
+        #    TLS with. MySQL generated its own set into the data directory;
+        #    MariaDB gets one per sandbox, so each has its own CA.
+        if ssl:
+            if vendor == _VENDOR_MARIADB:
+                print("Generating SSL certificates for the sandbox...")
+                ssl_files = _generate_ssl_certs(sandbox_dir, openssl)
+            else:
+                ssl_files = _mysql_auto_ssl_paths(datadir)
+
+        # 2b) MariaDB only, best effort: see _generate_caching_sha2_keypair().
+        if openssl:
+            try:
+                _generate_caching_sha2_keypair(datadir, openssl)
+            except Exception as err:
+                _log("warning", "Could not provision the caching_sha2_password "
+                     "RSA keypair (non-fatal): {0}".format(err))
+        elif vendor == _VENDOR_MARIADB:
+            _log("debug", "openssl not found; skipping caching_sha2_password "
+                 "keypair generation (the server logs a harmless startup "
+                 "error).")
+
+        # 2c) Offline, before the first connection: see _root_auth_plugin().
+        if root_auth_plugin:
+            _log("info", "Switching the sandbox root accounts to '{0}': this "
+                 "shell links the MySQL client library, which cannot "
+                 "authenticate with MariaDB's default plugin.".format(
+                     root_auth_plugin))
             _bootstrap_root_auth_plugin(mariadbd, datadir, innodb_opts,
                                         root_auth_plugin)
-        except Exception:
-            shutil.rmtree(sandbox_dir, ignore_errors=True)
-            raise
+    except Exception:
+        shutil.rmtree(sandbox_dir, ignore_errors=True)
+        raise
 
     # 3) Write the option file and the start/stop scripts (the scripts capture
     #    the resolved server binary and the option file path).
-    cnf_path = _cnf_path(sandbox_dir)
     _write_option_file(
-        cnf_path,
+        _cnf_path(sandbox_dir),
         _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
                            innodb_opts, ssl_files,
                            disable_ssl=(not ssl and vendor == _VENDOR_MARIADB),
@@ -1678,15 +1653,11 @@ def create_sandbox(port, options):
     _write_scripts(sandbox_dir, port, mariadbd)
     # Record the vendor and version so later operations can report them.
     _write_vendor(sandbox_dir, vendor)
-    _write_version(sandbox_dir, _version_number(mariadbd))
+    _write_version(sandbox_dir, version)
 
     # 4) Start the server (root still has no password at this point).
     print("Starting {0} sandbox instance...".format(label))
-    _start_server(sandbox_dir)
-    if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
-        raise Error("Timeout waiting for the {0} sandbox on port {1} to "
-                    "start. Check the error log at '{2}'.".format(
-                        label, port, os.path.join(datadir, "error.log")))
+    _start_and_wait(port, sandbox_dir, label, timeout)
 
     # 5) Set the root password and, optionally, create a remote root account.
     session = _open_root_session(port, sandbox_dir, "")
@@ -1710,15 +1681,9 @@ def create_sandbox(port, options):
 
 
 def start_sandbox(port, options):
-    port = _validate_port(port)
+    port, sandbox_dir = _existing_sandbox(port, options, need_cnf=True)
     timeout = int(options.get("timeout", SANDBOX_TIMEOUT))
-    _, sandbox_dir = _sandbox_dir(port, options)
-    cnf_path = _cnf_path(sandbox_dir)
-
-    if not os.path.isfile(cnf_path):
-        raise Error("There is no sandbox at '{0}'. Deploy it first."
-                    "".format(sandbox_dir))
-    if is_listening("localhost", port):
+    if _port_open(port):
         raise Error("Port '{0}' is already in use; the sandbox may already be "
                     "running.".format(port))
 
@@ -1726,33 +1691,25 @@ def start_sandbox(port, options):
     # which captures the server binary path, so it works even without the binary
     # on PATH. Regenerate the scripts only if a different binary was requested
     # or the sandbox predates script generation.
-    start_script = _start_script_path(sandbox_dir)
-    if options.get("mariadbdPath") or not os.path.isfile(start_script):
+    if options.get("mariadbdPath") or \
+            not os.path.isfile(_start_script_path(sandbox_dir)):
         mariadbd, _ = _resolve_mariadbd(options.get("mariadbdPath"))
         _write_scripts(sandbox_dir, port, mariadbd)
         # Keep the recorded vendor/version in sync with the (possibly new)
         # binary.
-        _write_vendor(sandbox_dir, _server_vendor(mariadbd))
-        _write_version(sandbox_dir, _version_number(mariadbd))
+        vendor, version = _server_identity(mariadbd)
+        _write_vendor(sandbox_dir, vendor)
+        _write_version(sandbox_dir, version)
 
     label = _vendor_label(sandbox_dir)
     print("Starting {0} sandbox instance on port {1}...".format(label, port))
-    _start_server(sandbox_dir)
-    if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
-        raise Error("Timeout waiting for the {0} sandbox on port {1} to "
-                    "start. Check the error log at '{2}'.".format(
-                        label, port,
-                        os.path.join(_datadir(sandbox_dir), "error.log")))
+    _start_and_wait(port, sandbox_dir, label, timeout)
     print("Instance localhost:{0} successfully started.".format(port))
 
 
 def stop_sandbox(port, options):
-    port = _validate_port(port)
+    port, sandbox_dir = _existing_sandbox(port, options)
     timeout = int(options.get("timeout", SANDBOX_TIMEOUT))
-    _, sandbox_dir = _sandbox_dir(port, options)
-
-    if not os.path.isdir(sandbox_dir):
-        raise Error("There is no sandbox at '{0}'.".format(sandbox_dir))
     label = _vendor_label(sandbox_dir)
 
     # Close the active shell session if it points at this very sandbox.
@@ -1767,41 +1724,29 @@ def stop_sandbox(port, options):
     except Exception:
         pass
 
-    if not is_listening("localhost", port):
+    if not _port_open(port):
         print("{0} sandbox on port {1} is already stopped.".format(label, port))
         return
 
     print("Stopping {0} sandbox instance on port {1}...".format(label, port))
-    pid = _read_pid(sandbox_dir, port)
     if os.name == "posix":
+        pid = _read_pid(sandbox_dir, port)
         if pid is None:
             raise Error("Could not find the PID file for the sandbox on port "
                         "{0}. Use kill() to terminate it.".format(port))
-        # SIGTERM triggers a clean MariaDB shutdown (same as mariadb-admin).
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        # SIGTERM triggers a clean shutdown (same as mariadb-admin).
+        _signal_pid(pid, signal.SIGTERM)
     else:
-        # On Windows there is no signal-based way to ask an arbitrary process
-        # to shut down cleanly (os.kill() there only maps to TerminateProcess,
-        # an abrupt kill - see the SIGTERM branch above). Ask the server
-        # itself instead, over the client protocol, using the shell's own
-        # session API rather than shelling out to mariadb-admin/mysqladmin.
+        # Windows has no signal asking a process to shut down cleanly (os.kill()
+        # there is TerminateProcess), so ask the server over the client protocol.
+        # The server closes the connection while shutting down, which is the
+        # expected outcome, not a failure.
         session = _open_root_session(port, sandbox_dir,
                                      options.get("password", ""))
-        try:
-            try:
-                session.run_sql("SHUTDOWN")
-            except Exception:
-                # The server closes the connection as part of shutting down;
-                # that is the expected outcome, not a failure.
-                pass
-        finally:
-            try:
-                session.close()
-            except Exception:
-                pass
+        with contextlib.suppress(Exception):
+            session.run_sql("SHUTDOWN")
+        with contextlib.suppress(Exception):
+            session.close()
 
     if not _wait_until(lambda: not _is_listening_anywhere(port, sandbox_dir),
                        timeout):
@@ -1821,16 +1766,12 @@ def stop_sandbox(port, options):
 
 
 def kill_sandbox(port, options):
-    port = _validate_port(port)
-    _, sandbox_dir = _sandbox_dir(port, options)
-
-    if not os.path.isdir(sandbox_dir):
-        raise Error("There is no sandbox at '{0}'.".format(sandbox_dir))
+    port, sandbox_dir = _existing_sandbox(port, options)
     label = _vendor_label(sandbox_dir)
 
     pid = _read_pid(sandbox_dir, port)
     if pid is None:
-        if is_listening("localhost", port):
+        if _port_open(port):
             raise Error("Could not find the PID file for the sandbox on port "
                         "{0}, although a server is listening on it.".format(
                             port))
@@ -1839,31 +1780,19 @@ def kill_sandbox(port, options):
 
     print("Killing {0} sandbox instance on port {1} (pid {2})...".format(
         label, port, pid))
-    try:
-        _signal_pid(pid, signal.SIGKILL if os.name == "posix" else None)
-    except ProcessLookupError:
-        pass
+    _signal_pid(pid, signal.SIGKILL if os.name == "posix" else None)
 
-    _wait_until(lambda: not is_listening("localhost", port), 10)
-    pid_path = _pid_path(sandbox_dir, port)
-    if os.path.isfile(pid_path):
-        try:
-            os.unlink(pid_path)
-        except OSError:
-            pass
+    _wait_until(lambda: not _port_open(port), 10)
+    with contextlib.suppress(OSError):
+        os.unlink(_pid_path(sandbox_dir, port))
     print("Instance localhost:{0} successfully killed.".format(port))
 
 
 def delete_sandbox(port, options):
-    port = _validate_port(port)
-    _, sandbox_dir = _sandbox_dir(port, options)
-
-    if not os.path.isdir(sandbox_dir):
-        raise Error("Sandbox instance at '{0}' does not exist.".format(
-            sandbox_dir))
+    port, sandbox_dir = _existing_sandbox(port, options)
     label = _vendor_label(sandbox_dir)
 
-    if is_listening("localhost", port):
+    if _port_open(port):
         raise Error("The {0} sandbox on port {1} is running. Stop it "
                     "before deleting it.".format(label, port))
 
@@ -1885,13 +1814,31 @@ def delete_sandbox(port, options):
     # socket file (see _build_option_file), so this only applies elsewhere.
     if os.name != "nt":
         sock = _socket_path(sandbox_dir)
-        if not sock.startswith(sandbox_dir) and os.path.exists(sock):
-            try:
+        if not sock.startswith(sandbox_dir):
+            with contextlib.suppress(OSError):
                 os.unlink(sock)
-            except OSError:
-                pass
 
     print("Instance localhost:{0} successfully deleted.".format(port))
+
+
+def _describe_server(port, options, recorded, from_binary):
+    """What sandbox_vendor()/sandbox_version() report.
+
+    With a 'port', the value recorded for that sandbox, recorded(sandbox_dir),
+    when there is one. Otherwise - no port, or a sandbox from before the value
+    was recorded - from_binary(server) for the server binary a new deployment
+    would use, honoring 'mariadbdPath'; None when there is no such binary.
+    """
+    if port is not None:
+        _, sandbox_dir = _existing_sandbox(port, options, need_cnf=True)
+        value = recorded(sandbox_dir)
+        if value:
+            return value
+    try:
+        mariadbd, _ = _resolve_mariadbd(options.get("mariadbdPath"))
+    except Error:
+        return None
+    return from_binary(mariadbd)
 
 
 def sandbox_vendor(port=None, options=None):
@@ -1907,25 +1854,10 @@ def sandbox_vendor(port=None, options=None):
     cannot be determined. Still raises when a 'port' is given but no sandbox
     exists there.
     """
-    options = options or {}
-    if port is not None:
-        port = _validate_port(port)
-        _, sandbox_dir = _sandbox_dir(port, options)
-        if not os.path.isfile(_cnf_path(sandbox_dir)):
-            raise Error("There is no sandbox at '{0}'. Deploy it first."
-                        "".format(sandbox_dir))
-        if os.path.isfile(_vendor_file(sandbox_dir)):
-            return _vendor_label(sandbox_dir)
-        # Older sandbox without a recorded vendor: derive it from the server
-        # binary (honoring 'mariadbdPath') rather than assuming a default.
-
-    try:
-        mariadbd, _ = _resolve_mariadbd(options.get("mariadbdPath"))
-    except Error:
-        # No server binary on the PATH (and none at 'mariadbdPath'): the vendor
-        # cannot be determined, so report nothing rather than failing.
-        return None
-    return _VENDOR_LABELS[_server_vendor(mariadbd)]
+    return _describe_server(
+        port, options or {},
+        lambda d: _VENDOR_LABELS.get(_read_marker(d, "vendor")),
+        lambda m: _VENDOR_LABELS[_server_vendor(m)])
 
 
 def sandbox_version(port=None, options=None):
@@ -1944,26 +1876,10 @@ def sandbox_version(port=None, options=None):
     cannot be determined. Still raises when a 'port' is given but no sandbox
     exists there.
     """
-    options = options or {}
-    if port is not None:
-        port = _validate_port(port)
-        _, sandbox_dir = _sandbox_dir(port, options)
-        if not os.path.isfile(_cnf_path(sandbox_dir)):
-            raise Error("There is no sandbox at '{0}'. Deploy it first."
-                        "".format(sandbox_dir))
-        recorded = _read_version(sandbox_dir)
-        if recorded:
-            return _short_version(recorded)
-        # Older sandbox without a recorded version: derive it from the server
-        # binary (honoring 'mariadbdPath') rather than reporting nothing.
-
-    try:
-        mariadbd, _ = _resolve_mariadbd(options.get("mariadbdPath"))
-    except Error:
-        # No server binary on the PATH (and none at 'mariadbdPath'): the version
-        # cannot be determined, so report nothing rather than failing.
-        return None
-    return _short_version(_version_number(mariadbd))
+    return _describe_server(
+        port, options or {},
+        lambda d: _short_version(_read_marker(d, "version")),
+        lambda m: _short_version(_server_identity(m)[1]))
 
 
 def sandbox_path(port, path_id=None, options=None):
@@ -1980,12 +1896,7 @@ def sandbox_path(port, path_id=None, options=None):
     Raises when no sandbox exists at 'port', or when 'path_id' is not one of
     the recognized values.
     """
-    options = options or {}
-    port = _validate_port(port)
-    _, sandbox_dir = _sandbox_dir(port, options)
-    if not os.path.isdir(sandbox_dir):
-        raise Error("There is no sandbox at '{0}'. Deploy it first."
-                    "".format(sandbox_dir))
+    _, sandbox_dir = _existing_sandbox(port, options or {})
 
     path_id = (path_id or "").strip().lower()
     if path_id == "":
@@ -1993,6 +1904,6 @@ def sandbox_path(port, path_id=None, options=None):
     if path_id == "config":
         return _cnf_path(sandbox_dir)
     if path_id == "error":
-        return os.path.join(_datadir(sandbox_dir), "error.log")
+        return _error_log_path(sandbox_dir)
     raise Error("Unknown path identifier '{0}'. Use 'config' or 'error', or "
                 "omit it for the sandbox home directory.".format(path_id))

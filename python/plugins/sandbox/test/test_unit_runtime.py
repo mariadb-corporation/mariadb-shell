@@ -325,15 +325,14 @@ def test_prepare_boilerplate_rebuilds_over_unstamped_dir(sandboxlib, tmp_path,
     version = "mariadb-12.3.2"
     _make_boilerplate(sandboxlib, base, version, stamp=None)
 
-    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
-
     def fake_init(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
         open(os.path.join(datadir, "built-here"), "w").close()
 
     monkeypatch.setattr(sandboxlib, "_init_data_dir", fake_init)
 
-    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
-                                              "mariadbd", "mariadb", {})
+    bp_data = sandboxlib._prepare_boilerplate(base, version, "install-db",
+                                              "basedir", "mariadbd", "mariadb",
+                                              {})
 
     assert os.path.exists(os.path.join(bp_data, "built-here"))
     assert sandboxlib._boilerplate_is_complete(
@@ -346,15 +345,14 @@ def test_prepare_boilerplate_reuses_complete_dir(sandboxlib, tmp_path,
     version = "mariadb-12.3.2"
     _make_boilerplate(sandboxlib, base, version, stamp=version)
 
-    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
-
     def fail_init(*_args, **_kwargs):
         raise AssertionError("the complete boilerplate should be reused")
 
     monkeypatch.setattr(sandboxlib, "_init_data_dir", fail_init)
 
-    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
-                                              "mariadbd", "mariadb", {})
+    bp_data = sandboxlib._prepare_boilerplate(base, version, "install-db",
+                                              "basedir", "mariadbd", "mariadb",
+                                              {})
     assert bp_data == sandboxlib._datadir(
         sandboxlib._boilerplate_dir(base, version))
 
