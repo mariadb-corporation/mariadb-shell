@@ -144,6 +144,15 @@ EXPECT_STDOUT_CONTAINS("The following groups are read: mariadb-shell mysqlsh cli
 EXPECT_STDOUT_CONTAINS("Default options are read from the following files in the given order")
 EXPECT_STDOUT_CONTAINS(homedir)
 
+#@<> mysqlsh --help leaves out --login-path {__mariadb_build}
+testutil.call_mysqlsh(["--help"], "", ["MYSQL_HOME="+homedir])
+EXPECT_STDOUT_NOT_CONTAINS("--login-path")
+EXPECT_STDOUT_NOT_CONTAINS("except for login file")
+
+#@<> mysqlsh rejects --login-path {__mariadb_build}
+testutil.call_mysqlsh(["--login-path=lpathusr", "--sql", "-e", "select 1"], "", [myloginvar+"="+myloginfile])
+EXPECT_STDOUT_CONTAINS("unknown option --login-path")
+
 #@<> cleanup
 session.run_sql("drop user if exists mycnfusr@'%'")
 session.run_sql("drop user if exists lpathusr@'%'")
