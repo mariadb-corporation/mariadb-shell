@@ -82,7 +82,7 @@ Deploys a plain, standalone instance: no replication or GTID settings are config
 | `ssl` | Boolean | `true`; `false` for MariaDB Server on Windows | Generate certificates and enable TLS. See [TLS](#tls). |
 | `opensslPath` | string | Searched | Path to the `openssl` executable, or to a directory that contains it. Ignored for MySQL Server. |
 | `mariadbdPath` | string | Searched on the `PATH` | Path to the `mariadbd` or `mysqld` binary, or to the top directory of the server binaries, such as an unpacked server package. |
-| `mariadbdOptions` | list of strings | `[]` | Additional server options for the `[mysqld]` group of the option file, as `"name=value"` or `"name"`. They are applied after the TLS and network settings, so they can override them, `bind_address` included. You can't override `port`. |
+| `mariadbdOptions` | list of strings | `[]` | Additional server options for the `[mysqld]` group of the option file, as `"name=value"` or `"name"`. They are applied after the TLS and network settings, so they can override them, `bind_address` included. An option replaces the default of the same name whatever its spelling, so `bind-address` or `loose_bind_address` also replaces `bind_address`. You can't override `port`. |
 | `timeout` | integer | `60` | Seconds to wait for the instance to accept connections. |
 
 The deployment fails if the sandbox directory already exists and isn't empty, or if another process already listens on the port.
@@ -130,7 +130,7 @@ print(sandbox.get_path(3311, None, {"sandboxDir": "~/sandboxes"}))
 
 ### vendor() and version()
 
-Without a port, both functions report on the server binary that a new deployment would use: the one on the `PATH`, or the one at `mariadbdPath`. They return `None` if no server binary can be found. With a port, they report what was recorded for that sandbox when it was deployed or last started with `mariadbdPath`.
+Without a port, both functions report on the server binary that a new deployment would use: the one on the `PATH`, or the one at `mariadbdPath`. They return `None` if no server binary can be found. With a port, they report what was recorded for that sandbox when it was deployed or last started with `mariadbdPath`. If nothing was recorded, as for a sandbox from an older release, they fall back to the server binary a new deployment would use.
 
 ```text
 MariaDB  Py > sandbox.vendor(), sandbox.version()

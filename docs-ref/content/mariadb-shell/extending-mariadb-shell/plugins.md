@@ -124,7 +124,7 @@ The decorators parse the docstring of each function and refuse to register it wh
 * The first paragraph is the brief description. Further paragraphs become the details. A line that ends with a colon, such as `Returns:`, starts a section.
 * An `Args:` section must document every parameter, and only real parameters, one per line in the form `name (type): description`. Continuation lines are indented further.
 * Types are Python names that map to shell types: `str` to string, `int` to integer, `bool`, `float`, `dict` to dictionary, `list` to array, and `object` for sessions and other objects. Omit the type to accept any value.
-* A parameter with a default value is optional. Write `(type,required)` only for options inside a dictionary that callers must pass.
+* A parameter with a default value is optional. A parameter declared with `=None` receives `None` when the caller omits it, from the command line too, and callers can pass `None` for it explicitly. Write `(type,required)` only for options inside a dictionary that callers must pass.
 * Document the keys of `**options` in a `Keyword Args:` section. For a named dictionary parameter `cfg`, use a section called `Allowed options for cfg:`.
 * Lines that start with `* ` become bullet points in the help.
 

@@ -247,6 +247,13 @@ library the shell links separately. Handled in
   `from mysqlsh import mysqlx` at Python startup, and the bundled
   `mysqlsh/__init__.py` looks up `mysql`/`mysqlx` defensively (the X module is
   absent on MariaDB).
+- **Plugin parameters declared `=None`:** `parse_parameter()` in
+  [mod_extensible_object.cc](modules/mod_extensible_object.cc) keeps a null
+  default instead of dropping it, and `Cpp_function` (`cpp.cc`) accepts null for
+  a parameter whose declared default is null. Upstream dropped the null, so an
+  omitted parameter arrived as the type's empty value (`{}` for a dict, from the
+  command line) and an explicit `None` failed the type check. Only plugin
+  parameters declare defaults; built-in functions are unaffected.
 
 Also note: MariaDB has no MySQL-style **args-separator** in `my_load_defaults`,
 and its signature takes 5 args (no `MEM_ROOT`). `handle_mycnf_options` was
@@ -1265,7 +1272,7 @@ machine's hostname, which need not resolve to `127.0.0.1`.
 
 This is not a compatibility-preserving change: sandboxes deployed by an older
 build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed
-or found by `mariadbSandbox.*` unless the old path is passed explicitly
+or found by `sandbox.*` unless the old path is passed explicitly
 (`{sandboxDir: "~/mysql-sandboxes"}`), which still works. Simply moving the
 directory does **not** work: each sandbox's `my.cnf`, start script and stop
 script carry absolute paths written at deploy time, and `start_sandbox()`

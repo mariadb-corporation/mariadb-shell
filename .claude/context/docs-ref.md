@@ -43,7 +43,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 
   Table export/import, password change and diagnostics are pages directly under Utilities.
 - **Unwanted options are named, not taught.** HeatWave and MySQL-only options that the help still lists are mentioned once, in a hint, as "not available for MariaDB sources". They are never presented as usable.
-- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, sandbox exposure, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md). Reviewer pushback ("OK to document bugs?") was answered by fixing the bug instead where cheap (DECIMAL in JSON, #62).
+- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md). Reviewer pushback ("OK to document bugs?") was answered by fixing the bug instead where cheap (DECIMAL in JSON, #62).
 - **No Release Notes or Bug Reports pages.** The ai-plugins docs have both. They were left out here because no verified content was available (release-notes source, issue tracker).
 - **Install page.** The main command is the latest-release form. A hint explains that it fails today because every release is a prerelease, and documents `--pre-release` and `MARIADB_SHELL_TAG=v26.9.5`. `MARIADB_SHELL_TOKEN` is gone (installers dropped it in #63); `MARIADB_SHELL_REPO` is documented as "must be public".
 
@@ -72,7 +72,7 @@ Applied on the docs branch before the merge (`033274aa5`, `3b0cfe9e1`, `5a743d8d
   - F: extending, customizing
 - **How examples were verified:**
   - against `build/bin/mariadb-shell` 26.9.5 (built for MariaDB 13.1.0) and MariaDB 12.3.2 sandboxes from `/opt/homebrew/bin/mariadbd`, on ports 4401–4407 and 4414/4415, all deleted afterwards
-  - with `MARIADB_SHELL_USER_CONFIG_HOME` pointed at a scratch dir for isolation, which sandboxes ignore (see Gotchas)
+  - with `MARIADB_SHELL_USER_CONFIG_HOME` pointed at a scratch dir for isolation (sandboxes ignored it at the time; the default `sandboxDir` has followed it since 2026-10-07)
 - **Facts from real dumps, used in `how-dump-and-load-work.md`:**
   - chunk files are `schema@table@N.tsv.zst`, and the last chunk is `schema@table@@N`
   - every data file has a `.idx` next to it
@@ -132,7 +132,7 @@ Applied on the docs branch before the merge (`033274aa5`, `3b0cfe9e1`, `5a743d8d
   - `-e '\?'` does not work in `--py` mode.
   - Use `printf '\\? topic\n' | build/bin/mariadb-shell --py --nw --quiet-start=2 --disable-plugins -i` and strip ANSI codes.
   - Without `--disable-plugins`, the AI Plugins' `mcp`/`mrs`/`msm` show up.
-- **Sandbox location.** Sandbox tests deploy into the real `~/.mariadb-shell/sandboxes`. The user's sandboxes there (3313, `myboilerplate-*`) must not be touched.
+- **Sandbox location.** The default `sandboxDir` is `$MARIADB_SHELL_USER_CONFIG_HOME/sandboxes` when the variable is set, else `~/.mariadb-shell/sandboxes`. Set the variable (or pass `sandboxDir`) so tests don't deploy into the user's real sandboxes (3313, `myboilerplate-*`), which must not be touched.
 - **The Confluence page is login-gated.** WebFetch can't read it and the Atlassian MCP was unauthorized in the session, so ask the user for an export.
 - **`MARIADB_SHELL_USER_CONFIG_HOME` doesn't isolate MCP connections.** They live in the macOS keychain, so a scratch config home still shows the user's real `mariadb://root@127.0.0.1:3311`. Never add or delete MCP connections in tests.
 - **The MCP Inspector mangles `mariadb-shell -- mcp start-server ...`** (the shell ended up evaluating `true` as Python), so the docs don't recommend it.
