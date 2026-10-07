@@ -68,28 +68,28 @@ id	name	role	salary	hired
             "id": 1,
             "name": "Ada Lovelace",
             "role": "engineer",
-            "salary": 120000,
+            "salary": 120000.00,
             "hired": "2021-03-01"
         },
         {
             "id": 2,
             "name": "Alan Turing",
             "role": "engineer",
-            "salary": 135000,
+            "salary": 135000.00,
             "hired": "2019-07-15"
         },
         {
             "id": 3,
             "name": "Grace Hopper",
             "role": "manager",
-            "salary": 150000,
+            "salary": 150000.00,
             "hired": "2018-01-09"
         },
         {
             "id": 4,
             "name": "Edsger Dijkstra",
             "role": "engineer",
-            "salary": 128000.5,
+            "salary": 128000.50,
             "hired": "2022-11-30"
         },
         {
@@ -114,28 +114,28 @@ id	name	role	salary	hired
         "id": 1,
         "name": "Ada Lovelace",
         "role": "engineer",
-        "salary": 120000,
+        "salary": 120000.00,
         "hired": "2021-03-01"
     },
     {
         "id": 2,
         "name": "Alan Turing",
         "role": "engineer",
-        "salary": 135000,
+        "salary": 135000.00,
         "hired": "2019-07-15"
     },
     {
         "id": 3,
         "name": "Grace Hopper",
         "role": "manager",
-        "salary": 150000,
+        "salary": 150000.00,
         "hired": "2018-01-09"
     },
     {
         "id": 4,
         "name": "Edsger Dijkstra",
         "role": "engineer",
-        "salary": 128000.5,
+        "salary": 128000.50,
         "hired": "2022-11-30"
     },
     {
@@ -148,13 +148,13 @@ id	name	role	salary	hired
 ]
 
 #@<OUT> Full JSON Output honors --json=raw
-{"hasData":true,"rows":[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.5,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}],"executionTime":"[[*]]","affectedItemsCount":0,"warningsCount":0,"warnings":[],"info":"","autoIncrementValue":0}
+{"hasData":true,"rows":[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000.00,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000.00,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000.00,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.50,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}],"executionTime":"[[*]]","affectedItemsCount":0,"warningsCount":0,"warnings":[],"info":"","autoIncrementValue":0}
 
 #@<OUT> Record List JSON Output honors --json=raw
-[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.5,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}]
+[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000.00,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000.00,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000.00,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.50,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}]
 
 #@<OUT> Tabbed output is ignored while --json is enabled
-{"hasData":true,"rows":[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.5,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}],"executionTime":"[[*]]","affectedItemsCount":0,"warningsCount":0,"warnings":[],"info":"","autoIncrementValue":0}
+{"hasData":true,"rows":[{"id":1,"name":"Ada Lovelace","role":"engineer","salary":120000.00,"hired":"2021-03-01"},{"id":2,"name":"Alan Turing","role":"engineer","salary":135000.00,"hired":"2019-07-15"},{"id":3,"name":"Grace Hopper","role":"manager","salary":150000.00,"hired":"2018-01-09"},{"id":4,"name":"Edsger Dijkstra","role":"engineer","salary":128000.50,"hired":"2022-11-30"},{"id":5,"name":"Barbara Liskov","role":"architect","salary":145000.25,"hired":"2020-05-20"}],"executionTime":"[[*]]","affectedItemsCount":0,"warningsCount":0,"warnings":[],"info":"","autoIncrementValue":0}
 
 #@<OUT> Batch execution honors the format
 id	name	role	salary	hired

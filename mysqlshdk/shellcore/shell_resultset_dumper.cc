@@ -637,6 +637,22 @@ size_t Resultset_dumper::dump(const std::string &item_label, bool is_query,
   return total_count;
 }
 
+namespace {
+
+/**
+ * Removes the padding a ZEROFILL column adds to the text of a DECIMAL value,
+ * e.g. "0012.50" -> "12.50", as a JSON number cannot have leading zeros.
+ */
+std::string_view strip_leading_zeros(std::string_view number) {
+  size_t first = 0;
+  while (first + 1 < number.size() && number[first] == '0' &&
+         number[first + 1] != '.')
+    ++first;
+  return number.substr(first);
+}
+
+}  // namespace
+
 /**
  * This utility function creates a JSON document including all the fields in a
  * given row and appends it to a JSON_dumper object.
@@ -647,7 +663,7 @@ void dump_json_row(shcore::JSON_dumper *dumper,
   dumper->start_object();
 
   for (size_t col_index = 0; col_index < metadata.size(); col_index++) {
-    auto column = metadata[col_index];
+    const auto &column = metadata[col_index];
 
     dumper->append_string(column.get_column_label());
     auto type = column.get_type();
@@ -683,11 +699,19 @@ void dump_json_row(shcore::JSON_dumper *dumper,
     } else if (type == mysqlshdk::db::Type::UInteger) {
       dumper->append_uint64(row->get_uint(col_index));
     } else if (type == mysqlshdk::db::Type::Float) {
-      dumper->append_float(static_cast<double>(row->get_float(col_index)));
+      // Formatted with float precision, as the server does, so that 4.56
+      // prints as 4.56 and not as the double 4.559999942779541. The text of
+      // the row is not used because a buffered row (Mem_row) formats a float
+      // with std::to_string(), which prints 1.5e-10 as 0.000000.
+      dumper->append_number(shcore::ftoa(row->get_float(col_index)));
+    } else if (type == mysqlshdk::db::Type::Decimal) {
+      // The server sends the exact decimal text, which is a valid JSON number
+      // once the padding of a ZEROFILL column is removed; converting it to a
+      // floating-point number would lose digits.
+      const auto text = row->get_as_string(col_index);
+      dumper->append_number(strip_leading_zeros(text));
     } else if (type == mysqlshdk::db::Type::Double) {
       dumper->append_float(row->get_double(col_index));
-    } else if (type == mysqlshdk::db::Type::Decimal) {
-      dumper->append_float(static_cast<double>(row->get_float(col_index)));
     } else if (type == mysqlshdk::db::Type::Bit) {
       auto [bit_value, bit_size] = row->get_bit(col_index);
       dumper->append_string(shcore::bits_to_string_hex(bit_value, bit_size));

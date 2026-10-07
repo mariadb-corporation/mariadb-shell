@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -114,6 +115,13 @@ class SHCORE_PUBLIC JSON_dumper final {
   void append_float(std::string_view key, double data) const;
   void append(double data) const;
   void append(std::string_view key, double data) const;
+
+  /**
+   * Appends a number given as text, as it is, so that no precision is lost,
+   * e.g. a DECIMAL value. The text must be a valid JSON number: in
+   * particular, it cannot have leading zeros.
+   */
+  void append_number(std::string_view data) const;
 
   void append_json(const std::string &data) const;
 

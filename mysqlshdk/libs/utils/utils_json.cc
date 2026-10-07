@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -113,6 +114,7 @@ class JSON_dumper::Writer_base {
   virtual void append_uint64(uint64_t data) = 0;
   virtual void append_string(std::string_view data) = 0;
   virtual void append_float(double data) = 0;
+  virtual void append_number(std::string_view data) = 0;
   virtual void append_document(const rapidjson::Document &document) = 0;
 
   virtual const std::string &str() const = 0;
@@ -152,6 +154,10 @@ class Stream_writer : public JSON_dumper::Writer_base {
   }
 
   void append_float(double data) override { m_writer.Double(data); }
+
+  void append_number(std::string_view data) override {
+    m_writer.RawValue(data.data(), data.length(), rapidjson::kNumberType);
+  }
 
   void append_document(const rapidjson::Document &document) override {
     document.Accept(m_writer);
@@ -450,6 +456,10 @@ void JSON_dumper::append(double data) const { append_float(data); }
 
 void JSON_dumper::append(std::string_view key, double data) const {
   append_float(key, data);
+}
+
+void JSON_dumper::append_number(std::string_view data) const {
+  _writer->append_number(data);
 }
 
 void JSON_dumper::append_json(const std::string &data) const {
