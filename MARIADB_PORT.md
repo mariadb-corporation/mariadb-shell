@@ -343,7 +343,7 @@ These are intentional and should stay as `MARIADB_BUILD`:
 | mysys lifecycle | `shellcore/shell_init.cc`, `shellcore/shell_options.cc` (defaults), `include/shellcore/shell_options.h` | `my_init`/`my_end`/`my_load_defaults`/`free_defaults`, `MEM_ROOT` differences |
 | Python macro conflicts | `include/scripting/python_utils.h`, `libs/utils/debug.h` | `pyconfig.h` vs `my_config.h` `SIZEOF_*` redefinition; DBUG API differences |
 | UUID / version macros | `libs/utils/uuid_gen.cc`, `libs/utils/utils_general.cc`, `shell_script_tester.cc`, `utils_general_t.cc` | `my_rnd_*` rename; `LIBMYSQL_VERSION*` → `MYSQL_*` |
-| Misc build glue | `src/mysqlsh/cmdline_shell.cc` (`STDERR_FILENO`), `src/mysqlsh/main.cc` (FIDO/WebAuthn auth plugin) | not a feature module |
+| Misc build glue | `src/mysqlsh/cmdline_shell.cc` (`STDERR_FILENO`; `--help` leaves out `--login-path`, which MariaDB's mysys does not handle), `src/mysqlsh/main.cc` (FIDO/WebAuthn auth plugin) | not a feature module |
 | Test harness | `unittest/test_main.cc` (raw client probe) | Connector/C environment detection |
 
 The `unittest/CMakeLists.txt` yparser-grammar exclusion also stays

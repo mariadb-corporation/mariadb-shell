@@ -1232,6 +1232,18 @@ void Command_line_shell::print_cmd_line_helper() {
   for (std::string line : details) println("  " + line);
 
   // options handled by libmysqlclient (taken from my_default.cc)
+#ifdef MARIADB_BUILD
+  // MariaDB's mysys has no login file, so --login-path is rejected as an
+  // unknown option and --no-defaults has nothing to make an exception for.
+  println(
+      "\nThe following options may be given as the first argument:\n\
+--print-defaults        Print the program argument list and exit.\n\
+--no-defaults           Don't read default options from any option file.\n\
+--defaults-file=#       Only read default options from the given file #.\n\
+--defaults-extra-file=# Read this file after the global files are read.\n\
+--defaults-group-suffix=#\n\
+                        Also read groups with concat(group, suffix)");
+#else
   println(
       "\nThe following options may be given as the first argument:\n\
 --print-defaults        Print the program argument list and exit.\n\
@@ -1242,6 +1254,7 @@ void Command_line_shell::print_cmd_line_helper() {
 --defaults-group-suffix=#\n\
                         Also read groups with concat(group, suffix)\n\
 --login-path=#          Read this path from the login file.");
+#endif
 
   my_print_default_files("my");
   {
@@ -1258,7 +1271,9 @@ void Command_line_shell::print_cmd_line_helper() {
 
   println("");
   println("Usage examples:");
+#ifndef MARIADB_BUILD
   println("$ " + bin + " --login-path=server1 --sql");
+#endif
   println("$ " + bin + " root@localhost/schema");
 #ifdef HAVE_X_PROTOCOL
   println("$ " + bin + " mysqlx://root@some.server:3307/world_x");
