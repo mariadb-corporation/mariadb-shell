@@ -146,19 +146,19 @@ The server writes one line to standard error for each event that concerns a data
 * a connection refused, because the client couldn't be identified
 * an idle session closed, or a session that failed to close
 
-A multi-tenant server adds the user to each line, by the first eight characters of the user ID, and also logs refused API keys and tokens, sign-ins to the [built-in authorization server](oauth-authentication.md#using-the-built-in-authorization-server), and the end of each sign-in:
+A multi-tenant server adds the user to each line, by the name given with `mcp setup --name`, and also logs refused API keys and tokens, sign-ins to the [built-in authorization server](oauth-authentication.md#using-the-built-in-authorization-server), and the end of each sign-in. A user without a name is left out of the line:
 
 ```text
-2026-10-06T16:34:24+0200 [mcp] db.connect: opened connection 048c5223... on 'mariadb://ada@db.example.com:3306' (mcp) for address=203.0.113.24 session=- user=ac28066a...
-2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24 for user=ac28066a...
+2026-10-06T16:34:24+0200 [mcp] db.connect: opened a connection on 'mariadb://ada@db.example.com:3306' (mcp) for address=203.0.113.24 user='Ada Lovelace'
+2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24
 ```
 
 ```text
-2026-08-07T14:03:11+0200 [mcp] db.connect: opened connection 6f2a91c4... on 'mariadb://mcp@db.example.com:3306' for address=127.0.0.1 session=0123abcd...
-2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of connection 6f2a91c4... (address=127.0.0.1 session=0123abcd...) after 1800s unused; the connection stays valid and opens a new session when it is used again
+2026-08-07T14:03:11+0200 [mcp] db.connect: opened a connection on 'mariadb://mcp@db.example.com:3306' (mcp) for address=127.0.0.1
+2026-08-07T14:37:44+0200 [mcp] db: closed the idle session of a connection on 'mariadb://mcp@db.example.com:3306' (mcp) for address=127.0.0.1 after 1800s unused; the connection stays valid and opens a new session when it is used again
 ```
 
-The log doesn't contain the SQL statements that clients run. Connection IDs and MCP session IDs are cut to their first eight characters, because a client that knows them can use the connection. For the meaning of the client binding, see [Security and Session Handling](security-and-session-handling.md#connections-belong-to-the-client-that-opened-them).
+The log doesn't contain the SQL statements that clients run, and no part of any ID: connections are named by their URI, and users by their name. Connection IDs, MCP session IDs, user IDs, API keys, tokens, and OAuth client IDs are never logged, not even in part, because a client that knows them could use them. For the meaning of the client binding, see [Security and Session Handling](security-and-session-handling.md#connections-belong-to-the-client-that-opened-them).
 
 To keep the log of an HTTP server, redirect standard error to a file:
 
