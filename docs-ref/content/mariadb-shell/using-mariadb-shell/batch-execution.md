@@ -167,7 +167,7 @@ fi
 
 A batch job can't answer a password prompt. Use one of these methods instead of putting the password on the command line, where other users can see it in the process list:
 
-* Store the password in the credential store, or use a login path. See [Credential Store](../connecting/credential-store.md) and [Option Files and Login Paths](../connecting/option-files-and-login-paths.md).
+* Store the password in the credential store. See [Credential Store](../connecting/credential-store.md).
 * Put the password in an option file in the `[mariadb-shell]` or `[client]` group, readable only by the job's user.
 * Use `--passwords-from-stdin`. The shell then reads each password it needs as one line from standard input instead of the terminal, and reads the rest of the input as statements:
 

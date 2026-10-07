@@ -28,6 +28,7 @@ The following MySQL Shell features depend on MySQL-only server functionality or 
 | The `random`, `dual`, and `discardOld` options of `util.change_password` | Use MySQL 8.0 account statements that MariaDB Server does not have. See [Password Change Utility](../utilities/password-change-utility.md). |
 | MySQL REST Service management | Specific to MySQL Router. |
 | `--register-factor` and FIDO/WebAuthn authentication | Use a MySQL authentication plugin. |
+| The client authentication plugins that MySQL Shell bundles: Kerberos (`authentication_kerberos_client`), LDAP SASL (`authentication_ldap_sasl_client`), OCI IAM (`authentication_oci_client`), and OpenID Connect (`authentication_openid_connect_client`), and the options that configure them | They implement MySQL Server authentication methods. MariaDB Shell authenticates through MariaDB Connector/C, and the only plugin file it ships in `lib/mariadb/plugins` is `caching_sha2_password`. |
 | The `--where` option of the built-in `threads` report | Relies on the X DevAPI expression parser. The option is accepted but raises a "not supported in this build" error. |
 
 ### Dump and Load Options for MySQL HeatWave Service

@@ -168,20 +168,23 @@ Each option dictionary accepts these keys:
 
 ## Loading Reports at Startup
 
-At startup, before it loads plugins, the shell runs every `.py` file in the `init.d` directory of the user configuration directory. Reports that you register there are available in every session:
+To have a report in every session, register it in a [plugin](plugins.md). Create a directory for it in the `plugins` directory of the user configuration directory, and put the registration code in its `init.py` file:
 
-* Linux and macOS: `~/.mariadb-shell/init.d/`
-* Windows: `%AppData%\MariaDB\mariadb-shell\init.d\`
+```text
+~/.mariadb-shell/plugins/
+└── table_sizes/
+    └── init.py
+```
 
-Each file runs in its own namespace, so names it defines don't appear in your interactive Python session. The files also run when you start the shell with `--disable-plugins`. If a file fails, the shell prints a warning at startup and writes the details to the [log file](../logging-and-debugging.md).
+On Windows, the directory is `%AppData%\MariaDB\mariadb-shell\plugins\`. The shell loads the plugin at every startup, whatever the mode, so the report is also available to `\show` and `\watch` in SQL mode. A plugin directory can be shared with other users as it is, or installed from a repository with the `plugins` global object. See [Plugins](plugins.md).
 
-To share a set of reports with other users, package them as a [plugin](plugins.md) instead.
+As an alternative, the shell runs every `.py` file in the `init.d` directory of the user configuration directory (`~/.mariadb-shell/init.d/`, or `%AppData%\MariaDB\mariadb-shell\init.d\` on Windows) at startup, before it loads plugins. Each file runs in its own namespace, and the files also run when you start the shell with `--disable-plugins`. If a file fails, the shell prints a warning at startup and writes the details to the [log file](../logging-and-debugging.md).
 
 ## Example: Largest Tables
 
 The following `list` report shows the largest tables of a schema. It accepts an optional schema name and a `--limit` option.
 
-{% code title="~/.mariadb-shell/init.d/table_sizes.py" %}
+{% code title="~/.mariadb-shell/plugins/table_sizes/init.py" %}
 ```python
 def table_sizes(session, argv=None, options=None):
     """Lists the largest tables of a schema."""
