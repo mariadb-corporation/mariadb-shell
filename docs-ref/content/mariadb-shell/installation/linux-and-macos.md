@@ -14,7 +14,7 @@ The `install.sh` script installs MariaDB Shell into your home directory from a G
 * An x86-64 or ARM64 CPU.
 * `curl`, `tar`, and `awk`.
 * `sha256sum` or `shasum`, to verify the download.
-* `jq` or `python3`, only when you install a prerelease or install with a GitHub token.
+* `jq` or `python3`, only when you install a prerelease with `--pre-release`.
 
 ## Install the Latest Release
 
@@ -94,7 +94,6 @@ The script reads the following environment variables:
 | `MARIADB_SHELL_PREFIX` | `~/.local/share/mariadb-shell` | Directory that holds the unpacked versions. |
 | `MARIADB_SHELL_BINDIR` | `~/.local/bin` | Directory where the `mariadb-shell` and `msh` links are created. |
 | `MARIADB_SHELL_REPO` | `mariadb-corporation/mariadb-shell` | GitHub repository, in `owner/repo` form, to install from. |
-| `MARIADB_SHELL_TOKEN` | None | GitHub token, needed only to install from a private repository. If it is not set, the script uses `GH_TOKEN`, then `GITHUB_TOKEN`, and finally the token of a logged-in GitHub CLI (`gh auth token`). |
 
 The script accepts these options:
 
@@ -149,4 +148,4 @@ To also remove your history, settings, plugins, log file, and sandbox instances,
 | `unsupported CPU architecture` | Only x86-64 and ARM64 packages are built. |
 | `could not download SHA256SUMS from the latest release` | The release does not exist or is a prerelease. Use `--pre-release` or set `MARIADB_SHELL_TAG`. |
 | `checksum mismatch` | The download is corrupt or incomplete. Run the script again. |
-| `this install needs jq or python3 to read the release listing` | Install `jq` or `python3`, which the script needs for `--pre-release` and token-based downloads. |
+| `this install needs jq or python3 to read the release listing` | Install `jq` or `python3`, which the script needs for `--pre-release`. |
