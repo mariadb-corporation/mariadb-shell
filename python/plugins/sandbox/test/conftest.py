@@ -51,15 +51,32 @@ class FakeShell:
         self.log_records.append((level, msg))
 
 
+class _Rows:
+    """Fake result: just the rows, for fetch_all()."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetch_all(self):
+        return list(self._rows)
+
+
 class RecordingSession:
-    """Fake classic session that records the SQL it is asked to run."""
+    """Fake classic session that records the SQL it is asked to run.
+
+    'rows' maps a SELECT statement to the rows it returns; any other statement
+    returns no result.
+    """
 
     def __init__(self):
         self.calls = []  # list of (sql, args)
+        self.rows = {}  # select statement -> list of row tuples
         self.closed = False
 
     def run_sql(self, sql, args=None):
         self.calls.append((sql, args))
+        if sql in self.rows:
+            return _Rows(self.rows[sql])
         return None
 
     def close(self):

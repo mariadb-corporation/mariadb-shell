@@ -42,6 +42,9 @@ from mysqlsh import globals, Error, executable
 # Default timeout (seconds) to wait for a sandbox to start/stop.
 SANDBOX_TIMEOUT = 60
 
+# The address a sandbox listens on unless 'mariadbdOptions' says otherwise.
+_LOOPBACK_ADDRESS = "127.0.0.1"
+
 # Tool names tried in order: prefer the MariaDB-branded names, fall back to the
 # legacy mysql* names shared by MariaDB and MySQL packages. The server binary
 # lookup deliberately covers both vendors so a MySQL install on the PATH is
@@ -302,10 +305,12 @@ def default_sandbox_base_dir():
     """The default base directory for sandboxes.
 
     Honors the shell ``sandboxDir`` option when it is set, otherwise uses
+    ``<MARIADB_SHELL_USER_CONFIG_HOME>/sandboxes`` when that variable is set, and
     ``~/.mariadb-shell/sandboxes``
-    (``%userprofile%\\MariaDB\\mariadb-shell\\sandboxes`` on Windows). Must stay
-    in sync with the sandboxDir default in mysqlshdk/shellcore/shell_options.cc,
-    which is where the option value normally comes from.
+    (``%userprofile%\\MariaDB\\mariadb-shell\\sandboxes`` on Windows) when not.
+    Must stay in sync with the sandboxDir default in
+    mysqlshdk/shellcore/shell_options.cc, which is where the option value
+    normally comes from.
     """
     try:
         configured = globals.shell.options["sandboxDir"]
@@ -313,6 +318,11 @@ def default_sandbox_base_dir():
             return os.path.expanduser(configured)
     except Exception:
         pass
+
+    config_home = os.environ.get("MARIADB_SHELL_USER_CONFIG_HOME") or \
+        os.environ.get("MYSQLSH_USER_CONFIG_HOME")
+    if config_home:
+        return os.path.join(config_home, "sandboxes")
 
     if os.name == "nt":
         return os.path.join(
@@ -1275,7 +1285,7 @@ def _write_scripts(sandbox_dir, port, mariadbd):
 
 def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
                        innodb_opts, ssl_files=None, disable_ssl=False,
-                       no_sync=False):
+                       no_sync=False, x_plugin=False):
     """Build the option file for a raw (plain) MariaDB sandbox instance.
 
     No replication/GTID configuration is written: these are simple standalone
@@ -1295,7 +1305,15 @@ def _build_option_file(port, sandbox_dir, basedir, server_id, overrides,
         # A private tmpdir, see _tmpdir(). The start scripts create it.
         "tmpdir": _tmpdir(sandbox_dir).replace("\\", "/"),
         "performance_schema": "ON",
+        # Loopback only: without it the server listens on every interface, and
+        # the instance is meant for this machine. 'mariadbdOptions' can widen it
+        # (bind_address=* or an address), as the test harness does.
+        "bind_address": _LOOPBACK_ADDRESS,
     }
+    # MySQL's X plugin has an address of its own, also every interface by
+    # default.
+    if x_plugin:
+        mysqld["mysqlx_bind_address"] = _LOOPBACK_ADDRESS
     # Only Windows lacks Unix domain sockets: there --socket merely names a named
     # pipe, and then only when the server is started with --named-pipe (it is
     # not), so the value is inert and the sandbox connects over TCP. Omit it there
@@ -1399,14 +1417,28 @@ def _identified_clause(auth_plugin):
     return "IDENTIFIED BY ?"
 
 
+def _quote_host(host):
+    """'host' as a quoted account host part."""
+    return "'{0}'".format(host.replace("\\", "\\\\").replace("'", "''"))
+
+
 def _set_root_password(session, password, auth_plugin=None):
-    """Set the password for the local root accounts, with binlog disabled."""
+    """Set the password for every root account, with binlog disabled.
+
+    Every one, not just the local ones: mariadb-install-db also creates a
+    password-less root@<machine hostname> (baked into the boilerplate, so the
+    name of the machine it was bootstrapped on), which would otherwise stay open
+    to anyone who can reach the port.
+    """
+    hosts = [row[0] for row in session.run_sql(
+        "SELECT Host FROM mysql.user WHERE User = 'root'").fetch_all()]
     session.run_sql("SET sql_log_bin = 0")
     try:
-        for host in ("localhost", "127.0.0.1", "::1"):
+        for host in hosts:
             session.run_sql(
-                "ALTER USER IF EXISTS 'root'@'{0}' {1}"
-                "".format(host, _identified_clause(auth_plugin)), [password])
+                "ALTER USER 'root'@{0} {1}"
+                "".format(_quote_host(host), _identified_clause(auth_plugin)),
+                [password])
     finally:
         session.run_sql("SET sql_log_bin = 1")
 
@@ -1641,7 +1673,8 @@ def create_sandbox(port, options):
                            innodb_opts, ssl_files,
                            disable_ssl=(not ssl and vendor == _VENDOR_MARIADB),
                            no_sync=(vendor == _VENDOR_MARIADB
-                                    and bool(os.environ.get(NO_SYNC_ENV)))))
+                                    and bool(os.environ.get(NO_SYNC_ENV))),
+                           x_plugin=(vendor == _VENDOR_MYSQL)))
     _write_scripts(sandbox_dir, port, mariadbd)
     # Record the vendor and version so later operations can report them.
     _write_vendor(sandbox_dir, vendor)

@@ -119,13 +119,24 @@ def test_default_base_dir_uses_shell_option(sandboxlib, shell, tmp_path):
     assert base == os.path.abspath(str(tmp_path / "configured"))
 
 
-def test_default_base_dir_fallback(sandboxlib, shell):
+def test_default_base_dir_fallback(sandboxlib, shell, monkeypatch):
     # No sandboxDir option set -> default under the home directory.
+    monkeypatch.delenv("MARIADB_SHELL_USER_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("MYSQLSH_USER_CONFIG_HOME", raising=False)
     assert shell.options == {}
     result = sandboxlib.default_sandbox_base_dir()
     assert result.startswith(os.path.expanduser("~"))
     assert result.endswith(os.path.join("mariadb-shell", "sandboxes"))
 
+
+
+def test_default_base_dir_follows_user_config_home(sandboxlib, shell,
+                                                   monkeypatch, tmp_path):
+    # No sandboxDir option set, config home moved -> sandboxes move with it.
+    monkeypatch.setenv("MARIADB_SHELL_USER_CONFIG_HOME", str(tmp_path))
+    assert shell.options == {}
+    assert sandboxlib.default_sandbox_base_dir() == os.path.join(
+        str(tmp_path), "sandboxes")
 
 # --------------------------------------------------------------------------- #
 # sandbox_path

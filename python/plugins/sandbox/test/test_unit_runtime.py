@@ -363,23 +363,34 @@ def test_prepare_boilerplate_reuses_complete_dir(sandboxlib, tmp_path,
 # _set_root_password
 # --------------------------------------------------------------------------- #
 def test_set_root_password_sql_sequence(sandboxlib, session):
+    # What mariadb-install-db leaves: the local accounts plus one for the name
+    # of the machine the boilerplate was bootstrapped on.
+    session.rows["SELECT Host FROM mysql.user WHERE User = 'root'"] = [
+        ("localhost",), ("127.0.0.1",), ("::1",), ("build-host",)]
     sandboxlib._set_root_password(session, "secret")
 
     sqls = [sql for sql, _ in session.calls]
-    assert sqls[0] == "SET sql_log_bin = 0"
+    assert sqls[0] == "SELECT Host FROM mysql.user WHERE User = 'root'"
+    assert sqls[1] == "SET sql_log_bin = 0"
     assert sqls[-1] == "SET sql_log_bin = 1"
 
     altered_hosts = []
     for sql, args in session.calls:
         if sql.startswith("ALTER USER"):
-            assert "IF EXISTS" in sql
             assert args == ["secret"]
             altered_hosts.append(sql)
-    # localhost, 127.0.0.1 and ::1 are all updated.
-    assert len(altered_hosts) == 3
-    assert any("'root'@'localhost'" in s for s in altered_hosts)
-    assert any("'root'@'127.0.0.1'" in s for s in altered_hosts)
-    assert any("'root'@'::1'" in s for s in altered_hosts)
+    # Every root account gets the password, the hostname one included.
+    assert len(altered_hosts) == 4
+    for host in ("localhost", "127.0.0.1", "::1", "build-host"):
+        assert any("'root'@'{0}'".format(host) in s for s in altered_hosts)
+
+
+def test_set_root_password_quotes_host(sandboxlib, session):
+    session.rows["SELECT Host FROM mysql.user WHERE User = 'root'"] = [
+        ("o'host",)]
+    sandboxlib._set_root_password(session, "secret")
+    assert any(sql.startswith("ALTER USER 'root'@'o''host' ")
+               for sql, _ in session.calls)
 
 
 # --------------------------------------------------------------------------- #

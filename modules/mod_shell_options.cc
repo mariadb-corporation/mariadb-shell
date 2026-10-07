@@ -142,8 +142,8 @@ read passwords from stdin instead of the tty
 
 @li <b>resultFormat</b>: controls the type of output produced for SQL results
 
-@li <b>sandboxDir</b>: default path where the new sandbox instances for InnoDB
-cluster will be deployed
+@li <b>sandboxDir</b>: default path where the sandbox plugin deploys new
+sandbox instances
 
 @li <b>showColumnTypeInfo</b>: display column type information in SQL mode.
 Please be aware that output may depend on the protocol you are using to

@@ -831,8 +831,8 @@ DESCRIPTION
       - passwordsFromStdin: boolean value that indicates if the shell should
         read passwords from stdin instead of the tty
       - resultFormat: controls the type of output produced for SQL results
-      - sandboxDir: default path where the new sandbox instances for InnoDB
-        cluster will be deployed
+      - sandboxDir: default path where the sandbox plugin deploys new sandbox
+        instances
       - showColumnTypeInfo: display column type information in SQL mode. Please
         be aware that output may depend on the protocol you are using to
         connect to the server, e.g. DbType field is approximated when using X

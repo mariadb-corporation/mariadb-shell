@@ -43,7 +43,7 @@ By default, [sandbox instances](sandbox-instances.md) are created in the `sandbo
 | Linux and macOS | `~/.mariadb-shell/sandboxes` |
 | Windows | `%USERPROFILE%\MariaDB\mariadb-shell\sandboxes` |
 
-This location is controlled by the `sandboxDir` configuration option. It does not follow `MARIADB_SHELL_USER_CONFIG_HOME`.
+This location is controlled by the `sandboxDir` configuration option. Its default follows `MARIADB_SHELL_USER_CONFIG_HOME`: with the variable set, sandboxes go to `$MARIADB_SHELL_USER_CONFIG_HOME/sandboxes`.
 
 ## Other Files
 

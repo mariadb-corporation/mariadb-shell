@@ -466,10 +466,15 @@ class SandboxManager:
         the X port the test harness expects (port * _X_PORT_FACTOR) and a
         socket of its own. The options are 'loose-' so that MariaDB, which has
         no X plugin, ignores them.
+
+        The plugin binds a sandbox to 127.0.0.1; the tests may reach the server
+        through the machine's hostname instead, so it listens everywhere.
         """
         x_socket = self.socket_dir / f"mysqlx-{port}.sock"
         self._run_cli("sandbox", "deploy", str(port), "--password=",
                       "--mariadbd-options=performance-schema=ON",
+                      "--mariadbd-options=bind_address=*",
+                      "--mariadbd-options=loose-mysqlx-bind-address=*",
                       f"--mariadbd-options=loose-mysqlx-port={port * _X_PORT_FACTOR}",
                       f"--mariadbd-options=loose-mysqlx-socket={x_socket}")
 

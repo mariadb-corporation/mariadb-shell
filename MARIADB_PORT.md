@@ -1233,9 +1233,11 @@ directory, so everything the shell writes to `$HOME` lives in one place:
 |---|---|
 | Unix / macOS | `~/.mariadb-shell/sandboxes` |
 | Windows | `%userprofile%\MariaDB\mariadb-shell\sandboxes` |
+| `MARIADB_SHELL_USER_CONFIG_HOME` set | `$MARIADB_SHELL_USER_CONFIG_HOME/sandboxes` |
 
 The value is the default of the `sandboxDir` shell option, built from
-`k_shell_user_config_dir_unix` (or the two Windows constants) plus
+`MARIADB_SHELL_USER_CONFIG_HOME` when it is set, else from
+`k_shell_user_config_dir_unix` (or the two Windows constants), plus
 `k_shell_sandbox_dir_name` in
 [shell_options.cc](mysqlshdk/shellcore/shell_options.cc). The sandbox plugin
 normally just reads `shell.options["sandboxDir"]`, but
@@ -1251,6 +1253,15 @@ from, live under the sandbox directory too, unless the
 run under its logs dir before any worker starts and points every sandbox call and
 test process at it. Each test process has its own `TMPDIR`, which is its sandbox
 directory, so otherwise every process would run `mariadb-install-db` again.
+
+A sandbox listens on `127.0.0.1` only (`bind_address`, plus `mysqlx_bind_address`
+for MySQL), and `_set_root_password()` sets the password on every `root` row in
+`mysql.user`, which includes the `root@<hostname>` that `mariadb-install-db`
+creates. Both test harnesses (`deploy_sandbox_with_plugin()` in
+[mod_testutils.cc](unittest/test_utils/mod_testutils.cc) and the runner's own
+deploy in `scripts/run_unit_tests.py`) pass `bind_address=*` and
+`loose_mysqlx_bind_address=*` back, because tests may reach a server through the
+machine's hostname, which need not resolve to `127.0.0.1`.
 
 This is not a compatibility-preserving change: sandboxes deployed by an older
 build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed
