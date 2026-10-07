@@ -552,9 +552,12 @@ void Base_shell::execute_buffered_code(bool flush) {
 
 void Base_shell::flush_input() { execute_buffered_code(true); }
 
-void Base_shell::notify_executed_statement(const std::string &line) {
+void Base_shell::notify_executed_statement(const std::string &line,
+                                           const std::string &command) {
   shcore::Value::Map_type_ref data(new shcore::Value::Map_type());
   (*data)["statement"] = shcore::Value(line);
+  if (!command.empty() && command != line)
+    (*data)["command"] = shcore::Value(command);
   shcore::ShellNotifications::get()->notify("SN_STATEMENT_EXECUTED", nullptr,
                                             data);
 }

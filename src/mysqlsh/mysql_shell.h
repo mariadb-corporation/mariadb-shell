@@ -121,14 +121,23 @@ class Mysql_shell : public mysqlsh::Base_shell {
 
   /**
    * If the line is a shell command written with a / prefix (e.g. /status) and
-   * the slashCommands option is enabled, returns it with the \ prefix the
-   * command handlers expect, otherwise returns the line unchanged.
+   * slash_command_allowed(), returns it with the \ prefix the command handlers
+   * expect, otherwise returns the line unchanged. Leading whitespace is
+   * skipped, as it is before a \command.
    *
    * Only a known command counts: anything else starting with / (SQL comments,
    * JS regular expressions, a lone / used as a statement delimiter) is left as
    * input for the active language.
    */
   std::string slash_command_as_backslash(const std::string &line) const;
+
+  /**
+   * Whether a line entered now can be a shell command with a / prefix: the
+   * prefix is enabled and the line starts a new statement.
+   */
+  bool slash_command_allowed() const {
+    return options().slash_commands && _input_buffer.empty();
+  }
 
  protected:
   static void set_sql_safe_for_logging(const std::string &patterns);

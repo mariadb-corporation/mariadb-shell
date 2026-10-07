@@ -39,7 +39,7 @@ Some commands keep the backslash only:
 * The statement terminators `\G` and `\g`, and `\w` and `\W` used inside a statement, because a `/` there is division or the start of a comment.
 * The `\` command that starts multi-line input in SQL mode.
 
-A slash command behaves like its backslash form in the rest of the shell. It's saved in the history with the same filters, so a password in `/connect` or `/sql` is kept out as it is for `\connect` or `\sql`, and it completes with **Tab** the same way: `/co` completes to `/connect`, and `/use ` completes schema names.
+A slash command behaves like its backslash form in the rest of the shell. It's saved in the history with the same filters, so a password in `/connect` or `/sql` is kept out as it is for `\connect` or `\sql`, and it completes with **Tab** the same way: `/co` completes to `/connect`, and `/use ` completes schema names. Help finds it too, so `/help /quit` shows the help of `\quit`.
 
 The `slashCommands` option, `true` by default, controls the slash prefix. To accept the backslash form only:
 

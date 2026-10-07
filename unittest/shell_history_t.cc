@@ -184,6 +184,19 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   EXPECT_STREQ("\\sql secret;", linenoiseHistoryLine(1));
   shell.process_line("\\sql drop user foo@bar;");
 
+  // /sql, and a tab after \sql, are filtered as \sql followed by a space
+  shell.process_line("/sql set password = 'secret' then fail;");
+  EXPECT_STREQ("/sql set password = 'secret' then fail;",
+               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+  shell.process_line("\\sql\tset password = 'secret' then fail;");
+  EXPECT_STREQ("\\sql\tset password = 'secret' then fail;",
+               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+  shell.process_line("/sql select 2;");
+  EXPECT_STREQ("\\sql drop user foo@bar;",
+               linenoiseHistoryLine(linenoiseHistorySize() - 2));
+  EXPECT_STREQ("/sql select 2;",
+               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+
   // TS_CV#9
   shell.process_line("\\sql");
   EXPECT_EQ(0, linenoiseHistorySize());

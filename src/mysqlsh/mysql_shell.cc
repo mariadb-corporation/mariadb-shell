@@ -28,6 +28,7 @@
 
 #include <mysqld_error.h>
 
+#include <algorithm>
 #include <atomic>
 #include <iterator>
 #include <memory>
@@ -231,7 +232,7 @@ class Shell_command_provider : public shcore::completer::Provider {
                                               size_t *compl_offset) {
     shcore::completer::Completion_list options;
     size_t cmdend;
-    if (line[0] == '/' && shell_->options().slash_commands) {
+    if (line[0] == '/' && shell_->slash_command_allowed()) {
       return complete_slash_command(line, compl_offset);
     }
     if (line[0] == '\\' && (cmdend = line.find(' ')) != std::string::npos) {
@@ -699,8 +700,9 @@ Mysql_shell::Mysql_shell(const std::shared_ptr<Shell_options> &cmdline_options,
       "\\sql", "CMD_SQL",
       [this](const std::vector<std::string> &args) -> bool {
         std::string command = shcore::str_strip(args[0]);
-        const auto command_pos =
-            command.empty() ? std::string::npos : command.find(' ');
+        const auto command_pos = command.empty()
+                                     ? std::string::npos
+                                     : command.find_first_of(" \t\r\n\v\f");
         command = command_pos != std::string::npos &&
                           command_pos + 1 < command.length()
                       ? command.substr(command_pos + 1)
@@ -1502,6 +1504,16 @@ Mysql_shell::create_default_replicaset_object(bool for_help) {
 
 bool Mysql_shell::cmd_print_shell_help(const std::vector<std::string> &args) {
   const auto pager = current_console()->enable_pager();
+
+  // help on a command written with the / prefix is that of the \command
+  if (args.size() == 2) {
+    if (const auto topic = slash_command_as_backslash(args[1]);
+        topic != args[1]) {
+      const auto help = shcore::str_split(shcore::str_strip(args[0]), " ", 1);
+      return Command_help(_shell)({help[0] + " " + topic, topic});
+    }
+  }
+
   return Command_help(_shell)(args);
 }
 
@@ -2057,22 +2069,23 @@ bool Mysql_shell::cmd_watch(const std::vector<std::string> &args) {
 
 std::string Mysql_shell::slash_command_as_backslash(
     const std::string &line) const {
-  if (!options().slash_commands || line.length() < 2 || line[0] != '/' ||
-      std::isspace(static_cast<unsigned char>(line[1])))
+  if (!slash_command_allowed()) return line;
+
+  const auto is_space = [](char c) {
+    return std::isspace(static_cast<unsigned char>(c));
+  };
+  const auto slash = std::find_if_not(line.begin(), line.end(), is_space);
+  // a lone / is not a command, it is a common statement delimiter
+  if (slash == line.end() || *slash != '/' || slash + 1 == line.end() ||
+      is_space(*(slash + 1)))
     return line;
 
-  auto command = "\\" + line.substr(1);
+  auto command = line;
+  command[slash - line.begin()] = '\\';
   return _shell->is_shell_command(command) ? command : line;
 }
 
 bool Mysql_shell::do_shell_command(const std::string &line) {
-  // a known command, even when run by the language's own handler, which
-  // reports it as not handled
-  if (const auto command = slash_command_as_backslash(line); command != line) {
-    _shell->handle_shell_command(command);
-    return true;
-  }
-
   bool handled = _shell->handle_shell_command(line);
   if (line.length() > 1 && line[0] == '\\' && !handled) {
     print_diag("Unknown command: '" + line + "'");
@@ -2084,13 +2097,15 @@ bool Mysql_shell::do_shell_command(const std::string &line) {
 
 void Mysql_shell::process_line(const std::string &line) {
   bool handled_as_command = false;
-  std::string to_history;
+  // a /command runs, and is recorded, as the \command it stands for
+  std::string command;
 
   // check if the line is an escape/shell command
   if (_input_buffer.empty() && !line.empty() &&
       _input_mode == shcore::Input_state::Ok) {
     try {
-      handled_as_command = do_shell_command(line);
+      command = slash_command_as_backslash(line);
+      handled_as_command = do_shell_command(command);
     } catch (const std::exception &exc) {
       std::string error(exc.what());
       error += "\n";
@@ -2100,7 +2115,7 @@ void Mysql_shell::process_line(const std::string &line) {
   }
 
   if (handled_as_command)
-    notify_executed_statement(line);
+    notify_executed_statement(line, command);
   else
     Base_shell::process_line(line);
 }

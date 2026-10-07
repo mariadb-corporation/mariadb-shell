@@ -2474,6 +2474,17 @@ TEST_F(Interactive_shell_test, slash_commands) {
   execute("/warnings");
   MY_EXPECT_STDOUT_CONTAINS("Show warnings enabled.");
 
+  // leading whitespace is skipped, as it is before a \command
+  wipe_all();
+  execute("  /nowarnings");
+  MY_EXPECT_STDOUT_CONTAINS("Show warnings disabled.");
+
+  // help on a /command is that of the \command
+  wipe_all();
+  execute("/help /quit");
+  MY_EXPECT_STDOUT_CONTAINS("\\quit");
+  MY_EXPECT_STDOUT_NOT_CONTAINS("No help items found");
+
   // anything else starting with / is input for the language, not an unknown
   // command
   wipe_all();

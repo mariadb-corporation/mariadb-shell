@@ -606,6 +606,17 @@ TEST_F(Completer_frontend, builtin_slash) {
   EXPECT_AFTER_TAB("/use i", "/use information_schema");
   // not a command, left to the language
   EXPECT_TAB_DOES_NOTHING("/xyz");
+
+  // nor is a / on the continuation of a statement
+  execute("\\sql");
+  execute("select 1");
+  ASSERT_EQ(shcore::Input_state::ContinuedSingle,
+            _interactive_shell->input_state());
+  size_t offset = 0;
+  const auto options = _interactive_shell->auto_complete("/co", &offset);
+  EXPECT_EQ(options.end(),
+            std::find(options.begin(), options.end(), "/connect"));
+  execute(";");
 }
 
 // FR4

@@ -302,10 +302,8 @@ void Shell_core::clear_input() { _langs[interactive_mode()]->clear_input(); }
 bool Shell_core::handle_shell_command(const std::string &line) {
   Entering_command_guard guard(this);
 
-  if (!_langs[_mode]->command_handler()->process(line, _mode)) {
-    return m_command_handler.process(line, _mode);
-  }
-  return false;
+  return _langs[_mode]->command_handler()->process(line, _mode) ||
+         m_command_handler.process(line, _mode);
 }
 
 bool Shell_core::is_shell_command(const std::string &line) {
