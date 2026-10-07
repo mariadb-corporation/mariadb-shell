@@ -93,7 +93,7 @@ mariadb-shell --version
 | `-AddToPath` | `MARIADB_SHELL_ADDTOPATH` | Off | Add the command directory to the user `PATH`. |
 | `-Prefix` | `MARIADB_SHELL_PREFIX` | `%LOCALAPPDATA%\Programs\mariadb-shell` | Directory that holds the unpacked versions. |
 | `-BinDir` | `MARIADB_SHELL_BINDIR` | `<prefix>\bin` | Directory where `mariadb-shell.cmd` and `msh.cmd` are written. |
-| `-Repo` | `MARIADB_SHELL_REPO` | `mariadb-corporation/mariadb-shell` | GitHub repository, in `owner/repo` form, to install from. |
+| `-Repo` | `MARIADB_SHELL_REPO` | `mariadb-corporation/mariadb-shell` | GitHub repository, in `owner/repo` form, to install from. It must be public. |
 
 A parameter takes precedence over its environment variable. For the switch variables `MARIADB_SHELL_PRERELEASE` and `MARIADB_SHELL_ADDTOPATH`, any non-empty value turns the setting on.
 
