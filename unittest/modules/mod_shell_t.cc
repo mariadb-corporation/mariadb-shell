@@ -463,13 +463,13 @@ TEST_F(mod_shell_test, dump_rows) {
           "{\n"
           "    \"1\": 1,\n"
           "    \"hello\": \"hello\",\n"
-          "    \"4.56\": 4.559999942779541,\n"
+          "    \"4.56\": 4.56,\n"
           "    \"foobar\": \"foobar\"\n"
           "}\n"
           "{\n"
           "    \"1\": 4,\n"
           "    \"hello\": \"world\",\n"
-          "    \"4.56\": 6.320000171661377,\n"
+          "    \"4.56\": 6.32,\n"
           "    \"foobar\": \"bla\"\n"
           "}\n");
       wipe_all();
@@ -481,8 +481,8 @@ TEST_F(mod_shell_test, dump_rows) {
       _shell->dump_rows(result, "json/raw");
       // clang-format off
       MY_EXPECT_STDOUT_CONTAINS(
-          "{\"1\":1,\"hello\":\"hello\",\"4.56\":4.559999942779541,\"foobar\":\"foobar\"}\n"
-          "{\"1\":4,\"hello\":\"world\",\"4.56\":6.320000171661377,\"foobar\":\"bla\"}\n");
+          "{\"1\":1,\"hello\":\"hello\",\"4.56\":4.56,\"foobar\":\"foobar\"}\n"
+          "{\"1\":4,\"hello\":\"world\",\"4.56\":6.32,\"foobar\":\"bla\"}\n");
       // clang-format on
       wipe_all();
     }
@@ -494,8 +494,8 @@ TEST_F(mod_shell_test, dump_rows) {
       // clang-format off
       MY_EXPECT_STDOUT_CONTAINS(
           "[\n"
-          "{\"1\":1,\"hello\":\"hello\",\"4.56\":4.559999942779541,\"foobar\":\"foobar\"},\n"
-          "{\"1\":4,\"hello\":\"world\",\"4.56\":6.320000171661377,\"foobar\":\"bla\"}\n"
+          "{\"1\":1,\"hello\":\"hello\",\"4.56\":4.56,\"foobar\":\"foobar\"},\n"
+          "{\"1\":4,\"hello\":\"world\",\"4.56\":6.32,\"foobar\":\"bla\"}\n"
           "]\n");
       // clang-format on
       wipe_all();
