@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +57,10 @@ REGISTER_HELP(COMMANDS_BRIEF,
 REGISTER_HELP(COMMANDS_DETAIL,
               "The shell commands allow executing specific operations "
               "including updating the shell configuration.");
+REGISTER_HELP(COMMANDS_DETAIL1,
+              "Each command can also be written with a / in place of the \\, "
+              "e.g. /quit or /status, unless the <b>slashCommands</b> option "
+              "is disabled.");
 REGISTER_HELP(COMMANDS_CHILDS_DESC,
               "The following shell commands are available:");
 REGISTER_HELP(COMMANDS_CLOSING,
@@ -303,6 +308,11 @@ bool Shell_core::handle_shell_command(const std::string &line) {
   return false;
 }
 
+bool Shell_core::is_shell_command(const std::string &line) {
+  return _langs[_mode]->command_handler()->has_command(line, _mode) ||
+         m_command_handler.has_command(line, _mode);
+}
+
 size_t Shell_core::handle_inline_shell_command(const std::string &line) {
   Entering_command_guard guard(this);
 
@@ -481,25 +491,38 @@ std::vector<std::string> Shell_command_handler::split_command_line(
   return ret_val;
 }
 
+namespace {
+std::string first_word(const std::string &command_line) {
+  std::locale locale;
+  size_t index = 0;
+  while (index < command_line.size() &&
+         std::isspace(command_line[index], locale))
+    index++;
+
+  size_t start = index;
+  while (index < command_line.size() &&
+         !std::isspace(command_line[index], locale))
+    index++;
+
+  return command_line.substr(start, index - start);
+}
+}  // namespace
+
+bool Shell_command_handler::has_command(const std::string &command_line,
+                                        IShell_core::Mode mode) const {
+  const auto item = _command_dict.find(first_word(command_line));
+  return item != _command_dict.end() && item->second->mode.is_set(mode) &&
+         item->second->function;
+}
+
 bool Shell_command_handler::process(const std::string &command_line,
                                     IShell_core::Mode mode) {
   bool ret_val = false;
   std::vector<std::string> tokens;
 
   if (!_command_dict.empty()) {
-    std::locale locale;
     // Identifies if the line is a registered command
-    size_t index = 0;
-    while (index < command_line.size() &&
-           std::isspace(command_line[index], locale))
-      index++;
-
-    size_t start = index;
-    while (index < command_line.size() &&
-           !std::isspace(command_line[index], locale))
-      index++;
-
-    std::string command = command_line.substr(start, index - start);
+    std::string command = first_word(command_line);
 
     // Srearch on the registered command list and processes it if it exists
     Command_registry::iterator item = _command_dict.find(command);

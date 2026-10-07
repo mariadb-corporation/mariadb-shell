@@ -231,6 +231,9 @@ class Shell_command_provider : public shcore::completer::Provider {
                                               size_t *compl_offset) {
     shcore::completer::Completion_list options;
     size_t cmdend;
+    if (line[0] == '/' && shell_->options().slash_commands) {
+      return complete_slash_command(line, compl_offset);
+    }
     if (line[0] == '\\' && (cmdend = line.find(' ')) != std::string::npos) {
       // check if we're completing params for a \command
 
@@ -266,6 +269,27 @@ class Shell_command_provider : public shcore::completer::Provider {
 
  private:
   Mysql_shell *shell_;
+
+  // Completes the name of a command written with the / prefix, offering the
+  // names with that prefix too. The arguments of a /command are completed by
+  // the caller, as those of the \command it runs as.
+  shcore::completer::Completion_list complete_slash_command(
+      const std::string &line, size_t *compl_offset) {
+    if (line.find(' ') != std::string::npos) return {};
+
+    shcore::completer::Completion_list options;
+    for (auto &name :
+         shell_->shell_context()->command_handler()->get_command_names_matching(
+             "\\" + line.substr(1), shell_->interactive_mode())) {
+      // a lone / is not a command, \ starting a multi-line one has no / form
+      if (name.length() < 2) continue;
+      name[0] = '/';
+      options.push_back(std::move(name));
+    }
+    // the name is completed as a whole, the / included
+    if (!options.empty()) *compl_offset = 0;
+    return options;
+  }
 
   shcore::completer::Completion_list complete_command(const std::string &line,
                                                       size_t cmdend,
@@ -2031,7 +2055,24 @@ bool Mysql_shell::cmd_watch(const std::vector<std::string> &args) {
   return Command_watch(_shell, _global_shell->get_shell_reports())(args);
 }
 
+std::string Mysql_shell::slash_command_as_backslash(
+    const std::string &line) const {
+  if (!options().slash_commands || line.length() < 2 || line[0] != '/' ||
+      std::isspace(static_cast<unsigned char>(line[1])))
+    return {};
+
+  auto command = "\\" + line.substr(1);
+  if (!_shell->is_shell_command(command)) return {};
+
+  return command;
+}
+
 bool Mysql_shell::do_shell_command(const std::string &line) {
+  if (const auto command = slash_command_as_backslash(line); !command.empty()) {
+    _shell->handle_shell_command(command);
+    return true;
+  }
+
   bool handled = _shell->handle_shell_command(line);
   if (line.length() > 1 && line[0] == '\\' && !handled) {
     print_diag("Unknown command: '" + line + "'");

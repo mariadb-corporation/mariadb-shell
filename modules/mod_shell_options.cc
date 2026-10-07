@@ -152,6 +152,10 @@ connect to the server, e.g. DbType field is approximated when using X protocol.
 @li <b>showWarnings</b>: boolean value to indicate whether warnings shall be
 included when printing a SQL result
 
+@li <b>slashCommands</b>: boolean value, default true, to indicate whether shell
+commands are also accepted with a / prefix, e.g. /quit or /status, as well as
+with the \ prefix
+
 @li <b>ssh.bufferSize</b> integer, default 10240 bytes, used for tunnel data
 transfer
 

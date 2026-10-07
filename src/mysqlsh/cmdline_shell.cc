@@ -110,7 +110,9 @@ int auto_complete_start_cb(const char32_t *text, int pos) {
   };
 
   // Perform context-sensitive tokenization for the auto-completer
-  if (begins_with(text, "\\source") || begins_with(text, "\\.")) {
+  if (begins_with(text, "\\source") || begins_with(text, "\\.") ||
+      (g_instance->options().slash_commands &&
+       (begins_with(text, "/source") || begins_with(text, "/.")))) {
     const char32_t *p = text;
     while (*p != ' ' && *p != '\0') ++p;  // skip \cmd
     while (*p == ' ' && *p != '\0') ++p;  // skip spcs
@@ -1306,9 +1308,12 @@ void Command_line_shell::handle_notification(
     const auto executed = shcore::str_strip(data->get_string("statement"));
     auto mode = interactive_mode();
     auto sql = executed;
-    if (shcore::str_beginswith(executed, "\\sql ") && executed.length() > 5) {
+    // a /command is checked as the \command it runs as
+    const auto command = slash_command_as_backslash(executed);
+    const auto &line = command.empty() ? executed : command;
+    if (shcore::str_beginswith(line, "\\sql ") && line.length() > 5) {
       mode = shcore::Shell_core::Mode::SQL;
-      sql = executed.substr(5);
+      sql = line.substr(5);
     }
     if (mode != shcore::Shell_core::Mode::SQL || sql_safe_for_logging(sql)) {
       _history.add(executed);
@@ -1454,10 +1459,15 @@ void Command_line_shell::process_line(const std::string &line) {
 }
 
 void Command_line_shell::syslog(const std::string &statement) {
+  if (!m_syslog.active()) return;
+
+  // a /command is logged (or not) as the \command it runs as
+  const auto command = slash_command_as_backslash(statement);
+  const auto &line = command.empty() ? statement : command;
+
   // log SQL statements and \source commands
-  if (m_syslog.active() &&
-      ('\\' != statement[0] || shcore::str_beginswith(statement, "\\source ") ||
-       shcore::str_beginswith(statement, "\\. "))) {
+  if ('\\' != line[0] || shcore::str_beginswith(line, "\\source ") ||
+      shcore::str_beginswith(line, "\\. ")) {
     m_syslog.log(shcore::syslog::Level::INFO, syslog_format(statement));
   }
 }
@@ -1496,6 +1506,13 @@ void Command_line_shell::pause_history(bool flag) {
 
 std::vector<std::string> Command_line_shell::auto_complete(
     const std::string &line, size_t *completion_offset) {
+  // the arguments of a /command complete as those of the \command it runs as
+  if (const auto command = slash_command_as_backslash(line);
+      _input_buffer.empty() && command.find(' ') != std::string::npos) {
+    return completer()->complete(shell_context()->interactive_mode(),
+                                 _input_buffer, command, completion_offset);
+  }
+
   return completer()->complete(shell_context()->interactive_mode(),
                                _input_buffer, line, completion_offset);
 }

@@ -80,9 +80,9 @@ class Completer_frontend : public Shell_core_test_wrapper {
   void completionCallback(const std::string &text, int *start_index,
                           linenoiseCompletions *completions) {
     size_t completion_offset = *start_index;
-    std::vector<std::string> options(_interactive_shell->completer()->complete(
-        _interactive_shell->shell_context()->interactive_mode(), {}, text,
-        &completion_offset));
+    // the same entry point the shell's linenoise callback uses
+    std::vector<std::string> options(
+        _interactive_shell->auto_complete(text, &completion_offset));
 
     std::sort(options.begin(), options.end(),
               shcore::Case_insensitive_comparator{});
@@ -596,6 +596,16 @@ TEST_F(Completer_frontend, builtin_others) {
 #endif
 
   EXPECT_AFTER_TAB_TAB("\\", expect);
+}
+
+TEST_F(Completer_frontend, builtin_slash) {
+  connect_classic();
+  EXPECT_AFTER_TAB("/co", "/connect");
+  EXPECT_AFTER_TAB("/hi", "/history");
+  EXPECT_AFTER_TAB_TAB("/h", strv({"/help", "/history"}));
+  EXPECT_AFTER_TAB("/use i", "/use information_schema");
+  // not a command, left to the language
+  EXPECT_TAB_DOES_NOTHING("/xyz");
 }
 
 // FR4

@@ -40,6 +40,9 @@ SHELL COMMANDS
 The shell commands allow executing specific operations including updating the
 shell configuration.
 
+Each command can also be written with a / in place of the \, e.g. /quit or
+/status, unless the slashCommands option is disabled.
+
 The following shell commands are available:
 
  - \                   Start multi-line input when in SQL mode.
@@ -166,6 +169,9 @@ SHELL COMMANDS
 
 The shell commands allow executing specific operations including updating the
 shell configuration.
+
+Each command can also be written with a / in place of the \, e.g. /quit or
+/status, unless the slashCommands option is disabled.
 
 The following shell commands are available:
 
@@ -330,6 +336,9 @@ CLASSES
 //@<OUT> Help on shell commands
 The shell commands allow executing specific operations including updating the
 shell configuration.
+
+Each command can also be written with a / in place of the \, e.g. /quit or
+/status, unless the slashCommands option is disabled.
 
 The following shell commands are available:
 

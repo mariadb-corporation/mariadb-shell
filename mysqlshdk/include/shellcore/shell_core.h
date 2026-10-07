@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -94,6 +95,8 @@ class SHCORE_PUBLIC Shell_command_handler {
  public:
   Shell_command_handler(bool use_help = true) : m_use_help(use_help) {}
   bool process(const std::string &command_line, IShell_core::Mode mode);
+  bool has_command(const std::string &command_line,
+                   IShell_core::Mode mode) const;
   size_t process_inline(const std::string &command, IShell_core::Mode mode);
   void add_command(const std::string &triggers, const std::string &help_tag,
                    Shell_command_function function,
@@ -209,6 +212,11 @@ class SHCORE_PUBLIC Shell_core : public shcore::IShell_core {
   void handle_input(std::string &code, Input_state &state) override;
   void flush_input(const std::string &code) override;
   bool handle_shell_command(const std::string &code) override;
+  /**
+   * Whether the first word of the line is a command available in the current
+   * mode, without running it.
+   */
+  bool is_shell_command(const std::string &line);
   size_t handle_inline_shell_command(const std::string &code) override;
   std::string get_handled_input() override;
   int process_stream(std::istream &stream, const std::string &source) override;
