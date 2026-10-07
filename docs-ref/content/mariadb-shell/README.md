@@ -164,8 +164,8 @@ The application log, log levels, verbose output, and SQL logging.
 
 {% columns %}
 {% column %}
-{% content-ref url="command-reference.md" %}
-[command-reference.md](command-reference.md)
+{% content-ref url="cli-reference.md" %}
+[cli-reference.md](cli-reference.md)
 {% endcontent-ref %}
 {% endcolumn %}
 
@@ -183,6 +183,18 @@ Every command-line option of `mariadb-shell`.
 
 {% column %}
 The files MariaDB Shell reads and writes, and the environment variables it recognizes.
+{% endcolumn %}
+{% endcolumns %}
+
+{% columns %}
+{% column %}
+{% content-ref url="appendix/" %}
+[appendix](appendix/)
+{% endcontent-ref %}
+{% endcolumn %}
+
+{% column %}
+Background on how parts of MariaDB Shell work, such as the credential helpers.
 {% endcolumn %}
 {% endcolumns %}
 

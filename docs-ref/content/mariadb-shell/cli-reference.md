@@ -5,7 +5,7 @@ description: >-
 icon: terminal
 ---
 
-# Command Reference
+# CLI Reference
 
 This page lists the command-line options of `mariadb-shell` 26.9.5. The short alias `msh` accepts the same options. For the options of your installed build, run `mariadb-shell --help`.
 
@@ -27,7 +27,7 @@ Examples:
 
 ```sh
 mariadb-shell root@localhost/shop
-mariadb-shell --login-path=db1 --sql
+mariadb-shell dba@db1.example.com --sql
 mariadb-shell --uri app@db1.example.com --py -f report.py --month=2026-09
 mariadb-shell app@db1.example.com -- util dump-schemas shop --output-url=/backups/shop
 ```
@@ -216,11 +216,10 @@ The following options control which files are read. Each must be the first optio
 | Option | Description |
 | --- | --- |
 | `--print-defaults` | Print the arguments that the shell would receive from the option files, and exit. Passwords are masked. |
-| `--no-defaults` | Don't read any option file, except the login path file. |
+| `--no-defaults` | Don't read any option file. |
 | `--defaults-file=<file>` | Read only this option file. |
 | `--defaults-extra-file=<file>` | Read this file after the global option files. |
 | `--defaults-group-suffix=<suffix>` | Also read the groups whose names end with this suffix, such as `[mariadb-shell_prod]` and `[client_prod]` for `_prod`. |
-| `--login-path=<name>` | Read the options of this login path from the login path file. |
 
 See [Option Files and Login Paths](connecting/option-files-and-login-paths.md).
 

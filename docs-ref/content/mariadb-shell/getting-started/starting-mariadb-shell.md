@@ -58,11 +58,7 @@ The following options control how the shell obtains the password:
 | `--no-password` | Connect with an empty password and don't prompt. |
 | `--passwords-from-stdin` | Read passwords from standard input instead of the terminal, for example in scripts. |
 
-The shell also reads connection options from the `[mariadb-shell]`, `[mysqlsh]`, and `[client]` groups of your option files, and from a login path stored with `--login-path`:
-
-```sh
-mariadb-shell --login-path=reporting
-```
+The shell also reads connection options from the `[mariadb-shell]`, `[mysqlsh]`, and `[client]` groups of your option files. See [Option Files and Login Paths](../connecting/option-files-and-login-paths.md).
 
 For all connection methods, including sockets, TLS, and SSH tunnels, see [Connecting to a Server](../connecting/). For working with the session once it is open, see [Sessions](sessions.md).
 
@@ -128,7 +124,7 @@ The built-in help describes every shell command, global object, function, and op
 
 The pattern after `\?` can contain the wildcards `*` (any sequence of characters) and `?` (one character). In Python mode, every object also has a `help()` method, for example `util.help("dump_schemas")`.
 
-The `mariadb-shell --help` command lists the command-line options. On Linux and macOS, the `mariadb-shell(1)` manual page describes the options, files, and environment variables. All commands are listed in the [Command Reference](../command-reference.md).
+The `mariadb-shell --help` command lists the command-line options. On Linux and macOS, the `mariadb-shell(1)` manual page describes the options, files, and environment variables. All command-line options are listed in the [CLI Reference](../cli-reference.md).
 
 ## Exit the Shell
 

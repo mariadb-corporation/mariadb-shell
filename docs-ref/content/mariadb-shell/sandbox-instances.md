@@ -17,11 +17,11 @@ Sandboxes are meant for local development and testing only. They use small memor
 
 ## Requirements
 
-* A MariaDB Server or MySQL Server installation on the same machine. The plugin looks for `mariadbd`, then `mysqld`, on the `PATH`. Use the `mariadbdPath` option to point it at another installation.
-* For MariaDB Server, the data directory initialization tool `mariadb-install-db` (or `mysql_install_db`) of the same installation, found in the installation directory or on the `PATH`. MySQL Server 8.0 and later needs no separate tool.
-* For TLS with MariaDB Server, an `openssl` command-line tool. The plugin looks in the server installation, then in the MariaDB Shell installation, which includes one, then on the `PATH`. MySQL Server generates its own certificates.
+* MariaDB Server or MySQL Server binaries on the same machine. An unpacked server package is enough: the server doesn't have to be installed. The plugin looks for `mariadbd`, then `mysqld`, on the `PATH`. Use the `mariadbdPath` option to point it at other binaries.
+* For MariaDB Server, the data directory initialization tool `mariadb-install-db` (or `mysql_install_db`) from the same server package, found next to the server binary or on the `PATH`. MySQL Server 8.0 and later needs no separate tool.
+* For TLS with MariaDB Server, an `openssl` command-line tool. The plugin looks next to the server binaries, then in the MariaDB Shell installation, which includes one, then on the `PATH`. MySQL Server generates its own certificates.
 
-If you don't have a server installed, see [Sandbox Server Packages](#sandbox-server-packages).
+If you don't have server binaries, see [Sandbox Server Packages](#sandbox-server-packages).
 
 ## Quick Start
 
@@ -81,7 +81,7 @@ Deploys a plain, standalone instance: no replication or GTID settings are config
 | `serverId` | integer | Not set | Value for `server_id`. A standalone instance doesn't need one. |
 | `ssl` | Boolean | `true`; `false` for MariaDB Server on Windows | Generate certificates and enable TLS. See [TLS](#tls). |
 | `opensslPath` | string | Searched | Path to the `openssl` executable, or to a directory that contains it. Ignored for MySQL Server. |
-| `mariadbdPath` | string | Searched on the `PATH` | Path to the `mariadbd` or `mysqld` binary, or to the server installation directory. |
+| `mariadbdPath` | string | Searched on the `PATH` | Path to the `mariadbd` or `mysqld` binary, or to the top directory of the server binaries, such as an unpacked server package. |
 | `mariadbdOptions` | list of strings | `[]` | Additional server options for the `[mysqld]` group of the option file, as `"name=value"` or `"name"`. They are applied after the TLS settings, so they can override them. You can't override `port`. |
 | `timeout` | integer | `60` | Seconds to wait for the instance to accept connections. |
 
@@ -209,7 +209,7 @@ The plugin reads the vendor from the `--version` output of the server binary and
 | `debug-no-sync` with `MARIADB_SANDBOX_NO_SYNC` | Yes | No |
 | Root authentication | `mysql_native_password` | `caching_sha2_password` |
 
-To deploy a MySQL sandbox while MariaDB Server is on the `PATH`, point `mariadbdPath` at the MySQL installation:
+To deploy a MySQL sandbox while MariaDB Server is on the `PATH`, point `mariadbdPath` at the MySQL binaries:
 
 ```python
 sandbox.deploy(3320, {"password": "sandbox-root-pw", "mariadbdPath": "/opt/mysql-9.4"})

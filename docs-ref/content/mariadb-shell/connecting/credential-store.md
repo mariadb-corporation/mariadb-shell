@@ -38,7 +38,7 @@ MariaDB Shell doesn't save passwords that it reads with `--passwords-from-stdin`
 | `secret-service` | Linux | A keyring daemon, such as GNOME Keyring, through the Secret Service D-Bus API. |
 | `windows-credential` | Windows (default) | The Windows Credential Manager. |
 
-The helpers are separate executables named `mariadb-secret-store-<helper>`, installed next to the `mariadb-shell` binary. To see which helpers work on your system, call `shell.list_credential_helpers()`:
+To see which helpers work on your system, call `shell.list_credential_helpers()`:
 
 ```python
 print(shell.list_credential_helpers())
@@ -46,19 +46,11 @@ print(shell.list_credential_helpers())
 
 On macOS, for example, this prints `["login-path", "keychain"]`.
 
-A development build may also list a `plaintext` helper. It is a test fixture, isn't part of the packages, and must not be used for real passwords.
-
-### The login-path Helper
-
-On Linux, the default helper keeps passwords in `~/.mylogin.cnf`. It needs no daemon and no external tool: MariaDB Shell reads and writes the file itself, in the format that MySQL's `mysql_config_editor` uses, so that tool and MariaDB Shell can read each other's entries.
-
 {% hint style="warning" %}
-The passwords in `~/.mylogin.cnf` are obfuscated, not encrypted. The file is AES-encrypted, but the key is stored in the file itself, so anyone who can read the file can recover the passwords. Its protection is the file permissions. MariaDB Shell creates the file with mode `0600`. If you have an older file with looser permissions, tighten them with `chmod 600 ~/.mylogin.cnf`, and don't copy the file to shared hosts or into backups that you wouldn't trust with plain-text passwords.
+The `login-path` helper, the default on Linux, obfuscates the passwords in `~/.mylogin.cnf` but doesn't encrypt them: anyone who can read the file can recover them. MariaDB Shell creates the file readable only by you. Keep it that way, and don't copy the file to shared hosts or into backups that you wouldn't trust with plain-text passwords. Where a desktop keyring is available, prefer the `secret-service` helper.
 {% endhint %}
 
-To use a different file, set the `MYSQL_TEST_LOGIN_FILE` environment variable to its path.
-
-MariaDB Shell doesn't apply the connection settings in `~/.mylogin.cnf` at startup, and has no `--login-path` option. See [Option Files and Login Paths](option-files-and-login-paths.md#login-paths).
+For how the helpers work and how to run them directly, see [Credential Helpers](../appendix/credential-helpers.md).
 
 ### The secret-service Helper
 
@@ -148,24 +140,9 @@ shell.delete_secret("reports/smtp-password")
 
 Secrets are kept apart from stored passwords: `shell.list_credentials()` doesn't show them, and `shell.delete_all_credentials()` doesn't delete them.
 
-## Helper Limitations
-
-The helpers restrict which characters a stored password may contain. These limits don't apply to values stored with `shell.store_secret()`.
-
-| Helper | Not allowed |
-| --- | --- |
-| `login-path` | The control characters `\0`, `0x03`, `0x04`, `\n`, `\r`, `0x0F`, `0x11`, `0x12`, `0x13`, `0x15`, `0x16`, `0x17`, `0x19`, `0x1A`, `0x1C`, and `0x7F`. |
-| `keychain` | `\0` and `\n`. |
-| `secret-service` | Anything that isn't valid UTF-8. |
-
 ## Troubleshooting
 
-To find out why a helper doesn't work, run it directly with the `version` command. It exits with `0` when it is healthy, and otherwise prints the reason:
-
-```sh
-mariadb-secret-store-login-path version; echo "exit=$?"
-mariadb-secret-store-secret-service version; echo "exit=$?"
-```
+To find out why a helper doesn't work, run it directly, as described in [Credential Helpers](../appendix/credential-helpers.md#running-a-helper-directly). The following table lists common problems:
 
 | Symptom | Cause | Solution |
 | --- | --- | --- |

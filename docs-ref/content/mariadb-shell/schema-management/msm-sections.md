@@ -139,10 +139,6 @@ With `ONLY_FULL_GROUP_BY`, every column in the select list of a query with `GROU
 
 `NO_AUTO_CREATE_USER` makes a `GRANT` to a role or user that doesn't exist fail with error 1133, so the deployment stops with an error instead of creating an account of that name. Create every role with `CREATE ROLE IF NOT EXISTS` in section 170 before you grant privileges to it.
 
-{% hint style="danger" %}
-Projects created with an earlier version of MSM lack `NO_AUTO_CREATE_USER` in section 010 of their development script. Without it, a `GRANT` to a role or user that doesn't exist creates a **user account without a password** of that name for the host `%`. Add `NO_AUTO_CREATE_USER` to section 010 of the development script, as shown above, before the next release: release snapshots, and therefore the deployment script of a project's first release, take section 010 from the development script. To check a server for such accounts, run `SELECT user, host FROM mysql.user WHERE authentication_string = '' AND is_role = 'N'`.
-{% endhint %}
-
 ## The Schema Version
 
 MSM stores the version of a deployed schema in the view `msm_schema_version` inside the schema:

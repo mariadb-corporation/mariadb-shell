@@ -120,7 +120,7 @@ mariadb-shell would have been started with the following arguments:
 
 MariaDB Shell doesn't support the `--login-path` option. Although `mariadb-shell --help` lists it among the option-file options, the shell rejects it at startup with `unknown option --login-path`. To switch between sets of connection settings, use `--defaults-group-suffix` or `--defaults-file`.
 
-The file `~/.mylogin.cnf` has a different role in MariaDB Shell: on Linux, it is where the default credential store keeps the passwords that you save. MariaDB Shell reads and writes the file itself, in the format that MySQL's `mysql_config_editor` uses, so it needs no external tool. The connection settings in that file aren't applied at startup. See [Credential Store](credential-store.md#the-login-path-helper).
+The file `~/.mylogin.cnf` has a different role in MariaDB Shell: on Linux, it is where the default credential store keeps the passwords that you save. MariaDB Shell reads and writes the file itself, in the format that MySQL's `mysql_config_editor` uses, so it needs no external tool. The connection settings in that file aren't applied at startup. See [Credential Store](credential-store.md) and [Credential Helpers](../appendix/credential-helpers.md#the-login-path-file).
 
 {% hint style="warning" %}
 The passwords in `~/.mylogin.cnf` are obfuscated, not encrypted: anyone who can read the file can recover them. Keep the file readable only by you.

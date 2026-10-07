@@ -69,7 +69,7 @@ If you start the shell with `--disable-builtin-plugins`, these objects and funct
 
 ## The Plugin Decorators
 
-The `mysqlsh.plugin_manager` module provides decorators that register global objects and functions and build the help text from your docstrings. They call the [extension object](extension-objects.md) API for you.
+The `mysqlsh.plugin_manager` module provides decorators that register global objects and functions and build the help text from your docstrings. They call the lower-level [extension object](extension-objects.md) API for you. Use that API directly only when you need full control over the members of an object.
 
 ```python
 from mysqlsh.plugin_manager import plugin, plugin_function
