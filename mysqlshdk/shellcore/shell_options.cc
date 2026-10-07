@@ -405,15 +405,26 @@ Shell_options::Shell_options(
   // shell writes to $HOME stays in one place:
   //   ~/.mariadb-shell/sandboxes                    (Unix)
   //   %userprofile%\MariaDB\mariadb-shell\sandboxes (Windows)
-  std::string home = shcore::get_home_dir();
+  // When MARIADB_SHELL_USER_CONFIG_HOME moves that directory, they move with
+  // it, to <MARIADB_SHELL_USER_CONFIG_HOME>/sandboxes. The sandbox plugin's own
+  // fallback (python/plugins/sandbox/sandboxlib.py) mirrors this.
+  std::string home;
+  if (const char *config_home =
+          shcore::getenv_shell("MARIADB_SHELL_USER_CONFIG_HOME");
+      config_home && *config_home) {
+    home = shcore::path::join_path(config_home,
+                                   shcore::k_shell_sandbox_dir_name);
+  } else {
+    home = shcore::get_home_dir();
 #ifdef WIN32
-  home += shcore::path::join_path(shcore::k_shell_config_dir_win_vendor,
-                                  shcore::k_shell_config_dir_win,
-                                  shcore::k_shell_sandbox_dir_name);
+    home += shcore::path::join_path(shcore::k_shell_config_dir_win_vendor,
+                                    shcore::k_shell_config_dir_win,
+                                    shcore::k_shell_sandbox_dir_name);
 #else
-  home += shcore::path::join_path(shcore::k_shell_user_config_dir_unix,
-                                  shcore::k_shell_sandbox_dir_name);
+    home += shcore::path::join_path(shcore::k_shell_user_config_dir_unix,
+                                    shcore::k_shell_sandbox_dir_name);
 #endif
+  }
 
   const auto create_result_format_handler = [this](const char *value) {
     return [this, value](const std::string &opt_name, const char *) {

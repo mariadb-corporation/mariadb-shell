@@ -111,6 +111,11 @@ def deploy(port, options=None):
         timeout (int): Seconds to wait for the instance to start listening for
             connections. Defaults to 60.
 
+    The instance listens on 127.0.0.1 only. Pass bind_address in
+    'mariadbdOptions' (for example "bind_address=*") to make it reachable from
+    other hosts; every root account, the remote one included, has the given
+    password.
+
     Sandbox instances are only suitable for deploying and running on the local
     machine for testing purposes and are not accessible from external networks.
     """

@@ -119,13 +119,24 @@ def test_default_base_dir_uses_shell_option(sandboxlib, shell, tmp_path):
     assert base == os.path.abspath(str(tmp_path / "configured"))
 
 
-def test_default_base_dir_fallback(sandboxlib, shell):
+def test_default_base_dir_fallback(sandboxlib, shell, monkeypatch):
     # No sandboxDir option set -> default under the home directory.
+    monkeypatch.delenv("MARIADB_SHELL_USER_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("MYSQLSH_USER_CONFIG_HOME", raising=False)
     assert shell.options == {}
     result = sandboxlib.default_sandbox_base_dir()
     assert result.startswith(os.path.expanduser("~"))
     assert result.endswith(os.path.join("mariadb-shell", "sandboxes"))
 
+
+
+def test_default_base_dir_follows_user_config_home(sandboxlib, shell,
+                                                   monkeypatch, tmp_path):
+    # No sandboxDir option set, config home moved -> sandboxes move with it.
+    monkeypatch.setenv("MARIADB_SHELL_USER_CONFIG_HOME", str(tmp_path))
+    assert shell.options == {}
+    assert sandboxlib.default_sandbox_base_dir() == os.path.join(
+        str(tmp_path), "sandboxes")
 
 # --------------------------------------------------------------------------- #
 # sandbox_path
@@ -173,3 +184,17 @@ def test_sandbox_path_unknown_identifier_raises(sandboxlib, tmp_path):
     base, _ = _make_sandbox(tmp_path)
     with pytest.raises(sandboxlib.Error, match="Unknown path identifier"):
         sandboxlib.sandbox_path(3311, "bogus", {"sandboxDir": str(base)})
+
+
+# --------------------------------------------------------------------------- #
+# _recorded_version
+# --------------------------------------------------------------------------- #
+def test_recorded_version_ignores_unknown(sandboxlib, tmp_path):
+    sandbox_dir = str(tmp_path)
+    assert sandboxlib._recorded_version(sandbox_dir) is None
+    sandboxlib._write_version(sandbox_dir, "13.1.1-MariaDB")
+    assert sandboxlib._recorded_version(sandbox_dir) == "13.1.1"
+    # A banner without a version was recorded as 'unknown': that is no
+    # version, so the binary gets asked instead.
+    sandboxlib._write_version(sandbox_dir, "unknown")
+    assert sandboxlib._recorded_version(sandbox_dir) is None

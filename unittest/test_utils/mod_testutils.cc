@@ -1570,6 +1570,13 @@ void Testutils::deploy_sandbox_with_plugin(
 
   auto extra = shcore::make_array();
 
+  // The plugin binds a sandbox to 127.0.0.1, while the tests may reach it
+  // through the machine's hostname, which need not resolve to that address
+  // (127.0.1.1 on Debian). Listen everywhere, as the server does by default,
+  // X Protocol included; a test which passes its own bind_address still wins.
+  extra->push_back(shcore::Value("bind_address=*"));
+  extra->push_back(shcore::Value("loose_mysqlx_bind_address=*"));
+
   // A MySQL 8.0+ instance starts with binary logging on, MariaDB's default is
   // off, and the scripted tests were written against the MySQL default: they
   // reset the binary log, read its position and size the binlog cache. Give a

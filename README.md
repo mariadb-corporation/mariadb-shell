@@ -107,7 +107,7 @@ sandbox.vendor()          sandbox.version()
 ```
 
 It supports both **MariaDB** and **MySQL** servers, auto-detecting the vendor
-from the server binaries on `PATH` (or from an explicit `basedir`), and handles
+from the server binaries on `PATH` (or at the `mariadbdPath` option), and handles
 the per-vendor differences in datadir initialization, authentication and TLS
 certificate generation.
 

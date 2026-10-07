@@ -193,15 +193,47 @@ def test_is_listening_anywhere(sandboxlib, short_dir, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# _wait_until (time.sleep patched out so the test is instant)
+# _probe_hosts / _configured_mysqld_options
 # --------------------------------------------------------------------------- #
+def test_probe_hosts_follow_bind_address(sandboxlib):
+    loopback = ("127.0.0.1", "::1")
+    assert sandboxlib._probe_hosts({}) == loopback
+    for everywhere in ("*", "0.0.0.0", "::"):
+        assert sandboxlib._probe_hosts({"bind_address": everywhere}) == loopback
+    assert sandboxlib._probe_hosts(
+        {"bind_address": "192.168.64.1"}) == ("192.168.64.1",)
+    assert sandboxlib._probe_hosts(
+        {"bind_address": "10.0.0.1, ::1"}) == ("10.0.0.1", "::1")
+
+
+def test_configured_options_match_the_server_spelling(sandboxlib, short_dir):
+    # '-' and '_' are the same to the server, and 'loose-' only changes how an
+    # unknown option fails, so a reader must see through both.
+    sandboxlib._write_option_file(
+        sandboxlib._cnf_path(short_dir),
+        {"mysqld": {"loose-skip-networking": None, "bind-address": "*"}})
+    assert sandboxlib._configured_mysqld_options(short_dir) == {
+        "skip_networking": None, "bind_address": "*"}
+
+
+# --------------------------------------------------------------------------- #
+# _wait_until (the clock is faked so the tests are instant)
+# --------------------------------------------------------------------------- #
+def _fake_clock(sandboxlib, monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(sandboxlib.time, "sleep",
+                        lambda seconds: now.__setitem__(0, now[0] + seconds))
+    monkeypatch.setattr(sandboxlib.time, "monotonic", lambda: now[0])
+    return now
+
+
 def test_wait_until_returns_true_immediately(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     assert sandboxlib._wait_until(lambda: True, timeout=5) is True
 
 
 def test_wait_until_becomes_true(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     state = {"n": 0}
 
     def predicate():
@@ -212,8 +244,23 @@ def test_wait_until_becomes_true(sandboxlib, monkeypatch):
 
 
 def test_wait_until_times_out(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     assert sandboxlib._wait_until(lambda: False, timeout=3) is False
+
+
+def test_wait_until_charges_the_predicate_time(sandboxlib, monkeypatch):
+    # A slow predicate (e.g. probes that wait out their timeout) eats into the
+    # wait rather than stretching it.
+    now = _fake_clock(sandboxlib, monkeypatch)
+    calls = []
+
+    def slow_predicate():
+        calls.append(now[0])
+        now[0] += 1.0
+        return False
+
+    assert sandboxlib._wait_until(slow_predicate, timeout=3) is False
+    assert len(calls) <= 4
 
 
 # --------------------------------------------------------------------------- #
@@ -325,15 +372,14 @@ def test_prepare_boilerplate_rebuilds_over_unstamped_dir(sandboxlib, tmp_path,
     version = "mariadb-12.3.2"
     _make_boilerplate(sandboxlib, base, version, stamp=None)
 
-    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
-
     def fake_init(install_db, basedir, datadir, mariadbd, vendor, innodb_opts):
         open(os.path.join(datadir, "built-here"), "w").close()
 
     monkeypatch.setattr(sandboxlib, "_init_data_dir", fake_init)
 
-    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
-                                              "mariadbd", "mariadb", {})
+    bp_data = sandboxlib._prepare_boilerplate(base, version, "install-db",
+                                              "basedir", "mariadbd", "mariadb",
+                                              {})
 
     assert os.path.exists(os.path.join(bp_data, "built-here"))
     assert sandboxlib._boilerplate_is_complete(
@@ -346,15 +392,14 @@ def test_prepare_boilerplate_reuses_complete_dir(sandboxlib, tmp_path,
     version = "mariadb-12.3.2"
     _make_boilerplate(sandboxlib, base, version, stamp=version)
 
-    monkeypatch.setattr(sandboxlib, "_version_token", lambda *_: version)
-
     def fail_init(*_args, **_kwargs):
         raise AssertionError("the complete boilerplate should be reused")
 
     monkeypatch.setattr(sandboxlib, "_init_data_dir", fail_init)
 
-    bp_data = sandboxlib._prepare_boilerplate(base, "install-db", "basedir",
-                                              "mariadbd", "mariadb", {})
+    bp_data = sandboxlib._prepare_boilerplate(base, version, "install-db",
+                                              "basedir", "mariadbd", "mariadb",
+                                              {})
     assert bp_data == sandboxlib._datadir(
         sandboxlib._boilerplate_dir(base, version))
 
@@ -363,23 +408,34 @@ def test_prepare_boilerplate_reuses_complete_dir(sandboxlib, tmp_path,
 # _set_root_password
 # --------------------------------------------------------------------------- #
 def test_set_root_password_sql_sequence(sandboxlib, session):
+    # What mariadb-install-db leaves: the local accounts plus one for the name
+    # of the machine the boilerplate was bootstrapped on.
+    session.rows["SELECT Host FROM mysql.user WHERE User = 'root'"] = [
+        ("localhost",), ("127.0.0.1",), ("::1",), ("build-host",)]
     sandboxlib._set_root_password(session, "secret")
 
     sqls = [sql for sql, _ in session.calls]
-    assert sqls[0] == "SET sql_log_bin = 0"
+    assert sqls[0] == "SELECT Host FROM mysql.user WHERE User = 'root'"
+    assert sqls[1] == "SET sql_log_bin = 0"
     assert sqls[-1] == "SET sql_log_bin = 1"
 
     altered_hosts = []
     for sql, args in session.calls:
         if sql.startswith("ALTER USER"):
-            assert "IF EXISTS" in sql
             assert args == ["secret"]
             altered_hosts.append(sql)
-    # localhost, 127.0.0.1 and ::1 are all updated.
-    assert len(altered_hosts) == 3
-    assert any("'root'@'localhost'" in s for s in altered_hosts)
-    assert any("'root'@'127.0.0.1'" in s for s in altered_hosts)
-    assert any("'root'@'::1'" in s for s in altered_hosts)
+    # Every root account gets the password, the hostname one included.
+    assert len(altered_hosts) == 4
+    for host in ("localhost", "127.0.0.1", "::1", "build-host"):
+        assert any("'root'@'{0}'".format(host) in s for s in altered_hosts)
+
+
+def test_set_root_password_quotes_host(sandboxlib, session):
+    session.rows["SELECT Host FROM mysql.user WHERE User = 'root'"] = [
+        ("o'host",)]
+    sandboxlib._set_root_password(session, "secret")
+    assert any(sql.startswith("ALTER USER 'root'@'o''host' ")
+               for sql, _ in session.calls)
 
 
 # --------------------------------------------------------------------------- #

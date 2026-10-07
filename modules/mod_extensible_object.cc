@@ -637,6 +637,12 @@ std::shared_ptr<Parameter_definition> Extensible_object::parse_parameter(
   unpacker.optional("type", &type);
   unpacker.optional("required", &required);
   unpacker.optional("default", &param->def_value);
+  // The unpacker skips a null value, but a null default is a real one (Python's
+  // 'param=None'): it lets the parameter take null, see Parameter::valid_type().
+  if (const auto def = definition->find("default");
+      def != definition->end() && def->second.get_type() == shcore::Null) {
+    param->def_value = shcore::Value::Null();
+  }
   unpacker.optional("brief", &param_definition->brief);
   unpacker.optional("details", &param_definition->details);
 

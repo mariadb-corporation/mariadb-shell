@@ -247,6 +247,13 @@ library the shell links separately. Handled in
   `from mysqlsh import mysqlx` at Python startup, and the bundled
   `mysqlsh/__init__.py` looks up `mysql`/`mysqlx` defensively (the X module is
   absent on MariaDB).
+- **Plugin parameters declared `=None`:** `parse_parameter()` in
+  [mod_extensible_object.cc](modules/mod_extensible_object.cc) keeps a null
+  default instead of dropping it, and `Cpp_function` (`cpp.cc`) accepts null for
+  a parameter whose declared default is null. Upstream dropped the null, so an
+  omitted parameter arrived as the type's empty value (`{}` for a dict, from the
+  command line) and an explicit `None` failed the type check. Only plugin
+  parameters declare defaults; built-in functions are unaffected.
 
 Also note: MariaDB has no MySQL-style **args-separator** in `my_load_defaults`,
 and its signature takes 5 args (no `MEM_ROOT`). `handle_mycnf_options` was
@@ -1233,9 +1240,11 @@ directory, so everything the shell writes to `$HOME` lives in one place:
 |---|---|
 | Unix / macOS | `~/.mariadb-shell/sandboxes` |
 | Windows | `%userprofile%\MariaDB\mariadb-shell\sandboxes` |
+| `MARIADB_SHELL_USER_CONFIG_HOME` set | `$MARIADB_SHELL_USER_CONFIG_HOME/sandboxes` |
 
 The value is the default of the `sandboxDir` shell option, built from
-`k_shell_user_config_dir_unix` (or the two Windows constants) plus
+`MARIADB_SHELL_USER_CONFIG_HOME` when it is set, else from
+`k_shell_user_config_dir_unix` (or the two Windows constants), plus
 `k_shell_sandbox_dir_name` in
 [shell_options.cc](mysqlshdk/shellcore/shell_options.cc). The sandbox plugin
 normally just reads `shell.options["sandboxDir"]`, but
@@ -1252,9 +1261,18 @@ run under its logs dir before any worker starts and points every sandbox call an
 test process at it. Each test process has its own `TMPDIR`, which is its sandbox
 directory, so otherwise every process would run `mariadb-install-db` again.
 
+A sandbox listens on `127.0.0.1` only (`bind_address`, plus `mysqlx_bind_address`
+for MySQL), and `_set_root_password()` sets the password on every `root` row in
+`mysql.user`, which includes the `root@<hostname>` that `mariadb-install-db`
+creates. Both test harnesses (`deploy_sandbox_with_plugin()` in
+[mod_testutils.cc](unittest/test_utils/mod_testutils.cc) and the runner's own
+deploy in `scripts/run_unit_tests.py`) pass `bind_address=*` and
+`loose_mysqlx_bind_address=*` back, because tests may reach a server through the
+machine's hostname, which need not resolve to `127.0.0.1`.
+
 This is not a compatibility-preserving change: sandboxes deployed by an older
 build under `~/mysql-sandboxes/<port>` are not migrated and are no longer listed
-or found by `mariadbSandbox.*` unless the old path is passed explicitly
+or found by `sandbox.*` unless the old path is passed explicitly
 (`{sandboxDir: "~/mysql-sandboxes"}`), which still works. Simply moving the
 directory does **not** work: each sandbox's `my.cnf`, start script and stop
 script carry absolute paths written at deploy time, and `start_sandbox()`

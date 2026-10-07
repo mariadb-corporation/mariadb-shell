@@ -82,7 +82,7 @@ Deploys a plain, standalone instance: no replication or GTID settings are config
 | `ssl` | Boolean | `true`; `false` for MariaDB Server on Windows | Generate certificates and enable TLS. See [TLS](#tls). |
 | `opensslPath` | string | Searched | Path to the `openssl` executable, or to a directory that contains it. Ignored for MySQL Server. |
 | `mariadbdPath` | string | Searched on the `PATH` | Path to the `mariadbd` or `mysqld` binary, or to the top directory of the server binaries, such as an unpacked server package. |
-| `mariadbdOptions` | list of strings | `[]` | Additional server options for the `[mysqld]` group of the option file, as `"name=value"` or `"name"`. They are applied after the TLS settings, so they can override them. You can't override `port`. |
+| `mariadbdOptions` | list of strings | `[]` | Additional server options for the `[mysqld]` group of the option file, as `"name=value"` or `"name"`. They are applied after the TLS and network settings, so they can override them, `bind_address` included. An option replaces the default of the same name whatever its spelling, so `bind-address` or `loose_bind_address` also replaces `bind_address`. You can't override `port`. |
 | `timeout` | integer | `60` | Seconds to wait for the instance to accept connections. |
 
 The deployment fails if the sandbox directory already exists and isn't empty, or if another process already listens on the port.
@@ -92,7 +92,7 @@ sandbox.deploy(3311, {
     "password": "sandbox-root-pw",
     "sandboxDir": "~/sandboxes",
     "allowRootFrom": "",
-    "mariadbdOptions": ["character_set_server=utf8mb4", "max_connections=50", "bind_address=127.0.0.1"],
+    "mariadbdOptions": ["character_set_server=utf8mb4", "max_connections=50"],
 })
 ```
 
@@ -122,15 +122,15 @@ Returns a path that belongs to an existing sandbox. `path_id` selects which one:
 | `"config"` | The option file of the instance, `my.cnf`. |
 | `"error"` | The server error log. |
 
-In Python, pass an empty string rather than `None` when you need to give `options` without a `path_id`:
+To give `options` without a `path_id`, pass `None` or an empty string as the `path_id`:
 
 ```python
-print(sandbox.get_path(3311, "", {"sandboxDir": "~/sandboxes"}))
+print(sandbox.get_path(3311, None, {"sandboxDir": "~/sandboxes"}))
 ```
 
 ### vendor() and version()
 
-Without a port, both functions report on the server binary that a new deployment would use: the one on the `PATH`, or the one at `mariadbdPath`. They return `None` if no server binary can be found. With a port, they report what was recorded for that sandbox when it was deployed or last started with `mariadbdPath`.
+Without a port, both functions report on the server binary that a new deployment would use: the one on the `PATH`, or the one at `mariadbdPath`. They return `None` if no server binary can be found. With a port, they report what was recorded for that sandbox when it was deployed or last started with `mariadbdPath`. If nothing was recorded, as for a sandbox from an older release, they fall back to the server binary a new deployment would use.
 
 ```text
 MariaDB  Py > sandbox.vendor(), sandbox.version()
@@ -145,6 +145,7 @@ Each sandbox lives in `<sandboxDir>/<port>`. The default `sandboxDir` is the val
 | --- | --- |
 | Linux and macOS | `~/.mariadb-shell/sandboxes` |
 | Windows | `%USERPROFILE%\MariaDB\mariadb-shell\sandboxes` |
+| `MARIADB_SHELL_USER_CONFIG_HOME` set | `$MARIADB_SHELL_USER_CONFIG_HOME/sandboxes` |
 
 To keep your sandboxes elsewhere without passing `sandboxDir` every time, persist the option:
 
@@ -173,14 +174,10 @@ Initializing a data directory takes a while. The first deployment for a server v
 ## How an Instance Is Configured
 
 * **Initialization.** MariaDB data directories are initialized with `mariadb-install-db`, with password authentication for `root`. MySQL data directories are initialized with `mysqld --initialize-insecure`.
-* **Accounts.** The plugin sets the password of `root@localhost`, `root@127.0.0.1`, and `root@::1`, where these accounts exist, and by default creates `root@'%'` with the same password. All of them have every privilege. On MariaDB Server, the root accounts use the server default, `mysql_native_password`.
-* **Connections.** On Linux and macOS, the instance listens on its port and on a Unix socket. The socket path is `<sandbox directory>/mysqld.sock`, or a short path in the temporary directory when the full path would be too long for a socket. On Windows, the instance listens on TCP only.
+* **Accounts.** The plugin sets the password of every `root` account the data directory has: `root@localhost`, `root@127.0.0.1`, and `root@::1`, and on MariaDB Server also the `root` account that `mariadb-install-db` creates for the host name of the machine. By default it also creates `root@'%'` with the same password. All of them have every privilege. On MariaDB Server, the root accounts use the server default, `mysql_native_password`.
+* **Connections.** The instance listens on `127.0.0.1` only, so other hosts can't reach it; a MySQL sandbox's X Protocol port too. To accept connections from other hosts, add `"bind_address=*"` (or one address) to `mariadbdOptions`, and `"mysqlx_bind_address=*"` for X Protocol on MySQL Server. On Linux and macOS, the instance also listens on a Unix socket. The socket path is `<sandbox directory>/mysqld.sock`, or a short path in the temporary directory when the full path would be too long for a socket. On Windows, the instance listens on TCP only.
 * **Resources.** The option file keeps InnoDB small: a 16 MB buffer pool, a 10 MB initial system tablespace, and a small redo log. The Performance Schema is enabled. To give a sandbox more memory, pass a larger `innodb_buffer_pool_size` in `mariadbdOptions`. Don't change `innodb_data_file_path`: it must match the boilerplate that the data directory was copied from.
 * **Faster DDL for tests.** If the `MARIADB_SANDBOX_NO_SYNC` environment variable is set to a non-empty value when you deploy, MariaDB sandboxes run with `debug-no-sync`. DDL statements become much faster, especially on macOS, but everything except InnoDB data is no longer safe from an operating system crash. MySQL sandboxes ignore the variable.
-
-{% hint style="warning" %}
-The sandbox server listens on all network interfaces. `mariadb-install-db` also creates a `root` account for the host name of your machine, such as `root@devbox.example.com`, and the plugin doesn't set a password for it. If your machine is reachable from a network, add `"bind_address=127.0.0.1"` to `mariadbdOptions`, or drop that account after deployment.
-{% endhint %}
 
 ## TLS
 

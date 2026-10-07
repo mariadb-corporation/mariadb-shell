@@ -147,35 +147,38 @@ def test_generate_ssl_certs_produces_verifiable_certs(sandboxlib, tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# _version_token
+# _server_identity / _version_token
 # --------------------------------------------------------------------------- #
+def _version_of(sandboxlib, tmp_path, banner):
+    binp = _make_exe(str(tmp_path / "mariadbd"),
+                     "#!/bin/sh\necho '{0}'\n".format(banner))
+    return sandboxlib._server_identity(binp)[1]
+
+
 def test_version_token_parses_version(sandboxlib, tmp_path):
-    body = ("#!/bin/sh\n"
-            "echo 'mariadbd Ver 11.4.2-MariaDB-log for osx10.21 on arm64'\n")
-    binp = _make_exe(str(tmp_path / "mariadbd"), body)
+    version = _version_of(sandboxlib, tmp_path,
+                          "mariadbd Ver 11.4.2-MariaDB-log for osx10.21 on arm64")
     # The token is prefixed with the server vendor so different vendors never
     # share a boilerplate directory.
-    assert sandboxlib._version_token(binp, "mariadb") == \
+    assert sandboxlib._version_token("mariadb", version) == \
         "mariadb-11.4.2-MariaDB-log"
 
 
 def test_version_token_prefixes_vendor(sandboxlib, tmp_path):
-    body = ("#!/bin/sh\n"
-            "echo 'mysqld  Ver 9.7.1 for macos15 on arm64 (MySQL "
-            "Community Server - GPL)'\n")
-    binp = _make_exe(str(tmp_path / "mysqld"), body)
-    assert sandboxlib._version_token(binp, "mysql") == "mysql-9.7.1"
+    version = _version_of(sandboxlib, tmp_path,
+                          "mysqld  Ver 9.7.1 for macos15 on arm64 (MySQL "
+                          "Community Server - GPL)")
+    assert sandboxlib._version_token("mysql", version) == "mysql-9.7.1"
 
 
 def test_version_token_unknown_when_no_match(sandboxlib, tmp_path):
-    binp = _make_exe(str(tmp_path / "mariadbd"), "#!/bin/sh\necho 'nope'\n")
-    assert sandboxlib._version_token(binp, "mariadb") == "mariadb-unknown"
+    version = _version_of(sandboxlib, tmp_path, "nope")
+    assert sandboxlib._version_token("mariadb", version) == "mariadb-unknown"
 
 
 def test_version_token_sanitizes_unsafe_chars(sandboxlib, tmp_path):
-    body = "#!/bin/sh\necho 'mariadbd Ver 11.4/2 weird'\n"
-    binp = _make_exe(str(tmp_path / "mariadbd"), body)
-    token = sandboxlib._version_token(binp, "mariadb")
+    version = _version_of(sandboxlib, tmp_path, "mariadbd Ver 11.4/2 weird")
+    token = sandboxlib._version_token("mariadb", version)
     assert "/" not in token
     assert token == "mariadb-11.4_2"
 
@@ -194,6 +197,16 @@ def test_server_vendor_detects_mysql(sandboxlib, tmp_path):
     body = ("#!/bin/sh\n"
             "echo 'mysqld  Ver 9.7.1 for macos15 on arm64 (MySQL "
             "Community Server - GPL)'\n")
+    binp = _make_exe(str(tmp_path / "mysqld"), body)
+    assert sandboxlib._server_vendor(binp) == "mysql"
+
+
+def test_server_vendor_ignores_the_binary_path(sandboxlib, tmp_path):
+    # The banner starts with the binary's own path, which may well mention
+    # mariadb without the server being one.
+    body = ("#!/bin/sh\n"
+            "echo '/Users/dev/mariadb/mysql-server/bld/bin/mysqld  Ver 9.7.1 "
+            "for macos15 on arm64 (Source distribution)'\n")
     binp = _make_exe(str(tmp_path / "mysqld"), body)
     assert sandboxlib._server_vendor(binp) == "mysql"
 

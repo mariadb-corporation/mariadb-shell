@@ -112,6 +112,48 @@ def test_build_option_file_core_and_innodb_keys(sandboxlib):
     assert sections["client"]["user"] == "root"
 
 
+def test_build_option_file_listens_on_loopback(sandboxlib):
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mariadb", None, {}, _innodb(sandboxlib))[
+            "mysqld"]
+    assert mysqld["bind_address"] == "127.0.0.1"
+    assert "mysqlx_bind_address" not in mysqld
+
+
+def test_build_option_file_x_plugin_on_loopback(sandboxlib):
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mysql", None, {}, _innodb(sandboxlib),
+        x_plugin=True)["mysqld"]
+    assert mysqld["mysqlx_bind_address"] == "127.0.0.1"
+
+
+def test_build_option_file_bind_address_overridable(sandboxlib):
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mariadb", None, {"bind_address": "*"},
+        _innodb(sandboxlib))["mysqld"]
+    assert mysqld["bind_address"] == "*"
+
+
+def test_build_option_file_override_replaces_default_spelling(sandboxlib):
+    # Another spelling of a default option replaces it rather than adding a
+    # second, contradicting line.
+    mysqld = sandboxlib._build_option_file(
+        3310, "/sb/3310", "/opt/mariadb", None,
+        {"bind-address": "*", "loose-mysqlx-bind-address": "*"},
+        _innodb(sandboxlib), x_plugin=True)["mysqld"]
+    assert mysqld["bind-address"] == "*"
+    assert mysqld["loose-mysqlx-bind-address"] == "*"
+    assert "bind_address" not in mysqld
+    assert "mysqlx_bind_address" not in mysqld
+
+
+def test_build_option_file_rejects_port_in_any_spelling(sandboxlib):
+    with pytest.raises(sandboxlib.Error):
+        sandboxlib._build_option_file(
+            3310, "/sb/3310", "/opt/mariadb", None, {"loose-port": "1"},
+            _innodb(sandboxlib))
+
+
 def test_build_option_file_server_id_omitted_by_default(sandboxlib):
     mysqld = sandboxlib._build_option_file(
         3310, "/sb/3310", "/opt/mariadb", None, {}, _innodb(sandboxlib))[
