@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -1012,7 +1013,20 @@ std::string Parameter_context::str() const {
   return ctx_data;
 }
 
+namespace {
+// A plugin parameter declared with a null default (Python's 'param=None') takes
+// null as a valid value whatever its type: it is the value the function gets
+// when the argument is omitted, and the CLI passes it explicitly when a later
+// argument is given.
+bool is_declared_default_null(const Parameter &param, Value_type type) {
+  return type == Value_type::Null && param.flag == Param_flag::Optional &&
+         param.def_value.get_type() == Value_type::Null;
+}
+}  // namespace
+
 void Parameter::validate(const Value &data, Parameter_context *context) const {
+  if (is_declared_default_null(*this, data.get_type())) return;
+
   if (m_validator) {
     m_validator->validate(*this, data, context);
   } else {
@@ -1022,6 +1036,8 @@ void Parameter::validate(const Value &data, Parameter_context *context) const {
 }
 
 bool Parameter::valid_type(Value_type type) const {
+  if (is_declared_default_null(*this, type)) return true;
+
   if (m_validator) return m_validator->valid_type(*this, type);
 
   // If no validator was set, uses the default validator.
