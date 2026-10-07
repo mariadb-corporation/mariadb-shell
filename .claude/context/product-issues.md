@@ -2,14 +2,7 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Context for the docs work is in [docs-ref.md](docs-ref.md).
 
-These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes in October 2026. The docs describe the current behavior, so **when one is fixed, update the page named in brackets.** "Help" means the built-in `\?` text.
-
-### Fixed on `main` since (2026-10-07), docs already updated
-
-- `--login-path` listed in `--help` although rejected → MariaDB builds leave it out of `--help`, with the `--no-defaults` "except for login file" note (#61, `37e4a3851`). The option is still rejected; that is now consistent. The man page already left it out.
-- JSON result formats turned DECIMAL into single-precision floats (`24.90` → `24.899999618530273`), and FLOAT into doubles (`4.56` → `4.559999942779541`) → exact text via `JSON_dumper::append_number()`, ZEROFILL padding stripped, FLOAT via `shcore::ftoa()` (#62, `20033db05` on the docs branch, in `main` through #59). Not yet released: 26.9.5 still has the bug, the docs describe the fixed behaviour.
-- Installers read `MARIADB_SHELL_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`/`gh auth token` and sent them to GitHub; `--pre-release` spent three rate-limited API calls → token support removed, one anonymous API call then plain downloads, pinned tag never touches the API (#63, `534384530`).
-- MCP server log wrote the first eight characters of connection, session and user IDs → no part of any ID is logged; connections by URI, users by name (mariadb-shell-plugins #37, `5c49ab27`).
+These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes in October 2026. The docs describe the current behavior, so **when one is fixed, update the page named in brackets and delete the entry here** (git history keeps the record). "Help" means the built-in `\?` text.
 
 ### Found during the review fixes, not fixed
 
@@ -31,11 +24,7 @@ The original summary, carried over verbatim:
   - `util.debug.collect_*` fail on MariaDB because they read `@@server_uuid`.
   - `util.change_password({"account":…})` uses `ALTER USER … IDENTIFIED BY`, which switches ed25519 accounts to `mysql_native_password`.
   - `\show threads` always fails ('where' parameter unsupported); `\show thread --vars/--raw-locks` also fail on MariaDB.
-  - Sandboxes:
-    - they ignore `MARIADB_SHELL_USER_CONFIG_HOME` and always use `~/.mariadb-shell/sandboxes`
-    - they listen on all interfaces
-    - `root@<hostname>` has no password
-  - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`; the token path that also used the API is gone since #63.)
+  - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`.)
   - Load progress file: on MariaDB it is `load-progress.<server_id>.json`, but the help says `<server_uuid>.progress`.
   - On the command line, a `where` option with `schema.table` keys is parsed as a nested key and fails.
   - Every dump warns "Charset id '33' csname 'UTF8'…".
@@ -46,7 +35,6 @@ The full list, by area:
 
 - **`mariadb+ssh://` works only from Python** (`shell.connect`, `shell.open_session`). A positional URI, `--uri` and `\connect` all fail with "Scheme extension [ssh] is not supported". The cause is `hide_password_in_uri()` at `src/mysqlsh/shell_options.cc:1348`, which re-parses the URI without the extension support. [connecting/ssh-tunnels.md, which points to `--ssh` as the workaround]
 - **The older `--ssh` without a user connects as `root`** in sessions opened by another user (CI, agents). `get_system_user()` asks `getlogin_r()` before `getpwuid_r()`. Only `+ssh` URIs use the new `get_effective_user()` (commit a7405461f). The same call also picks the default *database* user. [connecting/ssh-tunnels.md]
-- ~~**`--login-path`** is listed in `--help`, but the shell rejects it as an unknown option.~~ Fixed in #61; see the top of this file. [connecting/option-files-and-login-paths.md]
 - **`ssl-mode=REQUIRED` and `PREFERRED`** fall back to an unencrypted connection, with no warning, when the server has no TLS. README.md "Server Compatibility" and MARIADB_PORT.md §3 say the shell warns; the code has no warning. [connecting/encrypted-connections.md]
 - **`VERIFY_CA` behaves like `VERIFY_IDENTITY`.** Both turn on Connector/C's server certificate check, which includes the host name. [connecting/encrypted-connections.md]
 - **`compression-algorithms` and `compression-level` have no effect** with Connector/C. `compression-algorithms` alone does not turn compression on: Compression showed OFF. Only zlib is documented. [connecting/compressed-connections.md]
@@ -79,7 +67,6 @@ The full list, by area:
 - **A report function gets `argv`/`options` only if the report declares them**; without defaults, the call fails. [extending-mariadb-shell/reports.md]
 - **Command-line integration:**
   - The dotted forms `shell.options` and `util.debug` fail with exit code 10; only the space form (`shell options set-persist`, `util debug …`) works.
-  - `sandbox get-path` with named options fails.
 
   [using-mariadb-shell/command-line-integration.md]
 - **`--json` prints an empty `{}` first.** [using-mariadb-shell/output-formats.md]
@@ -92,8 +79,6 @@ The full list, by area:
 
 ### Sandboxes
 
-- **`sandbox.deploy` ignores `MARIADB_SHELL_USER_CONFIG_HOME`** and always deploys into `~/.mariadb-shell/sandboxes`. [sandbox-instances.md]
-- **A sandbox listens on all interfaces**, and `root@<machine hostname>` (created by mariadb-install-db) has no password. The page warns and suggests `bind_address=127.0.0.1`. [sandbox-instances.md]
 - **Sandbox server packages aren't fetched automatically.** The `mariadb-*-sandbox.tar.gz` packages on the release are fetched by neither the plugin nor the installers; the docs describe them from the build workflows only. [sandbox-instances.md]
 
 ### Installation and Packaging
@@ -112,7 +97,7 @@ The original summary, carried over verbatim:
   - The dump/load help lists HeatWave/lakehouse options.
   - `\option -l` shows `dba.*`/`devapi.*`.
   - The manifest field `dumper` says "mysqlsh".
-  - The man page lists `MARIADB_SHELL_JS_MODULE_PATH` and says `mysqlsh` is an alias. (It leaves out `--login-path`, which is correct since #61.)
+  - The man page lists `MARIADB_SHELL_JS_MODULE_PATH` and says `mysqlsh` is an alias.
 
 The full list:
 
@@ -144,7 +129,6 @@ The full list:
 - **`\? util.import_table`** says `SET unique_checks = 0`. On MariaDB the code keeps unique checks on unless `replaceDuplicates` is set.
 - **`collect_slow_query_diagnostics`:** the help says `delay` defaults to 5 s; the code uses 15.
 - **`export_table`:** `json` is not an allowed dialect. The code rejects it, and the page says so.
-- **`sandboxDir`** option text says "for InnoDB cluster".
 - **`\? create_result`:**
   - a warning `level` of "error" is rejected; only warning and note work
   - the `columns` key, list-form rows and `error` entries in multi-results are undocumented
