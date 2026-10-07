@@ -118,7 +118,8 @@ class SHCORE_PUBLIC JSON_dumper final {
 
   /**
    * Appends a number given as text, as it is, so that no precision is lost,
-   * i.e. a DECIMAL value. The text must be a valid JSON number.
+   * e.g. a DECIMAL value. The text must be a valid JSON number: in
+   * particular, it cannot have leading zeros.
    */
   void append_number(std::string_view data) const;
 
