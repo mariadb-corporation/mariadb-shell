@@ -338,10 +338,10 @@ HTTP/1.1 401 Unauthorized
 www-authenticate: Bearer error="invalid_token", error_description="Authentication required"
 ```
 
-Each refused token is logged, without the token itself:
+Each refused token is logged with the address it came from, without the token and without the user it claims to belong to:
 
 ```text
-2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24 for user=ac28066a...
+2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24
 ```
 
 After 10 refused tokens within a minute from one address for one user, the server answers that address and user with status `429 Too Many Requests` for the rest of the minute. One address can cause at most 200 refusals a minute in total. The limits apply per address and user, so that one user's wrong key doesn't lock out other users who reach the server through the same gateway or proxy.
