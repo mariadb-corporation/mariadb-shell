@@ -1,12 +1,13 @@
 ---
 description: >-
   Reference for the built-in backslash commands of MariaDB Shell, such as
-  connect, use, option, source, and history, with their aliases and syntax.
+  connect, use, option, source, and history, with their aliases and syntax,
+  and the slash prefix that also runs them.
 ---
 
 # Shell Commands
 
-Shell commands control MariaDB Shell itself rather than the server. Each one starts with a backslash, works the same way in SQL and Python mode, and is processed by the shell before anything reaches the server or the Python interpreter.
+Shell commands control MariaDB Shell itself rather than the server. Each one starts with a backslash, or with a slash in its place (see [The Slash Prefix](#the-slash-prefix)), works the same way in SQL and Python mode, and is processed by the shell before anything reaches the server or the Python interpreter.
 
 A shell command must be the only thing on its line and doesn't take a statement terminator. Arguments follow the command name, separated by spaces.
 
@@ -21,6 +22,30 @@ To list all commands, type `\?` or `\help`. To show the help for one command, pa
 {% hint style="info" %}
 Shell commands are interactive features. In batch mode, when you run a file with `-f` or pipe input into the shell, a line such as `\use mysql` is sent to the server as SQL and fails. Add `-i` (`--interactive`) to process shell commands in batch input. The statement terminators `\G` and `\g` work in both modes. See [Batch Execution](batch-execution.md#shell-commands-in-scripts).
 {% endhint %}
+
+## The Slash Prefix
+
+Every shell command can also be typed with a slash in place of the backslash, so `/quit`, `/status`, `/connect`, `/sql`, and `/?` run `\quit`, `\status`, `\connect`, `\sql`, and `\?`. Aliases work the same way: `/q` exits and `/.` runs a script file.
+
+```text
+MariaDB localhost:3306 ssl  shop  SQL > /use sakila
+Default schema set to `sakila`.
+```
+
+The shell runs a line as a slash command only when the word after the `/` is a shell command of the current mode and the line starts a new statement. Any other line that starts with `/` goes to SQL or Python unchanged, so SQL comments such as `/* ... */` and `/*M! ... */`, a `/` used as the statement delimiter, Python code, and the continuation lines of a multi-line statement keep working. For the same reason, a mistyped command such as `/stauts` isn't reported as an unknown command: it goes to the server or the Python interpreter, which reports the error.
+
+Some commands keep the backslash only:
+
+* The statement terminators `\G` and `\g`, and `\w` and `\W` used inside a statement, because a `/` there is division or the start of a comment.
+* The `\` command that starts multi-line input in SQL mode.
+
+A slash command behaves like its backslash form in the rest of the shell. It's saved in the history with the same filters, so a password in `/connect` or `/sql` is kept out as it is for `\connect` or `\sql`, and it completes with **Tab** the same way: `/co` completes to `/connect`, and `/use ` completes schema names.
+
+The `slashCommands` option, `true` by default, controls the slash prefix. To accept the backslash form only:
+
+```text
+MariaDB localhost:3306 ssl  SQL > \option --persist slashCommands false
+```
 
 ## Command Reference
 

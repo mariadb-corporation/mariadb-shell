@@ -13,7 +13,7 @@ Completion is available in interactive sessions only. It works in both modes and
 
 | What you type | What completes |
 | --- | --- |
-| A backslash at the start of the line | Shell commands, such as `\rehash` or `\history`. |
+| A backslash or slash at the start of the line | Shell commands, such as `\rehash` or `/history`, and their arguments. See [The Slash Prefix](shell-commands.md#the-slash-prefix). |
 | SQL, in SQL mode | SQL keywords and built-in functions, plus database object names from the name cache. |
 | Python, in Python mode | Global objects such as `util`, `shell`, `session`, and `sandbox`, their methods and properties, and Python names in scope. |
 

@@ -118,6 +118,7 @@ Options marked read-only can only be set with the command line option shown.
 | `sandboxDir` | string | `~/.mariadb-shell/sandboxes`; on Windows, `%userprofile%\MariaDB\mariadb-shell\sandboxes` | The default directory for instances that the `sandbox` object deploys. See [Sandbox Instances](../sandbox-instances.md). |
 | `showColumnTypeInfo` | bool | `false` | Shows column metadata, such as types and lengths, before SQL results. Command line: `--column-type-info`. |
 | `showWarnings` | bool | `true` | Shows the warnings of an SQL statement after its result in SQL mode. Command line: `--show-warnings`. |
+| `slashCommands` | bool | `true` | Also accepts shell commands with a `/` prefix in place of `\`, such as `/quit` or `/status`. See [The Slash Prefix](../using-mariadb-shell/shell-commands.md#the-slash-prefix). |
 | `ssh.bufferSize` | integer | `10240` | The buffer size, in bytes, for data transfer through [SSH tunnels](../connecting/ssh-tunnels.md). |
 | `ssh.configFile` | string | empty | A custom SSH configuration file. Empty means the standard locations, such as `~/.ssh/config`. Command line: `--ssh-config-file`. |
 | `useWizards` | bool | `true` | Read-only. Whether functions may prompt interactively for missing information and confirmations. Command line: `--no-wizard` (`--nw`) turns it off. |

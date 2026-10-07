@@ -56,6 +56,7 @@ MariaDB Connector/C replaces the MySQL client library, and some MySQL 8.0 client
 | Vendor rules for dump and load | A dump records the vendor of its source. Loading a dump into a server of another vendor is refused before any DDL runs, and the copy utilities refuse to copy between vendors. |
 | Script-based installation | `install.sh` and `install.ps1` install the right package for your platform from a GitHub release. See [Installation](../installation/). |
 | Default mode | Without `--py` or a `defaultMode` setting, the shell starts in SQL mode. |
+| Slash prefix for shell commands | Shell commands also run with a `/` in place of the `\`, such as `/quit` or `/status`. The `slashCommands` option turns it off. See [Shell Commands](../using-mariadb-shell/shell-commands.md#the-slash-prefix). |
 
 ## Renamed Items
 
