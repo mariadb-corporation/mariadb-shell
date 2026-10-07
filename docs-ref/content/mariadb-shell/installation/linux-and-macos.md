@@ -93,7 +93,7 @@ The script reads the following environment variables:
 | `MARIADB_SHELL_TAG` | Newest release | Release tag to install, for example `v26.9.5`. |
 | `MARIADB_SHELL_PREFIX` | `~/.local/share/mariadb-shell` | Directory that holds the unpacked versions. |
 | `MARIADB_SHELL_BINDIR` | `~/.local/bin` | Directory where the `mariadb-shell` and `msh` links are created. |
-| `MARIADB_SHELL_REPO` | `mariadb-corporation/mariadb-shell` | GitHub repository, in `owner/repo` form, to install from. |
+| `MARIADB_SHELL_REPO` | `mariadb-corporation/mariadb-shell` | GitHub repository, in `owner/repo` form, to install from. It must be public. |
 
 The script accepts these options:
 
