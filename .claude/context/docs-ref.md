@@ -28,6 +28,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
   - Unverified: the VS Code and Claude Desktop JSON formats (from those products' documented formats), Windows `cmd /c mariadb-shell.cmd`, the SSH host-key prompt in `mcp setup`, and the stderr connection-event log lines (taken from the README).
   - Deviates from the ai-plugins rule "passwords only at the prompt": Automated Setup documents `--passwordEnv` and `--passwordStdin` for CI and secret managers, and names `--password` only to discourage it. Ask the user if this should be aligned.
   - `--gui` is listed once, as reserved for the VS Code extension; nothing else GUI-specific.
+  - **Multi-Tenant Mode and OAuth Authentication pages** (2026-10-06) were written from `wip/mcp-multi-tenant` at `abc58808`; the plugin's later simplification pass (`176aee35`, internal) and review fixes (`fe4dbfe6`) were folded in by PR #64 (2026-10-07). The pages match mariadb-shell-plugins `main` at `a5ad8bdf`. **When mcp_plugin changes**, read its `.claude/context/multi-tenant.md` "Review round"/"Next steps" and `security-review-multi-tenant.md` (M-items) first; they list the user-visible behaviour changes, and `git log origin/main -- mcp_plugin` shows what landed.
 - **Schema Management section (`schema-management/`, 2026-10-05).** Pages: README (lifecycle, quick start, interactive vs non-interactive), Schema Projects, MSM Sections (the core reference: dev/update/deployment section tables, idempotent model, stored-procedure rules, server variables, version view), Developing a Schema (SOURCE files), Preparing Releases, Deploying Schemas, Function Reference.
   - **Assumes mariadb-shell-plugins PR #36 (`wip/msm_mrs_fixes`) is merged**: section 180 is deployed on every deployment, REST views deploy, and section 010 sets `NO_AUTO_CREATE_USER`. If the PR changes, revisit MSM Sections and Deploying Schemas.
   - **Section model as the user defined it (verified):** idempotent objects come only from the target's section 150, new roles/grants only from section 170 (both run on every deployment); the update script carries only what those can't express: table changes and removals in 240, `REVOKE`/`DROP ROLE` in 270. Section 250 is documented as not deployed. The ai-plugins schema-management skills said to fill 250 and to `GRANT` in 270; corrected in ai-plugins PR #41 (`wip/skill-fixes`, with the e2e tests, docs-ref and DevHub).
@@ -42,9 +43,22 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 
   Table export/import, password change and diagnostics are pages directly under Utilities.
 - **Unwanted options are named, not taught.** HeatWave and MySQL-only options that the help still lists are mentioned once, in a hint, as "not available for MariaDB sources". They are never presented as usable.
-- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, sandbox exposure, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md).
+- **Bugs are documented as they behave today**, using `warning`/`danger` hints: `mariadb+ssh` only from Python, diagnostics broken, `\show threads` broken, sandbox exposure, `change_password` switching the plugin. When a bug is fixed, update its page; see [product-issues.md](product-issues.md). Reviewer pushback ("OK to document bugs?") was answered by fixing the bug instead where cheap (DECIMAL in JSON, #62).
 - **No Release Notes or Bug Reports pages.** The ai-plugins docs have both. They were left out here because no verified content was available (release-notes source, issue tracker).
-- **Install page.** The main command is the latest-release form. A hint explains that it fails today because every release is a prerelease, and documents `--pre-release` and `MARIADB_SHELL_TAG=v26.9.5`.
+- **Install page.** The main command is the latest-release form. A hint explains that it fails today because every release is a prerelease, and documents `--pre-release` and `MARIADB_SHELL_TAG=v26.9.5`. `MARIADB_SHELL_TOKEN` is gone (installers dropped it in #63); `MARIADB_SHELL_REPO` is documented as "must be public".
+
+### Review of PR #59 (mariadb-ReneRamirez, 2026-10-06/07)
+
+Applied on the docs branch before the merge (`033274aa5`, `3b0cfe9e1`, `5a743d8d4`, `423eeec24`); every thread has a reply naming the commit or PR.
+
+- **Renames/structure:** Command Reference → **CLI Reference** (`cli-reference.md`); "Command Reference" now means shell commands only. **Extension Objects** is a subpage of Plugins (the lower-level API the decorators build on). **Migration Tooling** is its own page after Configuring Access, which covers connections and allowed paths only. New **Appendix** section (`appendix/README.md`, `appendix/credential-helpers.md`) holds the helper internals: executables, `~/.mylogin.cnf` format, accepted password characters, running a helper directly. Credential Store keeps the helper table, the obfuscation warning and the `secret-service` setup.
+- **Kept against the suggestion:** "Automated Setup" stays (the page only covers `mcp setup` without prompts); "DevOps Integration" would suit a shell-wide CLI-integration section later. Rene was told so in the thread.
+- **Policy from the reviewer, adopted:** pre-releases get no migration notes; only the official version is the source of truth. The MSM danger hint for projects "created with an earlier version" was removed; don't add such notes until GA.
+- **Reports:** register them in `plugins/<name>/init.py` (verified: a report registered from a plugin's `init.py` loads); `init.d` is the documented alternative, as in the MySQL manual.
+- **Removed:** `MYSQL_TEST_LOGIN_FILE` everywhere; the macOS concurrent-load known issue (server doesn't support macOS); every `--login-path` mention outside Option Files and Login Paths; `MARIADB_SHELL_TOKEN`.
+- **Added:** a Differences row for the MySQL client auth plugins (Kerberos, LDAP SASL, OCI, OpenID Connect) that the MariaDB build doesn't bundle (only `caching_sha2_password` in `lib/mariadb/plugins`); sandbox requirements say "server binaries, an unpacked package is enough" (`mariadbdPath` accepts the top directory).
+- **MCP log examples** show no IDs: connections by URI, users by `--name`, refused tokens without the user. Matches mariadb-shell-plugins #37.
+- **Still open from the review:** nothing; the `MARIADB_SHELL_TOKEN` thread was the last and is answered.
 
 ## How the pages were written
 
@@ -94,17 +108,18 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 
 ## Next steps
 
-1. Have the user review the pages in the preview (`npm run docs-ref`), especially the dump & load pages against the Confluence source.
+1. Port to mariadb-docs following `docs-ref/README.md` § Porting (PR #59 is merged; the pages now live on `main`).
 2. Decide whether public docs keep the "object storage not validated" warning, and confirm the Enterprise Tools placement (versus Server › Clients & Utilities).
-3. File or fix the product bugs, especially `mariadb+ssh` on the CLI, `--login-path`, the diagnostics collectors, the `change_password` plugin switch and the silent `ssl-mode` fallback. Update the affected pages when they are fixed. The full list is in [product-issues.md](product-issues.md).
+3. File or fix the remaining product bugs, especially `mariadb+ssh` on the CLI, the diagnostics collectors, the `change_password` plugin switch and the silent `ssl-mode` fallback. Update the affected pages when they are fixed. The full list is in [product-issues.md](product-issues.md). (`--login-path`, DECIMAL/FLOAT in JSON and the installer token are done.)
 4. Clean up the help text that still describes MySQL Shell; see [product-issues.md](product-issues.md).
-5. Open a PR from `wip/docs-ref`, or port to mariadb-docs following `docs-ref/README.md` § Porting.
-6. Rebuild `build/` from current main and recheck the pages that depend on `util` account functions: `a36944d9c` changed `changePassword` and removed `upgradeAuthMethod` after the writers' build.
-7. Verify the gaps before publishing:
+5. Once a stable (non-prerelease) release exists, drop the install-page hint about `--pre-release` being needed.
+6. Keep the MCP pages in step with mariadb-shell-plugins `main` (see § MCP Server section for how); the plugin's own open items (uvicorn access log, `/register` rate limit M18, per-tool step-up M9) may need docs notes when done.
+7. Rebuild `build/` from current main and recheck the pages that depend on `util` account functions: `a36944d9c` changed `changePassword` and removed `upgradeAuthMethod` after the writers' build.
+8. Verify the gaps before publishing:
    - object storage
    - the cross-vendor refusal (needs a MySQL server)
    - `updateGtidSet` / `skipBinlog` privileges
-   - Windows install and named pipes
+   - Windows named pipes (`install.ps1` itself was verified on Windows 11 ARM64 under PowerShell 5.1 and 7 on 2026-10-07)
    - `--pym pip install` from PyPI
    - `change_password` on your own ed25519 account (the build tree lacks `client_ed25519.so`)
 
@@ -123,3 +138,5 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 - **The MCP Inspector mangles `mariadb-shell -- mcp start-server ...`** (the shell ended up evaluating `true` as Python), so the docs don't recommend it.
 - **Credential tests use the real keychain.** On macOS they default to the user's own keychain, so pass `--credential-store-helper=plaintext` or clean up afterwards. One test stored and then deleted `app@db1:3306` there.
 - **Build output is ignored.** `docs-ref/build/` and `.docusaurus/` are in `.gitignore`. A clean `npm run build` with no warnings is the check before committing, because broken links and anchors fail it.
+- **GitBook `<figure><img>` screenshots** need `remarkGitBookExtras` with `{ baseUrl }` (rewrites `.gitbook/assets/` in raw HTML) and the figure CSS added in `src/css/mariadb-gitbook.css`; a Markdown image alone is rewritten by the base plugin, raw HTML is not.
+- **A page that becomes a parent** (Plugins › Extension Objects, Appendix) only needs the nesting in `SUMMARY.md`; `sidebars.js` turns an entry with children into a category whose own page is the entry's target.

@@ -2,7 +2,20 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Context for the docs work is in [docs-ref.md](docs-ref.md).
 
-These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes in October 2026. None is filed or fixed yet. The docs describe the current behavior, so **when one is fixed, update the page named in brackets.** "Help" means the built-in `\?` text.
+These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes in October 2026. The docs describe the current behavior, so **when one is fixed, update the page named in brackets.** "Help" means the built-in `\?` text.
+
+### Fixed on `main` since (2026-10-07), docs already updated
+
+- `--login-path` listed in `--help` although rejected → MariaDB builds leave it out of `--help`, with the `--no-defaults` "except for login file" note (#61, `37e4a3851`). The option is still rejected; that is now consistent. The man page already left it out.
+- JSON result formats turned DECIMAL into single-precision floats (`24.90` → `24.899999618530273`), and FLOAT into doubles (`4.56` → `4.559999942779541`) → exact text via `JSON_dumper::append_number()`, ZEROFILL padding stripped, FLOAT via `shcore::ftoa()` (#62, `20033db05` on the docs branch, in `main` through #59). Not yet released: 26.9.5 still has the bug, the docs describe the fixed behaviour.
+- Installers read `MARIADB_SHELL_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN`/`gh auth token` and sent them to GitHub; `--pre-release` spent three rate-limited API calls → token support removed, one anonymous API call then plain downloads, pinned tag never touches the API (#63, `534384530`).
+- MCP server log wrote the first eight characters of connection, session and user IDs → no part of any ID is logged; connections by URI, users by name (mariadb-shell-plugins #37, `5c49ab27`).
+
+### Found during the review fixes, not fixed
+
+- **`Mem_row::get_as_string()` formats FLOAT/DOUBLE with `std::to_string`** (`mysqlshdk/libs/db/row_copy.cc:170`): fixed six decimals, so `1.5e-10` becomes `0.000000` and `3e30` a 31-digit integer. Buffered rows are what interactive Python auto-print uses. #62 routed the JSON dumper around it (ftoa), but `diff.cc`, `utils.cc` and any other consumer of buffered row text still hit it.
+- **uvicorn's access log in the MCP server** prints request paths with query strings, so `GET /authorize?client_id=…&state=…` shows the OAuth client ID. It is uvicorn's own logger (stdout), not `log_event`; `access_log=False` in `lib/server.py`'s `uvicorn.Config` would silence it. [mcp-server/starting-the-mcp-server.md would need a note]
+- **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
 
 ## Product bugs (behavior)
 
@@ -10,7 +23,6 @@ The original summary, carried over verbatim:
 
 - **Product bugs found while writing.** The docs describe the actual behavior:
   - `mariadb+ssh://` works only via Python `shell.connect`. On the CLI and with `\connect` it fails with "Scheme extension [ssh] is not supported" (`hide_password_in_uri()`, shell_options.cc:1348).
-  - `--login-path` is listed in `--help` but rejected.
   - `ssl-mode=REQUIRED`/`PREFERRED` silently fall back to an unencrypted connection, with no warning.
   - `util.debug.collect_*` fail on MariaDB because they read `@@server_uuid`.
   - `util.change_password({"account":…})` uses `ALTER USER … IDENTIFIED BY`, which switches ed25519 accounts to `mysql_native_password`.
@@ -19,7 +31,7 @@ The original summary, carried over verbatim:
     - they ignore `MARIADB_SHELL_USER_CONFIG_HOME` and always use `~/.mariadb-shell/sandboxes`
     - they listen on all interfaces
     - `root@<hostname>` has no password
-  - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease.
+  - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`; the token path that also used the API is gone since #63.)
   - Load progress file: on MariaDB it is `load-progress.<server_id>.json`, but the help says `<server_uuid>.progress`.
   - On the command line, a `where` option with `schema.table` keys is parsed as a nested key and fails.
   - Every dump warns "Charset id '33' csname 'UTF8'…".
@@ -30,7 +42,7 @@ The full list, by area:
 
 - **`mariadb+ssh://` works only from Python** (`shell.connect`, `shell.open_session`). A positional URI, `--uri` and `\connect` all fail with "Scheme extension [ssh] is not supported". The cause is `hide_password_in_uri()` at `src/mysqlsh/shell_options.cc:1348`, which re-parses the URI without the extension support. [connecting/ssh-tunnels.md, which points to `--ssh` as the workaround]
 - **The older `--ssh` without a user connects as `root`** in sessions opened by another user (CI, agents). `get_system_user()` asks `getlogin_r()` before `getpwuid_r()`. Only `+ssh` URIs use the new `get_effective_user()` (commit a7405461f). The same call also picks the default *database* user. [connecting/ssh-tunnels.md]
-- **`--login-path`** is listed in `--help`, but the shell rejects it as an unknown option. [connecting/option-files-and-login-paths.md]
+- ~~**`--login-path`** is listed in `--help`, but the shell rejects it as an unknown option.~~ Fixed in #61; see the top of this file. [connecting/option-files-and-login-paths.md]
 - **`ssl-mode=REQUIRED` and `PREFERRED`** fall back to an unencrypted connection, with no warning, when the server has no TLS. README.md "Server Compatibility" and MARIADB_PORT.md §3 say the shell warns; the code has no warning. [connecting/encrypted-connections.md]
 - **`VERIFY_CA` behaves like `VERIFY_IDENTITY`.** Both turn on Connector/C's server certificate check, which includes the host name. [connecting/encrypted-connections.md]
 - **`compression-algorithms` and `compression-level` have no effect** with Connector/C. `compression-algorithms` alone does not turn compression on: Compression showed OFF. Only zlib is documented. [connecting/compressed-connections.md]
@@ -54,7 +66,7 @@ The full list, by area:
   - `export_table`: `allowDataMasking`
   - copy: rejects `ocimds` as an invalid option, while dump refuses it with a reason; the two are inconsistent
 - **The dump manifest's `dumper` field** reads "mysqlsh Ver 26.9.5".
-- **macOS test hosts:** eight or more concurrent loads into one table can hang the MariaDB server. This is a server issue, not reproduced on Linux; it comes from the Confluence source.
+- **macOS test hosts:** eight or more concurrent loads into one table can hang the MariaDB server. This is a server issue, not reproduced on Linux; it comes from the Confluence source. Removed from the Limitations page on review (the server doesn't support macOS); kept here as a test-host note only.
 
 ### Shell, Output and Reports
 
@@ -96,7 +108,7 @@ The original summary, carried over verbatim:
   - The dump/load help lists HeatWave/lakehouse options.
   - `\option -l` shows `dba.*`/`devapi.*`.
   - The manifest field `dumper` says "mysqlsh".
-  - The man page lists `MARIADB_SHELL_JS_MODULE_PATH`, says `mysqlsh` is an alias, and leaves out `--login-path`.
+  - The man page lists `MARIADB_SHELL_JS_MODULE_PATH` and says `mysqlsh` is an alias. (It leaves out `--login-path`, which is correct since #61.)
 
 The full list:
 
@@ -138,7 +150,6 @@ The full list:
 - **Man page (`man/`):**
   - it says `mysqlsh` is an alias, but none is shipped
   - it says `-S` isn't available on Windows, where it takes a named pipe
-  - it leaves out `--login-path`
   - it lists `MARIADB_SHELL_JS_MODULE_PATH`
 - **Repo docs:** MARIADB_PORT.md §14.6 says the build "drops dump/load", which is wrong.
 - **`.claude/skills/create-shell-plugin`** describes a `plugins_path` option that nothing sets.
