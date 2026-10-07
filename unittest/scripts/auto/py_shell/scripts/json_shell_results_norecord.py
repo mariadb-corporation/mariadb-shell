@@ -59,6 +59,21 @@ mysqlsh(["--column-type-info", "--result-format=json/raw", "--sql", "-e", '{"exe
 EXPECT_STDOUT_CONTAINS('{"info":"{\\\"Field 1\\\":{\\\"Name\\\":\\\"`id`\\\"')
 EXPECT_STDOUT_CONTAINS('{"info":"{\\\"hasData\\\":true,\\\"rows\\\":[{\\\"id\\\":1,\\\"data\\\":\\\"john doe\\\"}')
 
+#@<> DECIMAL values keep all their digits in the JSON formats
+decimal_query = "SELECT CAST(24.90 AS DECIMAL(10,2)) AS d, CAST(12345678.91 AS DECIMAL(12,2)) AS e, CAST(-0.5 AS DECIMAL(3,1)) AS n, 12345678901234567890.123456789 AS big, CAST(NULL AS DECIMAL(5,2)) AS nul"
+for result_format in ["json", "ndjson", "json/raw", "json/array"]:
+    testutil.call_mysqlsh([__mysqluripwd, "--sql", f"--result-format={result_format}", "-e", decimal_query], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+    EXPECT_STDOUT_CONTAINS('"d":24.90' if result_format != "json" else '"d": 24.90')
+    EXPECT_STDOUT_CONTAINS('12345678.91')
+    EXPECT_STDOUT_CONTAINS('-0.5')
+    EXPECT_STDOUT_CONTAINS('12345678901234567890.123456789')
+    EXPECT_STDOUT_NOT_CONTAINS('24.8999')
+    WIPE_OUTPUT()
+
+r = session.run_sql(decimal_query)
+shell.dump_rows(r, "ndjson")
+EXPECT_STDOUT_CONTAINS('{"d":24.90,"e":12345678.91,"n":-0.5,"big":12345678901234567890.123456789,"nul":null}')
+
 #@<> Cleanup
 session.run_sql("DROP SCHEMA json_shell")
 shell.disconnect()

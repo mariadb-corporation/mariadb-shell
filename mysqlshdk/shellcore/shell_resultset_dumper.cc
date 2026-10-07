@@ -687,7 +687,9 @@ void dump_json_row(shcore::JSON_dumper *dumper,
     } else if (type == mysqlshdk::db::Type::Double) {
       dumper->append_float(row->get_double(col_index));
     } else if (type == mysqlshdk::db::Type::Decimal) {
-      dumper->append_float(static_cast<double>(row->get_float(col_index)));
+      // The server sends the exact decimal text, which is a valid JSON number;
+      // converting it to a floating-point number would lose digits.
+      dumper->append_number(row->get_as_string(col_index));
     } else if (type == mysqlshdk::db::Type::Bit) {
       auto [bit_value, bit_size] = row->get_bit(col_index);
       dumper->append_string(shcore::bits_to_string_hex(bit_value, bit_size));

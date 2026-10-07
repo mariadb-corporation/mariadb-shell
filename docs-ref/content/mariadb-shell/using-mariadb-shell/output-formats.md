@@ -156,16 +156,12 @@ In the JSON formats, the shell maps column values to JSON types:
 | --- | --- |
 | Integer types | Number |
 | `FLOAT`, `DOUBLE` | Number |
-| `DECIMAL` | Number. See the warning below. |
+| `DECIMAL` | Number, with all the digits of the value, such as `24.90` |
 | `NULL` | `null` |
 | `JSON` | The JSON value itself, embedded as object or array. |
 | Date and time types | String, such as `"2026-01-12"` or `"2026-01-01 10:00:00"` |
 | Binary types (`BINARY`, `VARBINARY`, `BLOB`) | Base64-encoded string |
 | Other types | String |
-
-{% hint style="warning" %}
-In MariaDB Shell 26.9.5, the JSON formats convert `DECIMAL` values to floating-point numbers with low precision. For example, `24.90` prints as `24.899999618530273`, and `12345678.91` prints as `12345679`. The `table`, `tabbed`, and `vertical` formats aren't affected. When exact decimal values matter, cast them to strings in the query, for example `SELECT CAST(price AS CHAR) AS price FROM product`.
-{% endhint %}
 
 ## JSON Output for Programs
 
