@@ -52,6 +52,9 @@ _LOOPBACK_ADDRESS = "127.0.0.1"
 _POLL_INTERVAL = 0.1
 _PROBE_TIMEOUT = 0.25
 
+# Recorded as the version of a server whose --version banner has none.
+_UNKNOWN_VERSION = "unknown"
+
 # Tool names tried in order: prefer the MariaDB-branded names, fall back to the
 # legacy mysql* names shared by MariaDB and MySQL packages. The server binary
 # lookup deliberately covers both vendors so a MySQL install on the PATH is
@@ -191,14 +194,30 @@ def is_listening(host, port, timeout=1.0):
         return False
 
 
-def _port_open(port):
-    """Whether a sandbox accepts TCP connections on 'port' of this machine.
+def _probe_hosts(options):
+    """The addresses to probe the port of a sandbox at, given its [mysqld]
+    options: its bind_address, or the loopback addresses when it has none or
+    listens on every interface."""
+    value = options.get("bind_address")
+    if value is None or value in ("*", "0.0.0.0", "::"):
+        return (_LOOPBACK_ADDRESS, "::1")
+    return tuple(host.strip() for host in value.split(",") if host.strip())
 
-    Probes 127.0.0.1, where a sandbox listens by default, before ::1, rather
-    than 'localhost', which may resolve to ::1 first.
+
+def _port_open(port, hosts=(_LOOPBACK_ADDRESS, "::1")):
+    """Whether something accepts TCP connections on 'port' at any of 'hosts'.
+
+    127.0.0.1, where a sandbox listens by default, goes before ::1; neither is
+    probed as 'localhost', which may resolve to ::1 first.
     """
     return any(is_listening(host, port, timeout=_PROBE_TIMEOUT)
-               for host in (_LOOPBACK_ADDRESS, "::1"))
+               for host in hosts)
+
+
+def _sandbox_port_open(port, sandbox_dir):
+    """Whether the sandbox at 'sandbox_dir' accepts TCP connections on 'port'."""
+    return _port_open(port,
+                      _probe_hosts(_configured_mysqld_options(sandbox_dir)))
 
 
 def _is_socket_listening(path, timeout=1.0):
@@ -216,9 +235,9 @@ def _configured_mysqld_options(sandbox_dir):
     """The [mysqld] options in the sandbox's option file.
 
     Reads the format _write_option_file() writes, plus the 'option = value'
-    lines other tools (e.g. the test suite) add to it. Names are normalized to
-    use '_', and an option given without a value maps to None. An unreadable
-    file yields an empty dict.
+    lines other tools (e.g. the test suite) add to it. Names are normalized
+    the way the server matches them (see _option_name()), and an option given
+    without a value maps to None. An unreadable file yields an empty dict.
     """
     section = None
     options = {}
@@ -232,7 +251,7 @@ def _configured_mysqld_options(sandbox_dir):
                     section = line[1:-1].strip()
                 elif section == "mysqld":
                     key, sep, value = line.partition("=")
-                    options[key.strip().replace("-", "_")] = (
+                    options[_option_name(key)] = (
                         value.strip() if sep else None)
     except OSError:
         return {}
@@ -255,13 +274,15 @@ def _is_enabled(options, name):
     return value is None or value.lower() not in ("0", "off", "false")
 
 
-def _networking_disabled(sandbox_dir):
+def _networking_disabled(sandbox_dir, options=None):
     """Whether the option file makes the server skip its TCP port.
 
     MySQL 8.0+ turns networking off along with the grant tables, so that no one
-    can reach an unprotected server remotely; MariaDB does not.
+    can reach an unprotected server remotely; MariaDB does not. 'options' are
+    the file's [mysqld] options when the caller has read them already.
     """
-    options = _configured_mysqld_options(sandbox_dir)
+    if options is None:
+        options = _configured_mysqld_options(sandbox_dir)
     if _is_enabled(options, "skip_networking"):
         return True
     return (_is_enabled(options, "skip_grant_tables") and
@@ -279,14 +300,14 @@ def _is_ready(port, sandbox_dir):
     A server running without networking (see _networking_disabled()) never
     opens the port, only the socket.
     """
-    if os.name == "posix" and _networking_disabled(sandbox_dir):
-        socket_path = _configured_socket(sandbox_dir)
+    options = _configured_mysqld_options(sandbox_dir)
+    socket_path = options.get("socket") or None
+    if os.name == "posix" and _networking_disabled(sandbox_dir, options):
         return socket_path is not None and _is_socket_listening(socket_path)
-    if not _port_open(port):
+    if not _port_open(port, _probe_hosts(options)):
         return False
     if os.name != "posix":
         return True
-    socket_path = _configured_socket(sandbox_dir)
     return socket_path is None or _is_socket_listening(socket_path)
 
 
@@ -297,22 +318,25 @@ def _is_listening_anywhere(port, sandbox_dir):
     _networking_disabled()) has no port to close, and the option file may have
     changed since it was started, so it cannot tell which endpoints it opened.
     """
-    if _port_open(port):
+    options = _configured_mysqld_options(sandbox_dir)
+    if _port_open(port, _probe_hosts(options)):
         return True
     if os.name != "posix":
         return False
-    socket_path = _configured_socket(sandbox_dir)
+    socket_path = options.get("socket") or None
     return socket_path is not None and _is_socket_listening(socket_path)
 
 
 def _wait_until(predicate, timeout):
-    """Poll predicate() every _POLL_INTERVAL until it is True or timeout
-    seconds of polling have passed."""
-    for _ in range(int(timeout / _POLL_INTERVAL)):
+    """Poll predicate() every _POLL_INTERVAL until it is True or 'timeout'
+    seconds have passed, the time the predicate itself takes included."""
+    deadline = time.monotonic() + timeout
+    while True:
         if predicate():
             return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(_POLL_INTERVAL)
-    return predicate()
 
 
 def default_sandbox_base_dir():
@@ -404,6 +428,15 @@ def _write_version(sandbox_dir, version):
     _write_marker(sandbox_dir, "version", version)
 
 
+def _recorded_version(sandbox_dir):
+    """The numeric version recorded for the sandbox at deploy time, or None
+    when there is none or the binary's banner had none to record."""
+    version = _read_marker(sandbox_dir, "version")
+    if not version or version == _UNKNOWN_VERSION:
+        return None
+    return _short_version(version)
+
+
 def _socket_path(sandbox_dir):
     """Path to the instance's Unix socket.
 
@@ -472,8 +505,7 @@ def _existing_sandbox(port, options, need_cnf=False):
     exists = os.path.isfile(_cnf_path(sandbox_dir)) if need_cnf \
         else os.path.isdir(sandbox_dir)
     if not exists:
-        raise Error("There is no sandbox at '{0}'. Deploy it first."
-                    "".format(sandbox_dir))
+        raise Error("There is no sandbox at '{0}'.".format(sandbox_dir))
     return port, sandbox_dir
 
 
@@ -519,18 +551,21 @@ def _resolve_mariadbd(mariadbd_path):
 def _server_identity(server):
     """(vendor, version) of a server binary, from one ``--version`` run.
 
-    The vendor is 'mariadb' or 'mysql': MariaDB servers include "MariaDB" in
-    the banner, MySQL servers do not, and an unreadable banner counts as
-    MariaDB, matching the plugin's historical behavior. The version is the
-    token after "Ver" (e.g. '9.7.1', '11.4.2-MariaDB-debug'), vendor/build
-    suffix included so the boilerplate key stays specific to the exact build
-    (_short_version() gives the numeric form), or 'unknown'.
+    The version is the token after "Ver" (e.g. '9.7.1', '11.4.2-MariaDB-debug'),
+    vendor/build suffix included so the boilerplate key stays specific to the
+    exact build (_short_version() gives the numeric form), or _UNKNOWN_VERSION.
+
+    The vendor is 'mariadb' or 'mysql', read from that token: MariaDB's carries
+    '-MariaDB', MySQL's does not. Not from the whole banner, which starts with
+    the binary's own path - a MySQL build under some .../mariadb/... directory
+    is still MySQL. A banner without a version counts as MariaDB, matching the
+    plugin's historical behavior.
     """
-    text = _server_version(server)
-    vendor = _VENDOR_MYSQL if text and "mariadb" not in text.lower() \
+    match = re.search(r"\bVer\s+([0-9][^\s]*)", _server_version(server))
+    version = match.group(1) if match else _UNKNOWN_VERSION
+    vendor = _VENDOR_MYSQL if match and "mariadb" not in version.lower() \
         else _VENDOR_MARIADB
-    match = re.search(r"Ver\s+([0-9][^\s]*)", text)
-    return vendor, (match.group(1) if match else "unknown")
+    return vendor, version
 
 
 def _server_vendor(server):
@@ -1483,13 +1518,14 @@ def _start_server(sandbox_dir):
     _spawn_detached(["cmd", "/c", script] if os.name == "nt" else [script])
 
 
-def _start_and_wait(port, sandbox_dir, label, timeout):
+def _start_and_wait(port, sandbox_dir, timeout):
     """Start the sandbox and wait until it accepts connections."""
     _start_server(sandbox_dir)
     if not _wait_until(lambda: _is_ready(port, sandbox_dir), timeout):
         raise Error("Timeout waiting for the {0} sandbox on port {1} to "
                     "start. Check the error log at '{2}'.".format(
-                        label, port, _error_log_path(sandbox_dir)))
+                        _vendor_label(sandbox_dir), port,
+                        _error_log_path(sandbox_dir)))
 
 
 def _read_pid(sandbox_dir, port):
@@ -1571,9 +1607,11 @@ def create_sandbox(port, options):
     if vendor == _VENDOR_MARIADB:
         try:
             openssl = _resolve_openssl(basedir, options.get("opensslPath"))
-        except Error:
+        except Error as err:
             if ssl:
                 raise
+            _log("warning", "{0} The caching_sha2_password keypair is not "
+                 "provisioned.".format(err))
         if ssl and not openssl:
             raise Error("Could not find the 'openssl' tool needed to generate "
                         "the sandbox SSL certificates. Install OpenSSL and make "
@@ -1657,7 +1695,7 @@ def create_sandbox(port, options):
 
     # 4) Start the server (root still has no password at this point).
     print("Starting {0} sandbox instance...".format(label))
-    _start_and_wait(port, sandbox_dir, label, timeout)
+    _start_and_wait(port, sandbox_dir, timeout)
 
     # 5) Set the root password and, optionally, create a remote root account.
     session = _open_root_session(port, sandbox_dir, "")
@@ -1683,7 +1721,7 @@ def create_sandbox(port, options):
 def start_sandbox(port, options):
     port, sandbox_dir = _existing_sandbox(port, options, need_cnf=True)
     timeout = int(options.get("timeout", SANDBOX_TIMEOUT))
-    if _port_open(port):
+    if _sandbox_port_open(port, sandbox_dir):
         raise Error("Port '{0}' is already in use; the sandbox may already be "
                     "running.".format(port))
 
@@ -1703,7 +1741,7 @@ def start_sandbox(port, options):
 
     label = _vendor_label(sandbox_dir)
     print("Starting {0} sandbox instance on port {1}...".format(label, port))
-    _start_and_wait(port, sandbox_dir, label, timeout)
+    _start_and_wait(port, sandbox_dir, timeout)
     print("Instance localhost:{0} successfully started.".format(port))
 
 
@@ -1724,7 +1762,7 @@ def stop_sandbox(port, options):
     except Exception:
         pass
 
-    if not _port_open(port):
+    if not _sandbox_port_open(port, sandbox_dir):
         print("{0} sandbox on port {1} is already stopped.".format(label, port))
         return
 
@@ -1771,7 +1809,7 @@ def kill_sandbox(port, options):
 
     pid = _read_pid(sandbox_dir, port)
     if pid is None:
-        if _port_open(port):
+        if _sandbox_port_open(port, sandbox_dir):
             raise Error("Could not find the PID file for the sandbox on port "
                         "{0}, although a server is listening on it.".format(
                             port))
@@ -1782,7 +1820,7 @@ def kill_sandbox(port, options):
         label, port, pid))
     _signal_pid(pid, signal.SIGKILL if os.name == "posix" else None)
 
-    _wait_until(lambda: not _port_open(port), 10)
+    _wait_until(lambda: not _sandbox_port_open(port, sandbox_dir), 10)
     with contextlib.suppress(OSError):
         os.unlink(_pid_path(sandbox_dir, port))
     print("Instance localhost:{0} successfully killed.".format(port))
@@ -1792,7 +1830,7 @@ def delete_sandbox(port, options):
     port, sandbox_dir = _existing_sandbox(port, options)
     label = _vendor_label(sandbox_dir)
 
-    if _port_open(port):
+    if _sandbox_port_open(port, sandbox_dir):
         raise Error("The {0} sandbox on port {1} is running. Stop it "
                     "before deleting it.".format(label, port))
 
@@ -1878,7 +1916,7 @@ def sandbox_version(port=None, options=None):
     """
     return _describe_server(
         port, options or {},
-        lambda d: _short_version(_read_marker(d, "version")),
+        _recorded_version,
         lambda m: _short_version(_server_identity(m)[1]))
 
 

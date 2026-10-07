@@ -193,15 +193,47 @@ def test_is_listening_anywhere(sandboxlib, short_dir, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# _wait_until (time.sleep patched out so the test is instant)
+# _probe_hosts / _configured_mysqld_options
 # --------------------------------------------------------------------------- #
+def test_probe_hosts_follow_bind_address(sandboxlib):
+    loopback = ("127.0.0.1", "::1")
+    assert sandboxlib._probe_hosts({}) == loopback
+    for everywhere in ("*", "0.0.0.0", "::"):
+        assert sandboxlib._probe_hosts({"bind_address": everywhere}) == loopback
+    assert sandboxlib._probe_hosts(
+        {"bind_address": "192.168.64.1"}) == ("192.168.64.1",)
+    assert sandboxlib._probe_hosts(
+        {"bind_address": "10.0.0.1, ::1"}) == ("10.0.0.1", "::1")
+
+
+def test_configured_options_match_the_server_spelling(sandboxlib, short_dir):
+    # '-' and '_' are the same to the server, and 'loose-' only changes how an
+    # unknown option fails, so a reader must see through both.
+    sandboxlib._write_option_file(
+        sandboxlib._cnf_path(short_dir),
+        {"mysqld": {"loose-skip-networking": None, "bind-address": "*"}})
+    assert sandboxlib._configured_mysqld_options(short_dir) == {
+        "skip_networking": None, "bind_address": "*"}
+
+
+# --------------------------------------------------------------------------- #
+# _wait_until (the clock is faked so the tests are instant)
+# --------------------------------------------------------------------------- #
+def _fake_clock(sandboxlib, monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(sandboxlib.time, "sleep",
+                        lambda seconds: now.__setitem__(0, now[0] + seconds))
+    monkeypatch.setattr(sandboxlib.time, "monotonic", lambda: now[0])
+    return now
+
+
 def test_wait_until_returns_true_immediately(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     assert sandboxlib._wait_until(lambda: True, timeout=5) is True
 
 
 def test_wait_until_becomes_true(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     state = {"n": 0}
 
     def predicate():
@@ -212,8 +244,23 @@ def test_wait_until_becomes_true(sandboxlib, monkeypatch):
 
 
 def test_wait_until_times_out(sandboxlib, monkeypatch):
-    monkeypatch.setattr(sandboxlib.time, "sleep", lambda *_: None)
+    _fake_clock(sandboxlib, monkeypatch)
     assert sandboxlib._wait_until(lambda: False, timeout=3) is False
+
+
+def test_wait_until_charges_the_predicate_time(sandboxlib, monkeypatch):
+    # A slow predicate (e.g. probes that wait out their timeout) eats into the
+    # wait rather than stretching it.
+    now = _fake_clock(sandboxlib, monkeypatch)
+    calls = []
+
+    def slow_predicate():
+        calls.append(now[0])
+        now[0] += 1.0
+        return False
+
+    assert sandboxlib._wait_until(slow_predicate, timeout=3) is False
+    assert len(calls) <= 4
 
 
 # --------------------------------------------------------------------------- #

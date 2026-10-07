@@ -201,6 +201,16 @@ def test_server_vendor_detects_mysql(sandboxlib, tmp_path):
     assert sandboxlib._server_vendor(binp) == "mysql"
 
 
+def test_server_vendor_ignores_the_binary_path(sandboxlib, tmp_path):
+    # The banner starts with the binary's own path, which may well mention
+    # mariadb without the server being one.
+    body = ("#!/bin/sh\n"
+            "echo '/Users/dev/mariadb/mysql-server/bld/bin/mysqld  Ver 9.7.1 "
+            "for macos15 on arm64 (Source distribution)'\n")
+    binp = _make_exe(str(tmp_path / "mysqld"), body)
+    assert sandboxlib._server_vendor(binp) == "mysql"
+
+
 def test_server_vendor_defaults_to_mariadb_when_unknown(sandboxlib, tmp_path):
     # Empty/unreadable version banner falls back to the historical behavior.
     binp = _make_exe(str(tmp_path / "mysqld"), "#!/bin/sh\nexit 1\n")

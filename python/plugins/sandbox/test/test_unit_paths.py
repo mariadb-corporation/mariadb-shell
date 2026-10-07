@@ -184,3 +184,17 @@ def test_sandbox_path_unknown_identifier_raises(sandboxlib, tmp_path):
     base, _ = _make_sandbox(tmp_path)
     with pytest.raises(sandboxlib.Error, match="Unknown path identifier"):
         sandboxlib.sandbox_path(3311, "bogus", {"sandboxDir": str(base)})
+
+
+# --------------------------------------------------------------------------- #
+# _recorded_version
+# --------------------------------------------------------------------------- #
+def test_recorded_version_ignores_unknown(sandboxlib, tmp_path):
+    sandbox_dir = str(tmp_path)
+    assert sandboxlib._recorded_version(sandbox_dir) is None
+    sandboxlib._write_version(sandbox_dir, "13.1.1-MariaDB")
+    assert sandboxlib._recorded_version(sandbox_dir) == "13.1.1"
+    # A banner without a version was recorded as 'unknown': that is no
+    # version, so the binary gets asked instead.
+    sandboxlib._write_version(sandbox_dir, "unknown")
+    assert sandboxlib._recorded_version(sandbox_dir) is None
