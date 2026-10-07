@@ -52,7 +52,7 @@ The public URL is the complete URL of the MCP endpoint, including the `/mcp` pat
 
 ## Scopes and Database Privileges
 
-A token carries the scopes that the user granted the client when they signed in:
+A token carries the scopes that the user granted the client when they signed in, limited to the scopes the user may have at the time of the request:
 
 | Scope | Tools |
 | --- | --- |
@@ -191,6 +191,8 @@ When the user signs in:
 
 Every failed sign-in shows the same message, whatever the reason. After 5 failures for one account, or 30 from one address, within 15 minutes, the page refuses further attempts until that time has passed.
 
+Starting a sign-in is limited to 30 per address per minute. Further requests are answered with status `429 Too Many Requests` and a `Retry-After` header. Behind a reverse proxy, every browser shares the proxy's address, so many people signing in within the same minute can reach that limit; they retry after a minute.
+
 ### Grants
 
 A grant is one user's authorization of one client. It lasts 90 days by default, and ends earlier when:
@@ -199,6 +201,8 @@ A grant is one user's authorization of one client. It lasts 90 days by default, 
 * the user revokes it in the client, or an administrator revokes the user's tokens with `mcp setup-oauth --revokeTokens`;
 * the user is disabled or removed, or the client is removed;
 * the client presents a refresh token that was already used.
+
+The tokens of a grant carry the scopes the user granted, limited to the scopes the user may have now. Narrowing a user with `mcp setup --setScopes` therefore applies to their existing grants at once; a grant left with none of its scopes stays, its tokens are refused with `403 Forbidden`, and it works again when a scope is restored. Widening a user never widens a grant beyond what was granted at sign-in.
 
 The access tokens of a grant are valid for one hour; the client renews them with its refresh token. Every refresh issues a new refresh token. If an old refresh token is presented again, the server assumes that it was stolen and ends the grant. A client that sends the same refresh token twice within 30 seconds, for example from two workers at once, receives the same new tokens both times. Change this period with `--refreshGracePeriod`.
 
@@ -413,7 +417,7 @@ Clients are named by their client ID or by their name.
 
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
-| *OAuth mode '…' needs the server's public URL* | The server was started in an OAuth2 mode without a public URL. | Set it with `mcp setup-oauth --publicUrl`. |
+| *OAuth mode '…' needs the server's public URL* | The server was started in an OAuth2 mode without a public URL. | Set it with `mcp setup-oauth --publicUrl`, or pass `--publicUrl` to `mcp start-server`. |
 | *OAuth mode 'keycloak' needs the realm's issuer URL.* | No issuer is configured. | Set it with `--issuer`, or run `mcp setup-keycloak-realm`. |
 | *OAuth mode 'builtin' signs users in against a MariaDB server, and none is configured.* | No login server is configured. | Add one with `--addLoginServer`. |
 | *Could not read the OpenID configuration of '…'* | The issuer URL is wrong, or Keycloak isn't reachable from the setup. | Check the URL, or save it with `--noVerify`. |
@@ -421,5 +425,6 @@ Clients are named by their client ID or by their name.
 | The client receives `403 Forbidden` with `insufficient_scope`. | The token grants neither `mcp:db` nor `mcp:msm`. | Let the client request the scopes. In Keycloak, add them as optional client scopes of the client. |
 | The sign-in page shows *Your account is not allowed to use this server.* | The account doesn't hold the required role, or new users aren't created automatically. | Grant the role, or add the account to a user with `mcp setup --addIdentity`. |
 | The sign-in page shows *Too many failed attempts. Try again later.* | Too many failed sign-ins for the account or from the address. | Wait 15 minutes. |
+| The browser receives `429 Too Many Requests` instead of the sign-in page. | More than 30 sign-ins were started from the address within a minute, for example behind a reverse proxy. | Retry after a minute. |
 | Keycloak refuses the client's registration with *Policy 'Trusted Hosts' rejected request*. | The realm doesn't allow anonymous dynamic registration from the client's host. | Trust the host in the realm's client registration policies, or configure the client with the `mariadb-mcp` client. |
 | *Keycloak refused the administrator sign-in* | The administrator credentials or the administrator realm are wrong. | Check `--adminUser` and `--adminRealm`. |
