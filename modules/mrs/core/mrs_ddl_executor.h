@@ -181,6 +181,8 @@ class Ddl_executor {
   void do_execute(const ast::Show_rest_auth_vendors &s, Statement_result *r);
   void do_execute(const ast::Show_rest_users &s, Statement_result *r);
   void do_execute(const ast::Show_rest_columns &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_daemons &s, Statement_result *r);
+  void do_execute(const ast::Drop_rest_daemon &s, Statement_result *r);
   void do_execute(const ast::Show_rest_roles &s, Statement_result *r);
   void do_execute(const ast::Show_rest_grants &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_service &s, Statement_result *r);

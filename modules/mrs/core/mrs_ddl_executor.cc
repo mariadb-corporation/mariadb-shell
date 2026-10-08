@@ -177,6 +177,12 @@ struct Operation_name {
   std::string operator()(const Show_rest_columns &) const {
     return "SHOW REST COLUMNS";
   }
+  std::string operator()(const Show_rest_daemons &) const {
+    return "SHOW REST DAEMONS";
+  }
+  std::string operator()(const Drop_rest_daemon &) const {
+    return "DROP REST DAEMON";
+  }
   std::string operator()(const Show_rest_roles &) const {
     return "SHOW REST ROLES";
   }

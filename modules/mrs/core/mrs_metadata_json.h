@@ -53,6 +53,9 @@ json::Value service_json(Db_session *session, const Service &service,
 
 json::Value schema_json(const Schema &schema);
 
+// A MariaDB REST Daemon instance.
+json::Value daemon_json(const Daemon &daemon);
+
 // A view, procedure or function with its data mapping: "objects", each
 // with its "fields" in the flat metadata order; a field representing a
 // reference carries it as "object_reference".

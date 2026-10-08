@@ -186,6 +186,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   ENDPOINTS_SYMBOL "ENDPOINTS" OBJECTS_SYMBOL "OBJECTS" DUMP_SYMBOL "DUMP"
   ZIP_SYMBOL "ZIP" SCRIPT_SYMBOL "SCRIPT" STATIC_SYMBOL "STATIC"
   VENDORS_SYMBOL "VENDORS" TABLE_SYMBOL "TABLE" COLUMNS_SYMBOL "COLUMNS"
+  DAEMON_SYMBOL "DAEMON" DAEMONS_SYMBOL "DAEMONS"
 
 /* Data mapping annotations. */
 %token
@@ -276,6 +277,9 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> show_rest_auth_vendors_statement
 %nterm <Statement> show_rest_users_statement
 %nterm <Statement> show_rest_columns_statement
+%nterm <Statement> show_rest_daemons_statement
+%nterm <Statement> drop_rest_daemon_statement
+%nterm <int64_t> daemon_id
 %nterm <Output_format> opt_output_format
 %nterm <Show_rest_columns::Source> opt_columns_source
 %nterm <Statement> show_rest_roles_statement
@@ -467,6 +471,8 @@ mrs_statement:
   | show_rest_auth_vendors_statement { $$ = std::move($1); }
   | show_rest_users_statement { $$ = std::move($1); }
   | show_rest_columns_statement { $$ = std::move($1); }
+  | show_rest_daemons_statement { $$ = std::move($1); }
+  | drop_rest_daemon_statement { $$ = std::move($1); }
   | show_rest_roles_statement { $$ = std::move($1); }
   | show_rest_grants_statement { $$ = std::move($1); }
   | show_create_rest_service_statement { $$ = std::move($1); }
@@ -1624,7 +1630,23 @@ show_rest_metadata_status_statement:
 
 show_rest_services_statement:
     SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL opt_for_auth_app
-    { $$ = make_statement(Show_rest_services{std::move($4)}, @1); }
+    { $$ = make_statement(Show_rest_services{std::move($4), std::nullopt}, @1); }
+  | SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL FOR_SYMBOL DAEMON_SYMBOL daemon_id
+    { $$ = make_statement(Show_rest_services{std::nullopt, $6}, @1); }
+  ;
+
+show_rest_daemons_statement:
+    SHOW_SYMBOL REST_SYMBOL DAEMONS_SYMBOL opt_output_format
+    { $$ = make_statement(Show_rest_daemons{$4}, @1); }
+  ;
+
+drop_rest_daemon_statement:
+    DROP_SYMBOL REST_SYMBOL DAEMON_SYMBOL opt_if_exists daemon_id
+    { $$ = make_statement(Drop_rest_daemon{$4, $5}, @1); }
+  ;
+
+daemon_id:
+    INT_NUMBER { $$ = std::stoll($1); }
   ;
 
 opt_for_auth_app:
@@ -2328,6 +2350,8 @@ identifier_keyword:
     FILES_SYMBOL { $$ = keyword_text(driver, @1); }
   | VENDORS_SYMBOL { $$ = keyword_text(driver, @1); }
   | COLUMNS_SYMBOL { $$ = keyword_text(driver, @1); }
+  | DAEMON_SYMBOL { $$ = keyword_text(driver, @1); }
+  | DAEMONS_SYMBOL { $$ = keyword_text(driver, @1); }
   ;
 
 /* An identifier where the rule using it accepts a double quoted string in

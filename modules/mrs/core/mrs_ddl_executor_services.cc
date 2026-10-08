@@ -219,9 +219,17 @@ void Ddl_executor::do_execute(const Clone_rest_service &s, Statement_result *r) 
 void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST services.");
 
-  // FOR AUTH APP limits the list to the services the auth app is linked to
+  // FOR AUTH APP limits the list to the services the auth app is linked to,
+  // FOR DAEMON to the ones the daemon serves
   std::vector<metadata::Service> services;
-  if (s.auth_app) {
+  if (s.daemon) {
+    if (!metadata::get_daemon(m_session, *s.daemon)) {
+      throw std::runtime_error("The given REST DAEMON `" +
+                               std::to_string(*s.daemon) +
+                               "` could not be found.");
+    }
+    services = metadata::get_services_of_daemon(m_session, *s.daemon);
+  } else if (s.auth_app) {
     const auto auth_app = metadata::find_auth_app(m_session, *s.auth_app);
     if (!auth_app) {
       throw std::runtime_error("The given REST AUTH APP `" + *s.auth_app +
@@ -245,6 +253,54 @@ void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) 
     row.emplace_back(m_state->current_service_id == service.id ? "YES" : "NO");
     row.emplace_back(auth_apps);
   }
+}
+
+void Ddl_executor::do_execute(const Show_rest_daemons &s, Statement_result *r) {
+  set_failure_context("Cannot SHOW the REST daemons.");
+
+  const auto daemons = metadata::get_daemons(m_session);
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &daemon : daemons) docs.push_back(metadata::daemon_json(daemon));
+    r->columns = {"REST DAEMONS"};
+    r->add_row().emplace_back(json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
+  r->columns = {"id",      "name",          "address", "product_name",
+                "version", "last_check_in", "active",  "developer"};
+  const auto text = [](const std::optional<std::string> &value) {
+    return value ? Db_value(*value) : Db_value(nullptr);
+  };
+  for (const auto &daemon : daemons) {
+    auto &row = r->add_row();
+    row.emplace_back(daemon.id);
+    row.emplace_back(daemon.name);
+    row.emplace_back(daemon.address);
+    row.emplace_back(daemon.product_name);
+    row.push_back(text(daemon.version));
+    row.push_back(text(daemon.last_check_in));
+    row.emplace_back(daemon.active ? "YES" : "NO");
+    row.push_back(text(daemon.developer));
+  }
+}
+
+void Ddl_executor::do_execute(const Drop_rest_daemon &s, Statement_result *r) {
+  const auto id = std::to_string(s.id);
+  set_failure_context("Failed to drop the REST DAEMON `" + id + "`.");
+
+  Db_transaction transaction(m_session);
+  if (!metadata::get_daemon(m_session, s.id)) {
+    if (!s.if_exists) {
+      throw std::runtime_error("The given REST DAEMON `" + id +
+                               "` could not be found.");
+    }
+  } else {
+    metadata::delete_daemon(m_session, s.id);
+    r->affected_items_count = 1;
+  }
+  transaction.commit();
+  r->message = "REST DAEMON `" + id + "` dropped successfully.";
 }
 
 void Ddl_executor::do_execute(const Show_create_rest_service &s,

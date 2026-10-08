@@ -287,6 +287,41 @@ EXPECT_THROWS(lambda: rest("LOAD REST SERVICE FROM '/nope/nope.sql'"), "The spec
 rest("DROP REST SERVICE /loaded")
 os.remove(dump_file)
 
+#@<> SHOW REST DAEMONS
+EXPECT_EQ([], rest_rows("SHOW REST DAEMONS"))
+# Daemons register themselves in the router table of the metadata
+session.run_sql("""INSERT INTO mysql_rest_service_metadata.router
+    (router_name, address, product_name, version, last_check_in, attributes, options) VALUES
+    ('daemon1', '127.0.0.1', 'MariaDB REST Daemon', '1.0.0', NOW(), '{}', '{}'),
+    ('daemon2', '127.0.0.2', 'MariaDB REST Daemon', '1.0.0', NOW() - INTERVAL 1 HOUR, '{"a": 1}', '{"developer": "mike"}')""")
+daemon_ids = [r[0] for r in session.run_sql("SELECT id FROM mysql_rest_service_metadata.router ORDER BY id").fetch_all()]
+res = rest("SHOW REST DAEMONS")
+EXPECT_EQ(["id", "name", "address", "product_name", "version", "last_check_in", "active", "developer"], res.get_column_names())
+rows = [list(r) for r in res.fetch_all()]
+EXPECT_EQ([[daemon_ids[0], "daemon1", "127.0.0.1", "MariaDB REST Daemon", "1.0.0", "YES", None], [daemon_ids[1], "daemon2", "127.0.0.2", "MariaDB REST Daemon", "1.0.0", "NO", "mike"]], [r[:5] + r[6:] for r in rows])
+doc = json.loads(rest("SHOW REST DAEMONS FORMAT=JSON").fetch_one()[0])
+EXPECT_EQ(["daemon1", "daemon2"], [d["name"] for d in doc])
+EXPECT_EQ([{}, {"a": 1}], [d["attributes"] for d in doc])
+EXPECT_EQ({"developer": "mike"}, doc[1]["options"])
+
+#@<> SHOW REST SERVICES FOR DAEMON
+for daemon_id in daemon_ids:
+    served = session.run_sql("SELECT COUNT(DISTINCT service_id) FROM mysql_rest_service_metadata.router_services WHERE router_id = ?", [daemon_id]).fetch_one()[0]
+    EXPECT_EQ(served, len(rest_rows("SHOW REST SERVICES FOR DAEMON %d" % daemon_id)))
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Cannot SHOW the REST services. The given REST DAEMON `999` could not be found.")
+
+#@<> DROP REST DAEMON removes its status reports
+session.run_sql("INSERT INTO mysql_rest_service_metadata.router_status (router_id, timespan) VALUES (?, 10)", [daemon_ids[0]])
+res = rest("DROP REST DAEMON %d" % daemon_ids[0])
+EXPECT_EQ("REST DAEMON `%d` dropped successfully." % daemon_ids[0], res.get_info())
+EXPECT_EQ(1, res.get_affected_items_count())
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.router_status").fetch_one()[0])
+EXPECT_EQ(["daemon2"], [r[1] for r in rest_rows("SHOW REST DAEMONS")])
+EXPECT_THROWS(lambda: rest("DROP REST DAEMON 999"), "Failed to drop the REST DAEMON `999`. The given REST DAEMON `999` could not be found.")
+EXPECT_EQ("REST DAEMON `999` dropped successfully.", rest_info("DROP REST DAEMON IF EXISTS 999"))
+rest("DROP REST DAEMON %d" % daemon_ids[1])
+EXPECT_EQ([], rest_rows("SHOW REST DAEMONS"))
+
 #@<> DROP REST SERVICE
 EXPECT_THROWS(lambda: rest("DROP REST SERVICE /nope"), "Failed to drop the REST SERVICE `/nope`. The given REST SERVICE `/nope` could not be found.")
 EXPECT_EQ("REST SERVICE `/nope` dropped successfully.", rest_info("DROP REST SERVICE IF EXISTS /nope"))
