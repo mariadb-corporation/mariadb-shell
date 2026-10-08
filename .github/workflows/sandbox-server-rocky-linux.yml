@@ -158,7 +158,6 @@ jobs:
           name: ${{ steps.pkg.outputs.name }}
           path: ${{ steps.pkg.outputs.path }}
           if-no-files-found: error
-          retention-days: 7
 
       # 9. Cleanup build image to save disk space on self-hosted VM
       - name: Cleanup Docker Image

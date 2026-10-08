@@ -329,8 +329,8 @@ jobs:
 
           # Refuse a half set. Verification proves each package passed on a
           # pristine machine; it says nothing about a package that is no longer
-          # here, and artifact retention differs per build leg (the Rocky legs
-          # keep 7 days), so an older run can hand back a subset. The globs are
+          # here, and an older run can still hand back a subset (an expired or
+          # deleted artifact, a leg that was re-run alone). The globs are
           # the ones verify-packages.yml verifies, so "verified" and "published"
           # cover the same platforms -- rather than a user's install.sh being the
           # thing that discovers the gap.
