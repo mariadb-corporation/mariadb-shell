@@ -334,7 +334,15 @@ TEST(Version, supported_servers) {
   EXPECT_FALSE(version::is_supported_server(Version(26, 6, 99)));
   EXPECT_TRUE(version::is_supported_server(Version(26, 7, 0)));
   EXPECT_TRUE(version::is_supported_server(Version(26, 7, 99)));
-  EXPECT_FALSE(version::is_supported_server(Version(26, 10, 0)));
+
+  // The upper bound follows the shell's own version, so it moves with every
+  // release: anything up to the shell's major.minor is supported, the next
+  // minor is not.
+  const auto major = k_shell_version.get_major();
+  const auto minor = k_shell_version.get_minor();
+  EXPECT_TRUE(version::is_supported_server(Version(major, minor, 0)));
+  EXPECT_TRUE(version::is_supported_server(Version(major, minor, 9999)));
+  EXPECT_FALSE(version::is_supported_server(Version(major, minor + 1, 0)));
 }
 
 }  // namespace
