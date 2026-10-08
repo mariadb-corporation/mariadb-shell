@@ -43,20 +43,27 @@ if(IS_SYMLINK "${src_file}")
   file(READ_SYMLINK "${src_file}" _link_target)
   if(_link_target MATCHES "[/\\]")
     get_filename_component(_link_name "${src_file}" NAME)
-    get_filename_component(_real_file "${src_file}" REALPATH)
-    if(NOT EXISTS "${_real_file}")
-      message(FATAL_ERROR
-        "Cannot bundle ${src_file}: it is a symlink to '${_link_target}', which "
-        "does not exist. A dangling link would be packaged as-is and fail on "
-        "every machine but this one.")
-    endif()
     message(STATUS
       "Dereferencing ${_link_name} -> ${_link_target} (target is outside its directory)")
-    # file(COPY) keeps the source's name and permissions, so copy then rename.
-    file(COPY "${_real_file}" DESTINATION "${dst_dir}")
-    get_filename_component(_real_name "${_real_file}" NAME)
-    if(NOT _real_name STREQUAL _link_name)
-      file(RENAME "${dst_dir}/${_real_name}" "${dst_dir}/${_link_name}")
+    # 'cmake -E copy' lets the OS follow the link, whatever form its target is
+    # written in. Resolving it here with REALPATH does not work for every form:
+    # the x64 runners' python3.exe points at \??\C:\..., an NT object path that
+    # REALPATH hands back unresolved, so the link itself got copied and shipped.
+    set(_dst_file "${dst_dir}/${_link_name}")
+    file(REMOVE "${_dst_file}")
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -E copy "${src_file}" "${_dst_file}"
+      RESULT_VARIABLE _copy_result)
+    if(NOT _copy_result EQUAL 0)
+      message(FATAL_ERROR
+        "Cannot bundle ${src_file}: it is a symlink to '${_link_target}', which "
+        "could not be copied (does it exist?). A dangling link would be packaged "
+        "as-is and fail on every machine but this one.")
+    endif()
+    if(IS_SYMLINK "${_dst_file}")
+      message(FATAL_ERROR
+        "Cannot bundle ${src_file}: copying it produced a symlink rather than a "
+        "file, and a link to '${_link_target}' points at the build machine.")
     endif()
     return()
   endif()
