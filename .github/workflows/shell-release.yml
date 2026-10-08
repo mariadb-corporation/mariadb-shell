@@ -6,7 +6,50 @@ on:
   repository_dispatch:
       types: [ "updated-shell-plugins-rc" ]
 jobs:
+  # ==========================================================================
+  # SHELL AND PLUGINS MUST BE THE SAME VERSION
+  #
+  # Every build leg bundles the head of the plugins repo's release/candidate,
+  # so a version bump on only one side ships a release whose shell and plugins
+  # disagree (26.10.0 went out with 26.9.5 plugins). Compared once, before any
+  # build starts, so a mismatch fails in seconds rather than after the builds.
+  # ==========================================================================
+  check-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Shell Version
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: MYSQL_VERSION
+          sparse-checkout-cone-mode: false
+
+      - name: Checkout Shell Plugins Version (release/candidate)
+        uses: actions/checkout@v4
+        with:
+          repository: mariadb-corporation/mariadb-shell-plugins
+          ref: release/candidate
+          path: _shell-plugins-src
+          token: ${{ secrets.DEVTOOLS_TOKEN }}
+          sparse-checkout: VERSION
+          sparse-checkout-cone-mode: false
+
+      - name: Compare Versions
+        run: |
+          set -euo pipefail
+          eval "$(grep -E '^MYSQL_VERSION_(MAJOR|MINOR|PATCH|EXTRA)=' MYSQL_VERSION)"
+          SHELL_VERSION="${MYSQL_VERSION_MAJOR}.${MYSQL_VERSION_MINOR}.${MYSQL_VERSION_PATCH}${MYSQL_VERSION_EXTRA}"
+          # The plugins repo's VERSION file is a single "VERSION = x.y.z" line.
+          PLUGINS_VERSION=$(sed -n 's/^VERSION[[:space:]]*=[[:space:]]*//p' _shell-plugins-src/VERSION | tr -d '[:space:]')
+
+          echo "Shell version (MYSQL_VERSION):              $SHELL_VERSION"
+          echo "Plugins version (release/candidate VERSION): ${PLUGINS_VERSION:-<none>}"
+          if [ "$SHELL_VERSION" != "$PLUGINS_VERSION" ]; then
+            echo "::error::Shell version $SHELL_VERSION does not match the plugins version '${PLUGINS_VERSION}' on mariadb-shell-plugins release/candidate. Bump the plugins to $SHELL_VERSION before building a release."
+            exit 1
+          fi
+
   build:
+    needs: check-versions
     runs-on: ${{ matrix.os-runner }}
 
     strategy:
@@ -318,5 +361,6 @@ jobs:
   # run id. secrets: inherit passes DEVTOOLS_TOKEN through for plugin staging.
   # ==========================================================================
   rocky:
+    needs: check-versions
     uses: ./.github/workflows/rocky-linux.yml
     secrets: inherit
