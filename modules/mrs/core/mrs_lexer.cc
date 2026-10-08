@@ -127,15 +127,19 @@ void Lexer::skip_whitespace_and_comments() {
       // input; they carry no meaning.
       advance();
     } else if (c == '#') {
-      while (!at_end() && peek() != '\n') advance();
+      // A line comment ends at \n or \r
+      while (!at_end() && peek() != '\n' && peek() != '\r') advance();
     } else if (c == '-' && peek(1) == '-' &&
                (peek(2) == ' ' || peek(2) == '\t' || peek(2) == '\n' ||
                 peek(2) == '\r' || peek(2) == '\0')) {
-      while (!at_end() && peek() != '\n') advance();
-    } else if (c == '/' && peek(1) == '*') {
-      advance(2);
-      while (!at_end() && !(peek() == '*' && peek(1) == '/')) advance();
-      advance(2);
+      while (!at_end() && peek() != '\n' && peek() != '\r') advance();
+    } else if (c == '/' && peek(1) == '*' && peek(2) != '!') {
+      // An unterminated comment, and a /*! ... */ version comment, whose
+      // content the server would run, are left to the parser as invalid
+      // input
+      const auto end = m_input.find("*/", m_pos + 2);
+      if (end == std::string_view::npos) break;
+      advance(end + 2 - m_pos);
     } else {
       break;
     }
@@ -200,6 +204,23 @@ Token Lexer::lex_number(size_t start) {
   // FLOAT_NUMBER. Digits followed by identifier characters form an
   // identifier (`1abc`), as in the server.
   auto kind = Token::Kind::int_number;
+
+  // 0x1F and 0b01 are hexadecimal and binary literals, which no rule takes,
+  // not names; followed by more identifier characters they are a name
+  if (peek() == '0' && (peek(1) == 'x' || peek(1) == 'X' || peek(1) == 'b' ||
+                        peek(1) == 'B')) {
+    const bool hex = peek(1) == 'x' || peek(1) == 'X';
+    size_t length = 2;
+    while (hex ? std::isxdigit(static_cast<unsigned char>(peek(length)))
+               : (peek(length) == '0' || peek(length) == '1')) {
+      ++length;
+    }
+    if (length > 2 && !is_identifier_char(peek(length))) {
+      advance(length);
+      return make_token(Token::Kind::invalid, start);
+    }
+  }
+
   while (is_digit(peek())) advance();
 
   if (peek() == '.' && is_digit(peek(1))) {
@@ -253,8 +274,8 @@ Token Lexer::lex_quoted(size_t start, char quote) {
   std::string value;
   bool closed = false;
 
-  // Adjacent string literals of the same quote concatenate, as in the ANTLR
-  // grammar (`'a''b'` is handled as an escaped quote inside one literal).
+  // A doubled quote inside the literal is one quote character ('it''s');
+  // separate literals ('a' 'b') do not concatenate, as in the ANTLR grammar.
   advance();  // the opening quote
   while (!at_end()) {
     const char c = peek();
@@ -315,11 +336,27 @@ Token Lexer::lex_quoted(size_t start, char quote) {
 }
 
 Token Lexer::lex_request_path(size_t start) {
+  // (/identifier)+, where a segment of digits only, or a number with an
+  // exponent like 1e5, is no identifier, as in the server
+  bool valid = true;
   while (peek() == '/' && is_identifier_char(peek(1))) {
     advance();
+    const auto segment_start = m_pos;
     while (is_identifier_char(peek())) advance();
+    const auto segment = m_input.substr(segment_start, m_pos - segment_start);
+    const auto digits = segment.find_first_not_of("0123456789");
+    if (digits == std::string_view::npos) {
+      valid = false;
+    } else if (digits > 0 && (segment[digits] == 'e' || segment[digits] == 'E') &&
+               digits + 1 < segment.size() &&
+               segment.find_first_not_of("0123456789", digits + 1) ==
+                   std::string_view::npos) {
+      valid = false;
+    }
   }
-  return make_token(Token::Kind::rest_request_path, start);
+  return make_token(valid ? Token::Kind::rest_request_path
+                          : Token::Kind::invalid,
+                    start);
 }
 
 Token Lexer::lex_at(size_t start) {

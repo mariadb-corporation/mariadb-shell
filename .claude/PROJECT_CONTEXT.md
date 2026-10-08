@@ -30,7 +30,6 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
 - **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
-- **Branch `wip/mrs_module` (2026-10-08, uncommitted):** the Python mrs_plugin ported to a built-in C++ `mrs` module with a bison REST SQL grammar and the `MRS` SQL handler. All statements except REST PROJECT/ZIP work; 49 related tests pass. See [context/mrs-module.md](context/mrs-module.md).
 - **Open:**
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
@@ -59,22 +58,23 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 ## Git state
 
-Branch `wip/mrs_module`, branched from `main` at `5e414f0be`, nothing committed. `git status --short`:
+Checked 2026-10-08. Branch `wip/mrs_module` (tracks `origin/wip/mrs_module`), one commit on top of `main`: `88413da93` (Add the mrs module). Uncommitted on top of it (`git status --short`, summarized):
 
 ```
- M .claude/PROJECT_CONTEXT.md
- M modules/CMakeLists.txt
+ M .claude/PROJECT_CONTEXT.md, .claude/context/mrs-module.md, .githooks/copyright-exceptions
+D  cmake/embed_file.cmake
+ M modules/CMakeLists.txt, modules/mrs/CMakeLists.txt, modules/mrs/mod_mrs.{h,cc}, modules/mrs/mrs_shell_session.cc
+D  modules/mrs/core/metadata/mysql_rest_service_metadata_4.1.6.sql
+ M modules/mrs/core/{mrs_ast.h, mrs_db_session.h, mrs_ddl_executor*.{h,cc}, mrs_lexer.{h,cc},
+   mrs_metadata*.{h,cc}, mrs_parser.yy, mrs_parser_driver.h, mrs_sql.{h,cc}}
+M  mysqlshdk/include/shellcore/shell_options.h, mysqlshdk/shellcore/shell_options.cc
  M src/mysqlsh/mysql_shell.cc
- M src/mysqlsh/mysql_shell.h
- M unittest/CMakeLists.txt
- M unittest/scripts/auto/js_shell/scripts/shell_register_sql_handler_norecord.js
- M unittest/scripts/auto/py_shell/scripts/shell_register_sql_handler_norecord.py
- M unittest/scripts/auto/py_shell/validation/cmd_help_norecord.py
-?? .claude/context/mrs-module.md
-?? cmake/embed_file.cmake
-?? modules/mrs/
-?? unittest/data/mrs/
-?? unittest/modules/mrs/
-?? unittest/scripts/auto/py_shell/scripts/mrs_{auth,content,db_objects,grammar_test,services}_norecord.py
+ M unittest/data/mrs/grammar_test.sql, unittest/modules/mrs/mrs_parser_t.cc
+ M unittest/scripts/auto/py_shell/scripts/mrs_{auth,content,db_objects,services}_norecord.py
+ M unittest/scripts/auto/py_shell/validation/plugin_cli_integration_norecord.py
+?? modules/mrs/core/mrs_metadata_json.{h,cc}, modules/mrs/core/mrs_schema_deployment.{h,cc}
+?? modules/mrs/db_schema/, modules/mrs/mrs_schema_deployers.{h,cc}
+?? unittest/modules/mrs/mrs_schema_deployment_t.cc
+?? unittest/scripts/auto/py_shell/scripts/mrs_{metadata_upgrade,plugin_extension}_norecord.py
 ```
 

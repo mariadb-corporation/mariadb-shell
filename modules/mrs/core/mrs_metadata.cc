@@ -185,7 +185,7 @@ void set_json_options(Db_session *session, sql::Update *update,
   if (merge) {
     const auto row = session->query(
         "SELECT options IS NULL AS options_is_null FROM " +
-        sql::metadata_table(table) + " WHERE id = " + sql::hex(id));
+        sql::metadata_table(table) + " WHERE id = " + sql::id(id));
     if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
       update->set_raw("options = JSON_MERGE_PATCH(options, " +
                       sql::quote(options) + ")");
@@ -279,9 +279,9 @@ void check_schema(Db_session *session) {
   if (version.major < k_supported_major_version) {
     throw std::runtime_error(
         "The MRS metadata schema version " + version.str() +
-        " is too old to be managed by this version of MariaDB Shell. The "
-        "version " +
-        k_schema_version.str() + " is required.");
+        " is too old to be managed by this version of MariaDB Shell. Run "
+        "CONFIGURE REST METADATA UPDATE IF AVAILABLE to update it to version " +
+        k_schema_version.str() + ".");
   }
   if (version.major > k_schema_version.major) {
     throw std::runtime_error(
@@ -367,7 +367,7 @@ std::string format_json_entry(std::string_view key,
 // -- Services -------------------------------------------------------------
 
 std::optional<Service> get_service(Db_session *session, const Id &id) {
-  auto services = query_services(session, "se.id = " + sql::hex(id));
+  auto services = query_services(session, "se.id = " + sql::id(id));
   if (services.empty()) return std::nullopt;
   return std::move(services.front());
 }
@@ -405,7 +405,7 @@ std::vector<Service> get_services_of_auth_app(Db_session *session,
       session,
       "se.id IN (SELECT service_id FROM " +
           sql::metadata_table("service_has_auth_app") +
-          " WHERE auth_app_id = " + sql::hex(auth_app_id) + ")");
+          " WHERE auth_app_id = " + sql::id(auth_app_id) + ")");
 }
 
 Id add_service(Db_session *session, const Service_definition &definition) {
@@ -495,14 +495,14 @@ void update_service(Db_session *session, const Id &id,
   }
 
   if (update.empty()) return;
-  update.where("id = " + sql::hex(id));
+  update.where("id = " + sql::id(id));
   session->execute(update.str());
 }
 
 void delete_service(Db_session *session, const Id &id) {
   if (session->execute("DELETE FROM " + sql::metadata_table("service") +
-                       " WHERE id = " + sql::hex(id)) == 0) {
-    throw std::runtime_error("The specified service with id " + sql::hex(id) +
+                       " WHERE id = " + sql::id(id)) == 0) {
+    throw std::runtime_error("The specified service with id " + id +
                              " was not found.");
   }
 }
@@ -617,7 +617,7 @@ Id clone_service(Db_session *session, const Service &service,
 // -- Schemas --------------------------------------------------------------
 
 std::optional<Schema> get_schema(Db_session *session, const Id &id) {
-  auto schemas = query_schemas(session, "sc.id = " + sql::hex(id));
+  auto schemas = query_schemas(session, "sc.id = " + sql::id(id));
   if (schemas.empty()) return std::nullopt;
   return std::move(schemas.front());
 }
@@ -627,7 +627,7 @@ std::optional<Schema> find_schema(Db_session *session, const Id &service_id,
   if (request_path.empty() || request_path[0] != '/') {
     throw std::runtime_error("The request_path has to start with '/'.");
   }
-  auto schemas = query_schemas(session, "sc.service_id = " + sql::hex(service_id) +
+  auto schemas = query_schemas(session, "sc.service_id = " + sql::id(service_id) +
                                             " AND sc.request_path = " +
                                             sql::quote(request_path));
   if (schemas.empty()) return std::nullopt;
@@ -635,7 +635,7 @@ std::optional<Schema> find_schema(Db_session *session, const Id &service_id,
 }
 
 std::vector<Schema> get_schemas(Db_session *session, const Id &service_id) {
-  return query_schemas(session, "sc.service_id = " + sql::hex(service_id));
+  return query_schemas(session, "sc.service_id = " + sql::id(service_id));
 }
 
 Id add_schema(Db_session *session, const Schema_definition &definition) {
@@ -691,14 +691,14 @@ void update_schema(Db_session *session, const Id &id,
                      changes.merge_options);
   }
   if (update.empty()) return;
-  update.where("id = " + sql::hex(id));
+  update.where("id = " + sql::id(id));
   session->execute(update.str());
 }
 
 void delete_schema(Db_session *session, const Id &id) {
   if (session->execute("DELETE FROM " + sql::metadata_table("db_schema") +
-                       " WHERE id = " + sql::hex(id)) == 0) {
-    throw std::runtime_error("The specified schema with id " + sql::hex(id) +
+                       " WHERE id = " + sql::id(id)) == 0) {
+    throw std::runtime_error("The specified schema with id " + id +
                              " was not found.");
   }
 }

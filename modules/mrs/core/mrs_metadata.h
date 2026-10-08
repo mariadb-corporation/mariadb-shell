@@ -71,9 +71,9 @@ struct Version {
 };
 
 // The version of the metadata schema this module deploys and expects.
-inline constexpr Version k_schema_version{4, 1, 6};
-// The oldest major version this module can manage.
-inline constexpr int k_supported_major_version = 3;
+inline constexpr Version k_schema_version{5, 0, 0};
+// The oldest major version this module can manage: ids are UUIDs since 5.0.0.
+inline constexpr int k_supported_major_version = 5;
 
 // Whether the metadata schema exists at all.
 bool schema_exists(Db_session *session);

@@ -20,3 +20,8 @@ docs-ref/content/.*\.md$
 # MRS test data: REST SQL scripts run as they are and a binary file whose
 # bytes the tests compare; a notice would break both.
 unittest/data/mrs/
+
+# The MSM project of the MRS metadata schema: msm generates its release
+# scripts with their own copyright headers from the project settings, and
+# the Workbench files belong to the schema model.
+modules/mrs/db_schema/

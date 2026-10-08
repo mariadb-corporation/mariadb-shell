@@ -38,7 +38,6 @@
 #define SHCORE_BATCH_CONTINUE_ON_ERROR "batchContinueOnError"
 #define SHCORE_USE_WIZARDS "useWizards"
 #define SHCORE_SLASH_COMMANDS "slashCommands"
-#define SHCORE_DISABLED_MODULES "disabledModules"
 
 #define SHCORE_SANDBOX_DIR "sandboxDir"
 #define SHCORE_DBA_GTID_WAIT_TIMEOUT "dba.gtidWaitTimeout"
@@ -208,10 +207,6 @@ class Shell_options final : public shcore::Options {
     bool gui_mode = false;
     bool disable_user_plugins = false;
     bool disable_builtin_plugins = false;
-    // Built-in modules whose global object is not created, comma separated
-    std::string disabled_modules;
-
-    bool is_module_disabled(std::string_view name) const;
     Js_options js_options;
     std::string execution_context;
 

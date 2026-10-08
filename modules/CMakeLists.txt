@@ -64,6 +64,7 @@ file(GLOB api_module_SOURCES
       "mod_mysql_constants.cc"
       "mrs/mod_mrs.cc"
       "mrs/mrs_shell_session.cc"
+      "mrs/mrs_schema_deployers.cc"
       "reports/native_report.cc"
       "reports/query.cc"
       "reports/thread.cc"

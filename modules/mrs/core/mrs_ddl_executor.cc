@@ -168,6 +168,15 @@ struct Operation_name {
   std::string operator()(const Show_rest_auth_apps &) const {
     return "SHOW REST AUTH APPS";
   }
+  std::string operator()(const Show_rest_auth_vendors &) const {
+    return "SHOW REST AUTH VENDORS";
+  }
+  std::string operator()(const Show_rest_users &) const {
+    return "SHOW REST USERS";
+  }
+  std::string operator()(const Show_rest_columns &) const {
+    return "SHOW REST COLUMNS";
+  }
   std::string operator()(const Show_rest_roles &) const {
     return "SHOW REST ROLES";
   }
@@ -201,14 +210,8 @@ struct Operation_name {
   std::string operator()(const Dump_rest_service &) const {
     return "DUMP REST SERVICE";
   }
-  std::string operator()(const Dump_rest_project &) const {
-    return "DUMP REST PROJECT";
-  }
   std::string operator()(const Load_rest_service &) const {
     return "LOAD REST SERVICE";
-  }
-  std::string operator()(const Load_rest_project &) const {
-    return "LOAD REST PROJECT";
   }
 };
 
@@ -419,7 +422,7 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
   }
   options.update_if_available = s.update_if_available;
 
-  const auto result = metadata::configure(m_session, options);
+  const auto result = metadata::configure(m_session, options, m_schema_deployer);
   r->message = result.schema_changed ? "REST metadata configured successfully."
                                      : "REST Metadata updated successfully.";
 }
@@ -438,7 +441,8 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &,
                 "service_upgradeable",     "service_upgrade_ignored",
                 "service_count",           "service_being_upgraded",
                 "major_upgrade_required",  "current_metadata_version",
-                "available_metadata_version", "required_router_version"};
+                "available_metadata_version", "required_router_version",
+                "metadata_version"};
   auto &row = r->add_row();
   row.push_back(flag(status.service_configured));
   row.push_back(flag(status.service_enabled));
@@ -450,6 +454,9 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &,
   row.push_back(text(status.current_metadata_version));
   row.push_back(text(status.available_metadata_version));
   row.push_back(text(status.required_router_version));
+  row.push_back(status.metadata_version
+                    ? Db_value(*status.metadata_version)
+                    : Db_value(nullptr));
 }
 
 void Ddl_executor::do_execute(const Use_rest &s, Statement_result *r) {
@@ -479,10 +486,10 @@ void Ddl_executor::do_execute(const Use_rest &s, Statement_result *r) {
     set_current_schema(*schema);
     r->message = "Now using REST SCHEMA `" + schema->request_path +
                  "` on REST SERVICE `" + current_service_path() + "`.";
-    r->id = sql::hex(schema->id);
+    r->id = schema->id;
   } else {
     r->message = "Now using REST SERVICE `" + current_service_path() + "`.";
-    r->id = sql::hex(*m_state->current_service_id);
+    r->id = *m_state->current_service_id;
   }
 }
 

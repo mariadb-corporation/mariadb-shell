@@ -59,18 +59,6 @@ class SHCORE_PUBLIC Mrs : public Extensible_object {
   // nothing when no SQL handler registry is active.
   void register_sql_handler();
 
-  // Removes the statically registered help topics of the object. Used when
-  // the module is disabled (disabledModules=mrs), so that the Python
-  // mrs_plugin can register an `mrs` object with its own help.
-  static void unregister_help();
-
-#if DOXYGEN_JS
-  Undefined runScript(String path);
-#elif DOXYGEN_PY
-  None run_script(str path);
-#endif
-  void run_script(const std::string &path);
-
   // Runs a REST SQL script against a session and returns the shell result
   // of its statements. The current service and schema are kept per
   // connection.

@@ -400,6 +400,9 @@ struct Drop_rest_schema {
 
 enum class Db_object_kind { view, procedure, function };
 
+// FORMAT=TRADITIONAL (the default) or FORMAT=JSON, as EXPLAIN takes it
+enum class Output_format { traditional, json };
+
 struct Drop_rest_db_object {
   Db_object_kind kind = Db_object_kind::view;
   bool if_exists = false;
@@ -469,7 +472,11 @@ struct Use_rest {
 };
 
 struct Show_rest_metadata_status {};
-struct Show_rest_services {};
+
+// SHOW REST SERVICES [FOR AUTH APP name]
+struct Show_rest_services {
+  std::optional<std::string> auth_app;
+};
 
 struct Show_rest_schemas {
   std::optional<Service_path> service;
@@ -493,6 +500,14 @@ struct Show_rest_auth_apps {
   std::optional<Service_path> service;
 };
 
+struct Show_rest_auth_vendors {};
+
+// SHOW REST USERS [ON SERVICE path] [FOR AUTH APP name]
+struct Show_rest_users {
+  std::optional<Service_path> service;
+  std::optional<std::string> auth_app;
+};
+
 struct Show_rest_roles {
   std::optional<Role_service> on;
   std::optional<std::string> user;
@@ -504,45 +519,61 @@ struct Show_rest_grants {
   std::optional<Role_service> on;
 };
 
+// SHOW REST COLUMNS FROM [TABLE | VIEW | PROCEDURE | FUNCTION] [schema.]name
+struct Show_rest_columns {
+  enum class Source { any, table, view, procedure, function };
+  Source source = Source::any;
+  Qualified_name object;
+  Output_format format = Output_format::traditional;
+};
+
 struct Show_create_rest_service {
   std::optional<Service_path> path;
   bool include_database_endpoints = false;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_schema {
   std::optional<std::string> schema_path;
   std::optional<Service_path> service;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_db_object {
   Db_object_kind kind = Db_object_kind::view;
   std::string path;
   std::optional<Schema_selector> on;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_content_set {
   std::string path;
   std::optional<Service_path> service;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_content_file {
   std::string path;
   std::optional<Service_path> service;
   std::string content_set_path;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_auth_app {
   std::string name;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_role {
   std::string name;
   std::optional<Role_service> on;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_create_rest_user {
   std::string name;
   std::string auth_app;
+  Output_format format = Output_format::traditional;
 };
 
 // INCLUDING DATABASE [AND STATIC [AND DYNAMIC]] | ALL ENDPOINTS
@@ -559,35 +590,8 @@ struct Dump_rest_service {
   std::string directory;
 };
 
-struct Dump_rest_project {
-  struct Service {
-    Service_path path;
-    Endpoint_selection endpoints;
-  };
-  struct Schema {
-    std::string name;
-    std::optional<std::string> file_path;
-  };
-
-  std::string name;
-  std::string version;
-  std::vector<Service> services;
-  std::vector<Schema> schemas;
-  std::optional<std::string> icon_file_path;
-  std::optional<std::string> description;
-  std::optional<std::string> publisher;
-  bool zip = false;
-  std::string directory;
-};
-
 struct Load_rest_service {
   std::optional<Service_path> as_path;
-  std::string directory;
-};
-
-struct Load_rest_project {
-  bool zip = false;
-  bool url = false;
   std::string directory;
 };
 
@@ -604,12 +608,12 @@ using Statement_variant = std::variant<
     Rest_role_statement, Use_rest, Show_rest_metadata_status,
     Show_rest_services, Show_rest_schemas, Show_rest_db_objects,
     Show_rest_content_sets, Show_rest_content_files, Show_rest_auth_apps,
+    Show_rest_auth_vendors, Show_rest_users, Show_rest_columns,
     Show_rest_roles, Show_rest_grants, Show_create_rest_service,
     Show_create_rest_schema, Show_create_rest_db_object,
     Show_create_rest_content_set, Show_create_rest_content_file,
     Show_create_rest_auth_app, Show_create_rest_role, Show_create_rest_user,
-    Dump_rest_service, Dump_rest_project, Load_rest_service,
-    Load_rest_project>;
+    Dump_rest_service, Load_rest_service>;
 
 // One parsed statement together with its position in the script.
 struct Statement {

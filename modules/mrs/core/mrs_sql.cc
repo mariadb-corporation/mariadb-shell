@@ -25,7 +25,10 @@
 
 #include "modules/mrs/core/mrs_sql.h"
 
+#include <algorithm>
 #include <cstdio>
+#include <optional>
+#include <string>
 #include <stdexcept>
 
 namespace mrs {
@@ -124,42 +127,72 @@ std::optional<std::string> base64_decode(std::string_view text) {
 
 }  // namespace
 
-Id id_from_string(std::string_view text, std::string_view context) {
+namespace {
+
+// The canonical lower case UUID text of 16 bytes.
+Id uuid_from_bytes(std::string_view bytes) {
+  static const char digits[] = "0123456789abcdef";
   std::string result;
-  if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
-    const auto digits = text.substr(2);
-    if (digits.size() % 2 != 0) {
-      throw std::runtime_error("Invalid hexadecimal string '" +
-                               std::string(text) + "' for '" +
-                               std::string(context) + "'.");
-    }
-    for (size_t i = 0; i < digits.size(); i += 2) {
-      const int hi = hex_digit(digits[i]);
-      const int lo = hex_digit(digits[i + 1]);
-      if (hi < 0 || lo < 0) {
-        throw std::runtime_error("Invalid hexadecimal string '" +
-                                 std::string(text) + "' for '" +
-                                 std::string(context) + "'.");
-      }
-      result += static_cast<char>((hi << 4) | lo);
-    }
+  result.reserve(36);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    if (i == 4 || i == 6 || i == 8 || i == 10) result += '-';
+    const auto c = static_cast<unsigned char>(bytes[i]);
+    result += digits[c >> 4];
+    result += digits[c & 0x0f];
+  }
+  return result;
+}
+
+// The bytes of a string of hex digits, or nothing when it is not one.
+std::optional<std::string> bytes_from_hex(std::string_view digits) {
+  if (digits.size() % 2 != 0) return std::nullopt;
+  std::string result;
+  for (size_t i = 0; i < digits.size(); i += 2) {
+    const int hi = hex_digit(digits[i]);
+    const int lo = hex_digit(digits[i + 1]);
+    if (hi < 0 || lo < 0) return std::nullopt;
+    result += static_cast<char>((hi << 4) | lo);
+  }
+  return result;
+}
+
+}  // namespace
+
+std::string id(const Id &uuid) { return quote(uuid); }
+
+Id id_from_string(std::string_view text, std::string_view context) {
+  const auto invalid = [&](std::string_view what) {
+    return std::runtime_error("Invalid " + std::string(what) + " '" +
+                              std::string(text) + "' for '" +
+                              std::string(context) + "'.");
+  };
+
+  std::optional<std::string> bytes;
+  if (text.size() == 36 && text[8] == '-' && text[13] == '-' &&
+      text[18] == '-' && text[23] == '-') {
+    // The UUID text itself
+    std::string digits(text);
+    std::erase(digits, '-');
+    bytes = bytes_from_hex(digits);
+    if (!bytes) throw invalid("UUID");
+  } else if (text.size() > 2 && text[0] == '0' &&
+             (text[1] == 'x' || text[1] == 'X')) {
+    // The 0x... form the metadata schema versions before 5.0.0 used
+    bytes = bytes_from_hex(text.substr(2));
+    if (!bytes) throw invalid("hexadecimal string");
   } else if (text.size() > 2 && text.substr(text.size() - 2) == "==") {
-    const auto decoded = base64_decode(text);
-    if (!decoded) {
-      throw std::runtime_error("Invalid base64 string '" + std::string(text) +
-                               "' for '" + std::string(context) + "'.");
-    }
-    result = *decoded;
+    // base64 of the bytes, as in the SDK configuration
+    bytes = base64_decode(text);
+    if (!bytes) throw invalid("base64 string");
   } else {
-    throw std::runtime_error("Invalid id format '" + std::string(text) +
-                             "' for '" + std::string(context) + "'.");
+    throw invalid("id format");
   }
 
-  if (result.size() != 16) {
+  if (bytes->size() != 16) {
     throw std::runtime_error("The '" + std::string(context) +
                              "' has an invalid size.");
   }
-  return result;
+  return uuid_from_bytes(*bytes);
 }
 
 std::string metadata_table(std::string_view table) {

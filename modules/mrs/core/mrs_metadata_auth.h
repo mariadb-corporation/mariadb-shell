@@ -42,16 +42,17 @@ namespace metadata {
 
 // -- Well-known ids -------------------------------------------------------
 
-// The rows the metadata schema ships with have ids of one byte followed by
-// 15 zero bytes (0x30..., 0x31...).
-inline Id builtin_id(char first) { return Id(1, first) + Id(15, '\0'); }
+// The rows the metadata schema ships with have well-known ids: one byte
+// followed by 15 zero bytes (0x30..., 0x31... before 5.0.0).
 
 // The MRS vendor (built-in user management, passwords stored by MRS).
-inline Id mrs_vendor_id() { return builtin_id('\x30'); }
+inline Id mrs_vendor_id() { return "30000000-0000-0000-0000-000000000000"; }
 // The MySQL Internal vendor (authentication against server accounts).
-inline Id mysql_vendor_id() { return builtin_id('\x31'); }
+inline Id mysql_vendor_id() { return "31000000-0000-0000-0000-000000000000"; }
 // The global 'Full Access' role.
-inline Id full_access_role_id() { return builtin_id('\x31'); }
+inline Id full_access_role_id() {
+  return "31000000-0000-0000-0000-000000000000";
+}
 
 // -- Auth vendors ---------------------------------------------------------
 
@@ -71,6 +72,9 @@ struct Auth_vendor {
 // The vendor with the given name (case-insensitive).
 std::optional<Auth_vendor> find_auth_vendor(Db_session *session,
                                             std::string_view name);
+
+// All vendors, ordered by name.
+std::vector<Auth_vendor> get_auth_vendors(Db_session *session);
 
 // -- Roles ----------------------------------------------------------------
 
@@ -268,6 +272,12 @@ std::optional<User> find_user(Db_session *session, const Id &auth_app_id,
 
 // The users of an auth app.
 std::vector<User> get_users(Db_session *session, const Id &auth_app_id);
+
+// The users of the auth apps linked to a service and/or of one auth app,
+// or all users; ordered by auth app and user name.
+std::vector<User> get_users(Db_session *session,
+                            const std::optional<Id> &service_id,
+                            const std::optional<Id> &auth_app_id);
 
 struct User_definition {
   Id auth_app_id;

@@ -14,6 +14,11 @@ The following objects provide command line operations:
    dba
       InnoDB Cluster, ReplicaSet, and ClusterSet management functions.
 
+?{}
+   mrs
+      Global object for the MariaDB REST Service (MRS).
+
+?{__have_admin_api}
    rs
       Represents an InnoDB ReplicaSet.
 

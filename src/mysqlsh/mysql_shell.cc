@@ -741,17 +741,11 @@ Mysql_shell::Mysql_shell(const std::shared_ptr<Shell_options> &cmdline_options,
   set_global_object("util", _global_util,
                     shcore::IShell_core::all_scripting_modes());
 
-  // The MariaDB REST Service: the `mrs` object and the REST SQL statements.
-  // With disabledModules=mrs neither exists, so the Python mrs_plugin can
-  // register them instead.
-  if (!options().is_module_disabled("mrs")) {
-    m_global_mrs = std::make_shared<mysqlsh::mrs::Mrs>(_shell.get());
-    set_global_object("mrs", m_global_mrs,
-                      shcore::IShell_core::all_scripting_modes());
-    m_global_mrs->register_sql_handler();
-  } else {
-    mysqlsh::mrs::Mrs::unregister_help();
-  }
+  // The MariaDB REST Service: the `mrs` object and the REST SQL statements
+  m_global_mrs = std::make_shared<mysqlsh::mrs::Mrs>(_shell.get());
+  set_global_object("mrs", m_global_mrs,
+                    shcore::IShell_core::all_scripting_modes());
+  m_global_mrs->register_sql_handler();
 
   // dummy initialization
   _global_shell->set_session_global({});
@@ -914,7 +908,7 @@ void Mysql_shell::finish_init() {
                                         _global_shell->get_shell_options());
 
       providers->register_provider("util", _global_util);
-      if (m_global_mrs) providers->register_provider("mrs", m_global_mrs);
+      providers->register_provider("mrs", m_global_mrs);
 
       // Gets provider corresponding to the given object from the parent
       // provider. Registers it if there's no such provider.
