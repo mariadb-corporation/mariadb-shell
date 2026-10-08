@@ -71,6 +71,9 @@ The full list, by area:
 - **The shell starts in SQL mode**, and `-e` runs SQL unless `--py` is given, while the help says the default mode is py. `defaultMode` also accepts `js`. [using-mariadb-shell/sql-and-python-modes.md]
 - **`db` is always `None`.** It is only set for X sessions; README.md says it holds the default schema. [getting-started/global-objects.md]
 - **`track_system_variable`** accepts only `sql_mode`, which MariaDB never reports through session tracking (MARIADB_PORT.md §13.2). It is left out of the docs.
+- **Syslog records a `/command` as the `\command` it ran as** (`/source f` is logged as `\source f`), while the history keeps what was typed. [logging-and-debugging.md]
+- **Tab doesn't complete a command after leading whitespace**, for either prefix: `  \co` and `  /co` stay as typed. [using-mariadb-shell/autocompletion.md]
+- **Argument completion splits the line on spaces only**, so a quoted or tab-separated argument isn't completed. [using-mariadb-shell/autocompletion.md]
 
 ### Sandboxes
 
