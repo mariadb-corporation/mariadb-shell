@@ -173,6 +173,19 @@ EXPECT_CONTAINS("\n    DISABLED\n", rest_text("SHOW CREATE REST CONTENT FILE /fr
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST CONTENT FILE /nope FROM CONTENT SET /inline"), "Failed to get the REST CONTENT FILE `/svc/inline/nope`. The given REST content file `/svc/inline/nope` could not be found.")
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST CONTENT FILE /nope FROM CONTENT SET /nope"), "Failed to get the REST CONTENT FILE `/svc/nope/nope`. The given REST content set `/svc/nope` could not be found.")
 
+#@<> SHOW CREATE REST CONTENT FILE FORMAT=JSON
+res = rest("SHOW CREATE REST CONTENT FILE `/readme.txt` FROM CONTENT SET /inline FORMAT=JSON")
+EXPECT_EQ(["CREATE REST CONTENT FILE"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"request_path": "/readme.txt", "content_set_request_path": "/inline", "requires_auth": False, "enabled": 1, "size": len(readme_txt.encode()), "options": {"a": 1}}, {k: doc[k] for k in ["request_path", "content_set_request_path", "requires_auth", "enabled", "size", "options"]})
+EXPECT_FALSE("content" in doc)
+
+#@<> SHOW CREATE REST CONTENT SET FORMAT=JSON
+res = rest("SHOW CREATE REST CONTENT SET /inline FORMAT=JSON")
+EXPECT_EQ(["CREATE REST CONTENT SET"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"request_path": "/inline", "content_type": "STATIC", "comments": "inline files", "requires_auth": False}, {k: doc[k] for k in ["request_path", "content_type", "comments", "requires_auth"]})
+
 #@<> SHOW CREATE REST CONTENT SET lists the set and its files
 rest("DROP REST CONTENT FILE /fromBinaryFile FROM CONTENT SET /inline")
 rest("DROP REST CONTENT FILE /fromTextFile FROM CONTENT SET /inline")

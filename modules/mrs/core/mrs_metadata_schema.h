@@ -29,17 +29,16 @@
 // Deployment and status of the MRS metadata schema itself:
 // CONFIGURE REST METADATA and SHOW REST METADATA STATUS.
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
 #include "modules/mrs/core/mrs_db_session.h"
 #include "modules/mrs/core/mrs_metadata.h"
+#include "modules/mrs/core/mrs_schema_deployment.h"
 
 namespace mrs {
 namespace metadata {
-
-// The embedded schema creation script of k_schema_version.
-std::string_view metadata_schema_script();
 
 // The version of the MariaDB REST Service router this module expects.
 inline constexpr Version k_required_router_version{8, 1, 0};
@@ -55,6 +54,9 @@ struct Status {
   std::optional<std::string> current_metadata_version;
   std::optional<std::string> available_metadata_version;
   std::optional<std::string> required_router_version;
+  // The id of the last audit log entry (0 without any): it changes whenever
+  // the REST metadata changes, so clients can poll it to refresh.
+  std::optional<int64_t> metadata_version;
 };
 
 Status get_status(Db_session *session);
@@ -72,11 +74,11 @@ struct Configure_result {
   bool mrs_enabled = false;
 };
 
-// Creates the metadata schema when it does not exist yet, then applies the
-// options. An existing schema of an older version is left alone unless
-// update_if_available is set; updating is not supported yet and reported
-// as an error.
-Configure_result configure(Db_session *session, const Configure_options &options);
+// Deploys the metadata schema through the deployer (creating it, or
+// updating an older version when update_if_available is set), then applies
+// the options.
+Configure_result configure(Db_session *session, const Configure_options &options,
+                           Schema_deployer *deployer);
 
 }  // namespace metadata
 }  // namespace mrs

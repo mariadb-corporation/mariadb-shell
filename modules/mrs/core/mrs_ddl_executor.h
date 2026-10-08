@@ -47,6 +47,7 @@
 
 #include "modules/mrs/core/mrs_ast.h"
 #include "modules/mrs/core/mrs_db_session.h"
+#include "modules/mrs/core/mrs_schema_deployment.h"
 #include "modules/mrs/core/mrs_metadata.h"
 
 namespace mrs {
@@ -120,6 +121,15 @@ class Ddl_executor {
   Db_session *session() const { return m_session; }
   Executor_state *state() const { return m_state; }
 
+  // How CONFIGURE REST METADATA deploys the metadata schema (the msm
+  // plugin, or a metadata::Script_deployer). Without one it fails.
+  void set_schema_deployer(metadata::Schema_deployer *deployer) {
+    m_schema_deployer = deployer;
+  }
+  metadata::Schema_deployer *schema_deployer() const {
+    return m_schema_deployer;
+  }
+
   // LOAD REST SERVICE AS <path> replaces the request path of the services
   // created while it runs.
   void set_service_path_override(std::optional<std::string> path) {
@@ -168,6 +178,9 @@ class Ddl_executor {
   void do_execute(const ast::Show_rest_content_sets &s, Statement_result *r);
   void do_execute(const ast::Show_rest_content_files &s, Statement_result *r);
   void do_execute(const ast::Show_rest_auth_apps &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_auth_vendors &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_users &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_columns &s, Statement_result *r);
   void do_execute(const ast::Show_rest_roles &s, Statement_result *r);
   void do_execute(const ast::Show_rest_grants &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_service &s, Statement_result *r);
@@ -179,9 +192,7 @@ class Ddl_executor {
   void do_execute(const ast::Show_create_rest_role &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_user &s, Statement_result *r);
   void do_execute(const ast::Dump_rest_service &s, Statement_result *r);
-  void do_execute(const ast::Dump_rest_project &s, Statement_result *r);
   void do_execute(const ast::Load_rest_service &s, Statement_result *r);
-  void do_execute(const ast::Load_rest_project &s, Statement_result *r);
 
   // -- Helpers shared by the handlers ------------------------------------
 
@@ -253,6 +264,7 @@ class Ddl_executor {
   std::string m_failure_context;
   bool m_state_validated = false;
   std::optional<std::string> m_service_path_override;
+  metadata::Schema_deployer *m_schema_deployer = nullptr;
 };
 
 }  // namespace mrs

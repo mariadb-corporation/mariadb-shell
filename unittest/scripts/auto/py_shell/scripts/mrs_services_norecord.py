@@ -25,14 +25,15 @@ EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mysq
 
 #@<> SHOW REST METADATA STATUS before the schema exists
 res = rest("SHOW REST METADATA STATUS")
-EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_router_version"], res.get_column_names())
+EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_router_version", "metadata_version"], res.get_column_names())
 row = res.fetch_one()
 EXPECT_EQ("false", row[0])
 EXPECT_EQ(None, row[7])
+EXPECT_EQ(None, row[10])
 
 #@<> CONFIGURE REST METADATA creates the schema
 EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA ENABLED"))
-EXPECT_EQ([[4, 1, 6]], [list(r) for r in session.run_sql("SELECT major, minor, patch FROM mysql_rest_service_metadata.msm_schema_version").fetch_all()])
+EXPECT_EQ([[5, 0, 0]], [list(r) for r in session.run_sql("SELECT major, minor, patch FROM mysql_rest_service_metadata.msm_schema_version").fetch_all()])
 EXPECT_EQ(1, session.run_sql("SELECT service_enabled FROM mysql_rest_service_metadata.config").fetch_one()[0])
 
 #@<> SHOW REST METADATA STATUS with the schema
@@ -40,8 +41,11 @@ row = rest("SHOW REST METADATA STATUS").fetch_one()
 EXPECT_EQ("true", row[0])
 EXPECT_EQ("true", row[1])
 EXPECT_EQ(0, row[4])
-EXPECT_EQ("4.1.6", row[7])
-EXPECT_EQ("4.1.6", row[8])
+EXPECT_EQ("5.0.0", row[7])
+EXPECT_EQ("5.0.0", row[8])
+# The metadata version is the id of the last audit log entry
+metadata_version = row[10]
+EXPECT_EQ(session.run_sql("SELECT COALESCE(MAX(id), 0) FROM mysql_rest_service_metadata.audit_log").fetch_one()[0], metadata_version)
 
 #@<> CONFIGURE REST METADATA again: no changes, options are applied
 EXPECT_EQ("REST Metadata updated successfully.", rest_info("CONFIGURE REST METADATA DISABLED OPTIONS {\"a\": 1}"))
@@ -168,6 +172,28 @@ rest("USE REST SERVICE /myService")
 EXPECT_EQ("CREATE REST SERVICE", rest("SHOW CREATE REST SERVICE").get_column_names()[0])
 EXPECT_CONTAINS("CREATE OR REPLACE REST SERVICE /myService\n", rest("SHOW CREATE REST SERVICE").fetch_one()[0])
 
+#@<> The metadata version changes with the metadata
+EXPECT_LT(metadata_version, rest("SHOW REST METADATA STATUS").fetch_one()[10])
+
+#@<> SHOW CREATE REST SERVICE FORMAT=JSON
+res = rest("SHOW CREATE REST SERVICE /full FORMAT=JSON")
+EXPECT_EQ(["CREATE REST SERVICE"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ("/full", doc["url_context_root"])
+EXPECT_EQ("/full", doc["full_service_path"])
+EXPECT_EQ(session.run_sql("SELECT id FROM mysql_rest_service_metadata.service WHERE url_context_root = '/full'").fetch_one()[0], doc["id"])
+EXPECT_EQ([], doc["developers"])
+EXPECT_EQ([], doc["auth_apps"])
+EXPECT_FALSE("schemas" in doc)
+# The option columns are embedded as JSON
+EXPECT_EQ(dict, type(doc["options"]))
+EXPECT_EQ(json.loads(session.run_sql("SELECT options FROM mysql_rest_service_metadata.service WHERE url_context_root = '/full'").fetch_one()[0]), doc["options"])
+# The current service, any case of the format name, and the default format
+EXPECT_EQ("/myService", json.loads(rest("SHOW CREATE REST SERVICE FORMAT = json").fetch_one()[0])["url_context_root"])
+EXPECT_EQ("/myService", json.loads(rest("SHOW CREATE REST SERVICE /myService FORMAT='Json'").fetch_one()[0])["url_context_root"])
+EXPECT_EQ(rest("SHOW CREATE REST SERVICE").fetch_one()[0], rest("SHOW CREATE REST SERVICE FORMAT=TRADITIONAL").fetch_one()[0])
+EXPECT_THROWS(lambda: rest("SHOW CREATE REST SERVICE FORMAT=XML"), "Unknown REST format name: 'XML'")
+
 #@<> CREATE REST SCHEMA
 testutil.import_data(__sandbox_uri1, os.path.join(__data_path, "sql", "sakila-schema.sql"))
 EXPECT_THROWS(lambda: rest("CREATE REST SCHEMA /nope FROM nope"), "Failed to create the REST SCHEMA `/myService/nope`. The given database schema name 'nope' does not exists.")
@@ -190,6 +216,16 @@ EXPECT_EQ("""CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /full
 EXPECT_EQ("""CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /myService
     FROM `sakila`
     AUTHENTICATION NOT REQUIRED;""", rest("SHOW CREATE REST SCHEMA /sakila").fetch_one()[0])
+
+#@<> SHOW CREATE REST SCHEMA FORMAT=JSON
+res = rest("SHOW CREATE REST SCHEMA /sakila ON SERVICE /full FORMAT=JSON")
+EXPECT_EQ(["CREATE REST SCHEMA"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"name": "sakila", "schema_type": "DATABASE_SCHEMA", "request_path": "/sakila", "requires_auth": True, "enabled": 0, "items_per_page": 10, "comments": "The sakila schema", "options": {"o": 1}, "metadata": {"m": 2}}, {k: doc[k] for k in ["name", "schema_type", "request_path", "requires_auth", "enabled", "items_per_page", "comments", "options", "metadata"]})
+# A service with its database endpoints carries its schemas
+doc = json.loads(rest("SHOW CREATE REST SERVICE /full INCLUDING DATABASE ENDPOINTS FORMAT=JSON").fetch_one()[0])
+EXPECT_EQ(["/sakila"], [schema["request_path"] for schema in doc["schemas"]])
+EXPECT_EQ([], doc["schemas"][0]["db_objects"])
 
 #@<> CREATE REST SCHEMA: IF NOT EXISTS and OR REPLACE
 EXPECT_EQ("REST SCHEMA `/myService/sakila` created successfully.", rest_info("CREATE REST SCHEMA IF NOT EXISTS /sakila FROM sakila PRIVATE"))
@@ -268,25 +304,17 @@ EXPECT_STDOUT_CONTAINS("/cli\tENABLED\tNO\t")
 EXPECT_STDOUT_CONTAINS("REST SERVICE `/cli` dropped successfully.")
 WIPE_OUTPUT()
 
-#@<> The module can be disabled, so the Python mrs_plugin can be loaded instead
-testutil.call_mysqlsh(["--disable-modules=mrs", "--py", "-e", "print('mrs' in globals(), len(shell.list_sql_handlers()))"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
-EXPECT_STDOUT_CONTAINS("False 0")
-WIPE_OUTPUT()
-testutil.call_mysqlsh(["--disable-modules= MRS ,mrs", "--py", "-e", "print(shell.options.disabledModules)"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
-EXPECT_STDOUT_CONTAINS("mrs")
-WIPE_OUTPUT()
-testutil.call_mysqlsh(["--disable-modules=nope", "--py", "-e", "print(1)"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
-EXPECT_STDOUT_CONTAINS("The acceptable values for the option --disable-modules are a comma separated list of: mrs")
-WIPE_OUTPUT()
+#@<> The mrs global object has no functions of its own
+EXPECT_EQ(["help"], dir(mrs))
 
-#@<> The mrs global object
-EXPECT_EQ(["help", "run_script"], dir(mrs))
+#@<> A REST SQL script runs like any SQL script
 script_file = os.path.join(__tmp_dir, "mrs_script.sql")
-testutil.create_file(script_file, "CREATE REST SERVICE /scripted COMMENT 'from a script';\nSHOW REST SERVICES;\n")
-mrs.run_script(script_file)
+testutil.create_file(script_file, "CREATE REST SERVICE /scripted COMMENT 'from a script';\nSELECT 1 AS plain_sql;\nSHOW REST SERVICES;\n")
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", script_file], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("REST SERVICE `/scripted` created successfully.")
+EXPECT_STDOUT_CONTAINS("plain_sql")
 EXPECT_STDOUT_CONTAINS("/scripted")
-EXPECT_THROWS(lambda: mrs.run_script(os.path.join(__tmp_dir, "nope.sql")), "does not exist")
+WIPE_OUTPUT()
 rest("DROP REST SERVICE /scripted")
 os.remove(script_file)
 

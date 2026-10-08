@@ -28,6 +28,7 @@
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
+#include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
 
@@ -48,7 +49,7 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
     if (existing) {
       if (s.flags.if_not_exists) {
         r->message = "REST SCHEMA `" + full_path + "` created successfully.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -80,7 +81,7 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   transaction.commit();
 
   r->message = "REST SCHEMA `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
@@ -113,7 +114,7 @@ void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
   }
 
   r->affected_items_count = 1;
-  r->id = sql::hex(schema.id);
+  r->id = schema.id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
@@ -131,7 +132,7 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
   if (schema) {
     metadata::delete_schema(m_session, schema->id);
     if (m_state->current_schema_id == schema->id) m_state->clear_schema();
-    r->id = sql::hex(schema->id);
+    r->id = schema->id;
   }
 
   transaction.commit();
@@ -162,8 +163,10 @@ void Ddl_executor::do_execute(const Show_create_rest_schema &s,
 
   r->columns = {"CREATE REST SCHEMA"};
   r->add_row().emplace_back(
-      metadata::schema_create_statement(m_session, schema, false));
-  r->id = sql::hex(schema.id);
+      s.format == Output_format::json
+          ? metadata::schema_json(schema).dump(true)
+          : metadata::schema_create_statement(m_session, schema, false));
+  r->id = schema.id;
 }
 
 }  // namespace mrs

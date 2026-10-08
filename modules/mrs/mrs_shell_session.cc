@@ -38,6 +38,13 @@ namespace mrs {
 
 namespace {
 
+// MariaDB sends UUID columns with the BINARY flag but a character set
+// collation; only the binary collation means raw bytes.
+bool is_binary(const mysqlshdk::db::Column &column) {
+  constexpr uint32_t k_binary_collation = 63;
+  return column.is_binary() && column.get_collation() == k_binary_collation;
+}
+
 ::mrs::Db_value to_value(const mysqlshdk::db::IRow *row, uint32_t index,
                          const mysqlshdk::db::Column &column) {
   using mysqlshdk::db::Type;
@@ -62,10 +69,10 @@ namespace {
     case Type::Bytes:
       return ::mrs::Db_value(row->get_string(index), true);
     case Type::String:
-      return ::mrs::Db_value(row->get_string(index), column.is_binary());
+      return ::mrs::Db_value(row->get_string(index), is_binary(column));
     default:
       // DECIMAL, dates, ENUM, SET, JSON, ...: their text form
-      return ::mrs::Db_value(row->get_as_string(index), column.is_binary());
+      return ::mrs::Db_value(row->get_as_string(index), is_binary(column));
   }
 }
 

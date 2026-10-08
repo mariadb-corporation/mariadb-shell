@@ -85,13 +85,14 @@ using Opt_class_definition = std::optional<Alter_rest_view::Class_definition>;
 using String_list = std::vector<std::string>;
 using Named_graphql_object_list = std::vector<Named_graphql_object>;
 using Privilege_list = std::vector<Privilege>;
-using Project_service_list = std::vector<Dump_rest_project::Service>;
-using Project_schema_list = std::vector<Dump_rest_project::Schema>;
 }  // namespace parser
 }  // namespace mrs
 }
 
 %code {
+#include <algorithm>
+#include <cctype>
+
 #include "modules/mrs/core/mrs_parser_driver.h"
 
 namespace mrs {
@@ -105,6 +106,23 @@ void validate_request_path(const std::string &path, bool allow_wildcards,
 
 // The source text of a keyword token, for keywords used as names.
 std::string keyword_text(const Driver &driver, const Parser::location_type &loc);
+
+// A double quoted string is an identifier under ANSI_QUOTES and a text
+// otherwise; where only one of them is allowed, the other mode is a syntax
+// error (the ANTLR grammar's isSqlModeActive(AnsiQuotes) predicates).
+void require_ansi_quotes(const Driver &driver, bool ansi_quotes,
+                         const Parser::location_type &loc);
+
+// The output format named by FORMAT=<name>: JSON or TRADITIONAL.
+Output_format output_format(const std::string &name,
+                            const Parser::location_type &loc);
+
+// A SHOW CREATE statement with the format of its FORMAT=<name> clause.
+template <typename T>
+T with_format(T &&value, Output_format format) {
+  value.format = format;
+  return std::forward<T>(value);
+}
 
 // Statements with a position.
 template <typename T>
@@ -145,7 +163,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   ALL_SYMBOL "ALL" PARAMETERS_SYMBOL "PARAMETERS" ADD_SYMBOL "ADD"
   REMOVE_SYMBOL "REMOVE" MERGE_SYMBOL "MERGE" COMMENT_SYMBOL "COMMENT"
   DYNAMIC_SYMBOL "DYNAMIC" SQL_SYMBOL "SQL" AND_SYMBOL "AND"
-  DESCRIPTION_SYMBOL "DESCRIPTION" SETS_SYMBOL "SETS"
+  SETS_SYMBOL "SETS"
   CONFIGURE_SYMBOL "CONFIGURE" REST_SYMBOL "REST" METADATA_SYMBOL "METADATA"
   SERVICES_SYMBOL "SERVICES" SERVICE_SYMBOL "SERVICE" VIEWS_SYMBOL "VIEWS"
   PROCEDURES_SYMBOL "PROCEDURES" FUNCTIONS_SYMBOL "FUNCTIONS"
@@ -167,8 +185,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   INCLUDE_SYMBOL "INCLUDE" INCLUDING_SYMBOL "INCLUDING"
   ENDPOINTS_SYMBOL "ENDPOINTS" OBJECTS_SYMBOL "OBJECTS" DUMP_SYMBOL "DUMP"
   ZIP_SYMBOL "ZIP" SCRIPT_SYMBOL "SCRIPT" STATIC_SYMBOL "STATIC"
-  PROJECT_SYMBOL "PROJECT" VERSION_SYMBOL "VERSION" ICON_SYMBOL "ICON"
-  PUBLISHER_SYMBOL "PUBLISHER"
+  VENDORS_SYMBOL "VENDORS" TABLE_SYMBOL "TABLE" COLUMNS_SYMBOL "COLUMNS"
 
 /* Data mapping annotations. */
 %token
@@ -241,11 +258,9 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> drop_rest_user_statement
 %nterm <Statement> drop_rest_role_statement
 %nterm <Statement> dump_rest_service_statement
-%nterm <Statement> dump_rest_project_statement
 %nterm <Statement> grant_rest_role_statement
 %nterm <Statement> grant_rest_privilege_statement
 %nterm <Statement> load_rest_service_statement
-%nterm <Statement> load_rest_project_statement
 %nterm <Statement> revoke_rest_privilege_statement
 %nterm <Statement> revoke_rest_role_statement
 %nterm <Statement> use_statement
@@ -258,6 +273,11 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> show_rest_content_sets_statement
 %nterm <Statement> show_rest_content_files_statement
 %nterm <Statement> show_rest_auth_apps_statement
+%nterm <Statement> show_rest_auth_vendors_statement
+%nterm <Statement> show_rest_users_statement
+%nterm <Statement> show_rest_columns_statement
+%nterm <Output_format> opt_output_format
+%nterm <Show_rest_columns::Source> opt_columns_source
 %nterm <Statement> show_rest_roles_statement
 %nterm <Statement> show_rest_grants_statement
 %nterm <Statement> show_create_rest_service_statement
@@ -319,7 +339,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Opt_string> opt_identified_by opt_class opt_new_service_name
 %nterm <Opt_string> opt_from_schema_name opt_from_directory
 %nterm <Opt_string> opt_new_request_path opt_schema_request_path
-%nterm <Opt_string> opt_extends opt_comments
+%nterm <Opt_string> opt_extends opt_comments opt_for_auth_app
 %nterm <Opt_service_path> opt_on_service opt_from_service opt_on_from_service
 %nterm <Opt_service_path> opt_as_service
 %nterm <Opt_service_path> opt_service_request_path
@@ -333,11 +353,6 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <bool> opt_including_database_endpoints
 %nterm <Endpoint_selection> endpoint_selection
 %nterm <bool> opt_zip opt_as_sql
-%nterm <Project_service_list> dump_rest_project_services
-%nterm <Dump_rest_project::Service> dump_rest_project_service
-%nterm <Project_schema_list> dump_rest_project_schemas
-%nterm <Dump_rest_project::Schema> dump_rest_project_schema
-%nterm <Dump_rest_project> dump_rest_project_settings
 
 %nterm <Service_path> service_request_path new_service_request_path
 %nterm <std::string> service_request_path_wildcard schema_request_path
@@ -349,10 +364,6 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <std::string> directory_file_path auth_app_name vendor_name
 %nterm <std::string> user_name user_password role_name parent_role_name
 %nterm <std::string> new_auth_app_name schema_name
-%nterm <std::string> rest_project_name rest_project_version
-%nterm <std::string> rest_project_database_schema_file_path
-%nterm <std::string> rest_project_icon_file_path rest_project_description
-%nterm <std::string> rest_project_publisher
 %nterm <String_list> service_developers_identifier service_developer_list
 %nterm <std::string> service_developer_identifier
 %nterm <std::string> request_path_identifier
@@ -370,7 +381,8 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Qualified_name> graphql_pair_value
 %nterm <std::string> graphql_datatype_text
 
-%nterm <std::string> pure_identifier identifier
+%nterm <std::string> pure_identifier identifier identifier_keyword
+%nterm <std::string> unquoted_identifier
 %nterm <Qualified_name> qualified_identifier
 %nterm <std::string> text_string_literal text_or_identifier
 
@@ -437,11 +449,9 @@ mrs_statement:
   | drop_rest_user_statement { $$ = std::move($1); }
   | drop_rest_role_statement { $$ = std::move($1); }
   | dump_rest_service_statement { $$ = std::move($1); }
-  | dump_rest_project_statement { $$ = std::move($1); }
   | grant_rest_role_statement { $$ = std::move($1); }
   | grant_rest_privilege_statement { $$ = std::move($1); }
   | load_rest_service_statement { $$ = std::move($1); }
-  | load_rest_project_statement { $$ = std::move($1); }
   | revoke_rest_privilege_statement { $$ = std::move($1); }
   | revoke_rest_role_statement { $$ = std::move($1); }
   | use_statement { $$ = std::move($1); }
@@ -454,6 +464,9 @@ mrs_statement:
   | show_rest_content_sets_statement { $$ = std::move($1); }
   | show_rest_content_files_statement { $$ = std::move($1); }
   | show_rest_auth_apps_statement { $$ = std::move($1); }
+  | show_rest_auth_vendors_statement { $$ = std::move($1); }
+  | show_rest_users_statement { $$ = std::move($1); }
+  | show_rest_columns_statement { $$ = std::move($1); }
   | show_rest_roles_statement { $$ = std::move($1); }
   | show_rest_grants_statement { $$ = std::move($1); }
   | show_create_rest_service_statement { $$ = std::move($1); }
@@ -1503,9 +1516,11 @@ grant_rest_privilege_statement:
  */
 privilege_target:
     %empty { $$ = Rest_privilege_statement{}; }
-  | ON_SYMBOL opt_service_keyword service_request_path_wildcard
+  | ON_SYMBOL service_request_path_wildcard
+    { $$ = Rest_privilege_statement{}; $$.service_pattern = std::move($2); }
+  | ON_SYMBOL SERVICE_SYMBOL service_request_path_wildcard
     { $$ = Rest_privilege_statement{}; $$.service_pattern = std::move($3); }
-  | ON_SYMBOL opt_service_keyword service_request_path_wildcard
+  | ON_SYMBOL SERVICE_SYMBOL service_request_path_wildcard
     DATABASE_SYMBOL schema_request_path_wildcard opt_object_wildcard
     {
       $$ = Rest_privilege_statement{};
@@ -1519,11 +1534,6 @@ privilege_target:
       $$.schema_pattern = std::move($3);
       $$.object_pattern = std::move($4);
     }
-  ;
-
-opt_service_keyword:
-    %empty
-  | SERVICE_SYMBOL
   ;
 
 %nterm <Opt_string> opt_object_wildcard;
@@ -1613,8 +1623,13 @@ show_rest_metadata_status_statement:
   ;
 
 show_rest_services_statement:
-    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL
-    { $$ = make_statement(Show_rest_services{}, @1); }
+    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL opt_for_auth_app
+    { $$ = make_statement(Show_rest_services{std::move($4)}, @1); }
+  ;
+
+opt_for_auth_app:
+    %empty { $$ = std::nullopt; }
+  | FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL auth_app_name { $$ = std::move($4); }
   ;
 
 show_rest_schemas_statement:
@@ -1671,6 +1686,43 @@ show_rest_auth_apps_statement:
     { $$ = make_statement(Show_rest_auth_apps{std::move($5)}, @1); }
   ;
 
+show_rest_auth_vendors_statement:
+    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL
+    { $$ = make_statement(Show_rest_auth_vendors{}, @1); }
+  ;
+
+show_rest_users_statement:
+    SHOW_SYMBOL REST_SYMBOL USERS_SYMBOL opt_on_from_service opt_for_auth_app
+    {
+      $$ = make_statement(Show_rest_users{std::move($4), std::move($5)}, @1);
+    }
+  ;
+
+show_rest_columns_statement:
+    SHOW_SYMBOL REST_SYMBOL COLUMNS_SYMBOL from_or_in opt_columns_source
+    qualified_identifier opt_output_format
+    {
+      Show_rest_columns s;
+      s.source = $5;
+      s.object = std::move($6);
+      s.format = $7;
+      $$ = make_statement(std::move(s), @1);
+    }
+  ;
+
+from_or_in:
+    FROM_SYMBOL
+  | IN_SYMBOL
+  ;
+
+opt_columns_source:
+    %empty { $$ = Show_rest_columns::Source::any; }
+  | TABLE_SYMBOL { $$ = Show_rest_columns::Source::table; }
+  | VIEW_SYMBOL { $$ = Show_rest_columns::Source::view; }
+  | PROCEDURE_SYMBOL { $$ = Show_rest_columns::Source::procedure; }
+  | FUNCTION_SYMBOL { $$ = Show_rest_columns::Source::function; }
+  ;
+
 show_rest_roles_statement:
     SHOW_SYMBOL REST_SYMBOL ROLES_SYMBOL opt_on_from_role_service
     {
@@ -1705,11 +1757,17 @@ show_rest_grants_statement:
 
 show_create_rest_service_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL
-    opt_including_database_endpoints
-    { $$ = make_statement(Show_create_rest_service{std::nullopt, $5}, @1); }
+    opt_including_database_endpoints opt_output_format
+    {
+      $$ = make_statement(
+          with_format(Show_create_rest_service{std::nullopt, $5}, $6), @1);
+    }
   | SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL service_request_path
-    opt_including_database_endpoints
-    { $$ = make_statement(Show_create_rest_service{std::move($5), $6}, @1); }
+    opt_including_database_endpoints opt_output_format
+    {
+      $$ = make_statement(
+          with_format(Show_create_rest_service{std::move($5), $6}, $7), @1);
+    }
   ;
 
 opt_including_database_endpoints:
@@ -1717,84 +1775,105 @@ opt_including_database_endpoints:
   | INCLUDING_SYMBOL DATABASE_SYMBOL ENDPOINTS_SYMBOL { $$ = true; }
   ;
 
+/* FORMAT=JSON | FORMAT=TRADITIONAL, as EXPLAIN FORMAT=JSON in the server */
+opt_output_format:
+    %empty { $$ = Output_format::traditional; }
+  | FORMAT_SYMBOL EQUAL_OPERATOR JSON_SYMBOL { $$ = Output_format::json; }
+  | FORMAT_SYMBOL EQUAL_OPERATOR text_or_identifier
+    { $$ = output_format($3, @3); }
+  ;
+
 show_create_rest_schema_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL DATABASE_SYMBOL opt_schema_request_path
-    opt_on_from_service
+    opt_on_from_service opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_schema{std::move($5), std::move($6)}, @1);
+          with_format(Show_create_rest_schema{std::move($5), std::move($6)}, $7),
+          @1);
     }
   ;
 
 show_create_rest_view_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL opt_data_mapping VIEW_SYMBOL
-    view_request_path opt_on_from_service_schema_selector
+    view_request_path opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_db_object{Db_object_kind::view, std::move($6),
-                                     std::move($7)}, @1);
+          with_format(Show_create_rest_db_object{Db_object_kind::view,
+                                                 std::move($6), std::move($7)},
+                      $8), @1);
     }
   ;
 
 show_create_rest_procedure_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL PROCEDURE_SYMBOL procedure_request_path
-    opt_on_from_service_schema_selector
+    opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_db_object{Db_object_kind::procedure, std::move($5),
-                                     std::move($6)}, @1);
+          with_format(Show_create_rest_db_object{Db_object_kind::procedure,
+                                                 std::move($5), std::move($6)},
+                      $7), @1);
     }
   ;
 
 show_create_rest_function_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL FUNCTION_SYMBOL function_request_path
-    opt_on_from_service_schema_selector
+    opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_db_object{Db_object_kind::function, std::move($5),
-                                     std::move($6)}, @1);
+          with_format(Show_create_rest_db_object{Db_object_kind::function,
+                                                 std::move($5), std::move($6)},
+                      $7), @1);
     }
   ;
 
 show_create_rest_content_set_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL CONTENT_SYMBOL SET_SYMBOL
-    content_set_request_path opt_on_from_service
+    content_set_request_path opt_on_from_service opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_content_set{std::move($6), std::move($7)}, @1);
+          with_format(Show_create_rest_content_set{std::move($6), std::move($7)},
+                      $8), @1);
     }
   ;
 
 show_create_rest_content_file_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL CONTENT_SYMBOL FILE_SYMBOL
     content_file_request_path on_or_from opt_service_request_path
-    CONTENT_SYMBOL SET_SYMBOL content_set_request_path
+    CONTENT_SYMBOL SET_SYMBOL content_set_request_path opt_output_format
     {
       $$ = make_statement(
-          Show_create_rest_content_file{std::move($6), std::move($8),
-                                        std::move($11)}, @1);
+          with_format(Show_create_rest_content_file{std::move($6), std::move($8),
+                                                    std::move($11)},
+                      $12), @1);
     }
   ;
 
 show_create_rest_auth_app_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL AUTH_SYMBOL APP_SYMBOL auth_app_name
-    { $$ = make_statement(Show_create_rest_auth_app{std::move($6)}, @1); }
+    opt_output_format
+    {
+      $$ = make_statement(
+          with_format(Show_create_rest_auth_app{std::move($6)}, $7), @1);
+    }
   ;
 
 show_create_rest_role_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL ROLE_SYMBOL role_name opt_role_service
+    opt_output_format
     {
-      $$ = make_statement(Show_create_rest_role{std::move($5), std::move($6)},
-                          @1);
+      $$ = make_statement(
+          with_format(Show_create_rest_role{std::move($5), std::move($6)}, $7),
+          @1);
     }
   ;
 
 show_create_rest_user_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL USER_SYMBOL user_name AT_SIGN_SYMBOL
-    auth_app_name
+    auth_app_name opt_output_format
     {
-      $$ = make_statement(Show_create_rest_user{std::move($5), std::move($7)},
-                          @1);
+      $$ = make_statement(
+          with_format(Show_create_rest_user{std::move($5), std::move($7)}, $8),
+          @1);
     }
   ;
 
@@ -1834,58 +1913,6 @@ endpoint_selection:
   | ALL_SYMBOL { $$ = Endpoint_selection{true, true, true}; }
   ;
 
-dump_rest_project_statement:
-    DUMP_SYMBOL REST_SYMBOL PROJECT_SYMBOL rest_project_name VERSION_SYMBOL
-    rest_project_version dump_rest_project_services dump_rest_project_schemas
-    dump_rest_project_settings TO_SYMBOL opt_zip directory_file_path
-    {
-      Dump_rest_project s = std::move($9);
-      s.name = std::move($4);
-      s.version = std::move($6);
-      s.services = std::move($7);
-      s.schemas = std::move($8);
-      s.zip = $11;
-      s.directory = std::move($12);
-      $$ = make_statement(std::move(s), @1);
-    }
-  ;
-
-dump_rest_project_services:
-    dump_rest_project_service
-    { $$ = Project_service_list{}; $$.push_back(std::move($1)); }
-  | dump_rest_project_services dump_rest_project_service
-    { $$ = std::move($1); $$.push_back(std::move($2)); }
-  ;
-
-dump_rest_project_service:
-    SERVICE_SYMBOL service_request_path INCLUDING_SYMBOL endpoint_selection
-    ENDPOINTS_SYMBOL
-    { $$ = Dump_rest_project::Service{std::move($2), $4}; }
-  ;
-
-dump_rest_project_schemas:
-    %empty { $$ = Project_schema_list{}; }
-  | dump_rest_project_schemas dump_rest_project_schema
-    { $$ = std::move($1); $$.push_back(std::move($2)); }
-  ;
-
-dump_rest_project_schema:
-    DATABASE_SYMBOL schema_name
-    { $$ = Dump_rest_project::Schema{std::move($2), std::nullopt}; }
-  | DATABASE_SYMBOL schema_name FROM_SYMBOL rest_project_database_schema_file_path
-    { $$ = Dump_rest_project::Schema{std::move($2), std::move($4)}; }
-  ;
-
-dump_rest_project_settings:
-    %empty { $$ = Dump_rest_project{}; }
-  | dump_rest_project_settings ICON_SYMBOL FROM_SYMBOL rest_project_icon_file_path
-    { $$ = std::move($1); $$.icon_file_path = std::move($4); }
-  | dump_rest_project_settings DESCRIPTION_SYMBOL rest_project_description
-    { $$ = std::move($1); $$.description = std::move($3); }
-  | dump_rest_project_settings PUBLISHER_SYMBOL rest_project_publisher
-    { $$ = std::move($1); $$.publisher = std::move($3); }
-  ;
-
 load_rest_service_statement:
     LOAD_SYMBOL REST_SYMBOL SERVICE_SYMBOL opt_as_service FROM_SYMBOL
     directory_file_path
@@ -1902,54 +1929,7 @@ opt_as_service:
   | AS_SYMBOL service_request_path { $$ = std::move($2); }
   ;
 
-load_rest_project_statement:
-    LOAD_SYMBOL REST_SYMBOL PROJECT_SYMBOL FROM_SYMBOL directory_file_path
-    {
-      Load_rest_project s;
-      s.directory = std::move($5);
-      $$ = make_statement(std::move(s), @1);
-    }
-  | LOAD_SYMBOL REST_SYMBOL PROJECT_SYMBOL FROM_SYMBOL ZIP_SYMBOL directory_file_path
-    {
-      Load_rest_project s;
-      s.zip = true;
-      s.directory = std::move($6);
-      $$ = make_statement(std::move(s), @1);
-    }
-  | LOAD_SYMBOL REST_SYMBOL PROJECT_SYMBOL FROM_SYMBOL URL_SYMBOL directory_file_path
-    {
-      Load_rest_project s;
-      s.url = true;
-      s.directory = std::move($6);
-      $$ = make_statement(std::move(s), @1);
-    }
-  ;
-
 /* Named identifiers ======================================================= */
-
-rest_project_name:
-    text_string_literal { $$ = std::move($1); }
-  ;
-
-rest_project_database_schema_file_path:
-    text_string_literal { $$ = std::move($1); }
-  ;
-
-rest_project_icon_file_path:
-    text_string_literal { $$ = std::move($1); }
-  ;
-
-rest_project_description:
-    text_string_literal { $$ = std::move($1); }
-  ;
-
-rest_project_publisher:
-    text_string_literal { $$ = std::move($1); }
-  ;
-
-rest_project_version:
-    text_string_literal { $$ = std::move($1); }
-  ;
 
 service_request_path:
     request_path_identifier
@@ -2027,7 +2007,11 @@ request_path_identifier:
   | BACK_TICK_QUOTED_ID
     { validate_request_path($1, false, @1); $$ = std::move($1); }
   | DOUBLE_QUOTED_TEXT
-    { validate_request_path($1.text, false, @1); $$ = std::move($1.text); }
+    {
+      require_ansi_quotes(driver, true, @1);
+      validate_request_path($1.text, false, @1);
+      $$ = std::move($1.text);
+    }
   ;
 
 request_path_identifier_with_wildcard:
@@ -2035,7 +2019,11 @@ request_path_identifier_with_wildcard:
   | BACK_TICK_QUOTED_ID
     { validate_request_path($1, true, @1); $$ = std::move($1); }
   | DOUBLE_QUOTED_TEXT
-    { validate_request_path($1.text, true, @1); $$ = std::move($1.text); }
+    {
+      require_ansi_quotes(driver, true, @1);
+      validate_request_path($1.text, true, @1);
+      $$ = std::move($1.text);
+    }
   ;
 
 /* Json ==================================================================== */
@@ -2078,10 +2066,11 @@ json_value:
   | NULL_SYMBOL { $$ = "null"; }
   ;
 
+/* JSON needs a digit before the decimal point: .5 is stored as 0.5 */
 json_number:
     INT_NUMBER { $$ = std::move($1); }
-  | DECIMAL_NUMBER { $$ = std::move($1); }
-  | FLOAT_NUMBER { $$ = std::move($1); }
+  | DECIMAL_NUMBER { $$ = $1[0] == '.' ? "0" + $1 : std::move($1); }
+  | FLOAT_NUMBER { $$ = $1[0] == '.' ? "0" + $1 : std::move($1); }
   ;
 
 /* GraphQL (data mapping) ================================================== */
@@ -2175,7 +2164,7 @@ opt_graphql_datatype:
 graphql_datatype_text:
     DOUBLE_QUOTED_TEXT { $$ = std::move($1.text); }
   | SINGLE_QUOTED_TEXT { $$ = std::move($1); }
-  | identifier { $$ = std::move($1); }
+  | unquoted_identifier { $$ = std::move($1); }
   ;
 
 opt_graphql_value_json_schema:
@@ -2280,7 +2269,6 @@ graphql_allowed_keyword:
   | FEED_SYMBOL { $$ = keyword_text(driver, @1); }
   | ITEM_SYMBOL { $$ = keyword_text(driver, @1); }
   | SETS_SYMBOL { $$ = keyword_text(driver, @1); }
-  | FILES_SYMBOL { $$ = keyword_text(driver, @1); }
   | AUTH_SYMBOL { $$ = keyword_text(driver, @1); }
   | APPS_SYMBOL { $$ = keyword_text(driver, @1); }
   | APP_SYMBOL { $$ = keyword_text(driver, @1); }
@@ -2301,11 +2289,12 @@ graphql_allowed_keyword:
   | EXTENDS_SYMBOL { $$ = keyword_text(driver, @1); }
   | OBJECT_SYMBOL { $$ = keyword_text(driver, @1); }
   | HIERARCHY_SYMBOL { $$ = keyword_text(driver, @1); }
+  | TABLE_SYMBOL { $$ = keyword_text(driver, @1); }
   ;
 
 graphql_pair_key:
     DOUBLE_QUOTED_TEXT { $$ = std::move($1.text); }
-  | identifier { $$ = std::move($1); }
+  | unquoted_identifier { $$ = std::move($1); }
   | graphql_allowed_keyword { $$ = std::move($1); }
   ;
 
@@ -2320,14 +2309,33 @@ schema_name:
     identifier { $$ = std::move($1); }
   ;
 
-/* Identifiers excluding keywords (except if they are quoted). */
+/* Identifiers excluding keywords (except if they are quoted). A double
+   quoted string is one under ANSI_QUOTES only. */
 pure_identifier:
     IDENTIFIER { $$ = std::move($1); }
   | BACK_TICK_QUOTED_ID { $$ = std::move($1); }
+  | DOUBLE_QUOTED_TEXT
+    { require_ansi_quotes(driver, true, @1); $$ = std::move($1.text); }
   ;
 
+/* Identifiers including the keywords that are also allowed unquoted. */
 identifier:
     pure_identifier { $$ = std::move($1); }
+  | identifier_keyword { $$ = std::move($1); }
+  ;
+
+identifier_keyword:
+    FILES_SYMBOL { $$ = keyword_text(driver, @1); }
+  | VENDORS_SYMBOL { $$ = keyword_text(driver, @1); }
+  | COLUMNS_SYMBOL { $$ = keyword_text(driver, @1); }
+  ;
+
+/* An identifier where the rule using it accepts a double quoted string in
+   every SQL mode. */
+unquoted_identifier:
+    IDENTIFIER { $$ = std::move($1); }
+  | BACK_TICK_QUOTED_ID { $$ = std::move($1); }
+  | identifier_keyword { $$ = std::move($1); }
   ;
 
 qualified_identifier:
@@ -2336,14 +2344,18 @@ qualified_identifier:
     { $$ = Qualified_name{std::move($1), std::move($3)}; }
   ;
 
+/* A double quoted string is a text unless ANSI_QUOTES is set. */
 text_string_literal:
     SINGLE_QUOTED_TEXT { $$ = std::move($1); }
-  | DOUBLE_QUOTED_TEXT { $$ = std::move($1.text); }
+  | DOUBLE_QUOTED_TEXT
+    { require_ansi_quotes(driver, false, @1); $$ = std::move($1.text); }
   ;
 
+/* A double quoted string is an identifier or a text, in every SQL mode. */
 text_or_identifier:
-    identifier { $$ = std::move($1); }
-  | text_string_literal { $$ = std::move($1); }
+    unquoted_identifier { $$ = std::move($1); }
+  | SINGLE_QUOTED_TEXT { $$ = std::move($1); }
+  | DOUBLE_QUOTED_TEXT { $$ = std::move($1.text); }
   ;
 
 %%
@@ -2358,6 +2370,24 @@ void Parser::error(const location_type &loc, const std::string &msg) {
 std::string keyword_text(const Driver &driver,
                          const Parser::location_type &loc) {
   return driver.token_text(loc.begin.line, loc.begin.column);
+}
+
+Output_format output_format(const std::string &name,
+                            const Parser::location_type &loc) {
+  std::string upper = name;
+  std::transform(upper.begin(), upper.end(), upper.begin(),
+                 [](unsigned char c) { return std::toupper(c); });
+  if (upper == "JSON") return Output_format::json;
+  if (upper == "TRADITIONAL") return Output_format::traditional;
+  throw Parser::syntax_error(loc, "Unknown REST format name: '" + name + "'");
+}
+
+void require_ansi_quotes(const Driver &driver, bool ansi_quotes,
+                         const Parser::location_type &loc) {
+  if (driver.ansi_quotes() != ansi_quotes) {
+    throw Parser::syntax_error(loc,
+                               "syntax error, unexpected double quoted string");
+  }
 }
 
 void validate_request_path(const std::string &path, bool allow_wildcards,

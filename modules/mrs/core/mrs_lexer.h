@@ -127,7 +127,6 @@ struct Sql_mode {
   X(DYNAMIC_SYMBOL, "DYNAMIC")                         \
   X(SQL_SYMBOL, "SQL")                                 \
   X(AND_SYMBOL, "AND")                                 \
-  X(DESCRIPTION_SYMBOL, "DESCRIPTION")                 \
   X(SETS_SYMBOL, "SETS")                               \
   X(CONFIGURE_SYMBOL, "CONFIGURE")                     \
   X(REST_SYMBOL, "REST")                               \
@@ -186,10 +185,9 @@ struct Sql_mode {
   X(ZIP_SYMBOL, "ZIP")                                 \
   X(SCRIPT_SYMBOL, "SCRIPT")                           \
   X(STATIC_SYMBOL, "STATIC")                           \
-  X(PROJECT_SYMBOL, "PROJECT")                         \
-  X(VERSION_SYMBOL, "VERSION")                         \
-  X(ICON_SYMBOL, "ICON")                               \
-  X(PUBLISHER_SYMBOL, "PUBLISHER")
+  X(VENDORS_SYMBOL, "VENDORS")                       \
+  X(TABLE_SYMBOL, "TABLE")                           \
+  X(COLUMNS_SYMBOL, "COLUMNS")
 
 // The @-annotations of data mapping definitions (`@INSERT`, `@KEY`, ...).
 #define MRS_ANNOTATION_LIST(X)      \

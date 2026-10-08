@@ -33,6 +33,7 @@
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_parser.h"
+#include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
 
@@ -98,7 +99,7 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
     if (existing) {
       if (s.flags.if_not_exists) {
         r->message = "REST SERVICE `" + full_path + "` created successfully.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -128,7 +129,7 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
   transaction.commit();
 
   r->message = "REST SERVICE `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) {
@@ -173,7 +174,7 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   }
 
   r->affected_items_count = 1;
-  r->id = sql::hex(service.id);
+  r->id = service.id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
@@ -191,7 +192,7 @@ void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
   if (service) {
     metadata::delete_service(m_session, service->id);
     if (m_state->current_service_id == service->id) m_state->clear_service();
-    r->id = sql::hex(service->id);
+    r->id = service->id;
   }
 
   transaction.commit();
@@ -212,14 +213,27 @@ void Ddl_executor::do_execute(const Clone_rest_service &s, Statement_result *r) 
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = sql::hex(service->id);
+  r->id = service->id;
 }
 
-void Ddl_executor::do_execute(const Show_rest_services &, Statement_result *r) {
+void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST services.");
 
+  // FOR AUTH APP limits the list to the services the auth app is linked to
+  std::vector<metadata::Service> services;
+  if (s.auth_app) {
+    const auto auth_app = metadata::find_auth_app(m_session, *s.auth_app);
+    if (!auth_app) {
+      throw std::runtime_error("The given REST AUTH APP `" + *s.auth_app +
+                               "` could not be found.");
+    }
+    services = metadata::get_services_of_auth_app(m_session, auth_app->id);
+  } else {
+    services = metadata::get_services(m_session);
+  }
+
   r->columns = {"REST SERVICE Path", "enabled", "current", "auth_apps"};
-  for (const auto &service : metadata::get_services(m_session)) {
+  for (const auto &service : services) {
     std::string auth_apps;
     for (const auto &name : service.auth_apps) {
       if (!auth_apps.empty()) auth_apps += ", ";
@@ -243,9 +257,14 @@ void Ddl_executor::do_execute(const Show_create_rest_service &s,
   if (!service) throw std::runtime_error("The given REST SERVICE was not found.");
 
   r->columns = {"CREATE REST SERVICE"};
-  r->add_row().emplace_back(metadata::service_create_statement(
-      m_session, *service, s.include_database_endpoints, false, false));
-  r->id = sql::hex(service->id);
+  r->add_row().emplace_back(
+      s.format == Output_format::json
+          ? metadata::service_json(m_session, *service,
+                                   s.include_database_endpoints)
+                .dump(true)
+          : metadata::service_create_statement(
+                m_session, *service, s.include_database_endpoints, false, false));
+  r->id = service->id;
 }
 
 void Ddl_executor::do_execute(const Dump_rest_service &s, Statement_result *r) {
@@ -276,7 +295,7 @@ void Ddl_executor::do_execute(const Dump_rest_service &s, Statement_result *r) {
 
   r->columns = {"DUMP REST SERVICE"};
   r->add_row().emplace_back("Result stored in '" + file_path + "'");
-  r->id = sql::hex(service->id);
+  r->id = service->id;
 }
 
 void Ddl_executor::do_execute(const Load_rest_service &s, Statement_result *r) {
@@ -295,6 +314,7 @@ void Ddl_executor::do_execute(const Load_rest_service &s, Statement_result *r) {
   // failure stops the load.
   Executor_state state;
   Ddl_executor loader(m_session, &state);
+  loader.set_schema_deployer(m_schema_deployer);
   if (s.as_path) loader.set_service_path_override(s.as_path->path);
   for (const auto &result : loader.run(script)) {
     if (!result.success) {
@@ -320,19 +340,6 @@ void Ddl_executor::do_execute(const Load_rest_service &s, Statement_result *r) {
   r->columns = {"LOAD REST SERVICE"};
   r->add_row().emplace_back("Service '" + loaded_path + "' loaded from '" +
                             file_path + "'");
-}
-
-void Ddl_executor::do_execute(const Dump_rest_project &s, Statement_result *) {
-  set_failure_context("Failed to execute DUMP REST PROJECT `" + s.name + "`.");
-  throw std::runtime_error(
-      "DUMP REST PROJECT is not supported by this version of MariaDB Shell yet.");
-}
-
-void Ddl_executor::do_execute(const Load_rest_project &s, Statement_result *) {
-  set_failure_context("Failed to execute LOAD REST PROJECT from `" + s.directory +
-                      "`.");
-  throw std::runtime_error(
-      "LOAD REST PROJECT is not supported by this version of MariaDB Shell yet.");
 }
 
 }  // namespace mrs

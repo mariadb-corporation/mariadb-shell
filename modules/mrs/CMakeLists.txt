@@ -53,20 +53,31 @@ IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   )
 ENDIF()
 
-# The MRS metadata schema script is compiled into the binary, so that
-# CONFIGURE REST METADATA needs no files at run time.
-set(MRS_METADATA_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/core/metadata/mysql_rest_service_metadata_4.1.6.sql")
-set(MRS_METADATA_SCRIPT_CC "${MRS_GENERATED_DIR}/mrs_metadata_schema_script.cc")
-add_custom_command(
-    OUTPUT "${MRS_METADATA_SCRIPT_CC}"
-    COMMAND "${CMAKE_COMMAND}"
-        -DINPUT=${MRS_METADATA_SCRIPT}
-        -DOUTPUT=${MRS_METADATA_SCRIPT_CC}
-        -DSYMBOL=k_metadata_schema_script
-        -P "${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake"
-    DEPENDS "${MRS_METADATA_SCRIPT}" "${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake"
-    COMMENT "Embedding the MRS metadata schema script"
+# The MSM project of the MRS metadata schema is maintained in db_schema/.
+# Its project settings and release scripts are bundled into
+# share/mariadb-shell/mrs/, where CONFIGURE REST METADATA deploys from:
+# through the msm plugin's deploySchema() when it is loaded, otherwise by
+# running the deployment script itself (metadata::Script_deployer).
+set(MRS_MSM_PROJECT_NAME "mysql_rest_service_metadata.msm.project")
+set(MRS_MSM_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/db_schema/${MRS_MSM_PROJECT_NAME}")
+set(MRS_MSM_PROJECT_DESTINATION "${INSTALL_SHAREDIR}/mrs/${MRS_MSM_PROJECT_NAME}")
+
+add_custom_target(mrs_metadata_project ALL)
+install_bundled_files(
+    DESCRIPTION "MRS metadata MSM project"
+    FILES "${MRS_MSM_PROJECT_DIR}/msm.project.json"
+    DESTINATION "${MRS_MSM_PROJECT_DESTINATION}"
+    TARGET mrs_metadata_project
 )
+foreach(release_dir versions deployment updates)
+  file(GLOB release_scripts "${MRS_MSM_PROJECT_DIR}/releases/${release_dir}/*.sql")
+  install_bundled_files(
+      DESCRIPTION "MRS metadata ${release_dir} scripts"
+      FILES ${release_scripts}
+      DESTINATION "${MRS_MSM_PROJECT_DESTINATION}/releases/${release_dir}"
+      TARGET mrs_metadata_project
+  )
+endforeach()
 
 set(mrs_core_SOURCES
     core/mrs_db_session.cc
@@ -82,11 +93,12 @@ set(mrs_core_SOURCES
     core/mrs_metadata_auth.cc
     core/mrs_metadata_content.cc
     core/mrs_metadata_db_objects.cc
+    core/mrs_metadata_json.cc
     core/mrs_metadata_schema.cc
     core/mrs_parser.cc
+    core/mrs_schema_deployment.cc
     core/mrs_sql.cc
     "${MRS_GENERATED_DIR}/mrs_parser_gen.cc"
-    "${MRS_METADATA_SCRIPT_CC}"
 )
 
 add_convenience_library(mrs_core ${mrs_core_SOURCES})

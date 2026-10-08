@@ -1,6 +1,7 @@
 #@<> Initialization
 # The REST SQL statements of the mrs module for database objects: REST VIEW
 # (data mapping views), REST PROCEDURE and REST FUNCTION.
+import json
 import os
 
 testutil.deploy_sandbox(__mysql_sandbox_port1, "root")
@@ -139,6 +140,34 @@ EXPECT_EQ("country", metadata_value("SELECT p.name FROM mysql_rest_service_metad
 EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info(full_city))
 EXPECT_EQ(full_city, show_create("SHOW CREATE REST VIEW /city"))
 EXPECT_EQ(full_city, show_create("SHOW CREATE REST DATA MAPPING VIEW /city ON SERVICE /svc SCHEMA /sakila"))
+
+#@<> SHOW CREATE REST VIEW FORMAT=JSON
+res = rest("SHOW CREATE REST VIEW /city FORMAT=JSON")
+EXPECT_EQ(["CREATE REST VIEW"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"name": "city", "schema_name": "sakila", "request_path": "/city", "object_type": "TABLE", "crud_operations": ["CREATE", "READ", "UPDATE", "DELETE"], "format": "ITEM", "enabled": 0, "requires_auth": False, "items_per_page": 10, "media_type": "application/json", "comments": "The cities", "options": {"a": 1}, "metadata": {"m": [1, 2]}}, {k: doc[k] for k in ["name", "schema_name", "request_path", "object_type", "crud_operations", "format", "enabled", "requires_auth", "items_per_page", "media_type", "comments", "options", "metadata"]})
+EXPECT_EQ(db_object_column("/city", "id"), doc["id"])
+EXPECT_EQ(1, len(doc["objects"]))
+obj = doc["objects"][0]
+EXPECT_EQ(["MyCity", "RESULT"], [obj["name"], obj["kind"]])
+EXPECT_TRUE(obj["options"]["dataMappingViewInsert"])
+# Columns left out of the mapping are stored as disabled fields
+fields = [f for f in obj["fields"] if f["enabled"]]
+EXPECT_EQ(["cityId", "city", "lastUpdate", "country", "addresses"], [f["name"] for f in fields if f["parent_reference_id"] is None])
+EXPECT_EQ(["countryId"], [f["name"] for f in obj["fields"] if not f["enabled"] and f["parent_reference_id"] is None])
+city_id = [f for f in fields if f["name"] == "cityId"][0]
+EXPECT_EQ(["city_id", True, None], [city_id["db_column"]["name"], city_id["db_column"]["is_primary"], city_id["object_reference"]])
+EXPECT_TRUE(city_id["allow_sorting"])
+EXPECT_TRUE(city_id["no_check"])
+EXPECT_FALSE([f for f in fields if f["name"] == "city"][0]["allow_filtering"])
+# A field representing a reference carries it; the fields below point to it
+country = [f for f in fields if f["name"] == "country" and f["parent_reference_id"] is None][0]
+reference = country["object_reference"]
+EXPECT_EQ(country["represents_reference_id"], reference["id"])
+EXPECT_EQ(["n:1", "country"], [reference["reference_mapping"]["kind"], reference["reference_mapping"]["referenced_table"]])
+EXPECT_TRUE(reference["unnest"])
+EXPECT_EQ(["country"], [f["name"] for f in fields if f["parent_reference_id"] == reference["id"]])
+EXPECT_EQ(doc, json.loads(show_create("SHOW CREATE REST DATA MAPPING VIEW /city ON SERVICE /svc SCHEMA /sakila FORMAT=JSON")))
 
 #@<> CREATE REST VIEW: IF NOT EXISTS and OR REPLACE
 EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info("CREATE REST VIEW IF NOT EXISTS /city AS sakila.city"))
@@ -317,6 +346,13 @@ EXPECT_EQ([["PARAMETERS", 0], ["RESULT", 1], ["RESULT", 2]], [list(r) for r in s
 EXPECT_EQ([["/filmInStock", "ENABLED"]], rest_rows("SHOW REST PROCEDURES"))
 EXPECT_EQ([], rest_rows("SHOW REST FUNCTIONS"))
 
+#@<> SHOW CREATE REST PROCEDURE FORMAT=JSON
+doc = json.loads(show_create("SHOW CREATE REST PROCEDURE /filmInStock FORMAT=JSON"))
+EXPECT_EQ(["PROCEDURE", "film_in_stock"], [doc["object_type"], doc["name"]])
+EXPECT_EQ([["FilmInStockParams", "PARAMETERS"], ["FilmInStock", "RESULT"], ["SvcSakilaFilmInStock2", "RESULT"]], [[o["name"], o["kind"]] for o in doc["objects"]])
+params = doc["objects"][0]["fields"]
+EXPECT_EQ([["pFilmId", True, False], ["pStoreId", True, False], ["pFilmCount", False, True]], [[f["name"], f["db_column"]["in"], f["db_column"]["out"]] for f in params])
+
 #@<> SHOW CREATE REST PROCEDURE round trip
 EXPECT_EQ("REST PROCEDURE `/svc/sakila/filmInStock` created successfully.", rest_info(film_in_stock))
 EXPECT_EQ(film_in_stock, show_create("SHOW CREATE REST PROCEDURE /filmInStock"))
@@ -442,6 +478,53 @@ EXPECT_EQ(customer_balance, show_create("SHOW CREATE REST FUNCTION /customerBala
 EXPECT_EQ([["/customerBalance", "ENABLED"], ["/inventoryInStock", "ENABLED"]], rest_rows("SHOW REST FUNCTIONS"))
 EXPECT_THROWS(lambda: rest("CREATE REST FUNCTION /bad AS sakila.get_customer_balance RESULT { nope: nope }"), "Failed to create the REST FUNCTION `/svc/sakila/bad`. The column `nope` does not exist on `sakila`.`get_customer_balance`.")
 EXPECT_THROWS(lambda: rest("CREATE REST FUNCTION /bad AS sakila.nope"), "Failed to create the REST FUNCTION `/svc/sakila/bad`.")
+
+#@<> SHOW CREATE REST FUNCTION FORMAT=JSON
+doc = json.loads(show_create("SHOW CREATE REST FUNCTION /customerBalance FORMAT=JSON"))
+EXPECT_EQ(["FUNCTION", "get_customer_balance"], [doc["object_type"], doc["name"]])
+EXPECT_EQ([["BalanceParams", "PARAMETERS"], ["Balance", "RESULT"]], [[o["name"], o["kind"]] for o in doc["objects"]])
+
+#@<> SHOW REST COLUMNS of a table
+res = rest("SHOW REST COLUMNS FROM sakila.city")
+EXPECT_EQ(["position", "name", "kind", "datatype", "not_null", "is_primary", "id_generation", "reference"], res.get_column_names())
+rows = [list(r) for r in res.fetch_all()]
+EXPECT_EQ([1, "city_id", "COLUMN", "smallint(5) unsigned", "YES", "YES", "auto_inc", None], rows[0])
+EXPECT_EQ([2, "city", "COLUMN", "varchar(50)", "YES", "NO", None, None], rows[1])
+EXPECT_EQ([["country", "REFERENCE", "n:1 sakila.country (country_id = country_id)"], ["address", "REFERENCE", "1:n sakila.address (city_id = city_id)"]], [[r[1], r[2], r[7]] for r in rows if r[2] == "REFERENCE"])
+# The schema defaults to the one of the current REST schema; TABLE, IN and
+# FROM are optional
+EXPECT_EQ(rows, rest_rows("SHOW REST COLUMNS IN TABLE city"))
+EXPECT_EQ(rows, rest_rows("SHOW REST COLUMNS FROM TABLE `sakila`.`city`"))
+EXPECT_THROWS(lambda: rest("SHOW REST COLUMNS FROM VIEW sakila.city"), "Cannot SHOW the REST COLUMNS of `sakila`.`city`. `sakila`.`city` is a table, not a view.")
+EXPECT_THROWS(lambda: rest("SHOW REST COLUMNS FROM sakila.nope"), "Cannot SHOW the REST COLUMNS of `sakila`.`nope`. The database object `sakila`.`nope` was not found.")
+EXPECT_THROWS(lambda: rest("SHOW REST COLUMNS FROM TABLE sakila.nope"), "The table `sakila`.`nope` was not found.")
+EXPECT_EQ("FID", rest_rows("SHOW REST COLUMNS FROM VIEW sakila.film_list")[0][1])
+
+#@<> SHOW REST COLUMNS FORMAT=JSON of a table
+res = rest("SHOW REST COLUMNS FROM sakila.city FORMAT=JSON")
+EXPECT_EQ(["REST COLUMNS"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ(["sakila", "city", "TABLE"], [doc["schema"], doc["name"], doc["type"]])
+EXPECT_EQ(["city_id", "city", "country_id", "last_update", "country", "address"], [c["name"] for c in doc["columns"]])
+EXPECT_EQ({"name": "city_id", "datatype": "smallint(5) unsigned", "not_null": True, "is_primary": True, "id_generation": "auto_inc"}, {k: doc["columns"][0]["db_column"][k] for k in ["name", "datatype", "not_null", "is_primary", "id_generation"]})
+EXPECT_EQ(None, doc["columns"][0]["reference_mapping"])
+EXPECT_EQ({"kind": "1:n", "to_many": True, "referenced_schema": "sakila", "referenced_table": "address", "column_mapping": [{"base": "city_id", "ref": "city_id"}]}, {k: doc["columns"][5]["reference_mapping"][k] for k in ["kind", "to_many", "referenced_schema", "referenced_table", "column_mapping"]})
+
+#@<> SHOW REST COLUMNS of a procedure and a function
+rows = rest_rows("SHOW REST COLUMNS FROM PROCEDURE sakila.film_in_stock")
+EXPECT_EQ([[1, "p_film_id", "IN"], [2, "p_store_id", "IN"], [3, "p_film_count", "OUT"]], [r[:3] for r in rows])
+EXPECT_CONTAINS("int", rows[0][3])
+EXPECT_EQ(rows, rest_rows("SHOW REST COLUMNS FROM sakila.film_in_stock"))
+rows = rest_rows("SHOW REST COLUMNS FROM sakila.inventory_in_stock")
+EXPECT_EQ([[1, "p_inventory_id", "IN"], [0, None, "RETURN"]], [r[:3] for r in rows])
+EXPECT_EQ("tinyint", rows[1][3])
+EXPECT_THROWS(lambda: rest("SHOW REST COLUMNS FROM FUNCTION sakila.film_in_stock"), "The function `sakila`.`film_in_stock` was not found.")
+doc = json.loads(show_create("SHOW REST COLUMNS FROM FUNCTION sakila.inventory_in_stock FORMAT=JSON"))
+EXPECT_EQ(["FUNCTION", "tinyint"], [doc["type"], doc["return_type"]])
+EXPECT_EQ([{"position": 1, "name": "p_inventory_id", "mode": "IN"}], [{k: p[k] for k in ["position", "name", "mode"]} for p in doc["parameters"]])
+doc = json.loads(show_create("SHOW REST COLUMNS FROM PROCEDURE sakila.film_in_stock FORMAT=JSON"))
+EXPECT_EQ(["p_film_id", "p_store_id", "p_film_count"], [p["name"] for p in doc["parameters"]])
+EXPECT_FALSE("return_type" in doc)
 
 #@<> ALTER REST FUNCTION
 res = rest("ALTER REST FUNCTION /inventoryInStock RESULT Stock { inStock: result @DATATYPE(\"bool\") } ITEMS PER PAGE 5")

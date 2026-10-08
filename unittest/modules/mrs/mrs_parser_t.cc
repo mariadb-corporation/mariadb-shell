@@ -55,9 +55,10 @@ const T &parse_as(const std::string &sql, const Sql_mode &mode = {}) {
 }
 
 void expect_parse_error(const std::string &sql, const std::string &message,
-                        int line = -1, int column = -1) {
+                        int line = -1, int column = -1,
+                        const Sql_mode &mode = {}) {
   try {
-    parse_script(sql);
+    parse_script(sql, mode);
     FAIL() << "No syntax error for: " << sql;
   } catch (const Parse_error &e) {
     EXPECT_NE(std::string::npos, std::string(e.what()).find(message))
@@ -675,6 +676,15 @@ TEST(Mrs_parser, auth_apps) {
     const auto &s = parse_as<Show_create_rest_auth_app>("SHOW CREATE REST AUTH APP `MRS`");
     EXPECT_EQ("MRS", s.name);
   }
+  EXPECT_TRUE(
+      parse_statement("SHOW REST AUTH VENDORS").is<Show_rest_auth_vendors>());
+  {
+    const auto &s = parse_as<Show_rest_services>(
+        "SHOW REST SERVICES FOR AUTH APP \"MRS\"");
+    EXPECT_EQ("MRS", *s.auth_app);
+  }
+  EXPECT_FALSE(
+      parse_as<Show_rest_services>("SHOW REST SERVICES").auth_app.has_value());
 }
 
 // Keywords such as MRS or MYSQL have to be quoted when used as names, as in
@@ -687,6 +697,25 @@ TEST(Mrs_parser, keywords_as_names_need_quotes) {
 }
 
 TEST(Mrs_parser, users) {
+  {
+    const auto &s = parse_as<Show_rest_users>("SHOW REST USERS");
+    EXPECT_FALSE(s.service.has_value());
+    EXPECT_FALSE(s.auth_app.has_value());
+  }
+  {
+    const auto &s = parse_as<Show_rest_users>(
+        "SHOW REST USERS ON SERVICE /svc FOR AUTH APP 'MRS'");
+    EXPECT_EQ("/svc", s.service->path);
+    EXPECT_EQ("MRS", *s.auth_app);
+  }
+  {
+    const auto &s =
+        parse_as<Show_rest_users>("SHOW REST USERS FROM /svc");
+    EXPECT_EQ("/svc", s.service->path);
+    EXPECT_FALSE(s.auth_app.has_value());
+  }
+  EXPECT_EQ("myApp", *parse_as<Show_rest_users>(
+                          "SHOW REST USERS FOR AUTH APP myApp").auth_app);
   {
     const auto &s = parse_as<Create_rest_user>(
         "CREATE REST USER \"boss\"@\"MRS\" IDENTIFIED BY \"MySQLR0cks!\" ACCOUNT LOCK "
@@ -786,7 +815,7 @@ TEST(Mrs_parser, roles_grants_and_revokes) {
   }
   {
     const auto &s = parse_as<Rest_privilege_statement>(
-        "GRANT REST READ ON /svc SCHEMA `` OBJECT `` TO 'Role1'");
+        "GRANT REST READ ON SERVICE /svc SCHEMA `` OBJECT `` TO 'Role1'");
     EXPECT_EQ("/svc", *s.service_pattern);
     EXPECT_EQ("", *s.schema_pattern);
     EXPECT_EQ("", *s.object_pattern);
@@ -902,29 +931,6 @@ TEST(Mrs_parser, dump_and_load_statements) {
     EXPECT_FALSE(s.zip);
   }
   {
-    const auto &s = parse_as<Dump_rest_project>(
-        "DUMP REST PROJECT 'proj' VERSION '1.0.0' "
-        "SERVICE /svc INCLUDING DATABASE ENDPOINTS "
-        "SERVICE /svc2 INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS "
-        "SCHEMA sakila SCHEMA `other` FROM '/tmp/other.sql' "
-        "ICON FROM '/tmp/icon.png' DESCRIPTION 'd' PUBLISHER 'p' TO ZIP '/tmp/p.zip'");
-    EXPECT_EQ("proj", s.name);
-    EXPECT_EQ("1.0.0", s.version);
-    ASSERT_EQ(2u, s.services.size());
-    EXPECT_EQ("/svc", s.services[0].path.path);
-    EXPECT_FALSE(s.services[0].endpoints.static_);
-    EXPECT_TRUE(s.services[1].endpoints.dynamic);
-    ASSERT_EQ(2u, s.schemas.size());
-    EXPECT_EQ("sakila", s.schemas[0].name);
-    EXPECT_FALSE(s.schemas[0].file_path.has_value());
-    EXPECT_EQ("/tmp/other.sql", *s.schemas[1].file_path);
-    EXPECT_EQ("/tmp/icon.png", *s.icon_file_path);
-    EXPECT_EQ("d", *s.description);
-    EXPECT_EQ("p", *s.publisher);
-    EXPECT_TRUE(s.zip);
-    EXPECT_EQ("/tmp/p.zip", s.directory);
-  }
-  {
     const auto &s = parse_as<Load_rest_service>(
         "LOAD REST SERVICE AS /newSvc FROM '/tmp/svc.mrs.sql'");
     EXPECT_EQ("/newSvc", s.as_path->path);
@@ -934,16 +940,98 @@ TEST(Mrs_parser, dump_and_load_statements) {
     const auto &s = parse_as<Load_rest_service>("LOAD REST SERVICE FROM 'x'");
     EXPECT_FALSE(s.as_path.has_value());
   }
+  // Projects are dumped and loaded by the mrs_plugin, not by REST SQL
+  expect_parse_error(
+      "DUMP REST PROJECT 'proj' VERSION '1.0.0' "
+      "SERVICE /svc INCLUDING DATABASE ENDPOINTS TO '/tmp/p'",
+      "unexpected identifier");
+  expect_parse_error("LOAD REST PROJECT FROM '/tmp/p'", "unexpected identifier");
+}
+
+TEST(Mrs_parser, output_format) {
+  // FORMAT=JSON closes every SHOW CREATE statement, as in EXPLAIN FORMAT=JSON
+  // the value is a name or a text in any case
+  EXPECT_EQ(Output_format::traditional,
+            parse_as<Show_create_rest_service>("SHOW CREATE REST SERVICE /s").format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_service>(
+                "SHOW CREATE REST SERVICE /s INCLUDING DATABASE ENDPOINTS FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_service>("SHOW CREATE REST SERVICE FORMAT = json")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_schema>(
+                "SHOW CREATE REST SCHEMA /db ON SERVICE /s FORMAT='Json'")
+                .format);
+  EXPECT_EQ(Output_format::traditional,
+            parse_as<Show_create_rest_schema>(
+                "SHOW CREATE REST SCHEMA /db FORMAT=TRADITIONAL")
+                .format);
+  for (const char *sql :
+       {"SHOW CREATE REST VIEW /v ON SERVICE /s SCHEMA /db FORMAT=JSON",
+        "SHOW CREATE REST DATA MAPPING VIEW /v FORMAT=JSON",
+        "SHOW CREATE REST PROCEDURE /p FORMAT=JSON",
+        "SHOW CREATE REST FUNCTION /f ON SERVICE /s SCHEMA /db FORMAT=JSON"}) {
+    EXPECT_EQ(Output_format::json, parse_as<Show_create_rest_db_object>(sql).format)
+        << sql;
+  }
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_content_set>(
+                "SHOW CREATE REST CONTENT SET /cs ON SERVICE /s FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_content_file>(
+                "SHOW CREATE REST CONTENT FILE /f FROM CONTENT SET /cs FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_auth_app>(
+                "SHOW CREATE REST AUTH APP 'MRS' FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_role>(
+                "SHOW CREATE REST ROLE r ON ANY SERVICE FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_create_rest_user>(
+                "SHOW CREATE REST USER mike@`MRS` FORMAT=JSON")
+                .format);
+  expect_parse_error("SHOW CREATE REST SERVICE /s FORMAT=XML",
+                     "Unknown REST format name: 'XML'", 1, 35);
+  expect_parse_error("SHOW CREATE REST SERVICE /s FORMAT JSON", "unexpected JSON");
+  expect_parse_error("SHOW REST SERVICES FORMAT=JSON", "unexpected FORMAT");
+}
+
+TEST(Mrs_parser, show_rest_columns) {
   {
-    const auto &s = parse_as<Load_rest_project>("LOAD REST PROJECT FROM ZIP '/tmp/p.zip'");
-    EXPECT_TRUE(s.zip);
-    EXPECT_FALSE(s.url);
+    const auto &s = parse_as<Show_rest_columns>("SHOW REST COLUMNS FROM sakila.city");
+    EXPECT_EQ(Show_rest_columns::Source::any, s.source);
+    EXPECT_EQ("sakila", *s.object.schema);
+    EXPECT_EQ("city", s.object.name);
+    EXPECT_EQ(Output_format::traditional, s.format);
   }
   {
-    const auto &s = parse_as<Load_rest_project>("LOAD REST PROJECT FROM URL 'https://x'");
-    EXPECT_TRUE(s.url);
-    EXPECT_EQ("https://x", s.directory);
+    const auto &s = parse_as<Show_rest_columns>("SHOW REST COLUMNS IN TABLE city FORMAT=JSON");
+    EXPECT_EQ(Show_rest_columns::Source::table, s.source);
+    EXPECT_FALSE(s.object.schema.has_value());
+    EXPECT_EQ(Output_format::json, s.format);
   }
+  EXPECT_EQ(Show_rest_columns::Source::view,
+            parse_as<Show_rest_columns>("SHOW REST COLUMNS FROM VIEW db.v").source);
+  EXPECT_EQ(Show_rest_columns::Source::procedure,
+            parse_as<Show_rest_columns>("SHOW REST COLUMNS FROM PROCEDURE db.p").source);
+  EXPECT_EQ(Show_rest_columns::Source::function,
+            parse_as<Show_rest_columns>("SHOW REST COLUMNS FROM FUNCTION `db`.`f`").source);
+  expect_parse_error("SHOW REST COLUMNS sakila.city", "unexpected identifier");
+
+  // COLUMNS is also a name; TABLE only as a data mapping key
+  EXPECT_EQ("columns", parse_as<Create_rest_view>(
+                           "CREATE REST VIEW /v ON SERVICE /s SCHEMA /d AS db.columns")
+                           .object.name);
+  EXPECT_NO_THROW(parse_statement(
+      "CREATE REST VIEW /v ON SERVICE /s SCHEMA /d AS db.t { table: table, columns: columns }"));
+  expect_parse_error("CREATE REST VIEW /v ON SERVICE /s SCHEMA /d AS db.table",
+                     "unexpected TABLE");
 }
 
 TEST(Mrs_parser, sql_modes) {
@@ -972,6 +1060,99 @@ TEST(Mrs_parser, sql_modes) {
         R"(CREATE REST SERVICE /svc COMMENT 'a\nb')", no_backslash);
     EXPECT_EQ("a\\nb", *s.options.comments);
   }
+}
+
+// Lexical and quoting rules that follow the ANTLR grammar (MRSLexer.g4 /
+// MRSParser.g4) and the server.
+TEST(Mrs_parser, antlr_compatible_lexical_rules) {
+  Sql_mode ansi;
+  ansi.ansi_quotes = true;
+
+  // A double quoted string is an identifier under ANSI_QUOTES ...
+  {
+    const auto &s = parse_as<Create_rest_view>(
+        R"(CREATE REST VIEW /v ON SERVICE /svc SCHEMA /db AS "sakila"."actor")",
+        ansi);
+    EXPECT_EQ("sakila", *s.object.schema);
+    EXPECT_EQ("actor", s.object.name);
+  }
+  {
+    const auto &s = parse_as<Create_rest_schema>(
+        R"(CREATE REST SCHEMA /db FROM "sakila")", ansi);
+    EXPECT_EQ("sakila", s.schema_name);
+  }
+  expect_parse_error(R"(CREATE REST SERVICE /svc COMMENT "hello")",
+                     "unexpected double quoted string", 1, 33, ansi);
+  // ... and a text otherwise
+  EXPECT_EQ("hello", *parse_as<Create_rest_service>(
+                          R"(CREATE REST SERVICE /svc COMMENT "hello")")
+                          .options.comments);
+  expect_parse_error(R"(CREATE REST SERVICE "/svc")",
+                     "unexpected double quoted string", 1, 20);
+  expect_parse_error(R"(CREATE REST SCHEMA /db FROM "sakila")",
+                     "unexpected double quoted string");
+  // Names that take both accept it in every mode
+  EXPECT_EQ("r", parse_as<Create_rest_role>(R"(CREATE REST ROLE "r")").name);
+  EXPECT_EQ("r",
+            parse_as<Create_rest_role>(R"(CREATE REST ROLE "r")", ansi).name);
+
+  // FILES is a keyword that is also allowed as a name
+  EXPECT_TRUE(parse_statement(
+                  "SHOW REST CONTENT FILES ON SERVICE /svc CONTENT SET /cs")
+                  .is<Show_rest_content_files>());
+  EXPECT_EQ("files", parse_as<Create_rest_role>("CREATE REST ROLE files").name);
+  EXPECT_EQ("files", parse_as<Create_rest_view>(
+                         "CREATE REST VIEW /f ON SERVICE /s SCHEMA /d AS db.files")
+                         .object.name);
+
+  // So is VENDORS
+  EXPECT_EQ("vendors", parse_as<Create_rest_view>(
+                           "CREATE REST VIEW /v ON SERVICE /s SCHEMA /d AS db.vendors")
+                           .object.name);
+
+  // A request path segment is an identifier: not digits only, no number
+  EXPECT_EQ("/v1/x2", parse_as<Create_rest_service>("CREATE REST SERVICE /v1/x2")
+                          .path.path);
+  expect_parse_error("CREATE REST SERVICE /1", "Unexpected input '/1'");
+  expect_parse_error("CREATE REST SERVICE /v1/2", "Unexpected input '/v1/2'");
+  expect_parse_error("CREATE REST SERVICE /1e5", "Unexpected input '/1e5'");
+
+  // Hexadecimal and binary literals are no names
+  expect_parse_error("CREATE REST ROLE 0x1F", "Unexpected input '0x1F'");
+  expect_parse_error("CREATE REST ROLE 0b01", "Unexpected input '0b01'");
+  EXPECT_EQ("0x1Fz", parse_as<Create_rest_role>("CREATE REST ROLE 0x1Fz").name);
+
+  // GRANT and REVOKE need SERVICE when a schema follows
+  expect_parse_error("GRANT REST READ ON /svc SCHEMA /db TO r",
+                     "unexpected SCHEMA, expecting TO");
+  expect_parse_error("REVOKE REST READ ON /svc SCHEMA /db FROM r",
+                     "unexpected SCHEMA, expecting FROM");
+  EXPECT_EQ("/svc", *parse_as<Rest_privilege_statement>(
+                         "GRANT REST READ ON /svc TO r")
+                         .service_pattern);
+
+  // Comments: line comments end at \r as well, an unterminated comment and
+  // a /*! version comment are errors
+  EXPECT_EQ(2u,
+            parse_script("SHOW REST SERVICES # c\r;SHOW REST SERVICES").size());
+  EXPECT_EQ(2u,
+            parse_script("SHOW REST SERVICES -- c\r;SHOW REST SERVICES").size());
+  expect_parse_error("SHOW REST SERVICES /* unterminated",
+                     "unexpected /, expecting end of input");
+  expect_parse_error("SHOW REST SERVICES /*!50000 x */",
+                     "unexpected /, expecting end of input");
+  EXPECT_EQ(1u, parse_script("SHOW REST SERVICES /* closed */").size());
+
+  // JSON numbers may carry a sign and a decimal part; they are stored as
+  // valid JSON
+  EXPECT_EQ(R"({"a":0.5,"b":1,"c":-1,"d":-1.5e3})",
+            parse_as<Create_rest_service>(
+                R"(CREATE REST SERVICE /s OPTIONS {"a": .5, "b": +1, "c": -1, "d": -1.5e3})")
+                .options.options->value);
+
+  // Any number of semicolons around the statements
+  EXPECT_EQ(1u, parse_script(";SHOW REST SERVICES;;").size());
+  EXPECT_TRUE(parse_script(";;").empty());
 }
 
 // Every REST statement of the grammar test of the Python plugin parses.

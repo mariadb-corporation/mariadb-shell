@@ -46,6 +46,7 @@ class Driver {
       : m_lexer(input, sql_mode) {}
 
   Lexer &lexer() { return m_lexer; }
+  bool ansi_quotes() const { return m_lexer.sql_mode().ansi_quotes; }
   ast::Script &script() { return m_script; }
 
   struct Error {

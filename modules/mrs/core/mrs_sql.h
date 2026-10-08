@@ -39,7 +39,8 @@
 
 namespace mrs {
 
-// A metadata id: the 16 raw bytes of a BINARY(16) column.
+// A metadata id: the canonical lower case text of a UUID column
+// (metadata schema 5.0.0), e.g. "31000000-0000-0000-0000-000000000000".
 using Id = std::string;
 
 // The name of the metadata schema.
@@ -53,15 +54,19 @@ std::string quote(std::string_view text);
 std::string quote_identifier(std::string_view name);
 // `schema`.`name`
 std::string quote_qualified(std::string_view schema, std::string_view name);
-// 0x... of a binary id, as used in SQL and in result ids.
+// 0x... of binary data, e.g. the content of a file.
 std::string hex(std::string_view binary);
-// The bytes of a 0x... or base64 (ending in ==) id. Throws on bad input.
+// The SQL literal of an id: the quoted UUID text.
+std::string id(const Id &uuid);
+// The id of a UUID text, of the 0x... hex form ids had before metadata
+// schema 5.0.0, or of base64 (ending in ==) of the 16 bytes. Throws on bad
+// input.
 Id id_from_string(std::string_view text, std::string_view context);
 // `mysql_rest_service_metadata`.`table`, or the name itself when it is
 // already qualified.
 std::string metadata_table(std::string_view table);
 
-// A SQL value: NULL, a number, a quoted string or a hex literal.
+// A SQL value: NULL, a number, a quoted string or raw SQL.
 class Value {
  public:
   Value() : m_sql("NULL") {}
@@ -86,12 +91,12 @@ class Value {
     v.m_sql = std::move(sql);
     return v;
   }
-  // A binary id as 0x literal; an empty or absent id is NULL.
-  static Value id(const Id &binary) {
-    return binary.empty() ? Value() : raw(hex(binary));
+  // An id as quoted UUID text; an empty or absent id is NULL.
+  static Value id(const Id &uuid) {
+    return uuid.empty() ? Value() : raw(sql::id(uuid));
   }
-  static Value id(const std::optional<Id> &binary) {
-    return binary ? id(*binary) : Value();
+  static Value id(const std::optional<Id> &uuid) {
+    return uuid ? id(*uuid) : Value();
   }
 
   const std::string &str() const { return m_sql; }

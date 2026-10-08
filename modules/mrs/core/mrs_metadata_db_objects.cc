@@ -297,7 +297,7 @@ SELECT f.id, f.object_id, f.parent_reference_id, f.represents_reference_id,
 FROM `mysql_rest_service_metadata`.`object_field` f
     LEFT OUTER JOIN `mysql_rest_service_metadata`.`object_reference` r
         ON r.id = f.represents_reference_id
-WHERE f.object_id = )" + sql::hex(object_id) +
+WHERE f.object_id = )" + sql::id(object_id) +
                                      " ORDER BY f.position, f.id");
 
   std::vector<Object_field> fields;
@@ -308,10 +308,10 @@ WHERE f.object_id = )" + sql::hex(object_id) +
 Id schema_id_of_db_object(Db_session *session, const Id &db_object_id) {
   const auto result = session->query(
       "SELECT db_schema_id FROM " + sql::metadata_table("db_object") +
-      " WHERE id = " + sql::hex(db_object_id));
+      " WHERE id = " + sql::id(db_object_id));
   if (result.empty()) {
     throw std::runtime_error("The specified db_object with id " +
-                             sql::hex(db_object_id) + " was not found.");
+                             db_object_id + " was not found.");
   }
   return result.first()["db_schema_id"].as_string();
 }
@@ -543,7 +543,7 @@ bool is_empty_json_object(const std::string &text) {
 // -- db_object rows -----------------------------------------------------------
 
 std::optional<Db_object> get_db_object(Db_session *session, const Id &id) {
-  auto db_objects = query_db_objects(session, "o.id = " + sql::hex(id));
+  auto db_objects = query_db_objects(session, "o.id = " + sql::id(id));
   if (db_objects.empty()) return std::nullopt;
   return std::move(db_objects.front());
 }
@@ -552,7 +552,7 @@ std::optional<Db_object> find_db_object(Db_session *session,
                                         const Id &schema_id,
                                         std::string_view request_path) {
   auto db_objects = query_db_objects(
-      session, "o.db_schema_id = " + sql::hex(schema_id) +
+      session, "o.db_schema_id = " + sql::id(schema_id) +
                    " AND o.request_path = " + sql::quote(request_path));
   if (db_objects.empty()) return std::nullopt;
   return std::move(db_objects.front());
@@ -560,7 +560,7 @@ std::optional<Db_object> find_db_object(Db_session *session,
 
 std::vector<Db_object> get_db_objects(Db_session *session, const Id &schema_id,
                                       const std::vector<std::string> &object_types) {
-  std::string where = "o.db_schema_id = " + sql::hex(schema_id);
+  std::string where = "o.db_schema_id = " + sql::id(schema_id);
   if (!object_types.empty()) {
     std::vector<std::string> quoted;
     for (const auto &type : object_types) quoted.push_back(sql::quote(type));
@@ -635,7 +635,7 @@ void update_db_object(Db_session *session, const Id &id,
     if (merge) {
       const auto row = session->query(
           "SELECT options IS NULL AS options_is_null FROM " +
-          sql::metadata_table("db_object") + " WHERE id = " + sql::hex(id));
+          sql::metadata_table("db_object") + " WHERE id = " + sql::id(id));
       merge = !row.empty() && !row.first()["options_is_null"].as_bool();
     }
     if (merge) {
@@ -647,14 +647,14 @@ void update_db_object(Db_session *session, const Id &id,
   }
 
   if (update.empty()) return;
-  update.where("id = " + sql::hex(id));
+  update.where("id = " + sql::id(id));
   session->execute(update.str());
 }
 
 void delete_db_object(Db_session *session, const Id &id) {
   const auto db_object = get_db_object(session, id);
   if (!db_object) {
-    throw std::runtime_error("The specified db_object with id " + sql::hex(id) +
+    throw std::runtime_error("The specified db_object with id " + id +
                              " was not found.");
   }
   revoke_all_from_db_object(session, db_object->schema_name, db_object->name,
@@ -662,8 +662,8 @@ void delete_db_object(Db_session *session, const Id &id) {
 
   // The objects, fields and references go with it (BEFORE DELETE triggers)
   if (session->execute("DELETE FROM " + sql::metadata_table("db_object") +
-                       " WHERE id = " + sql::hex(id)) == 0) {
-    throw std::runtime_error("The specified db_object with id " + sql::hex(id) +
+                       " WHERE id = " + sql::id(id)) == 0) {
+    throw std::runtime_error("The specified db_object with id " + id +
                              " was not found.");
   }
 }
@@ -693,7 +693,7 @@ std::vector<Object_definition> get_objects(Db_session *session,
       "SELECT id, name, kind, position, row_ownership_field_id, options, "
       "sdk_options, comments FROM " +
       sql::metadata_table("object") +
-      " WHERE db_object_id = " + sql::hex(db_object_id) + " ORDER BY position");
+      " WHERE db_object_id = " + sql::id(db_object_id) + " ORDER BY position");
 
   std::vector<Object_definition> objects;
   for (const auto &row : result.rows) {
@@ -716,7 +716,7 @@ void set_objects(Db_session *session, const Id &db_object_id,
                  const std::vector<Object_definition> &objects) {
   // The fields and references of the objects go with them (triggers)
   session->execute("DELETE FROM " + sql::metadata_table("object") +
-                   " WHERE db_object_id = " + sql::hex(db_object_id));
+                   " WHERE db_object_id = " + sql::id(db_object_id));
 
   check_object_names(session, schema_id_of_db_object(session, db_object_id),
                      objects);
@@ -733,7 +733,7 @@ void update_object(Db_session *session, const Id &object_id,
   update.set("name", name);
   update.set("options", options ? sql::Value(with_legacy_option_keys(*options))
                                 : sql::Value());
-  update.where("id = " + sql::hex(object_id));
+  update.where("id = " + sql::id(object_id));
   session->execute(update.str());
 }
 
@@ -743,8 +743,8 @@ bool object_name_in_use(Db_session *session, const Id &schema_id,
       "SELECT o.name FROM " + sql::metadata_table("object") + " o LEFT JOIN " +
       sql::metadata_table("db_object") +
       " dbo ON o.db_object_id = dbo.id WHERE dbo.db_schema_id = " +
-      sql::hex(schema_id) + " AND UPPER(o.name) = UPPER(" + sql::quote(name) +
-      ") AND o.id <> " + sql::hex(object_id));
+      sql::id(schema_id) + " AND UPPER(o.name) = UPPER(" + sql::quote(name) +
+      ") AND o.id <> " + sql::id(object_id));
   return !result.empty();
 }
 
@@ -1036,6 +1036,17 @@ std::vector<Routine_parameter> get_routine_parameters(
     parameters.push_back(std::move(p));
   }
   return parameters;
+}
+
+bool routine_exists(Db_session *session, std::string_view schema_name,
+                    std::string_view name, std::string_view routine_type) {
+  return !session
+              ->query("SELECT 1 FROM INFORMATION_SCHEMA.ROUTINES WHERE "
+                      "ROUTINE_SCHEMA = " +
+                      sql::quote(schema_name) + " AND ROUTINE_NAME = " +
+                      sql::quote(name) + " AND ROUTINE_TYPE = " +
+                      sql::quote(routine_type))
+              .empty();
 }
 
 std::optional<std::string> get_function_return_type(Db_session *session,

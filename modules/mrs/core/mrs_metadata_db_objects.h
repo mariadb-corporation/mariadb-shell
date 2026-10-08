@@ -286,6 +286,10 @@ std::vector<Routine_parameter> get_routine_parameters(
     Db_session *session, std::string_view schema_name, std::string_view name,
     std::string_view routine_type);
 
+// Whether a PROCEDURE or FUNCTION of that name exists.
+bool routine_exists(Db_session *session, std::string_view schema_name,
+                    std::string_view name, std::string_view routine_type);
+
 // The return type of a function, nullopt when there is no such function.
 std::optional<std::string> get_function_return_type(Db_session *session,
                                                     std::string_view schema_name,

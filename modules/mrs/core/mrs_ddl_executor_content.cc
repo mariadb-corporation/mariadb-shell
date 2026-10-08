@@ -35,6 +35,7 @@
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
+#include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
 
@@ -122,7 +123,7 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
       if (s.flags.if_not_exists) {
         r->message = "REST content set `" + full_path +
                      "` created successfully. 0 file(s) added.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -147,7 +148,7 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
 
   r->message = "REST content set `" + full_path + "` created successfully. " +
                std::to_string(added.files_added) + " file(s) added.";
-  r->id = sql::hex(added.id);
+  r->id = added.id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_content_set &s,
@@ -182,7 +183,7 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = sql::hex(content_set->id);
+  r->id = content_set->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_content_set &s,
@@ -201,7 +202,7 @@ void Ddl_executor::do_execute(const Drop_rest_content_set &s,
   }
   if (content_set) {
     metadata::delete_content_set(m_session, content_set->id);
-    r->id = sql::hex(content_set->id);
+    r->id = content_set->id;
   }
 
   transaction.commit();
@@ -235,9 +236,12 @@ void Ddl_executor::do_execute(const Show_create_rest_content_set &s,
   }
 
   r->columns = {"CREATE REST CONTENT SET"};
-  r->add_row().emplace_back(join_statements(
-      metadata::content_set_statements(m_session, *content_set, false)));
-  r->id = sql::hex(content_set->id);
+  r->add_row().emplace_back(
+      s.format == Output_format::json
+          ? metadata::content_set_json(*content_set).dump(true)
+          : join_statements(
+                metadata::content_set_statements(m_session, *content_set, false)));
+  r->id = content_set->id;
 }
 
 // -- CONTENT FILE ---------------------------------------------------------
@@ -267,7 +271,7 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
     }
     if (s.flags.if_not_exists) {
       r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
-      r->id = sql::hex(existing->id);
+      r->id = existing->id;
       transaction.commit();
       return;
     }
@@ -298,7 +302,7 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   transaction.commit();
 
   r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_content_file &s,
@@ -329,7 +333,7 @@ void Ddl_executor::do_execute(const Drop_rest_content_file &s,
   }
   if (content_file) {
     metadata::delete_content_file(m_session, content_file->id);
-    r->id = sql::hex(content_file->id);
+    r->id = content_file->id;
   }
 
   transaction.commit();
@@ -383,8 +387,10 @@ void Ddl_executor::do_execute(const Show_create_rest_content_file &s,
 
   r->columns = {"CREATE REST CONTENT FILE"};
   r->add_row().emplace_back(
-      metadata::content_file_create_statement(m_session, *content_file));
-  r->id = sql::hex(content_file->id);
+      s.format == Output_format::json
+          ? metadata::content_file_json(*content_file).dump(true)
+          : metadata::content_file_create_statement(m_session, *content_file));
+  r->id = content_file->id;
 }
 
 }  // namespace mrs

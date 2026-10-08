@@ -36,6 +36,7 @@
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
 
@@ -647,7 +648,7 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
 
   if (const auto existing = existing_db_object(m_session, s.flags, schema.id, s.path)) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
-    r->id = sql::hex(*existing);
+    r->id = *existing;
     transaction.commit();
     return;
   }
@@ -675,7 +676,7 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST VIEW `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r) {
@@ -692,7 +693,7 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
 
   if (const auto existing = existing_db_object(m_session, s.flags, schema.id, s.path)) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
-    r->id = sql::hex(*existing);
+    r->id = *existing;
     transaction.commit();
     return;
   }
@@ -727,7 +728,7 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   transaction.commit();
 
   r->message = "REST " + type + " `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 // -- ALTER --------------------------------------------------------------------
@@ -790,7 +791,7 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = sql::hex(db_object->id);
+  r->id = db_object->id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) {
@@ -849,7 +850,7 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = sql::hex(db_object->id);
+  r->id = db_object->id;
 }
 
 // -- DROP ---------------------------------------------------------------------
@@ -872,7 +873,7 @@ void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r)
   }
   if (db_object) {
     metadata::delete_db_object(m_session, db_object->id);
-    r->id = sql::hex(db_object->id);
+    r->id = db_object->id;
   }
 
   transaction.commit();
@@ -922,8 +923,180 @@ void Ddl_executor::do_execute(const Show_create_rest_db_object &s,
 
   r->columns = {"CREATE REST " + caption};
   r->add_row().emplace_back(
-      metadata::db_object_create_statement(m_session, *db_object));
-  r->id = sql::hex(db_object->id);
+      s.format == Output_format::json
+          ? metadata::db_object_json(m_session, *db_object).dump(true)
+          : metadata::db_object_create_statement(m_session, *db_object));
+  r->id = db_object->id;
+}
+
+// -- SHOW REST COLUMNS ----------------------------------------------------
+
+namespace {
+
+const char *source_caption(Show_rest_columns::Source source) {
+  switch (source) {
+    case Show_rest_columns::Source::table:
+      return "TABLE";
+    case Show_rest_columns::Source::view:
+      return "VIEW";
+    case Show_rest_columns::Source::procedure:
+      return "PROCEDURE";
+    case Show_rest_columns::Source::function:
+      return "FUNCTION";
+    case Show_rest_columns::Source::any:
+      break;
+  }
+  return "";
+}
+
+Db_value yes_no(const json::Value &doc, std::string_view key) {
+  const auto *value = doc.get(key);
+  if (!value || value->is_null()) return Db_value(nullptr);
+  return Db_value(value->as_bool() ? "YES" : "NO");
+}
+
+Db_value json_text(const json::Value &doc, std::string_view key) {
+  const auto *value = doc.get(key);
+  if (!value || !value->is_string()) return Db_value(nullptr);
+  return Db_value(value->as_string());
+}
+
+// "n:1 sakila.country (country_id = country_id)"
+std::string reference_caption(const json::Value &mapping) {
+  std::string columns;
+  if (const auto *column_mapping = mapping.get("column_mapping");
+      column_mapping && column_mapping->is_array()) {
+    for (const auto &pair : column_mapping->as_array()) {
+      if (!columns.empty()) columns += ", ";
+      columns += pair.get_string("base") + " = " + pair.get_string("ref");
+    }
+  }
+  return mapping.get_string("kind") + " " +
+         mapping.get_string("referenced_schema") + "." +
+         mapping.get_string("referenced_table") + " (" + columns + ")";
+}
+
+}  // namespace
+
+void Ddl_executor::do_execute(const Show_rest_columns &s, Statement_result *r) {
+  // The schema defaults to the database schema of the current REST schema,
+  // then to the session's current database
+  std::string schema_name;
+  if (s.object.schema) {
+    schema_name = *s.object.schema;
+  } else if (m_state->current_schema_id) {
+    if (const auto schema = metadata::get_schema(m_session, *m_state->current_schema_id)) {
+      schema_name = schema->name;
+    }
+  }
+  if (schema_name.empty()) {
+    const auto result = m_session->query("SELECT DATABASE() AS db");
+    if (!result.empty() && !result.first()["db"].is_null()) {
+      schema_name = result.first()["db"].as_string();
+    }
+  }
+  const auto target =
+      (schema_name.empty() ? "" : sql::quote_identifier(schema_name) + ".") +
+      sql::quote_identifier(s.object.name);
+  set_failure_context("Cannot SHOW the REST COLUMNS of " + target + ".");
+  if (schema_name.empty()) throw std::runtime_error("No database schema selected.");
+
+  // The type of the database object, as given or detected
+  std::string type = source_caption(s.source);
+  const auto table_type =
+      metadata::database_object_type(m_session, schema_name, s.object.name);
+  if (type.empty()) {
+    if (table_type) {
+      type = *table_type;
+    } else if (metadata::routine_exists(m_session, schema_name, s.object.name,
+                                        "FUNCTION")) {
+      type = "FUNCTION";
+    } else if (metadata::routine_exists(m_session, schema_name, s.object.name,
+                                        "PROCEDURE")) {
+      type = "PROCEDURE";
+    } else {
+      throw std::runtime_error("The database object " + target +
+                               " was not found.");
+    }
+  } else if (type == "TABLE" || type == "VIEW") {
+    if (!table_type) {
+      throw std::runtime_error("The " + to_lower(type) + " " + target +
+                               " was not found.");
+    }
+    if (*table_type != type) {
+      throw std::runtime_error(target + " is a " + to_lower(*table_type) +
+                               ", not a " + to_lower(type) + ".");
+    }
+  } else if (!metadata::routine_exists(m_session, schema_name, s.object.name,
+                                       type)) {
+    throw std::runtime_error("The " + to_lower(type) + " " + target +
+                             " was not found.");
+  }
+
+  const bool routine = type == "PROCEDURE" || type == "FUNCTION";
+  std::vector<metadata::Table_column> columns;
+  std::vector<metadata::Routine_parameter> parameters;
+  std::optional<std::string> return_type;
+  if (routine) {
+    parameters = metadata::get_routine_parameters(m_session, schema_name,
+                                                  s.object.name, type);
+    if (type == "FUNCTION") {
+      return_type = metadata::get_function_return_type(m_session, schema_name,
+                                                       s.object.name);
+    }
+  } else {
+    columns = metadata::get_table_columns_with_references(m_session, schema_name,
+                                                          s.object.name);
+  }
+
+  if (s.format == Output_format::json) {
+    r->columns = {"REST COLUMNS"};
+    r->add_row().emplace_back(
+        (routine ? metadata::routine_json(schema_name, s.object.name, type,
+                                          parameters, return_type)
+                 : metadata::table_columns_json(schema_name, s.object.name,
+                                                type, columns))
+            .dump(true));
+    return;
+  }
+
+  r->columns = {"position",   "name",          "kind",     "datatype",
+                "not_null",   "is_primary",    "id_generation", "reference"};
+  for (const auto &column : columns) {
+    auto &row = r->add_row();
+    row.emplace_back(static_cast<int64_t>(column.position));
+    row.emplace_back(column.name);
+    if (column.reference_mapping) {
+      row.emplace_back("REFERENCE");
+      for (int i = 0; i < 4; ++i) row.emplace_back(nullptr);
+      row.emplace_back(reference_caption(*column.reference_mapping));
+    } else {
+      const auto db_column =
+          column.db_column ? *column.db_column : json::Value::object();
+      row.emplace_back("COLUMN");
+      row.push_back(json_text(db_column, "datatype"));
+      row.push_back(yes_no(db_column, "not_null"));
+      row.push_back(yes_no(db_column, "is_primary"));
+      row.push_back(json_text(db_column, "id_generation"));
+      row.emplace_back(nullptr);
+    }
+  }
+  for (const auto &parameter : parameters) {
+    auto &row = r->add_row();
+    row.emplace_back(static_cast<int64_t>(parameter.position));
+    row.emplace_back(parameter.name);
+    row.emplace_back(parameter.mode);
+    row.emplace_back(parameter.datatype);
+    for (int i = 0; i < 4; ++i) row.emplace_back(nullptr);
+  }
+  if (return_type) {
+    auto &row = r->add_row();
+    row.emplace_back(static_cast<int64_t>(0));
+    row.emplace_back(nullptr);
+    row.emplace_back("RETURN");
+    row.emplace_back(*return_type);
+    for (int i = 0; i < 4; ++i) row.emplace_back(nullptr);
+  }
 }
 
 }  // namespace mrs

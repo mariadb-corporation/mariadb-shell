@@ -56,8 +56,8 @@ class Db_error : public std::runtime_error {
   std::string m_sqlstate;
 };
 
-// One cell of a result. Binary columns (the BINARY(16) ids) come back as
-// strings holding the raw bytes; JSON columns as their text.
+// One cell of a result. Binary columns come back as strings holding the raw
+// bytes; UUID ids and JSON columns as their text.
 class Db_value {
  public:
   Db_value() = default;

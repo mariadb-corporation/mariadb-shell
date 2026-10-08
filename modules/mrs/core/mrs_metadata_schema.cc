@@ -29,18 +29,7 @@
 
 namespace mrs {
 
-namespace embedded {
-extern const unsigned char k_metadata_schema_script[];
-extern const unsigned long k_metadata_schema_script_size;
-}  // namespace embedded
-
 namespace metadata {
-
-std::string_view metadata_schema_script() {
-  return std::string_view(
-      reinterpret_cast<const char *>(embedded::k_metadata_schema_script),
-      embedded::k_metadata_schema_script_size);
-}
 
 namespace {
 
@@ -102,13 +91,23 @@ Status get_status(Db_session *session) {
   if (!count.empty() && !count.first()["service_count"].is_null()) {
     status.service_count = static_cast<int>(count.first()["service_count"].as_int());
   }
+
+  const auto last_change = session->query(
+      "SELECT COALESCE(MAX(id), 0) AS version FROM " +
+      sql::metadata_table("audit_log"));
+  status.metadata_version =
+      last_change.empty() ? 0 : last_change.first()["version"].as_int();
   return status;
 }
 
-Configure_result configure(Db_session *session,
-                           const Configure_options &options) {
+Configure_result configure(Db_session *session, const Configure_options &options,
+                           Schema_deployer *deployer) {
   Configure_result result;
 
+  // As the Python plugin's configure(): refuse versions this module cannot
+  // handle, skip an available update unless asked for, otherwise let the
+  // deployment create the schema or update it (or report "No changes").
+  bool skip_update = false;
   if (schema_exists(session)) {
     const auto current = schema_version(session);
 
@@ -127,22 +126,19 @@ Configure_result configure(Db_session *session,
           "UPDATE IF AVAILABLE` to update.");
     }
 
-    if (current < k_schema_version) {
-      if (options.update_if_available) {
-        throw std::runtime_error(
-            "Updating the MRS metadata schema from version " + current.str() +
-            " to " + k_schema_version.str() +
-            " is not supported by this version of MariaDB Shell yet.");
-      }
-      result.info = "MRS metadata version update available, but update skipped.";
-    } else {
-      result.info = "No changes to the MRS metadata schema were needed.";
-    }
+    skip_update = current < k_schema_version && !options.update_if_available;
+  }
+
+  if (skip_update) {
+    result.info = "MRS metadata version update available, but update skipped.";
   } else {
-    session->execute_script(std::string(metadata_schema_script()));
-    result.schema_changed = true;
-    result.info = "The MRS metadata schema version " + k_schema_version.str() +
-                  " was created.";
+    if (!deployer) {
+      throw std::runtime_error(
+          "The MRS metadata schema cannot be deployed: no deployment is "
+          "available.");
+    }
+    result.info = deployer->deploy(session, true);
+    result.schema_changed = result.info.find("No changes") == std::string::npos;
   }
 
   if (options.enabled) {

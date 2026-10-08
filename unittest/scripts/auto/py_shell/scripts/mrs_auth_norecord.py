@@ -54,8 +54,8 @@ EXPECT_EQ("REST AUTH APP `MySQL App` created successfully.", rest_info("""CREATE
     COMMENT "mysql accounts"
     ALLOW NEW USERS TO REGISTER
     DEFAULT ROLE "Full Access\""""))
-EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.auth_app WHERE name = 'MRS App' AND auth_vendor_id = 0x30000000000000000000000000000000 AND limit_to_registered_users = 1 AND enabled = 1 AND default_role_id = 0x31000000000000000000000000000000"))
-EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.auth_app WHERE name = 'MySQL App' AND auth_vendor_id = 0x31000000000000000000000000000000 AND limit_to_registered_users = 0 AND enabled = 0 AND description = 'mysql accounts'"))
+EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.auth_app WHERE name = 'MRS App' AND auth_vendor_id = '30000000-0000-0000-0000-000000000000' AND limit_to_registered_users = 1 AND enabled = 1 AND default_role_id = '31000000-0000-0000-0000-000000000000'"))
+EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.auth_app WHERE name = 'MySQL App' AND auth_vendor_id = '31000000-0000-0000-0000-000000000000' AND limit_to_registered_users = 0 AND enabled = 0 AND description = 'mysql accounts'"))
 
 #@<> CREATE REST AUTH APP errors
 EXPECT_THROWS(lambda: rest("CREATE REST AUTH APP \"nope\" VENDOR \"Nope\""), "Failed to create the REST AUTH APP `nope`. The vendor `Nope` was not found.")
@@ -92,6 +92,18 @@ rest("ALTER REST SERVICE /svc REMOVE AUTH APP \"MySQL App\"")
 EXPECT_EQ([["MRS App", "MRS", None, "ENABLED"]], rest_rows("SHOW REST AUTH APPS FROM SERVICE /svc"))
 EXPECT_EQ([["/other", "ENABLED", "NO", ""], ["/svc", "ENABLED", "YES", "MRS App"]], rest_rows("SHOW REST SERVICES"))
 
+#@<> SHOW REST SERVICES FOR AUTH APP
+EXPECT_EQ([["/svc", "ENABLED", "YES", "MRS App"]], rest_rows("SHOW REST SERVICES FOR AUTH APP \"MRS App\""))
+EXPECT_EQ(["REST SERVICE Path", "enabled", "current", "auth_apps"], rest("SHOW REST SERVICES FOR AUTH APP \"mrs app\"").get_column_names())
+EXPECT_EQ([], rest_rows("SHOW REST SERVICES FOR AUTH APP \"MySQL App\""))
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR AUTH APP \"nope\""), "Cannot SHOW the REST services. The given REST AUTH APP `nope` could not be found.")
+
+#@<> SHOW REST AUTH VENDORS
+EXPECT_EQ(["REST AUTH VENDOR name", "comments", "enabled"], rest("SHOW REST AUTH VENDORS").get_column_names())
+vendors = [list(row) for row in session.run_sql("SELECT name, comments, IF(enabled, 'ENABLED', 'DISABLED') FROM mysql_rest_service_metadata.auth_vendor ORDER BY name").fetch_all()]
+EXPECT_EQ(vendors, rest_rows("SHOW REST AUTH VENDORS"))
+EXPECT_EQ(["MRS", "Built-in user management of MRS", "ENABLED"], [row for row in vendors if row[0] == "MRS"][0])
+
 #@<> SHOW CREATE REST AUTH APP
 EXPECT_EQ("""CREATE OR REPLACE REST AUTH APP `MRS App`
     VENDOR MRS
@@ -105,6 +117,20 @@ EXPECT_EQ("""CREATE OR REPLACE REST AUTH APP `MySQL App`
 # The name is matched case-insensitively
 EXPECT_EQ(["CREATE REST AUTH APP"], rest("SHOW CREATE REST AUTH APP \"mrs app\"").get_column_names())
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST AUTH APP \"nope\""), "Failed to get the REST AUTH APP `nope`. The given REST AUTH APP `nope` could not be found.")
+
+#@<> SHOW CREATE REST AUTH APP FORMAT=JSON
+res = rest("SHOW CREATE REST AUTH APP \"MRS App\" FORMAT=JSON")
+EXPECT_EQ(["CREATE REST AUTH APP"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"name": "MRS App", "auth_vendor": "MRS", "auth_vendor_id": "30000000-0000-0000-0000-000000000000", "enabled": True, "limit_to_registered_users": True, "default_role_id": "31000000-0000-0000-0000-000000000000", "services": ["/svc"], "has_app_secret": False}, {k: doc[k] for k in ["name", "auth_vendor", "auth_vendor_id", "enabled", "limit_to_registered_users", "default_role_id", "services", "has_app_secret"]})
+EXPECT_EQ([], json.loads(rest_text("SHOW CREATE REST AUTH APP \"MySQL App\" FORMAT=JSON"))["services"])
+# The app secret is never returned
+rest("CREATE REST AUTH APP \"fb\" VENDOR \"Facebook\" URL \"https://fb.example.com\" CLIENT ID \"id1\" CLIENT SECRET \"secret1\"")
+doc = json.loads(rest_text("SHOW CREATE REST AUTH APP \"fb\" FORMAT=JSON"))
+EXPECT_EQ(["id1", True], [doc["app_id"], doc["has_app_secret"]])
+EXPECT_FALSE("access_token" in doc)
+EXPECT_FALSE("secret1" in rest_text("SHOW CREATE REST AUTH APP \"fb\" FORMAT=JSON"))
+rest("DROP REST AUTH APP \"fb\"")
 
 #@<> ALTER REST AUTH APP
 res = rest("ALTER REST AUTH APP \"MRS App\" NEW NAME \"MRS Auth\" COMMENT \"mrs users\" ALLOW NEW USERS TO REGISTER DISABLED")
@@ -167,6 +193,26 @@ rest("""CREATE REST USER "boss"@"MRS App" IDENTIFIED BY "MySQLR0cks!" ACCOUNT LO
 } APP OPTIONS {"myoption": 12345}""")
 EXPECT_EQ(["boss@example.com", "vendor", "vendorboss123", 0, "custom value", "12345"], list(session.run_sql("SELECT email, vendor_user_id, mapped_user_id, login_permitted, JSON_VALUE(options, '$.custom'), JSON_VALUE(app_options, '$.myoption') FROM mysql_rest_service_metadata.mrs_user WHERE name = 'boss'").fetch_one()))
 EXPECT_EQ(1, query_one("SELECT JSON_LENGTH(options) FROM mysql_rest_service_metadata.mrs_user WHERE name = 'boss'"))
+
+#@<> SHOW REST USERS
+EXPECT_EQ(["REST USER name", "auth_app", "email", "vendor_user_id", "mapped_user_id", "login_permitted"], rest("SHOW REST USERS").get_column_names())
+# The current service /svc has the MRS App linked, the MySQL App is linked
+# to no service
+mrs_app_users = [["boss", "MRS App", "boss@example.com", "vendor", "vendorboss123", "NO"],
+                 ["mike", "MRS App", None, None, None, "YES"]]
+EXPECT_EQ(mrs_app_users, rest_rows("SHOW REST USERS"))
+EXPECT_EQ(mrs_app_users, rest_rows("SHOW REST USERS ON SERVICE /svc"))
+EXPECT_EQ(mrs_app_users, rest_rows("SHOW REST USERS FROM /svc FOR AUTH APP \"MRS App\""))
+EXPECT_EQ([], rest_rows("SHOW REST USERS ON SERVICE /other"))
+# An auth app without a service ignores the current service
+EXPECT_EQ([["root", "MySQL App", None, None, None, "YES"]], rest_rows("SHOW REST USERS FOR AUTH APP \"MySQL App\""))
+EXPECT_EQ([], rest_rows("SHOW REST USERS ON SERVICE /svc FOR AUTH APP \"MySQL App\""))
+EXPECT_THROWS(lambda: rest("SHOW REST USERS FOR AUTH APP \"nope\""), "Cannot SHOW the REST users. The given REST AUTH APP `nope` could not be found.")
+EXPECT_THROWS(lambda: rest("SHOW REST USERS ON SERVICE /nope"), "Cannot SHOW the REST users. Could not find the REST SERVICE /nope.")
+# Without a current service all users are listed
+other_session = shell.open_session(__sandbox_uri1)
+EXPECT_EQ(mrs_app_users + [["root", "MySQL App", None, None, None, "YES"]], [list(row) for row in other_session.run_sql("SHOW REST USERS").fetch_all()])
+other_session.close()
 
 #@<> SHOW CREATE REST USER
 EXPECT_EQ(["CREATE REST USER"], rest("SHOW CREATE REST USER \"mike\"@\"MRS App\"").get_column_names())
@@ -310,6 +356,12 @@ EXPECT_EQ("CREATE REST ROLE `otherRole` ON SERVICE /other;", rest_text("SHOW CRE
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST ROLE \"nope\""), "Failed to get the REST ROLE `nope`. Role `nope` was not found.")
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST ROLE \"writer\" ON ANY SERVICE"), "Failed to get the REST ROLE `writer`. Role `writer` was not found.")
 
+#@<> SHOW CREATE REST ROLE FORMAT=JSON
+doc = json.loads(rest_text("SHOW CREATE REST ROLE \"writer\" ON SERVICE /svc FORMAT=JSON"))
+EXPECT_EQ({"caption": "writer", "derived_from_role_caption": "reader", "specific_to_service": "/svc", "description": "writes"}, {k: doc[k] for k in ["caption", "derived_from_role_caption", "specific_to_service", "description"]})
+EXPECT_EQ([], doc["privileges"])
+EXPECT_EQ({"a": [1, 2]}, json.loads(rest_text("SHOW CREATE REST ROLE \"optioned\" ON ANY SERVICE FORMAT=JSON"))["options"])
+
 #@<> GRANT REST privileges
 res = rest("GRANT REST READ ON SERVICE /svc SCHEMA /sakila TO \"reader\"")
 EXPECT_EQ("GRANT to `reader` added successfully.", res.get_info())
@@ -338,6 +390,10 @@ EXPECT_EQ([["GRANT REST READ ON SERVICE /other SCHEMA `*` OBJECT `*` TO `otherRo
 EXPECT_EQ([["GRANT REST CREATE,READ,UPDATE,DELETE ON SERVICE `*` SCHEMA `*` OBJECT `*` TO `Full Access` ON ANY SERVICE"]], rest_rows("SHOW REST GRANTS FOR \"Full Access\" ON ANY SERVICE"))
 EXPECT_THROWS(lambda: rest("SHOW REST GRANTS FOR \"nope\""), "Cannot SHOW REST GRANTs. No such role nope")
 
+#@<> SHOW CREATE REST ROLE FORMAT=JSON lists the privileges
+doc = json.loads(rest_text("SHOW CREATE REST ROLE \"reader\" FORMAT=JSON"))
+EXPECT_EQ([[["CREATE", "READ", "UPDATE"], "/svc", "/sakila", "*"], [["DELETE"], "/svc", "/sakila", "/actor"]], sorted([[p["crud_operations"], p["service_path"], p["schema_path"], p["object_path"]] for p in doc["privileges"]], key=lambda p: p[3]))
+
 #@<> REVOKE REST privileges
 EXPECT_EQ("REVOKE from `reader` executed successfully.", rest_info("REVOKE REST CREATE ON SERVICE /svc SCHEMA /sakila FROM \"reader\""))
 EXPECT_EQ([
@@ -364,6 +420,16 @@ EXPECT_THROWS(lambda: rest("GRANT REST ROLE \"reader\" TO \"nobody\"@\"MRS App\"
 EXPECT_THROWS(lambda: rest("GRANT REST ROLE \"reader\" TO \"mike\"@\"nope\""), "User \"mike\"@\"nope\" was not found.")
 EXPECT_EQ(3, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.mrs_user_has_role"))
 EXPECT_EQ("Hello", query_one("SELECT comments FROM mysql_rest_service_metadata.mrs_user_has_role WHERE user_id = (SELECT id FROM mysql_rest_service_metadata.mrs_user WHERE name = 'mike') AND role_id = (SELECT id FROM mysql_rest_service_metadata.mrs_role WHERE caption = 'reader' AND specific_to_service_id IS NOT NULL)"))
+
+#@<> SHOW CREATE REST USER FORMAT=JSON
+res = rest("SHOW CREATE REST USER \"mike\"@\"MRS App\" FORMAT=JSON")
+EXPECT_EQ(["CREATE REST USER"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"name": "mike", "auth_app_name": "MRS App", "login_permitted": True, "has_password": True}, {k: doc[k] for k in ["name", "auth_app_name", "login_permitted", "has_password"]})
+EXPECT_FALSE("auth_string" in doc)
+EXPECT_EQ([["reader", None], ["reader", "Hello"]], sorted([[r["caption"], r["comments"]] for r in doc["roles"]], key=lambda r: r[1] or ""))
+doc = json.loads(rest_text("SHOW CREATE REST USER \"boss\"@\"MRS App\" FORMAT=JSON"))
+EXPECT_EQ({"email": "boss@example2.com", "login_permitted": True}, {k: doc[k] for k in ["email", "login_permitted"]})
 
 #@<> SHOW REST ROLES FOR a user
 res = rest("SHOW REST ROLES FOR \"mike\"@\"MRS App\"")

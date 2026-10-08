@@ -26,7 +26,6 @@
 
 #include "mysqlshdk/include/shellcore/shell_options.h"
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -75,40 +74,9 @@ void obfuscate_uri_password(const std::string &nopassword_uri, char *argv) {
   strncpy(value, nopassword_uri.c_str(), value_length + 1);
   value[value_length] = '\0';
 }
-
-// The built-in modules the disabledModules option accepts
-#define DISABLEABLE_MODULES "mrs"
-const std::vector<std::string> k_disableable_modules = {"mrs"};
-
-// The disabledModules value as a lower case list without blanks or
-// duplicates, e.g. " MRS, mrs" -> "mrs"
-std::string normalize_module_list(const std::string &value) {
-  std::vector<std::string> names;
-  for (auto name : shcore::split_string(value, ",")) {
-    name = shcore::str_lower(shcore::str_strip(name));
-    if (name.empty()) continue;
-    if (std::find(k_disableable_modules.begin(), k_disableable_modules.end(),
-                  name) == k_disableable_modules.end()) {
-      throw std::invalid_argument(
-          "The acceptable values for the option " SHCORE_DISABLED_MODULES
-          " are a comma separated list of: " DISABLEABLE_MODULES);
-    }
-    if (std::find(names.begin(), names.end(), name) == names.end()) {
-      names.push_back(std::move(name));
-    }
-  }
-  return shcore::str_join(names, ",");
-}
 }  // namespace
 
 namespace mysqlsh {
-
-bool Shell_options::Storage::is_module_disabled(std::string_view name) const {
-  for (const auto &disabled : shcore::split_string(disabled_modules, ",")) {
-    if (disabled == name) return true;
-  }
-  return false;
-}
 
 using mysqlshdk::db::Transport_type;
 using mysqlshdk::db::uri::Type;
@@ -963,14 +931,6 @@ Shell_options::Shell_options(
     (&storage.slash_commands, true, SHCORE_SLASH_COMMANDS,
         "Accepts shell commands with a / prefix as well as a \\ prefix, "
         "e.g. /quit or /status.")
-    (&storage.disabled_modules, "", SHCORE_DISABLED_MODULES,
-        cmdline("--disable-modules=<names>"),
-        "Comma separated list of built-in modules the shell starts without, "
-        "e.g. mrs. Allowed values: " DISABLEABLE_MODULES ". Takes effect "
-        "when the shell starts.",
-        [](const std::string &val, Source) {
-          return normalize_module_list(val);
-        })
     (&storage.initial_mode, shcore::IShell_core::Mode::None,
         "defaultMode", "Specifies the shell mode to use when shell is started "
         "- one of sql, js or py.", std::bind(&shcore::parse_mode, _1),

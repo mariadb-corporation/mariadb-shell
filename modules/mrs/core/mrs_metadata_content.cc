@@ -166,7 +166,7 @@ void set_json_options(Db_session *session, sql::Update *update, const Id &id,
   if (merge) {
     const auto row = session->query(
         "SELECT options IS NULL AS options_is_null FROM " +
-        sql::metadata_table("content_set") + " WHERE id = " + sql::hex(id));
+        sql::metadata_table("content_set") + " WHERE id = " + sql::id(id));
     if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
       update->set_raw("options = JSON_MERGE_PATCH(options, " +
                       sql::quote(options) + ")");
@@ -317,7 +317,7 @@ std::string load_scripts_clause(const Content_set &content_set) {
 // -- Content sets ---------------------------------------------------------
 
 std::optional<Content_set> get_content_set(Db_session *session, const Id &id) {
-  auto sets = query_content_sets(session, "cs.id = " + sql::hex(id));
+  auto sets = query_content_sets(session, "cs.id = " + sql::id(id));
   if (sets.empty()) return std::nullopt;
   return std::move(sets.front());
 }
@@ -329,7 +329,7 @@ std::optional<Content_set> find_content_set(Db_session *session,
     throw std::runtime_error("The request_path has to start with '/'.");
   }
   auto sets = query_content_sets(
-      session, "cs.service_id = " + sql::hex(service_id) +
+      session, "cs.service_id = " + sql::id(service_id) +
                    " AND cs.request_path = " + sql::quote(request_path));
   if (sets.empty()) return std::nullopt;
   return std::move(sets.front());
@@ -337,7 +337,7 @@ std::optional<Content_set> find_content_set(Db_session *session,
 
 std::vector<Content_set> get_content_sets(Db_session *session,
                                           const Id &service_id) {
-  return query_content_sets(session, "cs.service_id = " + sql::hex(service_id));
+  return query_content_sets(session, "cs.service_id = " + sql::id(service_id));
 }
 
 Added_content_set add_content_set(Db_session *session,
@@ -392,7 +392,7 @@ void update_content_set(Db_session *session, const Id &id,
                      changes.merge_options);
   }
   if (update.empty()) return;
-  update.where("id = " + sql::hex(id));
+  update.where("id = " + sql::id(id));
   session->execute(update.str());
 }
 
@@ -400,9 +400,9 @@ void delete_content_set(Db_session *session, const Id &id) {
   const auto content_set = get_content_set(session, id);
 
   if (session->execute("DELETE FROM " + sql::metadata_table("content_set") +
-                       " WHERE id = " + sql::hex(id)) == 0) {
+                       " WHERE id = " + sql::id(id)) == 0) {
     throw std::runtime_error("The specified content_set with id " +
-                             sql::hex(id) + " was not found.");
+                             id + " was not found.");
   }
 
   // A script set may have left behind a script module without objects
@@ -420,7 +420,7 @@ void delete_content_set(Db_session *session, const Id &id) {
 std::optional<Content_file> get_content_file(Db_session *session, const Id &id,
                                              bool include_content) {
   auto files =
-      query_content_files(session, "f.id = " + sql::hex(id), include_content);
+      query_content_files(session, "f.id = " + sql::id(id), include_content);
   if (files.empty()) return std::nullopt;
   return std::move(files.front());
 }
@@ -431,7 +431,7 @@ std::optional<Content_file> find_content_file(Db_session *session,
                                               bool include_content) {
   auto files = query_content_files(
       session,
-      "f.content_set_id = " + sql::hex(content_set_id) +
+      "f.content_set_id = " + sql::id(content_set_id) +
           " AND f.request_path = " + sql::quote(request_path),
       include_content);
   if (files.empty()) return std::nullopt;
@@ -442,7 +442,7 @@ std::vector<Content_file> get_content_files(Db_session *session,
                                             const Id &content_set_id,
                                             bool include_content) {
   return query_content_files(
-      session, "f.content_set_id = " + sql::hex(content_set_id),
+      session, "f.content_set_id = " + sql::id(content_set_id),
       include_content);
 }
 
@@ -463,9 +463,9 @@ Id add_content_file(Db_session *session,
 
 void delete_content_file(Db_session *session, const Id &id) {
   if (session->execute("DELETE FROM " + sql::metadata_table("content_file") +
-                       " WHERE id = " + sql::hex(id)) == 0) {
+                       " WHERE id = " + sql::id(id)) == 0) {
     throw std::runtime_error("The specified REST content file with id " +
-                             sql::hex(id) + " was not found.");
+                             id + " was not found.");
   }
 }
 

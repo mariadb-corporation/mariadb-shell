@@ -29,6 +29,7 @@
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_auth.h"
+#include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
 
@@ -131,7 +132,7 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
     if (const auto existing = metadata::find_auth_app(m_session, s.name)) {
       if (s.flags.if_not_exists) {
         r->message = "REST AUTH APP `" + s.name + "` created successfully.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -188,7 +189,7 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
   transaction.commit();
 
   r->message = "REST AUTH APP `" + s.name + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_auth_app &s, Statement_result *r) {
@@ -227,7 +228,7 @@ void Ddl_executor::do_execute(const Alter_rest_auth_app &s, Statement_result *r)
 
   r->message = "REST AUTH APP `" + s.name + "` updated successfully.";
   r->affected_items_count = 1;
-  r->id = sql::hex(auth_app->id);
+  r->id = auth_app->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_auth_app &s, Statement_result *r) {
@@ -242,7 +243,7 @@ void Ddl_executor::do_execute(const Drop_rest_auth_app &s, Statement_result *r) 
   }
   if (auth_app) {
     metadata::delete_auth_app(m_session, auth_app->id);
-    r->id = sql::hex(auth_app->id);
+    r->id = auth_app->id;
   }
 
   transaction.commit();
@@ -266,6 +267,19 @@ void Ddl_executor::do_execute(const Show_rest_auth_apps &s, Statement_result *r)
   }
 }
 
+void Ddl_executor::do_execute(const Show_rest_auth_vendors &,
+                              Statement_result *r) {
+  set_failure_context("Cannot SHOW the REST auth vendors.");
+
+  r->columns = {"REST AUTH VENDOR name", "comments", "enabled"};
+  for (const auto &vendor : metadata::get_auth_vendors(m_session)) {
+    auto &row = r->add_row();
+    row.emplace_back(vendor.name);
+    row.push_back(text_or_null(vendor.comments));
+    row.emplace_back(metadata::enabled_caption(vendor.enabled ? 1 : 0));
+  }
+}
+
 void Ddl_executor::do_execute(const Show_create_rest_auth_app &s,
                               Statement_result *r) {
   set_failure_context("Failed to get the REST AUTH APP `" + s.name + "`.");
@@ -278,11 +292,49 @@ void Ddl_executor::do_execute(const Show_create_rest_auth_app &s,
 
   r->columns = {"CREATE REST AUTH APP"};
   r->add_row().emplace_back(
-      metadata::auth_app_create_statement(m_session, *auth_app, false));
-  r->id = sql::hex(auth_app->id);
+      s.format == Output_format::json
+          ? metadata::auth_app_json(m_session, *auth_app).dump(true)
+          : metadata::auth_app_create_statement(m_session, *auth_app, false));
+  r->id = auth_app->id;
 }
 
 // -- REST USER ------------------------------------------------------------
+
+void Ddl_executor::do_execute(const Show_rest_users &s, Statement_result *r) {
+  set_failure_context("Cannot SHOW the REST users.");
+
+  std::optional<Id> auth_app_id;
+  if (s.auth_app) {
+    const auto auth_app = metadata::find_auth_app(m_session, *s.auth_app);
+    if (!auth_app) {
+      throw std::runtime_error("The given REST AUTH APP `" + *s.auth_app +
+                               "` could not be found.");
+    }
+    auth_app_id = auth_app->id;
+  }
+
+  // The current service only applies when no auth app is given; without
+  // either, all users are listed
+  std::optional<Id> service_id;
+  if (s.service || !s.auth_app) {
+    if (const auto service = resolve_service(s.service)) {
+      service_id = service->id;
+    }
+  }
+
+  r->columns = {"REST USER name", "auth_app",       "email",
+                "vendor_user_id", "mapped_user_id", "login_permitted"};
+  for (const auto &user :
+       metadata::get_users(m_session, service_id, auth_app_id)) {
+    auto &row = r->add_row();
+    row.emplace_back(user.name);
+    row.emplace_back(user.auth_app_name);
+    row.push_back(text_or_null(user.email));
+    row.push_back(text_or_null(user.vendor_user_id));
+    row.push_back(text_or_null(user.mapped_user_id));
+    row.emplace_back(user.login_permitted ? "YES" : "NO");
+  }
+}
 
 void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
   const auto full_path = user_full_path(s.name, s.auth_app);
@@ -304,7 +356,7 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
     if (const auto existing = metadata::find_user(m_session, auth_app->id, s.name)) {
       if (s.flags.if_not_exists) {
         r->message = "REST USER `" + full_path + "` created successfully.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -331,7 +383,7 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST USER `" + full_path + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_user &s, Statement_result *r) {
@@ -380,7 +432,7 @@ void Ddl_executor::do_execute(const Alter_rest_user &s, Statement_result *r) {
 
   r->message = "REST USER `" + full_path + "` updated successfully.";
   r->affected_items_count = 1;
-  r->id = sql::hex(user->id);
+  r->id = user->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_user &s, Statement_result *r) {
@@ -399,7 +451,7 @@ void Ddl_executor::do_execute(const Drop_rest_user &s, Statement_result *r) {
     if (!user && !s.if_exists) throw std::runtime_error("User was not found.");
     if (user) {
       metadata::delete_user(m_session, user->id);
-      r->id = sql::hex(user->id);
+      r->id = user->id;
     }
   }
 
@@ -421,8 +473,11 @@ void Ddl_executor::do_execute(const Show_create_rest_user &s,
   }
 
   r->columns = {"CREATE REST USER"};
-  r->add_row().emplace_back(metadata::user_create_statement(m_session, *user, false));
-  r->id = sql::hex(user->id);
+  r->add_row().emplace_back(
+      s.format == Output_format::json
+          ? metadata::user_json(m_session, *user).dump(true)
+          : metadata::user_create_statement(m_session, *user, false));
+  r->id = user->id;
 }
 
 // -- REST ROLE ------------------------------------------------------------
@@ -447,7 +502,7 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
     if (const auto existing = metadata::find_role(m_session, s.name, service_id)) {
       if (s.flags.if_not_exists) {
         r->message = "REST ROLE `" + s.name + "` created successfully.";
-        r->id = sql::hex(existing->id);
+        r->id = existing->id;
         transaction.commit();
         return;
       }
@@ -466,7 +521,7 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST ROLE `" + s.name + "` created successfully.";
-  r->id = sql::hex(id);
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_role &s, Statement_result *r) {
@@ -482,7 +537,7 @@ void Ddl_executor::do_execute(const Drop_rest_role &s, Statement_result *r) {
   }
   if (role) {
     metadata::delete_role(m_session, role->id);
-    r->id = sql::hex(role->id);
+    r->id = role->id;
   }
 
   transaction.commit();
@@ -574,8 +629,11 @@ void Ddl_executor::do_execute(const Show_create_rest_role &s,
   if (!role) throw std::runtime_error("Role `" + s.name + "` was not found.");
 
   r->columns = {"CREATE REST ROLE"};
-  r->add_row().emplace_back(metadata::role_create_statement(m_session, *role));
-  r->id = sql::hex(role->id);
+  r->add_row().emplace_back(
+      s.format == Output_format::json
+          ? metadata::role_json(m_session, *role).dump(true)
+          : metadata::role_create_statement(m_session, *role));
+  r->id = role->id;
 }
 
 // -- GRANT / REVOKE -------------------------------------------------------
@@ -616,7 +674,7 @@ void Ddl_executor::do_execute(const Rest_privilege_statement &s,
     const Id id = metadata::add_role_privilege(
         m_session, role->id, operations, service_path, schema_path, object_path);
     r->message = "GRANT to `" + s.role + "` added successfully.";
-    r->id = sql::hex(id);
+    r->id = id;
   }
 
   transaction.commit();
@@ -671,7 +729,7 @@ void Ddl_executor::do_execute(const Show_rest_grants &s, Statement_result *r) {
     r->add_row().emplace_back(
         metadata::privilege_grant_statement(privilege, *role));
   }
-  r->id = sql::hex(role->id);
+  r->id = role->id;
 }
 
 }  // namespace mrs
