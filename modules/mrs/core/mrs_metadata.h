@@ -148,6 +148,34 @@ std::vector<Service> get_services(Db_session *session);
 std::vector<Service> get_services_of_auth_app(Db_session *session,
                                               const Id &auth_app_id);
 
+// -- Daemons --------------------------------------------------------------
+//
+// The MariaDB REST Daemon instances serving the REST services; each one
+// registers itself in the router table of the metadata.
+
+struct Daemon {
+  int64_t id = 0;
+  std::string name;  // router_name
+  std::string address;
+  std::string product_name;
+  std::optional<std::string> version;
+  std::optional<std::string> last_check_in;
+  bool active = false;  // checked in within the last 10 seconds
+  std::optional<std::string> developer;   // options.developer
+  std::optional<std::string> attributes;  // JSON text
+  std::optional<std::string> options;     // JSON text
+};
+
+// All daemons, ordered by id.
+std::vector<Daemon> get_daemons(Db_session *session);
+std::optional<Daemon> get_daemon(Db_session *session, int64_t id);
+
+// The services a daemon serves (the router_services view).
+std::vector<Service> get_services_of_daemon(Db_session *session, int64_t id);
+
+// Deletes a daemon with its status reports and log entries.
+void delete_daemon(Db_session *session, int64_t id);
+
 // The values of a service to create. Unset fields take the column defaults.
 struct Service_definition {
   std::string url_context_root;

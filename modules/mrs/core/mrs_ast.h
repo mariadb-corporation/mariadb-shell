@@ -473,9 +473,21 @@ struct Use_rest {
 
 struct Show_rest_metadata_status {};
 
-// SHOW REST SERVICES [FOR AUTH APP name]
+// SHOW REST SERVICES [FOR AUTH APP name | FOR DAEMON id]
 struct Show_rest_services {
   std::optional<std::string> auth_app;
+  std::optional<int64_t> daemon;
+};
+
+// SHOW REST DAEMONS: the MariaDB REST Daemon instances (the router table)
+struct Show_rest_daemons {
+  Output_format format = Output_format::traditional;
+};
+
+// DROP REST DAEMON [IF EXISTS] id
+struct Drop_rest_daemon {
+  bool if_exists = false;
+  int64_t id = 0;
 };
 
 struct Show_rest_schemas {
@@ -609,6 +621,7 @@ using Statement_variant = std::variant<
     Show_rest_services, Show_rest_schemas, Show_rest_db_objects,
     Show_rest_content_sets, Show_rest_content_files, Show_rest_auth_apps,
     Show_rest_auth_vendors, Show_rest_users, Show_rest_columns,
+    Show_rest_daemons, Drop_rest_daemon,
     Show_rest_roles, Show_rest_grants, Show_create_rest_service,
     Show_create_rest_schema, Show_create_rest_db_object,
     Show_create_rest_content_set, Show_create_rest_content_file,

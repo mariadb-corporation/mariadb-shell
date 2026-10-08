@@ -1034,6 +1034,30 @@ TEST(Mrs_parser, show_rest_columns) {
                      "unexpected TABLE");
 }
 
+TEST(Mrs_parser, daemons) {
+  EXPECT_EQ(Output_format::traditional,
+            parse_as<Show_rest_daemons>("SHOW REST DAEMONS").format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_daemons>("SHOW REST DAEMONS FORMAT=JSON").format);
+  {
+    const auto &s = parse_as<Show_rest_services>("SHOW REST SERVICES FOR DAEMON 3");
+    EXPECT_EQ(3, *s.daemon);
+    EXPECT_FALSE(s.auth_app.has_value());
+  }
+  {
+    const auto &s = parse_as<Drop_rest_daemon>("DROP REST DAEMON 12");
+    EXPECT_EQ(12, s.id);
+    EXPECT_FALSE(s.if_exists);
+  }
+  EXPECT_TRUE(parse_as<Drop_rest_daemon>("DROP REST DAEMON IF EXISTS 1").if_exists);
+  expect_parse_error("DROP REST DAEMON myDaemon", "unexpected identifier");
+  expect_parse_error("SHOW REST SERVICES FOR DAEMON", "unexpected end of input");
+  // DAEMON and DAEMONS are also names
+  EXPECT_EQ("daemons", parse_as<Create_rest_view>(
+                           "CREATE REST VIEW /v ON SERVICE /s SCHEMA /d AS db.daemons")
+                           .object.name);
+}
+
 TEST(Mrs_parser, sql_modes) {
   // ANSI_QUOTES: double quoted strings are identifiers, the doubled quote
   // is the escape

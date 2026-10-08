@@ -159,6 +159,21 @@ json::Value service_json(Db_session *session, const Service &service,
   return doc;
 }
 
+json::Value daemon_json(const Daemon &daemon) {
+  json::Value doc = json::Value::object();
+  doc.set("id", daemon.id);
+  doc.set("name", daemon.name);
+  doc.set("address", daemon.address);
+  doc.set("product_name", daemon.product_name);
+  doc.set("version", text(daemon.version));
+  doc.set("last_check_in", text(daemon.last_check_in));
+  doc.set("active", daemon.active);
+  doc.set("developer", text(daemon.developer));
+  doc.set("attributes", document(daemon.attributes));
+  doc.set("options", document(daemon.options));
+  return doc;
+}
+
 json::Value schema_json(const Schema &schema) {
   json::Value doc = json::Value::object();
   doc.set("id", schema.id);

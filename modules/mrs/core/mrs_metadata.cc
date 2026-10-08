@@ -408,6 +408,66 @@ std::vector<Service> get_services_of_auth_app(Db_session *session,
           " WHERE auth_app_id = " + sql::id(auth_app_id) + ")");
 }
 
+// -- Daemons --------------------------------------------------------------
+
+namespace {
+
+std::vector<Daemon> query_daemons(Db_session *session, const std::string &where) {
+  std::string query =
+      "SELECT id, router_name, address, product_name, version, last_check_in, "
+      "last_check_in > CURRENT_TIMESTAMP - INTERVAL 10 SECOND AS active, "
+      "JSON_UNQUOTE(JSON_EXTRACT(options, '$.developer')) AS developer, "
+      "attributes, options FROM " +
+      sql::metadata_table("router");
+  if (!where.empty()) query += " WHERE " + where;
+  query += " ORDER BY id";
+
+  std::vector<Daemon> daemons;
+  for (const auto &row : session->query(query).rows) {
+    Daemon d;
+    d.id = row["id"].as_int();
+    d.name = row["router_name"].as_string();
+    d.address = row["address"].as_string();
+    d.product_name = row["product_name"].as_string();
+    d.version = optional_text(row["version"]);
+    d.last_check_in = optional_text(row["last_check_in"]);
+    d.active = !row["active"].is_null() && row["active"].as_int() == 1;
+    d.developer = optional_text(row["developer"]);
+    d.attributes = optional_text(row["attributes"]);
+    d.options = optional_text(row["options"]);
+    daemons.push_back(std::move(d));
+  }
+  return daemons;
+}
+
+}  // namespace
+
+std::vector<Daemon> get_daemons(Db_session *session) {
+  return query_daemons(session, {});
+}
+
+std::optional<Daemon> get_daemon(Db_session *session, int64_t id) {
+  auto daemons = query_daemons(session, "id = " + std::to_string(id));
+  if (daemons.empty()) return std::nullopt;
+  return std::move(daemons.front());
+}
+
+std::vector<Service> get_services_of_daemon(Db_session *session, int64_t id) {
+  return query_services(
+      session, "se.id IN (SELECT service_id FROM " +
+                   sql::metadata_table("router_services") +
+                   " WHERE router_id = " + std::to_string(id) + ")");
+}
+
+void delete_daemon(Db_session *session, int64_t id) {
+  const auto where = " WHERE router_id = " + std::to_string(id);
+  session->execute("DELETE FROM " + sql::metadata_table("router_general_log") +
+                   where);
+  session->execute("DELETE FROM " + sql::metadata_table("router_status") + where);
+  session->execute("DELETE FROM " + sql::metadata_table("router") +
+                   " WHERE id = " + std::to_string(id));
+}
+
 Id add_service(Db_session *session, const Service_definition &definition) {
   {
     std::string lower = definition.url_context_root;
