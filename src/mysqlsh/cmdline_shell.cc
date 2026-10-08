@@ -739,7 +739,9 @@ bool Command_line_shell::cmd_history(const std::vector<std::string> &args) {
     }
   } else if (args[1] == "save") {
     std::string path = history_file();
-    if (linenoiseHistorySave(path.c_str()) < 0) {
+    // not linenoiseHistorySave(): the line before this one can still be in
+    // the history as a temporary entry, which must not reach the file
+    if (!_history.save(path)) {
       print_diag(shcore::str_format("Could not save command history to %s: %s",
                                     path.c_str(), strerror(errno)));
     } else {
@@ -1318,27 +1320,56 @@ void Command_line_shell::handle_notification(
     shcore::Value::Map_type_ref data) {
   if (name == "SN_STATEMENT_EXECUTED") {
     const auto executed = shcore::str_strip(data->get_string("statement"));
-    auto mode = interactive_mode();
+    const bool shell_command = data->has_key("command");
     // a /command is checked, and logged, as the \command it ran as
-    auto sql = data->has_key("command")
-                   ? shcore::str_strip(data->get_string("command"))
-                   : executed;
-    // any whitespace ends the command name, as it does when \sql runs
-    if (sql.length() > 5 && shcore::str_beginswith(sql, "\\sql") &&
-        std::isspace(static_cast<unsigned char>(sql[4]))) {
-      mode = shcore::Shell_core::Mode::SQL;
-      sql = sql.substr(5);
-    }
-    if (mode != shcore::Shell_core::Mode::SQL || sql_safe_for_logging(sql)) {
-      _history.add(executed);
+    auto sql = shell_command ? shcore::str_strip(data->get_string("command"))
+                             : executed;
+    auto mode = interactive_mode();
 
-      if (shcore::Shell_core::Mode::SQL == mode) {
-        syslog(sql);
+    // what history.sql.ignorePattern applies to: a line typed in SQL mode, the
+    // statement of \sql, the arguments of \show and \watch, which a report
+    // such as query runs as SQL, and a \source line in SQL mode, which the
+    // system log records; the text of any other shell command is not SQL
+    std::optional<std::string> statement;
+    if (shell_command) {
+      // any whitespace ends the command name, as it does when the command runs
+      if (const auto name_end = sql.find_first_of(" \t\r\n\v\f");
+          name_end != std::string::npos) {
+        const auto command = sql.substr(0, name_end);
+        if (command == "\\sql") {
+          mode = shcore::Shell_core::Mode::SQL;
+          sql = sql.substr(name_end + 1);
+          statement = sql;
+        } else if (command == "\\show" || command == "\\watch") {
+          statement = sql.substr(name_end + 1);
+        } else if ((command == "\\source" || command == "\\.") &&
+                   shcore::Shell_core::Mode::SQL == mode) {
+          statement = sql;
+        }
       }
-    } else {
+    } else if (shcore::Shell_core::Mode::SQL == mode) {
+      statement = executed;
+    }
+    const bool in_sql = shcore::Shell_core::Mode::SQL == mode;
+
+    if (data->has_key("temporary")) {
+      // a shell command whose line may hold a secret it couldn't remove
+      _history.add_temporary(executed);
+    } else if (statement && !sql_safe_for_logging(*statement)) {
       // add but delete after the next command and
       // don't let it get saved to disk either
       _history.add_temporary(executed);
+    } else if (data->has_key("history")) {
+      // a shell command whose line held a secret, given without it
+      const auto history = data->get_string("history");
+      _history.add(history);
+
+      // as typed for the history, as the \command it ran as for the log
+      if (in_sql) syslog('\\' + history.substr(1));
+    } else {
+      _history.add(executed);
+
+      if (in_sql) syslog(sql);
     }
     if (m_previous_mode != shcore::Shell_core::Mode::None) {
       save_state(m_previous_mode);

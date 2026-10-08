@@ -142,6 +142,21 @@ class Mysql_shell : public mysqlsh::Base_shell {
  protected:
   static void set_sql_safe_for_logging(const std::string &patterns);
 
+  /**
+   * Called by a shell command whose arguments hold a secret: the history keeps
+   * the command name as typed followed by these arguments, instead of the line.
+   */
+  void set_history_arguments(const std::string &arguments) {
+    m_history_arguments = arguments;
+  }
+
+  /**
+   * Called for a shell command line that may hold a secret no command removed:
+   * the history keeps the line only until the next one runs, as it does with
+   * a filtered SQL statement.
+   */
+  void keep_out_of_history() { m_keep_out_of_history = true; }
+
   void set_active_session(std::shared_ptr<mysqlsh::ShellBaseSession> session);
 
   virtual bool do_shell_command(const std::string &command);
@@ -174,6 +189,10 @@ class Mysql_shell : public mysqlsh::Base_shell {
 
   /// Last schema set by the user via \use command.
   std::string _last_active_schema;
+
+  // what the shell command that is running asked the history to keep
+  std::string m_history_arguments;
+  bool m_keep_out_of_history = false;
 
  private:
 #ifdef HAVE_ADMIN_API

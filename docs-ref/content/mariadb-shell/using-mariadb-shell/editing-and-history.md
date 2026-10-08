@@ -156,4 +156,8 @@ To change the list permanently, persist the option:
 MariaDB localhost:3306 ssl  SQL > \option --persist history.sql.ignorePattern *IDENTIFIED*:*PASSWORD*:*AES_ENCRYPT*
 ```
 
-The filter applies to SQL statements, including statements that you run with `\sql` (or `/sql`) from Python mode. Python code isn't filtered: avoid literal passwords in Python lines, and use the credential store or `shell.prompt()` instead. See [Credential Store](../connecting/credential-store.md).
+The filter applies to SQL statements only: lines that you type in SQL mode, statements that you run with `\sql` (or `/sql`) from Python mode, and the arguments of `\show` and `\watch`, which a report such as `query` runs as SQL. In SQL mode it also applies to `\source` lines, which the system log records. Other shell commands aren't SQL and aren't filtered.
+
+A `\connect` (or `\c`, `/connect`) line is saved without its password, in any mode: `\connect root:secret@localhost` is saved as `\connect root@localhost`, and `--password=secret` as `--password`, so running the entry again prompts for the password. A password in an `--ssh` URI is removed too, and the rest of a URI is kept as typed; an empty password, as in `root:@localhost`, isn't a secret and stays. A shell command line that the shell rejects, such as a `\connect` with an error in its options or a command with a misplaced quote, is kept only until the next command, as a filtered statement is.
+
+Python code isn't filtered: avoid literal passwords in Python lines, and use the credential store or `shell.prompt()` instead. See [Credential Store](../connecting/credential-store.md).

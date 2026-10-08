@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -175,6 +176,7 @@ class Command_line_shell : public Mysql_shell,
   FRIEND_TEST(Cmdline_shell, help);
   FRIEND_TEST(Cmdline_shell, prompt);
   FRIEND_TEST(Shell_history, check_password_history_linenoise);
+  FRIEND_TEST(Shell_history, connect_password_history);
   FRIEND_TEST(Shell_history, history_linenoise);
   FRIEND_TEST(Shell_history, history_management);
   FRIEND_TEST(Shell_history, history_sizes);

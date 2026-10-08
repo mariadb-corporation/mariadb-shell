@@ -1331,6 +1331,26 @@ TEST(Uri_parser, parse_file) {
   validate_file_uri("file:/some%20path", "file", NO_HOST, "/some%20path");
 }
 
+TEST(Uri_parser, remove_password_from_uri) {
+  const auto check = [](const std::string &expect, const std::string &input) {
+    EXPECT_EQ(expect, mysqlshdk::db::uri::remove_password_from_uri(input));
+  };
+
+  check("root@localhost:3306", "root:secret@localhost:3306");
+  check("mysql://root@localhost:3306/db",
+        "mysql://root:p%40ss@localhost:3306/db");
+  check("ssh://user.name@mysql.com:22", "ssh://user.name:pwd@mysql.com:22");
+  // the password starts at the first ':'
+  check("mysql://ro@(/path/to/socket.sock)",
+        "mysql://ro:::ot:fd@(/path/to/socket.sock)");
+  // the user name is kept as written
+  check("%72%6f%6f%74@localhost", "%72%6f%6f%74:123456@localhost");
+  // nothing to remove: no user info, no password, or an empty one
+  check("localhost:3306", "localhost:3306");
+  check("root@localhost", "root@localhost");
+  check("root:@localhost", "root:@localhost");
+}
+
 TEST(Uri_parser, hide_password_in_uri) {
   auto check = [](mysqlshdk::db::uri::Type /*type*/, const std::string &expect,
                   const std::string &input) {

@@ -1,6 +1,6 @@
 # Slash Prefix for Shell Commands
 
-Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Docs side: [docs-ref.md](docs-ref.md); the open history gap is in [product-issues.md](product-issues.md).
+Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Docs side: [docs-ref.md](docs-ref.md).
 
 Branch `wip/slash-commands`: shell commands also run with a `/` prefix (`/quit`, `/status`, `/connect`, `/sql`, `/?`), under the `slashCommands` option (bool, default `true`). Motivation: AI harnesses all use `/quit`, `/help`, so `/` instead of `\` is an easy slip.
 
@@ -39,7 +39,7 @@ Branch `wip/slash-commands`: shell commands also run with a `/` prefix (`/quit`,
 ## Next steps
 
 1. Push with `--force-with-lease`, then open the PR.
-2. Separate PR: filter passwords in `\connect` / `/connect` lines from history, as `shell-commands.md` already claims (user decision: fix the code, keep the docs). See [product-issues.md](product-issues.md).
+2. Done separately: `\connect` / `/connect` lines go to history without their password. `cmd_connect` hands history the arguments as its option parser left them (the parser removes URI passwords and stars password options in place), via `set_history_arguments()` / `keep_out_of_history()` and the `"history"` / `"temporary"` notification keys; a shell command line the shell rejects (`process_line`'s catch) is temporary whatever the command.
 
 ## Gotchas
 

@@ -9,10 +9,6 @@ These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built 
 - **uvicorn's access log in the MCP server** prints request paths with query strings, so `GET /authorize?client_id=…&state=…` shows the OAuth client ID. It is uvicorn's own logger (stdout), not `log_event`; `access_log=False` in `lib/server.py`'s `uvicorn.Config` would silence it. [mcp-server/starting-the-mcp-server.md would need a note]
 - **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
 
-### Found during the slash-commands review (2026-10-07), not fixed
-
-- **`\connect` / `/connect` lines go to history with their password.** `sql_safe_for_logging` runs only for SQL-mode lines and `\sql` statements, and the default `history.sql.ignorePattern` (`*IDENTIFIED*:*PASSWORD*`) doesn't match a URI. So `\connect root:secret@host` is saved in either mode. `using-mariadb-shell/shell-commands.md` § The Slash Prefix already says it is kept out. The user decided to fix the code in a separate PR rather than change the docs. See [slash-commands.md](slash-commands.md).
-
 ## Product bugs (behavior)
 
 The original summary, carried over verbatim:
