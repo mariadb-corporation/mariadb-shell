@@ -21,6 +21,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | --- | --- |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
+| [context/mrs-module.md](context/mrs-module.md) | Branch `wip/mrs_module`: the C++ `mrs` module replacing the Python mrs_plugin (bison REST SQL grammar, executor, SQL handler, tests): layout, design decisions, gotchas, state, next steps |
 
 ## Current State
 
@@ -29,6 +30,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
 - **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
+- **Branch `wip/mrs_module` (2026-10-08, uncommitted):** the Python mrs_plugin ported to a built-in C++ `mrs` module with a bison REST SQL grammar and the `MRS` SQL handler. All statements except REST PROJECT/ZIP work; 49 related tests pass. See [context/mrs-module.md](context/mrs-module.md).
 - **Open:**
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
@@ -54,3 +56,25 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **The pre-commit copyright hook** adds `Copyright (c) 2026, MariaDB plc.` to touched C++ files and aborts the commit; re-`git add` and commit again.
 - **GitHub returned HTTP 500 on four squash-merge attempts of #62** (2026-10-07) while the PR was clean; the user merged it later from the web UI.
 - **Windows testing:** a Windows 11 ARM64 box with OpenSSH, PowerShell 5.1 and 7 is in the project memory (`windows-test-machine`); used to verify `install.ps1`.
+
+## Git state
+
+Branch `wip/mrs_module`, branched from `main` at `5e414f0be`, nothing committed. `git status --short`:
+
+```
+ M .claude/PROJECT_CONTEXT.md
+ M modules/CMakeLists.txt
+ M src/mysqlsh/mysql_shell.cc
+ M src/mysqlsh/mysql_shell.h
+ M unittest/CMakeLists.txt
+ M unittest/scripts/auto/js_shell/scripts/shell_register_sql_handler_norecord.js
+ M unittest/scripts/auto/py_shell/scripts/shell_register_sql_handler_norecord.py
+ M unittest/scripts/auto/py_shell/validation/cmd_help_norecord.py
+?? .claude/context/mrs-module.md
+?? cmake/embed_file.cmake
+?? modules/mrs/
+?? unittest/data/mrs/
+?? unittest/modules/mrs/
+?? unittest/scripts/auto/py_shell/scripts/mrs_{auth,content,db_objects,grammar_test,services}_norecord.py
+```
+

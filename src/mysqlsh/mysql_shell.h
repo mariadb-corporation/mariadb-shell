@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "modules/adminapi/mod_dba.h"
+#include "modules/mrs/mod_mrs.h"
 #include "modules/adminapi/mod_dba_cluster_set.h"
 #include "modules/mod_sys.h"
 #include "mysqlshdk/include/scripting/plugin_definition.h"
@@ -178,6 +179,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
   std::shared_ptr<mysqlsh::dba::Dba> _global_dba;
 #endif
   std::shared_ptr<mysqlsh::Util> _global_util;
+  std::shared_ptr<mysqlsh::mrs::Mrs> m_global_mrs;
   std::shared_ptr<mysqlsh::Os> m_global_js_os;
 
 #ifdef HAVE_ADMIN_API
