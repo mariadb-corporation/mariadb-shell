@@ -60,6 +60,9 @@ TEST_F(Db_tests, row_float) {
       NEXT_ROW();
       CHECK_FLOAT_EQ(0, -1.02323, get_float);
       CHECK_FLOAT_EQ(1, 1.2333, get_float);
+      // a buffered row prints the shortest text, not a fixed six decimals
+      EXPECT_EQ("-1.02323", rowcp.get_as_string(0));
+      EXPECT_EQ("1.2333", rowcp.get_as_string(1));
       NEXT_ROW();
       if (is_classic) {
         CHECK_FLOAT_EQ(0, 123523, get_float);
@@ -92,8 +95,10 @@ TEST_F(Db_tests, row_float) {
       CHECK_FLOAT_EQ(0, -122022323.0230221, get_float);
       CHECK_DOUBLE_EQ(1, 2320.0012301, get_double);
       CHECK_FLOAT_EQ(1, 2320.0012301, get_float);
+      EXPECT_EQ("2320.0012301", rowcp.get_as_string(1));
       NEXT_ROW();
       CHECK_DOUBLE_EQ(0, -1.232023231, get_double);
+      EXPECT_EQ("-1.232023231", rowcp.get_as_string(0));
       CHECK_DOUBLE_EQ(1, 1231231231.23331231, get_double);
       NEXT_ROW();
       CHECK_DOUBLE_EQ(0, 1235212322.6123123, get_double);
