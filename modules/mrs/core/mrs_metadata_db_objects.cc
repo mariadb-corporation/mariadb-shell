@@ -1,0 +1,1148 @@
+/*
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is designed to work with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms,
+ * as designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
+ *
+ * This program is distributed in the hope that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+#include "modules/mrs/core/mrs_metadata_db_objects.h"
+
+#include <algorithm>
+#include <cctype>
+#include <map>
+#include <stdexcept>
+
+namespace mrs {
+namespace metadata {
+
+namespace {
+
+std::optional<std::string> optional_text(const Db_value &value) {
+  return value.as_optional_string();
+}
+
+std::optional<Id> optional_id(const Db_value &value) {
+  if (value.is_null()) return std::nullopt;
+  return value.as_string();
+}
+
+std::string to_lower(std::string_view text) {
+  std::string result(text);
+  std::transform(result.begin(), result.end(), result.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return result;
+}
+
+std::string to_upper(std::string_view text) {
+  std::string result(text);
+  std::transform(result.begin(), result.end(), result.begin(),
+                 [](unsigned char c) { return std::toupper(c); });
+  return result;
+}
+
+std::vector<std::string> split(std::string_view text, char separator) {
+  std::vector<std::string> parts;
+  size_t start = 0;
+  while (start <= text.size()) {
+    auto end = text.find(separator, start);
+    if (end == std::string_view::npos) end = text.size();
+    parts.emplace_back(text.substr(start, end - start));
+    start = end + 1;
+  }
+  return parts;
+}
+
+std::string join(const std::vector<std::string> &parts, std::string_view separator) {
+  std::string result;
+  for (const auto &part : parts) {
+    if (!result.empty()) result += separator;
+    result += part;
+  }
+  return result;
+}
+
+bool is_routine_type(std::string_view object_type) {
+  return object_type == "PROCEDURE" || object_type == "FUNCTION";
+}
+
+// The column list of the db_object queries. The audit log join yields the
+// time of the last change, as the Python plugin reported it.
+const char *k_db_object_select = R"(
+SELECT o.id, o.db_schema_id, o.name, o.request_path,
+    o.requires_auth, o.enabled, o.object_type,
+    o.items_per_page, o.comments,
+    sc.request_path AS schema_request_path,
+    CONCAT(h.name, se.url_context_root) AS host_ctx,
+    o.crud_operations, o.format,
+    o.media_type, o.auto_detect_media_type,
+    o.auth_stored_procedure, o.options,
+    o.metadata, o.internal,
+    al.changed_at,
+    se.id AS service_id, sc.name AS schema_name
+FROM `mysql_rest_service_metadata`.`db_object` o
+    LEFT OUTER JOIN `mysql_rest_service_metadata`.`db_schema` sc
+        ON sc.id = o.db_schema_id
+    LEFT OUTER JOIN `mysql_rest_service_metadata`.`service` se
+        ON se.id = sc.service_id
+    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+        ON se.url_host_id = h.id
+    LEFT OUTER JOIN (
+        SELECT new_row_id AS id, MAX(changed_at) AS changed_at
+        FROM `mysql_rest_service_metadata`.`audit_log`
+        WHERE table_name = 'db_object'
+        GROUP BY new_row_id) al
+    ON al.id = o.id
+)";
+
+Db_object db_object_from_row(const Db_row &row) {
+  Db_object o;
+  o.id = row["id"].as_string();
+  o.db_schema_id = row["db_schema_id"].as_string();
+  o.service_id = row["service_id"].as_string();
+  o.name = row["name"].as_string();
+  o.schema_name = row["schema_name"].as_string();
+  o.request_path = row["request_path"].as_string();
+  o.schema_request_path = row["schema_request_path"].as_string();
+  o.host_ctx = row["host_ctx"].as_string();
+  o.object_type = row["object_type"].as_string();
+  if (const auto crud = row["crud_operations"].as_string(); !crud.empty()) {
+    o.crud_operations = split(crud, ',');
+  }
+  o.format = row["format"].as_string();
+  o.enabled = static_cast<int>(row["enabled"].as_int());
+  o.internal = row["internal"].as_bool();
+  o.requires_auth = row["requires_auth"].as_bool();
+  if (!row["items_per_page"].is_null()) {
+    o.items_per_page = row["items_per_page"].as_int();
+  }
+  o.media_type = optional_text(row["media_type"]);
+  o.auto_detect_media_type = row["auto_detect_media_type"].as_bool();
+  o.auth_stored_procedure = optional_text(row["auth_stored_procedure"]);
+  o.comments = optional_text(row["comments"]);
+  o.options = optional_text(row["options"]);
+  o.metadata = optional_text(row["metadata"]);
+  o.changed_at = optional_text(row["changed_at"]);
+  return o;
+}
+
+std::vector<Db_object> query_db_objects(Db_session *session,
+                                        const std::string &where) {
+  std::string sql = k_db_object_select;
+  if (!where.empty()) sql += " WHERE " + where;
+  sql += " ORDER BY o.request_path";
+
+  std::vector<Db_object> db_objects;
+  for (const auto &row : session->query(sql).rows) {
+    db_objects.push_back(db_object_from_row(row));
+  }
+  return db_objects;
+}
+
+// The router of the previous metadata major version read the data mapping
+// flags under their old names, so they are stored twice.
+std::string with_legacy_option_keys(const std::string &options) {
+  auto doc = json::parse(options);
+  if (!doc.is_object()) return options;
+
+  for (const auto &[key, legacy_key] :
+       {std::pair{"dataMappingViewInsert", "duality_view_insert"},
+        std::pair{"dataMappingViewUpdate", "duality_view_update"},
+        std::pair{"dataMappingViewDelete", "duality_view_delete"}}) {
+    const auto *value = doc.get(key);
+    doc.set(legacy_key, value ? *value : json::Value());
+  }
+  if (const auto *no_check = doc.get("dataMappingViewNoCheck")) {
+    doc.set("duality_view_no_check", *no_check);
+  }
+  return doc.dump();
+}
+
+sql::Value json_value(const std::optional<std::string> &text) {
+  return text ? sql::Value(*text) : sql::Value();
+}
+
+sql::Value json_value(const std::optional<json::Value> &doc) {
+  return doc ? sql::Value(doc->dump()) : sql::Value();
+}
+
+void insert_object_reference(Db_session *session, const Object_reference &ref) {
+  sql::Insert insert("object_reference");
+  insert.set("id", sql::Value::id(ref.id));
+  insert.set("reduce_to_value_of_field_id",
+             sql::Value::id(ref.reduce_to_value_of_field_id));
+  insert.set("row_ownership_field_id", sql::Value::id(ref.row_ownership_field_id));
+  insert.set("reference_mapping", ref.reference_mapping.dump());
+  insert.set("unnest", ref.unnest);
+  insert.set("options", ref.options ? sql::Value(with_legacy_option_keys(*ref.options))
+                                    : sql::Value());
+  insert.set("sdk_options", json_value(ref.sdk_options));
+  insert.set("comments", ref.comments);
+  session->execute(insert.str());
+}
+
+void insert_object_field(Db_session *session, const Id &object_id,
+                         const Object_field &field) {
+  sql::Insert insert("object_field");
+  insert.set("id", sql::Value::id(field.id));
+  insert.set("object_id", sql::Value::id(object_id));
+  insert.set("parent_reference_id", sql::Value::id(field.parent_reference_id));
+  insert.set("represents_reference_id",
+             field.reference ? sql::Value::id(field.reference->id) : sql::Value());
+  insert.set("name", field.name);
+  insert.set("position", field.position);
+  insert.set("db_column", json_value(field.db_column));
+  insert.set("enabled", field.enabled);
+  insert.set("allow_filtering", field.allow_filtering);
+  insert.set("allow_sorting", field.allow_sorting);
+  insert.set("no_check", field.no_check);
+  insert.set("no_update", field.no_update);
+  insert.set("json_schema", json_value(field.json_schema));
+  insert.set("options", json_value(field.options));
+  insert.set("sdk_options", json_value(field.sdk_options));
+  insert.set("comments", field.comments);
+  session->execute(insert.str());
+}
+
+void insert_object(Db_session *session, const Id &db_object_id,
+                   const Object_definition &object) {
+  sql::Insert insert("object");
+  insert.set("id", sql::Value::id(object.id));
+  insert.set("db_object_id", sql::Value::id(db_object_id));
+  insert.set("name", object.name);
+  insert.set("kind", object.kind);
+  insert.set("position", object.position);
+  insert.set("row_ownership_field_id",
+             sql::Value::id(object.row_ownership_field_id));
+  insert.set("options", object.options
+                            ? sql::Value(with_legacy_option_keys(*object.options))
+                            : sql::Value());
+  insert.set("sdk_options", json_value(object.sdk_options));
+  insert.set("comments", object.comments);
+  session->execute(insert.str());
+
+  // The fields point to the references, so those go first
+  for (const auto &field : object.fields) {
+    if (field.reference) insert_object_reference(session, *field.reference);
+  }
+  for (const auto &field : object.fields) {
+    insert_object_field(session, object.id, field);
+  }
+}
+
+Object_field field_from_row(const Db_row &row) {
+  Object_field f;
+  f.id = row["id"].as_string();
+  f.object_id = row["object_id"].as_string();
+  f.parent_reference_id = optional_id(row["parent_reference_id"]);
+  f.name = row["name"].as_string();
+  f.position = static_cast<int>(row["position"].as_int());
+  if (const auto db_column = optional_text(row["db_column"])) {
+    f.db_column = json::parse(*db_column);
+  }
+  f.enabled = row["enabled"].as_bool();
+  f.allow_filtering = row["allow_filtering"].as_bool();
+  f.allow_sorting = row["allow_sorting"].as_bool();
+  f.no_check = row["no_check"].as_bool();
+  f.no_update = row["no_update"].as_bool();
+  f.json_schema = optional_text(row["json_schema"]);
+  f.options = optional_text(row["options"]);
+  f.sdk_options = optional_text(row["sdk_options"]);
+  f.comments = optional_text(row["comments"]);
+
+  if (const auto reference_id = optional_id(row["represents_reference_id"])) {
+    Object_reference r;
+    r.id = *reference_id;
+    r.reduce_to_value_of_field_id =
+        optional_id(row["reduce_to_value_of_field_id"]);
+    r.row_ownership_field_id = optional_id(row["ref_row_ownership_field_id"]);
+    r.reference_mapping = json::parse(row["reference_mapping"].as_string());
+    r.unnest = row["unnest"].as_bool();
+    r.options = optional_text(row["ref_options"]);
+    r.sdk_options = optional_text(row["ref_sdk_options"]);
+    r.comments = optional_text(row["ref_comments"]);
+    f.reference = std::move(r);
+  }
+  return f;
+}
+
+std::vector<Object_field> get_object_fields(Db_session *session,
+                                            const Id &object_id) {
+  const auto result = session->query(R"(
+SELECT f.id, f.object_id, f.parent_reference_id, f.represents_reference_id,
+    f.name, f.position, f.db_column, f.enabled, f.allow_filtering,
+    f.allow_sorting, f.no_check, f.no_update, f.json_schema, f.options,
+    f.sdk_options, f.comments,
+    r.reduce_to_value_of_field_id,
+    r.row_ownership_field_id AS ref_row_ownership_field_id,
+    r.reference_mapping, r.unnest, r.options AS ref_options,
+    r.sdk_options AS ref_sdk_options, r.comments AS ref_comments
+FROM `mysql_rest_service_metadata`.`object_field` f
+    LEFT OUTER JOIN `mysql_rest_service_metadata`.`object_reference` r
+        ON r.id = f.represents_reference_id
+WHERE f.object_id = )" + sql::hex(object_id) +
+                                     " ORDER BY f.position, f.id");
+
+  std::vector<Object_field> fields;
+  for (const auto &row : result.rows) fields.push_back(field_from_row(row));
+  return fields;
+}
+
+Id schema_id_of_db_object(Db_session *session, const Id &db_object_id) {
+  const auto result = session->query(
+      "SELECT db_schema_id FROM " + sql::metadata_table("db_object") +
+      " WHERE id = " + sql::hex(db_object_id));
+  if (result.empty()) {
+    throw std::runtime_error("The specified db_object with id " +
+                             sql::hex(db_object_id) + " was not found.");
+  }
+  return result.first()["db_schema_id"].as_string();
+}
+
+void check_object_names(Db_session *session, const Id &schema_id,
+                        const std::vector<Object_definition> &objects) {
+  std::vector<std::string> assigned;
+  for (const auto &object : objects) {
+    if (std::find(assigned.begin(), assigned.end(), object.name) != assigned.end()) {
+      throw std::runtime_error("The object name " + object.name +
+                               " has been used more than once.");
+    }
+    if (object_name_in_use(session, schema_id, object.id, object.name)) {
+      throw std::runtime_error("The object name " + object.name +
+                               " is already in use on this REST schema.");
+    }
+    assigned.push_back(object.name);
+  }
+}
+
+// The privileges of a crud_operations SET value.
+std::vector<std::string> privileges_of(const std::vector<std::string> &crud_operations) {
+  std::vector<std::string> privileges;
+  for (const auto &operation : crud_operations) {
+    if (operation == "CREATE") {
+      privileges.push_back("INSERT");
+    } else if (operation == "READ") {
+      privileges.push_back("SELECT");
+    } else if (operation == "UPDATE") {
+      privileges.push_back("UPDATE");
+    } else if (operation == "DELETE") {
+      privileges.push_back("DELETE");
+    } else {
+      throw std::runtime_error("The given CRUD operation " + operation +
+                               " does not exist.");
+    }
+  }
+  return privileges;
+}
+
+std::string grant_statement(const std::string &privileges,
+                            std::string_view object_type,
+                            std::string_view schema_name, std::string_view name) {
+  std::string statement = "GRANT " + privileges + " ON ";
+  if (is_routine_type(object_type)) statement += std::string(object_type) + " ";
+  statement += sql::quote_qualified(schema_name, name);
+  statement += " TO " + sql::quote(k_data_provider_role);
+  return statement;
+}
+
+std::string verified_privilege(const std::string &privilege) {
+  static const std::vector<std::string> k_valid{
+      "ALTER",       "ALTER ROUTINE", "CREATE",  "CREATE ROUTINE",
+      "CREATE TEMPORARY TABLES",      "CREATE VIEW", "DELETE",  "DROP",
+      "EVENT",       "EXECUTE",       "INDEX",   "INSERT",      "LOCK TABLES",
+      "REFERENCES",  "SELECT",        "SHOW DATABASES", "SHOW VIEW",
+      "TRIGGER",     "UPDATE",        "USAGE"};
+  if (std::find(k_valid.begin(), k_valid.end(), to_upper(privilege)) ==
+      k_valid.end()) {
+    throw std::runtime_error("Invalid privilege " + privilege +
+                             " specified. Valid privileges are " +
+                             join(k_valid, ", ") + ".");
+  }
+  return privilege;
+}
+
+// One privilege of an explicit grant: "SELECT" or {"privilege": "SELECT",
+// "columnList": ["a", "b"]}.
+std::string explicit_privilege(const json::Value &value) {
+  if (value.is_string()) return verified_privilege(value.as_string());
+  if (!value.is_object()) {
+    throw std::runtime_error("Invalid privilege definition in the grants option.");
+  }
+  std::string result = verified_privilege(value.get_string("privilege"));
+  if (const auto *columns = value.get("columnList"); columns && columns->is_array()) {
+    std::vector<std::string> names;
+    for (const auto &column : columns->as_array()) {
+      names.push_back(column.is_string() ? column.as_string() : column.dump());
+    }
+    result += " (" + join(names, ", ") + ")";
+  }
+  return result;
+}
+
+// The statements of the "grants" option: one grant document or a list of
+// {"schema", "object", "objectType", "privileges"}.
+std::vector<std::string> explicit_grant_statements(const json::Value &grants) {
+  std::vector<json::Value> entries;
+  if (grants.is_object()) {
+    entries.push_back(grants);
+  } else if (grants.is_array()) {
+    entries = grants.as_array();
+  }
+
+  std::vector<std::string> statements;
+  for (const auto &grant : entries) {
+    std::vector<std::string> privileges;
+    if (const auto *list = grant.get("privileges")) {
+      if (list->is_array()) {
+        for (const auto &privilege : list->as_array()) {
+          privileges.push_back(explicit_privilege(privilege));
+        }
+      } else {
+        privileges.push_back(explicit_privilege(*list));
+      }
+    }
+    if (privileges.empty()) continue;
+
+    statements.push_back(grant_statement(join(privileges, ", "),
+                                         grant.get_string("objectType"),
+                                         grant.get_string("schema"),
+                                         grant.get_string("object")));
+  }
+  return statements;
+}
+
+// -- SHOW CREATE output ------------------------------------------------------
+
+std::string cut_last_comma(const std::string &text) {
+  if (text.size() >= 2 && text.compare(text.size() - 2, 2, ",\n") == 0) {
+    return text.substr(0, text.size() - 2);
+  }
+  if (text.empty()) return text;
+  return text.substr(0, text.size() - 1);
+}
+
+std::string field_attributes(const Object_field &field, bool add_datatype,
+                             const std::optional<Id> &row_ownership_field_id) {
+  std::vector<std::string> attributes;
+  const auto &column = *field.db_column;
+
+  std::string inout = "@";
+  if (column.get_bool("in")) inout += "IN";
+  if (column.get_bool("out")) inout += "OUT";
+  if (inout != "@") attributes.push_back(inout);
+
+  if (column.get_bool("is_primary")) attributes.push_back("@KEY");
+  if (field.no_check) attributes.push_back("@NOCHECK");
+  if (field.no_update) attributes.push_back("@NOUPDATE");
+  if (field.allow_sorting) attributes.push_back("@SORTABLE");
+  if (!field.allow_filtering) attributes.push_back("@NOFILTERING");
+  if (add_datatype) {
+    const auto datatype = column.get_string("datatype");
+    if (!datatype.empty()) attributes.push_back("@DATATYPE(\"" + datatype + "\")");
+  }
+  if (row_ownership_field_id == field.id) attributes.push_back("@ROWOWNERSHIP");
+
+  return join(attributes, " ");
+}
+
+std::string reference_attributes(const Object_reference &reference) {
+  std::vector<std::string> attributes;
+  if (mapping_option(reference.options, "dataMappingViewInsert")) {
+    attributes.push_back("@INSERT");
+  }
+  if (mapping_option(reference.options, "dataMappingViewUpdate")) {
+    attributes.push_back("@UPDATE");
+  }
+  if (mapping_option(reference.options, "dataMappingViewDelete")) {
+    attributes.push_back("@DELETE");
+  }
+  if (mapping_option(reference.options, "dataMappingViewNoCheck")) {
+    attributes.push_back("@NOCHECK");
+  }
+  if (reference.unnest || reference.reduce_to_value_of_field_id) {
+    attributes.push_back("@UNNEST");
+  }
+  return join(attributes, " ");
+}
+
+// The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
+// references with their own block. Every line ends in ",\n"; the caller
+// cuts the last comma.
+std::string walk(const std::vector<Object_field> &fields,
+                 const std::optional<Id> &parent_reference_id, int level,
+                 bool add_datatype,
+                 const std::optional<Id> &row_ownership_field_id) {
+  const std::string indent(static_cast<size_t>(level) * 4, ' ');
+  std::string result;
+
+  for (const auto &field : fields) {
+    if (field.parent_reference_id != parent_reference_id) continue;
+
+    if (!field.reference) {
+      if (!field.enabled || !field.db_column) continue;
+      result += indent + field.name + ": " + field.column_name();
+      const auto attributes =
+          field_attributes(field, add_datatype, row_ownership_field_id);
+      if (!attributes.empty()) result += " " + attributes;
+      result += ",\n";
+      continue;
+    }
+
+    const auto &reference = *field.reference;
+    if (!reference.unnest && !field.enabled) continue;
+
+    result += indent + field.name + ": " + reference.referenced_schema() + "." +
+              reference.referenced_table();
+    const auto attributes = reference_attributes(reference);
+    if (!attributes.empty()) result += " " + attributes;
+
+    const auto children =
+        cut_last_comma(walk(fields, reference.id, level + 1, add_datatype,
+                            reference.row_ownership_field_id));
+    if (!children.empty()) {
+      result += " {\n" + children + "\n" + indent + "}";
+    }
+    result += ",\n";
+  }
+  return result;
+}
+
+std::string class_header(const Object_definition &object) {
+  std::string header = "CLASS " + object.name;
+  if (mapping_option(object.options, "dataMappingViewInsert")) header += " @INSERT";
+  if (mapping_option(object.options, "dataMappingViewUpdate")) header += " @UPDATE";
+  if (mapping_option(object.options, "dataMappingViewDelete")) header += " @DELETE";
+  if (mapping_option(object.options, "dataMappingViewNoCheck")) header += " @NOCHECK";
+  return header;
+}
+
+bool is_empty_json_object(const std::string &text) {
+  const auto doc = json::try_parse(text);
+  return doc && doc->is_object() && doc->as_object().empty();
+}
+
+}  // namespace
+
+// -- db_object rows -----------------------------------------------------------
+
+std::optional<Db_object> get_db_object(Db_session *session, const Id &id) {
+  auto db_objects = query_db_objects(session, "o.id = " + sql::hex(id));
+  if (db_objects.empty()) return std::nullopt;
+  return std::move(db_objects.front());
+}
+
+std::optional<Db_object> find_db_object(Db_session *session,
+                                        const Id &schema_id,
+                                        std::string_view request_path) {
+  auto db_objects = query_db_objects(
+      session, "o.db_schema_id = " + sql::hex(schema_id) +
+                   " AND o.request_path = " + sql::quote(request_path));
+  if (db_objects.empty()) return std::nullopt;
+  return std::move(db_objects.front());
+}
+
+std::vector<Db_object> get_db_objects(Db_session *session, const Id &schema_id,
+                                      const std::vector<std::string> &object_types) {
+  std::string where = "o.db_schema_id = " + sql::hex(schema_id);
+  if (!object_types.empty()) {
+    std::vector<std::string> quoted;
+    for (const auto &type : object_types) quoted.push_back(sql::quote(type));
+    where += " AND o.object_type IN (" + join(quoted, ", ") + ")";
+  }
+  return query_db_objects(session, where);
+}
+
+Id add_db_object(Db_session *session, const Db_object_definition &definition,
+                 const std::vector<Object_definition> &objects) {
+  static const std::vector<std::string> k_types{"TABLE", "VIEW", "PROCEDURE",
+                                                "FUNCTION", "SCRIPT"};
+  if (std::find(k_types.begin(), k_types.end(), definition.object_type) ==
+      k_types.end()) {
+    throw std::runtime_error(
+        "Invalid db_object_type. Only valid types are TABLE, VIEW, PROCEDURE "
+        "and FUNCTION.");
+  }
+
+  const Id id = definition.id ? *definition.id : new_id(session);
+  const auto crud_operations = calculate_crud_operations(
+      definition.object_type, objects, definition.options);
+
+  sql::Insert insert("db_object");
+  insert.set("id", sql::Value::id(id));
+  insert.set("db_schema_id", sql::Value::id(definition.db_schema_id));
+  insert.set("name", definition.name);
+  insert.set("request_path", definition.request_path);
+  insert.set("object_type", definition.object_type);
+  insert.set("enabled", definition.enabled.value_or(1));
+  insert.set("items_per_page", definition.items_per_page);
+  insert.set("requires_auth", definition.requires_auth.value_or(true));
+  insert.set("crud_operations", join(crud_operations, ","));
+  insert.set("format", definition.format.value_or("FEED"));
+  insert.set("comments", definition.comments.value_or(""));
+  insert.set("media_type", definition.media_type);
+  insert.set("metadata", definition.metadata);
+  insert.set("auto_detect_media_type", definition.auto_detect_media_type);
+  insert.set("auth_stored_procedure", definition.auth_stored_procedure);
+  insert.set("options", definition.options);
+  insert.set("internal", definition.internal);
+  session->execute(insert.str());
+
+  set_objects(session, id, objects);
+  return id;
+}
+
+void update_db_object(Db_session *session, const Id &id,
+                      const Db_object_changes &changes) {
+  sql::Update update("db_object");
+  if (changes.request_path) update.set("request_path", *changes.request_path);
+  if (changes.enabled) update.set("enabled", *changes.enabled);
+  if (changes.requires_auth) update.set("requires_auth", *changes.requires_auth);
+  if (changes.items_per_page) update.set("items_per_page", *changes.items_per_page);
+  if (changes.format) update.set("format", *changes.format);
+  if (changes.comments) update.set("comments", *changes.comments);
+  if (changes.media_type) update.set("media_type", *changes.media_type);
+  if (changes.auto_detect_media_type) {
+    update.set("auto_detect_media_type", *changes.auto_detect_media_type);
+  }
+  if (changes.auth_stored_procedure) {
+    update.set("auth_stored_procedure", *changes.auth_stored_procedure);
+  }
+  if (changes.metadata) update.set("metadata", *changes.metadata);
+  if (changes.crud_operations) {
+    update.set("crud_operations", join(*changes.crud_operations, ","));
+  }
+  if (changes.options) {
+    // MERGE OPTIONS merges into existing options and replaces when there
+    // are none yet
+    bool merge = changes.merge_options;
+    if (merge) {
+      const auto row = session->query(
+          "SELECT options IS NULL AS options_is_null FROM " +
+          sql::metadata_table("db_object") + " WHERE id = " + sql::hex(id));
+      merge = !row.empty() && !row.first()["options_is_null"].as_bool();
+    }
+    if (merge) {
+      update.set_raw("options = JSON_MERGE_PATCH(options, " +
+                     sql::quote(*changes.options) + ")");
+    } else {
+      update.set("options", *changes.options);
+    }
+  }
+
+  if (update.empty()) return;
+  update.where("id = " + sql::hex(id));
+  session->execute(update.str());
+}
+
+void delete_db_object(Db_session *session, const Id &id) {
+  const auto db_object = get_db_object(session, id);
+  if (!db_object) {
+    throw std::runtime_error("The specified db_object with id " + sql::hex(id) +
+                             " was not found.");
+  }
+  revoke_all_from_db_object(session, db_object->schema_name, db_object->name,
+                            db_object->object_type);
+
+  // The objects, fields and references go with it (BEFORE DELETE triggers)
+  if (session->execute("DELETE FROM " + sql::metadata_table("db_object") +
+                       " WHERE id = " + sql::hex(id)) == 0) {
+    throw std::runtime_error("The specified db_object with id " + sql::hex(id) +
+                             " was not found.");
+  }
+}
+
+// -- The data mapping ---------------------------------------------------------
+
+std::string mapping_options_json(bool insert, bool update, bool del,
+                                 bool no_check) {
+  json::Value doc = json::Value::object();
+  doc.set("dataMappingViewInsert", json::Value(insert));
+  doc.set("dataMappingViewUpdate", json::Value(update));
+  doc.set("dataMappingViewDelete", json::Value(del));
+  doc.set("dataMappingViewNoCheck", json::Value(no_check));
+  return doc.dump();
+}
+
+bool mapping_option(const std::optional<std::string> &options,
+                    std::string_view key) {
+  if (!options) return false;
+  const auto doc = json::try_parse(*options);
+  return doc && doc->get_bool(key);
+}
+
+std::vector<Object_definition> get_objects(Db_session *session,
+                                           const Id &db_object_id) {
+  const auto result = session->query(
+      "SELECT id, name, kind, position, row_ownership_field_id, options, "
+      "sdk_options, comments FROM " +
+      sql::metadata_table("object") +
+      " WHERE db_object_id = " + sql::hex(db_object_id) + " ORDER BY position");
+
+  std::vector<Object_definition> objects;
+  for (const auto &row : result.rows) {
+    Object_definition o;
+    o.id = row["id"].as_string();
+    o.name = row["name"].as_string();
+    o.kind = row["kind"].as_string();
+    o.position = static_cast<int>(row["position"].as_int());
+    o.row_ownership_field_id = optional_id(row["row_ownership_field_id"]);
+    o.options = optional_text(row["options"]);
+    o.sdk_options = optional_text(row["sdk_options"]);
+    o.comments = optional_text(row["comments"]);
+    o.fields = get_object_fields(session, o.id);
+    objects.push_back(std::move(o));
+  }
+  return objects;
+}
+
+void set_objects(Db_session *session, const Id &db_object_id,
+                 const std::vector<Object_definition> &objects) {
+  // The fields and references of the objects go with them (triggers)
+  session->execute("DELETE FROM " + sql::metadata_table("object") +
+                   " WHERE db_object_id = " + sql::hex(db_object_id));
+
+  check_object_names(session, schema_id_of_db_object(session, db_object_id),
+                     objects);
+
+  for (const auto &object : objects) {
+    insert_object(session, db_object_id, object);
+  }
+}
+
+void update_object(Db_session *session, const Id &object_id,
+                   const std::string &name,
+                   const std::optional<std::string> &options) {
+  sql::Update update("object");
+  update.set("name", name);
+  update.set("options", options ? sql::Value(with_legacy_option_keys(*options))
+                                : sql::Value());
+  update.where("id = " + sql::hex(object_id));
+  session->execute(update.str());
+}
+
+bool object_name_in_use(Db_session *session, const Id &schema_id,
+                        const Id &object_id, std::string_view name) {
+  const auto result = session->query(
+      "SELECT o.name FROM " + sql::metadata_table("object") + " o LEFT JOIN " +
+      sql::metadata_table("db_object") +
+      " dbo ON o.db_object_id = dbo.id WHERE dbo.db_schema_id = " +
+      sql::hex(schema_id) + " AND UPPER(o.name) = UPPER(" + sql::quote(name) +
+      ") AND o.id <> " + sql::hex(object_id));
+  return !result.empty();
+}
+
+std::vector<std::string> calculate_crud_operations(
+    std::string_view object_type, const std::vector<Object_definition> &objects,
+    const std::optional<std::string> &options) {
+  if (object_type == "SCRIPT") return {"CREATE", "READ", "UPDATE"};
+
+  if (is_routine_type(object_type)) {
+    // A routine backing a MySQL task is reached through all HTTP methods
+    const auto doc = options ? json::try_parse(*options) : std::nullopt;
+    if (doc && doc->has("mysqlTask") && !doc->get("mysqlTask")->is_null()) {
+      return {"CREATE", "READ", "UPDATE", "DELETE"};
+    }
+    return {"CREATE"};
+  }
+
+  if (objects.empty()) {
+    throw std::runtime_error("No object result definition present.");
+  }
+
+  const auto &object = objects.front();
+  std::vector<std::string> crud{"READ"};
+  if (mapping_option(object.options, "dataMappingViewInsert")) crud.push_back("CREATE");
+  if (mapping_option(object.options, "dataMappingViewUpdate")) crud.push_back("UPDATE");
+  if (mapping_option(object.options, "dataMappingViewDelete")) crud.push_back("DELETE");
+
+  // Changing nested documents updates the top level document, so a
+  // reference allowing any change makes the object updatable
+  const bool has_update = std::find(crud.begin(), crud.end(), "UPDATE") != crud.end();
+  if (!has_update) {
+    for (const auto &field : object.fields) {
+      if (!field.reference) continue;
+      const auto &ref_options = field.reference->options;
+      if (mapping_option(ref_options, "dataMappingViewInsert") ||
+          mapping_option(ref_options, "dataMappingViewUpdate") ||
+          mapping_option(ref_options, "dataMappingViewDelete")) {
+        crud.push_back("UPDATE");
+        break;
+      }
+    }
+  }
+  return crud;
+}
+
+// -- Privileges ---------------------------------------------------------------
+
+std::vector<std::string> grant_statements(
+    std::string_view schema_name, std::string_view name,
+    std::string_view object_type,
+    const std::vector<std::string> &crud_operations,
+    const std::vector<Object_definition> &objects,
+    const std::optional<std::string> &options) {
+  // The information_schema cannot be granted
+  if (to_lower(schema_name) == "information_schema") return {};
+
+  const auto doc = options ? json::try_parse(*options) : std::nullopt;
+  const bool automatic = !(doc && doc->get_bool("disableAutomaticGrants"));
+
+  std::vector<std::string> statements;
+
+  std::vector<std::string> privileges;
+  if (is_routine_type(object_type)) {
+    privileges = {"EXECUTE"};
+  } else if (to_lower(schema_name) == "performance_schema") {
+    privileges = {"SELECT"};
+  } else {
+    privileges = privileges_of(crud_operations);
+  }
+  if (privileges.empty()) {
+    throw std::runtime_error("No valid CRUD Operation specified");
+  }
+
+  if (automatic) {
+    const auto privilege_list = join(privileges, ",");
+    statements.push_back(
+        grant_statement(privilege_list, object_type, schema_name, name));
+
+    // The tables of the references are read and changed through the
+    // data mapping as well
+    if (!is_routine_type(object_type)) {
+      for (const auto &object : objects) {
+        for (const auto &field : object.fields) {
+          if (!field.reference) continue;
+          if (!field.reference->unnest && !field.enabled) continue;
+          statements.push_back(grant_statement(
+              privilege_list, "TABLE", field.reference->referenced_schema(),
+              field.reference->referenced_table()));
+        }
+      }
+    }
+  }
+
+  if (doc) {
+    if (const auto *grants = doc->get("grants")) {
+      for (auto &statement : explicit_grant_statements(*grants)) {
+        statements.push_back(std::move(statement));
+      }
+    }
+  }
+  return statements;
+}
+
+void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,
+                               std::string_view name,
+                               std::string_view object_type) {
+  const auto schema = to_lower(schema_name);
+  if (schema == "information_schema") return;
+
+  std::string what;
+  if (schema == "performance_schema") {
+    what = "SELECT ON";  // ALL PRIVILEGES cannot be revoked there
+  } else if (object_type == "PROCEDURE") {
+    what = "EXECUTE ON PROCEDURE";
+  } else if (object_type == "FUNCTION") {
+    what = "EXECUTE ON FUNCTION";
+  } else {
+    what = "ALL PRIVILEGES ON";
+  }
+
+  try {
+    session->execute("REVOKE " + what + " " + sql::quote_qualified(schema_name, name) +
+                     " FROM " + sql::quote(k_data_provider_role));
+  } catch (const Db_error &e) {
+    // Nothing to revoke is fine: the privileges may have been revoked
+    // before, or never granted (ER_NONEXISTING_GRANT,
+    // ER_NONEXISTING_TABLE_GRANT, ER_NONEXISTING_PROC_GRANT)
+    if (e.code() != 1141 && e.code() != 1147 && e.code() != 1403) throw;
+  }
+}
+
+// -- SHOW CREATE --------------------------------------------------------------
+
+std::string db_object_create_statement(Db_session *session,
+                                       const Db_object &db_object) {
+  const auto objects = get_objects(session, db_object.id);
+  const std::string object_type =
+      db_object.object_type == "TABLE" ? "VIEW" : db_object.object_type;
+
+  std::vector<std::string> lines{
+      "CREATE OR REPLACE REST " + object_type + " " +
+          quote_request_path(db_object.request_path),
+      "    ON SERVICE " + db_object.host_ctx + " SCHEMA " +
+          quote_request_path(db_object.schema_request_path),
+      "    AS " + sql::quote_qualified(db_object.schema_name, db_object.name)};
+
+  if (!db_object.is_routine()) {
+    if (!objects.empty()) {
+      const auto &object = objects.front();
+      lines.back() += " " + class_header(object) + " {";
+      lines.push_back(cut_last_comma(
+          walk(object.fields, std::nullopt, 2, false, object.row_ownership_field_id)));
+      lines.push_back("    }");
+    }
+  } else {
+    for (const auto &object : objects) {
+      std::string line = "    " + object.kind + " " + object.name;
+      const auto children =
+          cut_last_comma(walk(object.fields, std::nullopt, 2, object.kind == "RESULT",
+                              object.row_ownership_field_id));
+      // The grammar needs the braces, also when there are no fields
+      line += children.empty() ? std::string(" {}")
+                               : " {\n" + children + "\n    }";
+      lines.push_back(std::move(line));
+    }
+  }
+
+  if (db_object.enabled == 2) {
+    lines.push_back("    PRIVATE");
+  } else if (db_object.enabled == 0) {
+    lines.push_back("    DISABLED");
+  }
+  lines.push_back(db_object.requires_auth ? "    AUTHENTICATION REQUIRED"
+                                          : "    AUTHENTICATION NOT REQUIRED");
+  if (db_object.items_per_page && *db_object.items_per_page != 25) {
+    lines.push_back("    ITEMS PER PAGE " + std::to_string(*db_object.items_per_page));
+  }
+  if (db_object.comments && !db_object.comments->empty()) {
+    lines.push_back("    COMMENT " + sql::quote(*db_object.comments));
+  }
+  if (db_object.media_type) {
+    lines.push_back("    MEDIA TYPE " + sql::quote(*db_object.media_type));
+  }
+  if (db_object.auto_detect_media_type) lines.push_back("    MEDIA TYPE AUTODETECT");
+  if (db_object.format != "FEED") lines.push_back("    FORMAT " + db_object.format);
+  if (db_object.auth_stored_procedure && !db_object.auth_stored_procedure->empty()) {
+    lines.push_back("    AUTHENTICATION PROCEDURE " + *db_object.auth_stored_procedure);
+  }
+  if (db_object.options && !is_empty_json_object(*db_object.options)) {
+    lines.push_back(format_json_entry("OPTIONS", db_object.options));
+  }
+  if (db_object.metadata && !is_empty_json_object(*db_object.metadata)) {
+    lines.push_back(format_json_entry("METADATA", db_object.metadata));
+  }
+
+  return join(lines, "\n") + ";";
+}
+
+// -- Cloning ------------------------------------------------------------------
+
+Id clone_db_object(Db_session *session, const Db_object &db_object,
+                   const Id &new_schema_id) {
+  auto objects = get_objects(session, db_object.id);
+
+  // Every id of the mapping gets a new one; the links between fields and
+  // references are kept by mapping each old id to the same new id
+  std::map<Id, Id> ids;
+  const auto remap = [&](Id *id) {
+    auto it = ids.find(*id);
+    if (it == ids.end()) it = ids.emplace(*id, new_id(session)).first;
+    *id = it->second;
+  };
+  const auto remap_optional = [&](std::optional<Id> *id) {
+    if (*id) remap(&**id);
+  };
+
+  for (auto &object : objects) {
+    object.id = new_id(session);
+    remap_optional(&object.row_ownership_field_id);
+    for (auto &field : object.fields) {
+      field.object_id = object.id;
+      remap(&field.id);
+      remap_optional(&field.parent_reference_id);
+      if (field.reference) {
+        remap(&field.reference->id);
+        remap_optional(&field.reference->reduce_to_value_of_field_id);
+        remap_optional(&field.reference->row_ownership_field_id);
+      }
+    }
+  }
+
+  Db_object_definition definition;
+  definition.db_schema_id = new_schema_id;
+  definition.name = db_object.name;
+  definition.request_path = db_object.request_path;
+  definition.object_type = db_object.object_type;
+  definition.enabled = db_object.enabled;
+  definition.items_per_page = db_object.items_per_page;
+  definition.requires_auth = db_object.requires_auth;
+  definition.format = db_object.format;
+  definition.comments = db_object.comments;
+  definition.media_type = db_object.media_type;
+  definition.auto_detect_media_type = db_object.auto_detect_media_type;
+  definition.auth_stored_procedure = db_object.auth_stored_procedure;
+  definition.options = db_object.options;
+  definition.metadata = db_object.metadata;
+  definition.internal = db_object.internal;
+
+  // The database object is the same one, so its grants are in place already
+  return add_db_object(session, definition, objects);
+}
+
+// -- Database schema ----------------------------------------------------------
+
+std::optional<std::string> database_object_type(Db_session *session,
+                                                std::string_view schema_name,
+                                                std::string_view name) {
+  const auto result = session->query(
+      "SELECT TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = " +
+      sql::quote(schema_name) + " AND TABLE_NAME = " + sql::quote(name));
+  if (result.empty()) return std::nullopt;
+  // BASE TABLE, SYSTEM VERSIONED, ... are tables; VIEW and SYSTEM VIEW not
+  const auto type = result.first()["TABLE_TYPE"].as_string();
+  return type.find("TABLE") != std::string::npos ? "TABLE" : "VIEW";
+}
+
+std::vector<Routine_parameter> get_routine_parameters(
+    Db_session *session, std::string_view schema_name, std::string_view name,
+    std::string_view routine_type) {
+  // The return value of a function has no mode and is left out
+  const auto result = session->query(
+      "SELECT ORDINAL_POSITION AS position, PARAMETER_NAME AS name, "
+      "PARAMETER_MODE AS mode, DTD_IDENTIFIER AS datatype, "
+      "CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation "
+      "FROM INFORMATION_SCHEMA.PARAMETERS WHERE SPECIFIC_SCHEMA = " +
+      sql::quote(schema_name) + " AND SPECIFIC_NAME = " + sql::quote(name) +
+      " AND ROUTINE_TYPE = " + sql::quote(routine_type) +
+      " AND NOT ISNULL(PARAMETER_MODE) ORDER BY ORDINAL_POSITION");
+
+  std::vector<Routine_parameter> parameters;
+  for (const auto &row : result.rows) {
+    Routine_parameter p;
+    p.position = static_cast<int>(row["position"].as_int());
+    p.name = row["name"].as_string();
+    p.mode = row["mode"].as_string();
+    p.datatype = row["datatype"].as_string();
+    p.charset = optional_text(row["charset"]);
+    p.collation = optional_text(row["collation"]);
+    parameters.push_back(std::move(p));
+  }
+  return parameters;
+}
+
+std::optional<std::string> get_function_return_type(Db_session *session,
+                                                    std::string_view schema_name,
+                                                    std::string_view name) {
+  const auto result = session->query(
+      "SELECT DATA_TYPE FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = " +
+      sql::quote(schema_name) + " AND ROUTINE_NAME = " + sql::quote(name) +
+      " AND ROUTINE_TYPE = 'FUNCTION'");
+  if (result.empty()) return std::nullopt;
+  return result.first()["DATA_TYPE"].as_string();
+}
+
+namespace {
+
+// The plain columns of a table or view, in the layout of the
+// table_columns_with_references procedure. The procedure runs with the
+// ONLY_FULL_GROUP_BY mode it was created with, so on MariaDB it cannot open
+// views that group loosely (like sakila.film_list) and returns no rows for
+// them; this query runs with the session's mode instead.
+Db_result query_plain_columns(Db_session *session, std::string_view schema_name,
+                              std::string_view name) {
+  return session->query(
+      "SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name, "
+      "JSON_OBJECT('name', c.COLUMN_NAME, 'datatype', c.COLUMN_TYPE, "
+      "'not_null', c.IS_NULLABLE = 'NO', 'is_primary', c.COLUMN_KEY = 'PRI', "
+      "'is_unique', c.COLUMN_KEY = 'UNI', "
+      "'is_generated', c.GENERATION_EXPRESSION <> '', "
+      "'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc', NULL), "
+      "'comment', c.COLUMN_COMMENT, 'srid', NULL, "
+      "'column_default', c.COLUMN_DEFAULT, "
+      "'charset', c.CHARACTER_SET_NAME, 'collation', c.COLLATION_NAME) "
+      "AS db_column, NULL AS reference_mapping "
+      "FROM INFORMATION_SCHEMA.COLUMNS AS c WHERE c.TABLE_SCHEMA = " +
+      sql::quote(schema_name) + " AND c.TABLE_NAME = " + sql::quote(name) +
+      " ORDER BY c.ORDINAL_POSITION");
+}
+
+}  // namespace
+
+std::vector<Table_column> get_table_columns_with_references(
+    Db_session *session, std::string_view schema_name, std::string_view name) {
+  auto result = session->query(
+      "CALL " + sql::metadata_table("table_columns_with_references") + "(" +
+      sql::quote(schema_name) + ", " + sql::quote(name) + ")");
+  if (result.rows.empty()) {
+    result = query_plain_columns(session, schema_name, name);
+  }
+
+  std::vector<Table_column> columns;
+  for (const auto &row : result.rows) {
+    Table_column c;
+    c.position = static_cast<int>(row["position"].as_int());
+    c.name = row["name"].as_string();
+    if (const auto db_column = optional_text(row["db_column"])) {
+      c.db_column = json::parse(*db_column);
+    }
+    if (const auto mapping = optional_text(row["reference_mapping"])) {
+      c.reference_mapping = json::parse(*mapping);
+    }
+    columns.push_back(std::move(c));
+  }
+  return columns;
+}
+
+// -- Naming -------------------------------------------------------------------
+
+std::string snake_to_camel_case(std::string_view snake) {
+  std::string result;
+  for (const auto &part : split(to_lower(snake), '_')) {
+    if (part.empty()) continue;
+    result += static_cast<char>(std::toupper(static_cast<unsigned char>(part[0])));
+    result += part.substr(1);
+  }
+  if (!result.empty()) {
+    result[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[0])));
+  }
+  return result;
+}
+
+std::string path_to_pascal_case(std::string_view path) {
+  if (!path.empty() && path[0] == '/') path.remove_prefix(1);
+
+  std::string joined(path);
+  std::replace(joined.begin(), joined.end(), '/', '_');
+
+  std::string camel;
+  bool first = true;
+  for (const auto &part : split(joined, '_')) {
+    if (first) {
+      camel += part;
+      first = false;
+    } else if (!part.empty()) {
+      camel += static_cast<char>(std::toupper(static_cast<unsigned char>(part[0])));
+      camel += part.substr(1);
+    }
+  }
+
+  std::string result;
+  for (const char c : camel) {
+    if (std::isalnum(static_cast<unsigned char>(c))) result += c;
+  }
+  if (!result.empty()) {
+    result[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[0])));
+  }
+  return result;
+}
+
+}  // namespace metadata
+}  // namespace mrs

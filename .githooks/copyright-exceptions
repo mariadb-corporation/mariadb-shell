@@ -16,3 +16,7 @@
 # copyright line included, as sample output; a notice added there would make
 # the sample wrong.
 docs-ref/content/.*\.md$
+
+# MRS test data: REST SQL scripts run as they are and a binary file whose
+# bytes the tests compare; a notice would break both.
+unittest/data/mrs/
