@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -110,9 +111,17 @@ class SHCORE_PUBLIC Uri_parser {
                       size_t position = std::string::npos);
 
   friend std::string hide_password_in_uri(std::string uri);
+  friend std::string remove_password_from_uri(const std::string &uri);
 };
 
 std::string hide_password_in_uri(std::string uri);
+
+/**
+ * The URI without its password, otherwise as written: the user name keeps its
+ * percent-encoding, and an empty password (user:@host) stays, since it is not
+ * a secret and it is what stops the password prompt.
+ */
+std::string remove_password_from_uri(const std::string &uri);
 
 }  // namespace uri
 }  // namespace db

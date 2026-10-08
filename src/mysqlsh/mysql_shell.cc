@@ -30,9 +30,12 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "commands/command_help.h"
@@ -53,6 +56,7 @@
 #include "modules/util/mod_util.h"
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/db/session.h"
+#include "mysqlshdk/libs/db/uri_parser.h"
 #include "mysqlshdk/libs/db/utils_error.h"
 #include "mysqlshdk/libs/utils/atomic_flag.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
@@ -219,6 +223,69 @@ std::optional<std::string> parse_param_for_use_cmd(const std::string &line) {
   }
 
   return line.substr(start, end - start);
+}
+
+/**
+ * The arguments of a \connect line as the history keeps them, or nothing if
+ * they hold no secret.
+ *
+ * A password option loses its value, so that the line prompts for the password
+ * when it runs again. A URI loses its password and keeps the rest as typed.
+ *
+ * `parsed` is a copy of `args` that went through the option parser, which
+ * rewrites a URI in place without its password to hide it from ps: a URI
+ * argument that changed held a password. The parser also stars the value of a
+ * password option, but that is not relied on, as a value made of '*' would not
+ * change.
+ */
+std::optional<std::string> connect_arguments_for_history(
+    const std::vector<std::string> &args,
+    const std::vector<std::string> &parsed) {
+  bool changed = false;
+  std::vector<std::string> history;
+
+  // args[0] is the whole line
+  for (std::size_t i = 1; i < args.size(); ++i) {
+    std::string arg = args[i];
+
+    const auto equals = arg.find('=');
+    const auto name = arg.substr(0, equals);
+    // the option parser takes a --loose- prefix on any option
+    const auto option =
+        shcore::str_beginswith(name, "--loose-") ? "--" + name.substr(8) : name;
+    const bool password_option =
+        option == "--password" || option == "--password1" ||
+        option == "--password2" || option == "--password3";
+
+    if (password_option && equals != std::string::npos &&
+        equals + 1 < arg.size()) {
+      // --password=<value>
+      arg = name;
+    } else if (arg.size() > 2 && shcore::str_beginswith(arg, "-p")) {
+      // -p<value>
+      arg = "-p";
+    } else if (std::strcmp(parsed[i].c_str(), arg.c_str()) != 0) {
+      // c_str(): the parser pads the shortened URI with '\0'. The URI is the
+      // whole argument, or the value of --uri=<uri> or --ssh=<uri>
+      const auto uri =
+          shcore::str_beginswith(arg, "--") && equals != std::string::npos
+              ? equals + 1
+              : 0;
+      arg = arg.substr(0, uri) +
+            mysqlshdk::db::uri::remove_password_from_uri(arg.substr(uri));
+    }
+
+    if (arg != args[i]) changed = true;
+
+    // the inverse of how the command line was split
+    if (arg.empty() || arg.find_first_of("\" \t\r\n\v\f") != std::string::npos)
+      arg = shcore::quote_string(arg, '"');
+
+    history.emplace_back(std::move(arg));
+  }
+
+  if (!changed) return {};
+  return shcore::str_join(history, " ");
 }
 
 }  // namespace
@@ -1543,6 +1610,14 @@ bool Mysql_shell::cmd_connect(const std::vector<std::string> &args) {
       [](const std::string &err) { print_diag(err + "\n"); },
       [](const std::string &w) { print_diag(w + "\n"); });
 
+  if (shell_options.get().exit_code != 0) {
+    // the arguments after the one that failed weren't parsed, so a password
+    // in them wasn't removed
+    keep_out_of_history();
+  } else if (const auto history = connect_arguments_for_history(args, copy)) {
+    set_history_arguments(*history);
+  }
+
   if (shell_options.get().exit_code == 0 &&
       shell_options.get().has_connection_data()) {
     try {
@@ -2100,6 +2175,15 @@ void Mysql_shell::process_line(const std::string &line) {
   // a /command runs, and is recorded, as the \command it stands for
   std::string command;
 
+  // a command can run lines of its own (\source), each through this function,
+  // so what they ask of the history is kept apart from what this line asks
+  const auto outer_arguments = std::exchange(m_history_arguments, {});
+  const auto outer_temporary = std::exchange(m_keep_out_of_history, false);
+  const shcore::on_leave_scope restore_outer([&]() {
+    m_history_arguments = outer_arguments;
+    m_keep_out_of_history = outer_temporary;
+  });
+
   // check if the line is an escape/shell command
   if (_input_buffer.empty() && !line.empty() &&
       _input_mode == shcore::Input_state::Ok) {
@@ -2111,12 +2195,23 @@ void Mysql_shell::process_line(const std::string &line) {
       error += "\n";
       print_diag(error);
       handled_as_command = true;
+
+      // the shell rejected the line, so a command couldn't remove a secret
+      // from it, such as the password of a \connect with a misplaced quote
+      keep_out_of_history();
     }
   }
 
-  if (handled_as_command)
-    notify_executed_statement(line, command);
-  else
+  if (handled_as_command) {
+    std::string history;
+    if (!m_history_arguments.empty()) {
+      // the command name as typed, so that /connect stays /connect
+      history =
+          shcore::str_split(shcore::str_strip(line), " \t\r\n\v\f", 1)[0] +
+          " " + m_history_arguments;
+    }
+    notify_executed_statement(line, command, history, m_keep_out_of_history);
+  } else
     Base_shell::process_line(line);
 }
 

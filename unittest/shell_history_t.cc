@@ -73,6 +73,10 @@ class Shell_history : public ::testing::Test {
  protected:
   void enable_capture() { current_console()->add_print_handler(&m_handler); }
 
+  static std::string last_history_line() {
+    return linenoiseHistoryLine(linenoiseHistorySize() - 1);
+  }
+
   void disable_capture() {
     current_console()->remove_print_handler(&m_handler);
   }
@@ -186,16 +190,13 @@ TEST_F(Shell_history, check_password_history_linenoise) {
 
   // /sql, and a tab after \sql, are filtered as \sql followed by a space
   shell.process_line("/sql set password = 'secret' then fail;");
-  EXPECT_STREQ("/sql set password = 'secret' then fail;",
-               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+  EXPECT_EQ("/sql set password = 'secret' then fail;", last_history_line());
   shell.process_line("\\sql\tset password = 'secret' then fail;");
-  EXPECT_STREQ("\\sql\tset password = 'secret' then fail;",
-               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+  EXPECT_EQ("\\sql\tset password = 'secret' then fail;", last_history_line());
   shell.process_line("/sql select 2;");
   EXPECT_STREQ("\\sql drop user foo@bar;",
                linenoiseHistoryLine(linenoiseHistorySize() - 2));
-  EXPECT_STREQ("/sql select 2;",
-               linenoiseHistoryLine(linenoiseHistorySize() - 1));
+  EXPECT_EQ("/sql select 2;", last_history_line());
 
   // TS_CV#9
   shell.process_line("\\sql");
@@ -312,14 +313,16 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   shell.process_line("\\sql");
   shell.process_line("\\history clear");
   EXPECT_EQ(1, linenoiseHistorySize());
+  // the \history command is not SQL and stays; each filtered statement is
+  // kept only until the next one, so the count doesn't grow past 2
   shell.process_line("a;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("hello world;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("*;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line(";");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
 
   shell.process_line(to_scripting);
   shell.process_line("shell.options['history.sql.ignorePattern'] = '**';");
@@ -327,13 +330,13 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   shell.process_line("\\history clear");
   EXPECT_EQ(1, linenoiseHistorySize());
   shell.process_line("a;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("hello world;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("*;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line(";");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
 
   shell.process_line(to_scripting);
   shell.process_line("shell.options['history.sql.ignorePattern'] = '?';");
@@ -353,11 +356,11 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   shell.process_line("\\history clear");
   EXPECT_EQ(1, linenoiseHistorySize());
   shell.process_line("?;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("a;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
   shell.process_line("aa;");
-  EXPECT_EQ(1, linenoiseHistorySize());
+  EXPECT_EQ(2, linenoiseHistorySize());
 
   shell.process_line(to_scripting);
   shell.process_line("shell.options['history.sql.ignorePattern'] = 'a?b?c*';");
@@ -455,6 +458,238 @@ TEST_F(Shell_history, history_set_option) {
   shell.process_line("a = 1;");
   EXPECT_EQ(2, linenoiseHistorySize());
   EXPECT_STREQ("a = 1;", linenoiseHistoryLine(1));
+}
+
+TEST_F(Shell_history, connect_password_history) {
+  // the history keeps a \connect line without its password, and a line that
+  // fails to parse only until the next one
+  mysqlsh::Command_line_shell shell(
+      std::make_shared<Shell_options>(0, nullptr, m_options_file));
+  shell.get_options()->set("history.autoSave", shcore::Value::False());
+  enable_capture();
+
+  shell.process_line("\\sql");
+  shell.process_line("\\history clear");
+
+  // nothing listens on port 1, so each line fails right after parsing
+  shell.process_line("\\connect root:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect root@127.0.0.1:1", last_history_line());
+
+  shell.process_line("/c root:secret@127.0.0.1:1");
+  EXPECT_EQ("/c root@127.0.0.1:1", last_history_line());
+
+  shell.process_line("\\connect --uri=root:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect --uri=root@127.0.0.1:1", last_history_line());
+
+  // a URI with a scheme, on its own and as the value of an option
+  shell.process_line("\\connect mysql://root:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect mysql://root@127.0.0.1:1", last_history_line());
+
+  shell.process_line("\\connect --uri=mysql://root:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect --uri=mysql://root@127.0.0.1:1", last_history_line());
+
+  shell.process_line(
+      "\\connect --ssh=ssh://user:secret@127.0.0.1:1 root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --ssh=ssh://user@127.0.0.1:1 root@127.0.0.1:1",
+            last_history_line());
+
+  shell.process_line(
+      "\\connect --ssh user:secret@127.0.0.1:1 root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --ssh user@127.0.0.1:1 root@127.0.0.1:1",
+            last_history_line());
+
+  // a password option loses its value, so that the line prompts
+  shell.process_line("\\connect --password=secret -u root -h 127.0.0.1 -P 1");
+  EXPECT_EQ("\\connect --password -u root -h 127.0.0.1 -P 1",
+            last_history_line());
+
+  shell.process_line("\\c -psecret root@127.0.0.1:1");
+  EXPECT_EQ("\\c -p root@127.0.0.1:1", last_history_line());
+
+  // a password that looks like the parser's mask is still one
+  shell.process_line("\\connect -p*** root@127.0.0.1:1");
+  EXPECT_EQ("\\connect -p root@127.0.0.1:1", last_history_line());
+
+  shell.process_line("\\connect --password1=*** root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --password1 root@127.0.0.1:1", last_history_line());
+
+  // the option parser takes a --loose- prefix on any option
+  shell.process_line("\\connect --loose-password=secret root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --loose-password root@127.0.0.1:1", last_history_line());
+
+  // the user name is kept as typed, with its percent-encoding
+  shell.process_line("\\connect us%40er:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect us%40er@127.0.0.1:1", last_history_line());
+
+  shell.process_line("\\connect \"--password=a secret\" root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --password root@127.0.0.1:1", last_history_line());
+
+  // an argument that needs its quotes keeps them
+  shell.process_line(
+      "\\connect \"--socket=/tmp/a \\\"b\\\"\" root:secret@127.0.0.1:1");
+  EXPECT_EQ("\\connect \"--socket=/tmp/a \\\"b\\\"\" root@127.0.0.1:1",
+            last_history_line());
+
+  // a line that fails to parse is kept until the next one, and \history save
+  // doesn't write it
+  const auto size = linenoiseHistorySize();
+  shell.process_line("\\connect --bogus root:secret@127.0.0.1:1");
+  EXPECT_EQ(size + 1, linenoiseHistorySize());
+  EXPECT_EQ("\\connect --bogus root:secret@127.0.0.1:1", last_history_line());
+
+  const auto histfile = shell.history_file();
+  shcore::delete_file(histfile);
+  shell.process_line("\\history save");
+  EXPECT_EQ(size + 1, linenoiseHistorySize());
+  EXPECT_EQ("\\history save", last_history_line());
+
+  std::string hist;
+  EXPECT_TRUE(shcore::load_text_file(histfile, hist, false));
+  EXPECT_EQ(std::string::npos, hist.find("secret")) << hist;
+  shcore::delete_file(histfile);
+
+  // a shell command is not SQL, so history.sql.ignorePattern doesn't apply to
+  // it, even in SQL mode: the default *PASSWORD* pattern leaves these alone,
+  // whether the password option was typed with a value or with an empty one
+  // (not without one, which prompts)
+  shell.process_line("\\connect --password= root@127.0.0.1:1");
+  shell.process_line("\\connect --password=secret root@127.0.0.1:1");
+  shell.process_line("\\connect root@127.0.0.1:1");
+  EXPECT_EQ("\\connect root@127.0.0.1:1", last_history_line());
+  EXPECT_STREQ("\\connect --password root@127.0.0.1:1",
+               linenoiseHistoryLine(linenoiseHistorySize() - 2));
+  EXPECT_STREQ("\\connect --password= root@127.0.0.1:1",
+               linenoiseHistoryLine(linenoiseHistorySize() - 3));
+
+  // the statement of \sql is SQL, and is filtered (Python mode has its own
+  // history, so the count starts over)
+  shell.process_line("\\py");
+  shell.process_line("\\sql set password = 'secret';");
+  EXPECT_EQ("\\sql set password = 'secret';", last_history_line());
+  const auto with_filtered = linenoiseHistorySize();
+  shell.process_line("\\sql select 1;");
+  EXPECT_EQ("\\sql select 1;", last_history_line());
+  EXPECT_EQ(with_filtered, linenoiseHistorySize());
+
+  // a line without a password is kept as typed (an empty password, because a
+  // missing one would be prompted for); a line that fails before \connect runs
+  // is kept only until the next one, as above
+
+  // a quote inside an argument stops the line before \connect runs
+  shell.process_line("\\connect --password=\"a secret\" root@127.0.0.1:1");
+  EXPECT_EQ("\\connect --password=\"a secret\" root@127.0.0.1:1",
+            last_history_line());
+  const auto count = linenoiseHistorySize();
+
+  shell.process_line("\\connect  --password=  root@127.0.0.1:1");
+  EXPECT_EQ(count, linenoiseHistorySize());
+  EXPECT_EQ("\\connect  --password=  root@127.0.0.1:1", last_history_line());
+
+  // an empty password in a URI is not a secret either, and it is what stops
+  // the prompt, so it is kept
+  shell.process_line("\\connect root:@127.0.0.1:1");
+  EXPECT_EQ("\\connect root:@127.0.0.1:1", last_history_line());
+}
+
+TEST_F(Shell_history, report_arguments_history) {
+  // the arguments of \show and \watch are run as SQL by the query report, so
+  // history.sql.ignorePattern applies to them as it does to \sql, in any mode
+  // (\watch takes the same path, but runs until interrupted)
+  const auto &server_uri = shell_test_server_uri();
+  char *args[] = {const_cast<char *>("ut"),
+                  const_cast<char *>(server_uri.c_str()), nullptr};
+  mysqlsh::Command_line_shell shell(
+      std::make_shared<Shell_options>(2, args, m_options_file));
+  shell.get_options()->set("history.autoSave", shcore::Value::False());
+  enable_capture();
+
+  auto coptions = mysqlshdk::db::Connection_options("root@localhost");
+  coptions.set_scheme("mysql");
+  coptions.set_password("");
+  coptions.set_port(atoi(getenv("MYSQL_PORT")));
+  shell.connect(coptions);
+
+  for (const auto mode : {"\\sql", "\\py"}) {
+    SCOPED_TRACE(mode);
+    shell.process_line(mode);
+    shell.process_line("\\history clear");
+
+    shell.process_line("\\show query select 1");
+    EXPECT_EQ("\\show query select 1", last_history_line());
+    shell.process_line("\\show query select 'password'");
+    EXPECT_EQ("\\show query select 'password'", last_history_line());
+    shell.process_line("/show query select 'identified'");
+    EXPECT_EQ("/show query select 'identified'", last_history_line());
+
+    // each filtered line was kept only until the next one
+    shell.process_line("\\show query select 2");
+    ASSERT_EQ(3, linenoiseHistorySize());
+    EXPECT_STREQ("\\show query select 1", linenoiseHistoryLine(1));
+    EXPECT_STREQ("\\show query select 2", linenoiseHistoryLine(2));
+  }
+}
+
+TEST_F(Shell_history, source_line_history) {
+  // the system log records \source lines typed in SQL mode, so
+  // history.sql.ignorePattern applies to them there, and only there
+  mysqlsh::Command_line_shell shell(
+      std::make_shared<Shell_options>(0, nullptr, m_options_file));
+  shell.get_options()->set("history.autoSave", shcore::Value::False());
+  enable_capture();
+
+  // the files don't exist, which \source reports without failing the line
+  shell.process_line("\\sql");
+  shell.process_line("\\option history.sql.ignorePattern *ignored.sql*");
+  shell.process_line("\\history clear");
+  shell.process_line("\\source ignored.sql");
+  EXPECT_EQ("\\source ignored.sql", last_history_line());
+  shell.process_line("\\. other.sql");
+  EXPECT_EQ("\\. other.sql", last_history_line());
+  ASSERT_EQ(2, linenoiseHistorySize());
+  EXPECT_STREQ("\\history clear", linenoiseHistoryLine(0));
+
+  shell.process_line("\\py");
+  shell.process_line("\\history clear");
+  shell.process_line("\\source ignored.sql");
+  shell.process_line("\\. other.sql");
+  ASSERT_EQ(3, linenoiseHistorySize());
+  EXPECT_STREQ("\\source ignored.sql", linenoiseHistoryLine(1));
+}
+
+TEST_F(Shell_history, connect_password_history_source) {
+  // the \connect lines of a sourced file don't change what the history keeps
+  // for the \source line: not its arguments, and not for how long
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
+                  const_cast<char *>("--interactive=full"), nullptr};
+  mysqlsh::Command_line_shell shell(
+      std::make_shared<Shell_options>(3, args, m_options_file));
+  shell.get_options()->set("history.autoSave", shcore::Value::False());
+  enable_capture();
+
+  // no newline after the last line, so that it is the last one processed
+  const std::string with_password = "test_source_password.py";
+  const std::string with_error = "test_source_error.py";
+  std::ofstream(with_password) << "\\connect root:secret@127.0.0.1:1";
+  std::ofstream(with_error) << "\\connect --bogus root:secret@127.0.0.1:1";
+  shcore::on_leave_scope cleanup([&]() {
+    shcore::delete_file(with_password);
+    shcore::delete_file(with_error);
+  });
+
+  shell.process_line("\\history clear");
+  shell.process_line("\\source " + with_password);
+  EXPECT_EQ("\\source " + with_password, last_history_line());
+  shell.process_line("\\source " + with_error);
+  EXPECT_EQ("\\source " + with_error, last_history_line());
+
+  // both \source entries are permanent ones
+  shell.process_line("# next");
+  ASSERT_EQ(4, linenoiseHistorySize());
+  EXPECT_EQ("\\source " + with_password, linenoiseHistoryLine(1));
+  EXPECT_EQ("\\source " + with_error, linenoiseHistoryLine(2));
+  for (int i = 0; i < linenoiseHistorySize(); ++i) {
+    EXPECT_EQ(nullptr, strstr(linenoiseHistoryLine(i), "secret"));
+  }
 }
 
 #ifdef HAVE_JS

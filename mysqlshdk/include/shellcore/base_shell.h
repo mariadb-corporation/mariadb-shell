@@ -73,9 +73,13 @@ class SHCORE_PUBLIC Base_shell {
   shcore::Input_state input_state() const { return _input_mode; }
   void clear_input();
 
-  // command is the \command the line ran as, when it differs from the line
+  // command, when not empty, is the \command a shell command line ran as;
+  // history, when not empty, is what the history keeps instead of the line,
+  // and temporary keeps the line only until the next one runs
   void notify_executed_statement(const std::string &line,
-                                 const std::string &command = {});
+                                 const std::string &command = {},
+                                 const std::string &history = {},
+                                 bool temporary = false);
   virtual std::string prompt();
   std::map<std::string, std::string> *prompt_variables();
 

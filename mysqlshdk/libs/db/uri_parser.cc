@@ -929,6 +929,24 @@ std::string hide_password_in_uri(std::string uri) {
   return uri;
 }
 
+std::string remove_password_from_uri(const std::string &uri) {
+  Uri_parser parser(Type::Generic);
+  Generic_uri uri_data;
+  parser._data = &uri_data;
+  parser.preprocess(uri);
+
+  if (parser._chunks.find(URI_USER_INFO) == parser._chunks.end()) {
+    return uri;
+  }
+
+  // the password is what follows the first ':' of the user info
+  const auto [first, last] = parser._chunks[URI_USER_INFO];
+  const auto colon = uri.find(':', first);
+  if (colon == std::string::npos || colon >= last) return uri;
+
+  return uri.substr(0, colon) + uri.substr(last + 1);
+}
+
 }  // namespace uri
 }  // namespace db
 }  // namespace mysqlshdk
