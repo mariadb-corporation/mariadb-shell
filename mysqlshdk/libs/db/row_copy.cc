@@ -32,6 +32,7 @@
 #include <memory>
 #include <stdexcept>
 #include <utility>
+#include "mysqlshdk/libs/utils/dtoa.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlshdk {
@@ -172,10 +173,10 @@ std::string Mem_row::get_as_string(uint32_t index) const {
       return std::to_string(get<uint64_t>(index));
 
     case Type::Float:
-      return std::to_string(get<float>(index));
+      return shcore::ftoa(get<float>(index));
 
     case Type::Double:
-      return std::to_string(get<double>(index));
+      return shcore::dtoa(get<double>(index));
 
     case Type::Bit:
       return get<std::string>(index);

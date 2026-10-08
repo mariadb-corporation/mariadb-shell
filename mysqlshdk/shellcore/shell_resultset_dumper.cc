@@ -700,9 +700,7 @@ void dump_json_row(shcore::JSON_dumper *dumper,
       dumper->append_uint64(row->get_uint(col_index));
     } else if (type == mysqlshdk::db::Type::Float) {
       // Formatted with float precision, as the server does, so that 4.56
-      // prints as 4.56 and not as the double 4.559999942779541. The text of
-      // the row is not used because a buffered row (Mem_row) formats a float
-      // with std::to_string(), which prints 1.5e-10 as 0.000000.
+      // prints as 4.56 and not as the double 4.559999942779541.
       dumper->append_number(shcore::ftoa(row->get_float(col_index)));
     } else if (type == mysqlshdk::db::Type::Decimal) {
       // The server sends the exact decimal text, which is a valid JSON number

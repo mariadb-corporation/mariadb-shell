@@ -6,7 +6,6 @@ These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built 
 
 ### Found during the review fixes, not fixed
 
-- **`Mem_row::get_as_string()` formats FLOAT/DOUBLE with `std::to_string`** (`mysqlshdk/libs/db/row_copy.cc:170`): fixed six decimals, so `1.5e-10` becomes `0.000000` and `3e30` a 31-digit integer. Buffered rows are what interactive Python auto-print uses. #62 routed the JSON dumper around it (ftoa), but `diff.cc`, `utils.cc` and any other consumer of buffered row text still hit it.
 - **uvicorn's access log in the MCP server** prints request paths with query strings, so `GET /authorize?client_id=…&state=…` shows the OAuth client ID. It is uvicorn's own logger (stdout), not `log_event`; `access_log=False` in `lib/server.py`'s `uvicorn.Config` would silence it. [mcp-server/starting-the-mcp-server.md would need a note]
 - **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
 
