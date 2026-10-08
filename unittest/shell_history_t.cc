@@ -123,7 +123,6 @@ TEST_F(Shell_history, check_history_sql_not_connected) {
   EXPECT_STREQ("select 2;", linenoiseHistoryLine(1));
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, check_password_history_linenoise) {
   // TS_HM#6 in SQL mode, commands that match the glob patterns IDENTIFIED,
   // PASSWORD or any pattern specified in the
@@ -150,8 +149,8 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   EXPECT_EQ("*IDENTIFIED*:*PASSWORD*",
             shell.get_options()->get("history.sql.ignorePattern").descr());
 
-  // \js command should be filtered according to SQL mode rules
-  shell.process_line("\\js");
+  // \js and \py commands should be filtered according to SQL mode rules
+  shell.process_line(to_scripting);
   EXPECT_EQ(0, linenoiseHistorySize());
 
   // \sql command should be filtered according to SQL mode rules
@@ -278,8 +277,8 @@ TEST_F(Shell_history, check_password_history_linenoise) {
   shell.process_line(to_scripting);
   shell.process_line(
       "shell.options['history.sql.ignorePattern'] = '*bla*:*ble*';");
-  EXPECT_STREQ("shell.options['history.sql.ignorePattern'] = '*bla*:*ble*';",
-               linenoiseHistoryLine(0));
+  EXPECT_EQ("shell.options['history.sql.ignorePattern'] = '*bla*:*ble*';",
+            last_history_line());
   shell.process_line("\\sql");
   shell.process_line("select 'bga';");
   shell.process_line("select 'bge';");
@@ -417,7 +416,7 @@ TEST_F(Shell_history, history_ignore_wildcard_questionmark) {
   EXPECT_EQ(1, linenoiseHistorySize());
 
   shell.process_line(to_scripting);
-  shell.process_line("shell.options['defaultMode'] = 'js'");
+  shell.process_line("shell.options['defaultMode'] = 'py'");
   shell.process_line(
       "shell.options['history.sql.ignorePattern'] = '?? ??;:?\?'");
   shell.process_line("\\sql");
@@ -432,7 +431,6 @@ TEST_F(Shell_history, history_ignore_wildcard_questionmark) {
   shell.process_line(" A\n  ;");
   EXPECT_EQ(1, linenoiseHistorySize());
 }
-#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_set_option) {
   // All user input shall be caputered in the history
@@ -726,7 +724,6 @@ TEST_F(Shell_history, history_ignore_pattern_py) {
   EXPECT_STREQ("# WHAT A PROPERTY NAME", linenoiseHistoryLine(1));
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, history_linenoise) {
   // Test cases covered here:
   // TS_CLE#1 Commands executed by the user in the shell are saved to the
@@ -734,7 +731,7 @@ TEST_F(Shell_history, history_linenoise) {
   // TS_HM#1 only commands interactively typed by the user in the shell prompt
   // are saved to history file: ~/.mariadb-shell/history file
 
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -880,9 +877,7 @@ TEST_F(Shell_history, history_linenoise) {
   }
   shcore::delete_file(hist_file);
 }
-#endif  // HAVE_JS
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, check_help_shows_history) {
   // We should have one test that checks the output of \h for compleness
   // TODO(ulf) (Remove my [Ulf] note when checked): I don't mind if we have one
@@ -890,7 +885,7 @@ TEST_F(Shell_history, check_help_shows_history) {
   // My preference is a global one but I'm not the one to maintain the UTs so
   // I'll just do something and let the owners of the UTs decide.
 
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -908,7 +903,7 @@ TEST_F(Shell_history, check_help_shows_history) {
 }
 
 TEST_F(Shell_history, history_autosave_int) {
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -930,7 +925,6 @@ TEST_F(Shell_history, history_autosave_int) {
     EXPECT_TRUE(strstr(m_capture.c_str(), "\"history.autoSave\": true"));
   }
 }
-#endif  // HAVE_JS
 
 #ifdef HAVE_JS
 TEST_F(Shell_history, check_history_source_js) {
@@ -1144,13 +1138,12 @@ TEST_F(Shell_history, check_history_source_py_nonl_continuedstate_interactive) {
   shcore::delete_file("test_source_nonl.py");
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, check_history_overflow_del) {
   // See if the history numbering still works for users when the history
   // overflows, entries are dropped and renumbering might take place.
 
   {
-    char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+    char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                     nullptr};
     mysqlsh::Command_line_shell shell(
         std::make_shared<Shell_options>(2, args, m_options_file));
@@ -1160,14 +1153,14 @@ TEST_F(Shell_history, check_history_overflow_del) {
     EXPECT_NO_THROW(shell.load_state());
     EXPECT_EQ(0, shell._history.size());
 
-    shell.process_line("// 1");
+    shell.process_line("# 1");
     // Actual history is now:
     // 1   // 1
-    shell.process_line("// 2");
+    shell.process_line("# 2");
     // Actual history is now:
     // 1   // 1
     // 2   // 2
-    shell.process_line("// 3");
+    shell.process_line("# 3");
     // Actual history is now:
     // 1   // 1
     // 2   // 2
@@ -1184,7 +1177,7 @@ TEST_F(Shell_history, check_history_overflow_del) {
     // Did we just pop index 0 off the stack by pushing \\history?
     // A: Yes, but the pop only happens after the history is printed
     shell.process_line("\\history");
-    EXPECT_EQ("    1  // 1\n\n    2  // 2\n\n    3  // 3\n\n", m_capture);
+    EXPECT_EQ("    1  # 1\n\n    2  # 2\n\n    3  # 3\n\n", m_capture);
     EXPECT_EQ(3, shell._history.size());
     // Actual history is now:
     // 2   // 2
@@ -1204,12 +1197,11 @@ TEST_F(Shell_history, check_history_overflow_del) {
     // 4   \history
     // 5   \history del 2
     // 6   \history
-    EXPECT_EQ("    3  // 3\n\n    4  \\history\n\n    5  \\history del 2\n\n",
+    EXPECT_EQ("    3  # 3\n\n    4  \\history\n\n    5  \\history del 2\n\n",
               m_capture);
     EXPECT_EQ(3, shell._history.size());
   }
 }
-#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_management) {
   mysqlsh::Command_line_shell shell(
@@ -1346,14 +1338,13 @@ TEST_F(Shell_history, history_management) {
   shcore::remove_directory(histfile, false);
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, history_sizes) {
   // We use a secondary history list to provide entry numbers that do not
   // change when the list contents changes so that \history del works.
   // This test shall cover internal list management (grow, shrink, overflow).
   // No crash is good enough.
   // See also src/mysqlsh/history.cc|h
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -1426,7 +1417,6 @@ TEST_F(Shell_history, history_sizes) {
       "    4  print(42);\n\n",
       m_capture);
 }
-#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_del_invisible_entry) {
   // See also TEST_F(Shell_history, history_sizes)
@@ -1447,21 +1437,20 @@ TEST_F(Shell_history, history_del_invisible_entry) {
   EXPECT_TRUE(strstr(m_capture.c_str(), "Invalid"));
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, history_source_history) {
   // Generate a history, save it, load and execute saved history
   // using \source. \source shall not add any executed commands to history
   // but preserve the history state from after save.
 
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
 
   enable_capture();
 
-  shell.process_line("session");
-  shell.process_line("dba");
+  shell.process_line("# session");
+  shell.process_line("# dba");
   shell.process_line("\\history save");
 
   std::string histfile = shell.history_file();
@@ -1472,8 +1461,8 @@ TEST_F(Shell_history, history_source_history) {
 
   EXPECT_EQ(
       "Command history file saved with 2 entries.\n\n"
-      "    1  session\n\n"
-      "    2  dba\n\n"
+      "    1  # session\n\n"
+      "    2  # dba\n\n"
       "    3  \\history save\n\n"
       "    4  " +
           line + "\n\n",
@@ -1482,19 +1471,19 @@ TEST_F(Shell_history, history_source_history) {
 }
 
 TEST_F(Shell_history, history_del_range) {
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
 
   enable_capture();
 
-  shell.process_line("session");
-  shell.process_line("dba");
-  shell.process_line("mysql");
-  shell.process_line("mysqlx");
-  shell.process_line("shell");
-  shell.process_line("util");
+  shell.process_line("# session");
+  shell.process_line("# dba");
+  shell.process_line("# mysql");
+  shell.process_line("# mysqlx");
+  shell.process_line("# shell");
+  shell.process_line("# util");
   EXPECT_EQ(6, shell._history.size());
   // valid range
   shell.process_line("\\history del 1-3");
@@ -1503,9 +1492,9 @@ TEST_F(Shell_history, history_del_range) {
   EXPECT_EQ(5, shell._history.size());
 
   EXPECT_EQ(
-      "    4  mysqlx\n\n"
-      "    5  shell\n\n"
-      "    6  util\n\n"
+      "    4  # mysqlx\n\n"
+      "    5  # shell\n\n"
+      "    6  # util\n\n"
       "    7  \\history del 1-3\n\n",
       m_capture);
 
@@ -1521,8 +1510,8 @@ TEST_F(Shell_history, history_del_range) {
             m_capture);
 
   shell.process_line("\\history clear");
-  shell.process_line("session");
-  shell.process_line("dba");
+  shell.process_line("# session");
+  shell.process_line("# dba");
   m_capture.clear();
   shell.process_line("\\history del 1 - 3");
   // Not sure if we want to give an error here or be gentle and accept space
@@ -1534,22 +1523,22 @@ TEST_F(Shell_history, history_entry_number_reset) {
   // Numbering shall only be reset when Shell is restarted
   // or when \\history clear is called
 
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
 
   enable_capture();
 
-  shell.process_line("session");
-  shell.process_line("dba");
-  shell.process_line("util");
+  shell.process_line("# session");
+  shell.process_line("# dba");
+  shell.process_line("# util");
   shell.process_line("\\history");
   EXPECT_EQ(4, shell._history.size());
   EXPECT_EQ(
-      "    1  session\n\n"
-      "    2  dba\n\n"
-      "    3  util\n\n",
+      "    1  # session\n\n"
+      "    2  # dba\n\n"
+      "    3  # util\n\n",
       m_capture);
 
   m_capture.clear();
@@ -1559,7 +1548,6 @@ TEST_F(Shell_history, history_entry_number_reset) {
   EXPECT_EQ("    1  \\history clear\n\n", m_capture);
   EXPECT_EQ(2, shell._history.size());
 }
-#endif  // HAVE_JS
 
 TEST_F(Shell_history, history_delete_range) {
 #define LOAD_HISTORY(data)                                          \
@@ -1761,9 +1749,8 @@ TEST_F(Shell_history, history_delete_range) {
   shcore::delete_file("testhistory");
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, history_numbering) {
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -1788,85 +1775,93 @@ TEST_F(Shell_history, history_numbering) {
   }
 
   // Test sequential numbering of history
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
 
   // Must reset to 0 on clear
   shell._history.clear();
-  CHECK_NUMBERING_ADD("mysqlx", (strv{"1  mysqlx"}));
+  CHECK_NUMBERING_ADD("# mysqlx", (strv{"1  # mysqlx"}));
 
   // Must reset on load
-  shcore::create_file("testhistory", "mysql\nmysqlx\n");
+  shcore::create_file("testhistory", "# mysql\n# mysqlx\n");
   shell._history.load("testhistory");
-  CHECK_NUMBERING_ADD("shell", (strv{"1  mysql", "2  mysqlx", "3  shell"}));
+  CHECK_NUMBERING_ADD("# shell",
+                      (strv{"1  # mysql", "2  # mysqlx", "3  # shell"}));
 
   // Adding a duplicate item ignores the duplicate
   shell._history.clear();
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
-  CHECK_NUMBERING_ADD("dba",
-                      (strv{"1  session", "2  dba", "3  util", "4  dba"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
+  CHECK_NUMBERING_ADD(
+      "# dba", (strv{"1  # session", "2  # dba", "3  # util", "4  # dba"}));
 
   // Continued sequential numbering after filling up history
   shell._history.clear();
   shell._history.set_limit(3);
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
-  CHECK_NUMBERING_ADD("mysql", (strv{"2  dba", "3  util", "4  mysql"}));
-  CHECK_NUMBERING_ADD("mysqlx", (strv{"3  util", "4  mysql", "5  mysqlx"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
+  CHECK_NUMBERING_ADD("# mysql", (strv{"2  # dba", "3  # util", "4  # mysql"}));
+  CHECK_NUMBERING_ADD("# mysqlx",
+                      (strv{"3  # util", "4  # mysql", "5  # mysqlx"}));
 
   // Delete 1st id
   shell._history.clear();
   shell._history.set_limit(10);
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
   CHECK_NUMBERING_ADD("\\history del 1",
-                      (strv{"2  dba", "3  \\history del 1"}));
+                      (strv{"2  # dba", "3  \\history del 1"}));
 
   // Deleting an id that was already deleted is a no-op
   shell._history.clear();
   shell._history.set_limit(10);
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
-  CHECK_NUMBERING_ADD("mysql",
-                      (strv{"1  session", "2  dba", "3  util", "4  mysql"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
+  CHECK_NUMBERING_ADD(
+      "# mysql", (strv{"1  # session", "2  # dba", "3  # util", "4  # mysql"}));
 
   CHECK_NUMBERING_ADD(
       "\\history del 3",
-      (strv{"1  session", "2  dba", "4  mysql", "5  \\history del 3"}));
+      (strv{"1  # session", "2  # dba", "4  # mysql", "5  \\history del 3"}));
 
-  CHECK_NUMBERING_ADD("shell", (strv{"1  session", "2  dba", "4  mysql",
-                                     "5  \\history del 3", "6  shell"}));
+  CHECK_NUMBERING_ADD("# shell", (strv{"1  # session", "2  # dba", "4  # mysql",
+                                       "5  \\history del 3", "6  # shell"}));
 
   shell.process_line("\\history del 3");
   CHECK_NUMBERING_ADD(
       "\\history del 3",
-      (strv{"1  session", "2  dba", "4  mysql", "5  \\history del 3",
-            "6  shell", "7  \\history del 3"}));
+      (strv{"1  # session", "2  # dba", "4  # mysql", "5  \\history del 3",
+            "6  # shell", "7  \\history del 3"}));
 
   // Deleting the item at the limit
   shell._history.clear();
   shell._history.set_limit(4);
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
-  CHECK_NUMBERING_ADD("mysql",
-                      (strv{"1  session", "2  dba", "3  util", "4  mysql"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
+  CHECK_NUMBERING_ADD(
+      "# mysql", (strv{"1  # session", "2  # dba", "3  # util", "4  # mysql"}));
   CHECK_NUMBERING_ADD(
       "\\history del 4",
-      (strv{"1  session", "2  dba", "3  util", "4  \\history del 4"}));
+      (strv{"1  # session", "2  # dba", "3  # util", "4  \\history del 4"}));
   shell._history.clear();
   shell._history.set_limit(4);
-  CHECK_NUMBERING_ADD("session", (strv{"1  session"}));
-  CHECK_NUMBERING_ADD("dba", (strv{"1  session", "2  dba"}));
-  CHECK_NUMBERING_ADD("util", (strv{"1  session", "2  dba", "3  util"}));
-  CHECK_NUMBERING_ADD("mysql",
-                      (strv{"1  session", "2  dba", "3  util", "4  mysql"}));
+  CHECK_NUMBERING_ADD("# session", (strv{"1  # session"}));
+  CHECK_NUMBERING_ADD("# dba", (strv{"1  # session", "2  # dba"}));
+  CHECK_NUMBERING_ADD("# util",
+                      (strv{"1  # session", "2  # dba", "3  # util"}));
+  CHECK_NUMBERING_ADD(
+      "# mysql", (strv{"1  # session", "2  # dba", "3  # util", "4  # mysql"}));
   m_capture.clear();
   shell.process_line("\\history del 5");
   EXPECT_EQ("Invalid history entry: 5 - valid range is 1-4\n", m_capture);
@@ -1874,7 +1869,6 @@ TEST_F(Shell_history, history_numbering) {
 #undef CHECK_NUMBERING
   shcore::delete_file("testhistory");
 }
-#endif  // HAVE_JS
 
 TEST_F(Shell_history, never_filter_latest) {
   mysqlsh::Command_line_shell shell(
@@ -1985,9 +1979,8 @@ TEST_F(Shell_history, migrate_old_history) {
 #endif
 }
 
-#ifdef HAVE_JS
 TEST_F(Shell_history, get_entry) {
-  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--js"),
+  char *args[] = {const_cast<char *>("ut"), const_cast<char *>("--py"),
                   nullptr};
   mysqlsh::Command_line_shell shell(
       std::make_shared<Shell_options>(2, args, m_options_file));
@@ -2008,6 +2001,5 @@ TEST_F(Shell_history, get_entry) {
   EXPECT_EQ("a = 1", history.get_entry(history.first_entry()));
   EXPECT_EQ("c = 3", history.get_entry(history.last_entry()));
 }
-#endif  // HAVE_JS
 
 }  // namespace mysqlsh
