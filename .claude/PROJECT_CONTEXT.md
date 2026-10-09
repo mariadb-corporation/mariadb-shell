@@ -8,7 +8,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 | Path | What it is |
 | --- | --- |
-| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, page tree in `SUMMARY.md`) |
+| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, 40 under `mariadb-rest-service/` since 2026-10-09, page tree in `SUMMARY.md`) |
+| `modules/mrs/antlr_grammar/` | ANTLR reference grammar of REST SQL + scripts for its railroad diagrams and the reference's rule blocks (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`) |
 | `docs-ref/` (rest) | Docusaurus offline preview, copied from ai-plugins; `npm run docs-ref` from the repo root |
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `build/bin/mariadb-shell` | Local 26.9.5 build, used to check help text and docs examples |
@@ -30,7 +31,6 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
 - **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
-- **Branch `wip/mrs_module` (2026-10-08, uncommitted):** the Python mrs_plugin ported to a built-in C++ `mrs` module with a bison REST SQL grammar and the `MRS` SQL handler. All statements except `DUMP ... TO ZIP` work (DUMP/LOAD REST PROJECT and `mrs.runScript()` removed 2026-10-08; added `SHOW REST USERS`/`AUTH VENDORS`/`COLUMNS`/`DAEMONS`, `DROP REST DAEMON`, `FORMAT=JSON` on SHOW CREATE, `metadata_version`); 67 related tests pass. See [context/mrs-module.md](context/mrs-module.md).
 - **Open:**
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
@@ -59,13 +59,9 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 ## Git state
 
-Checked 2026-10-08, before this checkpoint's commit. Branch `wip/mrs_module` (tracks `origin/wip/mrs_module`); commits on top of `main`: `88413da93` (Add the mrs module), `3088f476e` (schema 5.0.0 deployment, new REST SQL statements, FORMAT=JSON), plus this checkpoint's commit with the daemon statements. `git status --short` before it:
+Checked 2026-10-09, before this checkpoint's commit. Branch `wip/mrs_module` (tracks `origin/wip/mrs_module`); latest pushed commits `0504c64ae` (no client files in REST SQL, LOAD SCRIPTS) and `ced93ef43` (MRS docs, ANTLR grammar and diagram tools), plus this checkpoint's commit. `git status --short` before it:
 
 ```
- M .claude/context/mrs-module.md
- M modules/mrs/core/{mrs_ast.h, mrs_ddl_executor.{h,cc}, mrs_ddl_executor_services.cc,
-   mrs_lexer.h, mrs_metadata.{h,cc}, mrs_metadata_json.{h,cc}, mrs_parser.yy}
- M unittest/data/mrs/grammar_test.sql, unittest/modules/mrs/mrs_parser_t.cc
- M unittest/scripts/auto/py_shell/scripts/mrs_services_norecord.py
+ M .claude/PROJECT_CONTEXT.md
 ```
 
