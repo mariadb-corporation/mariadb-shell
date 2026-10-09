@@ -141,6 +141,13 @@ mariadb-shell mariadb://dba@localhost -- util import-table products.csv \
   --columns=id,name,1,in_stock --decode-columns=price='@1 * 2'
 ```
 
+You can also pass the whole dictionary as JSON, quoted so that the operating system shell passes it unchanged. The entries are merged with any given as `key=value`. A key can contain dots, as in the `schema.table` keys of the dump `where` option:
+
+```sh
+mariadb-shell mariadb://dba@localhost -- util dump-tables shop orders \
+  --output-url=/backups/recent-orders --where='{"shop.orders": "id > 1000"}'
+```
+
 ### Grouping Named Arguments
 
 Named arguments at the end of the command go into the last parameter. When an operation takes more than one dictionary, enclose the named arguments for an earlier one in braces, separated by spaces. The braces are separate arguments and must be quoted in most operating system shells:

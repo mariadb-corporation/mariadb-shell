@@ -73,3 +73,35 @@ rc = testutil.call_mysqlsh(["--", "dba", "deploy-sandbox-instance", "invalid-por
 EXPECT_STDOUT_CONTAINS("ERROR: Argument error at 'invalid-port': Integer expected, but value is String")
 EXPECT_NE(0, rc)
 WIPE_OUTPUT()
+
+#@<> Dictionary options with schema.table keys
+import os
+import shutil
+
+shell.connect(__mysql_uri)
+session.run_sql("drop schema if exists scti_where")
+session.run_sql("create schema scti_where")
+session.run_sql("create table scti_where.t (id int primary key)")
+session.run_sql("insert into scti_where.t values (1), (2), (3), (4), (5)")
+
+dump_dir = os.path.join(__tmp_dir, "scti_where_dump")
+
+def dump_with(where_arg):
+    shutil.rmtree(dump_dir, True)
+    WIPE_OUTPUT()
+    rc = testutil.call_mysqlsh([__mysqluripwd, "--", "util", "dump-tables", "scti_where", "t", "--output-url=" + dump_dir, "--show-progress=false", where_arg], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+    EXPECT_EQ(0, rc)
+
+dump_with("--where=scti_where.t=id > 3")
+EXPECT_STDOUT_CONTAINS("Rows written: 2")
+
+dump_with('--where={"scti_where.t": "id < 4"}')
+EXPECT_STDOUT_CONTAINS("Rows written: 3")
+
+dump_with('--where:json={"scti_where.t": "id = 5"}')
+EXPECT_STDOUT_CONTAINS("Rows written: 1")
+
+shutil.rmtree(dump_dir, True)
+session.run_sql("drop schema scti_where")
+session.close()
+del dump_with
