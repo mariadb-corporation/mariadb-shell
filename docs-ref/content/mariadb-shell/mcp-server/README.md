@@ -54,7 +54,7 @@ The server's tools are organized in function groups. By default, the server prov
 | `sandbox` | List the server versions that can be deployed, and deploy, start, stop, and delete local sandbox instances. |
 | `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the [migration tooling](migration-tooling.md) with `mcp setup`. |
 
-A [multi-tenant](multi-tenant-mode.md) server provides only the `db` and `msm` groups.
+A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` tools work on schema project folders on the developer's own machine, so they are not available on a server that several users reach remotely.
 
 ## The mcp Global Object
 

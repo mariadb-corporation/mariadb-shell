@@ -19,7 +19,7 @@ Use multi-tenant mode when one MCP server is shared, for example by a team, by a
 | Connections and passwords | One list, shared by every client | One list per user |
 | Allowed directories | One list, shared by every client | One list per user |
 | Transport | `stdio` or `streamable-http` | `streamable-http` only |
-| Function groups | `db`, `msm`, `sandbox`, `migrator` | `db` and `msm` |
+| Function groups | `db`, `msm`, `sandbox`, `migrator` | `db` |
 | Paths outside the allowed directories | The server asks the client whether to trust them | Refused |
 | Configured with | `mcp setup` | `mcp setup`, and `mcp setup-oauth` for OAuth2 |
 
@@ -105,14 +105,15 @@ Scopes decide which tool groups a user may call:
 | Scope | Tools |
 | --- | --- |
 | `mcp:db` | The `db` tools: connections, schemas, objects, and SQL. |
-| `mcp:msm` | The `msm` tools: MariaDB Schema Management projects. |
 
-A new user may be granted both. To restrict a user, pass `--scopes` when you add the user, or change it later with `--setScopes`:
+A new user is granted `mcp:db`. To set a user's scopes, pass `--scopes` when you add the user, or change them later with `--setScopes`:
 
 ```bash
 mariadb-shell -- mcp setup --addUser=bob@example.com --scopes=mcp:db
-mariadb-shell -- mcp setup --user=bob@example.com --setScopes=mcp:db,mcp:msm
+mariadb-shell -- mcp setup --user=bob@example.com --setScopes=mcp:db
 ```
+
+Earlier versions also had the scope `mcp:msm`, for the `msm` tools. The server now ignores it where a user's configuration or a token still has it, and refuses it in `--scopes` and `--setScopes`.
 
 A client sees only the tools of the scopes its token grants, and a call to another tool fails. A change of a user's scopes applies at once, to API keys and to existing OAuth2 sign-ins alike: a token never grants a scope that the user doesn't have at the time of the request.
 
@@ -187,9 +188,9 @@ A user's connections behave like the connections of a single-user server, descri
 
 Use a separate database account for each user wherever possible, so that the database's own privileges and audit logs apply per person.
 
-A path outside a user's allowed directories is refused. Unlike a single-user server, a multi-tenant server never asks the client whether to trust such a path, because the client is the party that the list restricts. A tool that falls back to the server's working directory when it receives no path, such as the `msm` tools, is checked against the user's directories as well.
+A user's allowed directories are where `db.execute_sql_script` may read a script file from. A path outside them is refused. Unlike a single-user server, a multi-tenant server never asks the client whether to trust such a path, because the client is the party that the list restricts.
 
-If two users are allowed the same directory, they can read and change each other's files in it.
+If two users are allowed the same directory, they can read each other's files in it.
 
 ## Show the Configuration
 
@@ -210,7 +211,7 @@ Users:
   Ada Lovelace
     id:            ac28066a-df09-44d3-868c-41e7ab32fc80
     identities:    email:ada@example.com, userId:ada
-    scopes:        mcp:db, mcp:msm
+    scopes:        mcp:db
     API key:       yes
     connections:   mariadb://ada@db.example.com:3306
     allowed paths: /srv/projects/ada
@@ -233,7 +234,7 @@ Start the server as described in [Starting the MCP Server](starting-the-mcp-serv
 
 * serves only over `streamable-http`, and refuses to start with `--transport=stdio`, because a `stdio` server has no request that could carry a user's credentials;
 * refuses `--gui`;
-* provides the `db` and `msm` groups by default, and refuses to start if `--functionGroups` names `sandbox` or `migrator`, whose tools run local servers and long jobs on the server's machine;
+* provides only the `db` group, and refuses to start if `--functionGroups` names another one: the `sandbox` and `migrator` tools run local servers and long jobs on the server's machine, and the `msm` tools work on schema project folders on the developer's own machine;
 * refuses to start if there is no enabled user, unless an [OAuth2](oauth-authentication.md) mode creates users at their first sign-in (`--autoProvision`, the default), because then the first sign-in adds the first user.
 
 ```text
@@ -372,7 +373,7 @@ These options complement the options described in [Automated Setup](automated-se
 | `--multiTenant=<bool>` | Turns multi-tenant mode on or off. Moves no configuration. |
 | `--addUser=<identities>` | Adds a user, known by the given comma-separated identities, and prints their API key. |
 | `--name=<name>` | The name to show for the user that `--addUser` adds. |
-| `--scopes=<list>` | The scopes that the user `--addUser` adds may be granted. Default: `mcp:db,mcp:msm`. |
+| `--scopes=<list>` | The scopes that the user `--addUser` adds may be granted. Default: `mcp:db`. |
 | `--removeUser=<list>` | Removes users, with their API keys and connection passwords. |
 | `--user=<user>` | The user that `--addConnection`, `--deleteConnections`, `--addPaths`, `--deletePaths`, `--addIdentity`, `--removeIdentity`, `--setScopes`, and `--setDefaultRole` change, or that `--show` reports. Required for the connection and path options in multi-tenant mode, and refused for them otherwise. |
 | `--addIdentity=<list>` | Adds identities to the user. |
@@ -397,7 +398,7 @@ The setup carries the options out in this order: the mode, user removals, user a
 | *Multi-tenant mode is on, but there is no enabled user to serve.* | No user exists, or all users are disabled, and no OAuth2 mode creates users at sign-in. | Add a user with `--addUser`, enable one, or turn on `--autoProvision` of the OAuth2 mode. |
 | *In multi-tenant mode connections and allowed paths belong to a user* | A connection or path option was given without `--user`. | Add `--user`. |
 | *--user only applies to … in multi-tenant mode, which is off.* | `--user` was given while multi-tenant mode is off. | Turn on multi-tenant mode, or leave out `--user`. |
-| *The function group(s) sandbox, migrator are not available in multi-tenant mode* | `--functionGroups` names a group that tenants can't use. | Leave out `--functionGroups`, or pass `db`, `msm`, or both. |
+| *The function group(s) msm, sandbox, migrator are not available in multi-tenant mode* | `--functionGroups` names a group that tenants can't use. | Leave out `--functionGroups`, or pass `db`. |
 | The client receives `401 Unauthorized`. | The request has no API key, or the key is wrong, rotated, or belongs to a disabled or removed user. | Check the key with `--showApiKey`, and the user with `--show --user`. |
 | The client receives `429 Too Many Requests`. | Too many refused tokens from the address. | Correct the key and wait a minute. |
 | *The tool … needs the scope '…', which your access was not granted.* | The user's scopes don't include the tool's group. | Grant the scope with `--setScopes`. |
