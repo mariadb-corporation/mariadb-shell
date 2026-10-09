@@ -1710,6 +1710,9 @@ END%%
 DROP PROCEDURE IF EXISTS `sdk_service_data`%%
 CREATE PROCEDURE `sdk_service_data`(IN service_id UUID)
 BEGIN
+    -- MariaDB keeps JSON in variables as text: every document is appended
+    -- through JSON_EXTRACT(x, '$') so it nests as an object, not a string, and
+    -- flag columns (TINYINT and BIT(1)) are compared to 1 so they are booleans
     DECLARE service_res JSON;
     DECLARE schema_id UUID;
     DECLARE schema_res JSON;
@@ -1724,8 +1727,8 @@ BEGIN
                 'name', s.name,
                 'schema_type', s.schema_type,
                 'request_path', s.request_path,
-                'requires_auth', s.requires_auth,
-                'internal', s.internal,
+                'requires_auth', s.requires_auth = 1,
+                'internal', s.internal = 1,
                 'options', s.options
             )
         FROM rest_schema AS s
@@ -1738,8 +1741,8 @@ BEGIN
             'id', s.id,
             'url_context_root', s.url_context_root,
             'name', s.name,
-            'enabled', s.enabled,
-            'published', s.published,
+            'enabled', s.enabled = 1,
+            'published', s.published = 1,
             'options', s.options,
             'auth_path', s.auth_path,
             'auth_completed_url_validation', s.auth_completed_url_validation
@@ -1771,11 +1774,11 @@ BEGIN
                         'id', o.id,
                         'name', o.name,
                         'request_path', o.request_path,
-                        'internal', o.internal,
+                        'internal', o.internal = 1,
                         'object_type', o.object_type,
                         'crud_operations', o.crud_operations,
                         'format', o.format,
-                        'requires_auth', o.requires_auth,
+                        'requires_auth', o.requires_auth = 1,
                         'options', o.options
                     )
                 FROM rest_object AS o
@@ -1839,11 +1842,11 @@ BEGIN
                                         'data_mapping_id', f.data_mapping_id,
                                         'name', f.name,
                                         'db_column', f.db_column,
-                                        'enabled', f.enabled,
-                                        'allow_filtering', f.allow_filtering,
-                                        'allow_sorting', f.allow_sorting,
-                                        'no_check', f.no_check,
-                                        'no_update', f.no_update,
+                                        'enabled', f.enabled = 1,
+                                        'allow_filtering', f.allow_filtering = 1,
+                                        'allow_sorting', f.allow_sorting = 1,
+                                        'no_check', f.no_check = 1,
+                                        'no_update', f.no_update = 1,
                                         'options', f.options,
                                         'sdk_options', f.sdk_options,
                                         'data_mapping_reference', f.data_mapping_reference
@@ -1864,23 +1867,23 @@ BEGIN
                                     LEAVE field_loop;
                                 ELSE field_block: BEGIN
                                     -- Append the field JSON data to the object's fields array
-                                    SET object_res = JSON_ARRAY_APPEND(object_res, '$.fields', field_res);
+                                    SET object_res = JSON_ARRAY_APPEND(object_res, '$.fields', JSON_EXTRACT(field_res, '$'));
                                 END field_block; END IF;
                             END LOOP field_loop;
 
                             -- Append the SDK object JSON data to the rest_objects's objects array
-                            SET rest_object_res = JSON_ARRAY_APPEND(rest_object_res, '$.data_mappings', object_res);
+                            SET rest_object_res = JSON_ARRAY_APPEND(rest_object_res, '$.data_mappings', JSON_EXTRACT(object_res, '$'));
                         END object_block; END IF;
                     END LOOP object_loop;
 
                     -- Append the rest_object JSON data to the rest_schema's rest_objects array
-                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.rest_objects', rest_object_res);
+                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.rest_objects', JSON_EXTRACT(rest_object_res, '$'));
 
                 END rest_object_block; END IF;
             END LOOP rest_object_loop;
 
             -- Append the rest_schema JSON data to the service's rest_schemas array
-            SET service_res = JSON_ARRAY_APPEND(service_res, '$.rest_schemas', schema_res);
+            SET service_res = JSON_ARRAY_APPEND(service_res, '$.rest_schemas', JSON_EXTRACT(schema_res, '$'));
 
             CLOSE rest_object_cursor;
         END schema_block; END IF;
