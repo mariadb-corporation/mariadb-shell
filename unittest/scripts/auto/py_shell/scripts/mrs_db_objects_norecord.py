@@ -566,17 +566,15 @@ EXPECT_EQ(show_create("SHOW CREATE REST PROCEDURE /filmInStock").replace("ON SER
 EXPECT_EQ(customer_balance.replace("ON SERVICE /svc ", "ON SERVICE /svc2 "), show_create("SHOW CREATE REST FUNCTION /customerBalance ON SERVICE /svc2 SCHEMA /sakila"))
 rest("DROP REST SERVICE /svc2")
 
-#@<> DUMP and LOAD REST SERVICE with the database endpoints
-dump_file = os.path.join(__tmp_dir, "svc.mrs.sql")
-if os.path.exists(dump_file):
-    os.remove(dump_file)
-rest("DUMP REST SERVICE /svc AS SQL SCRIPT INCLUDING DATABASE ENDPOINTS TO '%s'" % dump_file)
-with open(dump_file) as f:
-    dump = f.read()
+#@<> The dump of a service with its database endpoints loads the objects again
+dump = show_create("SHOW CREATE REST SERVICE /svc INCLUDING DATABASE ENDPOINTS")
 EXPECT_CONTAINS("CREATE OR REPLACE REST VIEW /city\n    ON SERVICE /svc SCHEMA /sakila\n    AS `sakila`.`city` CLASS Cities3 {", dump)
 EXPECT_CONTAINS("CREATE OR REPLACE REST PROCEDURE /filmInStock\n", dump)
 EXPECT_CONTAINS("CREATE OR REPLACE REST FUNCTION /customerBalance\n", dump)
-rest("LOAD REST SERVICE AS /loaded FROM '%s'" % dump_file)
+dump_file = os.path.join(__tmp_dir, "svc.mrs.sql")
+testutil.create_file(dump_file, dump.replace("SERVICE /svc", "SERVICE /loaded"))
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", dump_file], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+WIPE_OUTPUT()
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"]], rest_rows("SHOW REST VIEWS FROM SERVICE /loaded SCHEMA /sakila"))
 EXPECT_EQ([["/filmInStock", "ENABLED"]], rest_rows("SHOW REST PROCEDURES FROM SERVICE /loaded SCHEMA /sakila"))
 EXPECT_EQ(show_create("SHOW CREATE REST VIEW /city").replace("ON SERVICE /svc ", "ON SERVICE /loaded "), show_create("SHOW CREATE REST VIEW /city ON SERVICE /loaded SCHEMA /sakila"))

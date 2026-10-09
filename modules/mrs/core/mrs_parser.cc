@@ -164,8 +164,7 @@ const std::vector<std::string> &rest_sql_prefixes() {
       "CONFIGURE REST ", "CREATE REST ",  "CREATE OR REPLACE REST ",
       "ALTER REST ",     "DROP REST ",    "USE REST ",
       "SHOW REST ",      "SHOW CREATE REST ", "GRANT REST ",
-      "REVOKE REST ",    "CLONE REST ",   "DUMP REST ",
-      "LOAD REST ",
+      "REVOKE REST ",    "CLONE REST ",
   };
   return prefixes;
 }

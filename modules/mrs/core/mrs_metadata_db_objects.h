@@ -259,6 +259,11 @@ std::vector<std::string> grant_statements(
     const std::vector<Object_definition> &objects,
     const std::optional<std::string> &options);
 
+// The GRANT statements of the "grants" entry of an options document (one
+// grant or a list), e.g. the grants an MRS script declares.
+std::vector<std::string> option_grant_statements(
+    const std::optional<std::string> &options);
+
 // Revokes the privileges of the data provider role on the database object.
 // Privileges that are not granted are not an error.
 void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,

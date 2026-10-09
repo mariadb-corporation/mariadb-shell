@@ -130,12 +130,6 @@ class Ddl_executor {
     return m_schema_deployer;
   }
 
-  // LOAD REST SERVICE AS <path> replaces the request path of the services
-  // created while it runs.
-  void set_service_path_override(std::optional<std::string> path) {
-    m_service_path_override = std::move(path);
-  }
-
  private:
   friend struct Executor_access;
 
@@ -193,8 +187,6 @@ class Ddl_executor {
   void do_execute(const ast::Show_create_rest_auth_app &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_role &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_user &s, Statement_result *r);
-  void do_execute(const ast::Dump_rest_service &s, Statement_result *r);
-  void do_execute(const ast::Load_rest_service &s, Statement_result *r);
 
   // -- Helpers shared by the handlers ------------------------------------
 
@@ -265,7 +257,6 @@ class Ddl_executor {
   Executor_state *m_state;
   std::string m_failure_context;
   bool m_state_validated = false;
-  std::optional<std::string> m_service_path_override;
   metadata::Schema_deployer *m_schema_deployer = nullptr;
 };
 

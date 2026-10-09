@@ -25,16 +25,7 @@
 
 #include "modules/mrs/core/mrs_metadata_content.h"
 
-#include <algorithm>
-#include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <ctime>
-#include <filesystem>
-#include <fstream>
-#include <regex>
-#include <sstream>
 #include <stdexcept>
 
 namespace mrs {
@@ -43,10 +34,6 @@ namespace metadata {
 using sql::Value;
 
 namespace {
-
-namespace fs = std::filesystem;
-
-constexpr std::string_view k_default_ignore_list = "*node_modules/*, */.*";
 
 std::optional<std::string> optional_text(const Db_value &value) {
   return value.as_optional_string();
@@ -178,118 +165,6 @@ void set_json_options(Db_session *session, sql::Update *update, const Id &id,
 
 // -- File system ----------------------------------------------------------
 
-std::string expand_user_path(const std::string &path) {
-  if (path.size() >= 2 && path[0] == '~' && (path[1] == '/' || path[1] == '\\')) {
-    const char *home = std::getenv("HOME");
-    if (!home) home = std::getenv("USERPROFILE");
-    if (home) return std::string(home) + path.substr(1);
-  }
-  return path;
-}
-
-// The ignore list as one regular expression matched against the start of
-// a file's full path, with `*` and `?` as wildcards (the way the Python
-// plugin converted it). Empty entries are skipped.
-std::optional<std::regex> ignore_pattern(std::string_view ignore_list) {
-  std::string pattern;
-  std::stringstream entries{std::string(ignore_list)};
-  std::string entry;
-  while (std::getline(entries, entry, ',')) {
-    const auto first = entry.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) continue;
-    const auto last = entry.find_last_not_of(" \t\r\n");
-
-    std::string converted;
-    for (const char c : entry.substr(first, last - first + 1)) {
-      switch (c) {
-        case '\\':
-          converted += '/';
-          break;
-        case '.':
-          converted += "\\.";
-          break;
-        case '*':
-          converted += ".*";
-          break;
-        case '?':
-          converted += '.';
-          break;
-        default:
-          converted += c;
-      }
-    }
-    pattern += pattern.empty() ? "^(?:(" : ")|(";
-    pattern += converted;
-  }
-  if (pattern.empty()) return std::nullopt;
-
-  try {
-    return std::regex(pattern + "))");
-  } catch (const std::regex_error &) {
-    throw std::runtime_error("The IGNORE list '" + std::string(ignore_list) +
-                             "' is not a valid pattern list.");
-  }
-}
-
-std::string read_file(const fs::path &path) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    throw std::runtime_error("The file '" + path.string() +
-                             "' could not be read.");
-  }
-  std::stringstream content;
-  content << file.rdbuf();
-  return content.str();
-}
-
-// "YYYY-MM-DD HH:MM:SS.mmm" in UTC, as the Python plugin stored it.
-std::string last_modification(const fs::path &path) {
-  using namespace std::chrono;
-
-  // file_clock and system_clock may differ in their epoch; the difference
-  // of their "now" values converts between them portably.
-  const auto file_time = fs::last_write_time(path);
-  const auto system_time = time_point_cast<system_clock::duration>(
-      system_clock::now() + (file_time - fs::file_time_type::clock::now()));
-
-  const std::time_t seconds = system_clock::to_time_t(system_time);
-  auto millis = static_cast<int>(
-      duration_cast<milliseconds>(system_time.time_since_epoch()).count() % 1000);
-  if (millis < 0) millis += 1000;
-
-  std::tm tm{};
-#ifdef _WIN32
-  gmtime_s(&tm, &seconds);
-#else
-  gmtime_r(&seconds, &tm);
-#endif
-  char buffer[32];
-  std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm);
-
-  char fraction[8];
-  std::snprintf(fraction, sizeof(fraction), ".%03d", millis);
-  return std::string(buffer) + fraction;
-}
-
-// The regular files below a directory, sorted by path for a predictable
-// load order.
-std::vector<fs::path> files_below(const fs::path &directory) {
-  std::vector<fs::path> files;
-  try {
-    for (const auto &entry : fs::recursive_directory_iterator(
-             directory, fs::directory_options::skip_permission_denied)) {
-      if (entry.is_regular_file()) files.push_back(entry.path());
-    }
-  } catch (const fs::filesystem_error &e) {
-    throw std::runtime_error("The directory '" + directory.string() +
-                             "' could not be read: " + e.what());
-  }
-  std::sort(files.begin(), files.end());
-  return files;
-}
-
-// -- SHOW CREATE pieces ---------------------------------------------------
-
 std::string enabled_clause(int enabled) {
   if (enabled == 2) return "\n    PRIVATE";
   if (enabled == 0) return "\n    DISABLED";
@@ -301,15 +176,20 @@ std::string authentication_clause(bool requires_auth) {
                        : "\n    AUTHENTICATION NOT REQUIRED";
 }
 
-std::string load_scripts_clause(const Content_set &content_set) {
-  std::string language;
-  if (content_set.options) {
-    if (const auto options = json::try_parse(*content_set.options)) {
-      language = options->get_string("mrs_scripting_language");
-    }
+// The options document of a script set without what the script
+// registration generates (it is created again by LOAD SCRIPTS).
+std::optional<std::string> written_options(const Content_set &content_set) {
+  if (!content_set.options || content_set.content_type != "SCRIPTS") {
+    return content_set.options;
   }
-  return language == "TypeScript" ? "\n    LOAD TYPESCRIPT SCRIPTS"
-                                  : "\n    LOAD SCRIPTS";
+  auto doc = json::try_parse(*content_set.options);
+  if (!doc || !doc->is_object()) return content_set.options;
+  for (const char *key : {"script_module_files", "script_definitions",
+                          "contains_mrs_scripts", "mrs_scripting_language"}) {
+    doc->remove(key);
+  }
+  if (doc->as_object().empty()) return std::nullopt;
+  return doc->dump();
 }
 
 }  // namespace
@@ -340,20 +220,9 @@ std::vector<Content_set> get_content_sets(Db_session *session,
   return query_content_sets(session, "cs.service_id = " + sql::id(service_id));
 }
 
-Added_content_set add_content_set(Db_session *session,
-                                  const Content_set_definition &definition) {
+Id add_content_set(Db_session *session, const Content_set_definition &definition) {
   if (definition.request_path.empty() || definition.request_path[0] != '/') {
     throw std::runtime_error("The request_path has to start with '/'.");
-  }
-
-  // The directory is checked before anything is written
-  std::optional<fs::path> directory;
-  if (definition.directory) {
-    directory = fs::path(expand_user_path(*definition.directory));
-    if (!fs::is_directory(*directory)) {
-      throw std::runtime_error("The given path " + *definition.directory +
-                               " does not exist.");
-    }
   }
 
   const bool requires_auth = definition.requires_auth.value_or(false);
@@ -370,13 +239,7 @@ Added_content_set add_content_set(Db_session *session,
   insert.set("content_type", definition.content_type);
   session->execute(insert.str());
 
-  Added_content_set result{id, 0};
-  if (directory) {
-    result.files_added = add_content_directory(
-        session, id, directory->string(), requires_auth,
-        definition.ignore_list.value_or(std::string(k_default_ignore_list)));
-  }
-  return result;
+  return id;
 }
 
 void update_content_set(Db_session *session, const Id &id,
@@ -396,22 +259,38 @@ void update_content_set(Db_session *session, const Id &id,
   session->execute(update.str());
 }
 
+void delete_registered_scripts(Db_session *session, const Content_set &content_set) {
+  // Deleting the links deletes their SCRIPT objects (AFTER DELETE trigger)
+  session->execute("DELETE FROM " + sql::metadata_table("content_set_has_obj_def") +
+                   " WHERE content_set_id = " + sql::id(content_set.id));
+
+  // The script modules left without objects go as well. They are looked up
+  // first: a DELETE on db_schema whose subquery reads db_object fails with
+  // 1442, as the db_schema trigger deletes from db_object.
+  std::string empty_modules;
+  for (const auto &row :
+       session->query("SELECT id FROM " + sql::metadata_table("db_schema") +
+                      " WHERE service_id = " + sql::id(content_set.service_id) +
+                      " AND schema_type = 'SCRIPT_MODULE' AND id NOT IN (SELECT "
+                      "db_schema_id FROM " + sql::metadata_table("db_object") + ")")
+           .rows) {
+    empty_modules += (empty_modules.empty() ? "" : ", ") +
+                     sql::id(row["id"].as_string());
+  }
+  if (!empty_modules.empty()) {
+    session->execute("DELETE FROM " + sql::metadata_table("db_schema") +
+                     " WHERE id IN (" + empty_modules + ")");
+  }
+}
+
 void delete_content_set(Db_session *session, const Id &id) {
   const auto content_set = get_content_set(session, id);
+  if (content_set) delete_registered_scripts(session, *content_set);
 
   if (session->execute("DELETE FROM " + sql::metadata_table("content_set") +
                        " WHERE id = " + sql::id(id)) == 0) {
     throw std::runtime_error("The specified content_set with id " +
                              id + " was not found.");
-  }
-
-  // A script set may have left behind a script module without objects
-  if (content_set && content_set->content_type == "SCRIPTS") {
-    session->execute(
-        "DELETE FROM " + sql::metadata_table("db_schema") +
-        " WHERE schema_type = 'SCRIPT_MODULE' AND id NOT IN (SELECT "
-        "db_schema_id FROM " +
-        sql::metadata_table("db_object") + ")");
   }
 }
 
@@ -469,48 +348,7 @@ void delete_content_file(Db_session *session, const Id &id) {
   }
 }
 
-size_t add_content_directory(Db_session *session, const Id &content_set_id,
-                             const std::string &directory, bool requires_auth,
-                             std::string_view ignore_list) {
-  // Normalised without a trailing separator, so that the request path of a
-  // file is the remainder of its path and starts with '/'.
-  auto root = fs::absolute(expand_user_path(directory)).lexically_normal();
-  if (!root.has_filename()) root = root.parent_path();
-  const auto root_text = root.generic_string();
-
-  const auto ignore = ignore_pattern(ignore_list);
-
-  size_t added = 0;
-  for (const auto &file : files_below(root)) {
-    const auto full_path = file.generic_string();
-    if (ignore && std::regex_search(full_path, *ignore)) continue;
-
-    Content_file_definition definition;
-    definition.content_set_id = content_set_id;
-    definition.request_path = full_path.substr(root_text.size());
-    definition.requires_auth = requires_auth;
-    definition.content = read_file(file);
-
-    json::Value options = json::Value::object();
-    options.set("last_modification", json::Value(last_modification(file)));
-    definition.options = options.dump();
-
-    add_content_file(session, definition);
-    ++added;
-  }
-
-  if (added == 0) {
-    throw std::runtime_error("There are no files in '" + root.string() +
-                             "' or it's not accessible.");
-  }
-  return added;
-}
-
-// -- SHOW CREATE ----------------------------------------------------------
-
-std::string content_set_create_statement(Db_session *,
-                                         const Content_set &content_set,
-                                         bool allow_load_scripts) {
+std::string content_set_create_statement(const Content_set &content_set) {
   std::string output = "CREATE OR REPLACE REST CONTENT SET " +
                        quote_request_path(content_set.request_path) +
                        "\n    ON SERVICE " + content_set.host_ctx;
@@ -518,12 +356,9 @@ std::string content_set_create_statement(Db_session *,
   if (content_set.comments && !content_set.comments->empty()) {
     output += "\n    COMMENT " + sql::quote(*content_set.comments);
   }
-  const auto options = format_json_entry("OPTIONS", content_set.options);
+  const auto options = format_json_entry("OPTIONS", written_options(content_set));
   if (!options.empty()) output += "\n" + options;
   output += authentication_clause(content_set.requires_auth);
-  if (allow_load_scripts && content_set.content_type == "SCRIPTS") {
-    output += load_scripts_clause(content_set);
-  }
   return output + ";";
 }
 
@@ -560,12 +395,16 @@ std::string content_file_create_statement(Db_session *session,
 }
 
 std::vector<std::string> content_set_statements(Db_session *session,
-                                                const Content_set &content_set,
-                                                bool allow_load_scripts) {
-  std::vector<std::string> statements{
-      content_set_create_statement(session, content_set, allow_load_scripts)};
+                                                const Content_set &content_set) {
+  std::vector<std::string> statements{content_set_create_statement(content_set)};
   for (const auto &file : get_content_files(session, content_set.id, true)) {
     statements.push_back(content_file_create_statement(session, file));
+  }
+  if (content_set.content_type == "SCRIPTS") {
+    statements.push_back("ALTER REST CONTENT SET " +
+                         quote_request_path(content_set.request_path) +
+                         "\n    ON SERVICE " + content_set.host_ctx +
+                         "\n    LOAD TYPESCRIPT SCRIPTS;");
   }
   return statements;
 }
@@ -576,8 +415,7 @@ std::vector<std::string> content_set_create_statements(Db_session *session,
   std::vector<std::string> statements;
   for (const auto &content_set : get_content_sets(session, service_id)) {
     if (content_set.content_type == "SCRIPTS" && !include_dynamic) continue;
-    for (auto &statement :
-         content_set_statements(session, content_set, include_dynamic)) {
+    for (auto &statement : content_set_statements(session, content_set)) {
       statements.push_back(std::move(statement));
     }
   }
@@ -595,7 +433,7 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
   definition.options = content_set.options;
   definition.content_type = content_set.content_type;
 
-  const Id new_set_id = add_content_set(session, definition).id;
+  const Id new_set_id = add_content_set(session, definition);
 
   for (const auto &file : get_content_files(session, content_set.id, true)) {
     Content_file_definition copy;

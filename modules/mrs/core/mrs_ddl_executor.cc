@@ -214,12 +214,6 @@ struct Operation_name {
   std::string operator()(const Show_create_rest_user &) const {
     return "SHOW CREATE REST USER";
   }
-  std::string operator()(const Dump_rest_service &) const {
-    return "DUMP REST SERVICE";
-  }
-  std::string operator()(const Load_rest_service &) const {
-    return "LOAD REST SERVICE";
-  }
 };
 
 }  // namespace
@@ -298,7 +292,7 @@ void Ddl_executor::validate_state() {
 }
 
 std::string Ddl_executor::service_path(const Service_path &path) const {
-  return m_service_path_override ? *m_service_path_override : path.path;
+  return path.path;
 }
 
 std::optional<Ddl_executor::Resolved_service> Ddl_executor::resolve_service(

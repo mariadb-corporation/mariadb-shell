@@ -26,8 +26,6 @@
 // The REST SERVICE statements: CREATE, ALTER, DROP, CLONE, SHOW, SHOW
 // CREATE, DUMP and LOAD.
 
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
@@ -52,15 +50,6 @@ std::optional<std::optional<std::string>> change_of(
   if (!value) return std::nullopt;
   if (value->is_default) return std::optional<std::string>{};
   return std::optional<std::string>{value->text};
-}
-
-std::string expand_user_path(const std::string &path) {
-  if (path.size() >= 2 && path[0] == '~' && (path[1] == '/' || path[1] == '\\')) {
-    const char *home = std::getenv("HOME");
-    if (!home) home = std::getenv("USERPROFILE");
-    if (home) return std::string(home) + path.substr(1);
-  }
-  return path;
 }
 
 }  // namespace
@@ -315,87 +304,13 @@ void Ddl_executor::do_execute(const Show_create_rest_service &s,
   r->columns = {"CREATE REST SERVICE"};
   r->add_row().emplace_back(
       s.format == Output_format::json
-          ? metadata::service_json(m_session, *service,
-                                   s.include_database_endpoints)
+          ? metadata::service_json(m_session, *service, s.endpoints.database)
                 .dump(true)
-          : metadata::service_create_statement(
-                m_session, *service, s.include_database_endpoints, false, false));
+          : metadata::service_create_statement(m_session, *service,
+                                               s.endpoints.database,
+                                               s.endpoints.static_,
+                                               s.endpoints.dynamic));
   r->id = service->id;
-}
-
-void Ddl_executor::do_execute(const Dump_rest_service &s, Statement_result *r) {
-  const auto full_path = full_service_path(s.path);
-  set_failure_context("Failed to execute DUMP REST SERVICE `" + full_path + "`.");
-
-  if (s.zip) {
-    throw std::runtime_error(
-        "Dumping to a ZIP file is not supported by this version of MariaDB "
-        "Shell yet.");
-  }
-
-  const auto resolved = require_service(s.path);
-  const auto service = metadata::get_service(m_session, resolved.id);
-  if (!service) throw std::runtime_error("The given REST SERVICE was not found.");
-
-  const auto script = metadata::service_create_statement(
-      m_session, *service, s.endpoints.database, s.endpoints.static_,
-      s.endpoints.dynamic);
-
-  const auto file_path = expand_user_path(s.directory);
-  std::ofstream file(file_path, std::ios::binary);
-  if (!file) {
-    throw std::runtime_error("The file '" + file_path + "' could not be written.");
-  }
-  file << script;
-  file.close();
-
-  r->columns = {"DUMP REST SERVICE"};
-  r->add_row().emplace_back("Result stored in '" + file_path + "'");
-  r->id = service->id;
-}
-
-void Ddl_executor::do_execute(const Load_rest_service &s, Statement_result *r) {
-  const auto file_path = expand_user_path(s.directory);
-  set_failure_context("Failed to execute LOAD REST SERVICE from `" + file_path +
-                      "`.");
-
-  std::ifstream file(file_path, std::ios::binary);
-  if (!file) throw std::runtime_error("The specified file was not found.");
-  std::stringstream content;
-  content << file.rdbuf();
-
-  const auto script = parse_script(content.str(), Sql_mode::from_string(m_session->sql_mode()));
-
-  // The statements of the file run with their own executor and state; a
-  // failure stops the load.
-  Executor_state state;
-  Ddl_executor loader(m_session, &state);
-  loader.set_schema_deployer(m_schema_deployer);
-  if (s.as_path) loader.set_service_path_override(s.as_path->path);
-  for (const auto &result : loader.run(script)) {
-    if (!result.success) {
-      throw std::runtime_error("Statement at line " +
-                               std::to_string(result.line) + " failed: " +
-                               result.message);
-    }
-  }
-
-  // The loaded service is the AS path or the first service of the file.
-  std::string loaded_path;
-  if (s.as_path) {
-    loaded_path = s.as_path->path;
-  } else {
-    for (const auto &statement : script) {
-      if (const auto *create = statement.as<Create_rest_service>()) {
-        loaded_path = create->path.path;
-        break;
-      }
-    }
-  }
-
-  r->columns = {"LOAD REST SERVICE"};
-  r->add_row().emplace_back("Service '" + loaded_path + "' loaded from '" +
-                            file_path + "'");
 }
 
 }  // namespace mrs
