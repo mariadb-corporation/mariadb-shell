@@ -56,18 +56,21 @@ def change_password(session, account_data: dict, random: bool, dual: bool, new_p
     account = make_account(account_data["user"], account_data["host"])
 
     args = []
-    # MariaDB considers ALTER USER an administrative statement, so not everybody can execute it, 
-    # it is also the only way to set a random password
-    if session.server_vendor == "MySQL" or not current_user or random:
+    # On MariaDB, ALTER USER ... IDENTIFIED BY switches the account to
+    # mysql_native_password, while SET PASSWORD hands the new password to the
+    # account's own authentication plugins (ed25519, parsec, ...). MariaDB also
+    # considers ALTER USER an administrative statement, so not everybody can
+    # execute it for their own account. random and dual are MySQL-only, and
+    # refused before this point for a MariaDB server.
+    if session.server_vendor == "MySQL":
         sql_str = f"ALTER USER {account} IDENTIFIED BY"
         if random:
             sql_str += " RANDOM PASSWORD"
         else:
             sql_str += " ?"
             args.append(new_password)
-    elif session.server_vendor == "MariaDB":
-        # This statement only works for the current user with a given password
-        sql_str = "SET PASSWORD = PASSWORD(?)"
+    else:
+        sql_str = "SET PASSWORD" + ("" if current_user else f" FOR {account}") + " = PASSWORD(?)"
         args.append(new_password)
 
     if dual:

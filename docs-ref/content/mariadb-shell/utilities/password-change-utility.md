@@ -59,16 +59,12 @@ Confirm new password: ********
 NOTE: Password has been successfully updated.
 ```
 
-For another account, the utility runs `ALTER USER ... IDENTIFIED BY ...`. You need the `CREATE USER` privilege or the `UPDATE` privilege on the `mysql` schema. Before it prompts, the utility reads the account definition with `SHOW CREATE USER`, so you also need to be allowed to read account definitions. Without these privileges, or if the account doesn't exist, the utility stops before it prompts:
+For another account, the utility runs `SET PASSWORD FOR ... = PASSWORD(...)`, which also keeps the authentication plugin of the account. You need the `CREATE USER` privilege or the `UPDATE` privilege on the `mysql` schema. Before it prompts, the utility reads the account definition with `SHOW CREATE USER`, so you also need to be allowed to read account definitions. Without these privileges, or if the account doesn't exist, the utility stops before it prompts:
 
 ```text
 mysqlsh.DBError: MySQL Error (1044): Access denied for user 'app'@'%' to database 'mysql'
 mysqlsh.DBError: MySQL Error (1133): Can't find any matching row in the user table
 ```
-
-{% hint style="warning" %}
-`ALTER USER ... IDENTIFIED BY` sets the account to MariaDB's default password plugin, `mysql_native_password`. If the account authenticates with another plugin, such as `ed25519`, changing its password with `util.change_password()` replaces that plugin. To keep the plugin, change the password with SQL instead, for example `SET PASSWORD FOR 'report'@'localhost' = PASSWORD('...')` or `ALTER USER ... IDENTIFIED VIA ed25519 USING PASSWORD('...')`.
-{% endhint %}
 
 ## Password Validation
 
