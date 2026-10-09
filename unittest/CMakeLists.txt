@@ -155,7 +155,6 @@ if(WITH_TESTS)
       # AdminAPI mocks and tests that transitively require AdminAPI symbols.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/test_utils/mocks/modules/adminapi/common/mock_metadata_storage.cc")
       list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/test_utils/mocks/modules/adminapi/common/mock_precondition_checker.cc")
-      list(REMOVE_ITEM mysqlsh_tests_SRC "${CMAKE_SOURCE_DIR}/unittest/shell_cli_operation_t.cc")
       # clone.cc / repl_config.cc in mysqlshdk reference mysqlsh::dba helpers that
       # live in the (unbuilt) AdminAPI; these tests pull those objects in.
       list(REMOVE_ITEM mysqlsh_tests_SRC "${PROJECT_SOURCE_DIR}/unittest/mysqlshdk/libs/mysql/clone_t.cc")

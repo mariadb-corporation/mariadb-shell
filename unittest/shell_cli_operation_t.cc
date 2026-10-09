@@ -29,8 +29,10 @@
 #include <memory>
 #include <utility>
 
+#ifdef HAVE_ADMIN_API
 #include "modules/adminapi/mod_dba.h"
 #include "modules/adminapi/mod_dba_cluster.h"
+#endif  // HAVE_ADMIN_API
 #include "modules/mod_shell.h"
 #include "modules/mod_utils.h"
 #include "modules/util/dump/dump_instance_options.h"
@@ -89,6 +91,7 @@ class Shell_cli_operation_test : public Shell_core_test_wrapper,
           .as_object<shcore::Cpp_object_bridge>();
     });
 
+#ifdef HAVE_ADMIN_API
     get_provider()->register_provider("dba", [this](bool /*for_help*/) {
       return _interactive_shell->shell_context()
           ->get_global("dba")
@@ -102,6 +105,7 @@ class Shell_cli_operation_test : public Shell_core_test_wrapper,
     get_provider()->register_provider("rs", [](bool /*for_help*/) {
       return std::make_shared<mysqlsh::dba::ReplicaSet>(nullptr);
     });
+#endif  // HAVE_ADMIN_API
 
     auto shell_provider =
         get_provider()->register_provider("shell", [this](bool /*for_help*/) {
@@ -431,6 +435,23 @@ TEST_F(Shell_cli_operation_test, ut_dict_option) {
 
     TEST_DICTIONARY(9, argv, dict);
   }
+
+  // A dotted key is a plain key, and the whole dictionary can be given as
+  // JSON, merged with the other forms
+  {
+    const char *argv[] = {"cli", "test-dictionary-with-options",
+                          "--my-dict=schema.table=id > 5",
+                          R"(--my-dict={"other.table":"name = 'x'","n":2})",
+                          R"(--my-dict:json={"third.table":"id < 3"})"};
+
+    auto dict = shcore::make_dict(
+        "myDict", shcore::make_dict("schema.table", shcore::Value("id > 5"),
+                                    "other.table", shcore::Value("name = 'x'"),
+                                    "n", shcore::Value(2), "third.table",
+                                    shcore::Value("id < 3")));
+
+    TEST_DICTIONARY(5, argv, dict);
+  }
 }
 
 TEST_F(Shell_cli_operation_test, test_type_parsing_with_lists) {
@@ -585,11 +606,11 @@ TEST_F(Shell_cli_operation_test, parse_commandline) {
                       "There is no object registered under name 'whatever'");
   }
   {
-    const char *arg01[] = {"dba"};
+    const char *arg01[] = {"util"};
     Options::Cmdline_iterator it(1, arg01, 0);
     parse(&it);
     EXPECT_THROW_LIKE(prepare(), std::invalid_argument,
-                      "No operation specified for object 'dba'");
+                      "No operation specified for object 'util'");
   }
   // TODO(rennox): Boolean values are taking next anonymous argument no matter
   // if they are booleans
@@ -619,7 +640,7 @@ TEST_F(Shell_cli_operation_test, parse_commandline) {
   }*/
   {
     const char *arg1[] = {"util",
-                          "check-for-server-upgrade",
+                          "copy-instance",
                           "root@localhost",
                           "0",
                           "1",
@@ -634,10 +655,11 @@ TEST_F(Shell_cli_operation_test, parse_commandline) {
                       "The following arguments are invalid: 0, 1, true, false, "
                       "123456789, 12345.12345, -");
     EXPECT_EQ("util", m_object_name);
-    EXPECT_EQ("checkForServerUpgrade", m_method_name);
+    EXPECT_EQ("copyInstance", m_method_name);
     EXPECT_EQ(1, m_argument_list.size());
     EXPECT_EQ("root@localhost", m_argument_list.string_at(0));
   }
+#ifdef HAVE_ADMIN_API
   {
     const char *arg2[] = {"dba", "deploy-sandbox-instance", "3307",
                           "--password=foo", "--sandbox-dir=null"};
@@ -648,11 +670,12 @@ TEST_F(Shell_cli_operation_test, parse_commandline) {
         "Argument error at '--sandbox-dir=null': String expected, but "
         "value is Null");
   }
+#endif  // HAVE_ADMIN_API
 }
 
 TEST_F(Shell_cli_operation_test, local_dict) {
   {
-    const char *arg1[] = {"util", "check-for-server-upgrade",
+    const char *arg1[] = {"util", "copy-instance",
                           "{",    "--host=localhost",
                           "}",    "123"};
     Options::Cmdline_iterator it(6, arg1, 0);
@@ -662,14 +685,14 @@ TEST_F(Shell_cli_operation_test, local_dict) {
                       "The following argument is invalid: 123");
 
     EXPECT_EQ("util", m_object_name);
-    EXPECT_EQ("checkForServerUpgrade", m_method_name);
+    EXPECT_EQ("copyInstance", m_method_name);
     EXPECT_EQ(1, m_argument_list.size());
     ASSERT_TRUE(m_argument_list[0].get_type() == Value_type::Map);
     EXPECT_EQ("localhost", m_argument_list.map_at(0)->get_string("host"));
   }
   {
     const char *arg2[] = {
-        "util", "check-for-server-upgrade", "{", "--host=localhost", "1", "}",
+        "util", "copy-instance", "{", "--host=localhost", "1", "}",
         "123"};
     Options::Cmdline_iterator it(7, arg2, 0);
 
@@ -678,7 +701,7 @@ TEST_F(Shell_cli_operation_test, local_dict) {
                       "The following arguments are invalid: 1, 123");
   }
   {
-    const char *arg3[] = {"util", "check-for-server-upgrade", "{",
+    const char *arg3[] = {"util", "copy-instance", "{",
                           "--host=localhost"};
     Options::Cmdline_iterator it(4, arg3, 0);
     parse(&it);
@@ -689,7 +712,7 @@ TEST_F(Shell_cli_operation_test, local_dict) {
     EXPECT_EQ("localhost", m_argument_list.map_at(0)->get_string("host"));
   }
   {
-    const char *arg4[] = {"util",        "check-for-server-upgrade",
+    const char *arg4[] = {"util",        "copy-instance",
                           "--port=3306", "{--host=localhost",
                           "}",           "--lines=123"};
     Options::Cmdline_iterator it(6, arg4, 0);
@@ -700,13 +723,13 @@ TEST_F(Shell_cli_operation_test, local_dict) {
     EXPECT_THROW_LIKE(prepare(), std::invalid_argument,
                       "The following option is invalid: --lines");
     EXPECT_EQ("util", m_object_name);
-    EXPECT_EQ("checkForServerUpgrade", m_method_name);
+    EXPECT_EQ("copyInstance", m_method_name);
   }
 }
 
 TEST_F(Shell_cli_operation_test, connection_options) {
   {
-    const char *arg1[] = {"util",       "check-for-server-upgrade",
+    const char *arg1[] = {"util",       "copy-instance",
                           "{",          "--sslMode",
                           "required",   "--compression-algorithms",
                           "zstd",       "--user",
@@ -717,7 +740,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
     EXPECT_NO_THROW(parse(&it));
     EXPECT_NO_THROW(prepare());
     EXPECT_EQ("util", m_object_name);
-    EXPECT_EQ("checkForServerUpgrade", m_method_name);
+    EXPECT_EQ("copyInstance", m_method_name);
     EXPECT_EQ(1, m_argument_list.size());
     ASSERT_TRUE(m_argument_list[0].get_type() == Value_type::Map);
     EXPECT_EQ("localhost", m_argument_list.map_at(0)->get_string("host"));
@@ -729,11 +752,11 @@ TEST_F(Shell_cli_operation_test, connection_options) {
   }
   {
     const char *arg2[] = {"util",
-                          "check-for-server-upgrade",
+                          "copy-instance",
                           "--port=3306",
                           "{",
                           "--sslMode=required",
-                          "--config-path=/whatever/path",
+                          "--default-character-set=utf8mb4",
                           "}",
                           "--sslMode=required",
                           "--compression-algorithms=zstd",
@@ -742,7 +765,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
     EXPECT_NO_THROW(parse(&it));
     EXPECT_NO_THROW(prepare());
     EXPECT_EQ("util", m_object_name);
-    EXPECT_EQ("checkForServerUpgrade", m_method_name);
+    EXPECT_EQ("copyInstance", m_method_name);
     EXPECT_EQ(2, m_argument_list.size());
     ASSERT_TRUE(m_argument_list[0].get_type() == Value_type::Map);
     auto co = m_argument_list.map_at(0);
@@ -754,9 +777,10 @@ TEST_F(Shell_cli_operation_test, connection_options) {
 
     // not a connection options dictionary
     ASSERT_TRUE(m_argument_list[1].get_type() == Value_type::Map);
-    EXPECT_EQ("/whatever/path",
-              m_argument_list.map_at(1)->get_string("configPath"));
+    EXPECT_EQ("utf8mb4",
+              m_argument_list.map_at(1)->get_string("defaultCharacterSet"));
   }
+#ifdef HAVE_UPGRADE_CHECKER
   {
     const char *arg2[] = {
         "util",
@@ -775,6 +799,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
     // a connection options dictionary
     EXPECT_EQ("JSON", co->get_string("outputFormat"));
   }
+#endif  // HAVE_UPGRADE_CHECKER
 }
 
 #define MY_EXPECT_EQ_OR_DUMP(a, b)          \
@@ -805,9 +830,9 @@ TEST_F(Shell_cli_operation_test, error_test) {
   std::vector<std::string> env{"MARIADB_SHELL_TERM_COLOR_MODE=nocolor"};
 
   testutil->call_mysqlsh_c(
-      {"--", "cluster", "rescan", "{--addUnmanaged : true}"}, "", env);
+      {"--", "util", "copy-instance", "{--threads : 4}"}, "", env);
   MY_EXPECT_STDOUT_CONTAINS(
-      "Error at '--addUnmanaged : true}'.\n"
+      "Error at '--threads : 4}'.\n"
       "Invalid format for command line argument. Valid formats are:\n");
   output_handler.wipe_all();
 }
@@ -833,7 +858,7 @@ TEST_F(Shell_cli_operation_test, integration_test) {
           {"--", "shell", "options", "unset-persist", "defaultMode"}, "", env));
   EXPECT_TRUE(output_handler.std_err.empty() && output_handler.std_out.empty());
 
-#ifndef _MSC_VER
+#if defined(HAVE_ADMIN_API) && !defined(_MSC_VER)
   MY_ASSERT_EQ_OR_DUMP(
       0,
       testutil->call_mysqlsh_c(
@@ -849,6 +874,7 @@ TEST_F(Shell_cli_operation_test, integration_test) {
   std::string uri =
       "root:abc@localhost:" + std::to_string(_mysql_sandbox_ports[0]);
 
+#ifdef HAVE_UPGRADE_CHECKER
   EXPECT_NE(10, testutil->call_mysqlsh_c(
                     {"--", "util", "check-for-server-upgrade", uri.c_str()}, "",
                     env));
@@ -864,6 +890,7 @@ TEST_F(Shell_cli_operation_test, integration_test) {
   MY_EXPECT_STDOUT_NOT_CONTAINS(
       "To check for a different target server version");
   output_handler.wipe_all();
+#endif  // HAVE_UPGRADE_CHECKER
 
   MY_EXPECT_EQ_OR_DUMP(
       0,
@@ -899,11 +926,15 @@ TEST_F(Shell_cli_operation_test, integration_test) {
 
 TEST_F(Shell_cli_operation_test, test_invalid_cli_operations) {
   std::vector<std::pair<const char *, const char *>> invalid_ops = {
+#ifdef HAVE_ADMIN_API
       {"cluster", "fake-operation"},
       {"cluster", "disconnect"},
       {"dba", "fake-operation"},
       {"dba", "get-cluster"},
       {"dba", "get-replica-set"},
+      {"rs", "fake-operation"},
+      {"rs", "disconnect"},
+#endif  // HAVE_ADMIN_API
       {"shell", "fake-command"},
       {"shell", "add-extension-object-member"},
       {"shell", "connect"},
@@ -922,9 +953,7 @@ TEST_F(Shell_cli_operation_test, test_invalid_cli_operations) {
       {"shell", "register-global"},
       {"shell", "set-current-schema"},
       {"shell", "set-session"},
-      {"shell", "unparse-uri"},
-      {"rs", "fake-operation"},
-      {"rs", "disconnect"}};
+      {"shell", "unparse-uri"}};
 
   for (const auto &pair : invalid_ops) {
     // myInt is specified with invalid integer value
@@ -1096,8 +1125,10 @@ class Test_cli_integration_api_options : public Shell_cli_operation_test {
 
 TEST_F(Test_cli_integration_api_options, all) {
   /** The UTILS Object **/
+#ifdef HAVE_UPGRADE_CHECKER
   TEST_API_CLI_OPTIONS(mysqlsh::upgrade_checker::Upgrade_check_options, "util",
                        "check-for-server-upgrade", "dummy_uri@localhost");
+#endif  // HAVE_UPGRADE_CHECKER
 
   TEST_API_CLI_OPTIONS(mysqlsh::import_table::Import_table_option_pack, "util",
                        "import-table", "some/file/path");
@@ -1119,9 +1150,11 @@ TEST_F(Test_cli_integration_api_options, all) {
   TEST_API_CLI_OPTIONS(mysqlsh::Load_dump_options, "util", "load-dump",
                        "myUrl");
 
+#ifdef HAVE_ADMIN_API
   /** The DBA Object **/
   TEST_API_CLI_OPTIONS(mysqlsh::dba::Deploy_sandbox_options, "dba",
                        "deploy-sandbox-instance", "3310");
+#endif  // HAVE_ADMIN_API
 }
 }  // namespace cli
 }  // namespace shcore

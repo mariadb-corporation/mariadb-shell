@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -360,8 +361,6 @@ void add_value_to_dict(shcore::Dictionary_t *target_map,
     // - If the target option has type Undefined, which means it is not a
     // fixed type.
     if (option_md->type() == shcore::Value_type::Map) {
-      const auto &inner_option = parse_named_argument(arg.value.as_string());
-
       // Ensures the target dict option is available
       if (!arg_map->has_key(arg.option)) {
         (*arg_map)[arg.option] = shcore::Value(shcore::make_dict());
@@ -369,10 +368,20 @@ void add_value_to_dict(shcore::Dictionary_t *target_map,
 
       // Gets the target dictionary and sets the key inside
       auto inner_map = arg_map->get_map(arg.option);
+      const auto inner_validator =
+          option_md->validator<shcore::Option_validator>();
 
-      add_value_to_dict(&inner_map,
-                        option_md->validator<shcore::Option_validator>(),
-                        inner_option);
+      if (arg.value.get_type() == shcore::Value_type::Map) {
+        // The whole dictionary was given as JSON, i.e.
+        // --where={"schema.table":"condition"}, its keys are merged one by one
+        for (const auto &[key, value] : *arg.value.as_map()) {
+          add_value_to_dict(&inner_map, inner_validator,
+                            {arg.definition, key, value, {}});
+        }
+      } else {
+        add_value_to_dict(&inner_map, inner_validator,
+                          parse_named_argument(arg.value.as_string()));
+      }
     } else if (option_md->type() == shcore::Value_type::Array) {
       if (!arg_map->has_key(arg.option)) {
         (*arg_map)[arg.option] = shcore::Value(shcore::make_array());

@@ -347,7 +347,14 @@ mariadb-shell root@localhost:3306 -- util dump-tables shop audit_log \
   --output-url=/backups/audit-ddl --ddl-only
 ```
 
-Options that take a dictionary, such as `where` and `partitions`, are easier to pass from Python, because the command line parser reads dots in the table names as nested keys.
+Options that take a dictionary, such as `where` and `partitions`, accept one `schema.table` entry per option, or the whole dictionary as JSON. A `partitions` entry maps to a list, so give it as JSON:
+
+```sh
+mariadb-shell root@localhost:3306 -- util dump-tables shop orders,audit_log \
+  --output-url=/backups/shop-recent \
+  --where="shop.orders=created_at >= '2026-01-01'" \
+  --partitions='{"shop.audit_log": ["p2026"]}'
+```
 
 ## Related Pages
 
