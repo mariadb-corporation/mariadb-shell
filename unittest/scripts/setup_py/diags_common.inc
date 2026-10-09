@@ -96,24 +96,31 @@ def CHECK_PFS_CONSUMERS(path, level, enabled_consumers):
             EXPECT_TRUE(name not in enabled_consumers, f"consumer {name} is {enabled} but is expected to be")
 
 
-g_expected_files_per_instance = [
-    # query, filename, requirements
+# query, filename, requirements. A "vendor" requirement names the server the
+# file is written for; "version" is a MySQL version (negative: below it) and
+# does not apply to MariaDB, whose numbering is its own
+g_expected_replication_files = [
     ("", "performance_schema.replication_applier_configuration.tsv", {}),
-    ("select * from performance_schema.replication_applier_filters", "performance_schema.replication_applier_filters.tsv", {"version":80000}),
-    ("select * from performance_schema.replication_applier_global_filters", "performance_schema.replication_applier_global_filters.tsv", {"version":80000}),
+    ("select * from performance_schema.replication_applier_filters", "performance_schema.replication_applier_filters.tsv", {"version":80000, "vendor":"mysql"}),
+    ("select * from performance_schema.replication_applier_global_filters", "performance_schema.replication_applier_global_filters.tsv", {"version":80000, "vendor":"mysql"}),
     ("", "performance_schema.replication_applier_status.tsv", {}),
     ("", "performance_schema.replication_applier_status_by_coordinator.tsv", {}),
     ("", "performance_schema.replication_applier_status_by_worker.tsv", {}),
-    ("select * from performance_schema.replication_asynchronous_connection_failover_managed", "performance_schema.replication_asynchronous_connection_failover_managed.tsv", {"version":80000}),
+    ("select * from performance_schema.replication_asynchronous_connection_failover_managed", "performance_schema.replication_asynchronous_connection_failover_managed.tsv", {"version":80000, "vendor":"mysql"}),
     ("", "performance_schema.replication_connection_configuration.yaml", {}),
-    ("", "performance_schema.replication_connection_status.tsv", {}),
-    ("", "performance_schema.replication_group_member_stats.tsv", {}),
-    ("select * from performance_schema.replication_group_members", "performance_schema.replication_group_members.tsv", {}),
+    ("", "performance_schema.replication_connection_status.tsv", {"vendor":"mysql"}),
+    ("", "performance_schema.replication_group_member_stats.tsv", {"vendor":"mysql"}),
+    ("select * from performance_schema.replication_group_members", "performance_schema.replication_group_members.tsv", {"vendor":"mysql"}),
     ("", "SHOW_BINARY_LOGS.tsv", {}),
-    ("", "SHOW_REPLICAS.tsv", {"version":80023}),
-    ("", "SHOW_SLAVE_HOSTS.tsv", {"version":-80023}),
-    ("", "SHOW_BINARY_LOG_STATUS.tsv", {"version":80200}),
-    ("", "SHOW_MASTER_STATUS.tsv", {"version":-80200}),
+    ("", "SHOW_REPLICAS.tsv", {"version":80023, "vendor":"mysql"}),
+    ("", "SHOW_SLAVE_HOSTS.tsv", {"version":-80023, "vendor":"mysql"}),
+    ("", "SHOW_REPLICA_HOSTS.tsv", {"vendor":"mariadb"}),
+    ("", "SHOW_BINARY_LOG_STATUS.tsv", {"version":80200, "vendor":"mysql"}),
+    ("", "SHOW_MASTER_STATUS.tsv", {"version":-80200, "vendor":"mysql"}),
+    ("", "SHOW_BINLOG_STATUS.tsv", {"vendor":"mariadb"}),
+]
+
+g_expected_files_per_instance = g_expected_replication_files + [
     ("", "sys.processlist.tsv", {"version":80000}),
     ("", "SHOW_FULL_PROCESSLIST.tsv", {"version":-80000}),
     ("", "SHOW_GLOBAL_STATUS.tsv", {}),
@@ -124,24 +131,7 @@ g_expected_files_per_instance = [
     ("", "SHOW_ENGINE_INNODB_MUTEX.yaml", {"innodbMutex":1})
 ]
 
-g_expected_files_per_instance_high_load = [
-    # query, filename, requirements
-    ("", "performance_schema.replication_applier_configuration.tsv", {}),
-    ("select * from performance_schema.replication_applier_filters", "performance_schema.replication_applier_filters.tsv", {"version":80000}),
-    ("select * from performance_schema.replication_applier_global_filters", "performance_schema.replication_applier_global_filters.tsv", {"version":80000}),
-    ("", "performance_schema.replication_applier_status.tsv", {}),
-    ("", "performance_schema.replication_applier_status_by_coordinator.tsv", {}),
-    ("", "performance_schema.replication_applier_status_by_worker.tsv", {}),
-    ("select * from performance_schema.replication_asynchronous_connection_failover_managed", "performance_schema.replication_asynchronous_connection_failover_managed.tsv", {"version":80000}),
-    ("", "performance_schema.replication_connection_configuration.yaml", {}),
-    ("", "performance_schema.replication_connection_status.tsv", {}),
-    ("", "performance_schema.replication_group_member_stats.tsv", {}),
-    ("select * from performance_schema.replication_group_members", "performance_schema.replication_group_members.tsv", {}),
-    ("", "SHOW_BINARY_LOGS.tsv", {}),
-    ("", "SHOW_REPLICAS.tsv", {"version":80023}),
-    ("", "SHOW_SLAVE_HOSTS.tsv", {"version":-80022}),
-    ("", "SHOW_BINARY_LOG_STATUS.tsv", {"version":80200}),
-    ("", "SHOW_MASTER_STATUS.tsv", {"version":-80200}),
+g_expected_files_per_instance_high_load = g_expected_replication_files + [
     ("", "diagnostics-metrics.summary.tsv", {}),
     ("", "diagnostics-raw/start.host_summary.tsv", {}),
     ("", "diagnostics-raw/end.host_summary.tsv", {}),
@@ -156,43 +146,26 @@ g_expected_files_per_instance_high_load = [
     ("", "diagnostics-raw/iteration-1.SHOW_ENGINE_INNODB_MUTEX.tsv", {"innodbMutex":1})
 ]
 
-
-g_expected_files_per_instance_slow_query = [
-    # query, filename, requirements
-    ("", "performance_schema.replication_applier_configuration.tsv", {}),
-    ("select * from performance_schema.replication_applier_filters", "performance_schema.replication_applier_filters.tsv", {"version":80000}),
-    ("select * from performance_schema.replication_applier_global_filters", "performance_schema.replication_applier_global_filters.tsv", {"version":80000}),
-    ("", "performance_schema.replication_applier_status.tsv", {}),
-    ("", "performance_schema.replication_applier_status_by_coordinator.tsv", {}),
-    ("", "performance_schema.replication_applier_status_by_worker.tsv", {}),
-    ("select * from performance_schema.replication_asynchronous_connection_failover_managed", "performance_schema.replication_asynchronous_connection_failover_managed.tsv", {"version":80000}),
-    ("", "performance_schema.replication_connection_configuration.yaml", {}),
-    ("", "performance_schema.replication_connection_status.tsv", {}),
-    ("", "performance_schema.replication_group_member_stats.tsv", {}),
-    ("select * from performance_schema.replication_group_members", "performance_schema.replication_group_members.tsv", {}),
-    ("", "SHOW_BINARY_LOGS.tsv", {}),
-    ("", "SHOW_REPLICAS.tsv", {"version":80023}),
-    ("", "SHOW_SLAVE_HOSTS.tsv", {"version":-80022}),
-    ("", "SHOW_BINARY_LOG_STATUS.tsv", {"version":80200}),
-    ("", "SHOW_MASTER_STATUS.tsv", {"version":-80200}),
-    ("", "diagnostics-metrics.summary.tsv", {}),
-    ("", "diagnostics-raw/start.host_summary.tsv", {}),
-    ("", "diagnostics-raw/end.host_summary.tsv", {}),
-    ("", "diagnostics-raw/iteration-1.metrics.tsv", {}),
-    ("", "diagnostics-raw/iteration-1.sys.processlist.tsv", {"version":80000}),
-    ("", "diagnostics-raw/iteration-1.SHOW_FULL_PROCESSLIST.tsv", {"version":-80000}),
-    ("", "diagnostics-raw/iteration-1.SHOW_GLOBAL_STATUS.tsv", {}),
-    ("", "error_log", {"version":80022}),
-    ("", "global_variables.tsv", {}),
-    ("", "diagnostics-raw/iteration-1.information_schema.innodb_metrics.tsv", {}),
-    ("", "diagnostics-raw/iteration-1.SHOW_ENGINE_INNODB_STATUS.yaml", {}),
-    ("", "diagnostics-raw/iteration-1.SHOW_ENGINE_INNODB_MUTEX.tsv", {"innodbMutex":1}),
+g_expected_files_per_instance_slow_query = g_expected_files_per_instance_high_load + [
     ("", "explain.tsv", {}),
     ("", "explain_analyze.tsv", {"version":80022}),
     ("", "explain_json.tsv", {}),
     ("", "referenced_table-mysql.user.yaml", {}),
     ("", "referenced_table-mysql.db.yaml", {})
 ]
+
+
+def expected_on_this_server(options):
+    vendor = options.get("vendor")
+    if vendor and (vendor == "mariadb") != __server_is_maria_db:
+        return False
+    # the version requirements are MySQL version numbers
+    if __server_is_maria_db:
+        return True
+    minver = options.get("version")
+    if minver and ((minver>0 and __version_num < minver) or (minver<0 and __version_num >= -minver)):
+        return False
+    return True
 
 
 def CHECK_QUERY(session, data, query, note=None):
@@ -218,8 +191,7 @@ def CHECK_METADATA(session, path):
 
 def CHECK_INSTANCE(session, zf, instance_id, expected_files_per_instance, innodbMutex, localTarget):
     for q, fn, options in expected_files_per_instance:
-        minver = options.get("version", None)
-        if minver and ((minver>0 and __version_num < minver) or (minver<0 and __version_num >= -minver)):
+        if not expected_on_this_server(options):
             continue
         if options.get("innodbMutex") and not innodbMutex:
             continue
@@ -228,6 +200,9 @@ def CHECK_INSTANCE(session, zf, instance_id, expected_files_per_instance, innodb
                 fn += ".tsv"
             elif (instance_id and instance_id > 1):
                 fn += ".tsv"
+            # MariaDB has no performance_schema.error_log to read it from
+            if fn == "error_log.tsv" and __server_is_maria_db:
+                continue
         if instance_id is None:
             prefix = ""
         else:
@@ -292,7 +267,7 @@ def CHECK_DIAGPACK(file, sessions_or_errors, is_cluster=False, innodbMutex=False
             prefix = ""
             if instance_id is not None:
                 prefix = f"{instance_id}."
-            if __version_num > 80000:
+            if __server_is_maria_db or __version_num > 80000:
                 if slowQueries:
                     ZEXPECT_EXISTS(zf, f"{prefix}slow_log.tsv")
                     ZEXPECT_EXISTS(zf, f"{prefix}slow_log.yaml")

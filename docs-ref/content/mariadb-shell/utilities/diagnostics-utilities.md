@@ -1,13 +1,13 @@
 ---
 description: >-
   The util.debug collectors of MariaDB Shell, which package server, shell,
-  and host information into a ZIP file, and their current status with
-  MariaDB Server.
+  and host information from MariaDB Server or MySQL Server into a ZIP file
+  for troubleshooting and support requests.
 ---
 
 # Diagnostics Utilities
 
-The `util.debug` object provides three collectors that gather diagnostic information into one ZIP file, for troubleshooting or for attaching to a support request:
+The `util.debug` object provides three collectors that gather diagnostic information into one ZIP file, for troubleshooting or for attaching to a support request. They work with MariaDB Server and with MySQL Server, and adapt what they collect to the server they're connected to.
 
 | Function | Purpose |
 | --- | --- |
@@ -15,28 +15,28 @@ The `util.debug` object provides three collectors that gather diagnostic informa
 | `util.debug.collect_high_load_diagnostics()` | Repeated snapshots of performance metrics over a period, for a server that is under heavy load. |
 | `util.debug.collect_slow_query_diagnostics()` | Runs one query and collects its execution plan, optimizer trace, and the performance metrics during its execution. |
 
-{% hint style="danger" %}
-**Not usable with MariaDB Server in MariaDB Shell 26.9.5.** All three collectors stop with the following error when the global session is connected to MariaDB Server, and delete the partial ZIP file:
-
-```text
-An error occurred during data collection. Partial output deleted.
-mysqlsh.DBError: MySQL Error (1193): Unknown system variable 'server_uuid'
-```
-
-The collectors were written for MySQL Server and query system variables, tables, and `sys` schema objects that MariaDB Server doesn't have, starting with `@@server_uuid`. The `ignoreErrors` option doesn't avoid the error. Until the collectors support MariaDB Server, collect the information you need with SQL, for example `SHOW GLOBAL VARIABLES`, `SHOW GLOBAL STATUS`, `SHOW ENGINE INNODB STATUS`, and `SHOW FULL PROCESSLIST`, and include the server error log and the [MariaDB Shell log](../logging-and-debugging.md).
-{% endhint %}
-
-The rest of this page describes the collectors as they are implemented, for use with MySQL Server and for when MariaDB Server support is added. The details come from the built-in help (`\? util.debug`) and the source of the `debug` plugin.
+The details on this page come from the built-in help (`\? util.debug`) and the source of the `debug` plugin.
 
 ## Common Behavior
 
-* The collectors need an open global session. Each one opens its own session with the same connection options.
+* The collectors need an open global session to MariaDB Server 10.6 or newer, or to MySQL Server 5.7 or newer. Each one opens its own session with the same connection options.
 * `path` is the ZIP file to create. If it doesn't end in `.zip`, the extension is added. If it ends in `/` (or `\` on Windows), a file named `mysql-diagnostics-<date>-<time>.zip` is created in that directory. An existing file is never overwritten.
 * The ZIP file is created with mode `rw-------` on systems with POSIX permissions, because it can contain configuration details and query text. All entries are stored under one top-level directory named after the file.
-* If anything fails during collection, the ZIP file is deleted.
+* If anything fails during collection, the ZIP file is deleted. The `ignoreErrors` option of `collect_diagnostics()` turns a failing diagnostic query into an `.error` file in the ZIP instead.
 * When the session connects to `localhost`, the collectors can also run operating system commands on the database host (the `hostInfo` and `customShell` options). Over TCP to any other host name, including `127.0.0.1`, host information is not collected and `customShell` is refused.
 
-The connected account needs broad read access. The minimal account in the test suite of the collectors has `SELECT`, `PROCESS`, `REPLICATION CLIENT`, and `REPLICATION SLAVE` on `*.*`, and `EXECUTE`, `SELECT`, and `CREATE TEMPORARY TABLES` on `sys.*`. A `pfsInstrumentation` value other than `current` also needs the right to update the Performance Schema setup tables.
+{% hint style="info" %}
+MariaDB Server starts with `performance_schema=OFF`; MySQL Server starts with it on. With it off, the collectors still run, but they print a warning and skip everything that comes from the Performance Schema and the `sys` schema: statement, wait, I/O and memory statistics, and the metric deltas of the high load and slow query collectors. Turn it on (`performance_schema=ON` in the server configuration, which needs a restart) before collecting from a MariaDB server you're investigating.
+{% endhint %}
+
+The connected account needs broad read access, and `EXECUTE`, `SELECT`, and `CREATE TEMPORARY TABLES` on `sys.*`. On `*.*`, the minimal accounts in the test suite of the collectors have:
+
+| Server | Privileges on `*.*` |
+| --- | --- |
+| MariaDB Server | `SELECT`, `PROCESS`, `BINLOG MONITOR`, `REPLICATION SLAVE`, `REPLICA MONITOR`, `REPLICATION MASTER ADMIN` |
+| MySQL Server | `SELECT`, `PROCESS`, `REPLICATION CLIENT`, `REPLICATION SLAVE` |
+
+A `pfsInstrumentation` value other than `current` also needs the right to update the Performance Schema setup tables. When the binary log is on with a `binlog_format` other than `ROW` (MariaDB Server's default is `MIXED`), the high load and slow query collectors switch `sql_log_bin` off in their session so that the temporary tables of the `sys` procedures they call aren't replicated. That needs `BINLOG ADMIN` on MariaDB Server, and `SYSTEM_VARIABLES_ADMIN` or `SUPER` on MySQL Server. Without it, they print a warning and go on with logging left on on MariaDB Server, and stop on MySQL Server.
 
 ## collect\_diagnostics()
 
@@ -47,7 +47,7 @@ util.debug.collect_diagnostics(path[, options])
 Collects one snapshot of:
 
 * The shell version, the shell options, the host name of the client, and the MariaDB Shell log file.
-* Server identity and time settings, global variables, and the error log. On `localhost`, the error log file is copied; otherwise it is read through SQL where possible.
+* Server identity and time settings, global variables, and the error log. See [Server Information](#server-information).
 * InnoDB status and metrics, lock information, and the Performance Schema configuration.
 * Replication status.
 * Schema statistics: tables without a primary key, unused indexes, and stored routine sizes. With `schemaStats`, also the 20 largest tables with their indexes, the tables per storage engine, and all of `information_schema.TABLES`.
@@ -62,6 +62,7 @@ Collects one snapshot of:
 | `hostInfo` | Boolean | `true` | On `localhost`, run operating system diagnostic commands. See [Host Information](#host-information). |
 | `customSql` | list of strings | `[]` | Additional SQL statements to run. Each result is stored in the ZIP file. |
 | `customShell` | list of strings | `[]` | Additional operating system commands to run. Only on `localhost`. |
+| `allMembers` | Boolean | `false` | Collect from every member of a MySQL InnoDB Cluster. The collector prompts for the password of the account. On a server that isn't an InnoDB Cluster member, including any MariaDB server, the option has no effect and the collector reports that no cluster metadata was found. |
 
 ## collect\_high\_load\_diagnostics()
 
@@ -91,20 +92,39 @@ util.debug.collect_slow_query_diagnostics(path, query[, options])
 
 Runs `query` once in a separate session, collects metrics in the background while it runs, and adds the following to what `collect_high_load_diagnostics()` collects:
 
-* The `EXPLAIN` output and the optimizer trace of the query.
+* The `EXPLAIN` and `EXPLAIN FORMAT=JSON` output of the query, and the optimizer trace of the `EXPLAIN`.
+* The plan with actual row counts and timings of every step (file `explain_analyze.tsv`). It comes from `ANALYZE FORMAT=JSON` on MariaDB Server, only for a `SELECT` or `WITH` query, and from `EXPLAIN ANALYZE` on MySQL Server 8.0.18 or newer. Both run the query.
 * The DDL and statistics of every table that the query references.
 * The execution time, the fetch time, the number of rows, and the warnings of the query.
 
-The query really runs. Don't pass a statement that changes data unless you intend to change it.
+The query really runs, twice: once for the profiled execution and once for the plan with actual timings. Don't pass a statement that changes data unless you intend to change it.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `delay` | integer | `15` | Seconds between the background metric snapshots while the query runs. The built-in help states 5 seconds; the code uses 15. |
+| `delay` | integer | `15` | Seconds between the background metric snapshots while the query runs. |
 | `pfsInstrumentation` | string | `current` | As for `collect_high_load_diagnostics()`. |
 | `innodbMutex` | Boolean | `false` | Also collect `SHOW ENGINE INNODB MUTEX`. |
 | `hostInfo` | Boolean | `true` | On `localhost`, run operating system diagnostic commands. |
 | `customSql` | list of strings | `[]` | Additional SQL statements, with the `before:`, `during:`, and `after:` prefixes. |
 | `customShell` | list of strings | `[]` | Additional operating system commands, with the same prefixes. Only on `localhost`. |
+
+## Server Information
+
+Every collector writes these files for the server it's connected to. The statements behind them differ between the two servers:
+
+* `instance`: host name, port, server ID, version, the server's UTC and local time, time zones, the `sys` schema version, and whether the Performance Schema is on. On MySQL Server it also has the server UUID; MariaDB Server has none.
+* `global_variables.tsv`: all global variables. MariaDB Server's come from `information_schema.GLOBAL_VARIABLES`. MySQL Server's come from the Performance Schema, and from 8.0 on they include where each value was set.
+* The binary log and replication state, with the `replication_*` tables of the Performance Schema:
+
+  | Server | Files |
+  | --- | --- |
+  | MariaDB Server | `SHOW_BINARY_LOGS.tsv`, `SHOW_BINLOG_STATUS.tsv`, `SHOW_REPLICA_HOSTS.tsv`, and `SHOW_ALL_REPLICAS_STATUS.tsv`, with every connection of a multi-source replica |
+  | MySQL Server | `SHOW_BINARY_LOGS.tsv`, `SHOW_BINARY_LOG_STATUS.tsv`, `SHOW_REPLICAS.tsv`, and `SHOW_REPLICA_STATUS.tsv` (older spellings before 8.2 and 8.0.23), plus the `mysql.slave_master_info` table with the password masked, and `mysql.slave_relay_log_info` |
+
+* Prepared XA transactions, from `XA RECOVER FORMAT='SQL'` on MariaDB Server and `XA RECOVER CONVERT xid` on MySQL Server.
+* `error_log`: on `localhost`, a copy of the file that `log_error` names. Over TCP, MySQL Server 8.0.22 or newer serves it from `performance_schema.error_log`, without lines that hold a temporary password. MariaDB Server has no such table, so over TCP the error log isn't collected and the collector asks you to include the file yourself. The same happens when `log_error` is empty and the server logs to its standard error.
+
+A statement that fails with an error, for example a `SHOW` statement that the account has no privilege for, leaves an `.error` file with the error message in place of the result.
 
 ## Host Information
 

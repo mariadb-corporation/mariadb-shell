@@ -284,8 +284,7 @@ growth instead of scanning for `----args-separator----`).
 4. **Scripting modes** — JavaScript is dropped (no `--js`). **Python is enabled**
    (`-DHAVE_PYTHON=1 -DBUNDLED_PYTHON_DIR=...`) and `--py` works. For clean
    plugin loading, install `certifi` into the bundled Python (otherwise a
-   non-fatal "errors loading plugins" warning appears). The bundled `debug`
-   plugin is also X/`certifi`-dependent and may not load.
+   non-fatal "errors loading plugins" warning appears).
 
 ---
 
@@ -1105,6 +1104,44 @@ imports. `util.loadDump()` and the copy utilities load with `REPLACE`, so they k
 `unique_checks = 0`. They use `IGNORE` only for a table with a `WITHOUT OVERLAPS`
 key, and such a table only receives duplicates on a resumed load, when it's
 no longer empty.
+
+### 13.6 Diagnostics collectors (`util.debug`)
+
+The `debug` plugin (`python/plugins/debug/`) branches on
+`InstanceSession.is_mariadb`, from `ClassicSession.get_server_vendor()`, where
+MariaDB has no equivalent of what the MySQL statement reads:
+
+| MySQL | MariaDB |
+|---|---|
+| `@@server_uuid` | none; the `instance` file has no UUID line |
+| `performance_schema.global_variables` joined with `variables_info` | `information_schema.global_variables`, no source column |
+| `XA RECOVER CONVERT xid` | `XA RECOVER FORMAT='SQL'` |
+| `SHOW REPLICAS`, `SHOW BINARY LOG STATUS`, `SHOW REPLICA STATUS` | `SHOW REPLICA HOSTS`, `SHOW BINLOG STATUS`, `SHOW ALL REPLICAS STATUS` |
+| `mysql.slave_master_info`, `mysql.slave_relay_log_info` | absent (the state is in files and `mysql.gtid_slave_pos`); skipped |
+| `performance_schema.error_log` | absent; a remote error log is not collected |
+| `performance_schema.setup_threads` | absent; skipped |
+| `optimizer_trace_offset`, `optimizer_trace_limit` | absent; MariaDB keeps the last trace only |
+| `EXPLAIN ANALYZE` | `ANALYZE FORMAT=JSON`, only for `SELECT`/`WITH`: it also runs any DML, which the profiled run would repeat |
+
+The minimum version is MariaDB 10.6, which bundles the `sys` schema, against
+MySQL 5.7. Measured on 12.3.2: `SHOW REPLICA HOSTS` needs `REPLICATION MASTER
+ADMIN` and `SHOW ALL REPLICAS STATUS` needs `REPLICA MONITOR`, neither of which
+`REPLICATION CLIENT` (`BINLOG MONITOR`) or `REPLICATION SLAVE` implies; the
+server starts with `performance_schema=OFF` and, once on, with only the
+`global_instrumentation`, `thread_instrumentation` and `statements_digest`
+consumers enabled; there is no `events_statements_cpu` consumer; and `SET
+sql_log_bin = 0` needs `BINLOG ADMIN`, which the collectors reach on MariaDB
+because its default `binlog_format` is MIXED, not ROW (a denial is a warning there, the
+collection goes on with logging left on; on MySQL it still stops the collection). The
+scripted test (`util_debug_diags_norecord.py`, `diags_common.inc`) deploys its
+MariaDB sandbox with the Performance Schema on, grants the "minimal" account the
+two privileges, and marks the MySQL-only expected files with
+`"vendor": "mysql"`, since its `"version"` requirements are MySQL versions.
+
+One client-library difference surfaced too: on a MySQL 8+ server libmariadb's
+connection collation is `utf8mb4_general_ci`, so `sys.ps_is_consumer_enabled(...)
+= 'YES'` failed with 1267 (illegal mix with the function's `utf8mb4_0900_ai_ci`
+result). The plugin compares the result in Python instead.
 
 ---
 

@@ -16,7 +16,6 @@ The original summary, carried over verbatim:
 - **Product bugs found while writing.** The docs describe the actual behavior:
   - `mariadb+ssh://` works only via Python `shell.connect`. On the CLI and with `\connect` it fails with "Scheme extension [ssh] is not supported" (`hide_password_in_uri()`, shell_options.cc:1348).
   - `ssl-mode=REQUIRED`/`PREFERRED` silently fall back to an unencrypted connection, with no warning.
-  - `util.debug.collect_*` fail on MariaDB because they read `@@server_uuid`.
   - `util.change_password({"account":…})` uses `ALTER USER … IDENTIFIED BY`, which switches ed25519 accounts to `mysql_native_password`.
   - `\show threads` always fails ('where' parameter unsupported); `\show thread --vars/--raw-locks` also fail on MariaDB.
   - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`.)
@@ -41,7 +40,6 @@ The full list, by area:
 
 ### Utilities
 
-- **All three `util.debug.collect_*` collectors fail on MariaDB** with `Unknown system variable 'server_uuid'`, because `collect_diagnostics.py` queries `@@server_uuid`. Their scripted test is disabled for MariaDB builds (`#@{not __mariadb_build}`), and README.md shows the collector as working. [utilities/diagnostics-utilities.md, danger hint]
 - **`util.change_password({"account": ...})` switches the authentication plugin.** It runs `ALTER USER … IDENTIFIED BY`, which turned an ed25519 account into `mysql_native_password`. Changing your own password uses `SET PASSWORD`, which keeps the plugin. `change_password` has no command-line form. Recheck after a36944d9c. [utilities/password-change-utility.md]
 - **The `where` dump option fails on the command line.** The CLI argument parser reads the dot in a `schema.table` key as a nested key: `String expected, but value is Map`. The pages tell readers to pass dict options from Python. [dump-and-load/dump-utilities.md]
 - **`dryRun` in a copy is inconsistent.** It prints "no locks will be acquired", then reports that it acquired the global read lock. [dump-and-load/copy-utilities.md]
@@ -125,7 +123,6 @@ The full list:
   - it refers to "Section 13.2.10.1"
   - `dump-schemas --help` lists `compatibility` and `allowDataMasking`
 - **`\? util.import_table`** says `SET unique_checks = 0`. On MariaDB the code keeps unique checks on unless `replaceDuplicates` is set.
-- **`collect_slow_query_diagnostics`:** the help says `delay` defaults to 5 s; the code uses 15.
 - **`export_table`:** `json` is not an allowed dialect. The code rejects it, and the page says so.
 - **`\? create_result`:**
   - a warning `level` of "error" is rejected; only warning and note work

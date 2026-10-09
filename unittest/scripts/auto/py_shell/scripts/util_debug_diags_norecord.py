@@ -1,4 +1,3 @@
-#@{not __mariadb_build}
 import zipfile
 import yaml
 import os
@@ -9,7 +8,12 @@ from debug.collect_diagnostics import extract_referenced_tables
 #@<> INCLUDE diags_common.inc
 
 #@<> Init
-testutil.deploy_sandbox(__mysql_sandbox_port1, "root")
+sandbox_options = {}
+if __server_is_maria_db:
+    # MariaDB starts with the performance schema off; the collectors are
+    # tested with it on here, the sandbox on port 5 covers it being off
+    sandbox_options["performance_schema"] = "ON"
+testutil.deploy_sandbox(__mysql_sandbox_port1, "root", sandbox_options)
 
 session1 = mysql.get_session(__sandbox_uri1)
 
@@ -21,6 +25,9 @@ session1.run_sql("grant select on *.* to selectonly@'%'")
 session1.run_sql("create user minimal@'%'")
 session1.run_sql("grant select, process, replication client, replication slave on *.* to minimal@'%'")
 session1.run_sql("grant execute, select, create temporary tables on sys.* to minimal@'%'")
+if __server_is_maria_db:
+    # SHOW REPLICA HOSTS and SHOW ALL REPLICAS STATUS have their own privileges
+    session1.run_sql("grant replica monitor, replication master admin on *.* to minimal@'%'")
 
 session1.run_sql("create schema test")
 
@@ -37,15 +44,15 @@ EXPECT_EQ("ANSI_QUOTES", session1.run_sql("select @@session.sql_mode").fetch_one
 #@<> no session - TSFR_1_2_1
 def check(outpath):
     if "_hl" in outpath:
-        EXPECT_STDOUT_CONTAINS("Shell must be connected to the MySQL server to be diagnosed.")
+        EXPECT_STDOUT_CONTAINS("Shell must be connected to the server to be diagnosed.")
     elif "_sq" in outpath:
-        EXPECT_STDOUT_CONTAINS("Shell must be connected to a MySQL server.")
+        EXPECT_STDOUT_CONTAINS("Shell must be connected to a server.")
     else:
-        EXPECT_STDOUT_CONTAINS("Shell must be connected to a member of the desired MySQL topology.")
+        EXPECT_STDOUT_CONTAINS("Shell must be connected to a member of the desired topology.")
 
 CHECK_ALL_ERROR(check, uri=None)
 
-#@<> X protocol session
+#@<> X protocol session {__have_x_protocol and not __server_is_maria_db}
 #Bug #34533583	collectSlowQuery failed when using xprotocol on standalone and mds servers
 def check(outpath):
     EXPECT_STDOUT_NOT_CONTAINS("Traceback")
@@ -275,6 +282,9 @@ EXPECT_NO_FILE(outpath)
 
 #@<> minimal privs
 outpath = run_collect(f"minimal:@{hostname}:{__mysql_sandbox_port1}", None, {"hostInfo":0})
+if __server_is_maria_db:
+    # MIXED is the default binlog_format, and switching sql_log_bin off needs BINLOG ADMIN
+    EXPECT_STDOUT_CONTAINS("WARNING: Could not disable binary logging for this session")
 CHECK_DIAGPACK(outpath, [(0, session1)], is_cluster=False, innodbMutex=False)
 
 #@<> Regular instance + innodbMutex + schemaStatus
@@ -480,7 +490,9 @@ check(outpath)
 
 #@<> highLoad + slowQuery with pfsInstrumentation - current
 
-if __version_num > 80000:
+if __server_is_maria_db:
+    default_consumers = ["global_instrumentation", "thread_instrumentation", "statements_digest"]
+elif __version_num > 80000:
     default_consumers = ["events_statements_current", "events_statements_history", "events_transactions_current", "events_transactions_history", "global_instrumentation", "thread_instrumentation", "statements_digest"]
 else:
     default_consumers = ["events_statements_current", "events_statements_history", "global_instrumentation", "thread_instrumentation", "statements_digest"]
@@ -496,7 +508,9 @@ def check(outpath):
 CHECK_ALL(check, {"delay":1, "pfsInstrumentation":"current", "hostInfo":0}, nobasic=True)
 
 #@<> highLoad + slowQuery with pfsInstrumentation - medium
-if __version_num > 80000:
+if __server_is_maria_db:
+    consumers = ["events_stages_current", "events_statements_current", "events_transactions_current", "events_waits_current", "global_instrumentation", "thread_instrumentation", "statements_digest"]
+elif __version_num > 80000:
     consumers = ["events_stages_current", "events_statements_cpu", "events_statements_current", "events_statements_history", "events_transactions_current", "events_transactions_history", "events_waits_current", "global_instrumentation", "thread_instrumentation", "statements_digest"]
 else:
     consumers = ["events_stages_current", "events_statements_current", "events_statements_history", "events_transactions_current", "events_waits_current", "global_instrumentation", "thread_instrumentation", "statements_digest"]
@@ -508,10 +522,13 @@ CHECK_ALL(check, {"delay":1, "pfsInstrumentation":"medium", "hostInfo":0}, nobas
 
 #@<> highLoad + slowQuery with pfsInstrumentation - full
 # TSFR_6_1_1
+full_consumers = ["events_stages_current", "events_stages_history", "events_stages_history_long", "events_statements_cpu", "events_statements_current","events_statements_history","events_statements_history_long","events_transactions_current","events_transactions_history","events_transactions_history_long","events_waits_current","events_waits_history","events_waits_history_long","global_instrumentation","thread_instrumentation","statements_digest"]
+if __server_is_maria_db:
+    full_consumers.remove("events_statements_cpu")
 
 def check(outpath):
     CHECK_PFS_INSTRUMENTS(outpath, "full", {})
-    CHECK_PFS_CONSUMERS(outpath, "full", ["events_stages_current", "events_stages_history", "events_stages_history_long", "events_statements_cpu", "events_statements_current","events_statements_history","events_statements_history_long","events_transactions_current","events_transactions_history","events_transactions_history_long","events_waits_current","events_waits_history","events_waits_history_long","global_instrumentation","thread_instrumentation","statements_digest"])
+    CHECK_PFS_CONSUMERS(outpath, "full", full_consumers)
 
 CHECK_ALL(check, {"delay":1, "pfsInstrumentation":"full", "hostInfo":0}, nobasic=True)
 
@@ -531,7 +548,7 @@ CHECK_ALL(check, {"delay":1, "pfsInstrumentation":"current", "hostInfo":0}, noba
 
 session1.run_sql("call sys.ps_setup_reset_to_default(true)")
 
-#@<> highLoad with pfsInstrumentation current and all disabled threads {VER(>=8.0.0)}
+#@<> highLoad with pfsInstrumentation current and all disabled threads {VER(>=8.0.0) and not __server_is_maria_db}
 session1.run_sql("update performance_schema.setup_threads set enabled='NO'")
 
 def check(outpath):
@@ -573,13 +590,16 @@ outpath = run_collect_sq(__sandbox_uri1, None, "")
 EXPECT_STDOUT_CONTAINS("'query' must contain the query to be analyzed")
 EXPECT_NO_FILE(outpath)
 
-#@<> Binary logs disabled and through x protocol
+#@<> Binary logs disabled, through the X protocol where there is one
 # Should auto-reconnect using the classic protocol
 testutil.remove_from_sandbox_conf(__mysql_sandbox_port5, "log_bin");
 testutil.change_sandbox_conf(__mysql_sandbox_port5, "skip_log_bin", "ON");
 testutil.restart_sandbox(__mysql_sandbox_port5);
 
-CHECK_ALL(check, uri=f"mysqlx://root:root@localhost:{__mysql_sandbox_port5}0")
+if __have_x_protocol and not __server_is_maria_db:
+    CHECK_ALL(check, uri=f"mysqlx://root:root@localhost:{__mysql_sandbox_port5}0")
+else:
+    CHECK_ALL(check, uri=__sandbox_uri5)
 
 #@<> Cleanup
 session1.close()

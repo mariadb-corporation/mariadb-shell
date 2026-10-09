@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +36,7 @@ class debug:
 
 def reconnect_to_classic_session():
     """
-    Attempts to connect to a MySQL instance using the classic protocol.
+    Attempts to connect to the server using the classic protocol.
     Fetches the current session, parses the credentials, and connects using the classic protocol.
     """
     active_session = globals.shell.get_session()
@@ -51,12 +52,12 @@ def reconnect_to_classic_session():
         return session
     except Error as e:
         print(f"Could not connect to {creds['host']}:{creds['port']}: {e}")
-        print("Shell must be connected to a member of the desired MySQL topology using a classic session. Please reconnect with --mysql (--mc)")
+        print("Shell must be connected to a member of the desired topology using a classic session. Please reconnect with --mysql (--mc)")
         return None
 
 @plugin_function("util.debug.collectDiagnostics", cli=True)
 def collect_diagnostics(path: str, **options):
-    """Collects MySQL diagnostics information for standalone and managed
+    """Collects server diagnostics information for standalone and managed
     topologies
 
     A zip file containing diagnostics information collected from the server
@@ -118,7 +119,7 @@ def collect_diagnostics(path: str, **options):
     """
     if not globals.shell.get_session():
         raise Error(
-            "Shell must be connected to a member of the desired MySQL topology.")
+            "Shell must be connected to a member of the desired topology.")
     session = globals.shell.open_session()
 
     if shell.parse_uri(session.uri)["scheme"] == "mysqlx":
@@ -130,7 +131,7 @@ def collect_diagnostics(path: str, **options):
 
 @plugin_function("util.debug.collectHighLoadDiagnostics", cli=True)
 def collect_high_load_diagnostics(path: str, **options):
-    """Collects MySQL high load diagnostics information
+    """Collects server high load diagnostics information
 
     A zip file containing diagnostics information collected from the server
     connected to.
@@ -202,7 +203,7 @@ def collect_high_load_diagnostics(path: str, **options):
     """
     if not globals.shell.get_session():
         raise Error(
-            "Shell must be connected to the MySQL server to be diagnosed.")
+            "Shell must be connected to the server to be diagnosed.")
 
     session = globals.shell.open_session()
 
@@ -217,7 +218,7 @@ def collect_high_load_diagnostics(path: str, **options):
 
 @plugin_function("util.debug.collectSlowQueryDiagnostics", cli=True)
 def collect_slow_query_diagnostics(path: str, query: str, **options):
-    """Collects MySQL diagnostics and profiling information for a slow query
+    """Collects server diagnostics and profiling information for a slow query
 
     A zip file containing diagnostics information collected from the server
     connected to.
@@ -252,7 +253,7 @@ def collect_slow_query_diagnostics(path: str, query: str, **options):
 
     Keyword Args:
         delay (int): Number of seconds to wait between collection iterations
-            (default 5s)
+            (default 15s)
         innodbMutex (bool): If true, also collects output of
             SHOW ENGINE INNODB MUTEX. Disabled by default, as this command can
             have some impact on production performance.
@@ -277,7 +278,7 @@ def collect_slow_query_diagnostics(path: str, query: str, **options):
 
     if not globals.shell.get_session():
         raise Error(
-            "Shell must be connected to a MySQL server.")
+            "Shell must be connected to a server.")
 
     session = globals.shell.open_session()
 

@@ -78,16 +78,20 @@ def collect_error_log(zf: zipfile.ZipFile, path: str, *, local_target: bool, ses
         sys_datadir, sys_log_error = session.run_sql(
             "select @@datadir, @@log_error").fetch_one()
 
+        if not sys_log_error:
+            print(
+                f" - {session.vendor} error log is not written to a file (log_error is empty), please include the server's error output if reporting bugs or seeking assistance")
+            return False
         if os.path.isabs(sys_log_error):
             log_path = sys_log_error
         else:
             log_path = os.path.join(sys_datadir, sys_log_error)
-        print(f" - Copying MySQL error log file ({log_path})")
+        print(f" - Copying {session.vendor} error log file ({log_path})")
         copy_local_file(zf, path, log_path)
     else:
         if not collect_error_log_sql(zf, path, session, ignore_errors=ignore_errors):
             print(
-                f"MySQL error logs could not be collected for {session}, please include error.log files if reporting bugs or seeking assistance")
+                f"{session.vendor} error logs could not be collected for {session}, please include error.log files if reporting bugs or seeking assistance")
             return False
     return True
 
@@ -98,8 +102,10 @@ def collect_member_info(zf: zipfile.ZipFile, prefix: str, session: InstanceSessi
     with zf.open(make_zipinfo(f"{prefix}uri"), "w") as f:
         f.write(f"{session.uri}\n".encode("utf-8"))
 
+    # MariaDB has no server_uuid
+    server_uuid_expr = "NULL" if session.is_mariadb else "@@server_uuid"
     utc_time, local_time, time_zone, sys_tz, tz_offs, hostname, port, report_host, report_port, server_uuid, server_id, version = session.run_sql(
-        "select utc_timestamp(), now(), @@time_zone, @@system_time_zone, cast(TIMEDIFF(NOW(), UTC_TIMESTAMP()) as char), @@hostname, @@port, @@report_host, @@report_port, @@server_uuid, @@server_id, concat(@@version_comment, ' ', @@version)").fetch_one()
+        f"select utc_timestamp(), now(), @@time_zone, @@system_time_zone, cast(TIMEDIFF(NOW(), UTC_TIMESTAMP()) as char), @@hostname, @@port, @@report_host, @@report_port, {server_uuid_expr}, @@server_id, concat(@@version_comment, ' ', @@version)").fetch_one()
 
     try:
         sys_version = session.run_sql(
@@ -122,7 +128,8 @@ def collect_member_info(zf: zipfile.ZipFile, prefix: str, session: InstanceSessi
         f.write(
             f"Hostname: {hostname} (report_host={report_host})\n".encode("utf-8"))
         f.write(f"Port: {port} (report_port={report_port})\n".encode("utf-8"))
-        f.write(f"Server UUID: {server_uuid}\n".encode("utf-8"))
+        if server_uuid is not None:
+            f.write(f"Server UUID: {server_uuid}\n".encode("utf-8"))
         f.write(f"Server ID: {server_id}\n".encode("utf-8"))
         f.write(f"Connection Endpoint: {session.uri}\n".encode("utf-8"))
         f.write(f"Version: {version}\n".encode("utf-8"))
@@ -418,8 +425,6 @@ def do_collect_diagnostics(
     path, prefix = process_path(path)
 
     session = InstanceSession(session_)
-    if session.version < 50700:
-        raise Error("MySQL 5.7 or newer required")
 
     if slowQueries:
         row = session.run_sql(
@@ -569,9 +574,6 @@ def do_collect_high_load_diagnostics(
 
     session = InstanceSession(session_)
 
-    if session.version < 50700:
-        raise Error("MySQL 5.7 or newer required")
-
     target = globals.shell.parse_uri(session.uri)
     local_target = True if "host" not in target else target["host"] == "localhost"
     if customShell and not local_target:
@@ -712,8 +714,6 @@ def do_collect_slow_query_diagnostics(
             "'pfsInstrumentation' must be one of current, medium, full")
 
     session = InstanceSession(session_)
-    if session.version < 50700:
-        raise Error("MySQL 5.7 or newer required")
 
     target = globals.shell.parse_uri(session.uri)
     local_target = True if "host" not in target else target["host"] == "localhost"
