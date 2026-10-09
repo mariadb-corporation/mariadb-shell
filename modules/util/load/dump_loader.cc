@@ -4422,6 +4422,53 @@ void Dump_loader::execute_threaded(const std::function<bool()> &schedule_next) {
   } while (!m_worker_interrupt.test());
 }
 
+void Dump_loader::remove_triggers_dropped_with_tables(
+    const std::string &schema,
+    const std::list<Dump_reader::Object_info *> &tables,
+    std::list<Dump_reader::Object_info *> *triggers) {
+  if (tables.empty() || triggers->empty()) return;
+
+  // the existing trigger of a dumped name may be on another table than the
+  // dump's, the server tells which. Table names follow lower_case_table_names,
+  // trigger names are matched case-insensitively, as the check for
+  // pre-existing objects does
+  const auto fold = [](const std::string &name, bool case_sensitive) {
+    auto wide = shcore::utf8_to_wide(name);
+    return case_sensitive ? wide : shcore::str_lower(wide);
+  };
+  const auto fold_table =
+      [&fold, case_sensitive = 0 == m_options.lower_case_table_names()](
+          const std::string &name) { return fold(name, case_sensitive); };
+  const auto fold_trigger = [&fold](const std::string &name) {
+    return fold(name, false);
+  };
+
+  std::unordered_set<std::wstring> dropped_tables;
+
+  for (const auto table : tables) {
+    dropped_tables.emplace(fold_table(table->name));
+  }
+
+  // the existing triggers whose table stays
+  std::unordered_set<std::wstring> standalone;
+  const auto result =
+      query_names(m_reconnect_callback, m_session, schema, *triggers,
+                  "SELECT trigger_name, event_object_table"
+                  " FROM information_schema.triggers"
+                  " WHERE trigger_schema = ? AND trigger_name in ");
+
+  while (const auto row = result->fetch_one()) {
+    if (!dropped_tables.contains(fold_table(row->get_string(1)))) {
+      standalone.emplace(fold_trigger(row->get_string(0)));
+    }
+  }
+
+  // a trigger which does not exist has nothing to drop either
+  triggers->remove_if([&](const auto t) {
+    return !standalone.contains(fold_trigger(t->name));
+  });
+}
+
 void Dump_loader::execute_drop_ddl_tasks() {
   if (!m_options.drop_existing_objects()) {
     return;
@@ -4534,6 +4581,11 @@ void Dump_loader::execute_drop_ddl_tasks() {
         remove_completed(&tables, table_status);
         // just in case drop both views and tables with these names
         tables.insert(tables.end(), views.begin(), views.end());
+        // DROP TABLE takes the triggers of the table with it, and dropping
+        // one of them on another worker in the meantime fails on MariaDB,
+        // which looks for the trigger's file (error 13, Can't get stat of
+        // tt.TRN), so only a trigger whose table stays is dropped on its own
+        remove_triggers_dropped_with_tables(schema->name, tables, &triggers);
       }
 
       // triggers are tracked separately from schema DDL

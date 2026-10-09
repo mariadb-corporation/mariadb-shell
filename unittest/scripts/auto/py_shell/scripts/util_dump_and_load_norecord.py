@@ -4082,6 +4082,35 @@ EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
 
 os.remove(progress_file)
 
+#@<> BUG#36561962 - resume a load with 'dropExistingObjects': True when table DDL was not completed and a trigger of the same name is on another table (8)
+wipeout_server(session2)
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_file, "showProgress": False }), "Load should not throw")
+
+with open(progress_file, "r") as f:
+    progress_file_contents = f.readlines()
+
+# copy the progress file, removing the DONE entry for the schema, view, table and trigger
+with open(progress_file, "w") as f:
+    for line in progress_file_contents:
+        if line:
+            content = json.loads(line)
+            if ("SCHEMA-DDL" != content["op"] and "VIEW-DDL" != content["op"] and "TABLE-DDL" != content["op"] and "TRIGGERS-DDL" != content["op"]) or not content["done"]:
+                f.write(line)
+
+# all objects will be recreated; the trigger is moved to a table which is not in the dump,
+# so it has to be dropped on its own
+schemas = snapshot_schemas(session2)
+session2.run_sql("DROP TRIGGER !.tt", [ test_schema ])
+session2.run_sql("CREATE TABLE !.other (c INT)", [ test_schema ])
+session2.run_sql("CREATE TRIGGER !.tt BEFORE INSERT ON other FOR EACH ROW BEGIN END", [ test_schema ])
+
+EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "progressFile": progress_file, "showProgress": False }), "Load should not throw")
+
+session2.run_sql("DROP TABLE !.other", [ test_schema ])
+EXPECT_JSON_EQ(schemas, snapshot_schemas(session2), "Verifying schemas")
+
+os.remove(progress_file)
+
 #@<> BUG#38249362 - using 'dropExistingObjects' when schema did not exist failed with an error (8)
 wipeout_server(session2)
 EXPECT_NO_THROWS(lambda: util.load_dump(dump_dir, { "dropExistingObjects": True, "resetProgress": True, "loadUsers": True, "showProgress": False }), "Load should not throw")

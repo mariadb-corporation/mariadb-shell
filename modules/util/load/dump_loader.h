@@ -562,6 +562,10 @@ class Dump_loader {
       std::list<Dump_reader::Object_info *> *objects,
       mysqlshdk::db::IResult *result);
   void report_duplicate_object(const std::string &msg) const;
+  void remove_triggers_dropped_with_tables(
+      const std::string &schema,
+      const std::list<Dump_reader::Object_info *> &tables,
+      std::list<Dump_reader::Object_info *> *triggers);
 
   void open_dump();
   void open_dump(std::unique_ptr<mysqlshdk::storage::IDirectory> dumpdir);
