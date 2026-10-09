@@ -134,9 +134,21 @@ bool Db_row::has(std::string_view column) const {
 }
 
 std::string Db_session::bind(const sql::Statement &statement) {
-  if (statement.params.empty()) return statement.text;
+  // The marker is replaced in the text only, never in the values
+  std::string text = statement.text;
+  const auto marker = sql::k_metadata_schema_marker;
+  if (text.find(marker) != std::string::npos) {
+    const auto schema = sql::quote_identifier(m_metadata_schema);
+    for (auto pos = text.find(marker); pos != std::string::npos;
+         pos = text.find(marker, pos + schema.size())) {
+      text.replace(pos, marker.size(), schema);
+    }
+  }
+
+  // Without values, a ? in the text is left alone
+  if (statement.params.empty()) return text;
   if (!m_quoting) m_quoting = sql::Quoting::from_sql_mode(sql_mode());
-  return statement.render(*m_quoting);
+  return sql::Statement(std::move(text), statement.params).render(*m_quoting);
 }
 
 Db_transaction::Db_transaction(Db_session *session) : m_session(session) {

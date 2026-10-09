@@ -101,7 +101,7 @@ Representational State Transfer (REST) is a style of software architecture for d
 
 ## Requirements
 
-* **MariaDB Server** with the MRS metadata schema `mysql_rest_service_metadata`. MariaDB Shell creates and updates this schema with the [CONFIGURE REST METADATA](rest-sql-reference/rest-metadata.md#configure-rest-metadata) statement. The same server holds the data of your REST applications.
+* **MariaDB Server** with the MRS metadata schema `mariadb_rest_service`. MariaDB Shell creates and updates this schema with the [CONFIGURE REST METADATA](rest-sql-reference/rest-metadata.md#configure-rest-metadata) statement. The same server holds the data of your REST applications.
 * **The MariaDB REST Daemon**, which serves the REST endpoints and static content defined in the metadata schema over HTTPS. See [Architecture](architecture.md) and [Running the MariaDB REST Daemon](developer-guide/configuring-mrs.md#running-the-mariadb-rest-daemon).
 * **MariaDB Shell**, which runs the REST SQL statements that configure MRS and define REST services, and generates client SDKs. See [MariaDB Shell](../mariadb-shell/README.md).
 * Optionally, **MariaDB Shell for VS Code**, which adds graphical editors for REST services and starts a local MariaDB REST Daemon for development.

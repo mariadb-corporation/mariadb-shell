@@ -108,12 +108,12 @@ SELECT se.id, se.enabled, se.published, se.url_protocol, h.name AS url_host_name
         JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
         ) AS jt) AS sorted_developers,
     se.name,
-    (SELECT JSON_ARRAYAGG(aa.name) FROM `mysql_rest_service_metadata`.`service_has_auth_app` sa2
-        JOIN `mysql_rest_service_metadata`.`auth_app` AS aa ON
+    (SELECT JSON_ARRAYAGG(aa.name) FROM `{metadata_schema}`.`service_has_auth_app` sa2
+        JOIN `{metadata_schema}`.`auth_app` AS aa ON
             sa2.auth_app_id = aa.id
     WHERE sa2.service_id = se.id) AS auth_apps
-FROM `mysql_rest_service_metadata`.`service` se
-    LEFT JOIN `mysql_rest_service_metadata`.url_host h
+FROM `{metadata_schema}`.`service` se
+    LEFT JOIN `{metadata_schema}`.url_host h
         ON se.url_host_id = h.id
 )";
 
@@ -200,10 +200,10 @@ SELECT sc.id, sc.name, sc.service_id, sc.request_path,
     sc.requires_auth, sc.enabled, sc.items_per_page, sc.comments, se.url_host_id,
     CONCAT(h.name, se.url_context_root) AS host_ctx,
     sc.options, sc.metadata, sc.schema_type, sc.internal
-FROM `mysql_rest_service_metadata`.db_schema sc
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.service se
+FROM `{metadata_schema}`.db_schema sc
+    LEFT OUTER JOIN `{metadata_schema}`.service se
         ON se.id = sc.service_id
-    LEFT JOIN `mysql_rest_service_metadata`.url_host h
+    LEFT JOIN `{metadata_schema}`.url_host h
         ON se.url_host_id = h.id
 )";
 
@@ -240,11 +240,84 @@ void set_json_options(Db_session *session, sql::Update *update,
   update->set("options", options);
 }
 
+std::optional<Schema_name_parts> schema_name_parts(std::string_view name) {
+  const auto pos = name.find(k_default_metadata_schema);
+  if (pos == std::string_view::npos ||
+      name.find(k_default_metadata_schema, pos + 1) != std::string_view::npos) {
+    return std::nullopt;
+  }
+  Schema_name_parts parts{
+      std::string(name.substr(0, pos)),
+      std::string(name.substr(pos + k_default_metadata_schema.size()))};
+
+  const auto word_chars = [](std::string_view text) {
+    return std::all_of(text.begin(), text.end(), [](unsigned char c) {
+      return std::isalnum(c) || c == '_';
+    });
+  };
+  if (!word_chars(parts.prefix) || !word_chars(parts.postfix)) return std::nullopt;
+  if (!parts.prefix.empty() &&
+      std::isdigit(static_cast<unsigned char>(parts.prefix.front()))) {
+    return std::nullopt;
+  }
+  if (!parts.postfix.empty() && parts.postfix.front() != '_') return std::nullopt;
+  return parts;
+}
+
+void check_metadata_schema_name(std::string_view name) {
+  if (name.size() > 64 || !schema_name_parts(name)) {
+    throw std::runtime_error(
+        "Invalid REST metadata schema name `" + std::string(name) +
+        "`. It has to contain `" + std::string(k_default_metadata_schema) +
+        "` once, optionally with a prefix (starting with a letter or _) and "
+        "a postfix (starting with _) of letters, digits and _.");
+  }
+}
+
+std::string role_name(const Db_session *session, std::string_view role) {
+  const auto parts = schema_name_parts(session->metadata_schema());
+  const auto prefix = parts ? parts->prefix : std::string();
+  const auto postfix = parts ? parts->postfix : std::string();
+  return prefix + std::string(k_default_metadata_schema) + "_" +
+         std::string(role) + postfix;
+}
+
+std::vector<std::string> find_metadata_schemas(Db_session *session) {
+  const auto result = session->query(
+      "SELECT s.SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA s "
+      "WHERE LOCATE(?, s.SCHEMA_NAME) > 0 AND EXISTS (SELECT 1 FROM "
+      "INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_SCHEMA = s.SCHEMA_NAME AND "
+      "t.TABLE_NAME = 'msm_schema_version') ORDER BY s.SCHEMA_NAME",
+      {k_default_metadata_schema});
+  std::vector<std::string> names;
+  for (const auto &row : result.rows) {
+    auto name = row["name"].as_string();
+    if (schema_name_parts(name)) names.push_back(std::move(name));
+  }
+  return names;
+}
+
+std::string resolve_metadata_schema(Db_session *session) {
+  const auto names = find_metadata_schemas(session);
+  const std::string default_name{k_default_metadata_schema};
+  if (names.empty() ||
+      std::find(names.begin(), names.end(), default_name) != names.end()) {
+    return default_name;
+  }
+  if (names.size() == 1) return names.front();
+
+  std::string list;
+  for (const auto &name : names) list += (list.empty() ? "`" : ", `") + name + "`";
+  throw std::runtime_error(
+      "There are several REST metadata schemas: " + list +
+      ". Choose one with USE REST METADATA SCHEMA <name>.");
+}
+
 bool schema_exists(Db_session *session) {
   const auto result = session->query(
       "SELECT COUNT(*) AS schema_exists FROM INFORMATION_SCHEMA.SCHEMATA "
       "WHERE SCHEMA_NAME = ?",
-      {k_metadata_schema});
+      {session->metadata_schema()});
   return !result.empty() && result.first()["schema_exists"].as_int() > 0;
 }
 
@@ -270,8 +343,8 @@ Version schema_version(Db_session *session, std::string *view_name) {
 Version check_schema(Db_session *session, std::string *view) {
   if (!schema_exists(session)) {
     throw std::runtime_error(
-        "The MRS metadata schema `mysql_rest_service_metadata` is not "
-        "installed. Run CONFIGURE REST METADATA first.");
+        "The MRS metadata schema `" + session->metadata_schema() +
+        "` is not installed. Run CONFIGURE REST METADATA first.");
   }
   const auto version = schema_version(session, view);
   if (version.major < k_supported_major_version) {

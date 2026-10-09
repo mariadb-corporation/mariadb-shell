@@ -59,7 +59,7 @@ When a REST object requires authentication, your application authenticates in th
 
 If you don't specify a vendor ID, the SDK looks up the vendor ID of the authentication app, which costs an extra round-trip to the MRS backend.
 
-The MRS SDK for TypeScript and Python supports authentication apps of two vendors: MRS native authentication, and MariaDB internal authentication (vendor `MySQL Internal`). For more details, see [Authentication and Authorization](../developer-guide/authentication-and-authorization.md).
+The MRS SDK for TypeScript and Python supports authentication apps of two vendors: MRS native authentication, and MariaDB internal authentication (vendor `MariaDB Internal`). For more details, see [Authentication and Authorization](../developer-guide/authentication-and-authorization.md).
 
 ### MRS Native Authentication
 
@@ -94,7 +94,7 @@ my_service.authenticate(username="foo", password="bar", app="baz")
 In the same way, create an authentication app for MariaDB internal authentication and link it to the REST service:
 
 ```sql
-CREATE REST AUTH APP qux VENDOR MYSQL;
+CREATE REST AUTH APP qux VENDOR MARIADB;
 
 ALTER REST SERVICE /myService ADD AUTH APP qux;
 ```

@@ -47,8 +47,8 @@ namespace metadata {
 
 // The MRS vendor (built-in user management, passwords stored by MRS).
 inline Id mrs_vendor_id() { return "30000000-0000-0000-0000-000000000000"; }
-// The MySQL Internal vendor (authentication against server accounts).
-inline Id mysql_vendor_id() { return "31000000-0000-0000-0000-000000000000"; }
+// The MariaDB Internal vendor (authentication against server accounts).
+inline Id mariadb_vendor_id() { return "31000000-0000-0000-0000-000000000000"; }
 // The global 'Full Access' role.
 inline Id full_access_role_id() {
   return "31000000-0000-0000-0000-000000000000";
@@ -62,10 +62,10 @@ struct Auth_vendor {
   bool enabled = true;
   std::optional<std::string> comments;
 
-  // Every vendor other than MRS and MySQL Internal is an OAuth2 vendor
+  // Every vendor other than MRS and MariaDB Internal is an OAuth2 vendor
   // that needs an URL, an app id and an app secret.
   bool is_oauth2() const {
-    return id != mrs_vendor_id() && id != mysql_vendor_id();
+    return id != mrs_vendor_id() && id != mariadb_vendor_id();
   }
 };
 

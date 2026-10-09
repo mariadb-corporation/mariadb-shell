@@ -27,14 +27,14 @@
 // $antlr-format alignTrailingComments on, columnLimit 100, minEmptyLines 1, maxEmptyLinesToKeep 1, reflowComments off
 // $antlr-format useTab off, allowShortRulesOnASingleLine off, allowShortBlocksOnASingleLine on, alignSemicolons ownLine
 
-// MySQL REST Service (MRS) Grammar Definition (parser).
+// MariaDB REST Service (MRS) Grammar Definition (parser).
 parser grammar MRSParser;
 
 options {
     tokenVocab = MRSLexer;
 }
 
-// Used for auto merging this grammar and the standard MySQL grammar.
+// Used for auto merging this grammar and the standard SQL grammar.
 /* START OF MERGE PART */
 
 mrsScript:
@@ -79,6 +79,7 @@ mrsStatement:
     | revokeRestRoleStatement
     | useStatement
     | showRestMetadataStatusStatement
+    | showRestMetadataSchemasStatement
     | showRestServicesStatement
     | showRestSchemasStatement
     | showRestViewsStatement
@@ -169,10 +170,17 @@ configureRestMetadataStatement:
 ;
 
 restMetadataOptions: (
-        enabledDisabled
+        metadataSchema
+        | enabledDisabled
         | jsonOptions
         | updateIfAvailable
     )+
+;
+
+// The metadata schema: mariadb_rest_service, optionally with a prefix and a
+// postfix, e.g. acme_mariadb_rest_service_eu
+metadataSchema:
+    DATABASE_SYMBOL schemaName
 ;
 
 updateIfAvailable:
@@ -416,7 +424,7 @@ createRestAuthAppStatement:
         ) APP_SYMBOL (IF_SYMBOL NOT_SYMBOL EXISTS_SYMBOL)?
     ) authAppName VENDOR_SYMBOL (
         MRS_SYMBOL
-        | MYSQL_SYMBOL
+        | MARIADB_SYMBOL
         | vendorName
     ) restAuthAppOptions?
 ;
@@ -738,7 +746,10 @@ revokeRestRoleStatement:
 // USE statements ===========================================================
 
 useStatement:
-    USE_SYMBOL REST_SYMBOL serviceAndSchemaRequestPaths
+    USE_SYMBOL REST_SYMBOL (
+        serviceAndSchemaRequestPaths
+        | METADATA_SYMBOL metadataSchema
+    )
 ;
 
 serviceAndSchemaRequestPaths:
@@ -750,6 +761,10 @@ serviceAndSchemaRequestPaths:
 
 showRestMetadataStatusStatement:
     SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL? STATUS_SYMBOL formatClause?
+;
+
+showRestMetadataSchemasStatement:
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL
 ;
 
 showRestServicesStatement:
@@ -1193,7 +1208,7 @@ graphQlAllowedKeyword:
     | SECRET_SYMBOL
     | VENDOR_SYMBOL
     | MRS_SYMBOL
-    | MYSQL_SYMBOL
+    | MARIADB_SYMBOL
     | USERS_SYMBOL
     | ALLOW_SYMBOL
     | REGISTER_SYMBOL

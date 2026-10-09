@@ -88,7 +88,7 @@ std::string hex(std::string_view binary) {
 
 std::string metadata_table(std::string_view table) {
   if (table.find('.') != std::string_view::npos) return std::string(table);
-  return quote_identifier(k_metadata_schema) + "." + quote_identifier(table);
+  return std::string(k_metadata_schema_marker) + "." + quote_identifier(table);
 }
 
 Quoting Quoting::from_sql_mode(std::string_view sql_mode) {

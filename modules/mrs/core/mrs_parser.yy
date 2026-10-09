@@ -177,7 +177,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   AUTODETECT_SYMBOL "AUTODETECT" FEED_SYMBOL "FEED" ITEM_SYMBOL "ITEM"
   AUTH_SYMBOL "AUTH" APPS_SYMBOL "APPS" APP_SYMBOL "APP" ID_SYMBOL "ID"
   SECRET_SYMBOL "SECRET" VENDOR_SYMBOL "VENDOR" MRS_SYMBOL "MRS"
-  MYSQL_SYMBOL "MYSQL" USERS_SYMBOL "USERS" ALLOW_SYMBOL "ALLOW"
+  MARIADB_SYMBOL "MARIADB" USERS_SYMBOL "USERS" ALLOW_SYMBOL "ALLOW"
   REGISTER_SYMBOL "REGISTER" CLASS_SYMBOL "CLASS"
   DEVELOPMENT_SYMBOL "DEVELOPMENT" SCRIPTS_SYMBOL "SCRIPTS"
   MAPPING_SYMBOL "MAPPING" TYPESCRIPT_SYMBOL "TYPESCRIPT" ROLES_SYMBOL "ROLES"
@@ -263,6 +263,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> revoke_rest_privilege_statement
 %nterm <Statement> revoke_rest_role_statement
 %nterm <Statement> use_statement
+%nterm <Statement> show_rest_metadata_schemas_statement
 %nterm <Statement> show_rest_metadata_status_statement
 %nterm <Statement> show_rest_services_statement
 %nterm <Statement> show_rest_schemas_statement
@@ -353,6 +354,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Endpoint_selection> endpoint_selection
 
 %nterm <Service_path> service_request_path new_service_request_path service_ref
+%nterm <std::string> metadata_schema
 %nterm <std::string> service_request_path_wildcard schema_request_path
 %nterm <std::string> schema_request_path_wildcard view_request_path
 %nterm <std::string> rest_object_name rest_result_name
@@ -452,6 +454,7 @@ mrs_statement:
   | revoke_rest_role_statement { $$ = std::move($1); }
   | use_statement { $$ = std::move($1); }
   | show_rest_metadata_status_statement { $$ = std::move($1); }
+  | show_rest_metadata_schemas_statement { $$ = std::move($1); }
   | show_rest_services_statement { $$ = std::move($1); }
   | show_rest_schemas_statement { $$ = std::move($1); }
   | show_rest_views_statement { $$ = std::move($1); }
@@ -617,6 +620,8 @@ configure_rest_metadata_statement:
 
 rest_metadata_options:
     %empty { $$ = Configure_rest_metadata{}; }
+  | rest_metadata_options metadata_schema
+    { $$ = std::move($1); $$.schema = std::move($2); }
   | rest_metadata_options enabled_disabled
     { $$ = std::move($1); $$.enabled = $2; }
   | rest_metadata_options json_options
@@ -1036,7 +1041,7 @@ auth_or_authentication:
 
 vendor:
     MRS_SYMBOL { $$ = "MRS"; }
-  | MYSQL_SYMBOL { $$ = "MySQL Internal"; }
+  | MARIADB_SYMBOL { $$ = "MariaDB Internal"; }
   | vendor_name { $$ = std::move($1); }
   ;
 
@@ -1575,6 +1580,14 @@ revoke_rest_role_statement:
 use_statement:
     USE_SYMBOL REST_SYMBOL service_and_schema_request_paths
     { $$ = make_statement(std::move($3), @1); }
+  | USE_SYMBOL REST_SYMBOL METADATA_SYMBOL metadata_schema
+    { $$ = make_statement(Use_rest_metadata_schema{std::move($4)}, @1); }
+  ;
+
+/* The metadata schema: mariadb_rest_service, optionally with a prefix and a
+   postfix, e.g. acme_mariadb_rest_service_eu */
+metadata_schema:
+    DATABASE_SYMBOL schema_name { $$ = std::move($2); }
   ;
 
 service_and_schema_request_paths:
@@ -1591,6 +1604,11 @@ show_rest_metadata_status_statement:
     { $$ = make_statement(Show_rest_metadata_status{$5}, @1); }
   | SHOW_SYMBOL REST_SYMBOL STATUS_SYMBOL opt_output_format
     { $$ = make_statement(Show_rest_metadata_status{$4}, @1); }
+  ;
+
+show_rest_metadata_schemas_statement:
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL
+    { $$ = make_statement(Show_rest_metadata_schemas{}, @1); }
   ;
 
 show_rest_services_statement:
@@ -2223,7 +2241,7 @@ graphql_allowed_keyword:
   | SECRET_SYMBOL { $$ = keyword_text(driver, @1); }
   | VENDOR_SYMBOL { $$ = keyword_text(driver, @1); }
   | MRS_SYMBOL { $$ = keyword_text(driver, @1); }
-  | MYSQL_SYMBOL { $$ = keyword_text(driver, @1); }
+  | MARIADB_SYMBOL { $$ = keyword_text(driver, @1); }
   | USERS_SYMBOL { $$ = keyword_text(driver, @1); }
   | ALLOW_SYMBOL { $$ = keyword_text(driver, @1); }
   | REGISTER_SYMBOL { $$ = keyword_text(driver, @1); }

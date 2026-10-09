@@ -18,7 +18,7 @@ After these steps, MRS is fully configured, and you can [add REST services](addi
 
 ## Configuring the MRS Metadata Schema
 
-MRS stores its configuration in the `mysql_rest_service_metadata` database schema. To deploy the metadata schema, use MariaDB Shell for VS Code or MariaDB Shell, as described in this section.
+MRS stores its configuration in the `mariadb_rest_service` database schema. To deploy the metadata schema, use MariaDB Shell for VS Code or MariaDB Shell, as described in this section.
 
 {% hint style="info" %}
 The MariaDB account that configures the metadata schema needs the privileges to create database schemas and roles. It is common practice to use the `root` account or a dedicated `dba` account with `ALL PRIVILEGES` and `WITH GRANT OPTION`.
@@ -72,12 +72,24 @@ CONFIGURE REST METADATA UPDATE IF AVAILABLE;
 
 Before the update, MariaDB Shell dumps the metadata schema to the `plugin_data/msm_plugin/backups` folder of its user configuration and loads the dump again if the update fails. The steps are logged to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
 
+### One Metadata Schema per Customer
+
+A server can hold several MRS metadata schemas, for example when a cloud provider runs one MariaDB Server for several customers. Each metadata schema adds a prefix or a postfix to the name `mariadb_rest_service`, and gets its own roles with the same prefix and postfix. Deploy one with the [`SCHEMA` option of `CONFIGURE REST METADATA`](../rest-sql-reference/rest-metadata.md#naming-the-metadata-schema):
+
+```sql
+CONFIGURE REST METADATA SCHEMA acme_mariadb_rest_service;
+```
+
+This creates the schema `acme_mariadb_rest_service` and the roles `acme_mariadb_rest_service_admin`, `acme_mariadb_rest_service_dev`, and so on. Grant the customer's accounts only these roles, and make them their default roles. A customer's accounts then see only the customer's metadata schema, and the REST statements find it without further setup. The MSM plugin deploys the same schema with `msm.deploySchema()` and the `substitutions` option `{"schema_prefix": "acme_"}`.
+
+An account that can see several metadata schemas chooses one with [`USE REST METADATA SCHEMA`](../rest-sql-reference/rest-metadata.md#use-rest-metadata-schema). [`SHOW REST METADATA SCHEMAS`](../rest-sql-reference/rest-metadata.md#show-rest-metadata-schemas) lists them.
+
 ### Removing the MRS Metadata Schema
 
 To remove MRS from a server, drop the metadata schema with a MariaDB account that has the privilege to drop it:
 
 ```sql
-DROP SCHEMA mysql_rest_service_metadata;
+DROP SCHEMA mariadb_rest_service;
 ```
 
 {% hint style="warning" %}
@@ -95,18 +107,18 @@ MRS has a multi-tiered access model. Configuring the metadata schema creates the
 | Access Level | Role Name | Description |
 | --- | --- | --- |
 | Root | - | Accounts with `ALL PRIVILEGES`, like the default `root` account, have full access to all features. |
-| REST Service Admin | `mysql_rest_service_admin` | Full access to all features of MRS. |
-| REST Schema Admin | `mysql_rest_service_schema_admin` | Adds REST schemas and endpoints to existing REST services. |
-| REST Service Developer | `mysql_rest_service_dev` | Defines REST endpoints for existing REST schemas. |
-| REST Service User | `mysql_rest_service_user` | Accesses REST endpoints as a MariaDB account, through MariaDB internal authentication. |
+| REST Service Admin | `mariadb_rest_service_admin` | Full access to all features of MRS. |
+| REST Schema Admin | `mariadb_rest_service_schema_admin` | Adds REST schemas and endpoints to existing REST services. |
+| REST Service Developer | `mariadb_rest_service_dev` | Defines REST endpoints for existing REST schemas. |
+| REST Service User | `mariadb_rest_service_user` | Accesses REST endpoints as a MariaDB account, through MariaDB internal authentication. |
 
 Grant a role with the `GRANT` statement. A role takes effect in a session only after it is activated with `SET ROLE`. To have it activated automatically when the account connects, which MariaDB Shell for VS Code requires, make it the account's default role with `SET DEFAULT ROLE`.
 
-The following example grants the `mysql_rest_service_admin` role to the `dba` account and makes it the account's default role:
+The following example grants the `mariadb_rest_service_admin` role to the `dba` account and makes it the account's default role:
 
 ```sql
-GRANT 'mysql_rest_service_admin' TO 'dba'@'%';
-SET DEFAULT ROLE mysql_rest_service_admin FOR 'dba'@'%';
+GRANT 'mariadb_rest_service_admin' TO 'dba'@'%';
+SET DEFAULT ROLE mariadb_rest_service_admin FOR 'dba'@'%';
 ```
 
 {% hint style="info" %}
@@ -119,13 +131,13 @@ Two further roles are used by the MariaDB REST Daemon to operate MRS:
 
 | Access Level | Role Name | Description |
 | --- | --- | --- |
-| Metadata Schema Read-Only | `mysql_rest_service_meta_provider` | Used by the MariaDB REST Daemon to read the REST services it serves from the metadata schema. |
-| Application Data Access | `mysql_rest_service_data_provider` | Used by the MariaDB REST Daemon to read and write the application data that the REST services expose. It applies to all REST users authenticated through the `MRS` vendor and through OAuth2 vendors. REST users authenticated through MariaDB internal authentication, vendor `MySQL Internal`, use their own privileges. |
+| Metadata Schema Read-Only | `mariadb_rest_service_meta_provider` | Used by the MariaDB REST Daemon to read the REST services it serves from the metadata schema. |
+| Application Data Access | `mariadb_rest_service_data_provider` | Used by the MariaDB REST Daemon to read and write the application data that the REST services expose. It applies to all REST users authenticated through the `MRS` vendor and through OAuth2 vendors. REST users authenticated through MariaDB internal authentication, vendor `MariaDB Internal`, use their own privileges. |
 
-When you define a REST endpoint, make sure that the `mysql_rest_service_data_provider` role has the privileges on the database objects behind it:
+When you define a REST endpoint, make sure that the `mariadb_rest_service_data_provider` role has the privileges on the database objects behind it:
 
 - For REST views on a table or view, the privileges are granted automatically.
-- For REST procedures and REST functions, the `EXECUTE` privilege is granted automatically. If the routine calls other routines or accesses other database objects, grant the privileges on them to `mysql_rest_service_data_provider` yourself.
+- For REST procedures and REST functions, the `EXECUTE` privilege is granted automatically. If the routine calls other routines or accesses other database objects, grant the privileges on them to `mariadb_rest_service_data_provider` yourself.
 
 The following example exposes the procedure `test.my_procedure`, which calls the procedure `test.my_sub_procedure`. The script creates both procedures and defines the REST endpoint `/myService/test/myProcedure`. The `EXECUTE` privilege on `test.my_procedure` is granted automatically, but the endpoint would still fail, because the privilege on `test.my_sub_procedure` is missing. The final `GRANT` statement adds it, and the endpoint works.
 
@@ -156,7 +168,7 @@ CREATE REST PROCEDURE /myProcedure
     ON SERVICE /myService SCHEMA /test
     AS `test`.`my_procedure`;
 
-GRANT EXECUTE ON PROCEDURE `test`.`my_sub_procedure` TO 'mysql_rest_service_data_provider';
+GRANT EXECUTE ON PROCEDURE `test`.`my_sub_procedure` TO 'mariadb_rest_service_data_provider';
 ```
 
 ## Running the MariaDB REST Daemon
@@ -179,17 +191,17 @@ The installation and bootstrap of the MariaDB REST Daemon are documented with it
 
 The MariaDB REST Daemon connects to the MariaDB Server with an account that has the [MRS provider roles](#mrs-provider-roles):
 
-- With one account, the MariaDB REST Daemon uses it for both the metadata schema and the application data. The account needs both the `mysql_rest_service_meta_provider` and the `mysql_rest_service_data_provider` role.
-- With two accounts, the MariaDB REST Daemon uses one for the metadata schema and the other for the application data. Grant `mysql_rest_service_meta_provider` to the first account and `mysql_rest_service_data_provider` to the second.
+- With one account, the MariaDB REST Daemon uses it for both the metadata schema and the application data. The account needs both the `mariadb_rest_service_meta_provider` and the `mariadb_rest_service_data_provider` role.
+- With two accounts, the MariaDB REST Daemon uses one for the metadata schema and the other for the application data. Grant `mariadb_rest_service_meta_provider` to the first account and `mariadb_rest_service_data_provider` to the second.
 
 To create the two accounts by hand, connect to the server with MariaDB Shell or MariaDB Shell for VS Code and run the following statements, with your own account names, host, and passwords. Each account gets its role as default role, so that the role is active when the MariaDB REST Daemon connects:
 
 ```sql
 CREATE USER 'mrs_metadata'@'<daemon_host>' IDENTIFIED BY '<password>';
-GRANT 'mysql_rest_service_meta_provider' TO 'mrs_metadata'@'<daemon_host>';
-SET DEFAULT ROLE mysql_rest_service_meta_provider FOR 'mrs_metadata'@'<daemon_host>';
+GRANT 'mariadb_rest_service_meta_provider' TO 'mrs_metadata'@'<daemon_host>';
+SET DEFAULT ROLE mariadb_rest_service_meta_provider FOR 'mrs_metadata'@'<daemon_host>';
 
 CREATE USER 'mrs_data'@'<daemon_host>' IDENTIFIED BY '<password>';
-GRANT 'mysql_rest_service_data_provider' TO 'mrs_data'@'<daemon_host>';
-SET DEFAULT ROLE mysql_rest_service_data_provider FOR 'mrs_data'@'<daemon_host>';
+GRANT 'mariadb_rest_service_data_provider' TO 'mrs_data'@'<daemon_host>';
+SET DEFAULT ROLE mariadb_rest_service_data_provider FOR 'mrs_data'@'<daemon_host>';
 ```

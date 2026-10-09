@@ -25,9 +25,13 @@
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "unittest/gtest_clean.h"
 
+#include "modules/mrs/core/mrs_db_session.h"
+#include "modules/mrs/core/mrs_metadata.h"
+#include "modules/mrs/core/mrs_schema_deployment.h"
 #include "modules/mrs/core/mrs_sql.h"
 
 namespace mrs {
@@ -93,7 +97,7 @@ TEST(Mrs_sql, placeholders) {
 TEST(Mrs_sql, builders) {
   auto insert = Insert("t").set("a", 1).set("b", "x").statement();
   EXPECT_EQ(
-      "INSERT INTO `mysql_rest_service_metadata`.`t` (`a`, `b`) VALUES (1, 'x')",
+      "INSERT INTO `{metadata_schema}`.`t` (`a`, `b`) VALUES (1, 'x')",
       insert.render(k_default));
 
   auto rows = Insert("t");
@@ -101,12 +105,12 @@ TEST(Mrs_sql, builders) {
   rows.next_row().set("a", 2);
   rows.next_row().set("b", "y");
   EXPECT_EQ(
-      "INSERT INTO `mysql_rest_service_metadata`.`t` (`a`, `b`) VALUES "
+      "INSERT INTO `{metadata_schema}`.`t` (`a`, `b`) VALUES "
       "(1, 'x'), (2, DEFAULT), (DEFAULT, 'y')",
       rows.statement().render(k_default));
 
   EXPECT_EQ(
-      "UPDATE `mysql_rest_service_metadata`.`t` SET `a` = 'it''s', "
+      "UPDATE `{metadata_schema}`.`t` SET `a` = 'it''s', "
       "o = JSON_MERGE_PATCH(o, '{}') WHERE `id` = 'i' AND x IN (1, 2)",
       Update("t")
           .set("a", "it's")
@@ -116,10 +120,103 @@ TEST(Mrs_sql, builders) {
           .statement()
           .render(k_default));
 
-  EXPECT_EQ("DELETE FROM `mysql_rest_service_metadata`.`t` WHERE `id` = 'a\\b'",
+  EXPECT_EQ("DELETE FROM `{metadata_schema}`.`t` WHERE `id` = 'a\\b'",
             Delete("t").where("id", "a\\b").statement().render(
                 k_no_backslash_escapes));
 }
 
+namespace {
+
+// A session that records the statements bind() produces.
+class Recording_session : public Db_session {
+ public:
+  void execute_script(const std::string &) override {}
+  std::string sql_mode() override { return m_sql_mode; }
+
+  std::string m_sql_mode;
+  std::vector<std::string> statements;
+
+ protected:
+  Db_result do_query(const std::string &sql) override {
+    statements.push_back(sql);
+    return {};
+  }
+  uint64_t do_execute(const std::string &sql) override {
+    statements.push_back(sql);
+    return 0;
+  }
+};
+
+}  // namespace
+
+TEST(Mrs_sql, bind_replaces_the_metadata_schema_marker) {
+  Recording_session session;
+  session.execute(Delete("t").where("id", "`{metadata_schema}`"));
+  session.query("SELECT 1 FROM " + metadata_table("t") + " WHERE a = '?'");
+  session.set_metadata_schema("acme_mariadb_rest_service_eu");
+  session.execute(Update("t").set("a", 1));
+
+  // The default schema until one is set; values and literals keep the
+  // marker text; a ? without values is left alone
+  EXPECT_EQ(std::vector<std::string>(
+                {"DELETE FROM `mariadb_rest_service`.`t` WHERE `id` = "
+                 "'`{metadata_schema}`'",
+                 "SELECT 1 FROM `mariadb_rest_service`.`t` WHERE a = '?'",
+                 "UPDATE `acme_mariadb_rest_service_eu`.`t` SET `a` = 1"}),
+            session.statements);
+}
+
 }  // namespace sql
+
+namespace metadata {
+
+TEST(Mrs_metadata_schema_name, parts_and_roles) {
+  const auto parts = [](std::string_view name) {
+    const auto p = schema_name_parts(name);
+    return p ? p->prefix + "|" + p->postfix : std::string("invalid");
+  };
+  EXPECT_EQ("|", parts("mariadb_rest_service"));
+  EXPECT_EQ("acme_|", parts("acme_mariadb_rest_service"));
+  EXPECT_EQ("|_eu", parts("mariadb_rest_service_eu"));
+  EXPECT_EQ("acme_|_eu", parts("acme_mariadb_rest_service_eu"));
+  EXPECT_EQ("acme|", parts("acmemariadb_rest_service"));
+  EXPECT_EQ("invalid", parts("mysql_rest_service_metadata"));
+  EXPECT_EQ("invalid", parts("mariadb_rest_serviceX"));
+  EXPECT_EQ("invalid", parts("1_mariadb_rest_service"));
+  EXPECT_EQ("invalid", parts("a-b_mariadb_rest_service"));
+  EXPECT_EQ("invalid", parts("mariadb_rest_service_mariadb_rest_service"));
+
+  EXPECT_NO_THROW(check_metadata_schema_name("acme_mariadb_rest_service"));
+  EXPECT_THROW(check_metadata_schema_name("rest"), std::runtime_error);
+  EXPECT_THROW(check_metadata_schema_name(std::string(50, 'a') +
+                                          "_mariadb_rest_service"),
+               std::runtime_error);
+
+  sql::Recording_session session;
+  EXPECT_EQ("mariadb_rest_service_data_provider",
+            role_name(&session, "data_provider"));
+  session.set_metadata_schema("acme_mariadb_rest_service_eu");
+  EXPECT_EQ("acme_mariadb_rest_service_admin_eu", role_name(&session, "admin"));
+}
+
+TEST(Mrs_metadata_schema_name, deployment_script_substitutions) {
+  const std::string script =
+      "CREATE SCHEMA /*<msm:schema_prefix>*/mariadb_rest_service"
+      "/*<msm:schema_postfix>*/;\n"
+      "CREATE ROLE /*<msm:schema_prefix>*/mariadb_rest_service_dev"
+      "/*<msm:schema_postfix>*/; -- /* other */";
+  EXPECT_EQ(
+      "CREATE SCHEMA mariadb_rest_service;\n"
+      "CREATE ROLE mariadb_rest_service_dev; -- /* other */",
+      apply_schema_substitutions(script, "mariadb_rest_service"));
+  EXPECT_EQ(
+      "CREATE SCHEMA acme_mariadb_rest_service_eu;\n"
+      "CREATE ROLE acme_mariadb_rest_service_dev_eu; -- /* other */",
+      apply_schema_substitutions(script, "acme_mariadb_rest_service_eu"));
+  EXPECT_THROW(apply_schema_substitutions("/*<msm:other>*/x", "mariadb_rest_service"),
+               std::runtime_error);
+  EXPECT_THROW(apply_schema_substitutions(script, "other"), std::runtime_error);
+}
+
+}  // namespace metadata
 }  // namespace mrs

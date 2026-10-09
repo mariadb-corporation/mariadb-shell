@@ -173,6 +173,7 @@ json::Value status_json(const Status &status,
   doc.set("available_metadata_version", text(status.available_metadata_version));
   doc.set("required_router_version", text(status.required_router_version));
   doc.set("metadata_version", number(status.metadata_version));
+  doc.set("metadata_schema", status.metadata_schema);
   json::Value::Array versions;
   for (const auto &version : available_versions) versions.emplace_back(version.str());
   doc.set("available_metadata_versions", json::Value(std::move(versions)));

@@ -183,6 +183,10 @@ shcore::Value Mrs::run_rest_sql(
   std::erase_if(m_states, [](const auto &entry) { return entry.first.expired(); });
   auto &state = m_states[session];
 
+  // The executor sets the session's metadata schema, which the fingerprint
+  // reads from
+  ::mrs::Ddl_executor executor(&db, &state);
+
   // One query gives the sql_mode the statements are parsed with and what
   // the executor's metadata checks depend on
   auto fingerprint = ::mrs::metadata::read_fingerprint(
@@ -197,7 +201,6 @@ shcore::Value Mrs::run_rest_sql(
   }
 
   const auto deployer = make_schema_deployer(&m_shell_core, session);
-  ::mrs::Ddl_executor executor(&db, &state);
   executor.set_schema_deployer(deployer.get());
   executor.set_fingerprint(std::move(fingerprint));
   const auto results = executor.run(script);

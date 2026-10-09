@@ -11,7 +11,7 @@ Before you execute CRUD operations on a REST object of the MariaDB REST Service 
 
 ## MariaDB Internal Authentication
 
-An authentication app with MariaDB internal authentication, vendor `MySQL Internal`, authenticates the REST user with a MariaDB account. The client sends the credentials to the `/login` path of the authentication endpoint of the REST service, by default `/${service}/authentication/login`. The client specifies the authentication mechanism to use, cookie or bearer token. The default is a cookie.
+An authentication app with MariaDB internal authentication, vendor `MariaDB Internal`, authenticates the REST user with a MariaDB account. The client sends the credentials to the `/login` path of the authentication endpoint of the REST service, by default `/${service}/authentication/login`. The client specifies the authentication mechanism to use, cookie or bearer token. The default is a cookie.
 
 Pattern:
 

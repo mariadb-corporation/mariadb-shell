@@ -44,6 +44,8 @@ namespace metadata {
 inline constexpr Version k_required_router_version{8, 1, 0};
 
 struct Status {
+  // The metadata schema the status is of (the session's)
+  std::string metadata_schema;
   bool service_configured = false;
   bool service_enabled = false;
   int service_count = 0;

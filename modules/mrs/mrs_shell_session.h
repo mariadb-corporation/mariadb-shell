@@ -42,12 +42,12 @@ class Shell_db_session : public ::mrs::Db_session {
  public:
   explicit Shell_db_session(std::shared_ptr<mysqlshdk::db::ISession> session);
 
-  ::mrs::Db_result query(const std::string &sql) override;
-  uint64_t execute(const std::string &sql) override;
-  using Db_session::execute;
-  using Db_session::query;
   void execute_script(const std::string &script) override;
   std::string sql_mode() override;
+
+ protected:
+  ::mrs::Db_result do_query(const std::string &sql) override;
+  uint64_t do_execute(const std::string &sql) override;
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> m_session;

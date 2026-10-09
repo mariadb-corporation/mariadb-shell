@@ -18,7 +18,7 @@ myService.sakila.address.find({ select: ["address", "address2"], where: { addres
       "address2": null,
     },
     {
-      "address": "28 MySQL Boulevard",
+      "address": "28 MariaDB Boulevard",
       "address2": null,
     },
     {

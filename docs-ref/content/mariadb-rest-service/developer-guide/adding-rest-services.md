@@ -33,13 +33,13 @@ To retire a REST service, disable it by setting the corresponding flag on the RE
 Before you set up a REST service, make sure that:
 
 - MRS is configured on the MariaDB Server. See [Configuring MRS](configuring-mrs.md).
-- The MariaDB account that you connect with has the `mysql_rest_service_admin` role or a superset of its privileges.
+- The MariaDB account that you connect with has the `mariadb_rest_service_admin` role or a superset of its privileges.
 
-To grant the `mysql_rest_service_admin` role and make it the account's default role, run the following statements:
+To grant the `mariadb_rest_service_admin` role and make it the account's default role, run the following statements:
 
 ```sql
-GRANT 'mysql_rest_service_admin' TO 'user_account'@'%';
-SET DEFAULT ROLE mysql_rest_service_admin FOR 'user_account'@'%';
+GRANT 'mariadb_rest_service_admin' TO 'user_account'@'%';
+SET DEFAULT ROLE mariadb_rest_service_admin FOR 'user_account'@'%';
 ```
 
 ## Setting Up a New REST Service
@@ -115,13 +115,13 @@ Adding a database schema as a REST schema does not expose its tables and views t
 Before you add REST schemas and objects, make sure that:
 
 - The REST service exists. See [Setting Up a New REST Service](#setting-up-a-new-rest-service).
-- The MariaDB account that you connect with has the `mysql_rest_service_schema_admin` role or a superset of its privileges.
+- The MariaDB account that you connect with has the `mariadb_rest_service_schema_admin` role or a superset of its privileges.
 
-To grant the `mysql_rest_service_schema_admin` role and make it the account's default role, run the following statements:
+To grant the `mariadb_rest_service_schema_admin` role and make it the account's default role, run the following statements:
 
 ```sql
-GRANT 'mysql_rest_service_schema_admin' TO 'user_account'@'%';
-SET DEFAULT ROLE mysql_rest_service_schema_admin FOR 'user_account'@'%';
+GRANT 'mariadb_rest_service_schema_admin' TO 'user_account'@'%';
+SET DEFAULT ROLE mariadb_rest_service_schema_admin FOR 'user_account'@'%';
 ```
 
 ### Adding a Schema with REST SQL

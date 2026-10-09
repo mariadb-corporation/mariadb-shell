@@ -25,13 +25,13 @@ def metadata_value(sql):
     return row[0] if row else None
 
 def table_privileges(table):
-    return metadata_value("SELECT Table_priv FROM mysql.tables_priv WHERE User = 'mysql_rest_service_data_provider' AND Db = 'sakila' AND Table_name = '%s'" % table)
+    return metadata_value("SELECT Table_priv FROM mysql.tables_priv WHERE User = 'mariadb_rest_service_data_provider' AND Db = 'sakila' AND Table_name = '%s'" % table)
 
 def routine_privileges(routine, routine_type):
-    return metadata_value("SELECT Proc_priv FROM mysql.procs_priv WHERE User = 'mysql_rest_service_data_provider' AND Db = 'sakila' AND Routine_name = '%s' AND Routine_type = '%s'" % (routine, routine_type))
+    return metadata_value("SELECT Proc_priv FROM mysql.procs_priv WHERE User = 'mariadb_rest_service_data_provider' AND Db = 'sakila' AND Routine_name = '%s' AND Routine_type = '%s'" % (routine, routine_type))
 
 def db_object_column(request_path, column):
-    return metadata_value("SELECT %s FROM mysql_rest_service_metadata.db_object WHERE request_path = '%s'" % (column, request_path))
+    return metadata_value("SELECT %s FROM mariadb_rest_service.db_object WHERE request_path = '%s'" % (column, request_path))
 
 rest("CONFIGURE REST METADATA ENABLED")
 rest("CREATE REST SERVICE /svc")
@@ -64,8 +64,8 @@ EXPECT_EQ(1, db_object_column("/city", "requires_auth"))
 EXPECT_EQ("FEED", db_object_column("/city", "format"))
 EXPECT_EQ("Select", table_privileges("city"))
 # The references of the table are stored as disabled fields
-EXPECT_EQ(6, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object_field"))
-EXPECT_EQ(4, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object_field WHERE enabled = 1"))
+EXPECT_EQ(6, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object_field"))
+EXPECT_EQ(4, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object_field WHERE enabled = 1"))
 EXPECT_THROWS(lambda: rest("CREATE REST VIEW /city AS sakila.city"), "Failed to create the REST VIEW `/svc/sakila/city`. The request_path is already used by another entity.")
 
 #@<> CREATE REST VIEW with nested references, annotations and all options
@@ -120,21 +120,21 @@ EXPECT_EQ("Select,Insert,Update,Delete", table_privileges("address"))
 EXPECT_EQ([["/city", "DISABLED"]], rest_rows("SHOW REST VIEWS"))
 
 #@<> The stored data mapping
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.dataMappingViewInsert') FROM mysql_rest_service_metadata.object WHERE name = 'MyCity'"))
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.duality_view_insert') FROM mysql_rest_service_metadata.object WHERE name = 'MyCity'"))
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.duality_view_no_check') FROM mysql_rest_service_metadata.object WHERE name = 'MyCity'"))
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(db_column, '$.is_primary') FROM mysql_rest_service_metadata.object_field WHERE name = 'cityId' AND parent_reference_id IS NULL"))
-EXPECT_EQ("varchar(50)", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mysql_rest_service_metadata.object_field WHERE name = 'address' AND db_column IS NOT NULL"))
-EXPECT_EQ("string", metadata_value("SELECT JSON_VALUE(json_schema, '$.type') FROM mysql_rest_service_metadata.object_field WHERE name = 'address' AND db_column IS NOT NULL"))
-EXPECT_EQ(0, metadata_value("SELECT allow_filtering FROM mysql_rest_service_metadata.object_field WHERE name = 'city' AND parent_reference_id IS NULL"))
-EXPECT_EQ(1, metadata_value("SELECT no_update FROM mysql_rest_service_metadata.object_field WHERE name = 'lastUpdate' AND parent_reference_id IS NULL"))
-EXPECT_EQ("n:1", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.kind') FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'country'"))
-EXPECT_EQ("1:n", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.kind') FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
-EXPECT_EQ("city_id", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.column_mapping[0].base') FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(r.options, '$.dataMappingViewInsert') FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
-EXPECT_EQ(1, metadata_value("SELECT r.unnest FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'country'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.dataMappingViewInsert') FROM mariadb_rest_service.object WHERE name = 'MyCity'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.duality_view_insert') FROM mariadb_rest_service.object WHERE name = 'MyCity'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(options, '$.duality_view_no_check') FROM mariadb_rest_service.object WHERE name = 'MyCity'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(db_column, '$.is_primary') FROM mariadb_rest_service.object_field WHERE name = 'cityId' AND parent_reference_id IS NULL"))
+EXPECT_EQ("varchar(50)", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mariadb_rest_service.object_field WHERE name = 'address' AND db_column IS NOT NULL"))
+EXPECT_EQ("string", metadata_value("SELECT JSON_VALUE(json_schema, '$.type') FROM mariadb_rest_service.object_field WHERE name = 'address' AND db_column IS NOT NULL"))
+EXPECT_EQ(0, metadata_value("SELECT allow_filtering FROM mariadb_rest_service.object_field WHERE name = 'city' AND parent_reference_id IS NULL"))
+EXPECT_EQ(1, metadata_value("SELECT no_update FROM mariadb_rest_service.object_field WHERE name = 'lastUpdate' AND parent_reference_id IS NULL"))
+EXPECT_EQ("n:1", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.kind') FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'country'"))
+EXPECT_EQ("1:n", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.kind') FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
+EXPECT_EQ("city_id", metadata_value("SELECT JSON_VALUE(r.reference_mapping, '$.column_mapping[0].base') FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(r.options, '$.dataMappingViewInsert') FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'addresses'"))
+EXPECT_EQ(1, metadata_value("SELECT r.unnest FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id WHERE f.name = 'country'"))
 # The fields of a referenced table hang below the reference
-EXPECT_EQ("country", metadata_value("SELECT p.name FROM mysql_rest_service_metadata.object_field f JOIN mysql_rest_service_metadata.object_field p ON p.represents_reference_id = f.parent_reference_id WHERE f.name = 'country' AND f.db_column IS NOT NULL"))
+EXPECT_EQ("country", metadata_value("SELECT p.name FROM mariadb_rest_service.object_field f JOIN mariadb_rest_service.object_field p ON p.represents_reference_id = f.parent_reference_id WHERE f.name = 'country' AND f.db_column IS NOT NULL"))
 
 #@<> SHOW CREATE REST VIEW round trip
 EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info(full_city))
@@ -198,8 +198,8 @@ EXPECT_EQ("""CREATE OR REPLACE REST VIEW /country
         }
     }
     AUTHENTICATION REQUIRED;""", show_create("SHOW CREATE REST VIEW /country"))
-EXPECT_EQ("city", metadata_value("SELECT f2.name FROM mysql_rest_service_metadata.object_reference r JOIN mysql_rest_service_metadata.object_field f ON f.represents_reference_id = r.id JOIN mysql_rest_service_metadata.object_field f2 ON f2.id = r.reduce_to_value_of_field_id WHERE f.name = 'cities'"))
-EXPECT_EQ("countryId", metadata_value("SELECT f.name FROM mysql_rest_service_metadata.object o JOIN mysql_rest_service_metadata.object_field f ON f.id = o.row_ownership_field_id WHERE o.name = 'SvcSakilaCountry'"))
+EXPECT_EQ("city", metadata_value("SELECT f2.name FROM mariadb_rest_service.object_reference r JOIN mariadb_rest_service.object_field f ON f.represents_reference_id = r.id JOIN mariadb_rest_service.object_field f2 ON f2.id = r.reduce_to_value_of_field_id WHERE f.name = 'cities'"))
+EXPECT_EQ("countryId", metadata_value("SELECT f.name FROM mariadb_rest_service.object o JOIN mariadb_rest_service.object_field f ON f.id = o.row_ownership_field_id WHERE o.name = 'SvcSakilaCountry'"))
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"]], rest_rows("SHOW REST VIEWS"))
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"]], rest_rows("SHOW REST DATA MAPPING VIEWS ON SERVICE /svc SCHEMA /sakila"))
 
@@ -294,7 +294,7 @@ EXPECT_EQ("""CREATE OR REPLACE REST VIEW /cities
     };""", show_create("SHOW CREATE REST VIEW /cities"))
 EXPECT_EQ("READ", db_object_column("/cities", "crud_operations"))
 EXPECT_EQ("Select", table_privileges("city"))
-EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object WHERE db_object_id = (SELECT id FROM mysql_rest_service_metadata.db_object WHERE request_path = '/cities')"))
+EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object WHERE db_object_id = (SELECT id FROM mariadb_rest_service.db_object WHERE request_path = '/cities')"))
 rest("ALTER REST VIEW /cities NEW REQUEST PATH /city")
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"], ["/filmList", "ENABLED"]], rest_rows("SHOW REST VIEWS"))
 
@@ -339,10 +339,10 @@ EXPECT_EQ(film_in_stock, show_create("SHOW CREATE REST PROCEDURE /filmInStock"))
 EXPECT_EQ("PROCEDURE", db_object_column("/filmInStock", "object_type"))
 EXPECT_EQ("CREATE", db_object_column("/filmInStock", "crud_operations"))
 EXPECT_EQ("Execute", routine_privileges("film_in_stock", "PROCEDURE"))
-EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(db_column, '$.out') FROM mysql_rest_service_metadata.object_field WHERE name = 'pFilmCount'"))
-EXPECT_EQ("false", metadata_value("SELECT JSON_EXTRACT(db_column, '$.in') FROM mysql_rest_service_metadata.object_field WHERE name = 'pFilmCount'"))
-EXPECT_IN("int", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mysql_rest_service_metadata.object_field WHERE name = 'pFilmCount'"))
-EXPECT_EQ([["PARAMETERS", 0], ["RESULT", 1], ["RESULT", 2]], [list(r) for r in session.run_sql("SELECT kind, position FROM mysql_rest_service_metadata.object WHERE db_object_id = (SELECT id FROM mysql_rest_service_metadata.db_object WHERE request_path = '/filmInStock') ORDER BY position").fetch_all()])
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(db_column, '$.out') FROM mariadb_rest_service.object_field WHERE name = 'pFilmCount'"))
+EXPECT_EQ("false", metadata_value("SELECT JSON_EXTRACT(db_column, '$.in') FROM mariadb_rest_service.object_field WHERE name = 'pFilmCount'"))
+EXPECT_IN("int", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mariadb_rest_service.object_field WHERE name = 'pFilmCount'"))
+EXPECT_EQ([["PARAMETERS", 0], ["RESULT", 1], ["RESULT", 2]], [list(r) for r in session.run_sql("SELECT kind, position FROM mariadb_rest_service.object WHERE db_object_id = (SELECT id FROM mariadb_rest_service.db_object WHERE request_path = '/filmInStock') ORDER BY position").fetch_all()])
 EXPECT_EQ([["/filmInStock", "ENABLED"]], rest_rows("SHOW REST PROCEDURES"))
 EXPECT_EQ([], rest_rows("SHOW REST FUNCTIONS"))
 
@@ -401,7 +401,7 @@ EXPECT_EQ("""CREATE OR REPLACE REST PROCEDURE /forced
         x: x @DATATYPE("varchar(255)")
     }
     AUTHENTICATION REQUIRED;""", show_create("SHOW CREATE REST PROCEDURE /forced"))
-EXPECT_EQ("int", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mysql_rest_service_metadata.object_field WHERE name = 'b'"))
+EXPECT_EQ("int", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM mariadb_rest_service.object_field WHERE name = 'b'"))
 EXPECT_EQ("REST PROCEDURE `/svc/sakila/forced` dropped successfully.", rest_info("DROP REST PROCEDURE /forced"))
 
 #@<> ALTER REST PROCEDURE
@@ -590,9 +590,9 @@ rest("DROP REST FUNCTION /customerBalance")
 EXPECT_EQ([], rest_rows("SHOW REST VIEWS"))
 EXPECT_EQ([], rest_rows("SHOW REST PROCEDURES"))
 EXPECT_EQ([], rest_rows("SHOW REST FUNCTIONS"))
-EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object"))
-EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object_field"))
-EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mysql_rest_service_metadata.object_reference"))
+EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object"))
+EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object_field"))
+EXPECT_EQ(0, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object_reference"))
 EXPECT_EQ(None, table_privileges("city"))
 EXPECT_EQ(None, routine_privileges("film_in_stock", "PROCEDURE"))
 EXPECT_EQ(None, routine_privileges("get_customer_balance", "FUNCTION"))

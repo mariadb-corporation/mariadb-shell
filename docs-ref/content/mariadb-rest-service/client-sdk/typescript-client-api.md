@@ -1,7 +1,7 @@
 ---
 description: >-
   Reference of the commands that the TypeScript client SDK of the MariaDB REST
-  Service generates for REST services, views, documents, routines, and tasks.
+  Service generates for REST services, views, documents, and routines.
 ---
 
 # TypeScript Client API Reference
@@ -657,28 +657,16 @@ if (actor) {
 
 ## Function.call
 
-`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). The first parameter of the command is an `object` containing the set of `IN`/`INOUT` parameters (and corresponding values) as specified by the database routine. The second parameter is an `object` with execution options which is only available if the REST routine has an associated Async Task.
-
-### Options
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| refreshRate | number (>=500) | No | Time (ms) to wait (default 2000) for retrieving the next progress report. (available only if the routine has an associated Async Task) |
-| progress | async function | No | Callback to be executed using the details of each progress report while the routine does not finish. |
-| timeout | number | No | Maximum time to wait for the execution to complete. If this threshold is reached, the ongoing task is killed. By default, no timeout is enforced. (available only if the routine has an associated Async Task) |
+`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). The first parameter of the command is an `object` containing the set of `IN`/`INOUT` parameters (and corresponding values) as specified by the database routine.
 
 ### Return Type
 
 In the case of a `FUNCTION`, the value returned by that function. In the case of a `PROCEDURE`, a JSON object containing the result produced by the procedure (including `OUT`/`INOUT` parameters and result sets).
 
-{% hint style="info" %}
-Procedures with an associated Async Task do not produce result sets, only `OUT`/`INOUT` parameter values.
-{% endhint %}
-
 ### Reference
 
 ```typescript
-async function call (noteUpdateParams?: IMyServiceMrsNotesNoteUpdateParams, options?: IMrsTaskRunOptions<object, IMrsProcedureResult<IMyServiceMrsNotesNoteUpdateParamsOut, IMyServiceMrsNotesNoteUpdateResultSet>>): Promise<IMrsProcedureResult<IMyServiceMrsNotesNoteUpdateParamsOut, IMyServiceMrsNotesNoteUpdateResultSet>> {
+async function call (noteUpdateParams?: IMyServiceMrsNotesNoteUpdateParams): Promise<IMrsProcedureResult<IMyServiceMrsNotesNoteUpdateParamsOut, IMyServiceMrsNotesNoteUpdateResultSet>> {
     // ...
 }
 
@@ -690,22 +678,6 @@ interface IMyServiceMrsNotesNoteUpdateParams {
     content?: string;
     pinned?: boolean;
     userId?: string;
-}
-
-interface IMrsTaskStartOptions {
-    refreshRate?: number;
-    timeout?: number;
-}
-
-interface IMrsTaskRunOptions<MrsTaskStatusUpdate, MrsTaskResult> extends IMrsTaskStartOptions {
-    progress?(report: IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>): Promise<void>;
-}
-
-interface IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    data: MrsTaskStatusUpdate;
-    status: "RUNNING";
-    message: string;
-    progress: number;
 }
 
 type IMyServiceMrsNotesNoteUpdateParamsOut = never;
@@ -727,199 +699,8 @@ const myService = new MyService();
 
 // update the title of a note with a given id
 await myService.mrsNotes.noteUpdate.call({ noteId: note.id, title: "hello world" });
-
-// execute a function for each progress status update
-const progress = (report) => {
-    console.log(report.progress)
-};
-
-await myService.mrsNotes.noteUpdate.call({ noteId: note.id, title: "hello world" }, { progress });
-```
-
-## Function.start
-
-`start` is used to start a REST routine (`FUNCTION` or `PROCEDURE`) with an associated Async Task. The first parameter of the command is an `object` containing the set of `IN`/`INOUT` parameters (and corresponding values) as specified by the database routine. The second and last parameter of the command is an `object` with a set of routine execution constraint options.
-
-### Options
-
-| Name | Type | Required | Description |
-| --- | --- | --- | --- |
-| refreshRate | number (>=500) | No | Time (ms) to wait (default 2000) for retrieving the next progress report (available only if the routine has an associated Async Task). |
-| timeout | number | No | Time (ms) to wait for the routine to produce a result. |
-
-### Return Type
-
-A [Task](#taskwatch) instance.
-
-### Reference
-
-```typescript
-async function start(params?: IMyServiceMrsNotesNoteUpdateParams, options?: IMrsTaskStartOptions): Promise<MrsTask<object, IMrsProcedureResult<IMyServiceMrsNotesNoteUpdateParamsOut, IMyServiceMrsNotesNoteUpdateResultSet>>> {
-    // ...
-}
-
-interface IMyServiceMrsNotesNoteUpdateParams {
-    tags?: JsonValue;
-    lockedDown?: boolean;
-    noteId?: number;
-    title?: string;
-    content?: string;
-    pinned?: boolean;
-    userId?: string;
-}
-
-type IMyServiceMrsNotesNoteUpdateParamsOut = never;
-
-type IMyServiceMrsNotesNoteUpdateResultSet = JsonObject;
-
-interface IMrsProcedureResult<OutParams, ResultSet> {
-    outParameters?: OutParams;
-    resultSets: ResultSet[];
-}
-
-interface IMrsTaskStartOptions {
-    refreshRate?: number;
-    timeout?: number;
-}
-```
-
-### Example
-
-```typescript
-import { MyService } from './myService.mrs.sdk/myService';
-
-const myService = new MyService();
-
-// update the title of a note with a given id
-let task = await myService.mrsNotes.noteUpdate.start({ noteId: note.id, title: "hello world" });
-// check for status updates every 1 second
-task = await myService.mrsNotes.noteUpdate.start({ noteId: note.id, title: "hello world" }, { refreshRate: 1000 });
-// cancel the execution after 5 seconds
-task = await myService.mrsNotes.noteUpdate.start({ noteId: note.id, title: "hello world" }, { timeout: 5000 });
 ```
 
 ## Procedure.call
 
 `call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). See [Function.call](#functioncall) for more details.
-
-## Procedure.start
-
-`start` is used to start a REST routine (`FUNCTION` or `PROCEDURE`) with an associated Async Task. See [Function.start](#functionstart) for more details.
-
-## Task.watch
-
-`watch` is used to monitor the status of a REST routine (`FUNCTION` or `PROCEDURE`) with an associated Async Task.
-
-### Return Type
-
-An [AsyncGenerator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncGenerator) instance which produces status update reports with details about the execution context of the REST routine.
-
-### Reference
-
-```typescript
-async function watch(): AsyncGenerator<
-    IMrsTaskReport<object, IMrsProcedureResult<IMyServiceMrsNotesNoteUpdateParamsOut, IMyServiceMrsNotesNoteUpdateResultSet>>> {
-    // ...
-}
-
-type IMyServiceMrsNotesNoteUpdateParamsOut = never;
-
-type IMyServiceMrsNotesNoteUpdateResultSet = JsonObject;
-
-interface IMrsProcedureResult<OutParams, ResultSet> {
-    outParameters?: OutParams;
-    resultSets: ResultSet[]
-}
-
-interface IMrsScheduledTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    status: "SCHEDULED";
-    message: string;
-}
-
-interface IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    data: MrsTaskStatusUpdate;
-    status: "RUNNING";
-    message: string;
-    progress: number;
-}
-
-interface IMrsCompletedTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    data: MrsTaskResult;
-    status: "COMPLETED";
-    message: string;
-}
-
-interface IMrsCancelledTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    status: "CANCELLED";
-    message: string;
-}
-
-interface IMrsErrorTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    status: "ERROR";
-    message: string;
-}
-
-interface IMrsTimedOutTaskReport<MrsTaskStatusUpdate, MrsTaskResult> {
-    status: "TIMEOUT";
-    message: string;
-}
-
-type IMrsTaskReport<MrsTaskStatusUpdate, MrsTaskResult> =
-    IMrsRunningTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsCompletedTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsCancelledTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsErrorTaskReport<MrsTaskStatusUpdate, MrsTaskResult>
-    | IMrsTimedOutTaskReport<MrsTaskStatusUpdate, MrsTaskResult>;
-```
-
-### Example
-
-```typescript
-import { MyService } from './myService.mrs.sdk/myService';
-
-const myService = new MyService();
-
-// update the title of a note with a given id
-const task = await myService.mrsNotes.noteUpdate.start({ noteId: note.id, title: "hello world" });
-
-// assuming it is a long-running operation, watch for status updates
-for await (const report of task.watch()) {
-    if (report.status === "RUNNING") {
-        console.log(report.progress);
-    } else if (report.status === "ERROR") {
-        console.log(report.message);
-    }
-}
-```
-
-## Task.kill
-
-`kill` is used to kill the underlying Async Task of a REST routine (`FUNCTION` or `PROCEDURE`) and cancel its execution.
-
-### Reference
-
-```typescript
-async function kill(): Promise<void> {
-    // ...
-}
-```
-
-### Example
-
-```typescript
-import { MyService } from './myService.mrs.sdk/myService';
-
-const myService = new MyService();
-
-// update the title of a note with a given id, kill the task if it takes more than 10 seconds to finish
-const task = await myService.mrsNotes.noteUpdate.start({ noteId: note.id, title: "hello world" }, { timeout: 10000 });
-
-// assuming it is a long-running operation, kill the task if it takes more than 10 seconds to finish
-for await (const report of task.watch()) {
-    if (report.status === "TIMEOUT") {
-        await task.kill();
-    } else if (report.status === "CANCELLED") {
-        console.log(report.message);
-    }
-}
-```

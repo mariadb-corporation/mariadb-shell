@@ -21,11 +21,11 @@ def rest_info(sql):
 EXPECT_EQ([{"name": "MRS", "description": "MariaDB REST Service SQL Extension"}], shell.list_sql_handlers())
 
 #@<> Statements need the metadata schema
-EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mysql_rest_service_metadata` is not installed. Run CONFIGURE REST METADATA first.")
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mariadb_rest_service` is not installed. Run CONFIGURE REST METADATA first.")
 
 #@<> SHOW REST METADATA STATUS before the schema exists
 res = rest("SHOW REST METADATA STATUS")
-EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_router_version", "metadata_version"], res.get_column_names())
+EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_router_version", "metadata_version", "metadata_schema"], res.get_column_names())
 row = res.fetch_one()
 EXPECT_EQ("false", row[0])
 EXPECT_EQ(None, row[7])
@@ -35,13 +35,13 @@ EXPECT_EQ(None, row[10])
 doc = json.loads(rest("SHOW REST METADATA STATUS FORMAT=JSON").fetch_one()[0])
 EXPECT_EQ([False, None, None], [doc["service_configured"], doc["current_metadata_version"], doc["metadata_version"]])
 EXPECT_EQ("5.0.0", doc["available_metadata_version"])
-EXPECT_EQ(["4.1.6", "5.0.0"], doc["available_metadata_versions"])
+EXPECT_EQ(["5.0.0"], doc["available_metadata_versions"])
 EXPECT_EQ({}, doc["configuration_options"])
 
 #@<> CONFIGURE REST METADATA creates the schema
 EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA ENABLED"))
-EXPECT_EQ([[5, 0, 0]], [list(r) for r in session.run_sql("SELECT major, minor, patch FROM mysql_rest_service_metadata.msm_schema_version").fetch_all()])
-EXPECT_EQ(1, session.run_sql("SELECT service_enabled FROM mysql_rest_service_metadata.config").fetch_one()[0])
+EXPECT_EQ([[5, 0, 0]], [list(r) for r in session.run_sql("SELECT major, minor, patch FROM mariadb_rest_service.msm_schema_version").fetch_all()])
+EXPECT_EQ(1, session.run_sql("SELECT service_enabled FROM mariadb_rest_service.config").fetch_one()[0])
 
 #@<> SHOW REST METADATA STATUS with the schema
 row = rest("SHOW REST METADATA STATUS").fetch_one()
@@ -52,20 +52,20 @@ EXPECT_EQ("5.0.0", row[7])
 EXPECT_EQ("5.0.0", row[8])
 # The metadata version is the id of the last audit log entry
 metadata_version = row[10]
-EXPECT_EQ(session.run_sql("SELECT COALESCE(MAX(id), 0) FROM mysql_rest_service_metadata.audit_log").fetch_one()[0], metadata_version)
+EXPECT_EQ(session.run_sql("SELECT COALESCE(MAX(id), 0) FROM mariadb_rest_service.audit_log").fetch_one()[0], metadata_version)
 res = rest("SHOW REST STATUS FORMAT=JSON")
 EXPECT_EQ(["REST METADATA STATUS"], res.get_column_names())
 doc = json.loads(res.fetch_one()[0])
 EXPECT_EQ({"service_configured": True, "service_enabled": True, "service_count": 0, "current_metadata_version": "5.0.0", "metadata_version": metadata_version}, {k: doc[k] for k in ["service_configured", "service_enabled", "service_count", "current_metadata_version", "metadata_version"]})
-EXPECT_EQ(json.loads(session.run_sql("SELECT data FROM mysql_rest_service_metadata.config").fetch_one()[0]), doc["configuration_options"])
+EXPECT_EQ(json.loads(session.run_sql("SELECT data FROM mariadb_rest_service.config").fetch_one()[0]), doc["configuration_options"])
 EXPECT_EQ(dict, type(doc["configuration_options"]))
 
 #@<> CONFIGURE REST METADATA again: no changes, options are applied
 EXPECT_EQ("REST Metadata updated successfully.", rest_info("CONFIGURE REST METADATA DISABLED OPTIONS {\"a\": 1}"))
-EXPECT_EQ(0, session.run_sql("SELECT service_enabled FROM mysql_rest_service_metadata.config").fetch_one()[0])
-EXPECT_EQ({"a": 1}, json.loads(session.run_sql("SELECT data FROM mysql_rest_service_metadata.config").fetch_one()[0]))
+EXPECT_EQ(0, session.run_sql("SELECT service_enabled FROM mariadb_rest_service.config").fetch_one()[0])
+EXPECT_EQ({"a": 1}, json.loads(session.run_sql("SELECT data FROM mariadb_rest_service.config").fetch_one()[0]))
 rest("CONFIGURE REST METADATA ENABLED MERGE OPTIONS {\"b\": 2}")
-EXPECT_EQ({"a": 1, "b": 2}, json.loads(session.run_sql("SELECT data FROM mysql_rest_service_metadata.config").fetch_one()[0]))
+EXPECT_EQ({"a": 1, "b": 2}, json.loads(session.run_sql("SELECT data FROM mariadb_rest_service.config").fetch_one()[0]))
 #@<> CONFIGURE REST METADATA UPDATE IF AVAILABLE with the current version
 EXPECT_NO_THROWS(lambda: rest("CONFIGURE REST METADATA UPDATE IF AVAILABLE ENABLED"))
 
@@ -119,10 +119,10 @@ EXPECT_EQ("""CREATE OR REPLACE REST SERVICE /full
     METADATA {
         "position": 1
     };""", rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
-EXPECT_EQ("HTTP", session.run_sql("SELECT url_protocol FROM mysql_rest_service_metadata.service WHERE url_context_root = '/full'").fetch_one()[0])
+EXPECT_EQ("HTTP", session.run_sql("SELECT url_protocol FROM mariadb_rest_service.service WHERE url_context_root = '/full'").fetch_one()[0])
 
 #@<> A service gets the default options
-options = session.run_sql("SELECT options FROM mysql_rest_service_metadata.service WHERE url_context_root = '/myService'").fetch_one()[0]
+options = session.run_sql("SELECT options FROM mariadb_rest_service.service WHERE url_context_root = '/myService'").fetch_one()[0]
 EXPECT_EQ("true", json.loads(options)["headers"]["Access-Control-Allow-Credentials"])
 EXPECT_EQ(True, json.loads(options)["returnInternalErrorDetails"])
 
@@ -131,7 +131,7 @@ EXPECT_EQ("REST SERVICE `mike@/myService` created successfully.", rest_info("CRE
 EXPECT_EQ("REST SERVICE `'alfredo@oracle.com',miguel@/myService` created successfully.", rest_info("CREATE REST SERVICE miguel,'alfredo@oracle.com'@/myService"))
 EXPECT_EQ([["/full", "DISABLED", "NO", ""], ["/myService", "ENABLED", "NO", ""], ["'alfredo@oracle.com',miguel@/myService", "ENABLED", "NO", ""], ["mike@/myService", "ENABLED", "NO", ""]], rest_rows("SHOW REST SERVICES"))
 EXPECT_THROWS(lambda: rest("CREATE REST SERVICE mike@/myService"), "Failed to create the REST SERVICE `mike@/myService`. The request_path is already used by another entity.")
-EXPECT_EQ([["alfredo@oracle.com", "miguel"], ["mike"]], sorted(sorted(json.loads(r[0])["developers"]) for r in session.run_sql("SELECT in_development FROM mysql_rest_service_metadata.service WHERE url_context_root = '/myService' AND in_development IS NOT NULL").fetch_all()))
+EXPECT_EQ([["alfredo@oracle.com", "miguel"], ["mike"]], sorted(sorted(json.loads(r[0])["developers"]) for r in session.run_sql("SELECT in_development FROM mariadb_rest_service.service WHERE url_context_root = '/myService' AND in_development IS NOT NULL").fetch_all()))
 
 #@<> ALTER REST SERVICE
 res = rest("ALTER REST SERVICE /full ENABLED UNPUBLISHED PROTOCOL HTTPS COMMENT 'changed' AUTHENTICATION PATH DEFAULT REDIRECTION DEFAULT")
@@ -198,10 +198,10 @@ other.run_sql("DROP REST SERVICE /gone")
 EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS"), "Cannot SHOW the REST schemas. No REST SERVICE specified.")
 
 #@<> A metadata version changed by another client is noticed
-view = session.run_sql("SHOW CREATE VIEW mysql_rest_service_metadata.msm_schema_version").fetch_one()[1]
-other.run_sql("CREATE OR REPLACE VIEW mysql_rest_service_metadata.msm_schema_version (major, minor, patch) AS SELECT 4, 1, 6")
+view = session.run_sql("SHOW CREATE VIEW mariadb_rest_service.msm_schema_version").fetch_one()[1]
+other.run_sql("CREATE OR REPLACE VIEW mariadb_rest_service.msm_schema_version (major, minor, patch) AS SELECT 4, 1, 6")
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema version 4.1.6 is too old to be managed by this version of MariaDB Shell.")
-other.run_sql("DROP VIEW mysql_rest_service_metadata.msm_schema_version")
+other.run_sql("DROP VIEW mariadb_rest_service.msm_schema_version")
 other.run_sql(view)
 EXPECT_EQ(4, len(rest_rows("SHOW REST SERVICES")))
 other.close()
@@ -211,7 +211,7 @@ rest("USE REST SERVICE /myService")
 # The module binds the values of its metadata statements in the quoting the
 # session's sql_mode needs.
 def stored_comment(path):
-    return session.run_sql("SELECT comments FROM mysql_rest_service_metadata.service WHERE url_context_root = ?", [path]).fetch_one()[0]
+    return session.run_sql("SELECT comments FROM mariadb_rest_service.service WHERE url_context_root = ?", [path]).fetch_one()[0]
 
 old_mode = session.run_sql("SELECT @@SESSION.sql_mode").fetch_one()[0]
 session.run_sql("SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_BACKSLASH_ESCAPES')")
@@ -239,13 +239,13 @@ EXPECT_EQ(["CREATE REST SERVICE"], res.get_column_names())
 doc = json.loads(res.fetch_one()[0])
 EXPECT_EQ("/full", doc["url_context_root"])
 EXPECT_EQ("/full", doc["full_service_path"])
-EXPECT_EQ(session.run_sql("SELECT id FROM mysql_rest_service_metadata.service WHERE url_context_root = '/full'").fetch_one()[0], doc["id"])
+EXPECT_EQ(session.run_sql("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/full'").fetch_one()[0], doc["id"])
 EXPECT_EQ([], doc["developers"])
 EXPECT_EQ([], doc["auth_apps"])
 EXPECT_FALSE("schemas" in doc)
 # The option columns are embedded as JSON
 EXPECT_EQ(dict, type(doc["options"]))
-EXPECT_EQ(json.loads(session.run_sql("SELECT options FROM mysql_rest_service_metadata.service WHERE url_context_root = '/full'").fetch_one()[0]), doc["options"])
+EXPECT_EQ(json.loads(session.run_sql("SELECT options FROM mariadb_rest_service.service WHERE url_context_root = '/full'").fetch_one()[0]), doc["options"])
 # The current service, any case of the format name, and the default format
 EXPECT_EQ("/myService", json.loads(rest("SHOW CREATE REST SERVICE FORMAT = json").fetch_one()[0])["url_context_root"])
 EXPECT_EQ("/myService", json.loads(rest("SHOW CREATE REST SERVICE /myService FORMAT='Json'").fetch_one()[0])["url_context_root"])
@@ -353,11 +353,11 @@ os.remove(dump_file)
 #@<> SHOW REST DAEMONS
 EXPECT_EQ([], rest_rows("SHOW REST DAEMONS"))
 # Daemons register themselves in the router table of the metadata
-session.run_sql("""INSERT INTO mysql_rest_service_metadata.router
+session.run_sql("""INSERT INTO mariadb_rest_service.router
     (router_name, address, product_name, version, last_check_in, attributes, options) VALUES
     ('daemon1', '127.0.0.1', 'MariaDB REST Daemon', '1.0.0', NOW(), '{}', '{}'),
     ('daemon2', '127.0.0.2', 'MariaDB REST Daemon', '1.0.0', NOW() - INTERVAL 1 HOUR, '{"a": 1}', '{"developer": "mike"}')""")
-daemon_ids = [r[0] for r in session.run_sql("SELECT id FROM mysql_rest_service_metadata.router ORDER BY id").fetch_all()]
+daemon_ids = [r[0] for r in session.run_sql("SELECT id FROM mariadb_rest_service.router ORDER BY id").fetch_all()]
 res = rest("SHOW REST DAEMONS")
 EXPECT_EQ(["id", "name", "address", "product_name", "version", "last_check_in", "active", "developer"], res.get_column_names())
 rows = [list(r) for r in res.fetch_all()]
@@ -369,16 +369,16 @@ EXPECT_EQ({"developer": "mike"}, doc[1]["options"])
 
 #@<> SHOW REST SERVICES FOR DAEMON
 for daemon_id in daemon_ids:
-    served = session.run_sql("SELECT COUNT(DISTINCT service_id) FROM mysql_rest_service_metadata.router_services WHERE router_id = ?", [daemon_id]).fetch_one()[0]
+    served = session.run_sql("SELECT COUNT(DISTINCT service_id) FROM mariadb_rest_service.router_services WHERE router_id = ?", [daemon_id]).fetch_one()[0]
     EXPECT_EQ(served, len(rest_rows("SHOW REST SERVICES FOR DAEMON %d" % daemon_id)))
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Cannot SHOW the REST services. The given REST DAEMON `999` could not be found.")
 
 #@<> DROP REST DAEMON removes its status reports
-session.run_sql("INSERT INTO mysql_rest_service_metadata.router_status (router_id, timespan) VALUES (?, 10)", [daemon_ids[0]])
+session.run_sql("INSERT INTO mariadb_rest_service.router_status (router_id, timespan) VALUES (?, 10)", [daemon_ids[0]])
 res = rest("DROP REST DAEMON %d" % daemon_ids[0])
 EXPECT_EQ("REST DAEMON `%d` dropped successfully." % daemon_ids[0], res.get_info())
 EXPECT_EQ(1, res.get_affected_items_count())
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.router_status").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.router_status").fetch_one()[0])
 EXPECT_EQ(["daemon2"], [r[1] for r in rest_rows("SHOW REST DAEMONS")])
 EXPECT_THROWS(lambda: rest("DROP REST DAEMON 999"), "Failed to drop the REST DAEMON `999`. The given REST DAEMON `999` could not be found.")
 EXPECT_EQ("REST DAEMON `999` dropped successfully.", rest_info("DROP REST DAEMON IF EXISTS 999"))

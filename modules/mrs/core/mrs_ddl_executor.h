@@ -82,6 +82,8 @@ struct Statement_result {
 // What the checks before the REST statements found last time, so they
 // run again only when the metadata fingerprint changed.
 struct Metadata_check {
+  // The metadata schema the checks were made on; empty before the first
+  std::string schema;
   std::string version_view = "msm_schema_version";
   std::optional<metadata::Version> version;  // a version that passed
   // The newest audit log id when the current service / schema were last
@@ -93,7 +95,20 @@ struct Metadata_check {
 // The state USE REST SERVICE / SCHEMA leaves behind, and the checks it was
 // validated with. One instance per session; it outlives the executor.
 struct Executor_state {
+  // The metadata schema chosen with USE REST METADATA SCHEMA (or CONFIGURE
+  // REST METADATA SCHEMA); without it, it is looked up (see
+  // metadata::resolve_metadata_schema()).
+  std::optional<std::string> metadata_schema;
   Metadata_check metadata_check;
+
+  // The metadata schema to start from: the chosen one, the one checked
+  // before, or the default name.
+  std::string assumed_metadata_schema() const {
+    if (metadata_schema) return *metadata_schema;
+    if (!metadata_check.schema.empty()) return metadata_check.schema;
+    return std::string(k_default_metadata_schema);
+  }
+
   std::optional<Id> current_service_id;
   std::string current_service;  // url_context_root
   std::string current_service_host;
@@ -173,6 +188,8 @@ class Ddl_executor {
   void do_execute(const ast::Rest_privilege_statement &s, Statement_result *r);
   void do_execute(const ast::Rest_role_statement &s, Statement_result *r);
   void do_execute(const ast::Use_rest &s, Statement_result *r);
+  void do_execute(const ast::Use_rest_metadata_schema &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_metadata_schemas &s, Statement_result *r);
   void do_execute(const ast::Show_rest_metadata_status &s, Statement_result *r);
   void do_execute(const ast::Show_rest_services &s, Statement_result *r);
   void do_execute(const ast::Show_rest_schemas &s, Statement_result *r);
@@ -256,6 +273,15 @@ class Ddl_executor {
   // current service / schema still exist. A fingerprint equal to the one
   // of the previous run skips the checks it covers.
   void check_metadata();
+
+  // Makes the chosen metadata schema the session's one, or looks it up
+  // (metadata::resolve_metadata_schema(), which throws when several are
+  // visible).
+  void select_metadata_schema();
+  // Makes the named schema the session's metadata schema. Another schema
+  // than the one checked before clears the current service and schema, and
+  // the checks.
+  void switch_metadata_schema(const std::string &name);
 
   // Drops the current service / schema if they no longer exist.
   void validate_state();

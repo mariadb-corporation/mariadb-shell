@@ -26,7 +26,7 @@
 #ifndef MODULES_MRS_CORE_MRS_SCHEMA_DEPLOYMENT_H_
 #define MODULES_MRS_CORE_MRS_SCHEMA_DEPLOYMENT_H_
 
-// Deployment of the MRS metadata schema, the way the MSM (MySQL Schema
+// Deployment of the MRS metadata schema, the way the MSM (MariaDB Schema
 // Management) plugin's deploy_schema() does it.
 //
 // The schema is an MSM project (modules/mrs/db_schema). Where the msm plugin
@@ -49,14 +49,20 @@ namespace metadata {
 
 // The MSM project of the metadata schema.
 inline constexpr std::string_view k_msm_project_name =
-    "mysql_rest_service_metadata.msm.project";
+    "mariadb_rest_service.msm.project";
 // The project's schemaFileName, the prefix of its release scripts.
-inline constexpr std::string_view k_schema_file_name =
-    "mysql_rest_service_metadata";
+inline constexpr std::string_view k_schema_file_name = "mariadb_rest_service";
 
 // The file name of the deployment script of a version, e.g.
-// mysql_rest_service_metadata_deployment_5.0.0.sql.
+// mariadb_rest_service_deployment_5.0.0.sql.
 std::string deployment_script_name(const Version &version);
+
+// The deployment script for a metadata schema name: msm's substitution
+// placeholders /*<msm:schema_prefix>*/ and /*<msm:schema_postfix>*/
+// replaced with the parts of the name (see schema_name_parts()). Throws on
+// an invalid name and on any other /*<msm:...>*/ placeholder.
+std::string apply_schema_substitutions(std::string_view script,
+                                       std::string_view schema_name);
 
 // The versions a deployment script can update from: the X of each
 // msm_update_X_to_Y procedure it creates, sorted.
@@ -103,7 +109,8 @@ class Schema_backup {
 };
 
 // msm's deploy_schema() on a folder of deployment scripts, e.g. the
-// releases/deployment folder of the MSM project. The log and the backup
+// releases/deployment folder of the MSM project. It deploys or updates the
+// session's metadata schema (Db_session::metadata_schema()). The log and the backup
 // are optional; without a backup an update that fails leaves the schema as
 // the script left it, as msm does with backups disabled.
 class Script_deployer : public Schema_deployer {

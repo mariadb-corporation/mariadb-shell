@@ -25,7 +25,7 @@ You perform administrative tasks, like configuration and creating and managing e
 A `root` account or any other account with full privileges on the MariaDB Server also has full privileges on MRS. Manage MRS with a dedicated MariaDB account with minimal privileges instead.
 {% endhint %}
 
-#### Service Administrator (`mysql_rest_service_admin`)
+#### Service Administrator (`mariadb_rest_service_admin`)
 
 A service administrator can:
 
@@ -38,9 +38,9 @@ A service administrator can:
 * Manage and monitor the MariaDB REST Daemon instances.
 * View the MRS audit log.
 
-Service administrators need the `mysql_rest_service_admin` role.
+Service administrators need the `mariadb_rest_service_admin` role.
 
-#### Schema Administrator (`mysql_rest_service_schema_admin`)
+#### Schema Administrator (`mariadb_rest_service_schema_admin`)
 
 The main task of a schema administrator is to create REST schemas, so that the objects of the schema can be published as endpoints of a REST service. Schema administrators need access to both the MRS metadata tables and the user schemas.
 
@@ -52,9 +52,9 @@ A schema administrator can:
 * Monitor the MariaDB REST Daemon instances.
 * View the MRS audit log.
 
-Schema administrators need the `mysql_rest_service_schema_admin` role. In addition, they need to see the objects they create endpoints for, and to hold all relevant privileges on them `WITH GRANT OPTION`, for example `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables that are published as updatable. MariaDB Shell grants these privileges to the `mysql_rest_service_data_provider` role, so that the MariaDB REST Daemon can do what the endpoint configuration requires.
+Schema administrators need the `mariadb_rest_service_schema_admin` role. In addition, they need to see the objects they create endpoints for, and to hold all relevant privileges on them `WITH GRANT OPTION`, for example `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables that are published as updatable. MariaDB Shell grants these privileges to the `mariadb_rest_service_data_provider` role, so that the MariaDB REST Daemon can do what the endpoint configuration requires.
 
-#### Developer (`mysql_rest_service_dev`)
+#### Developer (`mariadb_rest_service_dev`)
 
 Developers have mostly the same privileges as schema administrators, but they can't add REST schemas to a REST service.
 
@@ -66,13 +66,13 @@ A developer can:
 * Monitor the MariaDB REST Daemon instances.
 * View the MRS audit log.
 
-Developers need the `mysql_rest_service_dev` role. In addition, they need to hold all relevant privileges `WITH GRANT OPTION` on the objects they create endpoints for, for example `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables that are published as updatable. MariaDB Shell grants these privileges to the `mysql_rest_service_data_provider` role, so that the MariaDB REST Daemon can do what the endpoint configuration requires.
+Developers need the `mariadb_rest_service_dev` role. In addition, they need to hold all relevant privileges `WITH GRANT OPTION` on the objects they create endpoints for, for example `SELECT`, `INSERT`, `UPDATE`, and `DELETE` on tables that are published as updatable. MariaDB Shell grants these privileges to the `mariadb_rest_service_data_provider` role, so that the MariaDB REST Daemon can do what the endpoint configuration requires.
 
 ### MRS Service Accounts
 
 The MariaDB REST Daemon connects to the MariaDB Server with accounts that have the following two roles. See [MariaDB Accounts for the MariaDB REST Daemon](configuring-mrs.md#mariadb-accounts-for-the-mariadb-rest-daemon).
 
-#### Data Access (`mysql_rest_service_data_provider`)
+#### Data Access (`mariadb_rest_service_data_provider`)
 
 The MariaDB REST Daemon uses this role to run the SQL that serves the HTTP REST requests on behalf of REST users. The role needs privileges on all database objects that are exposed as REST endpoints.
 
@@ -82,7 +82,7 @@ MariaDB Shell manages the privileges of this role as you add database objects as
 MRS checks the access of REST users at the level of the REST endpoints, but all REST requests run through the same MariaDB account, whichever REST user sent them. Take care when you expose views and stored procedures, so that you don't give unintended users access to objects.
 {% endhint %}
 
-#### Metadata Access (`mysql_rest_service_meta_provider`)
+#### Metadata Access (`mariadb_rest_service_meta_provider`)
 
 The MariaDB REST Daemon uses this role to query the MRS metadata for the endpoint configuration, REST user account information, and similar data. The role has access to the internal metadata tables only.
 
@@ -102,9 +102,9 @@ CREATE REST USER "jane"@"MyAuthApp" IDENTIFIED BY "********";
 
 ### MariaDB Internal Authentication
 
-MRS authenticates users against the accounts of the MariaDB Server, with the vendor `MySQL Internal`. Applications send the credentials, user name and password, in clear text as part of a JSON request payload to the MariaDB REST Daemon.
+MRS authenticates users against the accounts of the MariaDB Server, with the vendor `MariaDB Internal`. Applications send the credentials, user name and password, in clear text as part of a JSON request payload to the MariaDB REST Daemon.
 
-Use this method for HTTPS-only REST services, and preferably for applications that are not exposed publicly. The MariaDB accounts need the `mysql_rest_service_user` role, and they access the data with their own privileges.
+Use this method for HTTPS-only REST services, and preferably for applications that are not exposed publicly. The MariaDB accounts need the `mariadb_rest_service_user` role, and they access the data with their own privileges.
 
 ### OAuth2 Authentication
 

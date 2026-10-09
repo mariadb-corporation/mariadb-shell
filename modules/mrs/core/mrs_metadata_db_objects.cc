@@ -57,16 +57,16 @@ SELECT o.id, o.db_schema_id, o.name, o.request_path,
     o.metadata, o.internal,
     al.changed_at,
     se.id AS service_id, sc.name AS schema_name
-FROM `mysql_rest_service_metadata`.`db_object` o
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`db_schema` sc
+FROM `{metadata_schema}`.`db_object` o
+    LEFT OUTER JOIN `{metadata_schema}`.`db_schema` sc
         ON sc.id = o.db_schema_id
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`service` se
+    LEFT OUTER JOIN `{metadata_schema}`.`service` se
         ON se.id = sc.service_id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+    LEFT JOIN `{metadata_schema}`.`url_host` h
         ON se.url_host_id = h.id
     LEFT OUTER JOIN (
         SELECT new_row_id AS id, MAX(changed_at) AS changed_at
-        FROM `mysql_rest_service_metadata`.`audit_log`
+        FROM `{metadata_schema}`.`audit_log`
         WHERE table_name = 'db_object'
         GROUP BY new_row_id) al
     ON al.id = o.id
@@ -269,10 +269,10 @@ SELECT f.id, f.object_id, f.parent_reference_id, f.represents_reference_id,
     r.row_ownership_field_id AS ref_row_ownership_field_id,
     r.reference_mapping, r.unnest, r.options AS ref_options,
     r.sdk_options AS ref_sdk_options, r.comments AS ref_comments
-FROM `mysql_rest_service_metadata`.`object_field` f
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`object_reference` r
+FROM `{metadata_schema}`.`object_field` f
+    LEFT OUTER JOIN `{metadata_schema}`.`object_reference` r
         ON r.id = f.represents_reference_id
-WHERE f.object_id IN (SELECT id FROM `mysql_rest_service_metadata`.`object`
+WHERE f.object_id IN (SELECT id FROM `{metadata_schema}`.`object`
                       WHERE db_object_id = ?)
 ORDER BY f.object_id, f.position, f.id)",
                                      {Value::id(db_object_id)});
@@ -333,13 +333,14 @@ std::vector<std::string> privileges_of(const std::vector<std::string> &crud_oper
   return privileges;
 }
 
-std::string grant_statement(const std::string &privileges,
+std::string grant_statement(const Db_session *session, const std::string &privileges,
                             std::string_view object_type,
                             std::string_view schema_name, std::string_view name) {
   std::string statement = "GRANT " + privileges + " ON ";
   if (is_routine_type(object_type)) statement += std::string(object_type) + " ";
   statement += sql::quote_qualified(schema_name, name);
-  statement += " TO " + sql::quote_identifier(k_data_provider_role);
+  statement +=
+      " TO " + sql::quote_identifier(role_name(session, k_data_provider_role));
   return statement;
 }
 
@@ -379,7 +380,8 @@ std::string explicit_privilege(const json::Value &value) {
 
 // The statements of the "grants" option: one grant document or a list of
 // {"schema", "object", "objectType", "privileges"}.
-std::vector<std::string> explicit_grant_statements(const json::Value &grants) {
+std::vector<std::string> explicit_grant_statements(const Db_session *session,
+                                                   const json::Value &grants) {
   std::vector<json::Value> entries;
   if (grants.is_object()) {
     entries.push_back(grants);
@@ -401,7 +403,7 @@ std::vector<std::string> explicit_grant_statements(const json::Value &grants) {
     }
     if (privileges.empty()) continue;
 
-    statements.push_back(grant_statement(join(privileges, ", "),
+    statements.push_back(grant_statement(session, join(privileges, ", "),
                                          grant.get_string("objectType"),
                                          grant.get_string("schema"),
                                          grant.get_string("object")));
@@ -563,8 +565,8 @@ Id add_db_object(Db_session *session, const Db_object_definition &definition,
   }
 
   const Id id = definition.id ? *definition.id : new_id(session);
-  const auto crud_operations = calculate_crud_operations(
-      definition.object_type, objects, definition.options);
+  const auto crud_operations =
+      calculate_crud_operations(definition.object_type, objects);
 
   sql::Insert insert("db_object");
   insert.set("id", sql::Value::id(id));
@@ -734,18 +736,11 @@ bool object_name_in_use(Db_session *session, const Id &schema_id,
 }
 
 std::vector<std::string> calculate_crud_operations(
-    std::string_view object_type, const std::vector<Object_definition> &objects,
-    const std::optional<std::string> &options) {
+    std::string_view object_type, const std::vector<Object_definition> &objects) {
   if (object_type == "SCRIPT") return {"CREATE", "READ", "UPDATE"};
 
-  if (is_routine_type(object_type)) {
-    // A routine backing a MySQL task is reached through all HTTP methods
-    const auto doc = options ? json::try_parse(*options) : std::nullopt;
-    if (doc && doc->has("mysqlTask") && !doc->get("mysqlTask")->is_null()) {
-      return {"CREATE", "READ", "UPDATE", "DELETE"};
-    }
-    return {"CREATE"};
-  }
+  // A routine is called with POST
+  if (is_routine_type(object_type)) return {"CREATE"};
 
   if (objects.empty()) {
     throw std::runtime_error("No object result definition present.");
@@ -778,7 +773,7 @@ std::vector<std::string> calculate_crud_operations(
 // -- Privileges ---------------------------------------------------------------
 
 std::vector<std::string> grant_statements(
-    std::string_view schema_name, std::string_view name,
+    const Db_session *session, std::string_view schema_name, std::string_view name,
     std::string_view object_type,
     const std::vector<std::string> &crud_operations,
     const std::vector<Object_definition> &objects,
@@ -806,7 +801,7 @@ std::vector<std::string> grant_statements(
   if (automatic) {
     const auto privilege_list = join(privileges, ",");
     statements.push_back(
-        grant_statement(privilege_list, object_type, schema_name, name));
+        grant_statement(session, privilege_list, object_type, schema_name, name));
 
     // The tables of the references are read and changed through the
     // data mapping as well
@@ -816,7 +811,7 @@ std::vector<std::string> grant_statements(
           if (!field.reference) continue;
           if (!field.reference->unnest && !field.enabled) continue;
           statements.push_back(grant_statement(
-              privilege_list, "TABLE", field.reference->referenced_schema(),
+              session, privilege_list, "TABLE", field.reference->referenced_schema(),
               field.reference->referenced_table()));
         }
       }
@@ -825,7 +820,7 @@ std::vector<std::string> grant_statements(
 
   if (doc) {
     if (const auto *grants = doc->get("grants")) {
-      for (auto &statement : explicit_grant_statements(*grants)) {
+      for (auto &statement : explicit_grant_statements(session, *grants)) {
         statements.push_back(std::move(statement));
       }
     }
@@ -834,11 +829,12 @@ std::vector<std::string> grant_statements(
 }
 
 std::vector<std::string> option_grant_statements(
-    const std::optional<std::string> &options) {
+    const Db_session *session, const std::optional<std::string> &options) {
   const auto doc = options ? json::try_parse(*options) : std::nullopt;
   if (!doc) return {};
   const auto *grants = doc->get("grants");
-  return grants ? explicit_grant_statements(*grants) : std::vector<std::string>{};
+  return grants ? explicit_grant_statements(session, *grants)
+                : std::vector<std::string>{};
 }
 
 void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,
@@ -860,7 +856,8 @@ void revoke_all_from_db_object(Db_session *session, std::string_view schema_name
 
   try {
     session->execute("REVOKE " + what + " " + sql::quote_qualified(schema_name, name) +
-                     " FROM " + sql::quote_identifier(k_data_provider_role));
+                     " FROM " +
+                     sql::quote_identifier(role_name(session, k_data_provider_role)));
   } catch (const Db_error &e) {
     // Nothing to revoke is fine: the privileges may have been revoked
     // before, or never granted (ER_NONEXISTING_GRANT,

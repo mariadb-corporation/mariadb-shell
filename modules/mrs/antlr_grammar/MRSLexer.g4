@@ -18,7 +18,7 @@
  * 02110-1301 USA
  */
 
-lexer grammar MRSLexer; // MySQL REST Service (MRS) Grammar Definition
+lexer grammar MRSLexer; // MariaDB REST Service (MRS) Grammar Definition
 
 CREATE_SYMBOL:         C R E A T E;
 OR_SYMBOL:             O R;
@@ -97,7 +97,7 @@ DYNAMIC_SYMBOL:        D Y N A M I C;
 AND_SYMBOL:            A N D;
 SETS_SYMBOL:           S E T S;
 
-// Used for auto merging this grammar and the standard MySQL grammar.
+// Used for auto merging this grammar and the standard SQL grammar.
 /* START OF MERGE PART */
 
 CONFIGURE_SYMBOL:   C O N F I G U R E;
@@ -141,7 +141,7 @@ COLUMNS_SYMBOL:     C O L U M N S;
 DAEMON_SYMBOL:      D A E M O N;
 DAEMONS_SYMBOL:     D A E M O N S;
 MRS_SYMBOL:         M R S;
-MYSQL_SYMBOL:       M Y S Q L;
+MARIADB_SYMBOL:     M A R I A D B;
 USERS_SYMBOL:       U S E R S;
 ALLOW_SYMBOL:       A L L O W;
 REGISTER_SYMBOL:    R E G I S T E R;
@@ -235,7 +235,7 @@ CLOSE_SQUARE_SYMBOL: ']';
 JSON_SEPARATOR_SYMBOL:          '->';
 JSON_UNQUOTED_SEPARATOR_SYMBOL: '->>';
 
-// The MySQL server parser uses custom code in its lexer to allow base alphanum chars (and ._$) as
+// The server parser uses custom code in its lexer to allow base alphanum chars (and ._$) as
 // variable name. For this it handles user variables in 2 different ways and we have to model this
 // to match that behavior.
 // A name directly after '@' (user@app) is lexed as AT_SIGN_SYMBOL and an identifier.
@@ -312,7 +312,7 @@ IDENTIFIER:
 
 NCHAR_TEXT: [nN] SINGLE_QUOTED_TEXT;
 
-// MySQL supports automatic concatenation of multiple single and double quoted strings if they
+// MariaDB supports automatic concatenation of multiple single and double quoted strings if they
 // follow each other as separate tokens. This is reflected in the `textLiteral` parser rule. Here we
 // handle duplication of quotation chars only (which must be replaced by a single char in the target
 // code).
@@ -351,7 +351,7 @@ fragment SIMPLE_IDENTIFIER: (DIGIT | [a-zA-Z_$] | DOT_SYMBOL)+;
 fragment ML_COMMENT_HEAD: '/*';
 fragment ML_COMMENT_END:  '*/';
 
-// As defined in https://dev.mysql.com/doc/refman/8.0/en/identifiers.html.
+// As defined in https://mariadb.com/kb/en/identifier-names/.
 fragment LETTER_WHEN_UNQUOTED: DIGIT | LETTER_WHEN_UNQUOTED_NO_DIGIT;
 
 fragment LETTER_WHEN_UNQUOTED_NO_DIGIT: [a-zA-Z_$\u0080-\uffff];
