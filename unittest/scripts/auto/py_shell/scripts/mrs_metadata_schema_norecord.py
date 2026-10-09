@@ -8,6 +8,8 @@
 # one visible. The test shell has no msm plugin, so the module deploys the
 # bundled MSM project itself.
 
+import json
+
 testutil.deploy_sandbox(__mysql_sandbox_port1, "root")
 shell.connect(__sandbox_uri1)
 
@@ -32,6 +34,8 @@ def roles_like(pattern):
 #@<> Nothing deployed: the default name is the one CONFIGURE would deploy
 EXPECT_EQ("mariadb_rest_service", status_schema())
 EXPECT_EQ([], rest_rows("SHOW REST METADATA SCHEMAS"))
+EXPECT_EQ([["[]"]], rest_rows("SHOW REST METADATA SCHEMAS FORMAT=JSON"))
+EXPECT_EQ(["REST METADATA SCHEMAS"], rest("SHOW REST METADATA SCHEMAS FORMAT=JSON").get_column_names())
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mariadb_rest_service` is not installed. Run CONFIGURE REST METADATA first.")
 
 #@<> CONFIGURE REST METADATA deploys the default schema and roles
@@ -60,6 +64,7 @@ EXPECT_EQ([["/acme", "ENABLED", "NO", ""]], rest_rows("SHOW REST SERVICES"))
 EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM acme_mariadb_rest_service_eu.service"))
 EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.service"))
 EXPECT_EQ([["acme_mariadb_rest_service_eu", "5.0.0", "YES"], ["mariadb_rest_service", "5.0.0", "NO"]], rest_rows("SHOW REST METADATA SCHEMAS"))
+EXPECT_EQ([{"schema_name": "acme_mariadb_rest_service_eu", "version": "5.0.0", "current": True}, {"schema_name": "mariadb_rest_service", "version": "5.0.0", "current": False}], json.loads(rest("SHOW REST METADATA SCHEMAS FORMAT=JSON").fetch_one()[0]))
 
 #@<> A session that chose nothing uses the default name while it is visible
 other = shell.open_session(__sandbox_uri1)
@@ -73,7 +78,29 @@ EXPECT_EQ([["/acme", "ENABLED", "NO", ""]], rest_rows("SHOW REST SERVICES", othe
 EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS", other), "No REST SERVICE specified.")
 EXPECT_THROWS(lambda: rest("USE REST METADATA SCHEMA nope_mariadb_rest_service", other), "Cannot USE the REST metadata schema `nope_mariadb_rest_service`. It is not a REST metadata schema, or not visible to the current account.")
 EXPECT_THROWS(lambda: rest("USE REST METADATA SCHEMA sakila", other), "Invalid REST metadata schema name `sakila`.")
+
+#@<> USE REST METADATA SCHEMA of the schema in use keeps the current service and schema
+rest("CREATE REST SCHEMA /s ON SERVICE /acme FROM mysql", other)
+rest("USE REST SERVICE /acme SCHEMA /s", other)
+EXPECT_EQ("Now using REST METADATA SCHEMA `acme_mariadb_rest_service_eu`.", rest_info("USE REST METADATA SCHEMA acme_mariadb_rest_service_eu", other))
+EXPECT_EQ([["/acme", "ENABLED", "YES", ""]], rest_rows("SHOW REST SERVICES", other))
+EXPECT_EQ([True], [d["is_current"] for d in json.loads(rest("SHOW REST SERVICES FORMAT=JSON", other).fetch_one()[0])])
+EXPECT_EQ("CREATE REST SCHEMA", rest("SHOW CREATE REST SCHEMA", other).get_column_names()[0])
+# Switching to another schema still clears them
+rest("USE REST METADATA SCHEMA mariadb_rest_service", other)
+EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS", other), "No REST SERVICE specified.")
+rest("USE REST METADATA SCHEMA acme_mariadb_rest_service_eu", other)
+EXPECT_EQ([["/acme", "ENABLED", "NO", ""]], rest_rows("SHOW REST SERVICES", other))
+rest("DROP REST SCHEMA /s FROM SERVICE /acme", other)
 other.close()
+
+#@<> A FORMAT=JSON list after USE REST METADATA SCHEMA in the same script
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-e", "USE REST METADATA SCHEMA acme_mariadb_rest_service_eu; SHOW REST SERVICES FORMAT=JSON; SHOW REST METADATA SCHEMAS FORMAT=JSON;"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+EXPECT_STDOUT_CONTAINS("Now using REST METADATA SCHEMA `acme_mariadb_rest_service_eu`.")
+EXPECT_STDOUT_CONTAINS("REST SERVICES")
+EXPECT_STDOUT_CONTAINS('"full_service_path": "/acme"')
+EXPECT_STDOUT_CONTAINS('"schema_name": "acme_mariadb_rest_service_eu"')
+WIPE_OUTPUT()
 
 #@<> Without the default schema, several visible schemas make the statements fail
 rest("CONFIGURE REST METADATA SCHEMA beta_mariadb_rest_service")

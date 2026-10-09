@@ -246,13 +246,15 @@ The `SHOW REST CONTENT SETS` statement lists all REST content sets of the given 
 showRestContentSetsStatement:
     SHOW REST CONTENT SETS (
         (ON | FROM) SERVICE? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestContentSetsStatement ::=`
 
 ![Railroad diagram of showRestContentSetsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestContentSetsStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST content sets; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 
@@ -273,7 +275,7 @@ showRestContentFilesStatement:
     SHOW REST CONTENT FILES (
         ON
         | FROM
-    ) (SERVICE? serviceRequestPath)? CONTENT SET contentSetRequestPath
+    ) (SERVICE? serviceRequestPath)? CONTENT SET contentSetRequestPath formatClause?
 ;
 ```
 
@@ -281,10 +283,40 @@ showRestContentFilesStatement:
 
 ![Railroad diagram of showRestContentFilesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestContentFilesStatement.svg)
 
+With `FORMAT=JSON`, the result is one JSON array of the REST content files, without their content; see [Lists in JSON](rest-metadata.md#lists-in-json).
+
 ### Examples
 
 ```sql
 SHOW REST CONTENT FILES FROM SERVICE /myService CONTENT SET /web;
+```
+
+## SHOW REST SCRIPTS
+
+The `SHOW REST SCRIPTS` statement lists the MRS scripts that [`ALTER REST CONTENT SET ... LOAD SCRIPTS`](#alter-rest-content-set) registered as REST endpoints in the given or the current REST schema. Each MRS module is a REST schema of the type `SCRIPT_MODULE`; `SHOW REST SCHEMAS` lists them.
+
+### Syntax
+
+```antlr
+showRestScriptsStatement:
+    SHOW REST SCRIPTS (
+        (ON | FROM) serviceSchemaSelector
+    )? formatClause?
+;
+```
+
+`showRestScriptsStatement ::=`
+
+![Railroad diagram of showRestScriptsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestScriptsStatement.svg)
+
+The result has the columns `REST DB Object`, the request path of the script, and `enabled`. With `FORMAT=JSON`, the result is one JSON array of the REST objects of the scripts (`object_type` `SCRIPT`), without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
+
+### Examples
+
+The following example lists the MRS scripts of the MRS module `/sales`.
+
+```sql
+SHOW REST SCRIPTS FROM SERVICE /myService SCHEMA /sales;
 ```
 
 ## SHOW CREATE REST CONTENT SET

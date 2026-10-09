@@ -345,7 +345,7 @@ std::string user_options_document(const User &user) {
 namespace {
 
 std::string auth_vendor_select() {
-  return "SELECT id, name, enabled, comments FROM " +
+  return "SELECT id, name, enabled, comments, validation_url FROM " +
          sql::metadata_table("auth_vendor");
 }
 
@@ -355,6 +355,7 @@ Auth_vendor auth_vendor_from_row(const Db_row &row) {
   vendor.name = row["name"].as_string();
   vendor.enabled = row["enabled"].as_bool();
   vendor.comments = row["comments"].as_optional_string();
+  vendor.validation_url = row["validation_url"].as_optional_string();
   return vendor;
 }
 

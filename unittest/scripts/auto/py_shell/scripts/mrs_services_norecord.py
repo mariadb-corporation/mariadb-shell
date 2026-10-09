@@ -331,6 +331,45 @@ EXPECT_THROWS(lambda: rest("USE REST SCHEMA /nope"), "A REST SCHEMA with the req
 EXPECT_EQ("Now using REST SCHEMA `/sakila` on REST SERVICE `/full`.", rest_info("USE REST SERVICE /full SCHEMA /sakila"))
 rest("USE REST SERVICE /myService")
 
+#@<> SHOW REST SERVICES FORMAT=JSON
+res = rest("SHOW REST SERVICES FORMAT=JSON")
+EXPECT_EQ(["REST SERVICES"], res.get_column_names())
+rows = res.fetch_all()
+EXPECT_EQ(1, len(rows))
+docs = json.loads(rows[0][0])
+EXPECT_EQ(list, type(docs))
+traditional = rest_rows("SHOW REST SERVICES")
+EXPECT_EQ(sorted(r[0] for r in traditional), [d["full_service_path"] for d in docs])
+# The documents of SHOW CREATE REST SERVICE without rest_schemas, plus is_current
+for doc in docs:
+    EXPECT_FALSE("rest_schemas" in doc)
+    if "'" in doc["full_service_path"]:
+        continue  # quoted developer names, checked above
+    shown = json.loads(rest("SHOW CREATE REST SERVICE %s FORMAT=JSON" % doc["full_service_path"]).fetch_one()[0])
+    EXPECT_EQ(shown, {k: v for k, v in doc.items() if k != "is_current"})
+EXPECT_EQ(["/myService"], [d["full_service_path"] for d in docs if d["is_current"]])
+EXPECT_EQ([bool], list(set(type(d["is_current"]) for d in docs)))
+EXPECT_EQ(dict, type(docs[0]["options"]))
+# The traditional form is unchanged
+EXPECT_EQ(["REST SERVICE Path", "enabled", "current", "auth_apps"], rest("SHOW REST SERVICES FORMAT=TRADITIONAL").get_column_names())
+EXPECT_EQ(traditional, rest_rows("SHOW REST SERVICES FORMAT=TRADITIONAL"))
+
+#@<> SHOW REST SCHEMAS FORMAT=JSON
+res = rest("SHOW REST SCHEMAS FROM SERVICE /full FORMAT=JSON")
+EXPECT_EQ(["REST SCHEMAS"], res.get_column_names())
+docs = json.loads(res.fetch_one()[0])
+EXPECT_EQ([json.loads(rest("SHOW CREATE REST SCHEMA /sakila ON SERVICE /full FORMAT=JSON").fetch_one()[0])], docs)
+EXPECT_EQ("DATABASE_SCHEMA", docs[0]["schema_type"])
+# The current service is the default
+EXPECT_EQ(["/sakila"], [d["request_path"] for d in json.loads(rest("SHOW REST SCHEMAS FORMAT=JSON").fetch_one()[0])])
+EXPECT_EQ([["/sakila", "PRIVATE"]], rest_rows("SHOW REST SCHEMAS FORMAT=TRADITIONAL"))
+# An empty list is one row holding []
+rest("CREATE REST SERVICE /empty")
+res = rest("SHOW REST SCHEMAS ON /empty FORMAT=JSON")
+EXPECT_EQ(["REST SCHEMAS"], res.get_column_names())
+EXPECT_EQ([["[]"]], [list(r) for r in res.fetch_all()])
+rest("DROP REST SERVICE /empty")
+
 #@<> ALTER REST SCHEMA
 res = rest("ALTER REST SCHEMA /sakila NEW REQUEST PATH /sakila2 ENABLED AUTHENTICATION REQUIRED ITEMS PER PAGE 5 COMMENT 'c' MERGE OPTIONS {\"x\": 1}")
 EXPECT_EQ(1, res.get_affected_items_count())
@@ -412,6 +451,9 @@ for daemon_id in daemon_ids:
     EXPECT_EQ(served, len(rest_rows("SHOW REST SERVICES FOR DAEMON '%s'" % daemon_id.upper())))
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON '%s'" % missing), "Cannot SHOW the REST services. The given REST DAEMON `%s` could not be found." % missing)
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Syntax Error")
+for daemon_id in daemon_ids:
+    docs = json.loads(rest("SHOW REST SERVICES FOR DAEMON '%s' FORMAT=JSON" % daemon_id).fetch_one()[0])
+    EXPECT_EQ(sorted(r[0] for r in rest_rows("SHOW REST SERVICES FOR DAEMON '%s'" % daemon_id)), [d["full_service_path"] for d in docs])
 
 #@<> The status cleanup aggregates the reports of the daemons of each version
 # Reports older than 4 hours are summed up per minute, per daemon; the
@@ -447,6 +489,8 @@ EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS"), "No REST SERVICE specified.")
 rest("DROP REST SERVICE /myService2")
 rest("DROP REST SERVICE /full")
 EXPECT_EQ([], rest_rows("SHOW REST SERVICES"))
+EXPECT_EQ([["[]"]], rest_rows("SHOW REST SERVICES FORMAT=JSON"))
+EXPECT_EQ(["REST SERVICES"], rest("SHOW REST SERVICES FORMAT=JSON").get_column_names())
 
 #@<> Statements through the command line in SQL mode
 testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-e", "CREATE REST SERVICE /cli; SHOW REST SERVICES; DROP REST SERVICE /cli;"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])

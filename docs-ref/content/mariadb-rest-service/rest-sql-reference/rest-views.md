@@ -488,13 +488,15 @@ The `SHOW REST DATA MAPPING VIEWS` statement lists all REST data mapping views o
 showRestViewsStatement:
     SHOW REST DATA? MAPPING? VIEWS (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestViewsStatement ::=`
 
 ![Railroad diagram of showRestViewsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestViewsStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST views, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

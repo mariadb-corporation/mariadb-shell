@@ -1015,7 +1015,112 @@ TEST(Mrs_parser, output_format) {
   expect_parse_error("SHOW CREATE REST SERVICE /s FORMAT=XML",
                      "Unknown REST format name: 'XML'", 1, 35);
   expect_parse_error("SHOW CREATE REST SERVICE /s FORMAT JSON", "unexpected JSON");
-  expect_parse_error("SHOW REST SERVICES FORMAT=JSON", "unexpected FORMAT");
+  expect_parse_error("SHOW REST GRANTS FOR r FORMAT=JSON", "unexpected FORMAT");
+}
+
+TEST(Mrs_parser, list_output_format) {
+  // FORMAT=JSON also closes every list statement
+  EXPECT_EQ(Output_format::traditional,
+            parse_as<Show_rest_services>("SHOW REST SERVICES").format);
+  {
+    const auto &s = parse_as<Show_rest_services>("SHOW REST SERVICES FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_FALSE(s.auth_app.has_value());
+  }
+  {
+    const auto &s = parse_as<Show_rest_services>(
+        "SHOW REST SERVICES FOR AUTH APP 'MRS' FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_EQ("MRS", s.auth_app.value_or(""));
+  }
+  {
+    const auto &s = parse_as<Show_rest_services>(
+        "SHOW REST SERVICES FOR DAEMON '0199A1B2-0000-7000-8000-000000000001' "
+        "FORMAT=TRADITIONAL");
+    EXPECT_EQ(Output_format::traditional, s.format);
+    EXPECT_EQ("0199a1b2-0000-7000-8000-000000000001", s.daemon.value_or(""));
+  }
+  {
+    const auto &s = parse_as<Show_rest_schemas>("SHOW REST SCHEMAS ON SERVICE /s FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_EQ("/s", s.service.value().path);
+  }
+  for (const auto &[sql, kind] :
+       std::vector<std::pair<std::string, Rest_object_kind>>{
+           {"SHOW REST VIEWS FORMAT=JSON", Rest_object_kind::view},
+           {"SHOW REST DATA MAPPING VIEWS ON SERVICE /s SCHEMA /db FORMAT=JSON",
+            Rest_object_kind::view},
+           {"SHOW REST PROCEDURES FROM SCHEMA /db FORMAT=JSON",
+            Rest_object_kind::procedure},
+           {"SHOW REST FUNCTIONS FORMAT=JSON", Rest_object_kind::function},
+           {"SHOW REST SCRIPTS ON SERVICE /s SCHEMA /mod FORMAT=JSON",
+            Rest_object_kind::script}}) {
+    const auto &s = parse_as<Show_rest_objects>(sql);
+    EXPECT_EQ(kind, s.kind) << sql;
+    EXPECT_EQ(Output_format::json, s.format) << sql;
+  }
+  {
+    const auto &s = parse_as<Show_rest_objects>("SHOW REST SCRIPTS");
+    EXPECT_EQ(Rest_object_kind::script, s.kind);
+    EXPECT_EQ(Output_format::traditional, s.format);
+    EXPECT_FALSE(s.on.has_value());
+  }
+  {
+    const auto &s = parse_as<Show_rest_objects>("SHOW REST SCRIPTS FROM SCHEMA /mod");
+    EXPECT_EQ("/mod", s.on.value().schema_path);
+  }
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_content_sets>(
+                "SHOW REST CONTENT SETS FROM /s FORMAT=JSON")
+                .format);
+  {
+    const auto &s = parse_as<Show_rest_content_files>(
+        "SHOW REST CONTENT FILES ON SERVICE /s CONTENT SET /cs FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_EQ("/cs", s.content_set_path);
+  }
+  {
+    const auto &s = parse_as<Show_rest_auth_apps>("SHOW REST AUTH APPS FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_FALSE(s.any_service);
+    EXPECT_FALSE(s.service.has_value());
+  }
+  {
+    const auto &s = parse_as<Show_rest_auth_apps>(
+        "SHOW REST AUTH APPS ON ANY SERVICE FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_TRUE(s.any_service);
+  }
+  {
+    const auto &s = parse_as<Show_rest_auth_apps>("SHOW REST AUTH APPS FROM ANY SERVICE");
+    EXPECT_TRUE(s.any_service);
+    EXPECT_EQ(Output_format::traditional, s.format);
+  }
+  {
+    const auto &s = parse_as<Show_rest_auth_apps>("SHOW REST AUTH APPS FROM SERVICE /s");
+    EXPECT_FALSE(s.any_service);
+    EXPECT_EQ("/s", s.service.value().path);
+  }
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_auth_vendors>("SHOW REST AUTH VENDORS FORMAT=JSON").format);
+  {
+    const auto &s = parse_as<Show_rest_users>(
+        "SHOW REST USERS ON SERVICE /s FOR AUTH APP 'MRS' FORMAT=JSON");
+    EXPECT_EQ(Output_format::json, s.format);
+    EXPECT_EQ("MRS", s.auth_app.value_or(""));
+  }
+  for (const auto *sql :
+       {"SHOW REST ROLES FORMAT=JSON", "SHOW REST ROLES ON ANY SERVICE FORMAT=JSON",
+        "SHOW REST ROLES FOR @'MRS' FORMAT=JSON",
+        "SHOW REST ROLES FROM SERVICE /s FOR mike@'MRS' FORMAT=JSON"}) {
+    EXPECT_EQ(Output_format::json, parse_as<Show_rest_roles>(sql).format) << sql;
+  }
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_metadata_schemas>(
+                "SHOW REST METADATA SCHEMAS FORMAT=JSON")
+                .format);
+  expect_parse_error("SHOW REST SCRIPTS FORMAT=XML", "Unknown REST format name: 'XML'");
+  expect_parse_error("SHOW REST SCRIPTS ON SERVICE /s", "expecting SCHEMA");
 }
 
 TEST(Mrs_parser, show_rest_columns) {

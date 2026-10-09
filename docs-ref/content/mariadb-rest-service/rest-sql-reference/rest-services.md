@@ -457,13 +457,15 @@ showRestServicesStatement:
             AUTH APP authAppName
             | DAEMON daemonId
         )
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestServicesStatement ::=`
 
 ![Railroad diagram of showRestServicesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestServicesStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST services, each with `is_current`; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

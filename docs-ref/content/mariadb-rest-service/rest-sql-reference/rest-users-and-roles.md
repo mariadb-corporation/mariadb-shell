@@ -345,13 +345,15 @@ Passwords are never shown.
 showRestUsersStatement:
     SHOW REST USERS (
         (ON | FROM) SERVICE? serviceRequestPath
-    )? (FOR AUTH APP authAppName)?
+    )? (FOR AUTH APP authAppName)? formatClause?
 ;
 ```
 
 `showRestUsersStatement ::=`
 
 ![Railroad diagram of showRestUsersStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestUsersStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST users, each with its roles; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 
@@ -380,13 +382,15 @@ showRestRolesStatement:
             ANY SERVICE
             | SERVICE? serviceRequestPath
         )
-    )? (FOR userName? AT_SIGN authAppName)?
+    )? (FOR userName? AT_SIGN authAppName)? formatClause?
 ;
 ```
 
 `showRestRolesStatement ::=`
 
 ![Railroad diagram of showRestRolesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestRolesStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST roles, each with its privileges; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

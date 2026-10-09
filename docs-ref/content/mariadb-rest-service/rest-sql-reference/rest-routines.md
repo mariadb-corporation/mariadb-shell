@@ -221,13 +221,15 @@ The `SHOW REST PROCEDURES` statement lists all REST procedures of the given or t
 showRestProceduresStatement:
     SHOW REST PROCEDURES (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestProceduresStatement ::=`
 
 ![Railroad diagram of showRestProceduresStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestProceduresStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST procedures, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 
@@ -247,13 +249,15 @@ The `SHOW REST FUNCTIONS` statement lists all REST functions of the given or the
 showRestFunctionsStatement:
     SHOW REST FUNCTIONS (
         (ON | FROM) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestFunctionsStatement ::=`
 
 ![Railroad diagram of showRestFunctionsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestFunctionsStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST functions, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

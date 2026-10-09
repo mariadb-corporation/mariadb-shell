@@ -571,6 +571,67 @@ EXPECT_EQ(None, routine_privileges("inventory_in_stock", "FUNCTION"))
 EXPECT_EQ([["/filmInStock", "ENABLED"]], rest_rows("SHOW REST PROCEDURES"))
 EXPECT_EQ([["/customerBalance", "ENABLED"]], rest_rows("SHOW REST FUNCTIONS"))
 
+#@<> SHOW REST VIEWS / PROCEDURES / FUNCTIONS FORMAT=JSON
+def json_list(sql, column):
+    res = rest(sql)
+    EXPECT_EQ([column], res.get_column_names())
+    rows = res.fetch_all()
+    EXPECT_EQ(1, len(rows))
+    return json.loads(rows[0][0])
+
+for kind in ["VIEW", "PROCEDURE", "FUNCTION"]:
+    docs = json_list("SHOW REST %sS FORMAT=JSON" % kind, "REST %sS" % kind)
+    # The same rows as the traditional form, ordered by request path
+    EXPECT_EQ([r[0] for r in rest_rows("SHOW REST %sS" % kind)], [d["request_path"] for d in docs])
+    EXPECT_EQ(sorted(d["request_path"] for d in docs), [d["request_path"] for d in docs])
+    for doc in docs:
+        # The SHOW CREATE document without its data mappings
+        EXPECT_FALSE("data_mappings" in doc)
+        full = json.loads(show_create("SHOW CREATE REST %s %s FORMAT=JSON" % (kind, doc["request_path"])))
+        del full["data_mappings"]
+        EXPECT_EQ(full, doc)
+EXPECT_EQ(["/city", "/country"], [d["request_path"] for d in json_list("SHOW REST DATA MAPPING VIEWS FROM SERVICE /svc SCHEMA /sakila FORMAT=JSON", "REST VIEWS")])
+EXPECT_EQ(["TABLE", "TABLE"], [d["object_type"] for d in json_list("SHOW REST VIEWS ON SCHEMA /sakila FORMAT=JSON", "REST VIEWS")])
+EXPECT_EQ(["/filmInStock"], [d["request_path"] for d in json_list("SHOW REST PROCEDURES FORMAT=JSON", "REST PROCEDURES")])
+EXPECT_EQ(["/customerBalance"], [d["request_path"] for d in json_list("SHOW REST FUNCTIONS FORMAT=JSON", "REST FUNCTIONS")])
+# A schema without SCRIPT objects
+EXPECT_EQ([], json_list("SHOW REST SCRIPTS FORMAT=JSON", "REST SCRIPTS"))
+EXPECT_EQ([], rest_rows("SHOW REST SCRIPTS"))
+EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"]], rest_rows("SHOW REST VIEWS FORMAT=TRADITIONAL"))
+
+#@<> sdk_service_data returns one nested JSON document
+service_id = metadata_value("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/svc'")
+doc = json.loads(session.run_sql("CALL mariadb_rest_service.sdk_service_data(?)", [service_id]).fetch_one()[0])
+EXPECT_EQ(dict, type(doc))
+EXPECT_EQ(True, doc["enabled"])
+EXPECT_EQ(False, doc["published"])
+EXPECT_EQ(dict, type(doc["options"]))
+EXPECT_EQ(["/sakila"], [s["request_path"] for s in doc["rest_schemas"]])
+schema_doc = doc["rest_schemas"][0]
+EXPECT_EQ(dict, type(schema_doc))
+EXPECT_EQ(False, schema_doc["requires_auth"])
+# Only the enabled objects (/city is disabled)
+EXPECT_EQ(["/country", "/customerBalance", "/filmInStock"], sorted(o["request_path"] for o in schema_doc["rest_objects"]))
+country = [o for o in schema_doc["rest_objects"] if o["request_path"] == "/country"][0]
+EXPECT_EQ(dict, type(country))
+EXPECT_EQ(bool, type(country["requires_auth"]))
+EXPECT_EQ(bool, type(country["internal"]))
+EXPECT_EQ(dict, type(country["data_mappings"][0]))
+fields = country["data_mappings"][0]["fields"]
+EXPECT_EQ(dict, type(fields[0]))
+for field in fields:
+    for flag in ["enabled", "allow_filtering", "allow_sorting", "no_check", "no_update"]:
+        EXPECT_EQ(bool, type(field[flag]), flag)
+# A field representing a reference carries it as an object with a boolean unnest
+references = [f["data_mapping_reference"] for f in fields if f["data_mapping_reference"] is not None]
+EXPECT_LT(0, len(references))
+EXPECT_EQ(dict, type(references[0]))
+EXPECT_EQ(bool, type(references[0]["unnest"]))
+EXPECT_EQ(dict, type(references[0]["reference_mapping"]))
+# The same flags as SHOW CREATE REST VIEW ... FORMAT=JSON
+shown = json.loads(show_create("SHOW CREATE REST VIEW /country FORMAT=JSON"))["data_mappings"][0]["fields"]
+EXPECT_EQ(sorted((f["id"], f["enabled"], f["allow_filtering"]) for f in shown), sorted((f["id"], f["enabled"], f["allow_filtering"]) for f in fields))
+
 #@<> CLONE REST SERVICE copies the objects with their data mapping
 rest("CLONE REST SERVICE /svc NEW REQUEST PATH /svc2")
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"]], rest_rows("SHOW REST VIEWS FROM SERVICE /svc2 SCHEMA /sakila"))
