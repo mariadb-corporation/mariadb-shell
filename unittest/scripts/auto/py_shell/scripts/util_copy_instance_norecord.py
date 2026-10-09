@@ -1115,6 +1115,58 @@ if instance_supports_libraries:
 EXPECT_JSON_EQ(schemas, snapshot_schemas(tgt_session), "Verifying schemas")
 EXPECT_JSON_EQ(accounts, snapshot_accounts(tgt_session), "Verifying accounts")
 
+#@<> BUG#36561962 - a trigger with the same name on another table is dropped on its own (8)
+# the trigger of the dump's table goes with the table, this one does not
+tgt_session.run_sql("DROP TRIGGER !.tt", [ test_schema ])
+tgt_session.run_sql("CREATE TABLE !.other (c INT)", [ test_schema ])
+tgt_session.run_sql("CREATE TRIGGER !.tt BEFORE INSERT ON other FOR EACH ROW BEGIN END", [ test_schema ])
+
+WIPE_OUTPUT()
+EXPECT_NO_THROWS(lambda: util.copy_instance(__sandbox_uri2, { "dropExistingObjects": True, "includeSchemas": [ test_schema ], "includeUsers": [ test_user ], "showProgress": False }), "Copy should not throw")
+
+EXPECT_STDOUT_CONTAINS(f"NOTE: TGT: Schema `{test_schema}` already contains a trigger named `tt`, dropping...")
+
+triggers = tgt_session.run_sql("SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = 'tt'", [ test_schema ]).fetch_all()
+EXPECT_EQ(1, len(triggers))
+EXPECT_EQ("t", triggers[0][0])
+
+tgt_session.run_sql("DROP TABLE !.other", [ test_schema ])
+
+#@<> BUG#36561962 - a trigger with the same name on another table of the dump goes with that table (8)
+# both tables are dropped, DROP TABLE takes the trigger with it
+src_session.run_sql("CREATE TABLE !.other (c INT)", [ test_schema ])
+tgt_session.run_sql("CREATE TABLE !.other (c INT)", [ test_schema ])
+tgt_session.run_sql("DROP TRIGGER !.tt", [ test_schema ])
+tgt_session.run_sql("CREATE TRIGGER !.tt BEFORE INSERT ON other FOR EACH ROW BEGIN END", [ test_schema ])
+
+WIPE_OUTPUT()
+EXPECT_NO_THROWS(lambda: util.copy_instance(__sandbox_uri2, { "dropExistingObjects": True, "includeSchemas": [ test_schema ], "includeUsers": [ test_user ], "showProgress": False }), "Copy should not throw")
+
+EXPECT_STDOUT_CONTAINS(f"NOTE: TGT: Schema `{test_schema}` already contains a trigger named `tt`, dropping...")
+
+triggers = tgt_session.run_sql("SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = 'tt'", [ test_schema ]).fetch_all()
+EXPECT_EQ(1, len(triggers))
+EXPECT_EQ("t", triggers[0][0])
+
+src_session.run_sql("DROP TABLE !.other", [ test_schema ])
+
+#@<> BUG#36561962 - a trigger on a table with the name of a view in the dump goes with that table (8)
+# the table is dropped in case it stands in the way of the view, and takes the trigger with it
+tgt_session.run_sql("DROP VIEW !.v", [ test_schema ])
+tgt_session.run_sql("CREATE TABLE !.v (c INT)", [ test_schema ])
+tgt_session.run_sql("DROP TRIGGER !.tt", [ test_schema ])
+tgt_session.run_sql("CREATE TRIGGER !.tt BEFORE INSERT ON v FOR EACH ROW BEGIN END", [ test_schema ])
+
+WIPE_OUTPUT()
+EXPECT_NO_THROWS(lambda: util.copy_instance(__sandbox_uri2, { "dropExistingObjects": True, "includeSchemas": [ test_schema ], "includeUsers": [ test_user ], "showProgress": False }), "Copy should not throw")
+
+EXPECT_STDOUT_CONTAINS(f"NOTE: TGT: Schema `{test_schema}` already contains a trigger named `tt`, dropping...")
+
+triggers = tgt_session.run_sql("SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ? AND trigger_name = 'tt'", [ test_schema ]).fetch_all()
+EXPECT_EQ(1, len(triggers))
+EXPECT_EQ("t", triggers[0][0])
+EXPECT_EQ("VIEW", tgt_session.run_sql("SELECT table_type FROM information_schema.tables WHERE table_schema = ? AND table_name = 'v'", [ test_schema ]).fetch_one()[0])
+
 #@<> BUG#36561962 - cleanup (8)
 src_session.run_sql("DROP SCHEMA IF EXISTS !", [ test_schema ])
 src_session.run_sql(f"DROP USER IF EXISTS {test_user}")

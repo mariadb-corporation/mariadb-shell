@@ -729,6 +729,16 @@ Other tables keep the remaining threads busy. The key is the table's data key, s
 the partitions of a partitioned table, which are separate indexes, still load
 concurrently.
 
+**`dropExistingObjects` drops a trigger only with its table.** The drops are
+separate tasks on separate workers, and `DROP TABLE` takes the table's triggers
+with it. A `DROP TRIGGER IF EXISTS` for one of them running at the same time fails
+on MariaDB with error 13, `Can't get stat of './schema/tt.TRN'`: the server finds
+a trigger through its `.TRN` file, which the table drop removes underneath it. So
+the loader drops a trigger on its own only when the table it is on stays. Trigger
+names are per schema, so the existing trigger of a dumped name may be on another
+table than the dump's; before scheduling a schema's drops, the loader asks
+`I_S.TRIGGERS.EVENT_OBJECT_TABLE` which table each existing trigger is on.
+
 ### 7.3 Deadlock retries
 
 `common::is_rolled_back_deadlock()` is "1213, or 4060 on MariaDB", for both retry
