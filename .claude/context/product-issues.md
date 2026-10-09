@@ -16,7 +16,6 @@ The original summary, carried over verbatim:
 - **Product bugs found while writing.** The docs describe the actual behavior:
   - `mariadb+ssh://` works only via Python `shell.connect`. On the CLI and with `\connect` it fails with "Scheme extension [ssh] is not supported" (`hide_password_in_uri()`, shell_options.cc:1348).
   - `ssl-mode=REQUIRED`/`PREFERRED` silently fall back to an unencrypted connection, with no warning.
-  - `util.change_password({"account":…})` uses `ALTER USER … IDENTIFIED BY`, which switches ed25519 accounts to `mysql_native_password`.
   - `\show threads` always fails ('where' parameter unsupported); `\show thread --vars/--raw-locks` also fail on MariaDB.
   - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`.)
   - Load progress file: on MariaDB it is `load-progress.<server_id>.json`, but the help says `<server_uuid>.progress`.
@@ -36,11 +35,11 @@ The full list, by area:
 - **Option-file groups have no priority.** Options from `[client]`, `[mysqlsh]` and `[mariadb-shell]` apply in file order. [connecting/option-files-and-login-paths.md]
 - **`local-infile` is ON by default** on the client side. [connecting/connection-uris-and-options.md]
 - **Passwords read with `--passwords-from-stdin` are never saved** to the credential store. [connecting/credential-store.md]
+- **The shell can't log in to `ed25519` (or `parsec`, `auth_gssapi`) accounts.** For MariaDB it bundles only the `caching_sha2_password` client plugin (`AUTH_CLIENT_PLUGINS` in CMakeLists.txt, `_mdb_core_targets` in cmake/bootstrap_mariadb.cmake), so the login fails with `Plugin client_ed25519 could not be loaded`. Connector/C has the `client_ed25519` target; it isn't built or copied.
 - **The macOS tarball has no `plaintext` credential helper**, although README.md says it exists on all platforms. [connecting/credential-store.md]
 
 ### Utilities
 
-- **`util.change_password({"account": ...})` switches the authentication plugin.** It runs `ALTER USER … IDENTIFIED BY`, which turned an ed25519 account into `mysql_native_password`. Changing your own password uses `SET PASSWORD`, which keeps the plugin. `change_password` has no command-line form. Recheck after a36944d9c. [utilities/password-change-utility.md]
 - **The `where` dump option fails on the command line.** The CLI argument parser reads the dot in a `schema.table` key as a nested key: `String expected, but value is Map`. The pages tell readers to pass dict options from Python. [dump-and-load/dump-utilities.md]
 - **`dryRun` in a copy is inconsistent.** It prints "no locks will be acquired", then reports that it acquired the global read lock. [dump-and-load/copy-utilities.md]
 - **Every dump prints a stray warning:** `Charset id '33' csname 'UTF8' trying to replace existing csname 'utf8mb3'`.

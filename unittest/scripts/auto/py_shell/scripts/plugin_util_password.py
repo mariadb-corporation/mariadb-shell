@@ -65,6 +65,33 @@ EXPECT_OUTPUT_CONTAINS(test_account1)
 testutil.assert_no_prompts()
 
 
+#@<> Changing a password keeps the authentication plugin {__server_is_maria_db}
+shell.connect(__mysql_uri)
+ed25519_installed = session.run_sql(
+    "select count(*) from information_schema.plugins where plugin_name = 'ed25519'").fetch_one()[0] > 0
+ensure_plugin_enabled("ed25519", session, "auth_ed25519")
+recreate_test_user(test_user1, "test", "ed25519")
+
+def get_test_user_auth():
+    return tuple(session.run_sql("select plugin, authentication_string from mysql.user where user = ? and host = ?",
+                                 [test_user1, test_host]).fetch_one())
+
+# The shell bundles no client_ed25519 plugin, so it cannot log in as the
+# account: check the stored plugin and hash instead.
+old_auth = get_test_user_auth()
+EXPECT_NO_THROWS(lambda: util.change_password({"account": test_account1, "newPassword": "other"}))
+new_auth = get_test_user_auth()
+EXPECT_EQ("ed25519", new_auth[0])
+EXPECT_NE(old_auth[1], new_auth[1])
+recreate_test_user(test_user1, "other", "ed25519")
+EXPECT_EQ(new_auth, get_test_user_auth())
+
+session.run_sql("drop user ?@?", [test_user1, test_host])
+if not ed25519_installed:
+    ensure_plugin_disabled("ed25519", session)
+del get_test_user_auth
+
+
 #@<> Change password from other user with insufficient privileges
 shell.connect(__mysql_uri)
 recreate_test_user(test_user1, "test2")

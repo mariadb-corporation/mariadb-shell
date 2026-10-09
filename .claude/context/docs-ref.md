@@ -121,7 +121,7 @@ Applied on the docs branch before the merge (`033274aa5`, `3b0cfe9e1`, `5a743d8d
    - `updateGtidSet` / `skipBinlog` privileges
    - Windows named pipes (`install.ps1` itself was verified on Windows 11 ARM64 under PowerShell 5.1 and 7 on 2026-10-07)
    - `--pym pip install` from PyPI
-   - `change_password` on your own ed25519 account (the build tree lacks `client_ed25519.so`)
+   - `change_password` on your own ed25519 account (the shell bundles no `client_ed25519` plugin, so it cannot log in as one)
 
 ## Gotchas / things not to repeat
 
