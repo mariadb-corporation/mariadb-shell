@@ -126,13 +126,8 @@ class Ddl_executor {
   void set_schema_deployer(metadata::Schema_deployer *deployer) {
     m_schema_deployer = deployer;
   }
-  metadata::Schema_deployer *schema_deployer() const {
-    return m_schema_deployer;
-  }
 
  private:
-  friend struct Executor_access;
-
   // One handler per statement type. A handler fills the result, and throws
   // on failure; the failure message is prefixed by the context set with
   // set_failure_context().
@@ -196,21 +191,13 @@ class Ddl_executor {
     m_failure_context = std::move(context);
   }
 
-  // A service resolved from a statement or from USE REST SERVICE.
-  struct Resolved_service {
-    Id id;
-    std::string url_context_root;
-    std::string url_host_name;
-    std::vector<std::string> developers;
-  };
-
-  // The service named in the statement, or the current one. Throws
+  // The id of the service named in the statement, or of the current one.
+  // Throws
   // "No REST SERVICE specified." when neither is available, or when the
   // named one does not exist.
-  Resolved_service require_service(
-      const std::optional<ast::Service_path> &given);
+  Id require_service(const std::optional<ast::Service_path> &given);
   // Same, but returns nullopt when no service is given nor current.
-  std::optional<Resolved_service> resolve_service(
+  std::optional<Id> resolve_service(
       const std::optional<ast::Service_path> &given);
   // The service of a role statement: `ON ANY SERVICE` yields nullopt.
   std::optional<Id> resolve_role_service(
@@ -220,9 +207,13 @@ class Ddl_executor {
   // neither is available or the named one does not exist.
   metadata::Schema require_schema(
       const std::optional<ast::Schema_selector> &given);
-  // The service part of a schema selector, or the current service.
-  Resolved_service require_service(
+  // The schema of a db object statement: ON [SERVICE] SCHEMA, or the
+  // current one. Throws when neither is available or the named one does
+  // not exist.
+  metadata::Schema db_object_schema(
       const std::optional<ast::Schema_selector> &given);
+  // The service part of a schema selector, or the current service.
+  Id require_service(const std::optional<ast::Schema_selector> &given);
 
   // Paths for messages: the service's full path (developers@host/path)
   // and the schema's path below it, with an optional request path appended.
@@ -232,9 +223,6 @@ class Ddl_executor {
                                std::string_view request_path = {});
   std::string current_service_path() const;
 
-  // The request path a service is created with: the statement's path or
-  // the LOAD REST SERVICE AS override.
-  std::string service_path(const ast::Service_path &path) const;
 
   // Drops the current service / schema if they no longer exist.
   void validate_state();
@@ -247,11 +235,6 @@ class Ddl_executor {
   // Makes the current service the given one.
   void set_current_service(const metadata::Service &service);
   void set_current_schema(const metadata::Schema &schema);
-
-  // Converts a Statement_result's rows from a set of key/value pairs.
-  void set_message_rows(Statement_result *result,
-                        const std::vector<std::pair<std::string, std::string>>
-                            &key_values);
 
   Db_session *m_session;
   Executor_state *m_state;

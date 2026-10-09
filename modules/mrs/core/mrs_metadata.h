@@ -90,6 +90,9 @@ void check_schema(Db_session *session);
 // A new id from the get_sequence_id() function.
 Id new_id(Db_session *session);
 
+// Whether a metadata table has a row with the id.
+bool row_exists(Db_session *session, std::string_view table, const Id &id);
+
 // The ids and names used as "enabled" captions in SHOW output.
 std::string enabled_caption(int enabled);
 
@@ -104,6 +107,13 @@ std::string quote_request_path(std::string_view path);
 // (pretty printed, indented by 4). Returns the empty string for no value.
 std::string format_json_entry(std::string_view key,
                               const std::optional<std::string> &json);
+
+// Appends the SET of the options column of a metadata row to an UPDATE,
+// honouring MERGE OPTIONS: merged into existing options, replaced when
+// there are none yet.
+void set_json_options(Db_session *session, sql::Update *update,
+                      std::string_view table, const Id &id,
+                      const std::string &options, bool merge);
 
 // -- Services -------------------------------------------------------------
 

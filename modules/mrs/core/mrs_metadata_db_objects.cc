@@ -30,54 +30,12 @@
 #include <map>
 #include <stdexcept>
 
+#include "modules/mrs/core/mrs_strings.h"
+
 namespace mrs {
 namespace metadata {
 
 namespace {
-
-std::optional<std::string> optional_text(const Db_value &value) {
-  return value.as_optional_string();
-}
-
-std::optional<Id> optional_id(const Db_value &value) {
-  if (value.is_null()) return std::nullopt;
-  return value.as_string();
-}
-
-std::string to_lower(std::string_view text) {
-  std::string result(text);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return result;
-}
-
-std::string to_upper(std::string_view text) {
-  std::string result(text);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
-  return result;
-}
-
-std::vector<std::string> split(std::string_view text, char separator) {
-  std::vector<std::string> parts;
-  size_t start = 0;
-  while (start <= text.size()) {
-    auto end = text.find(separator, start);
-    if (end == std::string_view::npos) end = text.size();
-    parts.emplace_back(text.substr(start, end - start));
-    start = end + 1;
-  }
-  return parts;
-}
-
-std::string join(const std::vector<std::string> &parts, std::string_view separator) {
-  std::string result;
-  for (const auto &part : parts) {
-    if (!result.empty()) result += separator;
-    result += part;
-  }
-  return result;
-}
 
 bool is_routine_type(std::string_view object_type) {
   return object_type == "PROCEDURE" || object_type == "FUNCTION";
@@ -133,13 +91,13 @@ Db_object db_object_from_row(const Db_row &row) {
   if (!row["items_per_page"].is_null()) {
     o.items_per_page = row["items_per_page"].as_int();
   }
-  o.media_type = optional_text(row["media_type"]);
+  o.media_type = row["media_type"].as_optional_string();
   o.auto_detect_media_type = row["auto_detect_media_type"].as_bool();
-  o.auth_stored_procedure = optional_text(row["auth_stored_procedure"]);
-  o.comments = optional_text(row["comments"]);
-  o.options = optional_text(row["options"]);
-  o.metadata = optional_text(row["metadata"]);
-  o.changed_at = optional_text(row["changed_at"]);
+  o.auth_stored_procedure = row["auth_stored_procedure"].as_optional_string();
+  o.comments = row["comments"].as_optional_string();
+  o.options = row["options"].as_optional_string();
+  o.metadata = row["metadata"].as_optional_string();
+  o.changed_at = row["changed_at"].as_optional_string();
   return o;
 }
 
@@ -251,10 +209,10 @@ Object_field field_from_row(const Db_row &row) {
   Object_field f;
   f.id = row["id"].as_string();
   f.object_id = row["object_id"].as_string();
-  f.parent_reference_id = optional_id(row["parent_reference_id"]);
+  f.parent_reference_id = row["parent_reference_id"].as_optional_string();
   f.name = row["name"].as_string();
   f.position = static_cast<int>(row["position"].as_int());
-  if (const auto db_column = optional_text(row["db_column"])) {
+  if (const auto db_column = row["db_column"].as_optional_string()) {
     f.db_column = json::parse(*db_column);
   }
   f.enabled = row["enabled"].as_bool();
@@ -262,22 +220,22 @@ Object_field field_from_row(const Db_row &row) {
   f.allow_sorting = row["allow_sorting"].as_bool();
   f.no_check = row["no_check"].as_bool();
   f.no_update = row["no_update"].as_bool();
-  f.json_schema = optional_text(row["json_schema"]);
-  f.options = optional_text(row["options"]);
-  f.sdk_options = optional_text(row["sdk_options"]);
-  f.comments = optional_text(row["comments"]);
+  f.json_schema = row["json_schema"].as_optional_string();
+  f.options = row["options"].as_optional_string();
+  f.sdk_options = row["sdk_options"].as_optional_string();
+  f.comments = row["comments"].as_optional_string();
 
-  if (const auto reference_id = optional_id(row["represents_reference_id"])) {
+  if (const auto reference_id = row["represents_reference_id"].as_optional_string()) {
     Object_reference r;
     r.id = *reference_id;
     r.reduce_to_value_of_field_id =
-        optional_id(row["reduce_to_value_of_field_id"]);
-    r.row_ownership_field_id = optional_id(row["ref_row_ownership_field_id"]);
+        row["reduce_to_value_of_field_id"].as_optional_string();
+    r.row_ownership_field_id = row["ref_row_ownership_field_id"].as_optional_string();
     r.reference_mapping = json::parse(row["reference_mapping"].as_string());
     r.unnest = row["unnest"].as_bool();
-    r.options = optional_text(row["ref_options"]);
-    r.sdk_options = optional_text(row["ref_sdk_options"]);
-    r.comments = optional_text(row["ref_comments"]);
+    r.options = row["ref_options"].as_optional_string();
+    r.sdk_options = row["ref_sdk_options"].as_optional_string();
+    r.comments = row["ref_comments"].as_optional_string();
     f.reference = std::move(r);
   }
   return f;
@@ -604,7 +562,9 @@ Id add_db_object(Db_session *session, const Db_object_definition &definition,
   insert.set("internal", definition.internal);
   session->execute(insert.str());
 
-  set_objects(session, id, objects);
+  // A new db_object has no objects to delete yet (see set_objects)
+  check_object_names(session, definition.db_schema_id, objects);
+  for (const auto &object : objects) insert_object(session, id, object);
   return id;
 }
 
@@ -629,21 +589,8 @@ void update_db_object(Db_session *session, const Id &id,
     update.set("crud_operations", join(*changes.crud_operations, ","));
   }
   if (changes.options) {
-    // MERGE OPTIONS merges into existing options and replaces when there
-    // are none yet
-    bool merge = changes.merge_options;
-    if (merge) {
-      const auto row = session->query(
-          "SELECT options IS NULL AS options_is_null FROM " +
-          sql::metadata_table("db_object") + " WHERE id = " + sql::id(id));
-      merge = !row.empty() && !row.first()["options_is_null"].as_bool();
-    }
-    if (merge) {
-      update.set_raw("options = JSON_MERGE_PATCH(options, " +
-                     sql::quote(*changes.options) + ")");
-    } else {
-      update.set("options", *changes.options);
-    }
+    set_json_options(session, &update, "db_object", id, *changes.options,
+                     changes.merge_options);
   }
 
   if (update.empty()) return;
@@ -687,6 +634,14 @@ bool mapping_option(const std::optional<std::string> &options,
   return doc && doc->get_bool(key);
 }
 
+bool has_objects(Db_session *session, const Id &db_object_id) {
+  return !session
+              ->query("SELECT 1 FROM " + sql::metadata_table("object") +
+                      " WHERE db_object_id = " + sql::id(db_object_id) +
+                      " LIMIT 1")
+              .empty();
+}
+
 std::vector<Object_definition> get_objects(Db_session *session,
                                            const Id &db_object_id) {
   const auto result = session->query(
@@ -702,10 +657,10 @@ std::vector<Object_definition> get_objects(Db_session *session,
     o.name = row["name"].as_string();
     o.kind = row["kind"].as_string();
     o.position = static_cast<int>(row["position"].as_int());
-    o.row_ownership_field_id = optional_id(row["row_ownership_field_id"]);
-    o.options = optional_text(row["options"]);
-    o.sdk_options = optional_text(row["sdk_options"]);
-    o.comments = optional_text(row["comments"]);
+    o.row_ownership_field_id = row["row_ownership_field_id"].as_optional_string();
+    o.options = row["options"].as_optional_string();
+    o.sdk_options = row["sdk_options"].as_optional_string();
+    o.comments = row["comments"].as_optional_string();
     o.fields = get_object_fields(session, o.id);
     objects.push_back(std::move(o));
   }
@@ -1039,8 +994,8 @@ std::vector<Routine_parameter> get_routine_parameters(
     p.name = row["name"].as_string();
     p.mode = row["mode"].as_string();
     p.datatype = row["datatype"].as_string();
-    p.charset = optional_text(row["charset"]);
-    p.collation = optional_text(row["collation"]);
+    p.charset = row["charset"].as_optional_string();
+    p.collation = row["collation"].as_optional_string();
     parameters.push_back(std::move(p));
   }
   return parameters;
@@ -1109,10 +1064,10 @@ std::vector<Table_column> get_table_columns_with_references(
     Table_column c;
     c.position = static_cast<int>(row["position"].as_int());
     c.name = row["name"].as_string();
-    if (const auto db_column = optional_text(row["db_column"])) {
+    if (const auto db_column = row["db_column"].as_optional_string()) {
       c.db_column = json::parse(*db_column);
     }
-    if (const auto mapping = optional_text(row["reference_mapping"])) {
+    if (const auto mapping = row["reference_mapping"].as_optional_string()) {
       c.reference_mapping = json::parse(*mapping);
     }
     columns.push_back(std::move(c));
@@ -1135,7 +1090,7 @@ std::string snake_to_camel_case(std::string_view snake) {
   return result;
 }
 
-std::string path_to_pascal_case(std::string_view path) {
+std::string path_to_camel_case(std::string_view path) {
   if (!path.empty() && path[0] == '/') path.remove_prefix(1);
 
   std::string joined(path);
@@ -1157,6 +1112,11 @@ std::string path_to_pascal_case(std::string_view path) {
   for (const char c : camel) {
     if (std::isalnum(static_cast<unsigned char>(c))) result += c;
   }
+  return result;
+}
+
+std::string path_to_pascal_case(std::string_view path) {
+  auto result = path_to_camel_case(path);
   if (!result.empty()) {
     result[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[0])));
   }

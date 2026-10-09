@@ -152,7 +152,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   TYPE_SYMBOL "TYPE" FORMAT_SYMBOL "FORMAT" FORCE_SYMBOL "FORCE"
   UPDATE_SYMBOL "UPDATE" NULL_SYMBOL "NULL" TRUE_SYMBOL "TRUE"
   FALSE_SYMBOL "FALSE" SET_SYMBOL "SET" IDENTIFIED_SYMBOL "IDENTIFIED"
-  BY_SYMBOL "BY" ROLE_SYMBOL "ROLE" TO_SYMBOL "TO" IGNORE_SYMBOL "IGNORE"
+  BY_SYMBOL "BY" ROLE_SYMBOL "ROLE" TO_SYMBOL "TO"
   CLONE_SYMBOL "CLONE" FILE_SYMBOL "FILE" FILES_SYMBOL "FILES"
   BINARY_SYMBOL "BINARY" DATA_SYMBOL "DATA" LOAD_SYMBOL "LOAD"
   GRANT_SYMBOL "GRANT" READ_SYMBOL "READ" DELETE_SYMBOL "DELETE"
@@ -980,7 +980,7 @@ alter_rest_content_set_options:
   | alter_rest_content_set_options LOAD_SYMBOL SCRIPTS_SYMBOL
     { $$ = std::move($1); $$.load_scripts = true; }
   | alter_rest_content_set_options LOAD_SYMBOL TYPESCRIPT_SYMBOL SCRIPTS_SYMBOL
-    { $$ = std::move($1); $$.load_scripts = true; $$.typescript = true; }
+    { $$ = std::move($1); $$.load_scripts = true; }
   ;
 
 /* - CREATE REST CONTENT FILE ---------------------------------------------- */
@@ -1883,7 +1883,7 @@ show_create_rest_user_statement:
     }
   ;
 
-/* DUMP and LOAD statements ================================================ */
+/* Endpoint selection ======================================================= */
 
 /* DATABASE (AND STATIC (AND DYNAMIC)?)? | ALL */
 endpoint_selection:
@@ -2181,7 +2181,6 @@ graphql_allowed_keyword:
   | BY_SYMBOL { $$ = keyword_text(driver, @1); }
   | ROLE_SYMBOL { $$ = keyword_text(driver, @1); }
   | TO_SYMBOL { $$ = keyword_text(driver, @1); }
-  | IGNORE_SYMBOL { $$ = keyword_text(driver, @1); }
   | CLONE_SYMBOL { $$ = keyword_text(driver, @1); }
   | FILE_SYMBOL { $$ = keyword_text(driver, @1); }
   | BINARY_SYMBOL { $$ = keyword_text(driver, @1); }

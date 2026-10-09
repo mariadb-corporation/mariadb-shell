@@ -73,7 +73,7 @@ EXPECT_EQ([["/assets", "DISABLED"], ["/static", "ENABLED"]], rest_rows("SHOW RES
 
 #@<> Files are not read from the client: no FROM, no IGNORE list, and LOAD SCRIPTS is an ALTER
 EXPECT_THROWS(lambda: rest("CREATE REST CONTENT SET /dir FROM '/tmp'"), "Syntax error, unexpected FROM")
-EXPECT_THROWS(lambda: rest("CREATE REST CONTENT SET /dir IGNORE '*.txt'"), "Syntax error, unexpected IGNORE")
+EXPECT_THROWS(lambda: rest("CREATE REST CONTENT SET /dir IGNORE '*.txt'"), "Syntax error, unexpected identifier")
 EXPECT_THROWS(lambda: rest("CREATE REST CONTENT SET /dir LOAD SCRIPTS"), "Syntax error, unexpected LOAD")
 EXPECT_THROWS(lambda: rest("CREATE REST CONTENT FILE /x ON CONTENT SET /static FROM '/tmp/x'"), "Syntax error, unexpected FROM")
 

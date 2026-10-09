@@ -28,23 +28,102 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "modules/mrs/core/mrs_json.h"
 
 #include "modules/mrs/core/mrs_metadata.h"
 #include "modules/mrs/core/mrs_metadata_db_objects.h"
 #include "modules/mrs/core/mrs_sql.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
 namespace scripts {
 
+// Everything of the analysis is local to this file; register_scripts()
+// below is the API.
 namespace {
 
 constexpr std::string_view k_typescript = "TypeScript";
 
-bool ends_with(std::string_view s, std::string_view suffix) {
-  return s.size() >= suffix.size() &&
-         s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+struct Code_file {
+  std::string path;  // the request path of the file in its content set
+  std::string code;
+  std::string last_modification;
+};
+
+using Properties = std::vector<std::pair<std::string, json::Value>>;
+
+struct Position {
+  int line_start = 0;
+  int line_end = 0;
+  size_t character_start = 0;
+  size_t character_end = 0;
+};
+
+struct Parameter {
+  std::string name;
+  std::string type;
+  bool optional = false;
+  bool is_array = false;
+  std::optional<json::Value> default_value;
+};
+
+struct Script {
+  std::string function_name;
+  Position position;
+  std::vector<Parameter> parameters;
+  std::string return_type;
+  bool returns_array = false;
+  Properties properties;
+};
+
+struct Module {
+  const Code_file *file = nullptr;
+  std::string class_name;
+  std::string schema_type;  // SCRIPT_MODULE or DATABASE_SCHEMA
+  Position position;
+  Properties properties;
+  std::vector<Script> scripts;
+  std::vector<Script> triggers;
+};
+
+struct Interface_property {
+  std::string name;
+  std::string type;
+  bool optional = false;
+  bool read_only = false;
+  std::optional<std::string> index_signature_type;
+};
+
+struct Interface {
+  const Code_file *file = nullptr;
+  std::string name;
+  std::optional<std::string> extends;
+  Position position;
+  std::vector<Interface_property> properties;
+};
+
+struct Definitions {
+  std::vector<Module> modules;
+  std::vector<Interface> interfaces;  // the ones the scripts use
+  std::vector<std::string> errors;
+
+  // The script definitions in the layout of the Python plugin's
+  // get_folder_mrs_script_definitions(), stored in the content set options.
+  json::Value to_json() const;
+};
+
+// Removes a trailing [] from a type; true if there was one.
+bool strip_array_suffix(std::string *type) {
+  if (!ends_with(*type, "[]")) return false;
+  type->resize(type->size() - 2);
+  return true;
 }
 
 bool is_space(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; }
@@ -60,18 +139,16 @@ std::string trim(std::string_view s) {
   return std::string(s.substr(b, e - b));
 }
 
-std::string lower(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return s;
-}
-
 // The parser works on the blanked code and takes values from the original
 // code at the same positions.
 class Reader {
  public:
   Reader(std::string_view code, std::string_view blanked)
-      : m_code(code), m_blanked(blanked) {}
+      : m_code(code), m_blanked(blanked) {
+    for (size_t i = 0; i < m_code.size(); ++i) {
+      if (m_code[i] == '\n') m_line_ends.push_back(i);
+    }
+  }
 
   std::string_view code() const { return m_code; }
   std::string_view blanked() const { return m_blanked; }
@@ -110,7 +187,8 @@ class Reader {
   }
 
   int line_of(size_t pos) const {
-    return static_cast<int>(std::count(m_code.begin(), m_code.begin() + pos, '\n')) + 1;
+    const auto before = std::lower_bound(m_line_ends.begin(), m_line_ends.end(), pos);
+    return static_cast<int>(before - m_line_ends.begin()) + 1;
   }
 
   Position position(size_t start, size_t end) const {
@@ -120,7 +198,16 @@ class Reader {
  private:
   std::string_view m_code;
   std::string_view m_blanked;
+  std::vector<size_t> m_line_ends;  // the positions of the line breaks
 };
+
+bool opens_bracket(char c) { return c == '(' || c == '{' || c == '[' || c == '<'; }
+
+// A > after = is part of an arrow (=>), not a closing bracket.
+bool closes_bracket(std::string_view text, size_t i) {
+  const char c = text[i];
+  return c == ')' || c == '}' || c == ']' || (c == '>' && i > 0 && text[i - 1] != '=');
+}
 
 // Splits [start, end) at the separators that are not inside brackets.
 std::vector<std::pair<size_t, size_t>> split_top_level(const Reader &r, size_t start,
@@ -131,13 +218,11 @@ std::vector<std::pair<size_t, size_t>> split_top_level(const Reader &r, size_t s
   size_t part_start = start;
   const auto text = r.blanked();
   for (size_t i = start; i < end; ++i) {
-    const char c = text[i];
-    if (c == '(' || c == '{' || c == '[' || c == '<') {
+    if (opens_bracket(text[i])) {
       ++depth;
-    } else if ((c == ')' || c == '}' || c == ']' || (c == '>' && i > 0 && text[i - 1] != '=')) &&
-               depth > 0) {
+    } else if (closes_bracket(text, i) && depth > 0) {
       --depth;
-    } else if (depth == 0 && separators.find(c) != std::string_view::npos) {
+    } else if (depth == 0 && separators.find(text[i]) != std::string_view::npos) {
       parts.emplace_back(part_start, i);
       part_start = i + 1;
     }
@@ -151,12 +236,10 @@ size_t find_top_level(const Reader &r, size_t start, size_t end, char c) {
   int depth = 0;
   const auto text = r.blanked();
   for (size_t i = start; i < end; ++i) {
-    const char ch = text[i];
-    if (depth == 0 && ch == c) return i;
-    if (ch == '(' || ch == '{' || ch == '[' || ch == '<') {
+    if (depth == 0 && text[i] == c) return i;
+    if (opens_bracket(text[i])) {
       ++depth;
-    } else if ((ch == ')' || ch == '}' || ch == ']' || (ch == '>' && text[i - 1] != '=')) &&
-               depth > 0) {
+    } else if (closes_bracket(text, i) && depth > 0) {
       --depth;
     }
   }
@@ -239,8 +322,8 @@ json::Value decorator_value(const std::string &text) {
     if (auto doc = json::try_parse(literal_as_json(text))) return std::move(*doc);
     return json::Value(text);
   }
-  if (lower(text) == "true") return json::Value(true);
-  if (lower(text) == "false") return json::Value(false);
+  if (to_lower(text) == "true") return json::Value(true);
+  if (to_lower(text) == "false") return json::Value(false);
   if (const auto v = to_number(text)) return number_value(*v);
   return json::Value(text);
 }
@@ -299,10 +382,7 @@ std::vector<Parameter> function_parameters(const Reader &r, size_t start, size_t
       p.name = trim(p.name.substr(0, p.name.size() - 1));
     }
     if (p.type.empty()) p.type = "unknown";
-    if (ends_with(p.type, "[]")) {
-      p.type = p.type.substr(0, p.type.size() - 2);
-      p.is_array = true;
-    }
+    p.is_array = strip_array_suffix(&p.type);
     params.push_back(std::move(p));
   }
   return params;
@@ -382,10 +462,7 @@ std::optional<Script> script_at(const Reader &r, const Decorator &d, size_t star
   if (body_end == std::string_view::npos) return std::nullopt;
 
   s.return_type = without_promise(return_type);
-  if (ends_with(s.return_type, "[]")) {
-    s.return_type = s.return_type.substr(0, s.return_type.size() - 2);
-    s.returns_array = true;
-  }
+  s.returns_array = strip_array_suffix(&s.return_type);
   s.properties = decorator_properties(r, d.props_start, d.props_end);
   s.position = r.position(start, body_end);
   return s;
@@ -573,14 +650,17 @@ json::Value script_json(const Script &s) {
   return doc;
 }
 
-}  // namespace
-
+// TypeScript files that can hold MRS scripts: .ts and .mts, but no test
+// (.spec.ts) or declaration (.d.ts) files.
 bool is_script_file(std::string_view path) {
   return (ends_with(path, ".ts") || ends_with(path, ".mts")) &&
          !ends_with(path, ".spec.ts") && !ends_with(path, ".spec.mts") &&
          !ends_with(path, ".d.ts");
 }
 
+// The code with the contents of comments and string literals replaced by
+// spaces (line breaks are kept), so brackets and keywords in them do not
+// count. Positions stay the same.
 std::string blank_comments_and_strings(std::string_view code) {
   std::string out(code);
   const auto blank = [&out](size_t from, size_t to) {
@@ -616,15 +696,8 @@ std::string blank_comments_and_strings(std::string_view code) {
   return out;
 }
 
-bool defines_mrs_module(std::string_view code) {
-  const auto blanked = blank_comments_and_strings(code);
-  const Reader r(code, blanked);
-  std::vector<Module> modules;
-  const Code_file file{"", std::string(code), ""};
-  find_modules(file, r, &modules);
-  return !modules.empty();
-}
-
+// The modules, scripts and used interfaces of the given TypeScript files.
+// The files have to outlive the result.
 Definitions analyze_typescript(const std::vector<Code_file> &files) {
   Definitions defs;
   std::vector<Interface> all_interfaces;
@@ -655,7 +728,7 @@ Definitions analyze_typescript(const std::vector<Code_file> &files) {
     const auto properties = defs.interfaces[i].properties;
     for (const auto &p : properties) {
       auto type = p.type;
-      if (ends_with(type, "[]")) type = type.substr(0, type.size() - 2);
+      strip_array_suffix(&type);
       if (!use_type(type, all_interfaces, &defs.interfaces)) {
         defs.errors.push_back("Unknown datatype `" + type +
                               "` used for interface property `" + p.name + "`.");
@@ -716,6 +789,7 @@ json::Value Definitions::to_json() const {
   return doc;
 }
 
+}  // namespace
 }  // namespace scripts
 
 namespace metadata {
@@ -723,39 +797,17 @@ namespace metadata {
 namespace {
 
 using scripts::Code_file;
+using scripts::is_simple_type;
+using scripts::k_typescript;
 using scripts::Properties;
 
-std::string lower_copy(std::string s) {
-  std::transform(s.begin(), s.end(), s.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return s;
-}
-
-bool ends_with_text(const std::string &s, std::string_view suffix) {
-  return s.size() >= suffix.size() &&
-         s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
-bool is_simple_type_name(const std::string &type) {
-  return type == "boolean" || type == "number" || type == "string";
-}
-
-json::Value file_info(const Code_file &file) {
-  json::Value doc = json::Value::object();
-  doc.set("full_file_name", file.path);
-  doc.set("relative_file_name", file.path);
-  doc.set("file_name", file.path.substr(file.path.rfind('/') + 1));
-  doc.set("last_modification", file.last_modification);
-  return doc;
-}
-
 bool is_build_folder(const std::string &dir) {
-  const auto d = lower_copy(dir);
+  const auto d = to_lower(dir);
   return d == "build" || d == "output" || d == "out" || d == "dist";
 }
 
 bool is_static_folder(const std::string &dir) {
-  const auto d = lower_copy(dir);
+  const auto d = to_lower(dir);
   return d == "static" || d == "assets" || d == "media" || d == "web" ||
          d == "js" || d == "css" || d == "images";
 }
@@ -795,24 +847,8 @@ std::optional<std::string> options_with_grants(const Properties &props) {
   return doc.dump();
 }
 
-// /my_module/sub -> myModuleSub (the first part keeps its case)
-std::string path_to_camel_case(std::string path) {
-  if (!path.empty() && path[0] == '/') path.erase(0, 1);
-  std::string out;
-  bool upper = false;
-  for (const char c : path) {
-    if (c == '/' || c == '_') {
-      upper = !out.empty();
-    } else {
-      out += upper ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
-      upper = false;
-    }
-  }
-  return out;
-}
-
 std::string database_type(const std::string &type) {
-  const auto t = lower_copy(type);
+  const auto t = to_lower(type);
   if (t == "string") return "text";
   if (t == "number") return "decimal";
   if (t == "boolean") return "bit(1)";
@@ -826,7 +862,7 @@ json::Value column(const std::string &name, const std::string &type, bool not_nu
   doc.set("not_null", not_null);
   doc.set("datatype", database_type(type));
   doc.set("is_array", is_array);
-  if (!is_simple_type_name(type)) doc.set("interface", type);
+  if (!is_simple_type(type)) doc.set("interface", type);
   return doc;
 }
 
@@ -845,7 +881,7 @@ Object_field field(Db_session *session, const Id &object_id, const std::string &
 
 json::Value class_sdk_options(const std::string &class_name) {
   json::Value language = json::Value::object();
-  language.set("language", "TypeScript");
+  language.set("language", std::string(k_typescript));
   language.set("class_name", class_name);
   json::Value doc = json::Value::object();
   doc.set("language_options", json::Value(json::Value::Array{std::move(language)}));
@@ -858,24 +894,17 @@ json::Value class_sdk_options(const std::string &class_name) {
 void add_interface_fields(Db_session *session, const scripts::Definitions &defs,
                           const std::string &name, const Id &object_id,
                           std::vector<Object_field> *fields, int depth = 0) {
-  const scripts::Interface *f = nullptr;
-  for (const auto &i : defs.interfaces) {
-    if (i.name == name) f = &i;
-  }
+  const auto *f = scripts::find_interface(defs.interfaces, name);
   if (!f || depth > 16) return;
   // The interface's own properties first, then the inherited ones
   for (const auto &p : f->properties) {
     auto type = p.type;
-    bool is_array = false;
-    if (type.size() > 2 && type.compare(type.size() - 2, 2, "[]") == 0) {
-      type = type.substr(0, type.size() - 2);
-      is_array = true;
-    }
+    const bool is_array = scripts::strip_array_suffix(&type);
     auto db_column = column(p.name, type, !p.optional, is_array);
     db_column.set("read_only", p.read_only);
     auto object_field = field(session, object_id, p.name,
                               static_cast<int>(fields->size()), std::move(db_column));
-    if (!is_simple_type_name(type)) {
+    if (!is_simple_type(type)) {
       Object_reference ref;
       ref.id = new_id(session);
       json::Value mapping = json::Value::object();
@@ -900,49 +929,37 @@ void add_interface_fields(Db_session *session, const scripts::Definitions &defs,
 
 }  // namespace
 
-Registered_scripts register_scripts(Db_session *session,
-                                    const Content_set &content_set,
-                                    const std::optional<std::string> &language) {
-  if (language && *language != "TypeScript") {
-    throw std::runtime_error("The MRS scripting language " + *language +
-                             " is not supported.");
-  }
+Registered_scripts register_scripts(Db_session *session, const Content_set &content_set) {
   const auto service = get_service(session, content_set.service_id);
   if (!service) throw std::runtime_error("The content set's service was not found.");
 
-  // The script files, the build output and the folders served as is
+  // The script files, the build output and the folders served as is. Only
+  // the script files' content is read.
   std::vector<Code_file> code_files;
   std::optional<std::string> build_folder;
   std::set<std::string> static_folders;
-  for (const auto &file : get_content_files(session, content_set.id, true)) {
-    std::vector<std::string> parts;
-    for (size_t start = 1, end; start <= file.request_path.size(); start = end + 1) {
-      end = file.request_path.find('/', start);
-      if (end == std::string::npos) end = file.request_path.size();
-      parts.push_back(file.request_path.substr(start, end - start));
-    }
+  for (const auto &file : get_content_files(session, content_set.id, false)) {
+    const auto &path = file.request_path;
+    // The first two folders of the path count
+    const auto parts = split(path, '/', true);
     for (size_t k = 0; k + 1 < parts.size() && k < 2; ++k) {
       if (is_build_folder(parts[k])) build_folder = parts[k];
       if (is_static_folder(parts[k])) static_folders.insert(parts[k]);
     }
-    if (!scripts::is_script_file(file.request_path)) continue;
-    const auto &content = file.content.value_or("");
+    if (!scripts::is_script_file(path)) continue;
+    auto content = get_content_file(session, file.id, true)->content.value_or("");
     if (!is_text(content) && !content.empty()) {
-      throw std::runtime_error("The content of file " + file.request_path +
-                               " is binary data, not text.");
+      throw std::runtime_error("The content of file " + path + " is binary data, not text.");
     }
     std::string last_modification;
     if (const auto options = file.options ? json::try_parse(*file.options) : std::nullopt) {
       last_modification = options->get_string("last_modification");
     }
-    code_files.push_back({file.request_path, content, last_modification});
+    code_files.push_back({path, std::move(content), std::move(last_modification)});
   }
 
-  std::vector<Code_file> module_files;
-  for (const auto &file : code_files) {
-    if (scripts::defines_mrs_module(file.code)) module_files.push_back(file);
-  }
-  if (module_files.empty()) {
+  const auto defs = scripts::analyze_typescript(code_files);
+  if (defs.modules.empty()) {
     throw std::runtime_error("The content set holds no MRS scripts: no TypeScript "
                              "file defines an @Mrs.module class.");
   }
@@ -951,8 +968,6 @@ Registered_scripts register_scripts(Db_session *session,
         "No build folder (build, dist, out or output) was found for this "
         "TypeScript project. Please upload the build output as well.");
   }
-
-  const auto defs = scripts::analyze_typescript(code_files);
   if (!defs.errors.empty()) {
     std::string message = "The MRS scripts have errors:";
     for (const auto &e : defs.errors) message += "\n" + e;
@@ -963,6 +978,7 @@ Registered_scripts register_scripts(Db_session *session,
   delete_registered_scripts(session, content_set);
 
   Registered_scripts registered;
+  registered.modules = defs.modules.size();
   json::Value::Array module_files_doc;
   for (const auto &m : defs.modules) {
     const auto &props = m.properties;
@@ -976,15 +992,15 @@ Registered_scripts register_scripts(Db_session *session,
     } else {
       const auto slash = m.file->path.rfind('/');
       auto name = m.file->path.substr(slash + 1);
-      if (ends_with_text(name, ".mts")) {
+      if (ends_with(name, ".mts")) {
         name = name.substr(0, name.size() - 4) + ".mjs";
-      } else if (ends_with_text(name, ".ts")) {
+      } else if (ends_with(name, ".ts")) {
         name = name.substr(0, name.size() - 3) + ".js";
       }
       file_to_load = "/" + *build_folder + "/" + name;
     }
     json::Value module_file = json::Value::object();
-    module_file.set("file_info", file_info(*m.file));
+    module_file.set("file_info", scripts::file_info_json(*m.file));
     module_file.set("file_to_load", file_to_load);
     module_file.set("class_name", m.class_name);
     module_files_doc.push_back(std::move(module_file));
@@ -1010,7 +1026,6 @@ Registered_scripts register_scripts(Db_session *session,
       definition.schema_type = "SCRIPT_MODULE";
       schema = get_schema(session, add_schema(session, definition));
     }
-    ++registered.modules;
 
     for (const auto &s : m.scripts) {
       const auto &fprops = s.properties;
@@ -1039,7 +1054,7 @@ Registered_scripts register_scripts(Db_session *session,
       result.name = path_to_pascal_case(full_path) + "Result";
       result.kind = "RESULT";
       result.position = 1;
-      if (is_simple_type_name(s.return_type)) {
+      if (is_simple_type(s.return_type)) {
         result.fields.push_back(field(session, result.id, "result", 0,
                                       column("result", s.return_type, true,
                                              s.returns_array)));
@@ -1072,7 +1087,7 @@ Registered_scripts register_scripts(Db_session *session,
                            .set("db_object_id", sql::Value::id(db_object_id))
                            .set("kind", "Script")
                            .set("priority", 0)
-                           .set("language", "TypeScript")
+                           .set("language", k_typescript)
                            .set("name", s.function_name)
                            .set("class_name", m.class_name)
                            .set("options", link_options.dump())
@@ -1092,9 +1107,9 @@ Registered_scripts register_scripts(Db_session *session,
       options = std::move(*doc);
     }
   }
-  options.set("contains_mrs_scripts", true);
-  options.set("mrs_scripting_language", "TypeScript");
-  options.set("script_module_files", json::Value(std::move(module_files_doc)));
+  options.set(k_contains_mrs_scripts, true);
+  options.set(k_mrs_scripting_language, std::string(k_typescript));
+  options.set(k_script_module_files, json::Value(std::move(module_files_doc)));
   auto definitions = defs.to_json();
   definitions.set("build_folder", *build_folder);
   if (!static_folders.empty()) {
@@ -1102,7 +1117,7 @@ Registered_scripts register_scripts(Db_session *session,
     for (const auto &f : static_folders) folders.emplace_back(f);
     definitions.set("static_content_folders", json::Value(std::move(folders)));
   }
-  options.set("script_definitions", std::move(definitions));
+  options.set(k_script_definitions, std::move(definitions));
   Content_set_changes changes;
   changes.content_type = "SCRIPTS";
   changes.options = options.dump();
@@ -1115,9 +1130,10 @@ Registered_scripts register_scripts(Db_session *session,
     served += (served.empty() ? "" : " OR ") + std::string("request_path LIKE ") +
               sql::quote("/" + f + "/%");
   }
-  session->execute("UPDATE " + sql::metadata_table("content_file") +
-                   " SET enabled = 2 WHERE content_set_id = " + sql::id(content_set.id) +
-                   (served.empty() ? "" : " AND NOT (" + served + ")"));
+  sql::Update make_private("content_file");
+  make_private.set("enabled", 2).where("content_set_id = " + sql::id(content_set.id));
+  if (!served.empty()) make_private.where("NOT (" + served + ")");
+  session->execute(make_private.str());
   return registered;
 }
 

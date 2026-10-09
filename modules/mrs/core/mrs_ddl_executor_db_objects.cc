@@ -37,6 +37,7 @@
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_db_objects.h"
 #include "modules/mrs/core/mrs_metadata_json.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
 
@@ -47,12 +48,6 @@ namespace {
 using metadata::Object_definition;
 using metadata::Object_field;
 using metadata::Object_reference;
-
-std::string to_lower(std::string text) {
-  std::transform(text.begin(), text.end(), text.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return text;
-}
 
 std::string kind_caption(Db_object_kind kind) {
   switch (kind) {
@@ -627,6 +622,13 @@ void regrant(Db_session *session, const metadata::Db_object &db_object,
 
 }  // namespace
 
+metadata::Schema Ddl_executor::db_object_schema(
+    const std::optional<Schema_selector> &given) {
+  if (!given) return current_schema(m_session, *m_state);
+  return schema_of_service(m_session, require_service(given), *given,
+                           full_schema_path(given));
+}
+
 // -- CREATE -------------------------------------------------------------------
 
 void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
@@ -635,9 +637,7 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
   const auto object_type = metadata::database_object_type(m_session, schema_name, name);
@@ -686,9 +686,7 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
   if (const auto existing = existing_db_object(m_session, s.flags, schema.id, s.path)) {
@@ -737,9 +735,7 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to update the REST VIEW `" + full_path + "`.");
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
   const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
   if (!db_object || !is_of_kind(*db_object, Db_object_kind::view)) {
     throw std::runtime_error("The given REST VIEW `" + full_path +
@@ -802,9 +798,7 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to update the REST " + type + " `" + full_path + "`.");
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
   const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
   if (!db_object || !is_of_kind(*db_object, kind)) {
     throw std::runtime_error("The given REST " + type + " `" + full_path +
@@ -862,9 +856,7 @@ void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
-  const auto schema = s.from ? schema_of_service(m_session, require_service(s.from).id,
-                                                 *s.from, full_schema_path(s.from))
-                             : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.from);
   auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
   if (db_object && !is_of_kind(*db_object, s.kind)) db_object.reset();
   if (!db_object && !s.if_exists) {
@@ -885,9 +877,7 @@ void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r)
 void Ddl_executor::do_execute(const Show_rest_db_objects &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST db objects.");
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
 
   r->columns = {"REST DB Object", "enabled"};
   for (const auto &db_object :
@@ -904,15 +894,13 @@ void Ddl_executor::do_execute(const Show_create_rest_db_object &s,
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to get the REST " + caption + " `" + full_path + "`.");
 
-  const auto schema = s.on ? schema_of_service(m_session, require_service(s.on).id,
-                                               *s.on, full_schema_path(s.on))
-                           : current_schema(m_session, *m_state);
+  const auto schema = db_object_schema(s.on);
   const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
   if (!db_object) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +
                              "` could not be found.");
   }
-  if (metadata::get_objects(m_session, db_object->id).empty()) {
+  if (!metadata::has_objects(m_session, db_object->id)) {
     throw std::runtime_error("The given REST object `" + full_path +
                              "` does not have a result definition defined.");
   }

@@ -1136,7 +1136,6 @@ graphQlAllowedKeyword:
     | BY_SYMBOL
     | ROLE_SYMBOL
     | TO_SYMBOL
-    | IGNORE_SYMBOL
     | CLONE_SYMBOL
     | FILE_SYMBOL
     | BINARY_SYMBOL

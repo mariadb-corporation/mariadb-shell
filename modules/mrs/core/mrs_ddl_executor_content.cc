@@ -34,6 +34,7 @@
 #include "modules/mrs/core/mrs_metadata_content.h"
 #include "modules/mrs/core/mrs_metadata_json.h"
 #include "modules/mrs/core/mrs_scripts.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
 
@@ -68,10 +69,10 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
 
   if (s.flags.or_replace || s.flags.if_not_exists) {
-    const auto existing = metadata::find_content_set(m_session, service.id, s.path);
+    const auto existing = metadata::find_content_set(m_session, service_id, s.path);
     if (existing) {
       if (s.flags.if_not_exists) {
         r->message = "REST content set `" + full_path + "` created successfully.";
@@ -84,7 +85,7 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   }
 
   metadata::Content_set_definition definition;
-  definition.service_id = service.id;
+  definition.service_id = service_id;
   definition.request_path = s.path;
   definition.requires_auth = s.options.requires_auth.value_or(true);
   if (s.options.enabled) definition.enabled = static_cast<int>(*s.options.enabled);
@@ -107,8 +108,8 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
-  const auto content_set = metadata::find_content_set(m_session, service.id, s.path);
+  const auto service_id = require_service(s.service);
+  const auto content_set = metadata::find_content_set(m_session, service_id, s.path);
   if (!content_set) {
     throw std::runtime_error("The given REST content set `" + full_path +
                              "` could not be found.");
@@ -127,10 +128,7 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
   // LOAD SCRIPTS: analyse the stored files and register their MRS scripts
   if (s.options.load_scripts) {
     const auto updated = metadata::get_content_set(m_session, content_set->id);
-    const auto registered = metadata::register_scripts(
-        m_session, *updated,
-        s.options.typescript ? std::optional<std::string>("TypeScript")
-                             : std::nullopt);
+    const auto registered = metadata::register_scripts(m_session, *updated);
     r->message = "REST content set `" + full_path + "` updated successfully. " +
                  std::to_string(registered.scripts) + " MRS script(s) of " +
                  std::to_string(registered.modules) + " module(s) registered.";
@@ -150,8 +148,8 @@ void Ddl_executor::do_execute(const Drop_rest_content_set &s,
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
-  const auto content_set = metadata::find_content_set(m_session, service.id, s.path);
+  const auto service_id = require_service(s.service);
+  const auto content_set = metadata::find_content_set(m_session, service_id, s.path);
   if (!content_set && !s.if_exists) {
     throw std::runtime_error("The given REST CONTENT SET `" + full_path +
                              "` could not be found.");
@@ -169,10 +167,10 @@ void Ddl_executor::do_execute(const Show_rest_content_sets &s,
                               Statement_result *r) {
   set_failure_context("Cannot SHOW the REST CONTENT SETs.");
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
 
   r->columns = {"REST CONTENT SET path", "enabled"};
-  for (const auto &content_set : metadata::get_content_sets(m_session, service.id)) {
+  for (const auto &content_set : metadata::get_content_sets(m_session, service_id)) {
     auto &row = r->add_row();
     row.emplace_back(content_set.request_path);
     row.emplace_back(metadata::enabled_caption(content_set.enabled));
@@ -184,8 +182,8 @@ void Ddl_executor::do_execute(const Show_create_rest_content_set &s,
   const auto full_path = full_service_path(s.service, s.path);
   set_failure_context("Failed to get the REST CONTENT SET `" + full_path + "`.");
 
-  const auto service = require_service(s.service);
-  const auto content_set = metadata::find_content_set(m_session, service.id, s.path);
+  const auto service_id = require_service(s.service);
+  const auto content_set = metadata::find_content_set(m_session, service_id, s.path);
   if (!content_set) {
     throw std::runtime_error("The given REST content set `" + full_path +
                              "` could not be found.");
@@ -211,9 +209,9 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
   const auto content_set =
-      metadata::find_content_set(m_session, service.id, s.content_set_path);
+      metadata::find_content_set(m_session, service_id, s.content_set_path);
   if (!content_set) {
     throw std::runtime_error("CONTENT SET " + s.content_set_path + " not found.");
   }
@@ -242,7 +240,7 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   if (s.options.options) definition.options = s.options.options->value;
 
   if (s.binary) {
-    definition.content = metadata::base64_decode(s.content.value_or(""));
+    definition.content = base64_decode(s.content.value_or(""));
   } else {
     definition.content = s.content.value_or("");
   }
@@ -264,9 +262,9 @@ void Ddl_executor::do_execute(const Drop_rest_content_file &s,
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
   const auto content_set =
-      metadata::find_content_set(m_session, service.id, s.content_set_path);
+      metadata::find_content_set(m_session, service_id, s.content_set_path);
   if (!content_set && !s.if_exists) {
     throw std::runtime_error("The REST content set " + s.content_set_path +
                              " was not found.");
@@ -295,9 +293,9 @@ void Ddl_executor::do_execute(const Show_rest_content_files &s,
   const auto full_path = full_service_path(s.service, s.content_set_path);
   set_failure_context("Cannot SHOW the REST CONTENT FILEs.");
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
   const auto content_set =
-      metadata::find_content_set(m_session, service.id, s.content_set_path);
+      metadata::find_content_set(m_session, service_id, s.content_set_path);
   if (!content_set) {
     throw std::runtime_error("The given REST content set `" + full_path +
                              "` could not be found.");
@@ -320,9 +318,9 @@ void Ddl_executor::do_execute(const Show_create_rest_content_file &s,
   set_failure_context("Failed to get the REST CONTENT FILE `" + full_path +
                       "`.");
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
   const auto content_set =
-      metadata::find_content_set(m_session, service.id, s.content_set_path);
+      metadata::find_content_set(m_session, service_id, s.content_set_path);
   if (!content_set) {
     throw std::runtime_error("The given REST content set `" +
                              full_service_path(s.service, s.content_set_path) +

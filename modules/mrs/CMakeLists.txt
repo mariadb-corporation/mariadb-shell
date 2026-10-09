@@ -99,6 +99,7 @@ set(mrs_core_SOURCES
     core/mrs_schema_deployment.cc
     core/mrs_scripts.cc
     core/mrs_sql.cc
+    core/mrs_strings.cc
     "${MRS_GENERATED_DIR}/mrs_parser_gen.cc"
 )
 

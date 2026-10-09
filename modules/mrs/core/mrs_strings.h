@@ -23,36 +23,39 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef MODULES_MRS_MRS_SHELL_SESSION_H_
-#define MODULES_MRS_MRS_SHELL_SESSION_H_
+#ifndef MODULES_MRS_CORE_MRS_STRINGS_H_
+#define MODULES_MRS_CORE_MRS_STRINGS_H_
 
-// The MRS core's database session, implemented on the shell's classic
-// session.
+// String helpers of the MRS core. The core does not depend on the shell's
+// libraries (it is meant to be shared with a server plugin), so these are
+// its own counterparts of shcore::str_lower, str_join, str_split and the
+// base64 functions.
 
-#include <memory>
 #include <string>
+#include <string_view>
+#include <vector>
 
-#include "modules/mrs/core/mrs_db_session.h"
-#include "mysqlshdk/libs/db/session.h"
-
-namespace mysqlsh {
 namespace mrs {
 
-class Shell_db_session : public ::mrs::Db_session {
- public:
-  explicit Shell_db_session(std::shared_ptr<mysqlshdk::db::ISession> session);
+// ASCII case conversion.
+std::string to_lower(std::string_view text);
+std::string to_upper(std::string_view text);
 
-  ::mrs::Db_result query(const std::string &sql) override;
-  uint64_t execute(const std::string &sql) override;
-  void execute_script(const std::string &script) override;
-  uint64_t connection_id() const override;
-  std::string sql_mode() override;
+bool ends_with(std::string_view text, std::string_view suffix);
 
- private:
-  std::shared_ptr<mysqlshdk::db::ISession> m_session;
-};
+// The parts joined with the separator. An empty part adds no separator
+// before the next one.
+std::string join(const std::vector<std::string> &parts,
+                 std::string_view separator);
+// The parts between the separators; with skip_empty, empty parts are
+// left out.
+std::vector<std::string> split(std::string_view text, char separator,
+                               bool skip_empty = false);
+
+std::string base64_encode(std::string_view data);
+// Decodes standard base64 (whitespace is skipped). Throws on bad input.
+std::string base64_decode(std::string_view text);
 
 }  // namespace mrs
-}  // namespace mysqlsh
 
-#endif  // MODULES_MRS_MRS_SHELL_SESSION_H_
+#endif  // MODULES_MRS_CORE_MRS_STRINGS_H_

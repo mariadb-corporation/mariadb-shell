@@ -32,6 +32,7 @@
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
 #include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
 namespace metadata {
@@ -56,10 +57,6 @@ constexpr std::string_view k_default_service_options = R"({
     "returnInternalErrorDetails": true,
     "includeLinksInResults": false
 })";
-
-std::optional<std::string> optional_text(const Db_value &value) {
-  return value.as_optional_string();
-}
 
 std::vector<std::string> developers_of(const std::optional<std::string> &in_development) {
   std::vector<std::string> developers;
@@ -131,20 +128,20 @@ Service service_from_row(const Db_row &row) {
   s.name = row["name"].as_string();
   s.enabled = static_cast<int>(row["enabled"].as_int());
   s.published = row["published"].as_bool();
-  s.comments = optional_text(row["comments"]);
-  s.options = optional_text(row["options"]);
-  s.metadata = optional_text(row["metadata"]);
+  s.comments = row["comments"].as_optional_string();
+  s.options = row["options"].as_optional_string();
+  s.metadata = row["metadata"].as_optional_string();
   s.auth_path = row["auth_path"].as_string();
-  s.auth_completed_url = optional_text(row["auth_completed_url"]);
+  s.auth_completed_url = row["auth_completed_url"].as_optional_string();
   s.auth_completed_url_validation =
-      optional_text(row["auth_completed_url_validation"]);
+      row["auth_completed_url_validation"].as_optional_string();
   s.auth_completed_page_content =
-      optional_text(row["auth_completed_page_content"]);
-  s.in_development = optional_text(row["in_development"]);
+      row["auth_completed_page_content"].as_optional_string();
+  s.in_development = row["in_development"].as_optional_string();
   s.developers = developers_of(s.in_development);
   s.host_ctx = row["host_ctx"].as_string();
   s.full_service_path = row["full_service_path"].as_string();
-  s.auth_apps = names_of(optional_text(row["auth_apps"]));
+  s.auth_apps = names_of(row["auth_apps"].as_optional_string());
   return s;
 }
 
@@ -177,24 +174,6 @@ Id url_host_id(Db_session *session, const std::string &host_name) {
   return id;
 }
 
-// Appends the SET of a JSON column honouring the MERGE OPTIONS semantics:
-// merged into existing options, replaced when there are none yet.
-void set_json_options(Db_session *session, sql::Update *update,
-                      std::string_view table, const Id &id,
-                      const std::string &options, bool merge) {
-  if (merge) {
-    const auto row = session->query(
-        "SELECT options IS NULL AS options_is_null FROM " +
-        sql::metadata_table(table) + " WHERE id = " + sql::id(id));
-    if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
-      update->set_raw("options = JSON_MERGE_PATCH(options, " +
-                      sql::quote(options) + ")");
-      return;
-    }
-  }
-  update->set("options", options);
-}
-
 Schema schema_from_row(const Db_row &row) {
   Schema s;
   s.id = row["id"].as_string();
@@ -208,9 +187,9 @@ Schema schema_from_row(const Db_row &row) {
   if (!row["items_per_page"].is_null()) {
     s.items_per_page = row["items_per_page"].as_int();
   }
-  s.comments = optional_text(row["comments"]);
-  s.options = optional_text(row["options"]);
-  s.metadata = optional_text(row["metadata"]);
+  s.comments = row["comments"].as_optional_string();
+  s.options = row["options"].as_optional_string();
+  s.metadata = row["metadata"].as_optional_string();
   s.host_ctx = row["host_ctx"].as_string();
   return s;
 }
@@ -242,6 +221,22 @@ std::vector<Schema> query_schemas(Db_session *session, const std::string &where)
 }  // namespace
 
 // -- Common ---------------------------------------------------------------
+
+void set_json_options(Db_session *session, sql::Update *update,
+                      std::string_view table, const Id &id,
+                      const std::string &options, bool merge) {
+  if (merge) {
+    const auto row = session->query(
+        "SELECT options IS NULL AS options_is_null FROM " +
+        sql::metadata_table(table) + " WHERE id = " + sql::id(id));
+    if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
+      update->set_raw("options = JSON_MERGE_PATCH(options, " +
+                      sql::quote(options) + ")");
+      return;
+    }
+  }
+  update->set("options", options);
+}
 
 bool schema_exists(Db_session *session) {
   const auto result = session->query(
@@ -291,6 +286,13 @@ void check_schema(Db_session *session) {
   }
 }
 
+bool row_exists(Db_session *session, std::string_view table, const Id &id) {
+  return !session
+              ->query("SELECT 1 FROM " + sql::metadata_table(table) +
+                      " WHERE id = " + sql::id(id))
+              .empty();
+}
+
 Id new_id(Db_session *session) {
   const auto result = session->query(
       "SELECT " + sql::metadata_table("get_sequence_id") + "() AS id");
@@ -310,15 +312,8 @@ std::string format_developers(std::vector<std::string> developers) {
   // The metadata orders the names case-insensitively (collation order).
   std::sort(developers.begin(), developers.end(),
             [](const std::string &a, const std::string &b) {
-              const auto lower = [](const std::string &s) {
-                std::string r = s;
-                std::transform(r.begin(), r.end(), r.begin(), [](unsigned char c) {
-                  return std::tolower(c);
-                });
-                return r;
-              };
-              const auto la = lower(a);
-              const auto lb = lower(b);
+              const auto la = to_lower(a);
+              const auto lb = to_lower(b);
               return la != lb ? la < lb : a < b;
             });
 
@@ -429,12 +424,12 @@ std::vector<Daemon> query_daemons(Db_session *session, const std::string &where)
     d.name = row["router_name"].as_string();
     d.address = row["address"].as_string();
     d.product_name = row["product_name"].as_string();
-    d.version = optional_text(row["version"]);
-    d.last_check_in = optional_text(row["last_check_in"]);
+    d.version = row["version"].as_optional_string();
+    d.last_check_in = row["last_check_in"].as_optional_string();
     d.active = !row["active"].is_null() && row["active"].as_int() == 1;
-    d.developer = optional_text(row["developer"]);
-    d.attributes = optional_text(row["attributes"]);
-    d.options = optional_text(row["options"]);
+    d.developer = row["developer"].as_optional_string();
+    d.attributes = row["attributes"].as_optional_string();
+    d.options = row["options"].as_optional_string();
     daemons.push_back(std::move(d));
   }
   return daemons;
@@ -469,14 +464,10 @@ void delete_daemon(Db_session *session, int64_t id) {
 }
 
 Id add_service(Db_session *session, const Service_definition &definition) {
-  {
-    std::string lower = definition.url_context_root;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
-    if (lower == "/mrs") {
-      throw std::runtime_error("The REST service path `" + lower +
-                               "` is reserved and cannot be used.");
-    }
+  if (const auto lower = to_lower(definition.url_context_root);
+      lower == "/mrs") {
+    throw std::runtime_error("The REST service path `" + lower +
+                             "` is reserved and cannot be used.");
   }
 
   const Id id = new_id(session);

@@ -179,6 +179,8 @@ bool mapping_option(const std::optional<std::string> &options,
 // The objects of a db_object with their fields, ordered by position.
 std::vector<Object_definition> get_objects(Db_session *session,
                                            const Id &db_object_id);
+// Whether a db_object has any object (a result definition).
+bool has_objects(Db_session *session, const Id &db_object_id);
 
 // Replaces the objects of a db_object. The object names have to be unique
 // within the REST schema (case-insensitively).
@@ -318,6 +320,8 @@ std::vector<Table_column> get_table_columns_with_references(
 
 // city_id -> cityId
 std::string snake_to_camel_case(std::string_view snake);
+// /my_module/sub_path -> myModuleSubPath (alphanumeric characters only)
+std::string path_to_camel_case(std::string_view path);
 // /myService/sakila/city -> MyServiceSakilaCity
 std::string path_to_pascal_case(std::string_view path);
 
