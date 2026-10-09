@@ -23,7 +23,7 @@ CREATE TABLE test.t1
   CONSTRAINT c2_positive CHECK (c2 > 0),
   CONSTRAINT info_json_schema CHECK (
     JSON_SCHEMA_VALID('{
-    "id": "https://dev.mysql.com/mrs/test/test.t1/info",
+    "id": "https://mariadb.com/mrs/test/test.t1/info",
     "type": "object",
     "properties": {
         "friends": {
@@ -43,7 +43,7 @@ CREATE TABLE test.t1
   CONSTRAINT c1_nonzero CHECK (c1 <> 0),
   CHECK (c1 > c3),
   CHECK (JSON_SCHEMA_VALID('{
-    "id": "https://dev.mysql.com/mrs/test/test.t1/data",
+    "id": "https://mariadb.com/mrs/test/test.t1/data",
     "type": "object",
     "properties": {
         "hobbies": {
@@ -62,7 +62,7 @@ CREATE TABLE test.t1
     }', data) AND (c1 <> c2)),
   CONSTRAINT info_json_schema2 CHECK (
     JSON_SCHEMA_VALID('{
-    "id": "https://dev.mysql.com/mrs/test/test.t1/info",
+    "id": "https://mariadb.com/mrs/test/test.t1/info",
     "type": "object",
     "properties": {
         "friends": {

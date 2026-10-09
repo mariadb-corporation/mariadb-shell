@@ -138,6 +138,31 @@ TEST(Mrs_parser, configure_rest_metadata) {
   }
 }
 
+TEST(Mrs_parser, metadata_schema) {
+  {
+    const auto &s = parse_as<Configure_rest_metadata>(
+        "CONFIGURE REST METADATA SCHEMA acme_mariadb_rest_service_eu ENABLED");
+    EXPECT_EQ("acme_mariadb_rest_service_eu", *s.schema);
+    EXPECT_TRUE(*s.enabled);
+  }
+  EXPECT_FALSE(
+      parse_as<Configure_rest_metadata>("CONFIGURE REST METADATA").schema);
+  EXPECT_EQ("x_mariadb_rest_service",
+            *parse_as<Configure_rest_metadata>(
+                 "CONFIGURE REST METADATA UPDATE DATABASE `x_mariadb_rest_service`")
+                 .schema);
+
+  EXPECT_EQ("beta_mariadb_rest_service",
+            parse_as<Use_rest_metadata_schema>(
+                "USE REST METADATA SCHEMA beta_mariadb_rest_service")
+                .schema);
+  parse_as<Show_rest_metadata_schemas>("SHOW REST METADATA SCHEMAS");
+  parse_as<Show_rest_metadata_schemas>("show rest metadata databases");
+
+  expect_parse_error("USE REST METADATA SCHEMA", "unexpected end of input");
+  expect_parse_error("SHOW REST METADATA SCHEMAS x", "unexpected");
+}
+
 TEST(Mrs_parser, create_rest_service) {
   {
     const auto &s = parse_as<Create_rest_service>("CREATE REST SERVICE /myService");
@@ -163,7 +188,7 @@ TEST(Mrs_parser, create_rest_service) {
         "AUTHENTICATION PATH \"/authentication\" REDIRECTION DEFAULT "
         "VALIDATION DEFAULT PAGE CONTENT 'content' "
         "OPTIONS {\"logging\": {\"exceptions\": true}} METADATA {\"position\": 1} "
-        "ADD AUTH APP \"MRS\" IF EXISTS REMOVE AUTH APP `MySQL`");
+        "ADD AUTH APP \"MRS\" IF EXISTS REMOVE AUTH APP `MariaDB`");
     EXPECT_TRUE(s.flags.if_not_exists);
     EXPECT_TRUE(*s.options.enabled);
     EXPECT_TRUE(*s.options.published);
@@ -181,7 +206,7 @@ TEST(Mrs_parser, create_rest_service) {
     EXPECT_EQ("MRS", s.options.add_auth_apps[0].name);
     EXPECT_TRUE(s.options.add_auth_apps[0].if_exists);
     ASSERT_EQ(1u, s.options.remove_auth_apps.size());
-    EXPECT_EQ("MySQL", s.options.remove_auth_apps[0].name);
+    EXPECT_EQ("MariaDB", s.options.remove_auth_apps[0].name);
     EXPECT_FALSE(s.options.remove_auth_apps[0].if_exists);
   }
 }
@@ -637,12 +662,12 @@ TEST(Mrs_parser, auth_apps) {
   }
   {
     const auto &s = parse_as<Create_rest_auth_app>(
-        "CREATE REST AUTHENTICATION APP IF NOT EXISTS 'MySQL' VENDOR MySQL "
+        "CREATE REST AUTHENTICATION APP IF NOT EXISTS 'MariaDB' VENDOR MariaDB "
         "ALLOW NEW USERS TO REGISTER DEFAULT ROLE \"Full Access\" DISABLED "
         "COMMENT 'c' APP ID 'id' CLIENT SECRET 'secret' URL 'https://x'");
     EXPECT_TRUE(s.flags.if_not_exists);
-    EXPECT_EQ("MySQL", s.name);
-    EXPECT_EQ("MySQL Internal", s.vendor);
+    EXPECT_EQ("MariaDB", s.name);
+    EXPECT_EQ("MariaDB Internal", s.vendor);
     EXPECT_TRUE(*s.options.allow_new_users);
     EXPECT_EQ("Full Access", *s.options.default_role);
     EXPECT_FALSE(*s.options.enabled);
@@ -689,13 +714,13 @@ TEST(Mrs_parser, auth_apps) {
       parse_as<Show_rest_services>("SHOW REST SERVICES").auth_app.has_value());
 }
 
-// Keywords such as MRS or MYSQL have to be quoted when used as names, as in
+// Keywords such as MRS or MARIADB have to be quoted when used as names, as in
 // the ANTLR grammar of the Python plugin.
 TEST(Mrs_parser, keywords_as_names_need_quotes) {
   expect_parse_error("CREATE REST USER mike@MRS", "unexpected MRS");
-  expect_parse_error("CREATE REST AUTH APP MySQL VENDOR MRS", "unexpected MYSQL");
+  expect_parse_error("CREATE REST AUTH APP MariaDB VENDOR MRS", "unexpected MARIADB");
   EXPECT_NO_THROW(parse_statement("CREATE REST USER mike@`MRS`"));
-  EXPECT_NO_THROW(parse_statement("CREATE REST AUTH APP 'MySQL' VENDOR MRS"));
+  EXPECT_NO_THROW(parse_statement("CREATE REST AUTH APP 'MariaDB' VENDOR MRS"));
 }
 
 TEST(Mrs_parser, users) {
@@ -720,11 +745,11 @@ TEST(Mrs_parser, users) {
                           "SHOW REST USERS FOR AUTH APP myApp").auth_app);
   {
     const auto &s = parse_as<Create_rest_user>(
-        "CREATE REST USER \"boss\"@\"MRS\" IDENTIFIED BY \"MySQLR0cks!\" ACCOUNT LOCK "
+        "CREATE REST USER \"boss\"@\"MRS\" IDENTIFIED BY \"MariaDBR0cks!\" ACCOUNT LOCK "
         "OPTIONS {\"email\": \"boss@example.com\"} APP OPTIONS {\"myoption\": 12345}");
     EXPECT_EQ("boss", s.name);
     EXPECT_EQ("MRS", s.auth_app);
-    EXPECT_EQ("MySQLR0cks!", *s.password);
+    EXPECT_EQ("MariaDBR0cks!", *s.password);
     EXPECT_TRUE(*s.options.account_locked);
     EXPECT_EQ("{\"email\":\"boss@example.com\"}", s.options.options->value);
     EXPECT_EQ("{\"myoption\":12345}", *s.options.app_options);

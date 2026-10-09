@@ -36,7 +36,9 @@ namespace mrs {
 using namespace ast;
 
 Ddl_executor::Ddl_executor(Db_session *session, Executor_state *state)
-    : m_session(session), m_state(state) {}
+    : m_session(session), m_state(state) {
+  m_session->set_metadata_schema(m_state->assumed_metadata_schema());
+}
 
 std::vector<Statement_result> Ddl_executor::run(const Script &script) {
   std::vector<Statement_result> results;
@@ -54,10 +56,12 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
   m_failure_context.clear();
 
   try {
-    // Only CONFIGURE REST METADATA and SHOW REST METADATA STATUS work
-    // without a metadata schema.
+    // The statements on the metadata schema itself work without one, and
+    // find it themselves
     if (!statement.is<Configure_rest_metadata>() &&
-        !statement.is<Show_rest_metadata_status>()) {
+        !statement.is<Show_rest_metadata_status>() &&
+        !statement.is<Use_rest_metadata_schema>() &&
+        !statement.is<Show_rest_metadata_schemas>()) {
       check_metadata();
     }
 
@@ -91,14 +95,15 @@ void Ddl_executor::check_metadata() {
     m_fingerprint = metadata::read_fingerprint(m_session, check.version_view);
   }
 
-  if (!m_fingerprint->valid || m_fingerprint->version != check.version) {
-    // A first run, another schema version or no fingerprint: the full check
-    // gives the error messages, and finds the version view
-    check = {};
+  if (!m_fingerprint->valid || m_fingerprint->version != check.version ||
+      check.schema != m_session->metadata_schema()) {
+    // A first run, another schema or version, or no fingerprint: the
+    // metadata schema is looked up again and checked in full, which gives
+    // the error messages and finds the version view
+    select_metadata_schema();
+    switch_metadata_schema(m_session->metadata_schema());
     check.version = metadata::check_schema(m_session, &check.version_view);
-    if (!m_fingerprint->valid) {
-      m_fingerprint = metadata::read_fingerprint(m_session, check.version_view);
-    }
+    m_fingerprint = metadata::read_fingerprint(m_session, check.version_view);
   }
 
   if (!m_fingerprint->valid || !check.state_checked ||
@@ -108,6 +113,23 @@ void Ddl_executor::check_metadata() {
     check.audit_id = m_fingerprint->audit_id;
   }
   m_metadata_checked = true;
+}
+
+void Ddl_executor::select_metadata_schema() {
+  m_session->set_metadata_schema(m_state->metadata_schema
+                                     ? *m_state->metadata_schema
+                                     : metadata::resolve_metadata_schema(m_session));
+}
+
+void Ddl_executor::switch_metadata_schema(const std::string &name) {
+  auto &check = m_state->metadata_check;
+  if (check.schema != name) {
+    // The current service and schema belong to another metadata schema
+    if (!check.schema.empty()) m_state->clear_service();
+    check = {};
+    check.schema = name;
+  }
+  m_session->set_metadata_schema(name);
 }
 
 void Ddl_executor::validate_state() {
@@ -226,12 +248,25 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
   }
   options.update_if_available = s.update_if_available;
 
+  // The named schema, else the one in use
+  if (s.schema) {
+    metadata::check_metadata_schema_name(*s.schema);
+    switch_metadata_schema(*s.schema);
+  } else {
+    select_metadata_schema();
+    switch_metadata_schema(m_session->metadata_schema());
+  }
+
   // The schema may be redeployed: the next statement checks it in full
   m_state->metadata_check = {};
+  m_state->metadata_check.schema = m_session->metadata_schema();
   m_metadata_checked = false;
   m_fingerprint.reset();
 
   const auto result = metadata::configure(m_session, options, m_schema_deployer);
+
+  // A named schema is the one the session goes on with
+  if (s.schema) m_state->metadata_schema = *s.schema;
   r->message = result.schema_changed ? "REST metadata configured successfully."
                                      : "REST Metadata updated successfully.";
 }
@@ -240,6 +275,7 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
                               Statement_result *r) {
   set_failure_context("Cannot SHOW the REST metadata status.");
 
+  select_metadata_schema();
   const auto status = metadata::get_status(m_session);
   if (s.format == Output_format::json) {
     r->columns = {"REST METADATA STATUS"};
@@ -261,7 +297,7 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
                 "service_count",           "service_being_upgraded",
                 "major_upgrade_required",  "current_metadata_version",
                 "available_metadata_version", "required_router_version",
-                "metadata_version"};
+                "metadata_version", "metadata_schema"};
   auto &row = r->add_row();
   row.push_back(flag(status.service_configured));
   row.push_back(flag(status.service_enabled));
@@ -276,6 +312,58 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
   row.push_back(status.metadata_version
                     ? Db_value(*status.metadata_version)
                     : Db_value(nullptr));
+  row.push_back(Db_value(status.metadata_schema));
+}
+
+void Ddl_executor::do_execute(const Use_rest_metadata_schema &s,
+                              Statement_result *r) {
+  set_failure_context("Cannot USE the REST metadata schema `" + s.schema + "`.");
+
+  metadata::check_metadata_schema_name(s.schema);
+  const auto names = metadata::find_metadata_schemas(m_session);
+  if (std::find(names.begin(), names.end(), s.schema) == names.end()) {
+    throw std::runtime_error(
+        "It is not a REST metadata schema, or not visible to the current "
+        "account.");
+  }
+
+  switch_metadata_schema(s.schema);
+  m_state->metadata_schema = s.schema;
+  r->message = "Now using REST METADATA SCHEMA `" + s.schema + "`.";
+}
+
+void Ddl_executor::do_execute(const Show_rest_metadata_schemas &,
+                              Statement_result *r) {
+  set_failure_context("Cannot SHOW the REST metadata schemas.");
+
+  // The schema in use: the chosen one, else the one a statement would use
+  // (none when several are visible)
+  std::string current;
+  if (m_state->metadata_schema) {
+    current = *m_state->metadata_schema;
+  } else {
+    try {
+      current = metadata::resolve_metadata_schema(m_session);
+    } catch (const std::runtime_error &) {
+    }
+  }
+
+  r->columns = {"schema_name", "version", "current"};
+  for (const auto &name : metadata::find_metadata_schemas(m_session)) {
+    std::optional<std::string> version;
+    try {
+      const auto result = m_session->query(
+          "SELECT CONCAT(major, '.', minor, '.', patch) AS version FROM " +
+          sql::quote_qualified(name, "msm_schema_version"));
+      if (!result.empty()) version = result.first()["version"].as_string();
+    } catch (const Db_error &) {
+      // The view may not be readable for the account
+    }
+    auto &row = r->add_row();
+    row.emplace_back(name);
+    row.push_back(version ? Db_value(*version) : Db_value(nullptr));
+    row.emplace_back(name == current ? "YES" : "NO");
+  }
 }
 
 void Ddl_executor::do_execute(const Use_rest &s, Statement_result *r) {

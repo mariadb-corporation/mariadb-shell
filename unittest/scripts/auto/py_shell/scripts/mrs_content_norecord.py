@@ -33,14 +33,14 @@ def query_rows(sql):
     return [list(row) for row in session.run_sql(sql).fetch_all()]
 
 def file_hex(content_set, request_path):
-    return session.run_sql(f"""SELECT HEX(f.content) FROM mysql_rest_service_metadata.content_file f
-        JOIN mysql_rest_service_metadata.content_set cs ON cs.id = f.content_set_id
+    return session.run_sql(f"""SELECT HEX(f.content) FROM mariadb_rest_service.content_file f
+        JOIN mariadb_rest_service.content_set cs ON cs.id = f.content_set_id
         WHERE cs.request_path = '{content_set}' AND f.request_path = '{request_path}'""").fetch_one()[0]
 
 def content_set_row(request_path):
     # The options are compared as a document, their text layout varies
     row = list(session.run_sql(f"""SELECT content_type, requires_auth, enabled, comments, options
-        FROM mysql_rest_service_metadata.content_set WHERE request_path = '{request_path}'""").fetch_one())
+        FROM mariadb_rest_service.content_set WHERE request_path = '{request_path}'""").fetch_one())
     if row[4] is not None:
         row[4] = json.loads(row[4])
     return row
@@ -107,7 +107,7 @@ EXPECT_EQ(binary_test_data.hex().upper(), file_hex("/inline", "/binaryFile"))
 EXPECT_EQ("REST CONTENT FILE `/svc/inline/privateFile` created successfully.", rest_info("CREATE REST CONTENT FILE /privateFile ON CONTENT SET /inline CONTENT 'SELECT 1;' PRIVATE"))
 # The REST SQL defaults: a content file requires authentication and is enabled
 EXPECT_EQ([["/bin.dat", 8, "ENABLED"], ["/binaryFile", len(binary_test_data), "DISABLED"], ["/privateFile", 9, "PRIVATE"], ["/readme.txt", len(readme_txt), "ENABLED"]], rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /inline"))
-EXPECT_EQ([[1], [0]], query_rows("SELECT requires_auth FROM mysql_rest_service_metadata.content_file WHERE request_path IN ('/bin.dat', '/readme.txt') ORDER BY request_path"))
+EXPECT_EQ([[1], [0]], query_rows("SELECT requires_auth FROM mariadb_rest_service.content_file WHERE request_path IN ('/bin.dat', '/readme.txt') ORDER BY request_path"))
 
 #@<> CREATE REST CONTENT FILE errors
 EXPECT_THROWS(lambda: rest("CREATE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline CONTENT 'again'"), "Failed to create the REST CONTENT FILE `/svc/inline/bin.dat`. The request_path is already used by another entity.")
@@ -266,12 +266,12 @@ rest("CREATE REST CONTENT FILE `/dist/sales.mjs` ON CONTENT SET /app CONTENT 'ex
 rest("CREATE REST CONTENT FILE `/static/index.html` ON CONTENT SET /app CONTENT '<html></html>'")
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD TYPESCRIPT SCRIPTS"))
 # The module is a REST schema of type SCRIPT_MODULE
-EXPECT_EQ([["sales", "/sales", "SCRIPT_MODULE", 0, "v1"]], query_rows("SELECT name, request_path, schema_type, requires_auth, JSON_VALUE(options, '$.tag') FROM mysql_rest_service_metadata.db_schema WHERE schema_type = 'SCRIPT_MODULE'"))
+EXPECT_EQ([["sales", "/sales", "SCRIPT_MODULE", 0, "v1"]], query_rows("SELECT name, request_path, schema_type, requires_auth, JSON_VALUE(options, '$.tag') FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'"))
 # Each script is a REST object of type SCRIPT, with its parameters and result as objects
-EXPECT_EQ([["summaryOf", "/summary", 1], ["total", "/total", 0]], query_rows("SELECT name, request_path, requires_auth FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT' ORDER BY name"))
-EXPECT_EQ([["SvcSalesSummaryParams", "PARAMETERS"], ["SvcSalesSummaryResult", "RESULT"], ["SvcSalesTotalParams", "PARAMETERS"], ["SvcSalesTotalResult", "RESULT"]], query_rows("SELECT name, kind FROM mysql_rest_service_metadata.object ORDER BY name"))
+EXPECT_EQ([["summaryOf", "/summary", 1], ["total", "/total", 0]], query_rows("SELECT name, request_path, requires_auth FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT' ORDER BY name"))
+EXPECT_EQ([["SvcSalesSummaryParams", "PARAMETERS"], ["SvcSalesSummaryResult", "RESULT"], ["SvcSalesTotalParams", "PARAMETERS"], ["SvcSalesTotalResult", "RESULT"]], query_rows("SELECT name, kind FROM mariadb_rest_service.object ORDER BY name"))
 fields = query_rows("""SELECT o.name, f.name, f.position, JSON_VALUE(f.db_column, '$.datatype'), JSON_EXTRACT(f.db_column, '$.not_null'), f.represents_reference_id IS NOT NULL
-    FROM mysql_rest_service_metadata.object_field f JOIN mysql_rest_service_metadata.object o ON o.id = f.object_id ORDER BY o.name, f.position""")
+    FROM mariadb_rest_service.object_field f JOIN mariadb_rest_service.object o ON o.id = f.object_id ORDER BY o.name, f.position""")
 EXPECT_EQ([
     ["SvcSalesSummaryParams", "region", 0, "text", "false", 0],
     ["SvcSalesSummaryParams", "detailed", 1, "bit(1)", "false", 0],
@@ -280,13 +280,13 @@ EXPECT_EQ([
     ["SvcSalesSummaryResult", "items", 2, "json", "false", 1],
     ["SvcSalesTotalParams", "year", 0, "decimal", "true", 0],
     ["SvcSalesTotalResult", "result", 0, "decimal", "true", 0]], fields)
-EXPECT_EQ('"EU"', session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') FROM mysql_rest_service_metadata.object_field WHERE name = 'region' AND JSON_EXTRACT(db_column, '$.in') = true").fetch_one()[0])
-EXPECT_EQ(["1:n", "Item"], list(session.run_sql("SELECT JSON_VALUE(reference_mapping, '$.kind'), JSON_VALUE(reference_mapping, '$.referenced_schema') FROM mysql_rest_service_metadata.object_reference").fetch_one()))
-EXPECT_EQ("true", session.run_sql("SELECT JSON_EXTRACT(sdk_options, '$.returns_array') FROM mysql_rest_service_metadata.object WHERE name = 'SvcSalesSummaryResult'").fetch_one()[0])
+EXPECT_EQ('"EU"', session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') FROM mariadb_rest_service.object_field WHERE name = 'region' AND JSON_EXTRACT(db_column, '$.in') = true").fetch_one()[0])
+EXPECT_EQ(["1:n", "Item"], list(session.run_sql("SELECT JSON_VALUE(reference_mapping, '$.kind'), JSON_VALUE(reference_mapping, '$.referenced_schema') FROM mariadb_rest_service.object_reference").fetch_one()))
+EXPECT_EQ("true", session.run_sql("SELECT JSON_EXTRACT(sdk_options, '$.returns_array') FROM mariadb_rest_service.object WHERE name = 'SvcSalesSummaryResult'").fetch_one()[0])
 # The links of the content set to its scripts name the compiled module
-EXPECT_EQ([["Script", "TypeScript", "Sales", "summary", "/dist/sales.mjs"], ["Script", "TypeScript", "Sales", "total", "/dist/sales.mjs"]], query_rows("SELECT kind, language, class_name, name, JSON_VALUE(options, '$.file_to_load') FROM mysql_rest_service_metadata.content_set_has_obj_def ORDER BY name"))
+EXPECT_EQ([["Script", "TypeScript", "Sales", "summary", "/dist/sales.mjs"], ["Script", "TypeScript", "Sales", "total", "/dist/sales.mjs"]], query_rows("SELECT kind, language, class_name, name, JSON_VALUE(options, '$.file_to_load') FROM mariadb_rest_service.content_set_has_obj_def ORDER BY name"))
 # The grants a script declares are run
-EXPECT_EQ("Select", session.run_sql("SELECT Table_priv FROM mysql.tables_priv WHERE User = 'mysql_rest_service_data_provider' AND Db = 'mysql' AND Table_name = 'user'").fetch_one()[0])
+EXPECT_EQ("Select", session.run_sql("SELECT Table_priv FROM mysql.tables_priv WHERE User = 'mariadb_rest_service_data_provider' AND Db = 'mysql' AND Table_name = 'user'").fetch_one()[0])
 # The set holds scripts now; its options carry what the daemon loads
 row = content_set_row("/app")
 EXPECT_EQ(["SCRIPTS", True, "TypeScript"], [row[0], row[4]["contains_mrs_scripts"], row[4]["mrs_scripting_language"]])
@@ -302,13 +302,13 @@ EXPECT_EQ([["/dist/sales.mjs", "PRIVATE"], ["/src/sales.mts", "PRIVATE"], ["/sta
 
 #@<> LOAD SCRIPTS again replaces the registered scripts; the language is detected
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
-EXPECT_EQ(1, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(1, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
 
 #@<> LOAD SCRIPTS reports type errors and registers nothing then
 rest("CREATE REST CONTENT FILE `/src/bad.ts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/bad\" }) class Bad { @Mrs.script({}) public static async b(x: Unknown): Promise<Missing> { return null; } }'")
 EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The MRS scripts have errors:\nThe script b returns an unknown datatype `Missing`.\nUnknown datatype `Unknown` used for script parameter `x`.")
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 rest("DROP REST CONTENT FILE `/src/bad.ts` FROM CONTENT SET /app")
 
 #@<> SHOW CREATE REST CONTENT SET of a script set: the set, its files, then LOAD SCRIPTS
@@ -328,27 +328,27 @@ EXPECT_FALSE("script_definitions" in statement)
 
 #@<> Dropping a script set removes its scripts and their module; the dump registers them again
 rest("DROP REST CONTENT SET /app")
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
 rest_script(statement)
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 EXPECT_EQ(statement, rest_text("SHOW CREATE REST CONTENT SET /app"))
 rest("DROP REST CONTENT SET /app")
 
 #@<> CLONE REST SERVICE copies the content files on the server, byte for byte
 def service_files(service_path):
     return query_rows(f"""SELECT cs.request_path, f.request_path, HEX(f.content), f.size, f.enabled, f.options
-        FROM mysql_rest_service_metadata.content_file f
-        JOIN mysql_rest_service_metadata.content_set cs ON cs.id = f.content_set_id
-        JOIN mysql_rest_service_metadata.service se ON se.id = cs.service_id
+        FROM mariadb_rest_service.content_file f
+        JOIN mariadb_rest_service.content_set cs ON cs.id = f.content_set_id
+        JOIN mariadb_rest_service.service se ON se.id = cs.service_id
         WHERE se.url_context_root = '{service_path}' ORDER BY 1, 2""")
 
 originals = service_files("/svc")
 EXPECT_TRUE(len(originals) > 0)
 rest("CLONE REST SERVICE /svc NEW REQUEST PATH /svcClone")
 EXPECT_EQ(originals, service_files("/svcClone"))
-EXPECT_EQ(0, session.run_sql("""SELECT COUNT(*) FROM mysql_rest_service_metadata.content_file a
-    JOIN mysql_rest_service_metadata.content_file b ON a.id = b.id AND a.content_set_id <> b.content_set_id""").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("""SELECT COUNT(*) FROM mariadb_rest_service.content_file a
+    JOIN mariadb_rest_service.content_file b ON a.id = b.id AND a.content_set_id <> b.content_set_id""").fetch_one()[0])
 rest("DROP REST SERVICE /svcClone")
 rest("USE REST SERVICE /svc")
 EXPECT_EQ(originals, service_files("/svc"))
@@ -372,8 +372,8 @@ EXPECT_EQ("REST CONTENT SET `/svc/assets` dropped successfully.", rest_info("DRO
 EXPECT_EQ("REST CONTENT SET `/svc/empty` dropped successfully.", rest_info("DROP REST CONTENT SET IF EXISTS /empty"))
 EXPECT_EQ("REST CONTENT SET `/svc/inline` dropped successfully.", rest_info("DROP REST CONTENT SET IF EXISTS /inline"))
 EXPECT_EQ([], rest_rows("SHOW REST CONTENT SETS"))
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.content_file").fetch_one()[0])
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.content_set").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.content_file").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.content_set").fetch_one()[0])
 
 #@<> SHOW REST CONTENT FILES errors
 EXPECT_THROWS(lambda: rest("SHOW REST CONTENT FILES FROM CONTENT SET /nope"), "Cannot SHOW the REST CONTENT FILEs. The given REST content set `/svc/nope` could not be found.")

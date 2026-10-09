@@ -237,7 +237,10 @@ struct Create_flags {
   bool if_not_exists = false;
 };
 
+// CONFIGURE REST METADATA [SCHEMA name] [ENABLED | DISABLED] [OPTIONS ...]
+// [UPDATE [IF AVAILABLE]]
 struct Configure_rest_metadata {
+  std::optional<std::string> schema;  // the metadata schema to deploy
   std::optional<bool> enabled;
   std::optional<Json_options> options;
   bool update_if_available = false;
@@ -304,7 +307,7 @@ struct Create_rest_content_file {
 struct Create_rest_auth_app {
   Create_flags flags;
   std::string name;
-  std::string vendor;  // "MRS", "MySQL Internal" or a custom vendor name
+  std::string vendor;  // "MRS", "MariaDB Internal" or a custom vendor name
   Auth_app_options options;
 };
 
@@ -469,6 +472,14 @@ struct Use_rest {
   std::optional<std::string> schema_path;
 };
 
+// USE REST METADATA SCHEMA name: the metadata schema of the session
+struct Use_rest_metadata_schema {
+  std::string schema;
+};
+
+// SHOW REST METADATA SCHEMAS: the metadata schemas the session can see
+struct Show_rest_metadata_schemas {};
+
 // SHOW REST [METADATA] STATUS [FORMAT=JSON]
 struct Show_rest_metadata_status {
   Output_format format = Output_format::traditional;
@@ -606,7 +617,8 @@ using Statement_variant = std::variant<
     Drop_rest_service, Drop_rest_schema, Drop_rest_db_object,
     Drop_rest_content_set, Drop_rest_content_file, Drop_rest_auth_app,
     Drop_rest_user, Drop_rest_role, Rest_privilege_statement,
-    Rest_role_statement, Use_rest, Show_rest_metadata_status,
+    Rest_role_statement, Use_rest, Use_rest_metadata_schema,
+    Show_rest_metadata_schemas, Show_rest_metadata_status,
     Show_rest_services, Show_rest_schemas, Show_rest_db_objects,
     Show_rest_content_sets, Show_rest_content_files, Show_rest_auth_apps,
     Show_rest_auth_vendors, Show_rest_users, Show_rest_columns,

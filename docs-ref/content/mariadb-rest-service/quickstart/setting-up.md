@@ -49,7 +49,7 @@ A new `DB Notebook` page opens with an SQL prompt.
 
 ## Configuring MariaDB Server for MRS
 
-You configure MRS support explicitly on a MariaDB Server before you can use it. The configuration creates the metadata schema `mysql_rest_service_metadata`, which holds all information about the REST services and their endpoints.
+You configure MRS support explicitly on a MariaDB Server before you can use it. The configuration creates the metadata schema `mariadb_rest_service`, which holds all information about the REST services and their endpoints.
 
 You can configure MRS either in the MariaDB Shell for VS Code extension or with the REST SQL extension of MariaDB Shell. See [Configuring MRS](../developer-guide/configuring-mrs.md) for details.
 
@@ -99,15 +99,15 @@ After you create the account, update the DB connection and replace the `User Nam
 
 ### Granting REST Service Admin Privileges
 
-To make a MariaDB account a REST service administrator, grant it the `mysql_rest_service_admin` role. Make the role the account's default role, so that it is active when the account connects.
+To make a MariaDB account a REST service administrator, grant it the `mariadb_rest_service_admin` role. Make the role the account's default role, so that it is active when the account connects.
 
 ```sql
-GRANT mysql_rest_service_admin TO 'dba'@'%';
-SET DEFAULT ROLE mysql_rest_service_admin FOR 'dba'@'%';
+GRANT mariadb_rest_service_admin TO 'dba'@'%';
+SET DEFAULT ROLE mariadb_rest_service_admin FOR 'dba'@'%';
 ```
 
 {% hint style="info" %}
-The `mysql_rest_service_admin` role exists only after you configure the server for MRS support.
+The `mariadb_rest_service_admin` role exists only after you configure the server for MRS support.
 {% endhint %}
 
 MRS provides several roles to manage fine-grained access for administrators and developers. See [MRS User Roles](../developer-guide/configuring-mrs.md#mrs-user-roles) for details.

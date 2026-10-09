@@ -1,0 +1,31 @@
+{
+    "copyrights": [
+        {
+            "holder": "Oracle and/or its affiliates.",
+            "yearOfCreation": "2025",
+            "tracksUpdates": false
+        },
+        {
+            "holder": "MariaDB plc.",
+            "yearOfCreation": "2026",
+            "tracksUpdates": true
+        }
+    ],
+    "copyrightHolder": "Oracle and/or its affiliates.",
+    "customLicense": "",
+    "license": "GPL-2.0",
+    "schemaDependencies": [],
+    "schemaName": "/*<msm:schema_prefix>*/mariadb_rest_service/*<msm:schema_postfix>*/",
+    "schemaFileName": "mariadb_rest_service",
+    "yearOfCreation": "2025",
+    "substitutions": {
+        "schema_prefix": {
+            "default": "",
+            "pattern": "([A-Za-z_][A-Za-z0-9_]*)?"
+        },
+        "schema_postfix": {
+            "default": "",
+            "pattern": "(_[A-Za-z0-9_]*)?"
+        }
+    }
+}

@@ -31,7 +31,7 @@ createRestAuthAppStatement:    (
         ) APP (IF NOT EXISTS)?
     ) authAppName VENDOR (
         MRS
-        | MYSQL
+        | MARIADB
         | vendorName
     ) restAuthAppOptions?
 ;
@@ -135,7 +135,7 @@ CREATE REST AUTHENTICATION APP "Google"
 | Vendor | Type | Description |
 | --- | --- | --- |
 | `MRS` | MRS | Built-in MRS authentication with dedicated MRS account management. |
-| `MYSQL` | MariaDB Server | MariaDB internal authentication, vendor `MySQL Internal`, which authenticates MariaDB accounts. This method suits tooling and other applications with hardcoded accounts that access the MariaDB REST Service. |
+| `MARIADB` | MariaDB Server | MariaDB internal authentication, vendor `MariaDB Internal`, which authenticates MariaDB accounts. This method suits tooling and other applications with hardcoded accounts that access the MariaDB REST Service. |
 | `Facebook` | OAuth2 | Authentication against the Facebook OAuth2 servers, using `Login with Facebook`. |
 | `Google` | OAuth2 | Authentication against the Google OAuth2 servers, using `Login with Google`. |
 
@@ -228,7 +228,7 @@ SHOW REST AUTH APPS FROM SERVICE /myService;
 
 ## SHOW REST AUTH VENDORS
 
-The `SHOW REST AUTH VENDORS` statement lists the vendors a REST auth app can be created for, for example `MRS`, `MySQL Internal`, or an OAuth2 vendor. The vendor is given in the `VENDOR` clause of the [`CREATE REST AUTH APP`](#create-rest-auth-app) statement.
+The `SHOW REST AUTH VENDORS` statement lists the vendors a REST auth app can be created for, for example `MRS`, `MariaDB Internal`, or an OAuth2 vendor. The vendor is given in the `VENDOR` clause of the [`CREATE REST AUTH APP`](#create-rest-auth-app) statement.
 
 ### Syntax
 

@@ -116,11 +116,11 @@ class Dump_schema_backup : public ::mrs::metadata::Schema_backup {
 
   void create(Db_session *session, std::string_view schema_name,
               const Version &version) override {
-    // A new folder per backup: <file name>_backup_<version>[_<n>]
+    // A new folder per backup: <schema>_backup_<version>[_<n>], as msm names
+    // it (schemas of several customers do not share one)
     const auto base = shcore::path::join_path(
         msm_plugin_data_path(), "backups",
-        std::string(::mrs::metadata::k_schema_file_name) + "_backup_" +
-            version.str());
+        std::string(schema_name) + "_backup_" + version.str());
     m_directory = base;
     for (int i = 2; shcore::path::exists(m_directory); ++i) {
       m_directory = base + "_" + std::to_string(i);
@@ -230,12 +230,21 @@ class Msm_plugin_deployer : public ::mrs::metadata::Schema_deployer {
                       std::shared_ptr<ShellBaseSession> session)
       : m_msm(std::move(msm)), m_session(std::move(session)) {}
 
-  std::string deploy(Db_session *, bool backup) override {
+  std::string deploy(Db_session *session, bool backup) override {
+    // The prefix and postfix of the session's metadata schema name are the
+    // project's substitutions
+    const auto &schema = session->metadata_schema();
+    ::mrs::metadata::check_metadata_schema_name(schema);
+    const auto parts = *::mrs::metadata::schema_name_parts(schema);
+
     shcore::Argument_list args;
     args.emplace_back(shcore::make_dict(
         "schema_project_path", msm_project_path(), "backup", backup, "session",
-        shcore::Value(std::static_pointer_cast<shcore::Object_bridge>(
-            m_session))));
+        shcore::Value(
+            std::static_pointer_cast<shcore::Object_bridge>(m_session)),
+        "substitutions",
+        shcore::make_dict("schema_prefix", parts.prefix, "schema_postfix",
+                          parts.postfix)));
     try {
       const auto result = m_msm->call("deploySchema", args);
       return result.get_type() == shcore::String ? result.get_string()

@@ -42,8 +42,6 @@ namespace {
 
 constexpr std::string_view k_lock_name = "MSM_METADATA_LOCK";
 
-std::string schema_name() { return std::string(k_metadata_schema); }
-
 std::optional<std::string> read_file(const std::filesystem::path &path) {
   std::ifstream file(path, std::ios::binary);
   if (!file) return std::nullopt;
@@ -58,17 +56,22 @@ bool schema_is_managed(Db_session *session) {
       "SELECT COUNT(*) AS table_count FROM information_schema.TABLES "
       "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'msm_schema_version' AND "
       "TABLE_TYPE = 'VIEW'",
-      {k_metadata_schema});
+      {session->metadata_schema()});
   return !result.empty() && result.first()["table_count"].as_int() == 1;
 }
 
-// GET_LOCK("MSM_METADATA_LOCK", 1) for the time of the script, as msm's
-// execute_msm_sql_script() takes it.
+// The lock msm's execute_msm_sql_script() takes for the time of the script:
+// one per schema, MSM_METADATA_LOCK_<MD5 of the schema name>, so schemas
+// deployed from the same project (one per customer) can be updated at the
+// same time.
+constexpr std::string_view k_lock_expression = "CONCAT(?, '_', MD5(?))";
+
 class Msm_lock {
  public:
   explicit Msm_lock(Db_session *session) : m_session(session) {
-    const auto result =
-        session->query("SELECT GET_LOCK(?, 1) AS msm_lock", {k_lock_name});
+    const auto result = session->query(
+        "SELECT GET_LOCK(" + std::string(k_lock_expression) + ", 1) AS msm_lock",
+        {k_lock_name, session->metadata_schema()});
     m_locked = !result.empty() && result.first()["msm_lock"].as_int() == 1;
     if (!m_locked) {
       throw std::runtime_error(
@@ -78,7 +81,9 @@ class Msm_lock {
   }
   ~Msm_lock() {
     try {
-      m_session->query("SELECT RELEASE_LOCK(?)", {k_lock_name});
+      m_session->query(
+          "SELECT RELEASE_LOCK(" + std::string(k_lock_expression) + ")",
+          {k_lock_name, m_session->metadata_schema()});
     } catch (...) {
       // The lock goes with the connection anyway
     }
@@ -112,6 +117,34 @@ std::vector<Version> released_versions(const std::string &dir) {
 std::string deployment_script_name(const Version &version) {
   return std::string(k_schema_file_name) + "_deployment_" + version.str() +
          ".sql";
+}
+
+std::string apply_schema_substitutions(std::string_view script,
+                                       std::string_view schema_name) {
+  check_metadata_schema_name(schema_name);
+  const auto parts = *schema_name_parts(schema_name);
+
+  static const std::regex k_placeholder(R"(/\*<msm:([A-Za-z_][A-Za-z0-9_]*)>\*/)");
+  std::string result;
+  result.reserve(script.size());
+  const std::string text(script);
+  size_t last = 0;
+  for (auto it = std::sregex_iterator(text.begin(), text.end(), k_placeholder);
+       it != std::sregex_iterator(); ++it) {
+    const auto name = (*it)[1].str();
+    result.append(text, last, it->position() - last);
+    if (name == "schema_prefix") {
+      result += parts.prefix;
+    } else if (name == "schema_postfix") {
+      result += parts.postfix;
+    } else {
+      throw std::runtime_error("The deployment script uses the unknown "
+                               "substitution /*<msm:" + name + ">*/.");
+    }
+    last = it->position() + it->length();
+  }
+  result.append(text, last, std::string::npos);
+  return result;
 }
 
 std::vector<Version> updatable_versions(std::string_view script) {
@@ -149,7 +182,7 @@ void Script_deployer::fail(const std::string &message) {
 }
 
 std::string Script_deployer::deploy(Db_session *session, bool backup) {
-  const auto name = schema_name();
+  const auto name = session->metadata_schema();
   const auto version = k_schema_version.str();
 
   // The deployment script of the version this module expects
@@ -162,6 +195,14 @@ std::string Script_deployer::deploy(Db_session *session, bool backup) {
          "` using version " + version +
          " requested but there is no deployment script available for this "
          "version.");
+  }
+
+  // The script for this schema name (its prefix and postfix filled in)
+  std::string deploy_script;
+  try {
+    deploy_script = apply_schema_substitutions(*script, name);
+  } catch (const std::exception &e) {
+    fail(e.what());
   }
 
   // Whether the schema exists, is managed by MSM, and on which version
@@ -230,7 +271,7 @@ std::string Script_deployer::deploy(Db_session *session, bool backup) {
     {
       Msm_lock lock(session);
       try {
-        session->execute_script(*script);
+        session->execute_script(deploy_script);
       } catch (const std::exception &e) {
         log("ERROR", "Failed to run the the SQL script `" +
                          script_path.string() + "`.\n" + e.what());

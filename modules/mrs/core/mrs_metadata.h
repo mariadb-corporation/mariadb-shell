@@ -26,7 +26,7 @@
 #ifndef MODULES_MRS_CORE_MRS_METADATA_H_
 #define MODULES_MRS_CORE_MRS_METADATA_H_
 
-// Access to the MRS metadata schema (`mysql_rest_service_metadata`): the
+// Access to the MRS metadata schema (`mariadb_rest_service`): the
 // common pieces, the REST services and the REST schemas. The other object
 // types are in mrs_metadata_db_objects.h, mrs_metadata_auth.h and
 // mrs_metadata_content.h.
@@ -67,7 +67,41 @@ inline constexpr Version k_schema_version{5, 0, 0};
 // The oldest major version this module can manage: ids are UUIDs since 5.0.0.
 inline constexpr int k_supported_major_version = 5;
 
-// Whether the metadata schema exists at all.
+// -- The metadata schema name ------------------------------------------------
+//
+// A metadata schema is named k_default_metadata_schema, optionally with a
+// prefix and a postfix, e.g. acme_mariadb_rest_service_eu: a cloud provider
+// can deploy one per customer into the same server. Its roles carry the same
+// prefix and postfix: acme_mariadb_rest_service_admin_eu.
+
+// The prefix and postfix of a metadata schema name.
+struct Schema_name_parts {
+  std::string prefix;   // empty or a letter or _, then letters, digits, _
+  std::string postfix;  // empty or _, then letters, digits, _
+};
+
+// The parts of a metadata schema name; nothing when the name does not
+// contain the default name exactly once or a part has other characters.
+std::optional<Schema_name_parts> schema_name_parts(std::string_view name);
+
+// Throws unless the name is a valid metadata schema name.
+void check_metadata_schema_name(std::string_view name);
+
+// A role of the session's metadata schema, e.g. role_name(session,
+// "data_provider") is acme_mariadb_rest_service_data_provider_eu.
+std::string role_name(const Db_session *session, std::string_view role);
+
+// The metadata schemas the session can see: names with valid parts that
+// hold an msm_schema_version view. INFORMATION_SCHEMA only lists the
+// schemas the account has privileges on (through its active roles).
+std::vector<std::string> find_metadata_schemas(Db_session *session);
+
+// The metadata schema to use when none was chosen with USE REST METADATA
+// SCHEMA: the default name if visible, else the only one visible, else
+// (none deployed yet) the default name. Throws when several are visible.
+std::string resolve_metadata_schema(Db_session *session);
+
+// Whether the session's metadata schema exists at all.
 bool schema_exists(Db_session *session);
 
 // The version of the deployed schema, from the msm_schema_version view (or

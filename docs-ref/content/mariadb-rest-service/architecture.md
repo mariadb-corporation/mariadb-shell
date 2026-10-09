@@ -11,7 +11,7 @@ description: >-
 The MariaDB REST Service (MRS) consists of the following components:
 
 - **MariaDB Server**
-  - Holds the metadata schema `mysql_rest_service_metadata`, which stores the MRS configuration: REST services, their endpoints, authentication apps, and users.
+  - Holds the metadata schema `mariadb_rest_service`, which stores the MRS configuration: REST services, their endpoints, authentication apps, and users.
   - Holds the data of the REST applications.
 - **The MariaDB REST Daemon**
   - One or more instances serve the HTTPS REST interface. Each instance reads the REST services and endpoints from the metadata schema and registers itself in it, so that [SHOW REST DAEMONS](rest-sql-reference/rest-daemons.md#show-rest-daemons) lists it.

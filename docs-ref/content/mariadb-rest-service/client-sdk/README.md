@@ -38,11 +38,7 @@ Most examples in this guide are written in TypeScript. For the details of each l
 | Document | [update](typescript-client-api.md#documentupdate) | [update](python-client-api.md#documentupdate) | Updates a REST document that was fetched before. |
 | | [delete](typescript-client-api.md#documentdelete) | [delete](python-client-api.md#documentdelete) | Deletes a REST document that was fetched before. |
 | Function | [call](typescript-client-api.md#functioncall) | [call](python-client-api.md#functioncall) | Calls a REST function. |
-| | [start](typescript-client-api.md#functionstart) | [start](python-client-api.md#functionstart) | Calls an async REST function and returns a task. |
 | Procedure | [call](typescript-client-api.md#procedurecall) | [call](python-client-api.md#procedurecall) | Calls a REST procedure. |
-| | [start](typescript-client-api.md#procedurestart) | [start](python-client-api.md#procedurestart) | Calls an async REST procedure and returns a task. |
-| Task | [watch](typescript-client-api.md#taskwatch) | [watch](python-client-api.md#taskwatch) | Watches a task for progress and result. |
-| | [kill](typescript-client-api.md#taskkill) | [kill](python-client-api.md#taskkill) | Terminates an async REST function or REST procedure call. |
 
 ## Generating the SDK Files
 

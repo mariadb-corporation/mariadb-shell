@@ -1,8 +1,8 @@
 ---
 description: >-
   Reference of the commands that the Python client SDK of the MariaDB REST
-  Service generates for REST services, schemas, views, documents, routines,
-  and tasks.
+  Service generates for REST services, schemas, views, documents, and
+  routines.
 ---
 
 # Python Client API Reference
@@ -182,7 +182,7 @@ auth_apps = await my_service.get_auth_apps()
 # ----------------
 # [
 #     {"name": "MRS", "vendor_id": "0x30000000000000000000000000000000"},
-#     {"name": "MySQL", "vendor_id": "0x31000000000000000000000000000000"}
+#     {"name": "MariaDB", "vendor_id": "0x31000000000000000000000000000000"}
 # ]
 ```
 
@@ -202,9 +202,9 @@ auth_apps = await my_service.get_auth_apps()
 The following authentication app vendors are supported:
 
 * MRS native authentication (vendor `MRS`)
-* MariaDB internal authentication (vendor `MySQL Internal`)
+* MariaDB internal authentication (vendor `MariaDB Internal`)
 
-The examples on this page use `MySQL`, the default authentication app for MariaDB internal authentication, which authenticates MariaDB accounts.
+The examples on this page use `MariaDB`, the default authentication app for MariaDB internal authentication, which authenticates MariaDB accounts.
 
 #### Return Type
 
@@ -223,7 +223,7 @@ my_service = MyService()
 
 # `authenticate` will account for authentication
 await my_service.authenticate(
-    app="MySQL",
+    app="MariaDB",
     username="Lucas",
     password="S3cr3t",
     vendor_id="0x31000000000000000000000000000000"
@@ -266,7 +266,7 @@ my_service = MyService()
 
 # Log in - `authenticate` will account for authentication
 await my_service.authenticate(
-    app="MySQL",
+    app="MariaDB",
     username="Lucas",
     password="S3cr3t"
 )
@@ -1098,19 +1098,7 @@ if __name__ == "__main__":
 
 ### Function.call
 
-`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). In the case of a `FUNCTION`, the set of parameters (and corresponding values) as specified by the database routine are provided as corresponding keyword arguments. If the REST routine has an associated Async Task, the first parameter is, instead, a positional argument that uses a Python `dict` to specify additional task-specific execution options.
-
-{% hint style="info" %}
-For the sake of avoiding conflict with keyword argument names, an arbitrary number of positional arguments are enabled. The recommended practice is to pass only one options dictionary, as the first positional argument. If you, intentionally or not, pass more than one positional argument, the option value from the later dictionary in the sequence takes precedence.
-{% endhint %}
-
-#### Options
-
-| Option Name  | Data Type | Required | Default | Notes |
-|---|---|---|---|---------------------|
-| refresh_rate | `float` | No | `2.0` | Rate at which the underlying implementation checks for status updates of the execution. Value in **seconds**. An exception is raised if `refresh_rate` is lower than 0.5 seconds. (available only if the routine has an associated Async Task) |
-| progress | `Callable[[IMrsRunningTaskReport], Awaitable[None]]` | No | `None` | Callback function that gets executed (with the details provided by the status update) while the status of the execution remains in `RUNNING` state. By default, no progress is carried on. |
-| timeout | `float` | No | `None` | Maximum time to wait for the execution to complete. If this threshold is reached, the ongoing task is killed and `MrsTaskTimeOutError` exception is raised. By default, no timeout is enforced. (available only if the routine has an associated Async Task) |
+`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). In the case of a `FUNCTION`, the set of parameters (and corresponding values) as specified by the database routine are provided as corresponding keyword arguments.
 
 #### Return Type
 
@@ -1119,16 +1107,6 @@ The Python data type returned by `<func_name>(...)` depends on the data type ret
 {% hint style="info" %}
 For instance, the Python data type `int` must be expected for stored functions declared to return `TINYINT`, `SMALLINT`, `MEDIUMINT`, `INT` and `BIGINT`.
 {% endhint %}
-
-#### Exceptions
-
-For REST routines with an associated asynchronous task, `call` can raise exceptions as follows:
-
-| Exception  | Notes |
-|---|---------------------|
-| `MrsTaskExecutionError` | When the status update reports back an `ERROR` event. |
-| `MrsTaskExecutionCancelledError` | When the status update reports back a `CANCELLED` event. |
-| `MrsTaskTimeOutError` | When the specified `timeout` threshold is reached. |
 
 #### Example
 
@@ -1166,57 +1144,15 @@ RETURNS DATETIME DETERMINISTIC
 RETURN CURDATE();
 ```
 
-### Function.start
-
-`start()` is used to start a REST routine (`FUNCTION` or `PROCEDURE`), with an associated Async Task, without waiting for it to finish.
-
-#### Options
-
-`start()` accepts the same set of options as `call()`, see [Function.call](#functioncall) for more details.
-
-#### Return Type
-
-A [Task](#async-tasks) instance.
-
-#### Example
-
-```python
-from sdk.python import MyService
-
-my_service = MyService()
-
-task = await my_service.sakila.delayed_hello_func.start({"refresh_rate": 5.0}, name="Rui")
-```
-
-where `delayed_hello_func` is:
-
-```sql
-DELIMITER $$
-CREATE FUNCTION delayed_hello_func (name CHAR(20))
-RETURNS CHAR(50) DETERMINISTIC
-SQL SECURITY INVOKER
-BEGIN
-  DO SLEEP(5);
-  RETURN CONCAT('Hello, ', name, '!');
-END $$
-DELIMITER ;
-```
-
 ### Procedure.call
 
-`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). In the case of a `PROCEDURE`, the set of `IN`/`INOUT` parameters (and corresponding values) as specified by the database routine are provided as corresponding keyword arguments. If the REST routine has an associated Async Task, the first parameter is, instead, a positional argument that uses a Python `dict` to specify additional task-specific execution options.
-
-{% hint style="info" %}
-For the sake of avoiding conflict with keyword argument names, an arbitrary number of positional arguments are enabled. The recommended practice is to pass only one options dictionary, as the first positional argument. If you, intentionally or not, pass more than one positional argument, the option value from the later dictionary in the sequence takes precedence.
-{% endhint %}
+`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). In the case of a `PROCEDURE`, the set of `IN`/`INOUT` parameters (and corresponding values) as specified by the database routine are provided as corresponding keyword arguments.
 
 #### Options
 
 Input parameters aren't mandatory, meaning you are free to not provide them.
 
 In case of being provided, input parameters can also be assigned a null value when calling the procedure, in other words, you can set any parameters to `None`.
-
-As for additional options, see [Function.call](#functioncall) for more details.
 
 #### Return Type
 
@@ -1333,86 +1269,4 @@ procedure_result = await my_service.mrs_tests.sample_proc.call(arg2=None)
 #         items=[{"something": "bar"}],
 #     ),
 # ],
-```
-
-### Procedure.start
-
-See [Function.start](#functionstart) for more details.
-
-#### Options
-
-`start()` accepts the same set of options as `call()`, see [Procedure.call](#procedurecall) for more details.
-
-#### Return Type
-
-A [Task](#async-tasks) instance.
-
-#### Example
-
-```python
-from sdk.python import MyService
-
-my_service = MyService()
-
-task = await my_service.sakila.delayed_hello_proc.start({"refresh_rate": 5.0}, name="Rui")
-```
-
-where `delayed_hello_proc` is:
-
-```sql
-DELIMITER $$
-CREATE PROCEDURE delayed_hello_proc (IN name CHAR(20), OUT salute CHAR(40))
-SQL SECURITY INVOKER
-BEGIN
-  DO SLEEP(5);
-  SELECT CONCAT('Hello, ', name, '!') INTO salute;
-END $$
-DELIMITER ;
-```
-
-## Async Tasks
-
-Asynchronous Tasks are an MRS construct used to manage the life-cycle of a long-running procedure which clients can poll to monitor for status updates. From the client-standpoint, a Task can produce the following type of events (status updates):
-
-* `SCHEDULED` starting the routine schedules a new task
-* `RUNNING` progress status updates whilst the procedure is running
-* `COMPLETE` result produced by the routine after it finishes
-* `TIMEOUT` if the routine does not produce a result before a given timeout
-* `ERROR` runtime error whilst executing the routine
-* `CANCELLED` when the associated asynchronous task is killed before the routine finishes
-
-### Task.watch
-
-`watch` is used to monitor the status of a REST routine (`FUNCTION` or `PROCEDURE`) with an associated Async Task.
-
-#### Return Type
-
-An [Asynchronous Generator](https://peps.python.org/pep-0525/) instance which produces status update reports with details about the execution context of the REST routine.
-
-#### Example
-
-```python
-task = await my_service.my_db.delayed_hello_func.start({"refresh_rate": 3.0}, name="Rui")
-
-async for report in task.watch():
-    if report.status == "RUNNING":
-        print(report.progress)
-    elif report.status == "ERROR":
-        print(report.message)
-```
-
-### Task.kill
-
-`kill` is used to kill the underlying Async Task of a REST routine (`FUNCTION` or `PROCEDURE`) and cancel its execution.
-
-#### Example
-
-```python
-task = await my_service.my_db.delayed_hello_func.start({ "timeout": 4 }, name="Rui")
-
-async for report in task.watch():
-    if report.status == "TIMEOUT":
-        await task.kill()
-    elif report.status == "CANCELLED":
-        print(report.message)
 ```

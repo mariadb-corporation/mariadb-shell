@@ -44,10 +44,10 @@ SELECT cs.id, cs.service_id, cs.request_path, cs.requires_auth,
     cs.enabled, cs.internal, cs.comments, cs.options,
     CONCAT(h.name, se.url_context_root) AS host_ctx,
     cs.content_type
-FROM `mysql_rest_service_metadata`.`content_set` cs
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`service` se
+FROM `{metadata_schema}`.`content_set` cs
+    LEFT OUTER JOIN `{metadata_schema}`.`service` se
         ON se.id = cs.service_id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+    LEFT JOIN `{metadata_schema}`.`url_host` h
         ON se.url_host_id = h.id
 )";
 
@@ -89,12 +89,12 @@ SELECT f.id, f.content_set_id, f.request_path, f.requires_auth, f.enabled,
     cs.request_path AS content_set_request_path,
     CONCAT(h.name, se.url_context_root) AS host_ctx)") +
          (include_content ? ", f.content" : "") + R"(
-FROM `mysql_rest_service_metadata`.`content_file` f
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`content_set` cs
+FROM `{metadata_schema}`.`content_file` f
+    LEFT OUTER JOIN `{metadata_schema}`.`content_set` cs
         ON cs.id = f.content_set_id
-    LEFT OUTER JOIN `mysql_rest_service_metadata`.`service` se
+    LEFT OUTER JOIN `{metadata_schema}`.`service` se
         ON se.id = cs.service_id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+    LEFT JOIN `{metadata_schema}`.`url_host` h
         ON se.url_host_id = h.id
 )";
 }

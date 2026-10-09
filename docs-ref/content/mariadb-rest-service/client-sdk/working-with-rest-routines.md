@@ -1,8 +1,7 @@
 ---
 description: >-
   Call REST functions and procedures with the MRS client SDK, pass IN and INOUT
-  parameters, read OUT parameters and result sets, and run long-running
-  routines as asynchronous tasks.
+  parameters, and read OUT parameters and result sets.
 ---
 
 # Working with REST Routines
@@ -149,50 +148,3 @@ my_service.my_db.my_proc.call(x=3, y=2) # IMrsProcedureResponse(result_sets=[Mrs
 ```
 {% endtab %}
 {% endtabs %}
-
-## Async Task Support
-
-A long-running REST function or procedure can run as an asynchronous task. Instead of running the routine directly and hitting an HTTP request timeout or a timeout of the MariaDB REST Daemon, the server spawns a monitoring task that the client checks for updates asynchronously.
-
-With the MRS TypeScript SDK, an application either monitors the tasks spawned for a REST routine itself, or runs the routine without dealing with these details.
-
-For a REST routine that runs as an asynchronous task, the SDK generates the same `call()` command, with an additional object of execution options:
-
-* `refreshRate`: the interval (ms) between status update checks.
-* `progress`: an asynchronous callback that runs with the details of each status update report.
-* `timeout`: the maximum time (ms) to wait for the execution to complete. When the threshold is reached, the ongoing task is killed.
-
-For example, if the REST function above runs as an asynchronous task, run the task and receive its status update reports in TypeScript as follows:
-
-```typescript
-myService.sakila.inventoryInStock.call({ pInventoryId: 1 }, { progress: (r) => console.log(r) });
-```
-
-The SDK also generates a `start()` command, which starts the task and lets you watch for status updates yourself, or kill the task to cancel the execution of the routine. The command takes the same set of `IN` and `INOUT` parameters and values as its first argument, and returns a `Task` object that provides the API for task-level actions. See [Task.watch](typescript-client-api.md#taskwatch) and [Task.kill](typescript-client-api.md#taskkill) for details.
-
-To start the task and cancel it if it takes longer than a given time to finish:
-
-```typescript
-const task = myService.sakila.inventoryInStock.start({ pInventoryId: 1 }, { timeout: 10000 });
-
-for await (const report of task.watch()) {
-  if (report.status === "TIMEOUT") {
-    await task.kill();
-  } else if (report.status === "CANCELLED") {
-    // this block is executed after the task is killed
-    console.log(report.message);
-  }
-}
-```
-
-To get the result that the REST routine produces:
-
-```typescript
-const task = myService.sakila.inventoryInStock.start({ pInventoryId: 1 });
-
-for await (const report of task.watch()) {
-  if (report.status === "COMPLETED") {
-    console.log(report.data.result); // true
-  }
-}
-```

@@ -1092,7 +1092,7 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
                            .set("class_name", m.class_name)
                            .set("options", link_options.dump()));
 
-      for (const auto &grant : option_grant_statements(definition.options)) {
+      for (const auto &grant : option_grant_statements(session, definition.options)) {
         session->execute(grant);
       }
       ++registered.scripts;

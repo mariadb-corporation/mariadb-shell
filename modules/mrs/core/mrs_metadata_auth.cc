@@ -293,12 +293,12 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
     r.caption, r.description, r.options
-FROM `mysql_rest_service_metadata`.`mrs_role` r
-    LEFT JOIN `mysql_rest_service_metadata`.`mrs_role` pr
+FROM `{metadata_schema}`.`mrs_role` r
+    LEFT JOIN `{metadata_schema}`.`mrs_role` pr
         ON r.derived_from_role_id = pr.id
-    LEFT JOIN `mysql_rest_service_metadata`.`service` s
+    LEFT JOIN `{metadata_schema}`.`service` s
         ON r.specific_to_service_id = s.id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h
+    LEFT JOIN `{metadata_schema}`.`url_host` h
         ON s.url_host_id = h.id
 )";
 
@@ -333,8 +333,8 @@ std::vector<Role> query_roles(Db_session *session, const std::string &where,
 const char *k_privilege_select = R"(
 SELECT p.id, p.role_id, r.caption AS role_caption, p.crud_operations,
     p.service_path, p.schema_path, p.object_path
-FROM `mysql_rest_service_metadata`.`mrs_privilege` p
-    JOIN `mysql_rest_service_metadata`.`mrs_role` r ON p.role_id = r.id
+FROM `{metadata_schema}`.`mrs_privilege` p
+    JOIN `{metadata_schema}`.`mrs_role` r ON p.role_id = r.id
 )";
 
 Privilege privilege_from_row(const Db_row &row) {
@@ -354,8 +354,8 @@ SELECT a.id, a.auth_vendor_id, a.name, a.description, a.url,
     a.url_direct_auth, a.access_token, a.app_id, a.enabled,
     a.limit_to_registered_users, a.default_role_id, a.options,
     v.name AS auth_vendor
-FROM `mysql_rest_service_metadata`.`auth_app` a
-    LEFT JOIN `mysql_rest_service_metadata`.`auth_vendor` v
+FROM `{metadata_schema}`.`auth_app` a
+    LEFT JOIN `{metadata_schema}`.`auth_vendor` v
         ON v.id = a.auth_vendor_id
 )";
 
@@ -397,8 +397,8 @@ SELECT u.id, u.auth_app_id, u.name, u.email, u.vendor_user_id,
     u.login_permitted, u.mapped_user_id, u.app_options, u.options,
     (u.auth_string IS NOT NULL) AS has_auth_string,
     a.name AS auth_app_name
-FROM `mysql_rest_service_metadata`.`mrs_user` u
-    JOIN `mysql_rest_service_metadata`.`auth_app` a ON a.id = u.auth_app_id
+FROM `{metadata_schema}`.`mrs_user` u
+    JOIN `{metadata_schema}`.`auth_app` a ON a.id = u.auth_app_id
 )";
 
 User user_from_row(const Db_row &row) {
@@ -551,15 +551,15 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
         "SEPARATOR ', ') AS users";
   }
   query += R"(
-FROM `mysql_rest_service_metadata`.`mrs_role` r
-    JOIN `mysql_rest_service_metadata`.`mrs_user_has_role` ur
+FROM `{metadata_schema}`.`mrs_role` r
+    JOIN `{metadata_schema}`.`mrs_user_has_role` ur
         ON ur.role_id = r.id
-    LEFT JOIN `mysql_rest_service_metadata`.`mrs_user` u ON u.id = ur.user_id
-    LEFT JOIN `mysql_rest_service_metadata`.`auth_app` a ON a.id = u.auth_app_id
-    LEFT JOIN `mysql_rest_service_metadata`.`service` s
+    LEFT JOIN `{metadata_schema}`.`mrs_user` u ON u.id = ur.user_id
+    LEFT JOIN `{metadata_schema}`.`auth_app` a ON a.id = u.auth_app_id
+    LEFT JOIN `{metadata_schema}`.`service` s
         ON r.specific_to_service_id = s.id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h ON s.url_host_id = h.id
-    LEFT JOIN `mysql_rest_service_metadata`.`mrs_role` pr
+    LEFT JOIN `{metadata_schema}`.`url_host` h ON s.url_host_id = h.id
+    LEFT JOIN `{metadata_schema}`.`mrs_role` pr
         ON r.derived_from_role_id = pr.id
 )";
 
@@ -891,8 +891,8 @@ std::string auth_app_create_statement(Db_session *session,
   std::string vendor;
   if (upper_vendor == "MRS") {
     vendor = "MRS";
-  } else if (upper_vendor == "MYSQL INTERNAL") {
-    vendor = "MYSQL";
+  } else if (upper_vendor == "MARIADB INTERNAL") {
+    vendor = "MARIADB";
   } else {
     vendor = sql::quote_identifier(auth_app.auth_vendor);
   }
@@ -1040,13 +1040,13 @@ SELECT ur.comments AS grant_comments, ur.options AS grant_options,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
     r.caption, r.description, r.options
-FROM `mysql_rest_service_metadata`.`mrs_user_has_role` ur
-    JOIN `mysql_rest_service_metadata`.`mrs_role` r ON ur.role_id = r.id
-    LEFT JOIN `mysql_rest_service_metadata`.`mrs_role` pr
+FROM `{metadata_schema}`.`mrs_user_has_role` ur
+    JOIN `{metadata_schema}`.`mrs_role` r ON ur.role_id = r.id
+    LEFT JOIN `{metadata_schema}`.`mrs_role` pr
         ON r.derived_from_role_id = pr.id
-    LEFT JOIN `mysql_rest_service_metadata`.`service` s
+    LEFT JOIN `{metadata_schema}`.`service` s
         ON s.id = r.specific_to_service_id
-    LEFT JOIN `mysql_rest_service_metadata`.`url_host` h ON s.url_host_id = h.id
+    LEFT JOIN `{metadata_schema}`.`url_host` h ON s.url_host_id = h.id
 WHERE ur.user_id = ? ORDER BY r.caption, specific_to_service_request_path)";
 
   std::vector<User_role> roles;

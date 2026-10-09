@@ -58,7 +58,7 @@ ENDIF()
 # share/mariadb-shell/mrs/, where CONFIGURE REST METADATA deploys from:
 # through the msm plugin's deploySchema() when it is loaded, otherwise by
 # running the deployment script itself (metadata::Script_deployer).
-set(MRS_MSM_PROJECT_NAME "mysql_rest_service_metadata.msm.project")
+set(MRS_MSM_PROJECT_NAME "mariadb_rest_service.msm.project")
 set(MRS_MSM_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/db_schema/${MRS_MSM_PROJECT_NAME}")
 set(MRS_MSM_PROJECT_DESTINATION "${INSTALL_SHAREDIR}/mrs/${MRS_MSM_PROJECT_NAME}")
 
@@ -71,6 +71,10 @@ install_bundled_files(
 )
 foreach(release_dir versions deployment updates)
   file(GLOB release_scripts "${MRS_MSM_PROJECT_DIR}/releases/${release_dir}/*.sql")
+  # The first release has no update scripts
+  if(NOT release_scripts)
+    continue()
+  endif()
   install_bundled_files(
       DESCRIPTION "MRS metadata ${release_dir} scripts"
       FILES ${release_scripts}

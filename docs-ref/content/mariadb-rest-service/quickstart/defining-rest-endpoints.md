@@ -27,7 +27,7 @@ To create a REST service, right-click the `MariaDB REST Service` child entry of 
 
 The REST service dialog opens. You can set a REST service path and a REST service name, or accept the default `/myService` for now.
 
-MRS creates the REST service without publishing it, and links the REST authentication app `MRS` to it by default. To allow logins with MariaDB accounts as well, link the authentication app that uses MariaDB internal authentication (vendor `MySQL Internal`). [SHOW REST AUTH APPS](../rest-sql-reference/rest-authentication.md#show-rest-auth-apps) lists the authentication apps.
+MRS creates the REST service without publishing it, and links the REST authentication app `MRS` to it by default. To allow logins with MariaDB accounts as well, link the authentication app that uses MariaDB internal authentication (vendor `MariaDB Internal`). [SHOW REST AUTH APPS](../rest-sql-reference/rest-authentication.md#show-rest-auth-apps) lists the authentication apps.
 
 Click `OK` to create the REST service.
 

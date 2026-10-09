@@ -41,10 +41,9 @@
 namespace mrs {
 namespace metadata {
 
-// The MySQL role the REST data is read through; the objects exposed via
-// REST are granted to it.
-inline constexpr std::string_view k_data_provider_role =
-    "mysql_rest_service_data_provider";
+// The role the REST data is read through (role_name(session,
+// k_data_provider_role)); the objects exposed via REST are granted to it.
+inline constexpr std::string_view k_data_provider_role = "data_provider";
 
 struct Db_object {
   Id id;
@@ -200,11 +199,10 @@ void update_object(Db_session *session, const Id &object_id,
 bool object_name_in_use(Db_session *session, const Id &schema_id,
                         const Id &object_id, std::string_view name);
 
-// The crud_operations of a db_object derived from its type, the options
-// of its first object and references, and the mysqlTask option.
+// The crud_operations of a db_object derived from its type and the options
+// of its first object.
 std::vector<std::string> calculate_crud_operations(
-    std::string_view object_type, const std::vector<Object_definition> &objects,
-    const std::optional<std::string> &options);
+    std::string_view object_type, const std::vector<Object_definition> &objects);
 
 // -- db_object rows ------------------------------------------------------
 
@@ -258,7 +256,7 @@ void update_db_object(Db_session *session, const Id &id,
 // object (and the tables of its references), as the crud_operations of the
 // db_object require, plus the explicit grants of its options document.
 std::vector<std::string> grant_statements(
-    std::string_view schema_name, std::string_view name,
+    const Db_session *session, std::string_view schema_name, std::string_view name,
     std::string_view object_type,
     const std::vector<std::string> &crud_operations,
     const std::vector<Object_definition> &objects,
@@ -267,7 +265,7 @@ std::vector<std::string> grant_statements(
 // The GRANT statements of the "grants" entry of an options document (one
 // grant or a list), e.g. the grants an MRS script declares.
 std::vector<std::string> option_grant_statements(
-    const std::optional<std::string> &options);
+    const Db_session *session, const std::optional<std::string> &options);
 
 // Revokes the privileges of the data provider role on the database object.
 // Privileges that are not granted are not an error.

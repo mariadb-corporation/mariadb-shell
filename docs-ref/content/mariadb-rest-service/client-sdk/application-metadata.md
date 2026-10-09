@@ -95,7 +95,7 @@ const metadata = await myService.myDb.getMetadata()
 console.log(metadata) // {}
 ```
 
-If the REST schema requires authentication, here with a MariaDB account that logs in through the default authentication app `MySQL` for MariaDB internal authentication:
+If the REST schema requires authentication, here with a MariaDB account that logs in through the default authentication app `MariaDB` for MariaDB internal authentication:
 
 ```sql
 CREATE OR REPLACE REST SCHEMA /myDb ON SERVICE /myService
@@ -107,7 +107,7 @@ CREATE OR REPLACE REST SCHEMA /myDb ON SERVICE /myService
 
 CREATE USER foo IDENTIFIED BY 'bar';
 
-ALTER REST SERVICE /myService ADD AUTH APP "MySQL";
+ALTER REST SERVICE /myService ADD AUTH APP "MariaDB";
 ```
 
 the command only succeeds if the client authenticates first:
@@ -117,7 +117,7 @@ import { MyService } from "/path/to/sdk/myService"
 
 const myService = new MyService()
 
-await myService.authenticate({ username: "foo", password: "bar", app: "MySQL" })
+await myService.authenticate({ username: "foo", password: "bar", app: "MariaDB" })
 const metadata = await myService.myDb.getMetadata()
 ```
 
@@ -211,7 +211,7 @@ import { MyService } from "/path/to/sdk/myService"
 
 const myService = new MyService()
 
-await myService.authenticate({ username: "foo", password: "bar", app: "MySQL" })
+await myService.authenticate({ username: "foo", password: "bar", app: "MariaDB" })
 const metadata = await myService.myDb.myTable.getMetadata()
 console.log(metadata) // { type: "table" }
 ```

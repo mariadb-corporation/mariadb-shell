@@ -85,7 +85,7 @@ Shell_db_session::Shell_db_session(
     std::shared_ptr<mysqlshdk::db::ISession> session)
     : m_session(std::move(session)) {}
 
-::mrs::Db_result Shell_db_session::query(const std::string &sql) {
+::mrs::Db_result Shell_db_session::do_query(const std::string &sql) {
   ::mrs::Db_result result;
   try {
     const auto res = m_session->query(sql, true);
@@ -112,7 +112,7 @@ Shell_db_session::Shell_db_session(
   return result;
 }
 
-uint64_t Shell_db_session::execute(const std::string &sql) {
+uint64_t Shell_db_session::do_execute(const std::string &sql) {
   try {
     const auto res = m_session->query(sql, true);
     return res->get_affected_row_count();

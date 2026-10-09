@@ -354,16 +354,16 @@ CREATE REST AUTH APP IF NOT EXISTS "MRS" VENDOR MRS;
 ALTER REST SERVICE /myTestService
 ADD AUTH APP "MRS";
 
-CREATE REST USER "mike"@"MRS" IDENTIFIED BY "MySQLR0cks!";
-CREATE REST USER "mike2"@"MRS" IDENTIFIED BY "MySQLR0cks!";
-CREATE REST USER "boss"@"MRS" IDENTIFIED BY "MySQLR0cks!" ACCOUNT LOCK OPTIONS {
+CREATE REST USER "mike"@"MRS" IDENTIFIED BY "MariaDBR0cks!";
+CREATE REST USER "mike2"@"MRS" IDENTIFIED BY "MariaDBR0cks!";
+CREATE REST USER "boss"@"MRS" IDENTIFIED BY "MariaDBR0cks!" ACCOUNT LOCK OPTIONS {
     "email": "boss@example.com",
     "vendor_user_id": "vendor",
     "mapped_user_id": "vendorboss123",
     "other_option": false
 } APP OPTIONS {"myoption": 12345};
 
-ALTER REST USER "mike"@"MRS" IDENTIFIED BY "MySQLR0cks!!";
+ALTER REST USER "mike"@"MRS" IDENTIFIED BY "MariaDBR0cks!!";
 
 ALTER REST USER "mike"@"MRS" OPTIONS {
     "email": "mike@example.com",
@@ -373,7 +373,7 @@ ALTER REST USER "mike"@"MRS" OPTIONS {
     "anything": [32]
 };
 
-select * from mysql_rest_service_metadata.mrs_user;
+select * from mariadb_rest_service.mrs_user;
 
 CREATE OR REPLACE REST ROLE "role1";
 CREATE REST ROLE IF NOT EXISTS "role1";
@@ -419,16 +419,16 @@ DROP REST ROLE "role1";
 DROP REST USER "mike"@"MRS";
 DROP REST USER IF EXISTS "mike"@"MRS";
 
-CREATE OR REPLACE REST AUTH APP "MySQL" VENDOR MySQL
+CREATE OR REPLACE REST AUTH APP "MariaDB" VENDOR MariaDB
 ALLOW NEW USERS TO REGISTER
 DEFAULT ROLE "Full Access";
 
-CREATE REST AUTH APP IF NOT EXISTS "MySQL" VENDOR MySQL
+CREATE REST AUTH APP IF NOT EXISTS "MariaDB" VENDOR MariaDB
 ALLOW NEW USERS TO REGISTER
 DEFAULT ROLE "Full Access";
 
 ALTER REST SERVICE /myTestService
-ADD AUTH APP "MySQL";
+ADD AUTH APP "MariaDB";
 
 SHOW REST AUTH APPS FROM SERVICE /myTestService;
 
@@ -440,7 +440,7 @@ SHOW REST DAEMONS FORMAT=JSON;
 
 DROP REST DAEMON IF EXISTS 999;
 
-SHOW REST SERVICES FOR AUTH APP "MySQL";
+SHOW REST SERVICES FOR AUTH APP "MariaDB";
 
 SHOW REST USERS ON SERVICE /myTestService;
 
@@ -448,16 +448,16 @@ SHOW REST USERS FOR AUTH APP "MRS";
 
 SHOW CREATE REST AUTH APP "MRS";
 
-SHOW CREATE REST AUTH APP "MySQL";
+SHOW CREATE REST AUTH APP "MariaDB";
 
-SHOW CREATE REST AUTH APP "MySQL" FORMAT=JSON;
+SHOW CREATE REST AUTH APP "MariaDB" FORMAT=JSON;
 
 ALTER REST SERVICE /myTestService DISABLED;
 
 DROP REST AUTH APP "MRS";
 DROP REST AUTH APP IF EXISTS "MRS";
 
-DROP REST AUTH APP "MySQL";
+DROP REST AUTH APP "MariaDB";
 
 DROP REST DATA MAPPING VIEW /country
 FROM SERVICE /myTestService SCHEMA /sakila;
@@ -660,7 +660,7 @@ AS `test`.`t1` {
     c2: c2,
     c3: c3,
     info: info JSON SCHEMA {
-        "id": "https://dev.mysql.com/mrs/test/test.t1/info",
+        "id": "https://mariadb.com/mrs/test/test.t1/info",
         "type": "object",
         "properties": {
             "friends": {
@@ -678,7 +678,7 @@ AS `test`.`t1` {
         "required": [ "friends" ]
     },
     data: data JSON SCHEMA {
-        "id": "https://dev.mysql.com/mrs/test/test.t1/data",
+        "id": "https://mariadb.com/mrs/test/test.t1/data",
         "type": "object",
         "properties": {
             "hobbies": {

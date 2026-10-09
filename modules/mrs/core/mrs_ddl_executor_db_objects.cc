@@ -611,7 +611,7 @@ void regrant(Db_session *session, const metadata::Db_object &db_object,
   metadata::revoke_all_from_db_object(session, db_object.schema_name,
                                       db_object.name, db_object.object_type);
   for (const auto &grant : metadata::grant_statements(
-           db_object.schema_name, db_object.name, db_object.object_type,
+           session, db_object.schema_name, db_object.name, db_object.object_type,
            db_object.crud_operations, objects, db_object.options)) {
     try {
       session->execute(grant);
@@ -674,9 +674,8 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
   run_grants_of_new_object(
       m_session, id,
       metadata::grant_statements(
-          schema_name, name, *object_type,
-          metadata::calculate_crud_operations(*object_type, objects,
-                                              definition.options),
+          m_session, schema_name, name, *object_type,
+          metadata::calculate_crud_operations(*object_type, objects),
           objects, definition.options),
       false, r);
 
@@ -719,8 +718,8 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   run_grants_of_new_object(
       m_session, id,
       metadata::grant_statements(
-          schema_name, name, type,
-          metadata::calculate_crud_operations(type, objects, definition.options),
+          m_session, schema_name, name, type,
+          metadata::calculate_crud_operations(type, objects),
           objects, definition.options),
       s.force, r);
 
@@ -772,9 +771,8 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
       object.options = mapping_options(s.class_def->crud);
       metadata::update_object(m_session, object.id, object.name, object.options);
     }
-    changes.crud_operations = metadata::calculate_crud_operations(
-        db_object->object_type, objects,
-        changes.options ? changes.options : db_object->options);
+    changes.crud_operations =
+        metadata::calculate_crud_operations(db_object->object_type, objects);
   }
 
   metadata::update_db_object(m_session, db_object->id, changes);
@@ -816,8 +814,7 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
                                       false);
     assign_object_names(m_session, schema.id, full_path, true, &objects);
     metadata::set_objects(m_session, db_object->id, objects);
-    changes.crud_operations = metadata::calculate_crud_operations(
-        type, objects, changes.options ? changes.options : db_object->options);
+    changes.crud_operations = metadata::calculate_crud_operations(type, objects);
   }
 
   metadata::update_db_object(m_session, db_object->id, changes);

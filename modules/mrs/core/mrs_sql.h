@@ -45,8 +45,10 @@ namespace mrs {
 // (metadata schema 5.0.0), e.g. "31000000-0000-0000-0000-000000000000".
 using Id = std::string;
 
-// The name of the metadata schema.
-inline constexpr std::string_view k_metadata_schema = "mysql_rest_service_metadata";
+// The default name of the metadata schema. A deployment may add a prefix
+// and a postfix to it (e.g. acme_mariadb_rest_service_eu), see
+// metadata::schema_name_parts().
+inline constexpr std::string_view k_default_metadata_schema = "mariadb_rest_service";
 
 namespace sql {
 
@@ -62,8 +64,12 @@ std::string quote_identifier(std::string_view name);
 std::string quote_qualified(std::string_view schema, std::string_view name);
 // 0x... of binary data, e.g. the content of a file.
 std::string hex(std::string_view binary);
-// `mysql_rest_service_metadata`.`table`, or the name itself when it is
-// already qualified.
+// Stands for the metadata schema in statement text; Db_session::bind()
+// replaces it with the session's metadata schema.
+inline constexpr std::string_view k_metadata_schema_marker = "`{metadata_schema}`";
+
+// <metadata schema marker>.`table`, or the name itself when it is already
+// qualified.
 std::string metadata_table(std::string_view table);
 
 // How string literals are written for a session.

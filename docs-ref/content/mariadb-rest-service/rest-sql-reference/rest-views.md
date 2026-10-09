@@ -344,7 +344,7 @@ The following options can be set for most database object endpoints, REST views 
 * `returnInternalErrorDetails` (_bool_)
   * Controls debug logging.
 * `disableAutomaticGrants` (_bool_)
-  * When you create or alter REST objects, a list of privileges is automatically granted to the `mysql_rest_service_data_provider` role, so that the MariaDB REST Daemon can access the referenced data in MariaDB Server. In some cases, you may want to turn off this automatic grant of privileges and use the `grants` option to specify a custom list of grants.
+  * When you create or alter REST objects, a list of privileges is automatically granted to the `mariadb_rest_service_data_provider` role, so that the MariaDB REST Daemon can access the referenced data in MariaDB Server. In some cases, you may want to turn off this automatic grant of privileges and use the `grants` option to specify a custom list of grants.
 * `grants` (_object_ | _list_)
   * Either a single grant object or a list of grant objects that are executed in addition to the automatically generated grant statements for the REST object. These additional grants are needed when, for example, a stored procedure works with database tables or views, or calls other procedures and functions.
   * `privileges` (_string_ | _list_)
@@ -356,25 +356,25 @@ The following options can be set for most database object endpoints, REST views 
   * `object` (_string_)
     * The name of the database table, view, procedure, or function, or `*`, without backticks.
 
-The following example grants the `SELECT` privilege on the `mysql_rest_service_metadata`.`mrs_user` table.
+The following example grants the `SELECT` privilege on the `mariadb_rest_service`.`mrs_user` table.
 
 ```json
 {
     "grants": {
         "privileges": "SELECT",
-        "schema": "mysql_rest_service_metadata",
+        "schema": "mariadb_rest_service",
         "object": "mrs_user"
     }
 }
 ```
 
-The following example grants the `SELECT` and `UPDATE` privileges on the `mysql_rest_service_metadata`.`mrs_user` table.
+The following example grants the `SELECT` and `UPDATE` privileges on the `mariadb_rest_service`.`mrs_user` table.
 
 ```json
 {
     "grants": {
         "privileges": [ "SELECT", "UPDATE" ],
-        "schema": "mysql_rest_service_metadata",
+        "schema": "mariadb_rest_service",
         "object": "mrs_user" }
 }
 ```
@@ -386,19 +386,19 @@ The following example grants two privileges.
     "grants": [
         {
             "privileges": "SELECT",
-            "schema": "mysql_rest_service_metadata",
+            "schema": "mariadb_rest_service",
             "object": "msm_schema_version"
         },
         {
             "privileges": "SELECT",
-            "schema": "mysql_rest_service_metadata",
+            "schema": "mariadb_rest_service",
             "object": "mrs_user_schema_version"
         }
     ]
 }
 ```
 
-The following example grants the `SELECT` privilege only on the `id` and `name` columns of the `mysql_rest_service_metadata`.`mrs_user` table.
+The following example grants the `SELECT` privilege only on the `id` and `name` columns of the `mariadb_rest_service`.`mrs_user` table.
 
 ```json
 {
@@ -412,7 +412,7 @@ The following example grants the `SELECT` privilege only on the `id` and `name` 
                 ]
             }
         ],
-        "schema": "mysql_rest_service_metadata",
+        "schema": "mariadb_rest_service",
         "object": "mrs_user"
     }
 }

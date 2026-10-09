@@ -162,7 +162,7 @@ struct Sql_mode {
   X(SECRET_SYMBOL, "SECRET")                           \
   X(VENDOR_SYMBOL, "VENDOR")                           \
   X(MRS_SYMBOL, "MRS")                                 \
-  X(MYSQL_SYMBOL, "MYSQL")                             \
+  X(MARIADB_SYMBOL, "MARIADB")                         \
   X(USERS_SYMBOL, "USERS")                             \
   X(ALLOW_SYMBOL, "ALLOW")                             \
   X(REGISTER_SYMBOL, "REGISTER")                       \

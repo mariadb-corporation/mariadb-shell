@@ -37,7 +37,7 @@ bool view_exists(Db_session *session, std::string_view view) {
   const auto result = session->query(
       "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES "
       "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
-      {k_metadata_schema, view});
+      {session->metadata_schema(), view});
   return !result.empty() && result.first()["c"].as_int() > 0;
 }
 
@@ -54,6 +54,7 @@ std::optional<Version> parse_version(const std::string &text) {
 Status get_status(Db_session *session) {
   // What this module deploys and needs is known without the schema
   Status status;
+  status.metadata_schema = session->metadata_schema();
   status.available_metadata_version = k_schema_version.str();
   status.required_router_version = k_required_router_version.str();
   if (!schema_exists(session)) return status;

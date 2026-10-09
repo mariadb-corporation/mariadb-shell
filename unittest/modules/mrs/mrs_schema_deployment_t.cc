@@ -52,11 +52,9 @@ class Fake_session : public Db_session {
   std::optional<std::string> script_error;
   std::vector<std::string> statements;
   int scripts_run = 0;
+  std::string last_script;
 
-  using Db_session::execute;
-  using Db_session::query;
-
-  Db_result query(const std::string &sql) override {
+  Db_result do_query(const std::string &sql) override {
     statements.push_back(sql);
     if (sql.find("SCHEMATA") != std::string::npos) {
       return single("schema_exists", exists ? 1 : 0);
@@ -80,7 +78,7 @@ class Fake_session : public Db_session {
     return {};
   }
 
-  uint64_t execute(const std::string &sql) override {
+  uint64_t do_execute(const std::string &sql) override {
     statements.push_back(sql);
     if (sql.starts_with("DROP SCHEMA")) {
       exists = false;
@@ -89,8 +87,9 @@ class Fake_session : public Db_session {
     return 0;
   }
 
-  void execute_script(const std::string &) override {
+  void execute_script(const std::string &script) override {
     ++scripts_run;
+    last_script = script;
     if (script_error) throw Db_error(*script_error, 1064, "42000");
     exists = true;
     managed = true;
@@ -158,8 +157,9 @@ class Fake_backup : public Schema_backup {
 };
 
 // The script names msm's update procedure, the source of the updatable
-// versions.
+// versions, and the schema with msm's substitution placeholders.
 constexpr const char *k_script = R"(
+CREATE SCHEMA /*<msm:schema_prefix>*/mariadb_rest_service/*<msm:schema_postfix>*/;
 DELIMITER %%
 DROP PROCEDURE IF EXISTS `msm_update_4.1.6_to_5.0.0`%%
 CREATE PROCEDURE `msm_update_4.1.6_to_5.0.0`()
@@ -201,7 +201,7 @@ TEST_F(Mrs_schema_deployment, updatable_versions_from_the_script) {
 }
 
 TEST_F(Mrs_schema_deployment, released_versions_of_a_folder) {
-  std::ofstream(m_dir / "mysql_rest_service_metadata_deployment_4.1.6.sql") << "";
+  std::ofstream(m_dir / "mariadb_rest_service_deployment_4.1.6.sql") << "";
   std::ofstream(m_dir / "notes.txt") << "";
   std::filesystem::create_directories(m_dir / "older_1.0.0.sql");
   const auto versions = released_versions(dir());
@@ -218,16 +218,50 @@ TEST_F(Mrs_schema_deployment, fresh_deployment) {
   Script_deployer deployer(dir(), &log);
 
   EXPECT_EQ(
-      "Deployment of `mysql_rest_service_metadata` version 5.0.0 completed "
+      "Deployment of `mariadb_rest_service` version 5.0.0 completed "
       "successfully.",
       deployer.deploy(&session, true));
   EXPECT_EQ(1, session.scripts_run);
-  EXPECT_TRUE(session.ran("SELECT GET_LOCK('MSM_METADATA_LOCK', 1)"));
-  EXPECT_TRUE(session.ran("SELECT RELEASE_LOCK('MSM_METADATA_LOCK')"));
+  // One lock per schema, as msm takes it
+  EXPECT_TRUE(session.ran(
+      "SELECT GET_LOCK(CONCAT('MSM_METADATA_LOCK', '_', "
+      "MD5('mariadb_rest_service')), 1)"));
+  EXPECT_TRUE(session.ran(
+      "SELECT RELEASE_LOCK(CONCAT('MSM_METADATA_LOCK', '_', "
+      "MD5('mariadb_rest_service')))"));
+  EXPECT_NE(std::string::npos,
+            session.last_script.find("CREATE SCHEMA mariadb_rest_service;"));
   EXPECT_TRUE(log.has(
       "INFO - Starting deployment of database schema "
-      "`mysql_rest_service_metadata` using version 5.0.0 ..."));
+      "`mariadb_rest_service` using version 5.0.0 ..."));
   EXPECT_TRUE(log.has("INFO - Running SQL script `"));
+}
+
+TEST_F(Mrs_schema_deployment, prefixed_schema) {
+  // The session's metadata schema is the one deployed: its prefix and
+  // postfix fill msm's placeholders
+  Fake_session session;
+  session.set_metadata_schema("acme_mariadb_rest_service_eu");
+  Script_deployer deployer(dir());
+
+  EXPECT_EQ(
+      "Deployment of `acme_mariadb_rest_service_eu` version 5.0.0 completed "
+      "successfully.",
+      deployer.deploy(&session, true));
+  EXPECT_NE(std::string::npos,
+            session.last_script.find(
+                "CREATE SCHEMA acme_mariadb_rest_service_eu;"));
+  EXPECT_TRUE(session.ran(
+      "SELECT GET_LOCK(CONCAT('MSM_METADATA_LOCK', '_', "
+      "MD5('acme_mariadb_rest_service_eu')), 1)"));
+
+  // A name that is no metadata schema name is refused before anything runs
+  Fake_session other;
+  other.set_metadata_schema("other_schema");
+  EXPECT_NE(std::string::npos,
+            message_of([&] { Script_deployer(dir()).deploy(&other, true); })
+                .find("Invalid REST metadata schema name `other_schema`"));
+  EXPECT_EQ(0, other.scripts_run);
 }
 
 TEST_F(Mrs_schema_deployment, already_on_the_version) {
@@ -249,7 +283,7 @@ TEST_F(Mrs_schema_deployment, update_with_backup) {
   Script_deployer deployer(dir(), nullptr, &backup);
 
   EXPECT_EQ(
-      "Completed the update of `mysql_rest_service_metadata` version 4.1.6 "
+      "Completed the update of `mariadb_rest_service` version 4.1.6 "
       "to 5.0.0 successfully.",
       deployer.deploy(&session, true));
   EXPECT_TRUE(backup.created);
@@ -275,7 +309,7 @@ TEST_F(Mrs_schema_deployment, versions_that_cannot_be_updated) {
   Script_deployer deployer(dir());
 
   EXPECT_EQ(
-      "Update of database schema `mysql_rest_service_metadata` to version "
+      "Update of database schema `mariadb_rest_service` to version "
       "5.0.0 requested but the version 4.1.5 cannot be updated.",
       message_of([&] { deployer.deploy(&session, true); }));
 
@@ -283,7 +317,7 @@ TEST_F(Mrs_schema_deployment, versions_that_cannot_be_updated) {
   session.version = Version{4, 2, 0};
   const auto info = deployer.deploy(&session, true);
   EXPECT_EQ(
-      "The database schema `mysql_rest_service_metadata` is on a newer "
+      "The database schema `mariadb_rest_service` is on a newer "
       "version 4.2.0 than shipped with this project (version 4.1.6). No "
       "changes performed.",
       info);
@@ -297,7 +331,7 @@ TEST_F(Mrs_schema_deployment, schema_not_managed_by_msm) {
   Script_deployer deployer(dir());
 
   EXPECT_EQ(
-      "Deployment or update of database schema `mysql_rest_service_metadata` "
+      "Deployment or update of database schema `mariadb_rest_service` "
       "using version 5.0.0 requested but the schema is not managed by MSM.",
       message_of([&] { deployer.deploy(&session, true); }));
 }
@@ -308,7 +342,7 @@ TEST_F(Mrs_schema_deployment, missing_deployment_script) {
   Script_deployer deployer((m_dir / "nope").string(), &log);
 
   EXPECT_EQ(
-      "Deployment or update of database schema `mysql_rest_service_metadata` "
+      "Deployment or update of database schema `mariadb_rest_service` "
       "using version 5.0.0 requested but there is no deployment script "
       "available for this version.",
       message_of([&] { deployer.deploy(&session, true); }));
@@ -322,10 +356,10 @@ TEST_F(Mrs_schema_deployment, failed_deployment_drops_the_new_schema) {
 
   const auto message = message_of([&] { deployer.deploy(&session, true); });
   EXPECT_TRUE(message.starts_with(
-      "Deploying the database schema `mysql_rest_service_metadata` failed. "
+      "Deploying the database schema `mariadb_rest_service` failed. "
       "Failed to run the SQL script.\nboom"))
       << message;
-  EXPECT_TRUE(session.ran("DROP SCHEMA IF EXISTS `mysql_rest_service_metadata`"));
+  EXPECT_TRUE(session.ran("DROP SCHEMA IF EXISTS `mariadb_rest_service`"));
   EXPECT_TRUE(session.ran("SELECT RELEASE_LOCK"));
 }
 
@@ -340,7 +374,7 @@ TEST_F(Mrs_schema_deployment, failed_update_is_restored_from_the_backup) {
   const auto message = message_of([&] { deployer.deploy(&session, true); });
   EXPECT_TRUE(message.starts_with(
       "An error occurred while updating the database schema "
-      "`mysql_rest_service_metadata` to version 5.0.0. The schema has been "
+      "`mariadb_rest_service` to version 5.0.0. The schema has been "
       "restored back to version 4.1.6. Failed to run the SQL script.\nboom"))
       << message;
   EXPECT_TRUE(session.ran("DROP SCHEMA IF EXISTS"));
@@ -375,7 +409,7 @@ TEST_F(Mrs_schema_deployment, failed_update_without_backup_keeps_the_schema) {
   const auto message = message_of([&] { deployer.deploy(&session, true); });
   EXPECT_TRUE(message.starts_with(
       "An error occurred while updating the database schema "
-      "`mysql_rest_service_metadata` to version 5.0.0. Failed to run the SQL "
+      "`mariadb_rest_service` to version 5.0.0. Failed to run the SQL "
       "script.\nboom"))
       << message;
   EXPECT_FALSE(session.ran("DROP SCHEMA"));

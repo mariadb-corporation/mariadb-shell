@@ -142,36 +142,45 @@ class Db_session {
  public:
   virtual ~Db_session() = default;
 
-  // Runs a statement and buffers its result.
-  virtual Db_result query(const std::string &sql) = 0;
-
-  // Runs a statement without a result; returns the affected rows.
-  virtual uint64_t execute(const std::string &sql) = 0;
-
-  // Runs a script of statements, honouring DELIMITER commands.
-  virtual void execute_script(const std::string &script) = 0;
-
-  // The server's @@sql_mode.
-  virtual std::string sql_mode() = 0;
-
-  // Statements with ? placeholders: bind() writes the values in.
+  // Runs a statement and buffers its result. Every statement goes through
+  // bind(): sql::k_metadata_schema_marker names the metadata schema (see
+  // sql::metadata_table()), ? placeholders take the statement's values.
+  Db_result query(const std::string &sql) { return do_query(bind(sql)); }
   Db_result query(const sql::Statement &statement) {
-    return query(bind(statement));
+    return do_query(bind(statement));
   }
   Db_result query(std::string_view text, std::vector<sql::Value> params) {
     return query(sql::Statement(std::string(text), std::move(params)));
   }
+
+  // Runs a statement without a result; returns the affected rows.
+  uint64_t execute(const std::string &sql) { return do_execute(bind(sql)); }
   uint64_t execute(const sql::Statement &statement) {
-    return execute(bind(statement));
+    return do_execute(bind(statement));
   }
   uint64_t execute(std::string_view text, std::vector<sql::Value> params) {
     return execute(sql::Statement(std::string(text), std::move(params)));
   }
 
-  // The SQL sent for a statement: its values written as literals in the
-  // quoting the session's sql_mode needs. A server plugin may bind them on
-  // the server instead.
+  // Runs a script of statements as it is (no binding), honouring DELIMITER
+  // commands.
+  virtual void execute_script(const std::string &script) = 0;
+
+  // The server's @@sql_mode.
+  virtual std::string sql_mode() = 0;
+
+  // The SQL sent for a statement: the metadata schema marker replaced with
+  // the metadata schema, the values written as literals in the quoting the
+  // session's sql_mode needs. A server plugin may bind them on the server
+  // instead.
   virtual std::string bind(const sql::Statement &statement);
+
+  // The metadata schema the statements run against, e.g.
+  // acme_mariadb_rest_service; mariadb_rest_service until it is set.
+  const std::string &metadata_schema() const { return m_metadata_schema; }
+  void set_metadata_schema(std::string name) {
+    m_metadata_schema = std::move(name);
+  }
 
   // The sql_mode statements are bound for, e.g. as read with the metadata
   // fingerprint. Without it, bind() reads the sql_mode first.
@@ -188,8 +197,14 @@ class Db_session {
   };
   Id_pool id_pool;
 
+ protected:
+  // Run the statement text bind() produced.
+  virtual Db_result do_query(const std::string &sql) = 0;
+  virtual uint64_t do_execute(const std::string &sql) = 0;
+
  private:
   std::optional<sql::Quoting> m_quoting;
+  std::string m_metadata_schema{k_default_metadata_schema};
 };
 
 // Runs a block inside a transaction: COMMIT at the end, ROLLBACK when the

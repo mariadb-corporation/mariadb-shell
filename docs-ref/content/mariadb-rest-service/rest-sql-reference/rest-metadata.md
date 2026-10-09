@@ -7,13 +7,13 @@ description: >-
 
 # REST Metadata
 
-The MariaDB REST Service (MRS) stores its configuration and all REST objects in the metadata schema `mysql_rest_service_metadata`. The statements on this page create and update that schema, report its status, and work across all object types.
+The MariaDB REST Service (MRS) stores its configuration and all REST objects in the metadata schema `mariadb_rest_service`. A server can also hold several metadata schemas whose names add a prefix or a postfix, for example one per customer of a cloud provider; see [Choosing the Metadata Schema](#choosing-the-metadata-schema). The statements on this page create and update the metadata schema, choose the one a session works with, report its status, and work across all object types.
 
 ## CONFIGURE REST METADATA
 
 The `CONFIGURE REST METADATA` statement performs the initial configuration of the MariaDB REST Service on a MariaDB Server.
 
-It creates the `mysql_rest_service_metadata` database schema. The MariaDB account that runs the statement needs the privileges to create database schemas.
+It creates the `mariadb_rest_service` database schema, or the metadata schema named with `SCHEMA`, and its roles. The MariaDB account that runs the statement needs the privileges to create database schemas and roles.
 
 ### Syntax
 
@@ -23,10 +23,15 @@ configureRestMetadataStatement:
 ;
 
 restMetadataOptions: (
-        enabledDisabled
+        metadataSchema
+        | enabledDisabled
         | jsonOptions
         | updateIfAvailable
     )+
+;
+
+metadataSchema:
+    SCHEMA schemaName
 ;
 ```
 
@@ -38,10 +43,32 @@ restMetadataOptions: (
 
 ![Railroad diagram of restMetadataOptions](../../.gitbook/assets/mariadb-rest-service/sql/restMetadataOptions.svg)
 
+`metadataSchema ::=`
+
+![Railroad diagram of metadataSchema](../../.gitbook/assets/mariadb-rest-service/sql/metadataSchema.svg)
+
 ### Examples
 
 ```sql
 CONFIGURE REST METADATA;
+```
+
+### Naming the Metadata Schema
+
+With `SCHEMA`, the statement deploys or updates the named metadata schema. The name is `mariadb_rest_service` with an optional prefix and an optional postfix. A prefix starts with a letter or `_`, a postfix starts with `_`, and both contain only letters, digits and `_`. The roles of the schema carry the same prefix and postfix, so each metadata schema has its own roles:
+
+| Metadata schema | Admin role |
+| --- | --- |
+| `mariadb_rest_service` | `mariadb_rest_service_admin` |
+| `acme_mariadb_rest_service` | `acme_mariadb_rest_service_admin` |
+| `acme_mariadb_rest_service_eu` | `acme_mariadb_rest_service_admin_eu` |
+
+After the statement, the session works with the named metadata schema.
+
+The following example deploys a metadata schema for the customer `acme`:
+
+```sql
+CONFIGURE REST METADATA SCHEMA acme_mariadb_rest_service;
 ```
 
 ### Enabling or Disabling the MariaDB REST Service
@@ -194,7 +221,7 @@ In the following example, an internal redirect of `/index.html` to `/myService/m
 
 ### Updating the Metadata Schema
 
-With `updateIfAvailable`, the configuration includes an update of the `mysql_rest_service_metadata` database schema.
+With `updateIfAvailable`, the configuration includes an update of the `mariadb_rest_service` database schema.
 
 ```antlr
 updateIfAvailable:
@@ -206,9 +233,9 @@ updateIfAvailable:
 
 ![Railroad diagram of updateIfAvailable](../../.gitbook/assets/mariadb-rest-service/sql/updateIfAvailable.svg)
 
-The current version of the metadata schema is 5.0.0, which stores all ids as MariaDB `UUID` values. A schema of version 4.1.6 is updated to 5.0.0 in place, and its ids keep their values. Older versions can't be updated. Without `UPDATE IF AVAILABLE`, `CONFIGURE REST METADATA` leaves an older schema as it is and reports that it needs to be updated, and the other REST statements refuse to work on it.
+The current version of the metadata schema is 5.0.0, the first release of `mariadb_rest_service`, which stores all ids as MariaDB `UUID` values. Without `UPDATE IF AVAILABLE`, `CONFIGURE REST METADATA` leaves an older schema as it is and reports that it needs to be updated, and the other REST statements refuse to work on it.
 
-The schema is deployed with the MariaDB Schema Management (`msm`) plugin when it is loaded, and with the same procedure built into MariaDB Shell otherwise. Before an update, the schema is dumped to the `plugin_data/msm_plugin/backups` folder of the MariaDB Shell user configuration, and loaded back if the update fails. The steps are logged to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
+The schema is deployed with the MariaDB Schema Management (`msm`) plugin when it is loaded, and with the same procedure built into MariaDB Shell otherwise. The prefix and the postfix of the schema name are passed to the deployment as the `schema_prefix` and `schema_postfix` substitutions of the schema project. Before an update, the schema is dumped to the `plugin_data/msm_plugin/backups` folder of the MariaDB Shell user configuration, in a folder named after the schema, and loaded back if the update fails. The steps are logged to `plugin_data/msm_plugin/msm_schema_update_log.txt`.
 
 ```sql
 CONFIGURE REST METADATA UPDATE IF AVAILABLE;
@@ -222,7 +249,10 @@ The `USE REST` statement sets the current REST service, and optionally the curre
 
 ```antlr
 useStatement:
-    USE REST serviceAndSchemaRequestPaths
+    USE REST (
+        serviceAndSchemaRequestPaths
+        | METADATA metadataSchema
+    )
 ;
 
 serviceAndSchemaRequestPaths:
@@ -261,6 +291,50 @@ The following example sets the current REST service and REST schema in a single 
 USE REST SERVICE /myService SCHEMA /sakila;
 ```
 
+### USE REST METADATA SCHEMA
+
+`USE REST METADATA SCHEMA` sets the metadata schema the following REST statements of the session work with. The schema has to be a metadata schema that the account can see. Switching to another metadata schema clears the current REST service and REST schema, as they belong to the previous one.
+
+```sql
+USE REST METADATA SCHEMA acme_mariadb_rest_service;
+```
+
+## Choosing the Metadata Schema
+
+A session works with the metadata schema it chose with `USE REST METADATA SCHEMA` or `CONFIGURE REST METADATA SCHEMA`. Without a choice, the REST statements use:
+
+1. `mariadb_rest_service`, if the account can see it.
+2. Otherwise the only metadata schema the account can see, for example `acme_mariadb_rest_service` for an account of the customer `acme`.
+3. Otherwise, when no metadata schema exists yet, `mariadb_rest_service`, which `CONFIGURE REST METADATA` deploys.
+
+When the account can see several metadata schemas but not `mariadb_rest_service`, the REST statements fail with an error that lists them. Choose one with `USE REST METADATA SCHEMA`. `SHOW REST METADATA SCHEMAS` and `CONFIGURE REST METADATA SCHEMA` work in that case too.
+
+A metadata schema is a schema whose name contains `mariadb_rest_service` once, with a valid prefix and postfix, and that holds the `msm_schema_version` view. The account sees the schemas it has privileges on. Privileges that come from a role count only while the role is active, so make the MRS role the account's default role.
+
+## SHOW REST METADATA SCHEMAS
+
+The `SHOW REST METADATA SCHEMAS` statement lists the metadata schemas the account can see.
+
+### Syntax
+
+```antlr
+showRestMetadataSchemasStatement:
+    SHOW REST METADATA SCHEMAS
+;
+```
+
+`showRestMetadataSchemasStatement ::=`
+
+![Railroad diagram of showRestMetadataSchemasStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataSchemasStatement.svg)
+
+The result has the columns `schema_name`, `version`, and `current`. `current` is `YES` for the metadata schema the REST statements of the session use.
+
+### Examples
+
+```sql
+SHOW REST METADATA SCHEMAS;
+```
+
 ## SHOW REST STATUS
 
 The `SHOW REST STATUS` statement returns basic information about the current status of the MariaDB REST Service. `SHOW REST METADATA STATUS` is a synonym.
@@ -277,7 +351,7 @@ showRestMetadataStatusStatement:
 
 ![Railroad diagram of showRestMetadataStatusStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataStatusStatement.svg)
 
-The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema, and whether it can be updated.
+The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema, and whether it can be updated. The last column, `metadata_schema`, names the metadata schema the status is of: the one the session uses, or the one `CONFIGURE REST METADATA` would deploy.
 
 The `metadata_version` column holds the id of the last entry in the audit log of the metadata. It changes whenever the REST metadata changes, so a client can poll it and refresh its view of the REST services only when the value has changed.
 

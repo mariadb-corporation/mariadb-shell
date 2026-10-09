@@ -43,7 +43,7 @@ namespace mysqlsh {
 namespace mrs {
 
 // The bundled MSM project of the metadata schema,
-// <share>/mrs/mysql_rest_service_metadata.msm.project.
+// <share>/mrs/mariadb_rest_service.msm.project.
 std::string msm_project_path();
 
 // The deployer for CONFIGURE REST METADATA on the given session.
