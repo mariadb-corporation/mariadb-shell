@@ -488,10 +488,10 @@ struct Show_rest_metadata_status {
 // SHOW REST SERVICES [FOR AUTH APP name | FOR DAEMON id]
 struct Show_rest_services {
   std::optional<std::string> auth_app;
-  std::optional<int64_t> daemon;
+  std::optional<std::string> daemon;  // its id
 };
 
-// SHOW REST DAEMONS: the MariaDB REST Daemon instances (the router table)
+// SHOW REST DAEMONS: the MariaDB REST Daemon instances (the rest_daemon table)
 struct Show_rest_daemons {
   Output_format format = Output_format::traditional;
 };
@@ -499,7 +499,7 @@ struct Show_rest_daemons {
 // DROP REST DAEMON [IF EXISTS] id
 struct Drop_rest_daemon {
   bool if_exists = false;
-  int64_t id = 0;
+  std::string id;  // a UUID
 };
 
 struct Show_rest_schemas {

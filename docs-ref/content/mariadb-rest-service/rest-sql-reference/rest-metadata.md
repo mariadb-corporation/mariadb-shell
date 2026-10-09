@@ -351,9 +351,9 @@ showRestMetadataStatusStatement:
 
 ![Railroad diagram of showRestMetadataStatusStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataStatusStatement.svg)
 
-The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema, and whether it can be updated. The last column, `metadata_schema`, names the metadata schema the status is of: the one the session uses, or the one `CONFIGURE REST METADATA` would deploy.
+The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema, and whether it can be updated. `required_rest_daemon_version` is the oldest version of the MariaDB REST Daemon that serves the available version of the metadata schema. The last column, `metadata_schema`, names the metadata schema the status is of: the one the session uses, or the one `CONFIGURE REST METADATA` would deploy.
 
-The `metadata_version` column holds the id of the last entry in the audit log of the metadata. It changes whenever the REST metadata changes, so a client can poll it and refresh its view of the REST services only when the value has changed.
+The `metadata_version` column holds the id of the last entry in the audit log of the metadata. It changes when the REST metadata changes, so a client can poll it and refresh its view of the REST services only when the value has changed. The ids follow the order the changes were made in, not the order they were committed: when several clients change the metadata at the same time, and especially on a Galera cluster with several write nodes, a change committed late can have a lower id than the last one and leave `metadata_version` unchanged. A client that must not miss such a change should also refresh after some time without a change of the value.
 
 With `FORMAT=JSON`, the result is a single JSON document with the same values, plus `available_metadata_versions`, the released versions of the metadata schema that MariaDB Shell can deploy, and `configuration_options`, the options set with `CONFIGURE REST METADATA OPTIONS`. The `FORMAT` clause is described under SHOW CREATE ... FORMAT=JSON below.
 

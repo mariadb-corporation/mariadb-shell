@@ -117,6 +117,10 @@ void require_ansi_quotes(const Driver &driver, bool ansi_quotes,
 Output_format output_format(const std::string &name,
                             const Parser::location_type &loc);
 
+// The id of a REST daemon: a UUID in its canonical text form, returned in
+// lower case like every metadata id.
+std::string daemon_id(const std::string &text, const Parser::location_type &loc);
+
 // A SHOW CREATE statement with the format of its FORMAT=<name> clause.
 template <typename T>
 T with_format(T &&value, Output_format format) {
@@ -278,7 +282,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> show_rest_columns_statement
 %nterm <Statement> show_rest_daemons_statement
 %nterm <Statement> drop_rest_daemon_statement
-%nterm <int64_t> daemon_id
+%nterm <std::string> daemon_id
 %nterm <Output_format> opt_output_format
 %nterm <Show_rest_columns::Source> opt_columns_source
 %nterm <Statement> show_rest_roles_statement
@@ -1629,7 +1633,7 @@ drop_rest_daemon_statement:
   ;
 
 daemon_id:
-    INT_NUMBER { $$ = std::stoll($1); }
+    text_string_literal { $$ = daemon_id($1, @1); }
   ;
 
 opt_for_auth_app:
@@ -2347,6 +2351,20 @@ Output_format output_format(const std::string &name,
   if (upper == "JSON") return Output_format::json;
   if (upper == "TRADITIONAL") return Output_format::traditional;
   throw Parser::syntax_error(loc, "Unknown REST format name: '" + name + "'");
+}
+
+std::string daemon_id(const std::string &text, const Parser::location_type &loc) {
+  bool valid = text.size() == 36;
+  for (size_t i = 0; valid && i < text.size(); ++i) {
+    valid = (i == 8 || i == 13 || i == 18 || i == 23)
+                ? text[i] == '-'
+                : std::isxdigit(static_cast<unsigned char>(text[i])) != 0;
+  }
+  if (!valid) throw Parser::syntax_error(loc, "Invalid REST daemon id");
+  std::string id = text;
+  std::transform(id.begin(), id.end(), id.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return id;
 }
 
 void require_ansi_quotes(const Driver &driver, bool ansi_quotes,

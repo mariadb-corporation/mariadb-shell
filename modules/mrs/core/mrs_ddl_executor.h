@@ -86,10 +86,10 @@ struct Metadata_check {
   std::string schema;
   std::string version_view = "msm_schema_version";
   std::optional<metadata::Version> version;  // a version that passed
-  // The newest audit log id when the current service / schema were last
-  // found to exist (unset: never checked or the audit log was empty).
+  // The audit log mark when the current service / schema were last found
+  // to exist (state_checked false: never checked).
   bool state_checked = false;
-  std::optional<int64_t> audit_id;
+  metadata::Audit_log_mark audit;
 };
 
 // The state USE REST SERVICE / SCHEMA leaves behind, and the checks it was

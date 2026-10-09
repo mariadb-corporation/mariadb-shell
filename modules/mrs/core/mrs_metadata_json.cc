@@ -171,7 +171,8 @@ json::Value status_json(const Status &status,
   doc.set("major_upgrade_required", status.major_upgrade_required);
   doc.set("current_metadata_version", text(status.current_metadata_version));
   doc.set("available_metadata_version", text(status.available_metadata_version));
-  doc.set("required_router_version", text(status.required_router_version));
+  doc.set("required_rest_daemon_version",
+          text(status.required_rest_daemon_version));
   doc.set("metadata_version", number(status.metadata_version));
   doc.set("metadata_schema", status.metadata_schema);
   json::Value::Array versions;

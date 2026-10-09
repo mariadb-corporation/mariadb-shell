@@ -16,8 +16,8 @@ COMMENT 'This procedure needs to be called on a primary instance in an InnoDB Cl
     become a secondary.'
 BEGIN
     ALTER EVENT `delete_old_audit_log_entries` DISABLE;
-    ALTER EVENT `router_status_cleanup` DISABLE;
-    ALTER EVENT `router_log_cleanup` DISABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` DISABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` DISABLE;
 END%%
 
 -- -----------------------------------------------------------------------------
@@ -31,8 +31,8 @@ COMMENT 'This procedure needs to be called on an instance in an InnoDB Cluster s
     become the primary.'
 BEGIN
     ALTER EVENT `delete_old_audit_log_entries` ENABLE;
-    ALTER EVENT `router_status_cleanup` ENABLE;
-    ALTER EVENT `router_log_cleanup` ENABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` ENABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` ENABLE;
 END%%
 
 
@@ -131,7 +131,7 @@ BEGIN
         IF event_count > 0 THEN
             -- Export all audit_log entries that occurred since the last dump
             SET @sql = CONCAT(
-                'SELECT JSON_OBJECT("changed_at", changed_at, "id", id, "server_uuid", @@server_uuid, ',
+                'SELECT JSON_OBJECT("changed_at", changed_at, "id", id, "server_uid", @@server_uid, ',
                 '    "schema_name", schema_name, "table_name", table_name, "dm_type", dml_type, "changed_by", changed_by, '
                 '    "old_row_data", JSON_REPLACE(old_row_data, "$.data.defaultStaticContent", "BINARY_DATA"), ',
                 '    "new_row_data", JSON_REPLACE(new_row_data, "$.data.defaultStaticContent", "BINARY_DATA")) ',
@@ -423,10 +423,10 @@ END%%
 -- sub-daily data is kept for 7 days, then down-sampled to 1 day samples
 -- daily data is kept indefinitely
 
-DROP PROCEDURE IF EXISTS `router_status_downsample`%%
-CREATE PROCEDURE `router_status_downsample`(
+DROP PROCEDURE IF EXISTS `rest_daemon_status_downsample`%%
+CREATE PROCEDURE `rest_daemon_status_downsample`(
     time TIMESTAMP,
-    router_version VARCHAR(12),
+    daemon_version VARCHAR(12),
     status_variables JSON,
     target_interval CHAR)
     SQL SECURITY INVOKER
@@ -503,32 +503,34 @@ here:BEGIN
 
     CLOSE cur1;
     DROP TABLE IF EXISTS `aggregated`;
-    CREATE TEMPORARY TABLE `aggregated` LIKE router_status;
+    CREATE TEMPORARY TABLE `aggregated` LIKE rest_daemon_status;
 
     -- aggregate rows with interval < target_interval at the same time
     SET @query = CONCAT('INSERT INTO `aggregated` ',
-        '(id, router_id, `timespan`, status_time, ', direct_columns, '`details`)',
-        ' SELECT min(rs.id) as id, rs.router_id, ', max_interval, ' as `timespan`, ',
+        '(id, rest_daemon_id, `timespan`, status_time, ', direct_columns, '`details`)',
+        ' SELECT min(rs.id) as id, rs.rest_daemon_id, ', max_interval, ' as `timespan`, ',
         'DATE_FORMAT(rs.status_time, ', quote(time_point_format), ') as status_time_rounded, ',
         direct_query, details_query,
-        ' FROM router_status rs JOIN router r ON rs.router_id=r.id WHERE r.version=', quote(router_version),
+        ' FROM rest_daemon_status rs JOIN rest_daemon r ON rs.rest_daemon_id=r.id WHERE r.version=', quote(daemon_version),
         ' AND rs.status_time < ', quote(before_time), ' AND rs.`timespan` < ', max_interval);
-    SET @query = CONCAT(@query, ' GROUP BY rs.router_id, DATE_FORMAT(rs.status_time, ',quote(time_point_format),') ORDER BY status_time_rounded ASC');
+    SET @query = CONCAT(@query, ' GROUP BY rs.rest_daemon_id, DATE_FORMAT(rs.status_time, ',quote(time_point_format),') ORDER BY status_time_rounded ASC');
 
     PREPARE stmt FROM @query;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
 
-    DELETE FROM router_status r
-        WHERE r.router_id=router_id AND r.status_time < before_time AND r.`timespan` < max_interval;
+    -- Only the rows of the daemons of this version were aggregated
+    DELETE FROM rest_daemon_status
+        WHERE rest_daemon_id IN (SELECT id FROM rest_daemon WHERE version = daemon_version)
+            AND status_time < before_time AND `timespan` < max_interval;
 
-    INSERT INTO router_status SELECT * FROM `aggregated`;
+    INSERT INTO rest_daemon_status SELECT * FROM `aggregated`;
 
     COMMIT;
 END%%
 
-DROP PROCEDURE IF EXISTS `router_status_do_cleanup`%%
-CREATE PROCEDURE `router_status_do_cleanup`(time TIMESTAMP)
+DROP PROCEDURE IF EXISTS `rest_daemon_status_do_cleanup`%%
+CREATE PROCEDURE `rest_daemon_status_do_cleanup`(time TIMESTAMP)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE version VARCHAR(12);
@@ -577,9 +579,9 @@ BEGIN
 {"name":"sqlQueryTimeouts"}]';
     DECLARE status_variables JSON;
     DECLARE done INT DEFAULT FALSE;
-    DECLARE cur1 CURSOR FOR SELECT router.version, JSON_EXTRACT(ANY_VALUE(router.attributes), '$.statusVariables')
-        FROM router
-        GROUP BY router.version;
+    DECLARE cur1 CURSOR FOR SELECT rest_daemon.version, MIN(JSON_EXTRACT(rest_daemon.attributes, '$.statusVariables'))
+        FROM rest_daemon
+        GROUP BY rest_daemon.version;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
 
     OPEN cur1;
@@ -592,9 +594,9 @@ BEGIN
         IF status_variables IS NULL THEN
             SET status_variables = old_status_variables;
         END IF;
-        CALL router_status_downsample(time, version, status_variables, 'M');
-        CALL router_status_downsample(time, version, status_variables, 'H');
-        CALL router_status_downsample(time, version, status_variables, 'D');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'M');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'H');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'D');
     END LOOP;
 
     CLOSE cur1;

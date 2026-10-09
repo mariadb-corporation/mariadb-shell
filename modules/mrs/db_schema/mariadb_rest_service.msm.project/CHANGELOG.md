@@ -6,7 +6,12 @@
 - The schema and role names take an optional prefix and postfix (MSM substitutions `schema_prefix` and `schema_postfix`), so a server can hold one metadata schema per customer; no object name is qualified with the schema any more
 - Removed the `mysql_task_user` role of MySQL's async tasks
 - Renamed the auth vendor `MySQL Internal` to `MariaDB Internal` and the default auth app `MySQL` to `MariaDB` (their ids are unchanged)
-- Renamed the `router_status` columns `mysql_connections`, `mysql_queries` and `active_mysql_connections` to `mariadb_connections`, `mariadb_queries` and `active_mariadb_connections`, and the `mysql*` status counters of the fallback list to `mariadb*`
+- Renamed the tables of the REST daemon instances `router`, `router_status`, `router_session` and `router_general_log` to `rest_daemon`, `rest_daemon_status`, `rest_daemon_session` and `rest_daemon_general_log`, the view `router_services` to `rest_daemon_services`, the procedures `router_status_downsample` and `router_status_do_cleanup` to `rest_daemon_status_downsample` and `rest_daemon_status_do_cleanup`, and the events `router_status_cleanup` and `router_log_cleanup` to `rest_daemon_status_cleanup` and `rest_daemon_log_cleanup`; the columns `router_id`, `router_session_id` and `router.router_name` are now `rest_daemon_id`, `rest_daemon_session_id` and `rest_daemon.name`
+- `rest_daemon.id` is a `UUID` defaulting to `UUID_v7()` like every other id; the ids of `rest_daemon_status`, `rest_daemon_session` and `rest_daemon_general_log` are `BIGINT UNSIGNED` (were `INT UNSIGNED`)
+- Fixed `rest_daemon_status_downsample` deleting the not yet aggregated status rows of the daemons of other versions
+- Renamed the `rest_daemon_status` columns `mysql_connections`, `mysql_queries` and `active_mysql_connections` to `mariadb_connections`, `mariadb_queries` and `active_mariadb_connections`, and the `mysql*` status counters of the fallback list to `mariadb*`
+- `audit_log.id` is `BIGINT UNSIGNED` (was `INT`)
+- `dump_audit_log` writes the MariaDB `@@server_uid` as `server_uid` instead of MySQL's `@@server_uuid`, which does not exist on MariaDB
 - Changed the id of the JSON schema of `service.in_development` to `https://mariadb.com/mrs/service/in_development`
 - The default landing page shows the MariaDB seal and links to the MariaDB REST Service documentation
 - Changed every id column, and every foreign key to one, from `BINARY(16)` to MariaDB's `UUID` type; primary keys default to `UUID_v7()`, and `get_sequence_id()` returns one

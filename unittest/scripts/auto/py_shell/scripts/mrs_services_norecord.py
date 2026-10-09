@@ -25,16 +25,19 @@ EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mari
 
 #@<> SHOW REST METADATA STATUS before the schema exists
 res = rest("SHOW REST METADATA STATUS")
-EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_router_version", "metadata_version", "metadata_schema"], res.get_column_names())
+EXPECT_EQ(["service_configured", "service_enabled", "service_upgradeable", "service_upgrade_ignored", "service_count", "service_being_upgraded", "major_upgrade_required", "current_metadata_version", "available_metadata_version", "required_rest_daemon_version", "metadata_version", "metadata_schema"], res.get_column_names())
 row = res.fetch_one()
 EXPECT_EQ("false", row[0])
 EXPECT_EQ(None, row[7])
 EXPECT_EQ(None, row[10])
+# The oldest MariaDB REST Daemon that serves this metadata version
+EXPECT_EQ("26.10.0", row[9])
 # The JSON form adds the released versions the shell can deploy and the
 # configuration options
 doc = json.loads(rest("SHOW REST METADATA STATUS FORMAT=JSON").fetch_one()[0])
 EXPECT_EQ([False, None, None], [doc["service_configured"], doc["current_metadata_version"], doc["metadata_version"]])
 EXPECT_EQ("5.0.0", doc["available_metadata_version"])
+EXPECT_EQ("26.10.0", doc["required_rest_daemon_version"])
 EXPECT_EQ(["5.0.0"], doc["available_metadata_versions"])
 EXPECT_EQ({}, doc["configuration_options"])
 
@@ -52,7 +55,7 @@ EXPECT_EQ("5.0.0", row[7])
 EXPECT_EQ("5.0.0", row[8])
 # The metadata version is the id of the last audit log entry
 metadata_version = row[10]
-EXPECT_EQ(session.run_sql("SELECT COALESCE(MAX(id), 0) FROM mariadb_rest_service.audit_log").fetch_one()[0], metadata_version)
+EXPECT_EQ(session.run_sql("SELECT CAST(COALESCE(MAX(id), 0) AS SIGNED) FROM mariadb_rest_service.audit_log").fetch_one()[0], metadata_version)
 res = rest("SHOW REST STATUS FORMAT=JSON")
 EXPECT_EQ(["REST METADATA STATUS"], res.get_column_names())
 doc = json.loads(res.fetch_one()[0])
@@ -195,6 +198,25 @@ other.run_sql("CREATE REST SERVICE /gone")
 rest("USE REST SERVICE /gone")
 EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS"))
 other.run_sql("DROP REST SERVICE /gone")
+EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS"), "Cannot SHOW the REST schemas. No REST SERVICE specified.")
+
+#@<> A change committed late with a lower audit log id is noticed
+# Audit log ids are not in commit order: with concurrent writers, or on a
+# Galera cluster with several write nodes, a row with a lower id can become
+# visible after a higher one and leave MAX(id) unchanged. The fingerprint
+# also counts the rows. Simulated with a high id from "another node" and the
+# DROP's rows moved below it.
+def max_audit_id():
+    return session.run_sql("SELECT MAX(id) FROM mariadb_rest_service.audit_log").fetch_one()[0]
+
+other.run_sql("CREATE REST SERVICE /late")
+high = max_audit_id() + 1000000
+other.run_sql("INSERT INTO mariadb_rest_service.audit_log (id, table_name, dml_type, changed_by, changed_at) VALUES (?, 'service', 'UPDATE', 'node2', NOW(6))", [high])
+rest("USE REST SERVICE /late")
+EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS"))
+other.run_sql("DROP REST SERVICE /late")
+other.run_sql("UPDATE mariadb_rest_service.audit_log SET id = id - 500000 WHERE id > ?", [high])
+EXPECT_EQ(high, max_audit_id())
 EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS"), "Cannot SHOW the REST schemas. No REST SERVICE specified.")
 
 #@<> A metadata version changed by another client is noticed
@@ -352,37 +374,56 @@ os.remove(dump_file)
 
 #@<> SHOW REST DAEMONS
 EXPECT_EQ([], rest_rows("SHOW REST DAEMONS"))
-# Daemons register themselves in the router table of the metadata
-session.run_sql("""INSERT INTO mariadb_rest_service.router
-    (router_name, address, product_name, version, last_check_in, attributes, options) VALUES
-    ('daemon1', '127.0.0.1', 'MariaDB REST Daemon', '1.0.0', NOW(), '{}', '{}'),
-    ('daemon2', '127.0.0.2', 'MariaDB REST Daemon', '1.0.0', NOW() - INTERVAL 1 HOUR, '{"a": 1}', '{"developer": "mike"}')""")
-daemon_ids = [r[0] for r in session.run_sql("SELECT id FROM mariadb_rest_service.router ORDER BY id").fetch_all()]
+# Daemons register themselves in the rest_daemon table of the metadata; the
+# ids are UUIDs (given here to fix the order)
+daemon_ids = ["0199a1b2-0000-7000-8000-000000000001", "0199a1b2-0000-7000-8000-000000000002"]
+session.run_sql("""INSERT INTO mariadb_rest_service.rest_daemon
+    (id, name, address, product_name, version, last_check_in, attributes, options) VALUES
+    (?, 'daemon1', '127.0.0.1', 'MariaDB REST Daemon', '1.0.0', NOW(), '{}', '{}'),
+    (?, 'daemon2', '127.0.0.2', 'MariaDB REST Daemon', '1.0.0', NOW() - INTERVAL 1 HOUR, '{"a": 1}', '{"developer": "mike"}')""", daemon_ids)
 res = rest("SHOW REST DAEMONS")
 EXPECT_EQ(["id", "name", "address", "product_name", "version", "last_check_in", "active", "developer"], res.get_column_names())
 rows = [list(r) for r in res.fetch_all()]
 EXPECT_EQ([[daemon_ids[0], "daemon1", "127.0.0.1", "MariaDB REST Daemon", "1.0.0", "YES", None], [daemon_ids[1], "daemon2", "127.0.0.2", "MariaDB REST Daemon", "1.0.0", "NO", "mike"]], [r[:5] + r[6:] for r in rows])
 doc = json.loads(rest("SHOW REST DAEMONS FORMAT=JSON").fetch_one()[0])
+EXPECT_EQ(daemon_ids, [d["id"] for d in doc])
 EXPECT_EQ(["daemon1", "daemon2"], [d["name"] for d in doc])
 EXPECT_EQ([{}, {"a": 1}], [d["attributes"] for d in doc])
 EXPECT_EQ({"developer": "mike"}, doc[1]["options"])
+# The audit log names the daemon by its id
+EXPECT_EQ(daemon_ids, [r[0] for r in session.run_sql("SELECT new_row_id FROM mariadb_rest_service.audit_log WHERE table_name = 'rest_daemon' ORDER BY new_row_id").fetch_all()])
 
 #@<> SHOW REST SERVICES FOR DAEMON
+missing = "0199a1b2-0000-7000-8000-000000000999"
 for daemon_id in daemon_ids:
-    served = session.run_sql("SELECT COUNT(DISTINCT service_id) FROM mariadb_rest_service.router_services WHERE router_id = ?", [daemon_id]).fetch_one()[0]
-    EXPECT_EQ(served, len(rest_rows("SHOW REST SERVICES FOR DAEMON %d" % daemon_id)))
-EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Cannot SHOW the REST services. The given REST DAEMON `999` could not be found.")
+    served = session.run_sql("SELECT COUNT(DISTINCT service_id) FROM mariadb_rest_service.rest_daemon_services WHERE rest_daemon_id = ?", [daemon_id]).fetch_one()[0]
+    EXPECT_EQ(served, len(rest_rows("SHOW REST SERVICES FOR DAEMON '%s'" % daemon_id.upper())))
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON '%s'" % missing), "Cannot SHOW the REST services. The given REST DAEMON `%s` could not be found." % missing)
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Syntax Error")
 
-#@<> DROP REST DAEMON removes its status reports
-session.run_sql("INSERT INTO mariadb_rest_service.router_status (router_id, timespan) VALUES (?, 10)", [daemon_ids[0]])
-res = rest("DROP REST DAEMON %d" % daemon_ids[0])
-EXPECT_EQ("REST DAEMON `%d` dropped successfully." % daemon_ids[0], res.get_info())
+#@<> The status cleanup aggregates the reports of the daemons of each version
+# Reports older than 4 hours are summed up per minute, per daemon; the
+# daemons of one version must not lose the reports of the other version.
+session.run_sql("UPDATE mariadb_rest_service.rest_daemon SET version = '2.0.0' WHERE id = ?", [daemon_ids[1]])
+for daemon_id in daemon_ids:
+    for requests in [3, 4]:
+        session.run_sql("INSERT INTO mariadb_rest_service.rest_daemon_status (rest_daemon_id, status_time, timespan, http_requests_get) VALUES (?, DATE_FORMAT(NOW() - INTERVAL 5 HOUR, '%Y-%m-%d %H:%i:10'), 10, ?)", [daemon_id, requests])
+session.run_sql("CALL mariadb_rest_service.rest_daemon_status_do_cleanup(NOW())")
+EXPECT_EQ([[daemon_ids[0], 60000, 7], [daemon_ids[1], 60000, 7]], [list(r) for r in session.run_sql("SELECT rest_daemon_id, timespan, CAST(http_requests_get AS SIGNED) FROM mariadb_rest_service.rest_daemon_status ORDER BY rest_daemon_id").fetch_all()])
+session.run_sql("DELETE FROM mariadb_rest_service.rest_daemon_status")
+
+#@<> DROP REST DAEMON removes its status reports and log entries
+session.run_sql("INSERT INTO mariadb_rest_service.rest_daemon_status (rest_daemon_id, timespan) VALUES (?, 10)", [daemon_ids[0]])
+session.run_sql("INSERT INTO mariadb_rest_service.rest_daemon_general_log (rest_daemon_id, log_type, message) VALUES (?, 'INFO', 'started')", [daemon_ids[0]])
+res = rest("DROP REST DAEMON '%s'" % daemon_ids[0])
+EXPECT_EQ("REST DAEMON `%s` dropped successfully." % daemon_ids[0], res.get_info())
 EXPECT_EQ(1, res.get_affected_items_count())
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.router_status").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_daemon_status").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_daemon_general_log").fetch_one()[0])
 EXPECT_EQ(["daemon2"], [r[1] for r in rest_rows("SHOW REST DAEMONS")])
-EXPECT_THROWS(lambda: rest("DROP REST DAEMON 999"), "Failed to drop the REST DAEMON `999`. The given REST DAEMON `999` could not be found.")
-EXPECT_EQ("REST DAEMON `999` dropped successfully.", rest_info("DROP REST DAEMON IF EXISTS 999"))
-rest("DROP REST DAEMON %d" % daemon_ids[1])
+EXPECT_THROWS(lambda: rest("DROP REST DAEMON '%s'" % missing), "Failed to drop the REST DAEMON `%s`. The given REST DAEMON `%s` could not be found." % (missing, missing))
+EXPECT_EQ("REST DAEMON `%s` dropped successfully." % missing, rest_info("DROP REST DAEMON IF EXISTS '%s'" % missing))
+rest("DROP REST DAEMON '%s'" % daemon_ids[1])
 EXPECT_EQ([], rest_rows("SHOW REST DAEMONS"))
 
 #@<> DROP REST SERVICE

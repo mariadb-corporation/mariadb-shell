@@ -5,33 +5,33 @@
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `router_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `router_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `rest_daemon` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "router",
+        "rest_daemon",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
             "options", NEW.options),
         NULL,
-        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+        NEW.id,
         CURRENT_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `router_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `router_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `rest_daemon` FOR EACH ROW
 BEGIN
     IF (COALESCE(OLD.options, '') <> COALESCE(NEW.options, '')) THEN
         INSERT INTO `audit_log` (
             table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
         VALUES (
-            "router",
+            "rest_daemon",
             "UPDATE",
             JSON_OBJECT(
                 "id", OLD.id,
@@ -39,8 +39,8 @@ BEGIN
             JSON_OBJECT(
                 "id", NEW.id,
                 "options", NEW.options),
-            CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
-            CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+            OLD.id,
+            NEW.id,
             CURRENT_USER(),
             CURRENT_TIMESTAMP
         );
@@ -390,17 +390,17 @@ BEGIN
     DELETE FROM `mrs_db_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `router_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `router_BEFORE_DELETE` BEFORE DELETE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon` FOR EACH ROW
 BEGIN
-	DELETE FROM `router_status` WHERE `router_id` = OLD.`id`;
-    DELETE FROM `router_general_log` WHERE `router_id` = OLD.`id`;
+	DELETE FROM `rest_daemon_status` WHERE `rest_daemon_id` = OLD.`id`;
+    DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `router_session_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `router_session_BEFORE_DELETE` BEFORE DELETE ON `router_session` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_session_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_session_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon_session` FOR EACH ROW
 BEGIN
-	DELETE FROM `router_general_log` WHERE `router_session_id` = OLD.`id`;
+	DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_session_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `object_BEFORE_DELETE`%%
