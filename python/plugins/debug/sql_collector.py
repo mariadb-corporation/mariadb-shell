@@ -1,4 +1,5 @@
 # Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +28,7 @@ from mysqlsh import mysql, Error
 from typing import Callable, List, Optional, Tuple
 import yaml
 import json
+import re
 import datetime
 import zipfile
 
@@ -94,6 +96,19 @@ class InstanceSession:
             version = version.split("-")[0]
         a, b, c = version.split(".")
         self.version = int(a) * 10000 + int(b) * 100 + int(c)
+
+        # "MySQL" or "MariaDB": the two differ in several of the statements
+        # below, and MariaDB's version numbers are on their own scale
+        self.vendor = self.session.get_server_vendor()
+        self.is_mariadb = self.vendor == "MariaDB"
+
+        # checked before the table listings below, which need the sys schema
+        if self.is_mariadb:
+            # the sys schema the collectors rely on is bundled since 10.6
+            if self.version < 100600:
+                raise Error("MariaDB 10.6 or newer required")
+        elif self.version < 50700:
+            raise Error("MySQL 5.7 or newer required")
 
         self.pfs_tables = [
             t[0] for t in self.run_sql(
@@ -517,9 +532,11 @@ class DiagnosticsSession:
         self.innodb_mutex = innodb_mutex
 
         if self.session.has_pfs:
+            # compared here, not in SQL: the function's result and the literal
+            # can be of different collations (libmariadb on a MySQL 8+ server)
             self.pfs_events_wait_history_long = self.session.run_sql(
-                "select sys.ps_is_consumer_enabled('events_waits_history_long') = 'YES'"
-            ).fetch_one()[0]
+                "select sys.ps_is_consumer_enabled('events_waits_history_long')"
+            ).fetch_one()[0] == "YES"
             self.pfs_memory_instrumented = self.session.run_sql(
                 "select EXISTS(SELECT 1 FROM performance_schema.setup_instruments WHERE NAME LIKE 'memory/%' AND ENABLED = 'YES')"
             ).fetch_one()[0]
@@ -539,13 +556,20 @@ class DiagnosticsSession:
 
         # disable binlog if it's enabled and not RBR, so that temp tables created
         # by sys SPs don't get replicated
-        log_bin, binlog_format = self.session.run_sql(
-            "select @@sql_log_bin, @@binlog_format").fetch_one()
-        if log_bin and binlog_format != "ROW" and self.session.has_pfs:
-            self.disabled_binlog = True
-            self.session.run_sql("SET SESSION sql_log_bin = 0")
-        else:
-            self.disabled_binlog = False
+        sql_log_bin, log_bin, binlog_format = self.session.run_sql(
+            "select @@sql_log_bin, @@log_bin, @@binlog_format").fetch_one()
+        self.disabled_binlog = False
+        if sql_log_bin and log_bin and binlog_format != "ROW" and self.session.has_pfs:
+            try:
+                # needs SUPER or SYSTEM_VARIABLES_ADMIN on MySQL, BINLOG ADMIN
+                # on MariaDB (where MIXED is the default binlog_format)
+                self.session.session.run_sql("SET SESSION sql_log_bin = 0")
+                self.disabled_binlog = True
+            except Error as e:
+                if not self.session.is_mariadb:
+                    raise
+                print(
+                    f"WARNING: Could not disable binary logging for this session ({e}), the temporary tables created by sys procedures will be logged")
 
     def start(self, zf: zipfile.ZipFile, prefix: str,
               pfs_instrumentation: str):
@@ -672,7 +696,7 @@ class DiagnosticsSession:
                     "WARNING: performance_schema.setup_consumers is completely disabled."
                 )
 
-            if self.session.version >= 80000:
+            if "setup_threads" in self.session.pfs_tables:
                 c = self.session.run_sql(
                     "select count(*) from performance_schema.setup_threads where enabled='YES'"
                 ).fetch_one()[0]
@@ -973,38 +997,58 @@ class DiagnosticsSession:
             row[5] = "*****"
             return row
 
-        if self.session.version >= 80023:
-            kw_replica = "REPLICA"
-            kw_replicas = "REPLICAS"
+        if self.session.is_mariadb:
+            # MariaDB has no performance_schema.global_variables, spells XA
+            # RECOVER CONVERT xid as FORMAT='SQL', has the REPLICA spellings
+            # but neither SHOW REPLICAS nor SHOW BINARY LOG STATUS, and a
+            # replica can have several connections (multi-source replication)
+            global_variables_sql = """SELECT variable_name name, variable_value value
+            FROM information_schema.global_variables
+            ORDER BY name"""
+            xa_recover = ("XA RECOVER", "XA RECOVER FORMAT='SQL'")
+            kw_replicas = "REPLICA HOSTS"
+            kw_binary_log_status = "BINLOG STATUS"
+            kw_replica_status = "ALL REPLICAS STATUS"
         else:
-            kw_replica = "SLAVE"
-            kw_replicas = "SLAVE HOSTS"
-
-        if self.session.version >= 80200:
-            kw_binary_log = "BINARY LOG"
-        else:
-            kw_binary_log = "MASTER"
-
-        queries = [
-            ("global variables",
-             """SELECT g.variable_name name, g.variable_value value /*!80000, i.variable_source source*/
+            global_variables_sql = """SELECT g.variable_name name, g.variable_value value /*!80000, i.variable_source source*/
             FROM performance_schema.global_variables g
             /*!80000 JOIN performance_schema.variables_info i ON g.variable_name = i.variable_name */
-            ORDER BY name"""),
-            "XA RECOVER CONVERT xid",
+            ORDER BY name"""
+            xa_recover = "XA RECOVER CONVERT xid"
+
+            if self.session.version >= 80023:
+                kw_replicas = "REPLICAS"
+                kw_replica_status = "REPLICA STATUS"
+            else:
+                kw_replicas = "SLAVE HOSTS"
+                kw_replica_status = "SLAVE STATUS"
+
+            if self.session.version >= 80200:
+                kw_binary_log_status = "BINARY LOG STATUS"
+            else:
+                kw_binary_log_status = "MASTER STATUS"
+
+        queries = [
+            ("global variables", global_variables_sql),
+            xa_recover,
 
             # replication configuration
             "SHOW BINARY LOGS",
             f"SHOW {kw_replicas}",
-            f"SHOW {kw_binary_log} STATUS",
-            f"SHOW {kw_replica} STATUS",
-            ("replication master_info",
-             """SELECT * FROM mysql.slave_master_info ORDER BY Channel_name""",
-             filter_slave_master_info),
-            ("replication relay_log_info",
-             """SELECT Channel_name, Sql_delay, Number_of_workers, Id
-                FROM mysql.slave_relay_log_info ORDER BY Channel_name""")
+            f"SHOW {kw_binary_log_status}",
+            f"SHOW {kw_replica_status}",
         ]
+
+        # MariaDB keeps the replica state in files and in mysql.gtid_slave_pos
+        if not self.session.is_mariadb:
+            queries += [
+                ("replication master_info",
+                 """SELECT * FROM mysql.slave_master_info ORDER BY Channel_name""",
+                 filter_slave_master_info),
+                ("replication relay_log_info",
+                 """SELECT Channel_name, Sql_delay, Number_of_workers, Id
+                FROM mysql.slave_relay_log_info ORDER BY Channel_name"""),
+            ]
 
         if self.session.has_rapid:
             queries += [
@@ -1312,7 +1356,7 @@ def get_topology_members(session: InstanceSession):
 def collect_error_log_sql(zf: zipfile.ZipFile, path: str,
                           session: InstanceSession,
                           ignore_errors: bool) -> bool:
-    if session.version >= 80022:
+    if "error_log" in session.pfs_tables:
         print(" - Gathering error_log")
 
         def filter_pwd(row):
@@ -1522,10 +1566,10 @@ def collect_table_info(zf: zipfile.ZipFile, prefix: str,
 
 def explain_query(zf: zipfile.ZipFile, session: InstanceSession, query: str,
                   prefix: str) -> dict:
-    before = [
-        "SET SESSION optimizer_trace='enabled=on'",
-        "SET optimizer_trace_offset=-1", "SET optimizer_trace_limit=1"
-    ]
+    before = ["SET SESSION optimizer_trace='enabled=on'"]
+    if not session.is_mariadb:
+        # MariaDB keeps the trace of the last statement only and has neither variable
+        before += ["SET optimizer_trace_offset=-1", "SET optimizer_trace_limit=1"]
     for q in before:
         session.run_sql(q)
 
@@ -1546,7 +1590,12 @@ def explain_query(zf: zipfile.ZipFile, session: InstanceSession, query: str,
         session.run_sql(q)
 
     queries = [(f"explain_json", f"EXPLAIN format=json {query}")]
-    if session.version >= 80018:
+    if session.is_mariadb:
+        # MariaDB spells EXPLAIN ANALYZE as ANALYZE; like it, it runs the query,
+        # but it accepts any DML too, which the profiled run would then repeat
+        if re.match(r"[\s(]*(SELECT|WITH)\b", query, re.IGNORECASE):
+            queries.append(("explain_analyze", f"ANALYZE format=json {query}"))
+    elif session.version >= 80018:
         queries.append(("explain_analyze", f"EXPLAIN ANALYZE {query}"))
     return collect_queries(zf, prefix, session, queries, include_warnings=True)
 

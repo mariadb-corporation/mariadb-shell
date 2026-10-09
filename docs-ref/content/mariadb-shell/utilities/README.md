@@ -67,6 +67,6 @@ Change the password of your own account or of another account with `util.change_
 {% endcolumn %}
 
 {% column %}
-The `util.debug` collectors that package server, shell, and host information into a ZIP file, and their current status with MariaDB Server.
+The `util.debug` collectors that package server, shell, and host information into a ZIP file for troubleshooting and support requests.
 {% endcolumn %}
 {% endcolumns %}

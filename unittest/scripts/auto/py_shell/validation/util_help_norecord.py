@@ -3018,7 +3018,7 @@ DESCRIPTION
 
 #@<OUT> util debug collect_diagnostics (full path)
 NAME
-      collect_diagnostics - Collects MySQL diagnostics information for
+      collect_diagnostics - Collects server diagnostics information for
                             standalone and managed topologies
 
 SYNTAX
@@ -3076,7 +3076,7 @@ DESCRIPTION
 
 #@<OUT> util debug collect_diagnostics with util.debug.help (partial path)
 NAME
-      collect_diagnostics - Collects MySQL diagnostics information for
+      collect_diagnostics - Collects server diagnostics information for
                             standalone and managed topologies
 
 SYNTAX
@@ -3134,7 +3134,7 @@ DESCRIPTION
 
 #@<OUT> util debug collect_high_load_diagnostics
 NAME
-      collect_high_load_diagnostics - Collects MySQL high load diagnostics
+      collect_high_load_diagnostics - Collects server high load diagnostics
                                       information
 
 SYNTAX
@@ -3206,8 +3206,8 @@ DESCRIPTION
 
 #@<OUT> util debug collect_slow_query_diagnostics
 NAME
-      collect_slow_query_diagnostics - Collects MySQL diagnostics and profiling
-                                       information for a slow query
+      collect_slow_query_diagnostics - Collects server diagnostics and
+                                       profiling information for a slow query
 
 SYNTAX
       util.debug.collect_slow_query_diagnostics(path, query[, options])
@@ -3245,7 +3245,7 @@ DESCRIPTION
       The options parameter accepts the following options:
 
       - delay: Integer - Number of seconds to wait between collection
-        iterations (default 5s).
+        iterations (default 15s).
       - innodbMutex: Bool - If true, also collects output of SHOW ENGINE INNODB
         MUTEX. Disabled by default, as this command can have some impact on
         production performance.
