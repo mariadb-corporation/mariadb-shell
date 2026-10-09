@@ -268,11 +268,12 @@ struct Create_rest_view {
   Object_options options;
 };
 
+// The kind of a REST db object, i.e. which statements it belongs to.
+enum class Db_object_kind { view, procedure, function };
+
 // CREATE REST PROCEDURE and CREATE REST FUNCTION
 struct Create_rest_routine {
-  enum class Kind { procedure, function };
-
-  Kind kind = Kind::procedure;
+  Db_object_kind kind = Db_object_kind::procedure;  // procedure or function
   Create_flags flags;
   std::string path;
   std::optional<Schema_selector> on;
@@ -357,7 +358,7 @@ struct Alter_rest_view {
 };
 
 struct Alter_rest_routine {
-  Create_rest_routine::Kind kind = Create_rest_routine::Kind::procedure;
+  Db_object_kind kind = Db_object_kind::procedure;  // procedure or function
   std::string path;
   std::optional<Schema_selector> on;
   std::optional<std::string> new_path;
@@ -396,8 +397,6 @@ struct Drop_rest_schema {
   std::string schema_path;
   std::optional<Service_path> service;
 };
-
-enum class Db_object_kind { view, procedure, function };
 
 // FORMAT=TRADITIONAL (the default) or FORMAT=JSON, as EXPLAIN takes it
 enum class Output_format { traditional, json };

@@ -325,10 +325,8 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Schema_options> rest_schema_options
 %nterm <Object_options> rest_object_options
 %nterm <Result_format> rest_view_format
-%nterm <Named_graphql_object> rest_procedure_result rest_function_result
-%nterm <Named_graphql_object_list> rest_procedure_results
-%nterm <Named_graphql_object_list> opt_rest_function_result
-%nterm <Named_graphql_object_list> rest_function_results
+%nterm <Named_graphql_object> rest_result
+%nterm <Named_graphql_object_list> rest_results opt_rest_result
 %nterm <Opt_named_graphql_object> opt_rest_parameters
 %nterm <Content_set_options> rest_content_set_options alter_rest_content_set_options
 %nterm <Content_file_options> rest_content_file_options
@@ -354,7 +352,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Endpoint_selection> opt_including_endpoints
 %nterm <Endpoint_selection> endpoint_selection
 
-%nterm <Service_path> service_request_path new_service_request_path
+%nterm <Service_path> service_request_path new_service_request_path service_ref
 %nterm <std::string> service_request_path_wildcard schema_request_path
 %nterm <std::string> schema_request_path_wildcard view_request_path
 %nterm <std::string> rest_object_name rest_result_name
@@ -551,12 +549,16 @@ opt_on_from_service_schema_selector:
   | FROM_SYMBOL service_schema_selector { $$ = std::move($2); }
   ;
 
+/* SERVICE? serviceRequestPath */
+service_ref:
+    SERVICE_SYMBOL service_request_path { $$ = std::move($2); }
+  | service_request_path { $$ = std::move($1); }
+  ;
+
 role_service:
     ON_SYMBOL ANY_SYMBOL SERVICE_SYMBOL
     { $$ = Role_service{true, std::nullopt}; }
-  | ON_SYMBOL SERVICE_SYMBOL service_request_path
-    { $$ = Role_service{false, std::move($3)}; }
-  | ON_SYMBOL service_request_path
+  | ON_SYMBOL service_ref
     { $$ = Role_service{false, std::move($2)}; }
   ;
 
@@ -571,37 +573,29 @@ opt_on_from_role_service:
   | role_service { $$ = std::move($1); }
   | FROM_SYMBOL ANY_SYMBOL SERVICE_SYMBOL
     { $$ = Role_service{true, std::nullopt}; }
-  | FROM_SYMBOL SERVICE_SYMBOL service_request_path
-    { $$ = Role_service{false, std::move($3)}; }
-  | FROM_SYMBOL service_request_path
+  | FROM_SYMBOL service_ref
     { $$ = Role_service{false, std::move($2)}; }
   ;
 
 opt_on_service:
     %empty { $$ = std::nullopt; }
-  | ON_SYMBOL SERVICE_SYMBOL service_request_path { $$ = std::move($3); }
-  | ON_SYMBOL service_request_path { $$ = std::move($2); }
+  | ON_SYMBOL service_ref { $$ = std::move($2); }
   ;
 
 opt_from_service:
     %empty { $$ = std::nullopt; }
-  | FROM_SYMBOL SERVICE_SYMBOL service_request_path { $$ = std::move($3); }
-  | FROM_SYMBOL service_request_path { $$ = std::move($2); }
+  | FROM_SYMBOL service_ref { $$ = std::move($2); }
   ;
 
 opt_on_from_service:
     %empty { $$ = std::nullopt; }
-  | ON_SYMBOL SERVICE_SYMBOL service_request_path { $$ = std::move($3); }
-  | ON_SYMBOL service_request_path { $$ = std::move($2); }
-  | FROM_SYMBOL SERVICE_SYMBOL service_request_path { $$ = std::move($3); }
-  | FROM_SYMBOL service_request_path { $$ = std::move($2); }
+  | on_or_from service_ref { $$ = std::move($2); }
   ;
 
 /* (SERVICE? serviceRequestPath)? in front of CONTENT SET */
 opt_service_request_path:
     %empty { $$ = std::nullopt; }
-  | SERVICE_SYMBOL service_request_path { $$ = std::move($2); }
-  | service_request_path { $$ = std::move($1); }
+  | service_ref { $$ = std::move($1); }
   ;
 
 opt_if_not_exists:
@@ -834,10 +828,10 @@ rest_view_format:
 create_rest_procedure_statement:
     create_rest_procedure_prefix procedure_request_path
     opt_on_service_schema_selector AS_SYMBOL qualified_identifier opt_force
-    opt_rest_parameters rest_procedure_results rest_object_options
+    opt_rest_parameters rest_results rest_object_options
     {
       Create_rest_routine s;
-      s.kind = Create_rest_routine::Kind::procedure;
+      s.kind = Db_object_kind::procedure;
       s.flags = $1;
       s.path = std::move($2);
       s.on = std::move($3);
@@ -871,13 +865,14 @@ opt_rest_parameters:
     { $$ = Named_graphql_object{std::move($2), std::move($3)}; }
   ;
 
-rest_procedure_results:
+rest_results:
     %empty { $$ = Named_graphql_object_list{}; }
-  | rest_procedure_results rest_procedure_result
+  | rest_results rest_result
     { $$ = std::move($1); $$.push_back(std::move($2)); }
   ;
 
-rest_procedure_result:
+/* The RESULT of a REST procedure (one per result set) or function */
+rest_result:
     RESULT_SYMBOL graphql_obj
     { $$ = Named_graphql_object{std::nullopt, std::move($2)}; }
   | RESULT_SYMBOL rest_result_name graphql_obj
@@ -889,10 +884,10 @@ rest_procedure_result:
 create_rest_function_statement:
     create_rest_function_prefix function_request_path
     opt_on_service_schema_selector AS_SYMBOL qualified_identifier opt_force
-    opt_rest_parameters opt_rest_function_result rest_object_options
+    opt_rest_parameters opt_rest_result rest_object_options
     {
       Create_rest_routine s;
-      s.kind = Create_rest_routine::Kind::function;
+      s.kind = Db_object_kind::function;
       s.flags = $1;
       s.path = std::move($2);
       s.on = std::move($3);
@@ -912,23 +907,10 @@ create_rest_function_prefix:
     { $$ = Create_flags{false, $4}; }
   ;
 
-opt_rest_function_result:
+opt_rest_result:
     %empty { $$ = Named_graphql_object_list{}; }
-  | rest_function_result
+  | rest_result
     { $$ = Named_graphql_object_list{}; $$.push_back(std::move($1)); }
-  ;
-
-rest_function_results:
-    %empty { $$ = Named_graphql_object_list{}; }
-  | rest_function_results rest_function_result
-    { $$ = std::move($1); $$.push_back(std::move($2)); }
-  ;
-
-rest_function_result:
-    RESULT_SYMBOL graphql_obj
-    { $$ = Named_graphql_object{std::nullopt, std::move($2)}; }
-  | RESULT_SYMBOL rest_result_name graphql_obj
-    { $$ = Named_graphql_object{std::move($2), std::move($3)}; }
   ;
 
 /* - CREATE REST CONTENT SET ----------------------------------------------- */
@@ -1283,10 +1265,10 @@ opt_alter_view_class:
 alter_rest_procedure_statement:
     ALTER_SYMBOL REST_SYMBOL PROCEDURE_SYMBOL procedure_request_path
     opt_on_service_schema_selector opt_new_request_path opt_rest_parameters
-    rest_procedure_results rest_object_options
+    rest_results rest_object_options
     {
       Alter_rest_routine s;
-      s.kind = Create_rest_routine::Kind::procedure;
+      s.kind = Db_object_kind::procedure;
       s.path = std::move($4);
       s.on = std::move($5);
       s.new_path = std::move($6);
@@ -1300,10 +1282,10 @@ alter_rest_procedure_statement:
 alter_rest_function_statement:
     ALTER_SYMBOL REST_SYMBOL FUNCTION_SYMBOL function_request_path
     opt_on_service_schema_selector opt_new_request_path opt_rest_parameters
-    rest_function_results rest_object_options
+    rest_results rest_object_options
     {
       Alter_rest_routine s;
-      s.kind = Create_rest_routine::Kind::function;
+      s.kind = Db_object_kind::function;
       s.path = std::move($4);
       s.on = std::move($5);
       s.new_path = std::move($6);

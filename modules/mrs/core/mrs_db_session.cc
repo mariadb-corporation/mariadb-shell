@@ -133,6 +133,12 @@ bool Db_row::has(std::string_view column) const {
   return column_index(column).has_value();
 }
 
+std::string Db_session::bind(const sql::Statement &statement) {
+  if (statement.params.empty()) return statement.text;
+  if (!m_quoting) m_quoting = sql::Quoting::from_sql_mode(sql_mode());
+  return statement.render(*m_quoting);
+}
+
 Db_transaction::Db_transaction(Db_session *session) : m_session(session) {
   m_session->execute("START TRANSACTION");
 }

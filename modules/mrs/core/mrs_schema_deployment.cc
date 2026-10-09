@@ -56,9 +56,9 @@ std::optional<std::string> read_file(const std::filesystem::path &path) {
 bool schema_is_managed(Db_session *session) {
   const auto result = session->query(
       "SELECT COUNT(*) AS table_count FROM information_schema.TABLES "
-      "WHERE TABLE_SCHEMA = " +
-      sql::quote(k_metadata_schema) +
-      " AND TABLE_NAME = 'msm_schema_version' AND TABLE_TYPE = 'VIEW'");
+      "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'msm_schema_version' AND "
+      "TABLE_TYPE = 'VIEW'",
+      {k_metadata_schema});
   return !result.empty() && result.first()["table_count"].as_int() == 1;
 }
 
@@ -67,9 +67,8 @@ bool schema_is_managed(Db_session *session) {
 class Msm_lock {
  public:
   explicit Msm_lock(Db_session *session) : m_session(session) {
-    const auto result = session->query("SELECT GET_LOCK(" +
-                                       sql::quote(k_lock_name) +
-                                       ", 1) AS msm_lock");
+    const auto result =
+        session->query("SELECT GET_LOCK(?, 1) AS msm_lock", {k_lock_name});
     m_locked = !result.empty() && result.first()["msm_lock"].as_int() == 1;
     if (!m_locked) {
       throw std::runtime_error(
@@ -79,7 +78,7 @@ class Msm_lock {
   }
   ~Msm_lock() {
     try {
-      m_session->query("SELECT RELEASE_LOCK(" + sql::quote(k_lock_name) + ")");
+      m_session->query("SELECT RELEASE_LOCK(?)", {k_lock_name});
     } catch (...) {
       // The lock goes with the connection anyway
     }

@@ -35,189 +35,6 @@ namespace mrs {
 
 using namespace ast;
 
-namespace {
-
-std::string create_prefix(const Create_flags &flags) {
-  if (flags.or_replace) return "CREATE OR REPLACE";
-  if (flags.if_not_exists) return "CREATE IF NOT EXISTS";
-  return "CREATE";
-}
-
-std::string db_object_caption(Db_object_kind kind) {
-  switch (kind) {
-    case Db_object_kind::view:
-      return "VIEW";
-    case Db_object_kind::procedure:
-      return "PROCEDURE";
-    case Db_object_kind::function:
-      return "FUNCTION";
-  }
-  return "VIEW";
-}
-
-std::string routine_caption(Create_rest_routine::Kind kind) {
-  return kind == Create_rest_routine::Kind::function ? "FUNCTION" : "PROCEDURE";
-}
-
-// The name of the operation, as reported in the results.
-struct Operation_name {
-  std::string operator()(const Configure_rest_metadata &) const {
-    return "CONFIGURE REST METADATA";
-  }
-  std::string operator()(const Create_rest_service &s) const {
-    return create_prefix(s.flags) + " REST SERVICE";
-  }
-  std::string operator()(const Create_rest_schema &s) const {
-    return create_prefix(s.flags) + " REST SCHEMA";
-  }
-  std::string operator()(const Create_rest_view &s) const {
-    return create_prefix(s.flags) + " REST VIEW";
-  }
-  std::string operator()(const Create_rest_routine &s) const {
-    return create_prefix(s.flags) + " REST " + routine_caption(s.kind);
-  }
-  std::string operator()(const Create_rest_content_set &s) const {
-    return create_prefix(s.flags) + " REST CONTENT SET";
-  }
-  std::string operator()(const Create_rest_content_file &s) const {
-    return create_prefix(s.flags) + " REST CONTENT FILE";
-  }
-  std::string operator()(const Create_rest_auth_app &s) const {
-    return create_prefix(s.flags) + " REST AUTH APP";
-  }
-  std::string operator()(const Create_rest_user &s) const {
-    return create_prefix(s.flags) + " REST USER";
-  }
-  std::string operator()(const Create_rest_role &s) const {
-    return create_prefix(s.flags) + " REST ROLE";
-  }
-  std::string operator()(const Clone_rest_service &) const {
-    return "CLONE REST SERVICE";
-  }
-  std::string operator()(const Alter_rest_service &) const {
-    return "ALTER REST SERVICE";
-  }
-  std::string operator()(const Alter_rest_schema &) const {
-    return "ALTER REST SCHEMA";
-  }
-  std::string operator()(const Alter_rest_view &) const {
-    return "ALTER REST VIEW";
-  }
-  std::string operator()(const Alter_rest_routine &s) const {
-    return "ALTER REST " + routine_caption(s.kind);
-  }
-  std::string operator()(const Alter_rest_content_set &) const {
-    return "ALTER REST CONTENT SET";
-  }
-  std::string operator()(const Alter_rest_auth_app &) const {
-    return "ALTER REST AUTH APP";
-  }
-  std::string operator()(const Alter_rest_user &) const {
-    return "ALTER REST USER";
-  }
-  std::string operator()(const Drop_rest_service &) const {
-    return "DROP REST SERVICE";
-  }
-  std::string operator()(const Drop_rest_schema &) const {
-    return "DROP REST SCHEMA";
-  }
-  std::string operator()(const Drop_rest_db_object &s) const {
-    return "DROP REST " + db_object_caption(s.kind);
-  }
-  std::string operator()(const Drop_rest_content_set &) const {
-    return "DROP REST CONTENT SET";
-  }
-  std::string operator()(const Drop_rest_content_file &) const {
-    return "DROP REST CONTENT FILE";
-  }
-  std::string operator()(const Drop_rest_auth_app &) const {
-    return "DROP REST AUTH APP";
-  }
-  std::string operator()(const Drop_rest_user &) const {
-    return "DROP REST USER";
-  }
-  std::string operator()(const Drop_rest_role &) const {
-    return "DROP REST ROLE";
-  }
-  std::string operator()(const Rest_privilege_statement &s) const {
-    return s.revoke ? "REVOKE REST PRIVILEGE" : "GRANT REST PRIVILEGE";
-  }
-  std::string operator()(const Rest_role_statement &s) const {
-    return s.revoke ? "REVOKE REST ROLE" : "GRANT REST ROLE";
-  }
-  std::string operator()(const Use_rest &s) const {
-    return s.schema_path ? "USE REST SCHEMA" : "USE REST SERVICE";
-  }
-  std::string operator()(const Show_rest_metadata_status &) const {
-    return "SHOW REST METADATA STATUS";
-  }
-  std::string operator()(const Show_rest_services &) const {
-    return "SHOW REST SERVICES";
-  }
-  std::string operator()(const Show_rest_schemas &) const {
-    return "SHOW REST SCHEMAS";
-  }
-  std::string operator()(const Show_rest_db_objects &s) const {
-    return "SHOW REST " + db_object_caption(s.kind) + "S";
-  }
-  std::string operator()(const Show_rest_content_sets &) const {
-    return "SHOW REST CONTENT SETS";
-  }
-  std::string operator()(const Show_rest_content_files &) const {
-    return "SHOW REST CONTENT FILES";
-  }
-  std::string operator()(const Show_rest_auth_apps &) const {
-    return "SHOW REST AUTH APPS";
-  }
-  std::string operator()(const Show_rest_auth_vendors &) const {
-    return "SHOW REST AUTH VENDORS";
-  }
-  std::string operator()(const Show_rest_users &) const {
-    return "SHOW REST USERS";
-  }
-  std::string operator()(const Show_rest_columns &) const {
-    return "SHOW REST COLUMNS";
-  }
-  std::string operator()(const Show_rest_daemons &) const {
-    return "SHOW REST DAEMONS";
-  }
-  std::string operator()(const Drop_rest_daemon &) const {
-    return "DROP REST DAEMON";
-  }
-  std::string operator()(const Show_rest_roles &) const {
-    return "SHOW REST ROLES";
-  }
-  std::string operator()(const Show_rest_grants &) const {
-    return "SHOW REST GRANTS";
-  }
-  std::string operator()(const Show_create_rest_service &) const {
-    return "SHOW CREATE REST SERVICE";
-  }
-  std::string operator()(const Show_create_rest_schema &) const {
-    return "SHOW CREATE REST SCHEMA";
-  }
-  std::string operator()(const Show_create_rest_db_object &s) const {
-    return "SHOW CREATE REST " + db_object_caption(s.kind);
-  }
-  std::string operator()(const Show_create_rest_content_set &) const {
-    return "SHOW CREATE REST CONTENT SET";
-  }
-  std::string operator()(const Show_create_rest_content_file &) const {
-    return "SHOW CREATE REST CONTENT FILE";
-  }
-  std::string operator()(const Show_create_rest_auth_app &) const {
-    return "SHOW CREATE REST AUTH APP";
-  }
-  std::string operator()(const Show_create_rest_role &) const {
-    return "SHOW CREATE REST ROLE";
-  }
-  std::string operator()(const Show_create_rest_user &) const {
-    return "SHOW CREATE REST USER";
-  }
-};
-
-}  // namespace
-
 Ddl_executor::Ddl_executor(Db_session *session, Executor_state *state)
     : m_session(session), m_state(state) {}
 
@@ -225,7 +42,6 @@ std::vector<Statement_result> Ddl_executor::run(const Script &script) {
   std::vector<Statement_result> results;
   for (const auto &statement : script) {
     results.push_back(execute(statement));
-    results.back().statement_index = static_cast<int>(results.size());
     if (!results.back().success) break;
   }
   return results;
@@ -235,9 +51,6 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
   const auto start = std::chrono::steady_clock::now();
 
   Statement_result result;
-  result.statement_index = 1;
-  result.line = statement.line;
-  result.operation = std::visit(Operation_name{}, statement.value);
   m_failure_context.clear();
 
   try {
@@ -245,8 +58,7 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
     // without a metadata schema.
     if (!statement.is<Configure_rest_metadata>() &&
         !statement.is<Show_rest_metadata_status>()) {
-      metadata::check_schema(m_session);
-      validate_state();
+      check_metadata();
     }
 
     std::visit([this, &result](const auto &s) { do_execute(s, &result); },
@@ -254,7 +66,6 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
   } catch (const std::exception &e) {
     if (const auto db_error = dynamic_cast<const Db_error *>(&e)) {
       result.error_code = db_error->code();
-      result.sqlstate = db_error->sqlstate();
     }
     result.success = false;
     result.message = m_failure_context.empty()
@@ -272,10 +83,34 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
 
 // -- Shared helpers -------------------------------------------------------
 
-void Ddl_executor::validate_state() {
-  if (m_state_validated) return;
-  m_state_validated = true;
+void Ddl_executor::check_metadata() {
+  if (m_metadata_checked) return;
 
+  auto &check = m_state->metadata_check;
+  if (!m_fingerprint) {
+    m_fingerprint = metadata::read_fingerprint(m_session, check.version_view);
+  }
+
+  if (!m_fingerprint->valid || m_fingerprint->version != check.version) {
+    // A first run, another schema version or no fingerprint: the full check
+    // gives the error messages, and finds the version view
+    check = {};
+    check.version = metadata::check_schema(m_session, &check.version_view);
+    if (!m_fingerprint->valid) {
+      m_fingerprint = metadata::read_fingerprint(m_session, check.version_view);
+    }
+  }
+
+  if (!m_fingerprint->valid || !check.state_checked ||
+      m_fingerprint->audit_id != check.audit_id) {
+    validate_state();
+    check.state_checked = m_fingerprint->valid;
+    check.audit_id = m_fingerprint->audit_id;
+  }
+  m_metadata_checked = true;
+}
+
+void Ddl_executor::validate_state() {
   if (m_state->current_service_id &&
       !metadata::row_exists(m_session, "service", *m_state->current_service_id)) {
     m_state->clear_service();
@@ -391,6 +226,11 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
   }
   options.update_if_available = s.update_if_available;
 
+  // The schema may be redeployed: the next statement checks it in full
+  m_state->metadata_check = {};
+  m_metadata_checked = false;
+  m_fingerprint.reset();
+
   const auto result = metadata::configure(m_session, options, m_schema_deployer);
   r->message = result.schema_changed ? "REST metadata configured successfully."
                                      : "REST Metadata updated successfully.";
@@ -465,10 +305,8 @@ void Ddl_executor::do_execute(const Use_rest &s, Statement_result *r) {
     set_current_schema(*schema);
     r->message = "Now using REST SCHEMA `" + schema->request_path +
                  "` on REST SERVICE `" + current_service_path() + "`.";
-    r->id = schema->id;
   } else {
     r->message = "Now using REST SERVICE `" + current_service_path() + "`.";
-    r->id = *m_state->current_service_id;
   }
 }
 

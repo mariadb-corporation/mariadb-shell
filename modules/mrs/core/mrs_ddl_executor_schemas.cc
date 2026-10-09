@@ -44,18 +44,16 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   const auto service_id = require_service(s.service);
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    const auto existing = metadata::find_schema(m_session, service_id, request_path);
-    if (existing) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST SCHEMA `" + full_path + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_schema(m_session, existing->id);
-      if (m_state->current_schema_id == existing->id) m_state->clear_schema();
-    }
+  if (keep_existing(
+          s.flags,
+          [&] { return metadata::find_schema(m_session, service_id, request_path); },
+          [&](const auto &existing) {
+            metadata::delete_schema(m_session, existing.id);
+            if (m_state->current_schema_id == existing.id) m_state->clear_schema();
+          })) {
+    r->message = "REST SCHEMA `" + full_path + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   metadata::Schema_definition definition;
@@ -81,7 +79,6 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   transaction.commit();
 
   r->message = "REST SCHEMA `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
@@ -114,7 +111,6 @@ void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
   }
 
   r->affected_items_count = 1;
-  r->id = schema.id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
@@ -132,7 +128,6 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
   if (schema) {
     metadata::delete_schema(m_session, schema->id);
     if (m_state->current_schema_id == schema->id) m_state->clear_schema();
-    r->id = schema->id;
   }
 
   transaction.commit();
@@ -166,7 +161,6 @@ void Ddl_executor::do_execute(const Show_create_rest_schema &s,
       s.format == Output_format::json
           ? metadata::schema_json(schema).dump(true)
           : metadata::schema_create_statement(m_session, schema, false));
-  r->id = schema.id;
 }
 
 }  // namespace mrs

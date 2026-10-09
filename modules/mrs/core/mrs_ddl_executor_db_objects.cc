@@ -61,10 +61,6 @@ std::string kind_caption(Db_object_kind kind) {
   return "VIEW";
 }
 
-std::string routine_type(Create_rest_routine::Kind kind) {
-  return kind == Create_rest_routine::Kind::function ? "FUNCTION" : "PROCEDURE";
-}
-
 // The object types a SHOW / SHOW CREATE statement of a kind covers.
 std::vector<std::string> object_types_of(Db_object_kind kind) {
   switch (kind) {
@@ -257,6 +253,26 @@ class Mapping_builder {
 
   // The RESULT object of a function: the single `result` value of the
   // return type the server reports.
+  // The objects of a REST PROCEDURE or FUNCTION: the parameters, then the
+  // result of a function or the result sets of a procedure.
+  std::vector<Object_definition> routine_objects(
+      Db_object_kind kind, const std::string &type,
+      const std::optional<Named_graphql_object> &parameters,
+      const std::vector<Named_graphql_object> &results, bool force) {
+    std::vector<Object_definition> objects{
+        parameters_object(type, parameters, force)};
+    if (kind == Db_object_kind::function) {
+      objects.push_back(
+          function_result(results.empty() ? nullptr : &results.front()));
+    } else {
+      for (const auto &result : results) {
+        objects.push_back(
+            procedure_result(result, static_cast<int>(objects.size())));
+      }
+    }
+    return objects;
+  }
+
   Object_definition function_result(const Named_graphql_object *result) {
     Object_definition object =
         new_object(result ? result->name : std::nullopt, "RESULT", 1);
@@ -583,19 +599,6 @@ std::pair<std::string, std::string> database_object_name(
   return {object.schema.value_or(schema.name), object.name};
 }
 
-// CREATE IF NOT EXISTS returns the id of an existing object, which the
-// statement then leaves alone; CREATE OR REPLACE drops it.
-std::optional<Id> existing_db_object(Db_session *session, const Create_flags &flags,
-                                     const Id &schema_id,
-                                     const std::string &request_path) {
-  if (!flags.or_replace && !flags.if_not_exists) return std::nullopt;
-  const auto existing = metadata::find_db_object(session, schema_id, request_path);
-  if (!existing) return std::nullopt;
-  if (flags.if_not_exists) return existing->id;
-  metadata::delete_db_object(session, existing->id);
-  return std::nullopt;
-}
-
 // Grants the privileges the db_object needs after a change: the
 // crud_operations, the options or the references may have changed.
 // A db_object created with FORCE may name a routine or table that does not
@@ -646,9 +649,13 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
                              "` does not exist.");
   }
 
-  if (const auto existing = existing_db_object(m_session, s.flags, schema.id, s.path)) {
+  if (keep_existing(
+          s.flags,
+          [&] { return metadata::find_db_object(m_session, schema.id, s.path); },
+          [&](const auto &existing) {
+            metadata::delete_db_object(m_session, existing.id);
+          })) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
-    r->id = *existing;
     transaction.commit();
     return;
   }
@@ -676,11 +683,10 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST VIEW `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r) {
-  const auto type = routine_type(s.kind);
+  const auto type = kind_caption(s.kind);
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to create the REST " + type + " `" + full_path + "`.");
 
@@ -689,26 +695,21 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   const auto schema = db_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
-  if (const auto existing = existing_db_object(m_session, s.flags, schema.id, s.path)) {
+  if (keep_existing(
+          s.flags,
+          [&] { return metadata::find_db_object(m_session, schema.id, s.path); },
+          [&](const auto &existing) {
+            metadata::delete_db_object(m_session, existing.id);
+          })) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
-    r->id = *existing;
     transaction.commit();
     return;
   }
 
   const Id id = metadata::new_id(m_session);
   Mapping_builder builder(m_session, id, schema_name, name);
-  std::vector<Object_definition> objects{
-      builder.parameters_object(type, s.parameters, s.force)};
-  if (s.kind == Create_rest_routine::Kind::function) {
-    objects.push_back(
-        builder.function_result(s.results.empty() ? nullptr : &s.results.front()));
-  } else {
-    for (const auto &result : s.results) {
-      objects.push_back(
-          builder.procedure_result(result, static_cast<int>(objects.size())));
-    }
-  }
+  auto objects = builder.routine_objects(s.kind, type, s.parameters,
+                                         s.results, s.force);
   assign_object_names(m_session, schema.id, full_path, true, &objects);
 
   auto definition = db_object_definition(schema.id, name, s.path, type, s.options);
@@ -726,7 +727,6 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   transaction.commit();
 
   r->message = "REST " + type + " `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 // -- ALTER --------------------------------------------------------------------
@@ -787,20 +787,16 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = db_object->id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) {
-  const auto type = routine_type(s.kind);
-  const auto kind = s.kind == Create_rest_routine::Kind::function
-                        ? Db_object_kind::function
-                        : Db_object_kind::procedure;
+  const auto type = kind_caption(s.kind);
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to update the REST " + type + " `" + full_path + "`.");
 
   const auto schema = db_object_schema(s.on);
   const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
-  if (!db_object || !is_of_kind(*db_object, kind)) {
+  if (!db_object || !is_of_kind(*db_object, s.kind)) {
     throw std::runtime_error("The given REST " + type + " `" + full_path +
                              "` could not be found.");
   }
@@ -816,16 +812,8 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
     metadata::set_objects(m_session, db_object->id, {});
     Mapping_builder builder(m_session, db_object->id, db_object->schema_name,
                             db_object->name);
-    objects.push_back(builder.parameters_object(type, s.parameters, false));
-    if (kind == Db_object_kind::function) {
-      objects.push_back(
-          builder.function_result(s.results.empty() ? nullptr : &s.results.front()));
-    } else {
-      for (const auto &result : s.results) {
-        objects.push_back(
-            builder.procedure_result(result, static_cast<int>(objects.size())));
-      }
-    }
+    objects = builder.routine_objects(s.kind, type, s.parameters, s.results,
+                                      false);
     assign_object_names(m_session, schema.id, full_path, true, &objects);
     metadata::set_objects(m_session, db_object->id, objects);
     changes.crud_operations = metadata::calculate_crud_operations(
@@ -844,7 +832,6 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = db_object->id;
 }
 
 // -- DROP ---------------------------------------------------------------------
@@ -865,7 +852,6 @@ void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r)
   }
   if (db_object) {
     metadata::delete_db_object(m_session, db_object->id);
-    r->id = db_object->id;
   }
 
   transaction.commit();
@@ -914,7 +900,6 @@ void Ddl_executor::do_execute(const Show_create_rest_db_object &s,
       s.format == Output_format::json
           ? metadata::db_object_json(m_session, *db_object).dump(true)
           : metadata::db_object_create_statement(m_session, *db_object));
-  r->id = db_object->id;
 }
 
 // -- SHOW REST COLUMNS ----------------------------------------------------

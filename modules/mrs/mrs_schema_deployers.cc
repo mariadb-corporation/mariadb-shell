@@ -33,6 +33,10 @@
 #include <utility>
 
 #include "modules/mrs/core/mrs_sql.h"
+#include "modules/util/dump/dump_schemas.h"
+#include "modules/util/dump/dump_schemas_options.h"
+#include "modules/util/load/dump_loader.h"
+#include "modules/util/load/load_dump_options.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -100,14 +104,15 @@ shcore::Object_bridge_ref global_object(shcore::IShell_core *shell_core,
   return value.as_object();
 }
 
-// The schema dumped with util.dumpSchemas() into the msm plugin's backup
-// folder and loaded back with util.loadDump(), as msm's deploy_schema()
-// does. util works on the global session, which is the one deployed to.
-class Util_schema_backup : public ::mrs::metadata::Schema_backup {
+// The schema dumped into the msm plugin's backup folder and loaded back,
+// as msm's deploy_schema() does with util.dumpSchemas() and util.loadDump().
+// The dumper and loader run on the session being deployed to, which need
+// not be the global one.
+class Dump_schema_backup : public ::mrs::metadata::Schema_backup {
  public:
-  Util_schema_backup(shcore::Object_bridge_ref util,
+  Dump_schema_backup(std::shared_ptr<mysqlshdk::db::ISession> session,
                      ::mrs::metadata::Deployment_log *log)
-      : m_util(std::move(util)), m_log(log) {}
+      : m_target(std::move(session)), m_log(log) {}
 
   void create(Db_session *session, std::string_view schema_name,
               const Version &version) override {
@@ -142,22 +147,27 @@ class Util_schema_backup : public ::mrs::metadata::Schema_backup {
 
     m_log->write("INFO", "Creating dump of `" + std::string(schema_name) +
                              "` version " + version.str() + " ...");
-    shcore::Argument_list args;
-    auto schemas = shcore::make_array();
-    schemas->emplace_back(std::string(schema_name));
-    args.emplace_back(std::move(schemas));
-    args.emplace_back(m_directory);
-    args.emplace_back(shcore::make_dict("skipUpgradeChecks", true,
-                                        "showProgress", false));
-    m_util->call("dumpSchemas", args);
+    dump::Dump_schemas_options options;
+    dump::Dump_schemas_options::options().unpack(
+        shcore::make_dict("skipUpgradeChecks", true, "showProgress", false),
+        &options);
+    options.set_schemas({std::string(schema_name)});
+    options.set_url(m_directory);
+    options.set_session(m_target);
+    options.validate_and_configure();
+    dump::Dump_schemas(options).run();
   }
 
   void restore(Db_session *) override {
-    shcore::Argument_list args;
-    args.emplace_back(m_directory);
-    args.emplace_back(shcore::make_dict("showMetadata", false, "showProgress",
-                                        false, "ignoreVersion", true));
-    m_util->call("loadDump", args);
+    Load_dump_options options;
+    Load_dump_options::options().unpack(
+        shcore::make_dict("showMetadata", false, "showProgress", false,
+                          "ignoreVersion", true),
+        &options);
+    options.set_url(m_directory);
+    options.set_session(m_target);
+    options.validate_and_configure();
+    Dump_loader(options).run();
   }
 
   void discard() override {
@@ -176,7 +186,7 @@ class Util_schema_backup : public ::mrs::metadata::Schema_backup {
   }
 
  private:
-  shcore::Object_bridge_ref m_util;
+  std::shared_ptr<mysqlshdk::db::ISession> m_target;
   ::mrs::metadata::Deployment_log *m_log;
   Db_session *m_session = nullptr;
   std::string m_directory;
@@ -191,23 +201,21 @@ class Shell_script_deployer : public ::mrs::metadata::Schema_deployer {
         shcore::path::join_path(msm_project_path(), "releases", "versions"));
   }
 
-  explicit Shell_script_deployer(shcore::Object_bridge_ref util) {
-    if (util) {
-      m_backup = std::make_unique<Util_schema_backup>(std::move(util), &m_log);
-    }
-  }
+  explicit Shell_script_deployer(
+      std::shared_ptr<mysqlshdk::db::ISession> session)
+      : m_backup(std::move(session), &m_log) {}
 
   std::string deploy(Db_session *session, bool backup) override {
     // The share folder is looked up only when deploying
     ::mrs::metadata::Script_deployer deployer(
         shcore::path::join_path(msm_project_path(), "releases", "deployment"),
-        &m_log, m_backup.get());
+        &m_log, &m_backup);
     return deployer.deploy(session, backup);
   }
 
  private:
   Msm_log_file m_log;
-  std::unique_ptr<Util_schema_backup> m_backup;
+  Dump_schema_backup m_backup;
 };
 
 // msm.deploySchema() of the loaded msm plugin, on the bundled project.
@@ -256,14 +264,7 @@ std::unique_ptr<::mrs::metadata::Schema_deployer> make_schema_deployer(
   if (auto msm = global_object(shell_core, "msm")) {
     return std::make_unique<Msm_plugin_deployer>(std::move(msm), session);
   }
-
-  // util backs up the global session only, so another session is updated
-  // without a backup, as msm does with backups disabled
-  shcore::Object_bridge_ref util;
-  if (session == shell_core->get_dev_session()) {
-    util = global_object(shell_core, "util");
-  }
-  return std::make_unique<Shell_script_deployer>(std::move(util));
+  return std::make_unique<Shell_script_deployer>(session->get_core_session());
 }
 
 }  // namespace mrs

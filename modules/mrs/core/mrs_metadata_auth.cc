@@ -106,55 +106,96 @@ void sha256_transform(uint32_t state[8], const unsigned char block[64]) {
   state[7] += h;
 }
 
+// Incremental SHA-256. A copy carries the state, so a hash of a common
+// prefix (an HMAC pad) is computed once and resumed for each message.
+class Sha256 {
+ public:
+  Sha256 &update(std::string_view data) {
+    m_length += data.size();
+    for (const char c : data) {
+      m_buffer[m_buffered++] = static_cast<unsigned char>(c);
+      if (m_buffered == 64) {
+        sha256_transform(m_state, m_buffer);
+        m_buffered = 0;
+      }
+    }
+    return *this;
+  }
+
+  // The 32 raw bytes of the digest of everything added so far.
+  std::string digest() const {
+    Sha256 last = *this;
+    const uint64_t bit_length = m_length * 8;
+    last.update(std::string_view("\x80", 1));
+    while (last.m_buffered != 56) last.update(std::string_view("\0", 1));
+    char length[8];
+    for (int i = 0; i < 8; ++i) {
+      length[i] = static_cast<char>((bit_length >> ((7 - i) * 8)) & 0xff);
+    }
+    last.update(std::string_view(length, 8));
+
+    std::string result;
+    result.reserve(32);
+    for (const uint32_t word : last.m_state) {
+      result += static_cast<char>((word >> 24) & 0xff);
+      result += static_cast<char>((word >> 16) & 0xff);
+      result += static_cast<char>((word >> 8) & 0xff);
+      result += static_cast<char>(word & 0xff);
+    }
+    return result;
+  }
+
+ private:
+  uint32_t m_state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                         0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+  unsigned char m_buffer[64] = {};
+  size_t m_buffered = 0;
+  uint64_t m_length = 0;
+};
+
 // The 32 raw bytes of the SHA-256 digest.
-std::string sha256(std::string_view input) {
-  uint32_t state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                       0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+std::string sha256(std::string_view input) { return Sha256().update(input).digest(); }
 
-  std::string message(input);
-  const uint64_t bit_length = static_cast<uint64_t>(input.size()) * 8;
-  message += '\x80';
-  while (message.size() % 64 != 56) message += '\0';
-  for (int i = 7; i >= 0; --i) {
-    message += static_cast<char>((bit_length >> (i * 8)) & 0xff);
-  }
-  for (size_t offset = 0; offset < message.size(); offset += 64) {
-    sha256_transform(
-        state, reinterpret_cast<const unsigned char *>(message.data()) + offset);
+// HMAC-SHA256 with one key: the inner and outer pads are hashed once, and
+// every mac() resumes from them (two compressions less per call).
+class Hmac_sha256 {
+ public:
+  explicit Hmac_sha256(std::string_view key) {
+    std::string block_key(key.size() > 64 ? sha256(key) : std::string(key));
+    block_key.resize(64, '\0');
+    std::string inner(64, '\0');
+    std::string outer(64, '\0');
+    for (size_t i = 0; i < 64; ++i) {
+      inner[i] = static_cast<char>(block_key[i] ^ 0x36);
+      outer[i] = static_cast<char>(block_key[i] ^ 0x5c);
+    }
+    m_inner.update(inner);
+    m_outer.update(outer);
   }
 
-  std::string digest;
-  digest.reserve(32);
-  for (const uint32_t word : state) {
-    digest += static_cast<char>((word >> 24) & 0xff);
-    digest += static_cast<char>((word >> 16) & 0xff);
-    digest += static_cast<char>((word >> 8) & 0xff);
-    digest += static_cast<char>(word & 0xff);
+  std::string mac(std::string_view data) const {
+    Sha256 inner = m_inner;
+    Sha256 outer = m_outer;
+    return outer.update(inner.update(data).digest()).digest();
   }
-  return digest;
-}
+
+ private:
+  Sha256 m_inner;
+  Sha256 m_outer;
+};
 
 std::string hmac_sha256(std::string_view key, std::string_view data) {
-  std::string block_key(key);
-  if (block_key.size() > 64) block_key = sha256(block_key);
-  block_key.resize(64, '\0');
-
-  std::string inner(64, '\0');
-  std::string outer(64, '\0');
-  for (size_t i = 0; i < 64; ++i) {
-    inner[i] = static_cast<char>(block_key[i] ^ 0x36);
-    outer[i] = static_cast<char>(block_key[i] ^ 0x5c);
-  }
-  return sha256(outer + sha256(inner + std::string(data)));
+  return Hmac_sha256(key).mac(data);
 }
 
 // PBKDF2-HMAC-SHA256 with a derived key of one digest length.
 std::string pbkdf2_sha256(std::string_view password, std::string_view salt,
                           int iterations) {
-  std::string block = hmac_sha256(password, std::string(salt) + std::string("\0\0\0\1", 4));
+  const Hmac_sha256 prf(password);
+  std::string block = prf.mac(std::string(salt) + std::string("\0\0\0\1", 4));
   std::string result = block;
   for (int i = 1; i < iterations; ++i) {
-    block = hmac_sha256(password, block);
+    block = prf.mac(block);
     for (size_t j = 0; j < result.size(); ++j) {
       result[j] = static_cast<char>(result[j] ^ block[j]);
     }
@@ -276,13 +317,14 @@ Role role_from_row(const Db_row &row) {
   return r;
 }
 
-std::vector<Role> query_roles(Db_session *session, const std::string &where) {
+std::vector<Role> query_roles(Db_session *session, const std::string &where,
+                              std::vector<Value> params = {}) {
   std::string query = k_role_select;
   if (!where.empty()) query += " WHERE " + where;
   query += " ORDER BY r.caption, specific_to_service_request_path";
 
   std::vector<Role> roles;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, std::move(params)).rows) {
     roles.push_back(role_from_row(row));
   }
   return roles;
@@ -337,13 +379,14 @@ Auth_app auth_app_from_row(const Db_row &row) {
 }
 
 std::vector<Auth_app> query_auth_apps(Db_session *session,
-                                      const std::string &where) {
+                                      const std::string &where,
+                                      std::vector<Value> params = {}) {
   std::string query = k_auth_app_select;
   if (!where.empty()) query += " WHERE " + where;
   query += " ORDER BY a.name";
 
   std::vector<Auth_app> auth_apps;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, std::move(params)).rows) {
     auth_apps.push_back(auth_app_from_row(row));
   }
   return auth_apps;
@@ -375,13 +418,14 @@ User user_from_row(const Db_row &row) {
 }
 
 std::vector<User> query_users(Db_session *session, const std::string &where,
+                              std::vector<Value> params = {},
                               const std::string &order_by = "u.name") {
   std::string query = k_user_select;
   if (!where.empty()) query += " WHERE " + where;
   query += " ORDER BY " + order_by;
 
   std::vector<User> users;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, std::move(params)).rows) {
     users.push_back(user_from_row(row));
   }
   return users;
@@ -438,9 +482,8 @@ Auth_vendor auth_vendor_from_row(const Db_row &row) {
 
 std::optional<Auth_vendor> find_auth_vendor(Db_session *session,
                                             std::string_view name) {
-  const auto result = session->query(auth_vendor_select() +
-                                     " WHERE UPPER(name) = UPPER(" +
-                                     sql::quote(name) + ")");
+  const auto result = session->query(
+      auth_vendor_select() + " WHERE UPPER(name) = UPPER(?)", {name});
   if (result.empty()) return std::nullopt;
   return auth_vendor_from_row(result.first());
 }
@@ -457,20 +500,22 @@ std::vector<Auth_vendor> get_auth_vendors(Db_session *session) {
 // -- Roles ----------------------------------------------------------------
 
 std::optional<Role> get_role(Db_session *session, const Id &id) {
-  auto roles = query_roles(session, "r.id = " + sql::id(id));
+  auto roles = query_roles(session, "r.id = ?", {Value::id(id)});
   if (roles.empty()) return std::nullopt;
   return std::move(roles.front());
 }
 
 std::optional<Role> find_role(Db_session *session, std::string_view caption,
                               const std::optional<Id> &service_id) {
-  std::string where = "r.caption = " + sql::quote(caption);
+  std::string where = "r.caption = ?";
+  std::vector<Value> params{caption};
   if (service_id) {
-    where += " AND r.specific_to_service_id = " + sql::id(*service_id);
+    where += " AND r.specific_to_service_id = ?";
+    params.push_back(Value::id(*service_id));
   } else {
     where += " AND r.specific_to_service_id IS NULL";
   }
-  auto roles = query_roles(session, where);
+  auto roles = query_roles(session, where, std::move(params));
   if (roles.empty()) return std::nullopt;
   return std::move(roles.front());
 }
@@ -479,13 +524,15 @@ std::vector<Role> get_roles(Db_session *session,
                             const std::optional<Id> &service_id,
                             bool include_global) {
   std::string where;
+  std::vector<Value> params;
   if (service_id) {
-    where = "r.specific_to_service_id = " + sql::id(*service_id);
+    where = "r.specific_to_service_id = ?";
+    params.push_back(Value::id(*service_id));
     if (include_global) where += " OR r.specific_to_service_id IS NULL";
   } else if (!include_global) {
     where = "r.specific_to_service_id IS NOT NULL";
   }
-  return query_roles(session, where);
+  return query_roles(session, where, std::move(params));
 }
 
 std::vector<Granted_role> get_granted_roles(
@@ -517,13 +564,20 @@ FROM `mysql_rest_service_metadata`.`mrs_role` r
 )";
 
   std::vector<std::string> conditions;
+  std::vector<Value> params;
   if (service_id) {
-    conditions.push_back("(r.specific_to_service_id IS NULL OR "
-                         "r.specific_to_service_id = " +
-                         sql::id(*service_id) + ")");
+    conditions.push_back(
+        "(r.specific_to_service_id IS NULL OR r.specific_to_service_id = ?)");
+    params.push_back(Value::id(*service_id));
   }
-  if (user_name) conditions.push_back("u.name = " + sql::quote(*user_name));
-  if (auth_app_name) conditions.push_back("a.name = " + sql::quote(*auth_app_name));
+  if (user_name) {
+    conditions.push_back("u.name = ?");
+    params.emplace_back(*user_name);
+  }
+  if (auth_app_name) {
+    conditions.push_back("a.name = ?");
+    params.emplace_back(*auth_app_name);
+  }
   if (!conditions.empty()) query += " WHERE " + join(conditions, " AND ");
 
   // Every selected column is listed: ONLY_FULL_GROUP_BY does not derive the
@@ -537,7 +591,7 @@ FROM `mysql_rest_service_metadata`.`mrs_role` r
   query += " ORDER BY r.caption, specific_to_service_request_path";
 
   std::vector<Granted_role> roles;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, std::move(params)).rows) {
     Granted_role granted;
     granted.role = role_from_row(row);
     if (include_users) granted.users = row["users"].as_optional_string();
@@ -569,7 +623,7 @@ Id add_role(Db_session *session, const Role_definition &definition) {
   insert.set("description", definition.description);
   insert.set("options", definition.options);
   try {
-    session->execute(insert.str());
+    session->execute(insert);
   } catch (const Db_error &e) {
     if (e.code() == 1062) throw std::runtime_error(duplicate_message);
     throw;
@@ -579,8 +633,7 @@ Id add_role(Db_session *session, const Role_definition &definition) {
 
 void delete_role(Db_session *session, const Id &id) {
   try {
-    session->execute("DELETE FROM " + sql::metadata_table("mrs_role") +
-                     " WHERE id = " + sql::id(id));
+    session->execute(sql::Delete("mrs_role").where("id", Value::id(id)));
   } catch (const Db_error &e) {
     if (e.code() == 1451) {
       throw std::runtime_error(
@@ -592,18 +645,19 @@ void delete_role(Db_session *session, const Id &id) {
   }
 }
 
-std::string role_create_statement(Db_session *session, const Role &role) {
+std::string role_create_statement(Db_session *session, const Role &role,
+                                  bool on_current_service) {
   std::string output = "CREATE REST ROLE " + sql::quote_identifier(role.caption);
   if (role.derived_from_role_caption) {
     output += " EXTENDS " + sql::quote_identifier(*role.derived_from_role_caption);
   }
 
-  if (role.specific_to_service_id) {
+  if (!role.specific_to_service_id) {
+    output += " ON ANY SERVICE";
+  } else if (!on_current_service) {
     const auto service = get_service(session, *role.specific_to_service_id);
     output += " ON SERVICE " + (service ? service->full_service_path
                                         : role.specific_to_service_request_path);
-  } else {
-    output += " ON ANY SERVICE";
   }
 
   if (role.description) {
@@ -619,7 +673,7 @@ std::vector<std::string> role_create_statements(Db_session *session,
                                                 const Id &service_id) {
   std::vector<std::string> statements;
   for (const auto &role : get_roles(session, service_id, false)) {
-    statements.push_back(role_create_statement(session, role));
+    statements.push_back(role_create_statement(session, role, true));
   }
   return statements;
 }
@@ -629,11 +683,11 @@ std::vector<std::string> role_create_statements(Db_session *session,
 std::vector<Privilege> get_role_privileges(Db_session *session,
                                            const Id &role_id) {
   const std::string query =
-      std::string(k_privilege_select) + " WHERE p.role_id = " + sql::id(role_id) +
-      " ORDER BY p.service_path, p.schema_path, p.object_path";
+      std::string(k_privilege_select) +
+      " WHERE p.role_id = ? ORDER BY p.service_path, p.schema_path, p.object_path";
 
   std::vector<Privilege> privileges;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, {Value::id(role_id)}).rows) {
     privileges.push_back(privilege_from_row(row));
   }
   return privileges;
@@ -658,8 +712,7 @@ Id add_role_privilege(Db_session *session, const Id &role_id,
     session->execute(sql::Update("mrs_privilege")
                          .set("crud_operations",
                               join(canonical_operations(merged), ","))
-                         .where("id = " + sql::id(privilege.id))
-                         .str());
+                         .where("id", Value::id(privilege.id)));
     return privilege.id;
   }
 
@@ -671,8 +724,7 @@ Id add_role_privilege(Db_session *session, const Id &role_id,
                             join(canonical_operations(operations), ","))
                        .set("service_path", service_path)
                        .set("schema_path", schema_path)
-                       .set("object_path", object_path)
-                       .str());
+                       .set("object_path", object_path));
   return id;
 }
 
@@ -697,13 +749,12 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
     if (remaining.size() == privilege.crud_operations.size()) continue;
 
     if (remaining.empty()) {
-      session->execute("DELETE FROM " + sql::metadata_table("mrs_privilege") +
-                       " WHERE id = " + sql::id(privilege.id));
+      session->execute(
+          sql::Delete("mrs_privilege").where("id", Value::id(privilege.id)));
     } else {
       session->execute(sql::Update("mrs_privilege")
                            .set("crud_operations", join(remaining, ","))
-                           .where("id = " + sql::id(privilege.id))
-                           .str());
+                           .where("id", Value::id(privilege.id)));
     }
   }
   return found;
@@ -737,14 +788,13 @@ std::string privilege_grant_statement(const Privilege &privilege,
 // -- Auth apps ------------------------------------------------------------
 
 std::optional<Auth_app> get_auth_app(Db_session *session, const Id &id) {
-  auto auth_apps = query_auth_apps(session, "a.id = " + sql::id(id));
+  auto auth_apps = query_auth_apps(session, "a.id = ?", {Value::id(id)});
   if (auth_apps.empty()) return std::nullopt;
   return std::move(auth_apps.front());
 }
 
 std::optional<Auth_app> find_auth_app(Db_session *session, std::string_view name) {
-  auto auth_apps = query_auth_apps(
-      session, "UPPER(a.name) = UPPER(" + sql::quote(name) + ")");
+  auto auth_apps = query_auth_apps(session, "UPPER(a.name) = UPPER(?)", {name});
   if (auth_apps.empty()) return std::nullopt;
   return std::move(auth_apps.front());
 }
@@ -752,10 +802,11 @@ std::optional<Auth_app> find_auth_app(Db_session *session, std::string_view name
 std::vector<Auth_app> get_auth_apps(Db_session *session,
                                     const std::optional<Id> &service_id) {
   if (!service_id) return query_auth_apps(session, {});
-  return query_auth_apps(session, "a.id IN (SELECT auth_app_id FROM " +
-                                      sql::metadata_table("service_has_auth_app") +
-                                      " WHERE service_id = " +
-                                      sql::id(*service_id) + ")");
+  return query_auth_apps(session,
+                         "a.id IN (SELECT auth_app_id FROM " +
+                             sql::metadata_table("service_has_auth_app") +
+                             " WHERE service_id = ?)",
+                         {Value::id(*service_id)});
 }
 
 Id add_auth_app(Db_session *session, const Auth_app_definition &definition) {
@@ -773,38 +824,36 @@ Id add_auth_app(Db_session *session, const Auth_app_definition &definition) {
           .set("enabled", definition.enabled)
           .set("limit_to_registered_users", definition.limit_to_registered_users)
           .set("default_role_id", Value::id(definition.default_role_id))
-          .set("options", definition.options)
-          .str());
+          .set("options", definition.options));
   return id;
 }
 
 void update_auth_app(Db_session *session, const Id &id,
                      const Auth_app_changes &changes) {
   sql::Update update("auth_app");
-  if (changes.name) update.set("name", *changes.name);
-  if (changes.description) update.set("description", *changes.description);
-  if (changes.enabled) update.set("enabled", *changes.enabled);
+  update.set_if("name", changes.name);
+  update.set_if("description", changes.description);
+  update.set_if("enabled", changes.enabled);
   if (changes.limit_to_registered_users) {
     update.set("limit_to_registered_users", *changes.limit_to_registered_users);
   }
   if (changes.default_role_id) {
     update.set("default_role_id", Value::id(*changes.default_role_id));
   }
-  if (changes.url) update.set("url", *changes.url);
-  if (changes.access_token) update.set("access_token", *changes.access_token);
-  if (changes.app_id) update.set("app_id", *changes.app_id);
+  update.set_if("url", changes.url);
+  update.set_if("access_token", changes.access_token);
+  update.set_if("app_id", changes.app_id);
 
   if (update.empty()) return;
-  update.where("id = " + sql::id(id));
-  session->execute(update.str());
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_auth_app(Db_session *session, const Id &id) {
-  session->execute("DELETE FROM " + sql::metadata_table("service_has_auth_app") +
-                   " WHERE auth_app_id = " + sql::id(id));
+  session->execute(
+      sql::Delete("service_has_auth_app").where("auth_app_id", Value::id(id)));
   // The users of the app are deleted by the auth_app_BEFORE_DELETE trigger
-  session->execute("DELETE FROM " + sql::metadata_table("auth_app") +
-                   " WHERE id = " + sql::id(id));
+  session->execute(sql::Delete("auth_app").where("id", Value::id(id)));
 }
 
 void link_auth_app(Db_session *session, const Id &auth_app_id,
@@ -812,8 +861,7 @@ void link_auth_app(Db_session *session, const Id &auth_app_id,
   try {
     session->execute(sql::Insert("service_has_auth_app")
                          .set("service_id", Value::id(service_id))
-                         .set("auth_app_id", Value::id(auth_app_id))
-                         .str());
+                         .set("auth_app_id", Value::id(auth_app_id)));
   } catch (const Db_error &e) {
     if (e.code() == 1062) {
       throw std::runtime_error(
@@ -825,10 +873,10 @@ void link_auth_app(Db_session *session, const Id &auth_app_id,
 
 void unlink_auth_app(Db_session *session, const Id &auth_app_id,
                      const Id &service_id) {
-  const auto affected = session->execute(
-      "DELETE FROM " + sql::metadata_table("service_has_auth_app") +
-      " WHERE service_id = " + sql::id(service_id) +
-      " AND auth_app_id = " + sql::id(auth_app_id));
+  const auto affected =
+      session->execute(sql::Delete("service_has_auth_app")
+                           .where("service_id", Value::id(service_id))
+                           .where("auth_app_id", Value::id(auth_app_id)));
   if (affected == 0) {
     throw std::runtime_error(
         "The REST auth app cannot be removed as it is not assigned to the "
@@ -878,35 +926,33 @@ std::string auth_app_create_statement(Db_session *session,
 
 std::optional<User> find_user(Db_session *session, const Id &auth_app_id,
                               std::string_view name) {
-  auto users = query_users(session, "u.auth_app_id = " + sql::id(auth_app_id) +
-                                        " AND u.name = " + sql::quote(name));
+  auto users = query_users(session, "u.auth_app_id = ? AND u.name = ?",
+                           {Value::id(auth_app_id), name});
   if (users.empty()) return std::nullopt;
   return std::move(users.front());
 }
 
 std::vector<User> get_users(Db_session *session, const Id &auth_app_id) {
-  return query_users(session, "u.auth_app_id = " + sql::id(auth_app_id));
+  return query_users(session, "u.auth_app_id = ?", {Value::id(auth_app_id)});
 }
 
 std::vector<User> get_users(Db_session *session,
                             const std::optional<Id> &service_id,
                             const std::optional<Id> &auth_app_id) {
   std::vector<std::string> conditions;
+  std::vector<Value> params;
   if (service_id) {
     conditions.push_back("u.auth_app_id IN (SELECT auth_app_id FROM " +
                          sql::metadata_table("service_has_auth_app") +
-                         " WHERE service_id = " + sql::id(*service_id) + ")");
+                         " WHERE service_id = ?)");
+    params.push_back(Value::id(*service_id));
   }
   if (auth_app_id) {
-    conditions.push_back("u.auth_app_id = " + sql::id(*auth_app_id));
+    conditions.push_back("u.auth_app_id = ?");
+    params.push_back(Value::id(*auth_app_id));
   }
-
-  std::string where;
-  for (const auto &condition : conditions) {
-    if (!where.empty()) where += " AND ";
-    where += condition;
-  }
-  return query_users(session, where, "a.name, u.name");
+  return query_users(session, join(conditions, " AND "), std::move(params),
+                     "a.name, u.name");
 }
 
 std::string hash_password(std::string_view password) {
@@ -947,8 +993,7 @@ Id add_user(Db_session *session, const User_definition &definition) {
           .set("mapped_user_id", definition.mapped_user_id)
           .set("options", definition.options)
           .set("app_options", definition.app_options)
-          .set("auth_string", auth_string)
-          .str());
+          .set("auth_string", auth_string));
   if (affected == 0) throw std::runtime_error("Failed to insert the new user.");
   return id;
 }
@@ -964,28 +1009,27 @@ void update_user(Db_session *session, const User &user,
     check_password(*changes.password);
     update.set("auth_string", hash_password(*changes.password));
   }
-  if (changes.login_permitted) update.set("login_permitted", *changes.login_permitted);
-  if (changes.email) update.set("email", *changes.email);
-  if (changes.vendor_user_id) update.set("vendor_user_id", *changes.vendor_user_id);
-  if (changes.mapped_user_id) update.set("mapped_user_id", *changes.mapped_user_id);
-  if (changes.app_options) update.set("app_options", *changes.app_options);
+  update.set_if("login_permitted", changes.login_permitted);
+  update.set_if("email", changes.email);
+  update.set_if("vendor_user_id", changes.vendor_user_id);
+  update.set_if("mapped_user_id", changes.mapped_user_id);
+  update.set_if("app_options", changes.app_options);
   if (changes.options) {
     if (changes.merge_options) {
-      update.set_raw("options = JSON_MERGE_PATCH(COALESCE(options, '{}'), " +
-                     sql::quote(*changes.options) + ")");
+      update.set_raw("options = JSON_MERGE_PATCH(COALESCE(options, '{}'), ?)",
+                     {*changes.options});
     } else {
       update.set("options", *changes.options);
     }
   }
 
   if (update.empty()) return;
-  update.where("id = " + sql::id(user.id));
-  session->execute(update.str());
+  update.where("id", Value::id(user.id));
+  session->execute(update);
 }
 
 void delete_user(Db_session *session, const Id &id) {
-  session->execute("DELETE FROM " + sql::metadata_table("mrs_user") +
-                   " WHERE id = " + sql::id(id));
+  session->execute(sql::Delete("mrs_user").where("id", Value::id(id)));
 }
 
 std::vector<User_role> get_user_roles(Db_session *session, const Id &user_id) {
@@ -1003,11 +1047,10 @@ FROM `mysql_rest_service_metadata`.`mrs_user_has_role` ur
     LEFT JOIN `mysql_rest_service_metadata`.`service` s
         ON s.id = r.specific_to_service_id
     LEFT JOIN `mysql_rest_service_metadata`.`url_host` h ON s.url_host_id = h.id
-WHERE ur.user_id = )" + sql::id(user_id) +
-                            " ORDER BY r.caption, specific_to_service_request_path";
+WHERE ur.user_id = ? ORDER BY r.caption, specific_to_service_request_path)";
 
   std::vector<User_role> roles;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, {Value::id(user_id)}).rows) {
     User_role user_role;
     user_role.role = role_from_row(row);
     user_role.comments = row["grant_comments"].as_optional_string();
@@ -1022,15 +1065,14 @@ void add_user_role(Db_session *session, const Id &user_id, const Id &role_id,
   session->execute(sql::Insert("mrs_user_has_role")
                        .set("user_id", Value::id(user_id))
                        .set("role_id", Value::id(role_id))
-                       .set("comments", comments)
-                       .str());
+                       .set("comments", comments));
 }
 
 void delete_user_role(Db_session *session, const Id &user_id,
                       const Id &role_id) {
-  session->execute("DELETE FROM " + sql::metadata_table("mrs_user_has_role") +
-                   " WHERE user_id = " + sql::id(user_id) +
-                   " AND role_id = " + sql::id(role_id));
+  session->execute(sql::Delete("mrs_user_has_role")
+                       .where("user_id", Value::id(user_id))
+                       .where("role_id", Value::id(role_id)));
 }
 
 std::string user_role_grant_statement(const User &user,

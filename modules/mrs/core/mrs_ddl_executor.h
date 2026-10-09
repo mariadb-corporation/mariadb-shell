@@ -60,12 +60,8 @@ struct Statement_result {
     std::string message;
   };
 
-  int statement_index = 0;
-  int line = 0;
   bool success = true;
-  std::string operation;  // e.g. "CREATE REST SERVICE"
-  std::string message;    // the success or error message
-  std::optional<std::string> id;  // 0x... id of the object concerned
+  std::string message;  // the success or error message
   std::optional<uint64_t> affected_items_count;
   double execution_time = 0.0;  // seconds
 
@@ -75,18 +71,29 @@ struct Statement_result {
 
   std::vector<Warning> warnings;
 
-  // Error details.
+  // The error code of a failed statement (0 for errors of the core).
   int error_code = 0;
-  std::string sqlstate;
 
   bool has_result_set() const { return !columns.empty(); }
   void add_column(std::string name) { columns.push_back(std::move(name)); }
   std::vector<Db_value> &add_row() { return rows.emplace_back(); }
 };
 
-// The state USE REST SERVICE / SCHEMA leaves behind. One instance per
-// connection; it outlives the executor.
+// What the checks before the REST statements found last time, so they
+// run again only when the metadata fingerprint changed.
+struct Metadata_check {
+  std::string version_view = "msm_schema_version";
+  std::optional<metadata::Version> version;  // a version that passed
+  // The newest audit log id when the current service / schema were last
+  // found to exist (unset: never checked or the audit log was empty).
+  bool state_checked = false;
+  std::optional<int64_t> audit_id;
+};
+
+// The state USE REST SERVICE / SCHEMA leaves behind, and the checks it was
+// validated with. One instance per session; it outlives the executor.
 struct Executor_state {
+  Metadata_check metadata_check;
   std::optional<Id> current_service_id;
   std::string current_service;  // url_context_root
   std::string current_service_host;
@@ -125,6 +132,12 @@ class Ddl_executor {
   // plugin, or a metadata::Script_deployer). Without one it fails.
   void set_schema_deployer(metadata::Schema_deployer *deployer) {
     m_schema_deployer = deployer;
+  }
+
+  // The fingerprint the caller read before parsing (it needs the
+  // sql_mode). Without one, the executor reads it itself.
+  void set_fingerprint(metadata::Metadata_fingerprint fingerprint) {
+    m_fingerprint = std::move(fingerprint);
   }
 
  private:
@@ -224,6 +237,26 @@ class Ddl_executor {
   std::string current_service_path() const;
 
 
+  // CREATE IF NOT EXISTS and CREATE OR REPLACE: looks up the existing
+  // object with find() (which returns an optional). Returns true when the
+  // statement keeps it (IF NOT EXISTS); with OR REPLACE it is removed with
+  // remove(existing). Without either flag nothing is looked up.
+  template <typename Find, typename Remove>
+  static bool keep_existing(const ast::Create_flags &flags, Find find,
+                            Remove remove) {
+    if (!flags.or_replace && !flags.if_not_exists) return false;
+    const auto existing = find();
+    if (!existing) return false;
+    if (flags.if_not_exists) return true;
+    remove(*existing);
+    return false;
+  }
+
+  // Checks once per run that the metadata schema can be used and that the
+  // current service / schema still exist. A fingerprint equal to the one
+  // of the previous run skips the checks it covers.
+  void check_metadata();
+
   // Drops the current service / schema if they no longer exist.
   void validate_state();
 
@@ -239,7 +272,8 @@ class Ddl_executor {
   Db_session *m_session;
   Executor_state *m_state;
   std::string m_failure_context;
-  bool m_state_validated = false;
+  bool m_metadata_checked = false;
+  std::optional<metadata::Metadata_fingerprint> m_fingerprint;
   metadata::Schema_deployer *m_schema_deployer = nullptr;
 };
 

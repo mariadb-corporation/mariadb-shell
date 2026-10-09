@@ -66,6 +66,21 @@ EXPECT_EQ(["8", "4", "4", "4", "12"], [str(len(part)) for part in new_id.split("
 session.run_sql("CREATE OR REPLACE VIEW mysql_rest_service_metadata.msm_schema_version (major, minor, patch) AS SELECT 4, 1, 5")
 EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA UPDATE IF AVAILABLE"), "Failed to configure the REST metadata. Update of database schema `mysql_rest_service_metadata` to version 5.0.0 requested but the version 4.1.5 cannot be updated.")
 
+#@<> A failed update on a session other than the global one is rolled back from the backup
+# The backup is dumped and loaded back on the session the statement runs on.
+# Dropping a foreign key the update procedure drops makes the update fail.
+session.run_sql("DROP SCHEMA mysql_rest_service_metadata")
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", os.path.join(msm_project, "releases", "versions", "mysql_rest_service_metadata_4.1.6.sql")], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+WIPE_OUTPUT()
+session.run_sql("INSERT INTO mysql_rest_service_metadata.service (id, url_host_id, url_context_root, enabled) SELECT 0x1112131415161718191a1b1c1d1e1f20, id, '/old', 1 FROM mysql_rest_service_metadata.url_host WHERE name = ''")
+session.run_sql("ALTER TABLE mysql_rest_service_metadata.service DROP FOREIGN KEY fk_service_service1")
+
+other = shell.open_session(__sandbox_uri1)
+EXPECT_THROWS(lambda: other.run_sql("CONFIGURE REST METADATA UPDATE IF AVAILABLE"), "The schema has been restored back to version 4.1.6.")
+other.close()
+EXPECT_EQ("4.1.6", query_one("SELECT CONCAT(major, '.', minor, '.', patch) FROM mysql_rest_service_metadata.msm_schema_version"))
+EXPECT_EQ("/old", query_one("SELECT url_context_root FROM mysql_rest_service_metadata.service WHERE id = 0x1112131415161718191a1b1c1d1e1f20"))
+
 #@<> Cleanup
 session.close()
 testutil.destroy_sandbox(__mysql_sandbox_port1)

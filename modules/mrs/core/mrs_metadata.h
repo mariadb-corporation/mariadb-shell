@@ -34,6 +34,7 @@
 // The functions take the session explicitly and know nothing about the
 // current service or schema; that is the executor's business.
 
+#include <compare>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -58,16 +59,7 @@ struct Version {
     return std::to_string(major) + "." + std::to_string(minor) + "." +
            std::to_string(patch);
   }
-  friend bool operator==(const Version &a, const Version &b) {
-    return a.major == b.major && a.minor == b.minor && a.patch == b.patch;
-  }
-  friend bool operator<(const Version &a, const Version &b) {
-    if (a.major != b.major) return a.major < b.major;
-    if (a.minor != b.minor) return a.minor < b.minor;
-    return a.patch < b.patch;
-  }
-  friend bool operator>(const Version &a, const Version &b) { return b < a; }
-  friend bool operator!=(const Version &a, const Version &b) { return !(a == b); }
+  friend auto operator<=>(const Version &, const Version &) = default;
 };
 
 // The version of the metadata schema this module deploys and expects.
@@ -80,14 +72,32 @@ bool schema_exists(Db_session *session);
 
 // The version of the deployed schema, from the msm_schema_version view (or
 // the schema_version view of versions before 4.0.0). Throws when there is
-// none.
-Version schema_version(Db_session *session);
+// none. The name of the view that answered is stored in `view`, if given.
+Version schema_version(Db_session *session, std::string *view = nullptr);
 
 // Throws a descriptive error unless the metadata schema is present and of
-// a version this module can work with.
-void check_schema(Db_session *session);
+// a version this module can work with. Returns that version; the name of
+// its version view is stored in `view`, if given.
+Version check_schema(Db_session *session, std::string *view = nullptr);
 
-// A new id from the get_sequence_id() function.
+// What the checks before each REST statement depend on, read in one query:
+// the session's sql_mode, the schema version and the newest audit log id.
+// Every change of a service or schema writes an audit log row (triggers),
+// so an unchanged id means a current service or schema checked before
+// still exists. A redeployment changes the version, not the audit log.
+struct Metadata_fingerprint {
+  std::string sql_mode;
+  // false when the schema, its version view or the audit log could not be
+  // read; version and audit_id are unset then.
+  bool valid = false;
+  std::optional<Version> version;
+  std::optional<int64_t> audit_id;  // unset for an empty audit log
+};
+Metadata_fingerprint read_fingerprint(Db_session *session,
+                                      std::string_view version_view);
+
+// A new id from the get_sequence_id() function. Ids are fetched in growing
+// batches and kept in the session's id pool.
 Id new_id(Db_session *session);
 
 // Whether a metadata table has a row with the id.
@@ -305,9 +315,12 @@ void update_schema(Db_session *session, const Id &id,
 void delete_schema(Db_session *session, const Id &id);
 
 // The CREATE OR REPLACE REST SCHEMA statement, optionally followed by the
-// statements of its objects.
+// statements of its objects. With on_current_service, the
+// statement names no service (ON SERVICE ...) and acts on the current one,
+// as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
 std::string schema_create_statement(Db_session *session, const Schema &schema,
-                                    bool include_database_endpoints);
+                                    bool include_database_endpoints,
+                                    bool on_current_service = false);
 
 // Copies a schema with its objects into another service.
 Id clone_schema(Db_session *session, const Schema &schema,

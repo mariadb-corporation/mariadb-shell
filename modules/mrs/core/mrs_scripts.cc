@@ -1090,8 +1090,7 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
                            .set("language", k_typescript)
                            .set("name", s.function_name)
                            .set("class_name", m.class_name)
-                           .set("options", link_options.dump())
-                           .str());
+                           .set("options", link_options.dump()));
 
       for (const auto &grant : option_grant_statements(definition.options)) {
         session->execute(grant);
@@ -1126,14 +1125,18 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
   // Only the static folders are served; the sources and the build output
   // are private (enabled = 2), the daemon still reads them
   std::string served;
+  std::vector<sql::Value> served_paths;
   for (const auto &f : static_folders) {
-    served += (served.empty() ? "" : " OR ") + std::string("request_path LIKE ") +
-              sql::quote("/" + f + "/%");
+    served += (served.empty() ? "" : " OR ") + std::string("request_path LIKE ?");
+    served_paths.emplace_back("/" + f + "/%");
   }
   sql::Update make_private("content_file");
-  make_private.set("enabled", 2).where("content_set_id = " + sql::id(content_set.id));
-  if (!served.empty()) make_private.where("NOT (" + served + ")");
-  session->execute(make_private.str());
+  make_private.set("enabled", 2).where("content_set_id",
+                                       sql::Value::id(content_set.id));
+  if (!served.empty()) {
+    make_private.where_raw("NOT (" + served + ")", std::move(served_paths));
+  }
+  session->execute(make_private);
   return registered;
 }
 

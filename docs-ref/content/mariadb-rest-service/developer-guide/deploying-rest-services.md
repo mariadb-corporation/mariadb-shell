@@ -44,6 +44,8 @@ Each choice of `endpoints` includes the former:
 mrs.load.service(file_path="~/myService.mrs.sql", as_path="/myServiceTest")
 ```
 
+The script names the service only in its first two statements, `CREATE REST SERVICE` and `USE REST SERVICE`; all other statements act on the current service. `as_path` replaces the service path in these two statements, including the developer list of a service in development (`mike@/myService`), so a copy of a service in development is created without developers unless `as_path` names them.
+
 The script doesn't include the database schemas that the REST service is based on. They must already exist on the target server. To deploy them together with the REST service, use a REST project.
 
 ## REST Projects

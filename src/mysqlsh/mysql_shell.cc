@@ -908,7 +908,6 @@ void Mysql_shell::finish_init() {
                                         _global_shell->get_shell_options());
 
       providers->register_provider("util", _global_util);
-      providers->register_provider("mrs", m_global_mrs);
 
       // Gets provider corresponding to the given object from the parent
       // provider. Registers it if there's no such provider.

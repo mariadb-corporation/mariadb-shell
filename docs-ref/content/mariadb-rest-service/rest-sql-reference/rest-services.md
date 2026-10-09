@@ -569,6 +569,29 @@ You choose which endpoints of the service to include:
 
 Each of these settings is a superset of the former.
 
+The script names the service only in its first two statements: `CREATE OR REPLACE REST SERVICE` and `USE REST SERVICE`. The statements of the endpoints that follow have no `ON SERVICE` clause and act on the current service. To load the service under another request path, change the path in these two statements. Running the script makes the service the current REST service of the session.
+
+String literals in the script are written so that they read the same with and without the `NO_BACKSLASH_ESCAPES` SQL mode: single quotes are doubled, and file content that holds a backslash is written as `BINARY CONTENT`. Only a backslash in another string, such as a comment, is still written with a backslash escape.
+
+```sql
+CREATE OR REPLACE REST SERVICE /myService
+    COMMENT 'My service';
+
+USE REST SERVICE /myService;
+
+CREATE OR REPLACE REST SCHEMA /sakila
+    FROM `sakila`
+    AUTHENTICATION NOT REQUIRED;
+
+CREATE OR REPLACE REST VIEW /city
+    ON SCHEMA /sakila
+    AS `sakila`.`city` CLASS MyServiceSakilaCity {
+        cityId: city_id @KEY @SORTABLE,
+        city: city
+    }
+    AUTHENTICATION NOT REQUIRED;
+```
+
 ## REST Projects
 
 A REST project bundles one or more REST services with the database schemas they are based on, so that you can deploy them together. REST SQL statements don't handle REST projects; you dump and load them with the `mrs.dump.service_project()` and `mrs.load.service_project()` functions of the mrs plugin.

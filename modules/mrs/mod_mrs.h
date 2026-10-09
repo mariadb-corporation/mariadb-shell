@@ -61,14 +61,18 @@ class SHCORE_PUBLIC Mrs : public Extensible_object {
 
   // Runs a REST SQL script against a session and returns the shell result
   // of its statements. The current service and schema are kept per
-  // connection.
+  // session object.
   shcore::Value run_rest_sql(const std::shared_ptr<ShellBaseSession> &session,
                              const std::string &sql);
 
  private:
   shcore::IShell_core &m_shell_core;
-  // The USE REST SERVICE / SCHEMA state, per connection id.
-  std::map<uint64_t, ::mrs::Executor_state> m_states;
+  // The USE REST SERVICE / SCHEMA state and the metadata check cache of
+  // each session. Keyed by the session object, not its connection id
+  // (ids repeat across servers); entries of closed sessions are dropped.
+  std::map<std::weak_ptr<ShellBaseSession>, ::mrs::Executor_state,
+           std::owner_less<>>
+      m_states;
 };
 
 }  // namespace mrs

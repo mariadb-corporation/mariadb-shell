@@ -53,6 +53,9 @@ class Fake_session : public Db_session {
   std::vector<std::string> statements;
   int scripts_run = 0;
 
+  using Db_session::execute;
+  using Db_session::query;
+
   Db_result query(const std::string &sql) override {
     statements.push_back(sql);
     if (sql.find("SCHEMATA") != std::string::npos) {
@@ -94,7 +97,6 @@ class Fake_session : public Db_session {
     version = k_schema_version;
   }
 
-  uint64_t connection_id() const override { return 1; }
   std::string sql_mode() override { return ""; }
 
   bool ran(std::string_view prefix) const {

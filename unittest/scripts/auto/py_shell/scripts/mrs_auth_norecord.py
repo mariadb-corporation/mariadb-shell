@@ -168,6 +168,12 @@ EXPECT_EQ(5, len(parts), auth_string)
 EXPECT_EQ(["", "A", "005"], parts[:3])
 EXPECT_EQ(28, len(parts[3]), "20 salt bytes in base64")
 EXPECT_EQ(44, len(parts[4]), "32 key bytes in base64")
+# The key matches the scheme the router verifies (and the Python plugin's
+# cypher_auth_string): SHA256(HMAC(PBKDF2-HMAC-SHA256(password, salt, 5000), "Client Key"))
+import base64, hashlib, hmac
+salted = hashlib.pbkdf2_hmac("sha256", b"MySQLR0cks!", base64.b64decode(parts[3]), 5000)
+client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+EXPECT_EQ(base64.b64encode(hashlib.sha256(client_key).digest()).decode(), parts[4])
 EXPECT_EQ(1, query_one("SELECT login_permitted FROM mysql_rest_service_metadata.mrs_user WHERE name = 'mike'"))
 # Users of a MySQL auth app have no password
 EXPECT_EQ("REST USER `:\"root\"@\"MySQL App\"` created successfully.", rest_info("CREATE REST USER \"root\"@\"MySQL App\""))
@@ -461,7 +467,8 @@ EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mysql_rest_service_metadata.mrs_use
 #@<> SHOW CREATE REST SERVICE includes the roles of the service
 script = rest_text("SHOW CREATE REST SERVICE /svc INCLUDING DATABASE ENDPOINTS")
 EXPECT_TRUE("CREATE OR REPLACE REST SERVICE /svc\n" in script, script)
-EXPECT_TRUE("\n\nCREATE REST ROLE `reader` ON SERVICE /svc;\n\nCREATE REST ROLE `writer` EXTENDS `reader` ON SERVICE /svc\n    COMMENT 'writes';" in script, script)
+# The endpoints act on the service the script names once, with USE
+EXPECT_TRUE("\n\nUSE REST SERVICE /svc;\n\nCREATE REST ROLE `reader`;\n\nCREATE REST ROLE `writer` EXTENDS `reader`\n    COMMENT 'writes';" in script, script)
 EXPECT_FALSE("`optioned`" in script, script)
 EXPECT_FALSE("`otherRole`" in script, script)
 
