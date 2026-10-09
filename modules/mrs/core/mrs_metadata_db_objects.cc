@@ -848,6 +848,14 @@ std::vector<std::string> grant_statements(
   return statements;
 }
 
+std::vector<std::string> option_grant_statements(
+    const std::optional<std::string> &options) {
+  const auto doc = options ? json::try_parse(*options) : std::nullopt;
+  if (!doc) return {};
+  const auto *grants = doc->get("grants");
+  return grants ? explicit_grant_statements(*grants) : std::vector<std::string>{};
+}
+
 void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,
                                std::string_view name,
                                std::string_view object_type) {

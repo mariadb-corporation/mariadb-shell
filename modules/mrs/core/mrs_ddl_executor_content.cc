@@ -24,18 +24,16 @@
  */
 
 // The REST CONTENT SET and CONTENT FILE statements: CREATE, ALTER, DROP,
-// SHOW and SHOW CREATE. Only static content is handled: a content set
-// marked LOAD SCRIPTS is stored as such, its scripts are not analysed.
+// SHOW and SHOW CREATE. The content arrives inline (CONTENT, BINARY
+// CONTENT); ALTER ... LOAD SCRIPTS registers the MRS scripts of the stored
+// files (mrs_scripts).
 
-#include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
 #include "modules/mrs/core/mrs_metadata_json.h"
+#include "modules/mrs/core/mrs_scripts.h"
 
 namespace mrs {
 
@@ -43,55 +41,10 @@ using namespace ast;
 
 namespace {
 
-std::string expand_user_path(const std::string &path) {
-  if (path.size() >= 2 && path[0] == '~' && (path[1] == '/' || path[1] == '\\')) {
-    const char *home = std::getenv("HOME");
-    if (!home) home = std::getenv("USERPROFILE");
-    if (home) return std::string(home) + path.substr(1);
-  }
-  return path;
-}
-
-std::string read_file(const std::string &path) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    throw std::runtime_error("The file '" + path + "' could not be read.");
-  }
-  std::stringstream content;
-  content << file.rdbuf();
-  return content.str();
-}
-
-// The options document of a content set with the LOAD SCRIPTS markers the
-// Python plugin stored; the statement's options are kept as given
-// otherwise.
+// The OPTIONS of the statement, if any.
 std::optional<std::string> content_set_options(const Content_set_options &options) {
-  std::optional<std::string> given;
-  if (options.options) given = options.options->value;
-  if (!options.load_scripts) return given;
-
-  json::Value doc = given ? json::parse(*given) : json::Value::object();
-  if (!doc.is_object()) {
-    throw std::runtime_error("The OPTIONS of a content set have to be a JSON object.");
-  }
-  doc.set("contains_mrs_scripts", json::Value(true));
-  if (options.typescript) {
-    doc.set("mrs_scripting_language", json::Value("TypeScript"));
-  }
-  return doc.dump();
-}
-
-// Without the script analysis of the Python plugin the language cannot be
-// detected, so an ALTER has to name it.
-void require_scripting_language(const std::optional<std::string> &options) {
-  if (!options) return;
-  const auto doc = json::try_parse(*options);
-  if (doc && doc->get_bool("contains_mrs_scripts") &&
-      !doc->has("mrs_scripting_language")) {
-    throw std::runtime_error(
-        "Failed to update REST content set. The options are missing the "
-        "`mrs_scripting_language` setting.");
-  }
+  if (!options.options) return std::nullopt;
+  return options.options->value;
 }
 
 std::string join_statements(const std::vector<std::string> &statements) {
@@ -121,8 +74,7 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
     const auto existing = metadata::find_content_set(m_session, service.id, s.path);
     if (existing) {
       if (s.flags.if_not_exists) {
-        r->message = "REST content set `" + full_path +
-                     "` created successfully. 0 file(s) added.";
+        r->message = "REST content set `" + full_path + "` created successfully.";
         r->id = existing->id;
         transaction.commit();
         return;
@@ -138,17 +90,13 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   if (s.options.enabled) definition.enabled = static_cast<int>(*s.options.enabled);
   definition.comments = s.options.comments;
   definition.options = content_set_options(s.options);
-  definition.content_type = s.options.load_scripts ? "SCRIPTS" : "STATIC";
-  definition.directory = s.directory;
-  definition.ignore_list = s.options.ignore_list;
 
-  const auto added = metadata::add_content_set(m_session, definition);
+  const Id id = metadata::add_content_set(m_session, definition);
 
   transaction.commit();
 
-  r->message = "REST content set `" + full_path + "` created successfully. " +
-               std::to_string(added.files_added) + " file(s) added.";
-  r->id = added.id;
+  r->message = "REST content set `" + full_path + "` created successfully.";
+  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_content_set &s,
@@ -173,12 +121,20 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
   changes.comments = s.options.comments;
   changes.options = content_set_options(s.options);
   if (s.options.options) changes.merge_options = s.options.options->merge;
-  if (s.options.load_scripts) {
-    require_scripting_language(changes.options);
-    changes.content_type = "SCRIPTS";
-  }
 
   metadata::update_content_set(m_session, content_set->id, changes);
+
+  // LOAD SCRIPTS: analyse the stored files and register their MRS scripts
+  if (s.options.load_scripts) {
+    const auto updated = metadata::get_content_set(m_session, content_set->id);
+    const auto registered = metadata::register_scripts(
+        m_session, *updated,
+        s.options.typescript ? std::optional<std::string>("TypeScript")
+                             : std::nullopt);
+    r->message = "REST content set `" + full_path + "` updated successfully. " +
+                 std::to_string(registered.scripts) + " MRS script(s) of " +
+                 std::to_string(registered.modules) + " module(s) registered.";
+  }
 
   transaction.commit();
 
@@ -240,7 +196,7 @@ void Ddl_executor::do_execute(const Show_create_rest_content_set &s,
       s.format == Output_format::json
           ? metadata::content_set_json(*content_set).dump(true)
           : join_statements(
-                metadata::content_set_statements(m_session, *content_set, false)));
+                metadata::content_set_statements(m_session, *content_set)));
   r->id = content_set->id;
 }
 
@@ -285,13 +241,7 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   if (s.options.enabled) definition.enabled = static_cast<int>(*s.options.enabled);
   if (s.options.options) definition.options = s.options.options->value;
 
-  if (s.from_file) {
-    const auto file_path = expand_user_path(*s.from_file);
-    if (!std::filesystem::is_regular_file(file_path)) {
-      throw std::runtime_error("File '" + file_path + "' does not exist.");
-    }
-    definition.content = read_file(file_path);
-  } else if (s.binary) {
+  if (s.binary) {
     definition.content = metadata::base64_decode(s.content.value_or(""));
   } else {
     definition.content = s.content.value_or("");

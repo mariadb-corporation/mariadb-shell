@@ -281,22 +281,23 @@ EXPECT_EQ(1, res.get_affected_items_count())
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /myClone"))
 EXPECT_EQ("REST SERVICE `/myClone` dropped successfully.", rest_info("DROP REST SERVICE /myClone"))
 
-#@<> DUMP and LOAD REST SERVICE
-dump_file = os.path.join(__tmp_dir, "myService.mrs.sql")
-if os.path.exists(dump_file):
-    os.remove(dump_file)
-EXPECT_EQ([["Result stored in '%s'" % dump_file]], rest_rows("DUMP REST SERVICE /myService AS SQL SCRIPT INCLUDING DATABASE ENDPOINTS TO '%s'" % dump_file))
-with open(dump_file) as f:
-    dump = f.read()
+#@<> SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS is the dump; running it loads the service
+# The script any client saves and runs: there are no DUMP or LOAD
+# statements, a server cannot reach the client's files
+EXPECT_THROWS(lambda: rest("DUMP REST SERVICE /myService AS SCRIPT INCLUDING ALL ENDPOINTS TO '/tmp/x'"), "")
+EXPECT_THROWS(lambda: rest("LOAD REST SERVICE FROM '/tmp/x'"), "")
+dump = rest("SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS").fetch_one()[0]
 EXPECT_CONTAINS("CREATE OR REPLACE REST SERVICE /myService\n", dump)
 EXPECT_CONTAINS("CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /myService\n", dump)
-EXPECT_THROWS(lambda: rest("DUMP REST SERVICE /myService AS SQL SCRIPT INCLUDING ALL ENDPOINTS TO ZIP '%s.zip'" % dump_file), "Dumping to a ZIP file is not supported")
-# The dump uses CREATE OR REPLACE, so loading it again replaces the service
-EXPECT_EQ([["Service '/myService' loaded from '%s'" % dump_file]], rest_rows("LOAD REST SERVICE FROM '%s'" % dump_file))
-EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /myService"))
-EXPECT_EQ([["Service '/loaded' loaded from '%s'" % dump_file]], rest_rows("LOAD REST SERVICE AS /loaded FROM '%s'" % dump_file))
+EXPECT_EQ(dump, rest("SHOW CREATE REST SERVICE /myService INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS").fetch_one()[0])
+dump_file = os.path.join(__tmp_dir, "myService.mrs.sql")
+# Loaded under another path by rewriting the script
+testutil.create_file(dump_file, dump.replace("/myService", "/loaded"))
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", dump_file], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+EXPECT_STDOUT_CONTAINS("REST SERVICE `/loaded` created successfully.")
+WIPE_OUTPUT()
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /loaded"))
-EXPECT_THROWS(lambda: rest("LOAD REST SERVICE FROM '/nope/nope.sql'"), "The specified file was not found.")
+EXPECT_EQ(dump.replace("/myService", "/loaded"), rest("SHOW CREATE REST SERVICE /loaded INCLUDING ALL ENDPOINTS").fetch_one()[0])
 rest("DROP REST SERVICE /loaded")
 os.remove(dump_file)
 

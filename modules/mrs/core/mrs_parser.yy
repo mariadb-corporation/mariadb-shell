@@ -162,7 +162,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   CLIENT_SYMBOL "CLIENT" URL_SYMBOL "URL" NAME_SYMBOL "NAME" DO_SYMBOL "DO"
   ALL_SYMBOL "ALL" PARAMETERS_SYMBOL "PARAMETERS" ADD_SYMBOL "ADD"
   REMOVE_SYMBOL "REMOVE" MERGE_SYMBOL "MERGE" COMMENT_SYMBOL "COMMENT"
-  DYNAMIC_SYMBOL "DYNAMIC" SQL_SYMBOL "SQL" AND_SYMBOL "AND"
+  DYNAMIC_SYMBOL "DYNAMIC" AND_SYMBOL "AND"
   SETS_SYMBOL "SETS"
   CONFIGURE_SYMBOL "CONFIGURE" REST_SYMBOL "REST" METADATA_SYMBOL "METADATA"
   SERVICES_SYMBOL "SERVICES" SERVICE_SYMBOL "SERVICE" VIEWS_SYMBOL "VIEWS"
@@ -183,8 +183,8 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   MAPPING_SYMBOL "MAPPING" TYPESCRIPT_SYMBOL "TYPESCRIPT" ROLES_SYMBOL "ROLES"
   EXTENDS_SYMBOL "EXTENDS" OBJECT_SYMBOL "OBJECT" HIERARCHY_SYMBOL "HIERARCHY"
   INCLUDE_SYMBOL "INCLUDE" INCLUDING_SYMBOL "INCLUDING"
-  ENDPOINTS_SYMBOL "ENDPOINTS" OBJECTS_SYMBOL "OBJECTS" DUMP_SYMBOL "DUMP"
-  ZIP_SYMBOL "ZIP" SCRIPT_SYMBOL "SCRIPT" STATIC_SYMBOL "STATIC"
+  ENDPOINTS_SYMBOL "ENDPOINTS" OBJECTS_SYMBOL "OBJECTS"
+  STATIC_SYMBOL "STATIC"
   VENDORS_SYMBOL "VENDORS" TABLE_SYMBOL "TABLE" COLUMNS_SYMBOL "COLUMNS"
   DAEMON_SYMBOL "DAEMON" DAEMONS_SYMBOL "DAEMONS"
 
@@ -258,10 +258,8 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> drop_rest_auth_app_statement
 %nterm <Statement> drop_rest_user_statement
 %nterm <Statement> drop_rest_role_statement
-%nterm <Statement> dump_rest_service_statement
 %nterm <Statement> grant_rest_role_statement
 %nterm <Statement> grant_rest_privilege_statement
-%nterm <Statement> load_rest_service_statement
 %nterm <Statement> revoke_rest_privilege_statement
 %nterm <Statement> revoke_rest_role_statement
 %nterm <Statement> use_statement
@@ -332,7 +330,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Named_graphql_object_list> opt_rest_function_result
 %nterm <Named_graphql_object_list> rest_function_results
 %nterm <Opt_named_graphql_object> opt_rest_parameters
-%nterm <Content_set_options> rest_content_set_options
+%nterm <Content_set_options> rest_content_set_options alter_rest_content_set_options
 %nterm <Content_file_options> rest_content_file_options
 %nterm <Auth_app_options> rest_auth_app_options
 %nterm <bool> allow_new_users_to_register
@@ -341,11 +339,10 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <std::string> vendor
 
 %nterm <Opt_string> opt_identified_by opt_class opt_new_service_name
-%nterm <Opt_string> opt_from_schema_name opt_from_directory
+%nterm <Opt_string> opt_from_schema_name
 %nterm <Opt_string> opt_new_request_path opt_schema_request_path
 %nterm <Opt_string> opt_extends opt_comments opt_for_auth_app
 %nterm <Opt_service_path> opt_on_service opt_from_service opt_on_from_service
-%nterm <Opt_service_path> opt_as_service
 %nterm <Opt_service_path> opt_service_request_path
 %nterm <Opt_class_definition> opt_alter_view_class
 %nterm <Opt_graphql_object> opt_graphql_obj
@@ -354,9 +351,8 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Privilege> privilege_name
 %nterm <Rest_privilege_statement> privilege_target
 %nterm <Use_rest> service_and_schema_request_paths
-%nterm <bool> opt_including_database_endpoints
+%nterm <Endpoint_selection> opt_including_endpoints
 %nterm <Endpoint_selection> endpoint_selection
-%nterm <bool> opt_zip opt_as_sql
 
 %nterm <Service_path> service_request_path new_service_request_path
 %nterm <std::string> service_request_path_wildcard schema_request_path
@@ -365,7 +361,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <std::string> object_request_path_wildcard procedure_request_path
 %nterm <std::string> function_request_path content_set_request_path
 %nterm <std::string> content_file_request_path
-%nterm <std::string> directory_file_path auth_app_name vendor_name
+%nterm <std::string> auth_app_name vendor_name
 %nterm <std::string> user_name user_password role_name parent_role_name
 %nterm <std::string> new_auth_app_name schema_name
 %nterm <String_list> service_developers_identifier service_developer_list
@@ -452,10 +448,8 @@ mrs_statement:
   | drop_rest_auth_app_statement { $$ = std::move($1); }
   | drop_rest_user_statement { $$ = std::move($1); }
   | drop_rest_role_statement { $$ = std::move($1); }
-  | dump_rest_service_statement { $$ = std::move($1); }
   | grant_rest_role_statement { $$ = std::move($1); }
   | grant_rest_privilege_statement { $$ = std::move($1); }
-  | load_rest_service_statement { $$ = std::move($1); }
   | revoke_rest_privilege_statement { $$ = std::move($1); }
   | revoke_rest_role_statement { $$ = std::move($1); }
   | use_statement { $$ = std::move($1); }
@@ -941,14 +935,13 @@ rest_function_result:
 
 create_rest_content_set_statement:
     create_rest_content_set_prefix content_set_request_path opt_on_service
-    opt_from_directory rest_content_set_options
+    rest_content_set_options
     {
       Create_rest_content_set s;
       s.flags = $1;
       s.path = std::move($2);
       s.service = std::move($3);
-      s.directory = std::move($4);
-      s.options = std::move($5);
+      s.options = std::move($4);
       $$ = make_statement(std::move(s), @1);
     }
   ;
@@ -958,15 +951,6 @@ create_rest_content_set_prefix:
     { $$ = Create_flags{true, false}; }
   | CREATE_SYMBOL REST_SYMBOL CONTENT_SYMBOL SET_SYMBOL opt_if_not_exists
     { $$ = Create_flags{false, $5}; }
-  ;
-
-opt_from_directory:
-    %empty { $$ = std::nullopt; }
-  | FROM_SYMBOL directory_file_path { $$ = std::move($2); }
-  ;
-
-directory_file_path:
-    text_string_literal { $$ = std::move($1); }
   ;
 
 rest_content_set_options:
@@ -979,11 +963,23 @@ rest_content_set_options:
     { $$ = std::move($1); $$.options = std::move($2); }
   | rest_content_set_options comments
     { $$ = std::move($1); $$.comments = std::move($2); }
-  | rest_content_set_options IGNORE_SYMBOL text_string_literal
-    { $$ = std::move($1); $$.ignore_list = std::move($3); }
-  | rest_content_set_options LOAD_SYMBOL SCRIPTS_SYMBOL
+  ;
+
+/* ALTER takes LOAD [TYPESCRIPT] SCRIPTS as well: the stored files are
+   analysed and their MRS scripts registered as REST endpoints */
+alter_rest_content_set_options:
+    %empty { $$ = Content_set_options{}; }
+  | alter_rest_content_set_options enabled_disabled_private
+    { $$ = std::move($1); $$.enabled = $2; }
+  | alter_rest_content_set_options authentication_required
+    { $$ = std::move($1); $$.requires_auth = $2; }
+  | alter_rest_content_set_options json_options
+    { $$ = std::move($1); $$.options = std::move($2); }
+  | alter_rest_content_set_options comments
+    { $$ = std::move($1); $$.comments = std::move($2); }
+  | alter_rest_content_set_options LOAD_SYMBOL SCRIPTS_SYMBOL
     { $$ = std::move($1); $$.load_scripts = true; }
-  | rest_content_set_options LOAD_SYMBOL TYPESCRIPT_SYMBOL SCRIPTS_SYMBOL
+  | alter_rest_content_set_options LOAD_SYMBOL TYPESCRIPT_SYMBOL SCRIPTS_SYMBOL
     { $$ = std::move($1); $$.load_scripts = true; $$.typescript = true; }
   ;
 
@@ -991,19 +987,6 @@ rest_content_set_options:
 
 create_rest_content_file_statement:
     create_rest_content_file_prefix content_file_request_path ON_SYMBOL
-    opt_service_request_path CONTENT_SYMBOL SET_SYMBOL content_set_request_path
-    FROM_SYMBOL directory_file_path rest_content_file_options
-    {
-      Create_rest_content_file s;
-      s.flags = $1;
-      s.path = std::move($2);
-      s.service = std::move($4);
-      s.content_set_path = std::move($7);
-      s.from_file = std::move($9);
-      s.options = std::move($10);
-      $$ = make_statement(std::move(s), @1);
-    }
-  | create_rest_content_file_prefix content_file_request_path ON_SYMBOL
     opt_service_request_path CONTENT_SYMBOL SET_SYMBOL content_set_request_path
     opt_binary CONTENT_SYMBOL text_string_literal rest_content_file_options
     {
@@ -1333,7 +1316,7 @@ alter_rest_function_statement:
 
 alter_rest_content_set_statement:
     ALTER_SYMBOL REST_SYMBOL CONTENT_SYMBOL SET_SYMBOL content_set_request_path
-    opt_on_service opt_new_request_path rest_content_set_options
+    opt_on_service opt_new_request_path alter_rest_content_set_options
     {
       Alter_rest_content_set s;
       s.path = std::move($5);
@@ -1779,22 +1762,23 @@ show_rest_grants_statement:
 
 show_create_rest_service_statement:
     SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL
-    opt_including_database_endpoints opt_output_format
+    opt_including_endpoints opt_output_format
     {
       $$ = make_statement(
           with_format(Show_create_rest_service{std::nullopt, $5}, $6), @1);
     }
   | SHOW_SYMBOL CREATE_SYMBOL REST_SYMBOL SERVICE_SYMBOL service_request_path
-    opt_including_database_endpoints opt_output_format
+    opt_including_endpoints opt_output_format
     {
       $$ = make_statement(
           with_format(Show_create_rest_service{std::move($5), $6}, $7), @1);
     }
   ;
 
-opt_including_database_endpoints:
-    %empty { $$ = false; }
-  | INCLUDING_SYMBOL DATABASE_SYMBOL ENDPOINTS_SYMBOL { $$ = true; }
+/* INCLUDING DATABASE [AND STATIC [AND DYNAMIC]] | ALL ENDPOINTS */
+opt_including_endpoints:
+    %empty { $$ = Endpoint_selection{}; }
+  | INCLUDING_SYMBOL endpoint_selection ENDPOINTS_SYMBOL { $$ = $2; }
   ;
 
 /* FORMAT=JSON | FORMAT=TRADITIONAL, as EXPLAIN FORMAT=JSON in the server */
@@ -1901,30 +1885,6 @@ show_create_rest_user_statement:
 
 /* DUMP and LOAD statements ================================================ */
 
-dump_rest_service_statement:
-    DUMP_SYMBOL REST_SYMBOL SERVICE_SYMBOL service_request_path AS_SYMBOL
-    opt_as_sql SCRIPT_SYMBOL INCLUDING_SYMBOL endpoint_selection ENDPOINTS_SYMBOL
-    TO_SYMBOL opt_zip directory_file_path
-    {
-      Dump_rest_service s;
-      s.path = std::move($4);
-      s.endpoints = $9;
-      s.zip = $12;
-      s.directory = std::move($13);
-      $$ = make_statement(std::move(s), @1);
-    }
-  ;
-
-opt_as_sql:
-    %empty { $$ = false; }
-  | SQL_SYMBOL { $$ = true; }
-  ;
-
-opt_zip:
-    %empty { $$ = false; }
-  | ZIP_SYMBOL { $$ = true; }
-  ;
-
 /* DATABASE (AND STATIC (AND DYNAMIC)?)? | ALL */
 endpoint_selection:
     DATABASE_SYMBOL { $$ = Endpoint_selection{true, false, false}; }
@@ -1933,22 +1893,6 @@ endpoint_selection:
   | DATABASE_SYMBOL AND_SYMBOL STATIC_SYMBOL AND_SYMBOL DYNAMIC_SYMBOL
     { $$ = Endpoint_selection{true, true, true}; }
   | ALL_SYMBOL { $$ = Endpoint_selection{true, true, true}; }
-  ;
-
-load_rest_service_statement:
-    LOAD_SYMBOL REST_SYMBOL SERVICE_SYMBOL opt_as_service FROM_SYMBOL
-    directory_file_path
-    {
-      Load_rest_service s;
-      s.as_path = std::move($4);
-      s.directory = std::move($6);
-      $$ = make_statement(std::move(s), @1);
-    }
-  ;
-
-opt_as_service:
-    %empty { $$ = std::nullopt; }
-  | AS_SYMBOL service_request_path { $$ = std::move($2); }
   ;
 
 /* Named identifiers ======================================================= */

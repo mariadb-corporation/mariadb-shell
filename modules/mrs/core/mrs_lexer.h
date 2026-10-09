@@ -125,7 +125,6 @@ struct Sql_mode {
   X(MERGE_SYMBOL, "MERGE")                             \
   X(COMMENT_SYMBOL, "COMMENT")                         \
   X(DYNAMIC_SYMBOL, "DYNAMIC")                         \
-  X(SQL_SYMBOL, "SQL")                                 \
   X(AND_SYMBOL, "AND")                                 \
   X(SETS_SYMBOL, "SETS")                               \
   X(CONFIGURE_SYMBOL, "CONFIGURE")                     \
@@ -181,9 +180,6 @@ struct Sql_mode {
   X(INCLUDING_SYMBOL, "INCLUDING")                     \
   X(ENDPOINTS_SYMBOL, "ENDPOINTS")                     \
   X(OBJECTS_SYMBOL, "OBJECTS")                         \
-  X(DUMP_SYMBOL, "DUMP")                               \
-  X(ZIP_SYMBOL, "ZIP")                                 \
-  X(SCRIPT_SYMBOL, "SCRIPT")                           \
   X(STATIC_SYMBOL, "STATIC")                           \
   X(VENDORS_SYMBOL, "VENDORS")                       \
   X(TABLE_SYMBOL, "TABLE")                           \

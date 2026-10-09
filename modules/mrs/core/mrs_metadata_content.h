@@ -64,10 +64,7 @@ std::optional<Content_set> find_content_set(Db_session *session,
 std::vector<Content_set> get_content_sets(Db_session *session,
                                           const Id &service_id);
 
-// The values of a content set to create. When a directory is given, its
-// files are loaded (recursively) as the content files of the set; the
-// ignore list is a comma separated list of file patterns (`*` and `?`
-// wildcards) and defaults to "*node_modules/*, */.*".
+// The values of a content set to create; its files are added one by one.
 struct Content_set_definition {
   Id service_id;
   std::string request_path;
@@ -76,18 +73,10 @@ struct Content_set_definition {
   std::optional<std::string> comments;
   std::optional<std::string> options;  // JSON
   std::string content_type = "STATIC";
-  std::optional<std::string> directory;
-  std::optional<std::string> ignore_list;
   std::optional<Id> id;  // a fixed id, for cloning
 };
 
-struct Added_content_set {
-  Id id;
-  size_t files_added = 0;
-};
-
-Added_content_set add_content_set(Db_session *session,
-                                  const Content_set_definition &definition);
+Id add_content_set(Db_session *session, const Content_set_definition &definition);
 
 // The changes ALTER REST CONTENT SET makes; an unset field is left alone.
 struct Content_set_changes {
@@ -103,8 +92,13 @@ struct Content_set_changes {
 void update_content_set(Db_session *session, const Id &id,
                         const Content_set_changes &changes);
 
-// Deletes a content set; its files go with it (BEFORE DELETE trigger).
+// Deletes a content set; its files go with it (BEFORE DELETE trigger), and
+// the MRS scripts registered from it with their emptied script modules.
 void delete_content_set(Db_session *session, const Id &id);
+
+// Deletes the MRS scripts registered from a content set (its SCRIPT
+// objects and their links) and the script modules left without objects.
+void delete_registered_scripts(Db_session *session, const Content_set &content_set);
 
 // -- Content files --------------------------------------------------------
 
@@ -147,21 +141,11 @@ Id add_content_file(Db_session *session,
 
 void delete_content_file(Db_session *session, const Id &id);
 
-// Loads the files below a directory into a content set, honouring the
-// ignore list (see Content_set_definition). The request path of a file is
-// its path relative to the directory. Returns the number of files added;
-// throws when the directory holds no file.
-size_t add_content_directory(Db_session *session, const Id &content_set_id,
-                             const std::string &directory, bool requires_auth,
-                             std::string_view ignore_list);
-
 // -- SHOW CREATE ----------------------------------------------------------
 
 // The CREATE OR REPLACE REST CONTENT SET statement of a set, without its
-// files. The LOAD SCRIPTS clause of a script set is only written when asked.
-std::string content_set_create_statement(Db_session *session,
-                                         const Content_set &content_set,
-                                         bool allow_load_scripts);
+// files. The options the script registration generates are left out.
+std::string content_set_create_statement(const Content_set &content_set);
 
 // The CREATE OR REPLACE REST CONTENT FILE statement of a file; the content
 // is fetched when the struct does not carry it. Text content is written as
@@ -169,10 +153,11 @@ std::string content_set_create_statement(Db_session *session,
 std::string content_file_create_statement(Db_session *session,
                                           const Content_file &content_file);
 
-// The statements of one content set: the set followed by its files.
+// The statements of one content set: the set, its files and, for a script
+// set, the ALTER REST CONTENT SET ... LOAD SCRIPTS that registers its
+// scripts once the files are there.
 std::vector<std::string> content_set_statements(Db_session *session,
-                                                const Content_set &content_set,
-                                                bool allow_load_scripts);
+                                                const Content_set &content_set);
 
 // The CREATE OR REPLACE REST CONTENT SET statements of a service's content
 // sets, with their files; dynamic (script) content sets only when asked.

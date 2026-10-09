@@ -72,9 +72,9 @@ void expect_parse_error(const std::string &sql, const std::string &message,
 
 TEST(Mrs_parser, prefixes) {
   const auto &prefixes = rest_sql_prefixes();
-  EXPECT_EQ(13u, prefixes.size());
+  EXPECT_EQ(11u, prefixes.size());
   EXPECT_EQ("CONFIGURE REST ", prefixes[0]);
-  EXPECT_EQ("LOAD REST ", prefixes.back());
+  EXPECT_EQ("CLONE REST ", prefixes.back());
 }
 
 TEST(Mrs_parser, empty_script_and_separators) {
@@ -536,20 +536,30 @@ TEST(Mrs_parser, content_sets_and_files) {
   {
     const auto &s = parse_as<Create_rest_content_set>(
         "CREATE REST CONTENT SET /testContent ON SERVICE /myTestService "
-        "FROM \"./grammar/test\" IGNORE \"*.txt\" LOAD TYPESCRIPT SCRIPTS PRIVATE");
+        "PRIVATE COMMENT 'c'");
     EXPECT_EQ("/testContent", s.path);
     EXPECT_EQ("/myTestService", s.service->path);
-    EXPECT_EQ("./grammar/test", *s.directory);
-    EXPECT_EQ("*.txt", *s.options.ignore_list);
-    EXPECT_TRUE(s.options.load_scripts);
-    EXPECT_TRUE(s.options.typescript);
+    EXPECT_EQ("c", *s.options.comments);
+    EXPECT_FALSE(s.options.load_scripts);
     EXPECT_EQ(Enabled_state::private_, *s.options.enabled);
   }
+  EXPECT_TRUE(parse_as<Create_rest_content_set>(
+                  "CREATE OR REPLACE REST CONTENT SET /mySet ON /svc")
+                  .flags.or_replace);
+  // The files of a set arrive inline: no folder, no ignore list, and the
+  // scripts are loaded by ALTER once the files are there
+  expect_parse_error("CREATE REST CONTENT SET /s FROM './dir'", "unexpected FROM");
+  expect_parse_error("CREATE REST CONTENT SET /s IGNORE '*.txt'", "unexpected IGNORE");
+  expect_parse_error("CREATE REST CONTENT SET /s LOAD SCRIPTS", "unexpected LOAD");
   {
-    const auto &s = parse_as<Create_rest_content_set>(
-        "CREATE OR REPLACE REST CONTENT SET /mySet ON /svc LOAD SCRIPTS");
-    EXPECT_TRUE(s.flags.or_replace);
-    EXPECT_FALSE(s.directory.has_value());
+    const auto &s = parse_as<Alter_rest_content_set>(
+        "ALTER REST CONTENT SET /mySet ON SERVICE /svc LOAD TYPESCRIPT SCRIPTS");
+    EXPECT_TRUE(s.options.load_scripts);
+    EXPECT_TRUE(s.options.typescript);
+  }
+  {
+    const auto &s = parse_as<Alter_rest_content_set>(
+        "ALTER REST CONTENT SET /mySet COMMENT 'x' LOAD SCRIPTS");
     EXPECT_TRUE(s.options.load_scripts);
     EXPECT_FALSE(s.options.typescript);
   }
@@ -571,18 +581,12 @@ TEST(Mrs_parser, content_sets_and_files) {
     EXPECT_EQ("/mySet", s.content_set_path);
     EXPECT_TRUE(s.binary);
     EXPECT_EQ("AAEC", *s.content);
-    EXPECT_FALSE(s.from_file.has_value());
     EXPECT_EQ(Enabled_state::enabled, *s.options.enabled);
   }
-  {
-    const auto &s = parse_as<Create_rest_content_file>(
-        "CREATE OR REPLACE REST CONTENT FILE /f ON CONTENT SET /mySet "
-        "FROM \"grammar/test/binary_test_file\"");
-    EXPECT_FALSE(s.service.has_value());
-    EXPECT_EQ("grammar/test/binary_test_file", *s.from_file);
-    EXPECT_FALSE(s.binary);
-    EXPECT_FALSE(s.content.has_value());
-  }
+  expect_parse_error(
+      "CREATE OR REPLACE REST CONTENT FILE /f ON CONTENT SET /mySet "
+      "FROM 'grammar/test/binary_test_file'",
+      "unexpected FROM");
   {
     const auto &s = parse_as<Create_rest_content_file>(
         "CREATE REST CONTENT FILE /f ON /svc CONTENT SET /mySet CONTENT 'text'");
@@ -901,51 +905,40 @@ TEST(Mrs_parser, use_and_show_statements) {
     const auto &s = parse_as<Show_create_rest_service>(
         "SHOW CREATE REST SERVICE /myTestService INCLUDING DATABASE ENDPOINTS");
     EXPECT_EQ("/myTestService", s.path->path);
-    EXPECT_TRUE(s.include_database_endpoints);
+    EXPECT_TRUE(s.endpoints.database);
+    EXPECT_FALSE(s.endpoints.static_);
   }
   {
     const auto &s = parse_as<Show_create_rest_service>("SHOW CREATE REST SERVICE");
     EXPECT_FALSE(s.path.has_value());
-    EXPECT_FALSE(s.include_database_endpoints);
+    EXPECT_FALSE(s.endpoints.database);
   }
-}
-
-TEST(Mrs_parser, dump_and_load_statements) {
   {
-    const auto &s = parse_as<Dump_rest_service>(
-        "DUMP REST SERVICE /svc AS SQL SCRIPT INCLUDING DATABASE AND STATIC ENDPOINTS "
-        "TO ZIP '/tmp/out.zip'");
-    EXPECT_EQ("/svc", s.path.path);
+    const auto &s = parse_as<Show_create_rest_service>(
+        "SHOW CREATE REST SERVICE /svc INCLUDING DATABASE AND STATIC ENDPOINTS");
     EXPECT_TRUE(s.endpoints.database);
     EXPECT_TRUE(s.endpoints.static_);
     EXPECT_FALSE(s.endpoints.dynamic);
-    EXPECT_TRUE(s.zip);
-    EXPECT_EQ("/tmp/out.zip", s.directory);
   }
   {
-    const auto &s = parse_as<Dump_rest_service>(
-        "DUMP REST SERVICE /svc AS SCRIPT INCLUDING ALL ENDPOINTS TO '/tmp/out'");
-    EXPECT_TRUE(s.endpoints.database);
-    EXPECT_TRUE(s.endpoints.static_);
+    const auto &s = parse_as<Show_create_rest_service>(
+        "SHOW CREATE REST SERVICE /svc INCLUDING ALL ENDPOINTS");
     EXPECT_TRUE(s.endpoints.dynamic);
-    EXPECT_FALSE(s.zip);
   }
-  {
-    const auto &s = parse_as<Load_rest_service>(
-        "LOAD REST SERVICE AS /newSvc FROM '/tmp/svc.mrs.sql'");
-    EXPECT_EQ("/newSvc", s.as_path->path);
-    EXPECT_EQ("/tmp/svc.mrs.sql", s.directory);
-  }
-  {
-    const auto &s = parse_as<Load_rest_service>("LOAD REST SERVICE FROM 'x'");
-    EXPECT_FALSE(s.as_path.has_value());
-  }
-  // Projects are dumped and loaded by the mrs_plugin, not by REST SQL
+}
+
+// Statements that read or write files on the client are not REST SQL: a
+// server cannot reach the client's files. SHOW CREATE REST SERVICE returns
+// the script, any client runs it.
+TEST(Mrs_parser, no_client_file_statements) {
+  expect_parse_error(
+      "DUMP REST SERVICE /svc AS SCRIPT INCLUDING ALL ENDPOINTS TO '/tmp/out'",
+      "unexpected identifier");
+  expect_parse_error("LOAD REST SERVICE FROM '/tmp/svc.mrs.sql'", "unexpected LOAD");
   expect_parse_error(
       "DUMP REST PROJECT 'proj' VERSION '1.0.0' "
       "SERVICE /svc INCLUDING DATABASE ENDPOINTS TO '/tmp/p'",
       "unexpected identifier");
-  expect_parse_error("LOAD REST PROJECT FROM '/tmp/p'", "unexpected identifier");
 }
 
 TEST(Mrs_parser, output_format) {

@@ -193,7 +193,7 @@ struct Content_set_options {
   std::optional<bool> requires_auth;
   std::optional<Json_options> options;
   std::optional<std::string> comments;
-  std::optional<std::string> ignore_list;
+  // ALTER only: analyse the stored files and register their MRS scripts
   bool load_scripts = false;
   bool typescript = false;
 };
@@ -286,7 +286,6 @@ struct Create_rest_content_set {
   Create_flags flags;
   std::string path;
   std::optional<Service_path> service;
-  std::optional<std::string> directory;
   Content_set_options options;
 };
 
@@ -295,7 +294,6 @@ struct Create_rest_content_file {
   std::string path;
   std::optional<Service_path> service;
   std::string content_set_path;
-  std::optional<std::string> from_file;
   std::optional<std::string> content;
   bool binary = false;
   Content_file_options options;
@@ -542,9 +540,16 @@ struct Show_rest_columns {
   Output_format format = Output_format::traditional;
 };
 
+// INCLUDING DATABASE [AND STATIC [AND DYNAMIC]] | ALL ENDPOINTS
+struct Endpoint_selection {
+  bool database = false;
+  bool static_ = false;
+  bool dynamic = false;
+};
+
 struct Show_create_rest_service {
   std::optional<Service_path> path;
-  bool include_database_endpoints = false;
+  Endpoint_selection endpoints;
   Output_format format = Output_format::traditional;
 };
 
@@ -591,25 +596,6 @@ struct Show_create_rest_user {
   Output_format format = Output_format::traditional;
 };
 
-// INCLUDING DATABASE [AND STATIC [AND DYNAMIC]] | ALL ENDPOINTS
-struct Endpoint_selection {
-  bool database = false;
-  bool static_ = false;
-  bool dynamic = false;
-};
-
-struct Dump_rest_service {
-  Service_path path;
-  Endpoint_selection endpoints;
-  bool zip = false;
-  std::string directory;
-};
-
-struct Load_rest_service {
-  std::optional<Service_path> as_path;
-  std::string directory;
-};
-
 using Statement_variant = std::variant<
     Configure_rest_metadata, Create_rest_service, Create_rest_schema,
     Create_rest_view, Create_rest_routine, Create_rest_content_set,
@@ -628,8 +614,7 @@ using Statement_variant = std::variant<
     Show_rest_roles, Show_rest_grants, Show_create_rest_service,
     Show_create_rest_schema, Show_create_rest_db_object,
     Show_create_rest_content_set, Show_create_rest_content_file,
-    Show_create_rest_auth_app, Show_create_rest_role, Show_create_rest_user,
-    Dump_rest_service, Load_rest_service>;
+    Show_create_rest_auth_app, Show_create_rest_role, Show_create_rest_user>;
 
 // One parsed statement together with its position in the script.
 struct Statement {
