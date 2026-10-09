@@ -43,8 +43,7 @@ bool is_routine_type(std::string_view object_type) {
   return object_type == "PROCEDURE" || object_type == "FUNCTION";
 }
 
-// The column list of the db_object queries. The audit log join yields the
-// time of the last change, as the Python plugin reported it.
+// The column list of the db_object queries.
 const char *k_db_object_select = R"(
 SELECT o.id, o.db_schema_id, o.name, o.request_path,
     o.requires_auth, o.enabled, o.object_type,
@@ -55,7 +54,6 @@ SELECT o.id, o.db_schema_id, o.name, o.request_path,
     o.media_type, o.auto_detect_media_type,
     o.auth_stored_procedure, o.options,
     o.metadata, o.internal,
-    al.changed_at,
     se.id AS service_id, sc.name AS schema_name
 FROM `{metadata_schema}`.`db_object` o
     LEFT OUTER JOIN `{metadata_schema}`.`db_schema` sc
@@ -64,12 +62,6 @@ FROM `{metadata_schema}`.`db_object` o
         ON se.id = sc.service_id
     LEFT JOIN `{metadata_schema}`.`url_host` h
         ON se.url_host_id = h.id
-    LEFT OUTER JOIN (
-        SELECT new_row_id AS id, MAX(changed_at) AS changed_at
-        FROM `{metadata_schema}`.`audit_log`
-        WHERE table_name = 'db_object'
-        GROUP BY new_row_id) al
-    ON al.id = o.id
 )";
 
 Db_object db_object_from_row(const Db_row &row) {
@@ -99,7 +91,6 @@ Db_object db_object_from_row(const Db_row &row) {
   o.comments = row["comments"].as_optional_string();
   o.options = row["options"].as_optional_string();
   o.metadata = row["metadata"].as_optional_string();
-  o.changed_at = row["changed_at"].as_optional_string();
   return o;
 }
 
@@ -622,6 +613,18 @@ void update_db_object(Db_session *session, const Id &id,
   if (update.empty()) return;
   update.where("id", Value::id(id));
   session->execute(update);
+}
+
+std::optional<std::string> options_after(Db_session *session,
+                                         const Db_object &db_object,
+                                         const Db_object_changes &changes) {
+  if (!changes.options) return db_object.options;
+  if (!changes.merge_options || !db_object.options) return changes.options;
+  return session
+      ->query("SELECT JSON_MERGE_PATCH(?, ?) AS options",
+              {Value(*db_object.options), Value(*changes.options)})
+      .first()["options"]
+      .as_string();
 }
 
 void delete_db_object(Db_session *session, const Id &id) {

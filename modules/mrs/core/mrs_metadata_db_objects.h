@@ -67,7 +67,6 @@ struct Db_object {
   std::optional<std::string> comments;
   std::optional<std::string> options;
   std::optional<std::string> metadata;
-  std::optional<std::string> changed_at;  // last audit log entry
 
   bool is_routine() const {
     return object_type == "PROCEDURE" || object_type == "FUNCTION";
@@ -249,6 +248,12 @@ struct Db_object_changes {
 
 void update_db_object(Db_session *session, const Id &id,
                       const Db_object_changes &changes);
+
+// The options update_db_object() leaves the db_object with: the given ones,
+// or a MERGE OPTIONS patch applied with the server's JSON_MERGE_PATCH.
+std::optional<std::string> options_after(Db_session *session,
+                                         const Db_object &db_object,
+                                         const Db_object_changes &changes);
 
 // -- Privileges of the data provider role ---------------------------------
 

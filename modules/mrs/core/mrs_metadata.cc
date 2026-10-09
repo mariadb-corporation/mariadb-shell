@@ -432,6 +432,35 @@ std::string enabled_caption(int enabled) {
   return "DISABLED";
 }
 
+namespace {
+
+// 'text' as the server's QUOTE() writes it: a quote, a backslash, NUL and
+// Ctrl-Z preceded by a backslash. The sorted_developers and
+// full_service_path columns are built with QUOTE(), and find_service()
+// compares against them.
+std::string server_quote(std::string_view text) {
+  std::string result = "'";
+  for (const char c : text) {
+    switch (c) {
+      case '\0':
+        result += "\\0";
+        break;
+      case '\032':
+        result += "\\Z";
+        break;
+      case '\'':
+      case '\\':
+        result += '\\';
+        [[fallthrough]];
+      default:
+        result += c;
+    }
+  }
+  return result + "'";
+}
+
+}  // namespace
+
 std::string format_developers(std::vector<std::string> developers) {
   if (developers.empty()) return {};
 
@@ -451,7 +480,7 @@ std::string format_developers(std::vector<std::string> developers) {
                                    [](unsigned char c) {
                                      return std::isalnum(c) || c == '_';
                                    });
-    result += plain ? developer : sql::quote(developer);
+    result += plain ? developer : server_quote(developer);
   }
   return result + "@";
 }
@@ -757,12 +786,7 @@ std::string service_create_statement(Db_session *session,
     }
   }
 
-  std::string result;
-  for (const auto &statement : statements) {
-    if (!result.empty()) result += "\n\n";
-    result += statement;
-  }
-  return result;
+  return join(statements, "\n\n");
 }
 
 Id clone_service(Db_session *session, const Service &service,

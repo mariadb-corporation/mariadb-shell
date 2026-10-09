@@ -109,3 +109,10 @@ set(mrs_core_SOURCES
 
 add_convenience_library(mrs_core ${mrs_core_SOURCES})
 target_include_directories(mrs_core PUBLIC "${MRS_GENERATED_DIR}")
+
+# The password hashing of REST users uses OpenSSL (the shell's bundled or
+# system one; a server plugin has the server's)
+if(OPENSSL_INCLUDE_DIR)
+  target_include_directories(mrs_core SYSTEM PRIVATE "${OPENSSL_INCLUDE_DIR}")
+endif()
+target_link_libraries(mrs_core ${SSL_LIBRARIES})

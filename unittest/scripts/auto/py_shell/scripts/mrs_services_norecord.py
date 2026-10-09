@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The REST SQL statements of the mrs module: metadata, services and schemas.
 # They run through the SQL handler the module registers, so session.run_sql()
@@ -167,6 +168,17 @@ rest("ALTER REST SERVICE /full MERGE OPTIONS {\"test\": null}")
 EXPECT_IN('OPTIONS {\n        "test2": 2\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
 rest("ALTER REST SERVICE /full OPTIONS {\"test3\": 3}")
 EXPECT_IN('OPTIONS {\n        "test3": 3\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
+
+#@<> Developer names with quotes and backslashes are found again
+# The module quotes the names like the server's QUOTE() does (backslash
+# escapes, whatever the sql_mode), which the service lookup compares with
+# the names the metadata view quotes.
+quoted = "'back\\\\slash','o\\'brien'@/quoted"
+EXPECT_EQ("REST SERVICE `%s` created successfully." % quoted, rest_info("CREATE REST SERVICE 'o''brien','back\\\\slash'@/quoted"))
+EXPECT_EQ([quoted], [r[0] for r in rest_rows("SHOW REST SERVICES") if r[0].endswith("/quoted")])
+EXPECT_EQ("Now using REST SERVICE `%s`." % quoted, rest_info("USE REST SERVICE %s" % quoted))
+EXPECT_EQ(["back\\slash", "o'brien"], sorted(json.loads(rest("SHOW CREATE REST SERVICE %s FORMAT=JSON" % quoted).fetch_one()[0])["developers"]))
+EXPECT_EQ("REST SERVICE `%s` dropped successfully." % quoted, rest_info("DROP REST SERVICE %s" % quoted))
 
 #@<> ALTER REST SERVICE: new request path and developers
 rest("ALTER REST SERVICE mike@/myService NEW REQUEST PATH mike,alfredo@/myService")

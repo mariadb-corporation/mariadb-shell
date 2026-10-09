@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The REST SQL statements of the mrs module for database objects: REST VIEW
 # (data mapping views), REST PROCEDURE and REST FUNCTION.
@@ -297,6 +298,19 @@ EXPECT_EQ("Select", table_privileges("city"))
 EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.object WHERE db_object_id = (SELECT id FROM mariadb_rest_service.db_object WHERE request_path = '/cities')"))
 rest("ALTER REST VIEW /cities NEW REQUEST PATH /city")
 EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"], ["/filmList", "ENABLED"]], rest_rows("SHOW REST VIEWS"))
+
+#@<> ALTER REST VIEW: a failed change keeps the old privileges
+# REVOKE and GRANT commit implicitly, so the privileges change before the
+# metadata transaction; when the metadata update fails (here: ITEMS PER PAGE
+# out of range for its INT UNSIGNED column), the old privileges come back.
+EXPECT_EQ("Select", table_privileges("city"))
+EXPECT_THROWS(lambda: rest("ALTER REST VIEW /city CLASS Cities4 @INSERT @UPDATE @DELETE { cityId: city_id, city: city } ITEMS PER PAGE 5000000000"), "Out of range value for column 'items_per_page'")
+EXPECT_EQ("Select", table_privileges("city"))
+EXPECT_EQ("READ", db_object_column("/city", "crud_operations"))
+EXPECT_IN("CLASS Cities3 {", show_create("SHOW CREATE REST VIEW /city"))
+# Without a change of the privileges nothing is revoked or granted
+rest("ALTER REST VIEW /city COMMENT 'same privileges'")
+EXPECT_EQ("Select", table_privileges("city"))
 
 #@<> DROP REST VIEW
 EXPECT_EQ("REST VIEW `/svc/sakila/filmList` dropped successfully.", rest_info("DROP REST VIEW /filmList"))

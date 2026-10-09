@@ -378,10 +378,19 @@ class Parser {
           break;
         case 'u': {
           uint32_t cp = parse_hex4();
-          if (cp >= 0xd800 && cp <= 0xdbff && consume_literal("\\u")) {
-            const uint32_t low = parse_hex4();
-            cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
+          if (cp >= 0xd800 && cp <= 0xdbff) {
+            // A high surrogate needs its low one; anything else is no pair
+            const size_t before = m_pos;
+            if (consume_literal("\\u")) {
+              const uint32_t low = parse_hex4();
+              if (low >= 0xdc00 && low <= 0xdfff) {
+                cp = 0x10000 + ((cp - 0xd800) << 10) + (low - 0xdc00);
+              } else {
+                m_pos = before;
+              }
+            }
           }
+          if (cp >= 0xd800 && cp <= 0xdfff) fail("Invalid \\u surrogate");
           append_utf8(&result, cp);
           break;
         }

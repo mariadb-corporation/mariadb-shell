@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The authentication statements of the mrs module: REST AUTH APP, REST USER,
 # REST ROLE, GRANT and REVOKE. They run through the SQL handler the module

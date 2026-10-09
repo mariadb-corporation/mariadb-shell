@@ -48,15 +48,6 @@ std::optional<std::string> content_set_options(const Content_set_options &option
   return options.options->value;
 }
 
-std::string join_statements(const std::vector<std::string> &statements) {
-  std::string result;
-  for (const auto &statement : statements) {
-    if (!result.empty()) result += "\n\n";
-    result += statement;
-  }
-  return result;
-}
-
 }  // namespace
 
 // -- CONTENT SET ----------------------------------------------------------
@@ -188,8 +179,8 @@ void Ddl_executor::do_execute(const Show_create_rest_content_set &s,
   r->add_row().emplace_back(
       s.format == Output_format::json
           ? metadata::content_set_json(*content_set).dump(true)
-          : join_statements(
-                metadata::content_set_statements(m_session, *content_set)));
+          : join(metadata::content_set_statements(m_session, *content_set),
+                 "\n\n"));
 }
 
 // -- CONTENT FILE ---------------------------------------------------------

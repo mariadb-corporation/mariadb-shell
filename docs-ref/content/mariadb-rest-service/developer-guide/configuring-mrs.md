@@ -18,7 +18,7 @@ After these steps, MRS is fully configured, and you can [add REST services](addi
 
 ## Configuring the MRS Metadata Schema
 
-MRS stores its configuration in the `mariadb_rest_service` database schema. To deploy the metadata schema, use MariaDB Shell for VS Code or MariaDB Shell, as described in this section.
+MRS stores its configuration in the `mariadb_rest_service` database schema. To deploy the metadata schema, use MariaDB Shell for VS Code or MariaDB Shell, as described in this section. The metadata schema uses MariaDB's `UUID` type and MariaDB roles, so MRS needs a MariaDB Server: a REST SQL statement run on a session to a MySQL server fails with an error that says so.
 
 {% hint style="info" %}
 The MariaDB account that configures the metadata schema needs the privileges to create database schemas and roles. It is common practice to use the `root` account or a dedicated `dba` account with `ALL PRIVILEGES` and `WITH GRANT OPTION`.

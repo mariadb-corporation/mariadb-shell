@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The REST SQL grammar test of the former Python mrs_plugin
 # (scripts/run_grammar_test.sh): every statement of grammar_test.sql runs

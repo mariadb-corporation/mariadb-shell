@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The REST metadata schema is named mariadb_rest_service, optionally with a
 # prefix and a postfix (e.g. acme_mariadb_rest_service_eu), so a cloud
