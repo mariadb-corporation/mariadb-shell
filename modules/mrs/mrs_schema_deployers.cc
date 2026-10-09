@@ -186,6 +186,11 @@ class Util_schema_backup : public ::mrs::metadata::Schema_backup {
 // The core's replica of deploy_schema(), with msm's log and backup.
 class Shell_script_deployer : public ::mrs::metadata::Schema_deployer {
  public:
+  std::vector<Version> available_versions() const override {
+    return ::mrs::metadata::released_versions(
+        shcore::path::join_path(msm_project_path(), "releases", "versions"));
+  }
+
   explicit Shell_script_deployer(shcore::Object_bridge_ref util) {
     if (util) {
       m_backup = std::make_unique<Util_schema_backup>(std::move(util), &m_log);
@@ -208,6 +213,11 @@ class Shell_script_deployer : public ::mrs::metadata::Schema_deployer {
 // msm.deploySchema() of the loaded msm plugin, on the bundled project.
 class Msm_plugin_deployer : public ::mrs::metadata::Schema_deployer {
  public:
+  std::vector<Version> available_versions() const override {
+    return ::mrs::metadata::released_versions(
+        shcore::path::join_path(msm_project_path(), "releases", "versions"));
+  }
+
   Msm_plugin_deployer(shcore::Object_bridge_ref msm,
                       std::shared_ptr<ShellBaseSession> session)
       : m_msm(std::move(msm)), m_session(std::move(session)) {}

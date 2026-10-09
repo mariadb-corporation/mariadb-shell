@@ -62,6 +62,11 @@ std::string deployment_script_name(const Version &version);
 // msm_update_X_to_Y procedure it creates, sorted.
 std::vector<Version> updatable_versions(std::string_view script);
 
+// The versions of the release scripts in a folder (files ending in
+// X.Y.Z.sql, as msm's get_released_versions() reads releases/versions),
+// sorted. A missing folder has none.
+std::vector<Version> released_versions(const std::string &dir);
+
 // Deploys (creates or updates) the metadata schema to k_schema_version.
 // Returns msm's information message; a message containing "No changes"
 // means the schema was left as it was. Throws with msm's error messages.
@@ -69,6 +74,9 @@ class Schema_deployer {
  public:
   virtual ~Schema_deployer() = default;
   virtual std::string deploy(Db_session *session, bool backup) = 0;
+  // The released versions of the metadata schema the deployer has scripts
+  // for.
+  virtual std::vector<Version> available_versions() const { return {}; }
 };
 
 // Where Script_deployer writes msm's update log, e.g. the
@@ -105,6 +113,9 @@ class Script_deployer : public Schema_deployer {
                            Schema_backup *backup = nullptr);
 
   std::string deploy(Db_session *session, bool backup) override;
+  std::vector<Version> available_versions() const override {
+    return released_versions(m_deployment_dir);
+  }
 
  private:
   void log(std::string_view type, std::string_view message);

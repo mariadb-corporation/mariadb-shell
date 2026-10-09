@@ -1034,6 +1034,16 @@ TEST(Mrs_parser, show_rest_columns) {
                      "unexpected TABLE");
 }
 
+TEST(Mrs_parser, metadata_status_format) {
+  EXPECT_EQ(Output_format::traditional,
+            parse_as<Show_rest_metadata_status>("SHOW REST METADATA STATUS").format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_metadata_status>("SHOW REST METADATA STATUS FORMAT=JSON")
+                .format);
+  EXPECT_EQ(Output_format::json,
+            parse_as<Show_rest_metadata_status>("SHOW REST STATUS FORMAT=JSON").format);
+}
+
 TEST(Mrs_parser, daemons) {
   EXPECT_EQ(Output_format::traditional,
             parse_as<Show_rest_daemons>("SHOW REST DAEMONS").format);

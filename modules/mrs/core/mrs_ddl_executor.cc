@@ -28,6 +28,7 @@
 #include <chrono>
 #include <stdexcept>
 
+#include "modules/mrs/core/mrs_metadata_json.h"
 #include "modules/mrs/core/mrs_metadata_schema.h"
 
 namespace mrs {
@@ -433,11 +434,21 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
                                      : "REST Metadata updated successfully.";
 }
 
-void Ddl_executor::do_execute(const Show_rest_metadata_status &,
+void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
                               Statement_result *r) {
   set_failure_context("Cannot SHOW the REST metadata status.");
 
   const auto status = metadata::get_status(m_session);
+  if (s.format == Output_format::json) {
+    r->columns = {"REST METADATA STATUS"};
+    r->add_row().emplace_back(
+        metadata::status_json(
+            status, m_schema_deployer ? m_schema_deployer->available_versions()
+                                      : std::vector<metadata::Version>{})
+            .dump(true));
+    return;
+  }
+
   const auto flag = [](bool b) { return Db_value(b ? "true" : "false"); };
   const auto text = [](const std::optional<std::string> &s) {
     return s ? Db_value(*s) : Db_value(nullptr);

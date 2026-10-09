@@ -471,7 +471,10 @@ struct Use_rest {
   std::optional<std::string> schema_path;
 };
 
-struct Show_rest_metadata_status {};
+// SHOW REST [METADATA] STATUS [FORMAT=JSON]
+struct Show_rest_metadata_status {
+  Output_format format = Output_format::traditional;
+};
 
 // SHOW REST SERVICES [FOR AUTH APP name | FOR DAEMON id]
 struct Show_rest_services {

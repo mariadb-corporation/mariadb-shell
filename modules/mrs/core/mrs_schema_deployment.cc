@@ -94,6 +94,22 @@ class Msm_lock {
 
 }  // namespace
 
+std::vector<Version> released_versions(const std::string &dir) {
+  std::vector<Version> versions;
+  std::error_code error;
+  const std::regex pattern(R"(.*?(\d+)\.(\d+)\.(\d+)\.sql)");
+  for (const auto &entry : std::filesystem::directory_iterator(dir, error)) {
+    std::smatch match;
+    const auto name = entry.path().filename().string();
+    if (entry.is_regular_file(error) && std::regex_match(name, match, pattern)) {
+      versions.push_back(Version{std::stoi(match[1]), std::stoi(match[2]),
+                                 std::stoi(match[3])});
+    }
+  }
+  std::sort(versions.begin(), versions.end());
+  return versions;
+}
+
 std::string deployment_script_name(const Version &version) {
   return std::string(k_schema_file_name) + "_deployment_" + version.str() +
          ".sql";

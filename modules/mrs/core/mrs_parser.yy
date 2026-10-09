@@ -1622,10 +1622,10 @@ service_and_schema_request_paths:
 /* SHOW statements ========================================================= */
 
 show_rest_metadata_status_statement:
-    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL STATUS_SYMBOL
-    { $$ = make_statement(Show_rest_metadata_status{}, @1); }
-  | SHOW_SYMBOL REST_SYMBOL STATUS_SYMBOL
-    { $$ = make_statement(Show_rest_metadata_status{}, @1); }
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL STATUS_SYMBOL opt_output_format
+    { $$ = make_statement(Show_rest_metadata_status{$5}, @1); }
+  | SHOW_SYMBOL REST_SYMBOL STATUS_SYMBOL opt_output_format
+    { $$ = make_statement(Show_rest_metadata_status{$4}, @1); }
   ;
 
 show_rest_services_statement:

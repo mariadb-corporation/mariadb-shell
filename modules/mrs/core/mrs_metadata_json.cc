@@ -159,6 +159,29 @@ json::Value service_json(Db_session *session, const Service &service,
   return doc;
 }
 
+json::Value status_json(const Status &status,
+                        const std::vector<Version> &available_versions) {
+  json::Value doc = json::Value::object();
+  doc.set("service_configured", status.service_configured);
+  doc.set("service_enabled", status.service_enabled);
+  doc.set("service_upgradeable", status.service_upgradeable);
+  doc.set("service_upgrade_ignored", status.service_upgrade_ignored);
+  doc.set("service_count", status.service_count);
+  doc.set("service_being_upgraded", status.service_being_upgraded);
+  doc.set("major_upgrade_required", status.major_upgrade_required);
+  doc.set("current_metadata_version", text(status.current_metadata_version));
+  doc.set("available_metadata_version", text(status.available_metadata_version));
+  doc.set("required_router_version", text(status.required_router_version));
+  doc.set("metadata_version", number(status.metadata_version));
+  json::Value::Array versions;
+  for (const auto &version : available_versions) versions.emplace_back(version.str());
+  doc.set("available_metadata_versions", json::Value(std::move(versions)));
+  doc.set("configuration_options",
+          status.configuration_options ? document(status.configuration_options)
+                                       : json::Value::object());
+  return doc;
+}
+
 json::Value daemon_json(const Daemon &daemon) {
   json::Value doc = json::Value::object();
   doc.set("id", daemon.id);
