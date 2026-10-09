@@ -332,13 +332,13 @@ EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_role WHERE
 EXPECT_EQ(["REST role", "derived_from_role", "description", "options", "specific_to_service"], rest("SHOW REST ROLES").get_column_names())
 # The roles of the current service and the global ones
 EXPECT_EQ([
-    ["Full Access", "", "Full access to all db_objects", None, ""],
+    ["Full Access", "", "Full access to all rest_objects", None, ""],
     ["optioned", "", "", {"a": [1, 2]}, ""],
     ["reader", "", "", {}, ""],
     ["reader", "", "", {}, "/svc"],
     ["writer", "reader", "writes", {}, "/svc"]], roles_rows("SHOW REST ROLES"))
 EXPECT_EQ([
-    ["Full Access", "", "Full access to all db_objects", None, ""],
+    ["Full Access", "", "Full access to all rest_objects", None, ""],
     ["optioned", "", "", {"a": [1, 2]}, ""],
     ["otherRole", "", "", {}, "/other"],
     ["reader", "", "", {}, ""]], roles_rows("SHOW REST ROLES ON SERVICE /other"))
@@ -486,7 +486,7 @@ EXPECT_EQ("REST ROLE `nope` dropped successfully.", rest_info("DROP REST ROLE IF
 EXPECT_EQ("REST ROLE `reader` dropped successfully.", rest_info("DROP REST ROLE \"reader\" ON ANY SERVICE"))
 EXPECT_EQ("REST ROLE `optioned` dropped successfully.", rest_info("DROP REST ROLE \"optioned\" ON ANY SERVICE"))
 EXPECT_EQ("REST ROLE `otherRole` dropped successfully.", rest_info("DROP REST ROLE \"otherRole\" ON /other"))
-EXPECT_EQ([["Full Access", "", "Full access to all db_objects", None, ""]], roles_rows("SHOW REST ROLES ON ANY SERVICE"))
+EXPECT_EQ([["Full Access", "", "Full access to all rest_objects", None, ""]], roles_rows("SHOW REST ROLES ON ANY SERVICE"))
 
 #@<> DROP REST AUTH APP
 EXPECT_THROWS(lambda: rest("DROP REST AUTH APP \"nope\""), "Failed to drop the REST AUTH APP `nope`. The given REST AUTH APP `nope` could not be found.")

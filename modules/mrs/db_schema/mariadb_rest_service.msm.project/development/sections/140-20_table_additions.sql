@@ -16,10 +16,10 @@ ALTER TABLE `service`
     CHANGE COLUMN name name VARCHAR(255) NOT NULL DEFAULT (REGEXP_REPLACE(url_context_root, '[^0-9a-zA-Z ]', ''));
 
 -- Ensure page size is within 16K limit
-ALTER TABLE `db_schema`
-	ADD CONSTRAINT db_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
-ALTER TABLE `db_object`
-	ADD CONSTRAINT db_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+ALTER TABLE `rest_schema`
+	ADD CONSTRAINT rest_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+ALTER TABLE `rest_object`
+	ADD CONSTRAINT rest_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
 
 -- Ensure an email cannot be used as user name and a user name cannot be used as email
 ALTER TABLE `mrs_user`
@@ -27,7 +27,7 @@ ALTER TABLE `mrs_user`
     ADD CONSTRAINT `mrs_user_at_symbol_in_email` CHECK (INSTR(email, '@') > 0 OR email IS NULL OR email = '');
 
 -- Ensure that for STORED PROCEDURE parameters at least one of the 'in' and 'out' flag is set to true
-ALTER TABLE `object_field`
+ALTER TABLE `data_mapping_field`
   ADD CONSTRAINT param_mode_not_false CHECK (
     (JSON_EXTRACT(db_column, "$.in") IS NULL AND JSON_EXTRACT(db_column, "$.out") IS NULL) OR
     (JSON_EXTRACT(db_column, "$.in") + JSON_EXTRACT(db_column, "$.out") >= 1));

@@ -240,27 +240,27 @@ void update_content_set(Db_session *session, const Id &id,
 
 void delete_registered_scripts(Db_session *session, const Content_set &content_set) {
   // Deleting the links deletes their SCRIPT objects (AFTER DELETE trigger)
-  session->execute(sql::Delete("content_set_has_obj_def")
+  session->execute(sql::Delete("content_set_has_rest_object")
                        .where("content_set_id", Value::id(content_set.id)));
 
   // The script modules left without objects go as well. They are looked up
-  // first: a DELETE on db_schema whose subquery reads db_object fails with
-  // 1442, as the db_schema trigger deletes from db_object.
+  // first: a DELETE on rest_schema whose subquery reads rest_object fails with
+  // 1442, as the rest_schema trigger deletes from rest_object.
   std::string placeholders;
   std::vector<Value> empty_modules;
   for (const auto &row :
        session
-           ->query("SELECT id FROM " + sql::metadata_table("db_schema") +
+           ->query("SELECT id FROM " + sql::metadata_table("rest_schema") +
                        " WHERE service_id = ? AND schema_type = 'SCRIPT_MODULE' "
-                       "AND id NOT IN (SELECT db_schema_id FROM " +
-                       sql::metadata_table("db_object") + ")",
+                       "AND id NOT IN (SELECT rest_schema_id FROM " +
+                       sql::metadata_table("rest_object") + ")",
                    {Value::id(content_set.service_id)})
            .rows) {
     placeholders += placeholders.empty() ? "?" : ", ?";
     empty_modules.push_back(Value::id(row["id"].as_string()));
   }
   if (!empty_modules.empty()) {
-    session->execute(sql::Delete("db_schema")
+    session->execute(sql::Delete("rest_schema")
                          .where_raw("id IN (" + placeholders + ")",
                                     std::move(empty_modules)));
   }

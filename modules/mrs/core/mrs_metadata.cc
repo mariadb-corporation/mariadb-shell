@@ -31,7 +31,7 @@
 
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
-#include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_rest_objects.h"
 #include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
@@ -200,7 +200,7 @@ SELECT sc.id, sc.name, sc.service_id, sc.request_path,
     sc.requires_auth, sc.enabled, sc.items_per_page, sc.comments, se.url_host_id,
     CONCAT(h.name, se.url_context_root) AS host_ctx,
     sc.options, sc.metadata, sc.schema_type, sc.internal
-FROM `{metadata_schema}`.db_schema sc
+FROM `{metadata_schema}`.rest_schema sc
     LEFT OUTER JOIN `{metadata_schema}`.service se
         ON se.id = sc.service_id
     LEFT JOIN `{metadata_schema}`.url_host h
@@ -868,7 +868,7 @@ Id add_schema(Db_session *session, const Schema_definition &definition) {
   }
 
   const Id id = definition.id ? *definition.id : new_id(session);
-  sql::Insert insert("db_schema");
+  sql::Insert insert("rest_schema");
   insert.set("id", Value::id(id));
   insert.set("service_id", Value::id(definition.service_id));
   insert.set("name", name);
@@ -887,7 +887,7 @@ Id add_schema(Db_session *session, const Schema_definition &definition) {
 
 void update_schema(Db_session *session, const Id &id,
                    const Schema_changes &changes) {
-  sql::Update update("db_schema");
+  sql::Update update("rest_schema");
   if (changes.service_id) update.set("service_id", Value::id(*changes.service_id));
   update.set_if("name", changes.name);
   update.set_if("request_path", changes.request_path);
@@ -897,7 +897,7 @@ void update_schema(Db_session *session, const Id &id,
   update.set_if("comments", changes.comments);
   update.set_if("metadata", changes.metadata);
   if (changes.options) {
-    set_json_options(session, &update, "db_schema", id, *changes.options,
+    set_json_options(session, &update, "rest_schema", id, *changes.options,
                      changes.merge_options);
   }
   if (update.empty()) return;
@@ -906,7 +906,7 @@ void update_schema(Db_session *session, const Id &id,
 }
 
 void delete_schema(Db_session *session, const Id &id) {
-  if (session->execute(sql::Delete("db_schema").where("id", Value::id(id))) == 0) {
+  if (session->execute(sql::Delete("rest_schema").where("id", Value::id(id))) == 0) {
     throw std::runtime_error("The specified schema with id " + id +
                              " was not found.");
   }
@@ -940,9 +940,9 @@ std::string schema_create_statement(Db_session *session, const Schema &schema,
   output += ";";
 
   if (include_database_endpoints) {
-    for (const auto &db_object : get_db_objects(session, schema.id, {})) {
+    for (const auto &rest_object : get_rest_objects(session, schema.id, {})) {
       output += "\n\n" +
-                db_object_create_statement(session, db_object, on_current_service);
+                rest_object_create_statement(session, rest_object, on_current_service);
     }
   }
   return output;
@@ -965,8 +965,8 @@ Id clone_schema(Db_session *session, const Schema &schema,
 
   const Id new_schema_id = add_schema(session, definition);
 
-  for (const auto &db_object : get_db_objects(session, schema.id, {})) {
-    clone_db_object(session, db_object, new_schema_id);
+  for (const auto &rest_object : get_rest_objects(session, schema.id, {})) {
+    clone_rest_object(session, rest_object, new_schema_id);
   }
   return new_schema_id;
 }

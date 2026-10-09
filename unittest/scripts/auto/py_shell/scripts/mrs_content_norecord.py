@@ -267,12 +267,12 @@ rest("CREATE REST CONTENT FILE `/dist/sales.mjs` ON CONTENT SET /app CONTENT 'ex
 rest("CREATE REST CONTENT FILE `/static/index.html` ON CONTENT SET /app CONTENT '<html></html>'")
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD TYPESCRIPT SCRIPTS"))
 # The module is a REST schema of type SCRIPT_MODULE
-EXPECT_EQ([["sales", "/sales", "SCRIPT_MODULE", 0, "v1"]], query_rows("SELECT name, request_path, schema_type, requires_auth, JSON_VALUE(options, '$.tag') FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'"))
+EXPECT_EQ([["sales", "/sales", "SCRIPT_MODULE", 0, "v1"]], query_rows("SELECT name, request_path, schema_type, requires_auth, JSON_VALUE(options, '$.tag') FROM mariadb_rest_service.rest_schema WHERE schema_type = 'SCRIPT_MODULE'"))
 # Each script is a REST object of type SCRIPT, with its parameters and result as objects
-EXPECT_EQ([["summaryOf", "/summary", 1], ["total", "/total", 0]], query_rows("SELECT name, request_path, requires_auth FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT' ORDER BY name"))
-EXPECT_EQ([["SvcSalesSummaryParams", "PARAMETERS"], ["SvcSalesSummaryResult", "RESULT"], ["SvcSalesTotalParams", "PARAMETERS"], ["SvcSalesTotalResult", "RESULT"]], query_rows("SELECT name, kind FROM mariadb_rest_service.object ORDER BY name"))
+EXPECT_EQ([["summaryOf", "/summary", 1], ["total", "/total", 0]], query_rows("SELECT name, request_path, requires_auth FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT' ORDER BY name"))
+EXPECT_EQ([["SvcSalesSummaryParams", "PARAMETERS"], ["SvcSalesSummaryResult", "RESULT"], ["SvcSalesTotalParams", "PARAMETERS"], ["SvcSalesTotalResult", "RESULT"]], query_rows("SELECT name, kind FROM mariadb_rest_service.data_mapping ORDER BY name"))
 fields = query_rows("""SELECT o.name, f.name, f.position, JSON_VALUE(f.db_column, '$.datatype'), JSON_EXTRACT(f.db_column, '$.not_null'), f.represents_reference_id IS NOT NULL
-    FROM mariadb_rest_service.object_field f JOIN mariadb_rest_service.object o ON o.id = f.object_id ORDER BY o.name, f.position""")
+    FROM mariadb_rest_service.data_mapping_field f JOIN mariadb_rest_service.data_mapping o ON o.id = f.data_mapping_id ORDER BY o.name, f.position""")
 EXPECT_EQ([
     ["SvcSalesSummaryParams", "region", 0, "text", "false", 0],
     ["SvcSalesSummaryParams", "detailed", 1, "bit(1)", "false", 0],
@@ -281,11 +281,11 @@ EXPECT_EQ([
     ["SvcSalesSummaryResult", "items", 2, "json", "false", 1],
     ["SvcSalesTotalParams", "year", 0, "decimal", "true", 0],
     ["SvcSalesTotalResult", "result", 0, "decimal", "true", 0]], fields)
-EXPECT_EQ('"EU"', session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') FROM mariadb_rest_service.object_field WHERE name = 'region' AND JSON_EXTRACT(db_column, '$.in') = true").fetch_one()[0])
-EXPECT_EQ(["1:n", "Item"], list(session.run_sql("SELECT JSON_VALUE(reference_mapping, '$.kind'), JSON_VALUE(reference_mapping, '$.referenced_schema') FROM mariadb_rest_service.object_reference").fetch_one()))
-EXPECT_EQ("true", session.run_sql("SELECT JSON_EXTRACT(sdk_options, '$.returns_array') FROM mariadb_rest_service.object WHERE name = 'SvcSalesSummaryResult'").fetch_one()[0])
+EXPECT_EQ('"EU"', session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') FROM mariadb_rest_service.data_mapping_field WHERE name = 'region' AND JSON_EXTRACT(db_column, '$.in') = true").fetch_one()[0])
+EXPECT_EQ(["1:n", "Item"], list(session.run_sql("SELECT JSON_VALUE(reference_mapping, '$.kind'), JSON_VALUE(reference_mapping, '$.referenced_schema') FROM mariadb_rest_service.data_mapping_reference").fetch_one()))
+EXPECT_EQ("true", session.run_sql("SELECT JSON_EXTRACT(sdk_options, '$.returns_array') FROM mariadb_rest_service.data_mapping WHERE name = 'SvcSalesSummaryResult'").fetch_one()[0])
 # The links of the content set to its scripts name the compiled module
-EXPECT_EQ([["Script", "TypeScript", "Sales", "summary", "/dist/sales.mjs"], ["Script", "TypeScript", "Sales", "total", "/dist/sales.mjs"]], query_rows("SELECT kind, language, class_name, name, JSON_VALUE(options, '$.file_to_load') FROM mariadb_rest_service.content_set_has_obj_def ORDER BY name"))
+EXPECT_EQ([["Script", "TypeScript", "Sales", "summary", "/dist/sales.mjs"], ["Script", "TypeScript", "Sales", "total", "/dist/sales.mjs"]], query_rows("SELECT kind, language, class_name, name, JSON_VALUE(options, '$.file_to_load') FROM mariadb_rest_service.content_set_has_rest_object ORDER BY name"))
 # The grants a script declares are run
 EXPECT_EQ("Select", session.run_sql("SELECT Table_priv FROM mysql.tables_priv WHERE User = 'mariadb_rest_service_data_provider' AND Db = 'mysql' AND Table_name = 'user'").fetch_one()[0])
 # The set holds scripts now; its options carry what the daemon loads
@@ -303,13 +303,13 @@ EXPECT_EQ([["/dist/sales.mjs", "PRIVATE"], ["/src/sales.mts", "PRIVATE"], ["/sta
 
 #@<> LOAD SCRIPTS again replaces the registered scripts; the language is detected
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
-EXPECT_EQ(1, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(1, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
 
 #@<> LOAD SCRIPTS reports type errors and registers nothing then
 rest("CREATE REST CONTENT FILE `/src/bad.ts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/bad\" }) class Bad { @Mrs.script({}) public static async b(x: Unknown): Promise<Missing> { return null; } }'")
 EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The MRS scripts have errors:\nThe script b returns an unknown datatype `Missing`.\nUnknown datatype `Unknown` used for script parameter `x`.")
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 rest("DROP REST CONTENT FILE `/src/bad.ts` FROM CONTENT SET /app")
 
 #@<> SHOW CREATE REST CONTENT SET of a script set: the set, its files, then LOAD SCRIPTS
@@ -329,10 +329,10 @@ EXPECT_FALSE("script_definitions" in statement)
 
 #@<> Dropping a script set removes its scripts and their module; the dump registers them again
 rest("DROP REST CONTENT SET /app")
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
-EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_schema WHERE schema_type = 'SCRIPT_MODULE'").fetch_one()[0])
 rest_script(statement)
-EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
+EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 EXPECT_EQ(statement, rest_text("SHOW CREATE REST CONTENT SET /app"))
 rest("DROP REST CONTENT SET /app")
 

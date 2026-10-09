@@ -88,7 +88,7 @@ set(mrs_core_SOURCES
     core/mrs_ddl_executor.cc
     core/mrs_ddl_executor_services.cc
     core/mrs_ddl_executor_schemas.cc
-    core/mrs_ddl_executor_db_objects.cc
+    core/mrs_ddl_executor_rest_objects.cc
     core/mrs_ddl_executor_auth.cc
     core/mrs_ddl_executor_content.cc
     core/mrs_json.cc
@@ -96,7 +96,7 @@ set(mrs_core_SOURCES
     core/mrs_metadata.cc
     core/mrs_metadata_auth.cc
     core/mrs_metadata_content.cc
-    core/mrs_metadata_db_objects.cc
+    core/mrs_metadata_rest_objects.cc
     core/mrs_metadata_json.cc
     core/mrs_metadata_schema.cc
     core/mrs_parser.cc

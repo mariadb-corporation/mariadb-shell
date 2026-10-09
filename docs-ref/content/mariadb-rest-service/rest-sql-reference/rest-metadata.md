@@ -437,8 +437,8 @@ The format name can be written in any case and in quotes, for example `FORMAT=JS
 
 The JSON document holds the values of the REST object as the REST metadata stores them, with the column names as keys. Ids are UUID strings, and option documents are embedded as JSON. In addition:
 
-* A REST service lists the names of its REST auth apps. With `INCLUDING DATABASE ENDPOINTS`, it holds its REST schemas, each with its REST objects.
-* A REST view, procedure, or function holds its data mapping as `objects`, each with its `fields`. A field that represents a reference to another table holds it as `object_reference`, and the fields below the reference point to it with their `parent_reference_id`. Columns that are not part of the data mapping are stored as disabled fields.
+* A REST service lists the names of its REST auth apps. With `INCLUDING DATABASE ENDPOINTS`, it holds its REST schemas as `rest_schemas`, each with its REST objects as `rest_objects`.
+* A REST view, procedure, or function holds its data mapping as `data_mappings`, each with its `fields`. A field that represents a reference to another table holds it as `data_mapping_reference`, and the fields below the reference point to it with their `parent_reference_id`. Columns that are not part of the data mapping are stored as disabled fields.
 * A REST auth app lists the REST services it is linked to. Its app secret is never returned; `has_app_secret` tells whether one is set.
 * A REST user lists the REST roles granted to it. Its password is never returned; `has_password` tells whether one is set.
 * A REST role lists its privileges.

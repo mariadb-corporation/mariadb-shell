@@ -41,14 +41,14 @@
 #include "modules/mrs/core/mrs_metadata.h"
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
-#include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_rest_objects.h"
 #include "modules/mrs/core/mrs_metadata_schema.h"
 
 namespace mrs {
 namespace metadata {
 
 // A service with the names of its auth apps; with database endpoints, its
-// schemas with their objects and data mappings under "schemas".
+// schemas with their objects and data mappings under "rest_schemas".
 json::Value service_json(Db_session *session, const Service &service,
                          bool include_database_endpoints);
 
@@ -62,10 +62,10 @@ json::Value status_json(const Status &status,
 // A MariaDB REST Daemon instance.
 json::Value daemon_json(const Daemon &daemon);
 
-// A view, procedure or function with its data mapping: "objects", each
+// A view, procedure or function with its data mapping: "data_mappings", each
 // with its "fields" in the flat metadata order; a field representing a
-// reference carries it as "object_reference".
-json::Value db_object_json(Db_session *session, const Db_object &db_object);
+// reference carries it as "data_mapping_reference".
+json::Value rest_object_json(Db_session *session, const Rest_object &rest_object);
 
 json::Value content_set_json(const Content_set &content_set);
 json::Value content_file_json(const Content_file &content_file);

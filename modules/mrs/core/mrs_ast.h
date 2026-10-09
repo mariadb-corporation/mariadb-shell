@@ -272,11 +272,11 @@ struct Create_rest_view {
 };
 
 // The kind of a REST db object, i.e. which statements it belongs to.
-enum class Db_object_kind { view, procedure, function };
+enum class Rest_object_kind { view, procedure, function };
 
 // CREATE REST PROCEDURE and CREATE REST FUNCTION
 struct Create_rest_routine {
-  Db_object_kind kind = Db_object_kind::procedure;  // procedure or function
+  Rest_object_kind kind = Rest_object_kind::procedure;  // procedure or function
   Create_flags flags;
   std::string path;
   std::optional<Schema_selector> on;
@@ -361,7 +361,7 @@ struct Alter_rest_view {
 };
 
 struct Alter_rest_routine {
-  Db_object_kind kind = Db_object_kind::procedure;  // procedure or function
+  Rest_object_kind kind = Rest_object_kind::procedure;  // procedure or function
   std::string path;
   std::optional<Schema_selector> on;
   std::optional<std::string> new_path;
@@ -404,8 +404,8 @@ struct Drop_rest_schema {
 // FORMAT=TRADITIONAL (the default) or FORMAT=JSON, as EXPLAIN takes it
 enum class Output_format { traditional, json };
 
-struct Drop_rest_db_object {
-  Db_object_kind kind = Db_object_kind::view;
+struct Drop_rest_object {
+  Rest_object_kind kind = Rest_object_kind::view;
   bool if_exists = false;
   std::string path;
   std::optional<Schema_selector> from;
@@ -506,8 +506,8 @@ struct Show_rest_schemas {
   std::optional<Service_path> service;
 };
 
-struct Show_rest_db_objects {
-  Db_object_kind kind = Db_object_kind::view;
+struct Show_rest_objects {
+  Rest_object_kind kind = Rest_object_kind::view;
   std::optional<Schema_selector> on;
 };
 
@@ -570,8 +570,8 @@ struct Show_create_rest_schema {
   Output_format format = Output_format::traditional;
 };
 
-struct Show_create_rest_db_object {
-  Db_object_kind kind = Db_object_kind::view;
+struct Show_create_rest_object {
+  Rest_object_kind kind = Rest_object_kind::view;
   std::string path;
   std::optional<Schema_selector> on;
   Output_format format = Output_format::traditional;
@@ -614,17 +614,17 @@ using Statement_variant = std::variant<
     Create_rest_role, Clone_rest_service, Alter_rest_service,
     Alter_rest_schema, Alter_rest_view, Alter_rest_routine,
     Alter_rest_content_set, Alter_rest_auth_app, Alter_rest_user,
-    Drop_rest_service, Drop_rest_schema, Drop_rest_db_object,
+    Drop_rest_service, Drop_rest_schema, Drop_rest_object,
     Drop_rest_content_set, Drop_rest_content_file, Drop_rest_auth_app,
     Drop_rest_user, Drop_rest_role, Rest_privilege_statement,
     Rest_role_statement, Use_rest, Use_rest_metadata_schema,
     Show_rest_metadata_schemas, Show_rest_metadata_status,
-    Show_rest_services, Show_rest_schemas, Show_rest_db_objects,
+    Show_rest_services, Show_rest_schemas, Show_rest_objects,
     Show_rest_content_sets, Show_rest_content_files, Show_rest_auth_apps,
     Show_rest_auth_vendors, Show_rest_users, Show_rest_columns,
     Show_rest_daemons, Drop_rest_daemon,
     Show_rest_roles, Show_rest_grants, Show_create_rest_service,
-    Show_create_rest_schema, Show_create_rest_db_object,
+    Show_create_rest_schema, Show_create_rest_object,
     Show_create_rest_content_set, Show_create_rest_content_file,
     Show_create_rest_auth_app, Show_create_rest_role, Show_create_rest_user>;
 

@@ -35,7 +35,7 @@
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
-#include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_rest_objects.h"
 #include "modules/mrs/core/mrs_metadata_json.h"
 #include "modules/mrs/core/mrs_strings.h"
 
@@ -45,38 +45,38 @@ using namespace ast;
 
 namespace {
 
-using metadata::Object_definition;
-using metadata::Object_field;
-using metadata::Object_reference;
+using metadata::Data_mapping;
+using metadata::Data_mapping_field;
+using metadata::Data_mapping_reference;
 
-std::string kind_caption(Db_object_kind kind) {
+std::string kind_caption(Rest_object_kind kind) {
   switch (kind) {
-    case Db_object_kind::procedure:
+    case Rest_object_kind::procedure:
       return "PROCEDURE";
-    case Db_object_kind::function:
+    case Rest_object_kind::function:
       return "FUNCTION";
-    case Db_object_kind::view:
+    case Rest_object_kind::view:
       break;
   }
   return "VIEW";
 }
 
 // The object types a SHOW / SHOW CREATE statement of a kind covers.
-std::vector<std::string> object_types_of(Db_object_kind kind) {
+std::vector<std::string> object_types_of(Rest_object_kind kind) {
   switch (kind) {
-    case Db_object_kind::procedure:
+    case Rest_object_kind::procedure:
       return {"PROCEDURE"};
-    case Db_object_kind::function:
+    case Rest_object_kind::function:
       return {"FUNCTION"};
-    case Db_object_kind::view:
+    case Rest_object_kind::view:
       break;
   }
   return {"TABLE", "VIEW"};
 }
 
-bool is_of_kind(const metadata::Db_object &db_object, Db_object_kind kind) {
+bool is_of_kind(const metadata::Rest_object &rest_object, Rest_object_kind kind) {
   const auto types = object_types_of(kind);
-  return std::find(types.begin(), types.end(), db_object.object_type) != types.end();
+  return std::find(types.begin(), types.end(), rest_object.object_type) != types.end();
 }
 
 std::string format_caption(Result_format format) {
@@ -117,11 +117,11 @@ metadata::Schema schema_of_service(Db_session *session, const Id &service_id,
   return *schema;
 }
 
-metadata::Db_object_definition db_object_definition(
+metadata::Rest_object_definition rest_object_definition(
     const Id &schema_id, std::string_view name, std::string_view request_path,
     std::string_view object_type, const Object_options &options) {
-  metadata::Db_object_definition definition;
-  definition.db_schema_id = schema_id;
+  metadata::Rest_object_definition definition;
+  definition.rest_schema_id = schema_id;
   definition.name = std::string(name);
   definition.request_path = std::string(request_path);
   definition.object_type = std::string(object_type);
@@ -140,9 +140,9 @@ metadata::Db_object_definition db_object_definition(
   return definition;
 }
 
-metadata::Db_object_changes db_object_changes(
+metadata::Rest_object_changes rest_object_changes(
     const Object_options &options, const std::optional<std::string> &new_path) {
-  metadata::Db_object_changes changes;
+  metadata::Rest_object_changes changes;
   changes.request_path = new_path;
   if (options.enabled) changes.enabled = static_cast<int>(*options.enabled);
   changes.requires_auth = options.requires_auth;
@@ -167,24 +167,24 @@ std::string mapping_options(const Crud_annotations &crud) {
                                         crud.allow_delete(), crud.is_no_check());
 }
 
-// Builds the objects of a db_object from the data mapping of a statement.
+// Builds the objects of a rest_object from the data mapping of a statement.
 // The columns, references and parameters come from the server; the mapping
 // enables, renames and annotates them.
 class Mapping_builder {
  public:
-  Mapping_builder(Db_session *session, Id db_object_id, std::string schema_name,
+  Mapping_builder(Db_session *session, Id rest_object_id, std::string schema_name,
                   std::string name)
       : m_session(session),
-        m_db_object_id(std::move(db_object_id)),
+        m_rest_object_id(std::move(rest_object_id)),
         m_schema_name(std::move(schema_name)),
         m_name(std::move(name)) {}
 
   // The RESULT object of a REST VIEW. Without a mapping all columns are
   // exposed.
-  Object_definition view_object(const std::optional<std::string> &class_name,
+  Data_mapping view_object(const std::optional<std::string> &class_name,
                                 const Crud_annotations &crud,
                                 const std::optional<Graphql_object> &mapping) {
-    Object_definition object = new_object(class_name, "RESULT", 0);
+    Data_mapping object = new_object(class_name, "RESULT", 0);
     object.options = mapping_options(crud);
     add_table_fields(&object, std::nullopt, m_schema_name, m_name, !mapping);
     if (mapping) apply_mapping(&object, *mapping, std::nullopt, false);
@@ -194,15 +194,15 @@ class Mapping_builder {
   // The PARAMETERS object of a routine. Without a PARAMETERS clause all
   // parameters are exposed; with FORCE, parameters the server does not
   // know are taken as given.
-  Object_definition parameters_object(
+  Data_mapping parameters_object(
       std::string_view type, const std::optional<Named_graphql_object> &parameters,
       bool force) {
-    Object_definition object =
+    Data_mapping object =
         new_object(parameters ? parameters->name : std::nullopt, "PARAMETERS", 0);
 
     for (const auto &parameter :
          metadata::get_routine_parameters(m_session, m_schema_name, m_name, type)) {
-      Object_field field = new_field(object, std::nullopt);
+      Data_mapping_field field = new_field(object, std::nullopt);
       field.name = metadata::snake_to_camel_case(parameter.name);
       field.position = parameter.position;
       field.enabled = !parameters;
@@ -230,16 +230,16 @@ class Mapping_builder {
 
   // A RESULT object of a procedure: its columns are only known from the
   // statement.
-  Object_definition procedure_result(const Named_graphql_object &result,
+  Data_mapping procedure_result(const Named_graphql_object &result,
                                      int position) {
-    Object_definition object = new_object(result.name, "RESULT", position);
+    Data_mapping object = new_object(result.name, "RESULT", position);
 
     for (const auto &pair : result.object.fields) {
       if (!pair.nested.empty()) {
         throw std::runtime_error("The column `" + pair.source.name +
                                  "` of a RESULT cannot hold a nested object.");
       }
-      Object_field field = new_field(object, std::nullopt);
+      Data_mapping_field field = new_field(object, std::nullopt);
       field.position = static_cast<int>(object.fields.size());
       json::Value column = json::Value::object();
       column.set("name", json::Value(pair.source.name));
@@ -255,13 +255,13 @@ class Mapping_builder {
   // return type the server reports.
   // The objects of a REST PROCEDURE or FUNCTION: the parameters, then the
   // result of a function or the result sets of a procedure.
-  std::vector<Object_definition> routine_objects(
-      Db_object_kind kind, const std::string &type,
+  std::vector<Data_mapping> routine_objects(
+      Rest_object_kind kind, const std::string &type,
       const std::optional<Named_graphql_object> &parameters,
       const std::vector<Named_graphql_object> &results, bool force) {
-    std::vector<Object_definition> objects{
+    std::vector<Data_mapping> objects{
         parameters_object(type, parameters, force)};
-    if (kind == Db_object_kind::function) {
+    if (kind == Rest_object_kind::function) {
       objects.push_back(
           function_result(results.empty() ? nullptr : &results.front()));
     } else {
@@ -273,11 +273,11 @@ class Mapping_builder {
     return objects;
   }
 
-  Object_definition function_result(const Named_graphql_object *result) {
-    Object_definition object =
+  Data_mapping function_result(const Named_graphql_object *result) {
+    Data_mapping object =
         new_object(result ? result->name : std::nullopt, "RESULT", 1);
 
-    Object_field field = new_field(object, std::nullopt);
+    Data_mapping_field field = new_field(object, std::nullopt);
     field.name = "result";
     field.position = 0;
     field.enabled = true;
@@ -312,9 +312,9 @@ class Mapping_builder {
     return pair.datatype ? to_lower(*pair.datatype) : "varchar(255)";
   }
 
-  Object_definition new_object(const std::optional<std::string> &name,
+  Data_mapping new_object(const std::optional<std::string> &name,
                                std::string kind, int position) {
-    Object_definition object;
+    Data_mapping object;
     object.id = metadata::new_id(m_session);
     object.name = name.value_or("");
     object.kind = std::move(kind);
@@ -322,11 +322,11 @@ class Mapping_builder {
     return object;
   }
 
-  Object_field new_field(const Object_definition &object,
+  Data_mapping_field new_field(const Data_mapping &object,
                          const std::optional<Id> &parent_reference_id) {
-    Object_field field;
+    Data_mapping_field field;
     field.id = metadata::new_id(m_session);
-    field.object_id = object.id;
+    field.data_mapping_id = object.id;
     field.parent_reference_id = parent_reference_id;
     return field;
   }
@@ -339,13 +339,13 @@ class Mapping_builder {
   // Adds the columns and references of a table or view below a parent,
   // disabled unless asked otherwise; references are never enabled by
   // default.
-  void add_table_fields(Object_definition *object,
+  void add_table_fields(Data_mapping *object,
                         const std::optional<Id> &parent_reference_id,
                         const std::string &schema_name, const std::string &table,
                         bool enable_columns) {
     for (auto &column : metadata::get_table_columns_with_references(
              m_session, schema_name, table)) {
-      Object_field field = new_field(*object, parent_reference_id);
+      Data_mapping_field field = new_field(*object, parent_reference_id);
       field.name = metadata::snake_to_camel_case(column.name);
       field.position = column.position;
       field.enabled = enable_columns && !column.is_reference();
@@ -355,7 +355,7 @@ class Mapping_builder {
     }
   }
 
-  void apply_mapping(Object_definition *object, const Graphql_object &mapping,
+  void apply_mapping(Data_mapping *object, const Graphql_object &mapping,
                      const std::optional<Id> &parent_reference_id, bool force) {
     for (const auto &pair : mapping.fields) {
       if (pair.nested.empty()) {
@@ -366,7 +366,7 @@ class Mapping_builder {
     }
   }
 
-  Object_field *find_column(Object_definition *object,
+  Data_mapping_field *find_column(Data_mapping *object,
                             const std::optional<Id> &parent_reference_id,
                             const std::string &column_name) {
     for (auto &field : object->fields) {
@@ -378,8 +378,8 @@ class Mapping_builder {
     return nullptr;
   }
 
-  Object_field *find_reference_candidate(
-      Object_definition *object, const std::optional<Id> &parent_reference_id,
+  Data_mapping_field *find_reference_candidate(
+      Data_mapping *object, const std::optional<Id> &parent_reference_id,
       const std::string &schema_name, const std::string &table) {
     for (auto &field : object->fields) {
       if (field.parent_reference_id != parent_reference_id ||
@@ -395,7 +395,7 @@ class Mapping_builder {
     return nullptr;
   }
 
-  Object_reference *find_reference(Object_definition *object, const Id &id) {
+  Data_mapping_reference *find_reference(Data_mapping *object, const Id &id) {
     for (auto &field : object->fields) {
       if (field.reference && field.reference->id == id) return &*field.reference;
     }
@@ -403,7 +403,7 @@ class Mapping_builder {
   }
 
   // `name: column @ANNOTATIONS`
-  void apply_column(Object_definition *object, const Graphql_field &pair,
+  void apply_column(Data_mapping *object, const Graphql_field &pair,
                     const std::optional<Id> &parent_reference_id, bool force) {
     auto *field = find_column(object, parent_reference_id, pair.source.name);
     if (!field) {
@@ -414,10 +414,10 @@ class Mapping_builder {
   }
 
   // A parameter the server does not know, taken from the statement (FORCE).
-  Object_field &add_forced_field(Object_definition *object,
+  Data_mapping_field &add_forced_field(Data_mapping *object,
                                  const Graphql_field &pair,
                                  const std::optional<Id> &parent_reference_id) {
-    Object_field field = new_field(*object, parent_reference_id);
+    Data_mapping_field field = new_field(*object, parent_reference_id);
     field.position = static_cast<int>(object->fields.size());
     json::Value column = json::Value::object();
     column.set("name", json::Value(pair.source.name));
@@ -431,7 +431,7 @@ class Mapping_builder {
     return object->fields.back();
   }
 
-  void apply_annotations(Object_definition *object, Object_field *field,
+  void apply_annotations(Data_mapping *object, Data_mapping_field *field,
                          const Graphql_field &pair) {
     field->name = pair.name;
     field->enabled = true;
@@ -448,7 +448,7 @@ class Mapping_builder {
   }
 
   // `name: schema.table @ANNOTATIONS { ... }`
-  void apply_reference(Object_definition *object, const Graphql_field &pair,
+  void apply_reference(Data_mapping *object, const Graphql_field &pair,
                        const std::optional<Id> &parent_reference_id) {
     const std::string schema_name = pair.source.schema.value_or(m_schema_name);
     const std::string table = pair.source.name;
@@ -461,7 +461,7 @@ class Mapping_builder {
                                "`.`" + m_name + "`.");
     }
 
-    Object_reference reference;
+    Data_mapping_reference reference;
     reference.id = metadata::new_id(m_session);
     reference.reference_mapping = std::move(*field->candidate_reference_mapping);
     reference.options = mapping_options(pair.crud);
@@ -484,7 +484,7 @@ class Mapping_builder {
     if (pair.unnest && to_many) reduce_to_single_column(object, reference_id);
   }
 
-  void reduce_to_single_column(Object_definition *object, const Id &reference_id) {
+  void reduce_to_single_column(Data_mapping *object, const Id &reference_id) {
     auto *reference = find_reference(object, reference_id);
 
     // The columns of nested references count as well, e.g. the title of
@@ -524,18 +524,18 @@ class Mapping_builder {
   }
 
   Db_session *m_session;
-  Id m_db_object_id;
+  Id m_rest_object_id;
   std::string m_schema_name;
   std::string m_name;
 };
 
 // Names the objects the statement left unnamed after the full path of the
-// db_object (/svc/sakila/city -> SvcSakilaCity), with a Params suffix for
+// rest_object (/svc/sakila/city -> SvcSakilaCity), with a Params suffix for
 // the parameters of a routine and a number for further results, made
 // unique within the REST schema.
 void assign_object_names(Db_session *session, const Id &schema_id,
                          const std::string &full_path, bool is_routine,
-                         std::vector<Object_definition> *objects) {
+                         std::vector<Data_mapping> *objects) {
   std::vector<std::string> assigned;
   for (size_t i = 0; i < objects->size(); ++i) {
     auto &object = (*objects)[i];
@@ -561,7 +561,7 @@ void assign_object_names(Db_session *session, const Id &schema_id,
   }
 }
 
-// Runs the GRANT statements of a db_object. With FORCE a failing grant,
+// Runs the GRANT statements of a rest_object. With FORCE a failing grant,
 // e.g. for a routine that does not exist yet, is reported as a warning.
 void run_grants(Db_session *session, const std::vector<std::string> &grants,
                 bool force, Statement_result *r) {
@@ -575,7 +575,7 @@ void run_grants(Db_session *session, const std::vector<std::string> &grants,
   }
 }
 
-// Runs the grants of a db_object that was just added. GRANT commits the
+// Runs the grants of a rest_object that was just added. GRANT commits the
 // transaction implicitly, so the object is removed again when they fail.
 void run_grants_of_new_object(Db_session *session, const Id &id,
                               const std::vector<std::string> &grants, bool force,
@@ -584,7 +584,7 @@ void run_grants_of_new_object(Db_session *session, const Id &id,
     run_grants(session, grants, force, r);
   } catch (...) {
     try {
-      metadata::delete_db_object(session, id);
+      metadata::delete_rest_object(session, id);
     } catch (...) {
       // The grant error is the one to report
     }
@@ -602,16 +602,16 @@ std::pair<std::string, std::string> database_object_name(
 // REVOKE and GRANT commit the transaction they run in, so the privileges of
 // the data provider role are changed before the metadata transaction of an
 // ALTER, and the old ones are granted again when anything after fails:
-// the db_object and its privileges then stay in step either way. Nothing is
+// the rest_object and its privileges then stay in step either way. Nothing is
 // revoked when the statements do not change.
 //
-// A db_object created with FORCE may name a routine or table that does not
+// A rest_object created with FORCE may name a routine or table that does not
 // exist (yet); granting on it is then reported as a warning.
-void restore_grants(Db_session *session, const metadata::Db_object &db_object,
+void restore_grants(Db_session *session, const metadata::Rest_object &rest_object,
                     const std::vector<std::string> &old_grants) noexcept {
   try {
-    metadata::revoke_all_from_db_object(session, db_object.schema_name,
-                                        db_object.name, db_object.object_type);
+    metadata::revoke_all_from_rest_object(session, rest_object.schema_name,
+                                        rest_object.name, rest_object.object_type);
   } catch (...) {
     // The error of the statement is the one to report
   }
@@ -626,15 +626,15 @@ void restore_grants(Db_session *session, const metadata::Db_object &db_object,
 
 // Returns whether the privileges changed, so the caller knows to restore
 // them when its metadata change fails.
-bool regrant(Db_session *session, const metadata::Db_object &db_object,
+bool regrant(Db_session *session, const metadata::Rest_object &rest_object,
              const std::vector<std::string> &old_grants,
              const std::vector<std::string> &new_grants, Statement_result *r) {
   constexpr int k_no_such_routine = 1305;  // ER_SP_DOES_NOT_EXIST
   constexpr int k_no_such_table = 1146;    // ER_NO_SUCH_TABLE
 
   if (old_grants == new_grants) return false;
-  metadata::revoke_all_from_db_object(session, db_object.schema_name,
-                                      db_object.name, db_object.object_type);
+  metadata::revoke_all_from_rest_object(session, rest_object.schema_name,
+                                      rest_object.name, rest_object.object_type);
   try {
     for (const auto &grant : new_grants) {
       try {
@@ -646,7 +646,7 @@ bool regrant(Db_session *session, const metadata::Db_object &db_object,
       }
     }
   } catch (...) {
-    restore_grants(session, db_object, old_grants);
+    restore_grants(session, rest_object, old_grants);
     throw;
   }
   return true;
@@ -656,14 +656,14 @@ bool regrant(Db_session *session, const metadata::Db_object &db_object,
 // regrant() fails; keep() once the change is committed.
 class Grant_restorer {
  public:
-  Grant_restorer(Db_session *session, const metadata::Db_object &db_object,
+  Grant_restorer(Db_session *session, const metadata::Rest_object &rest_object,
                  const std::vector<std::string> &old_grants, bool active)
       : m_session(session),
-        m_db_object(db_object),
+        m_rest_object(rest_object),
         m_old_grants(old_grants),
         m_active(active) {}
   ~Grant_restorer() {
-    if (m_active) restore_grants(m_session, m_db_object, m_old_grants);
+    if (m_active) restore_grants(m_session, m_rest_object, m_old_grants);
   }
   Grant_restorer(const Grant_restorer &) = delete;
   Grant_restorer &operator=(const Grant_restorer &) = delete;
@@ -672,14 +672,14 @@ class Grant_restorer {
 
  private:
   Db_session *m_session;
-  const metadata::Db_object &m_db_object;
+  const metadata::Rest_object &m_rest_object;
   const std::vector<std::string> &m_old_grants;
   bool m_active;
 };
 
 }  // namespace
 
-metadata::Schema Ddl_executor::db_object_schema(
+metadata::Schema Ddl_executor::rest_object_schema(
     const std::optional<Schema_selector> &given) {
   if (!given) return current_schema(m_session, *m_state);
   return schema_of_service(m_session, require_service(given), *given,
@@ -694,7 +694,7 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto schema = db_object_schema(s.on);
+  const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
   const auto object_type = metadata::database_object_type(m_session, schema_name, name);
@@ -705,9 +705,9 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
 
   if (keep_existing(
           s.flags,
-          [&] { return metadata::find_db_object(m_session, schema.id, s.path); },
+          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
           [&](const auto &existing) {
-            metadata::delete_db_object(m_session, existing.id);
+            metadata::delete_rest_object(m_session, existing.id);
           })) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
     transaction.commit();
@@ -716,14 +716,14 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
 
   const Id id = metadata::new_id(m_session);
   Mapping_builder builder(m_session, id, schema_name, name);
-  std::vector<Object_definition> objects{
+  std::vector<Data_mapping> objects{
       builder.view_object(s.class_name, s.crud, s.mapping)};
   assign_object_names(m_session, schema.id, full_path, false, &objects);
 
   auto definition =
-      db_object_definition(schema.id, name, s.path, *object_type, s.options);
+      rest_object_definition(schema.id, name, s.path, *object_type, s.options);
   definition.id = id;
-  metadata::add_db_object(m_session, definition, objects);
+  metadata::add_rest_object(m_session, definition, objects);
 
   run_grants_of_new_object(
       m_session, id,
@@ -745,14 +745,14 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
-  const auto schema = db_object_schema(s.on);
+  const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
   if (keep_existing(
           s.flags,
-          [&] { return metadata::find_db_object(m_session, schema.id, s.path); },
+          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
           [&](const auto &existing) {
-            metadata::delete_db_object(m_session, existing.id);
+            metadata::delete_rest_object(m_session, existing.id);
           })) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
     transaction.commit();
@@ -765,9 +765,9 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
                                          s.results, s.force);
   assign_object_names(m_session, schema.id, full_path, true, &objects);
 
-  auto definition = db_object_definition(schema.id, name, s.path, type, s.options);
+  auto definition = rest_object_definition(schema.id, name, s.path, type, s.options);
   definition.id = id;
-  metadata::add_db_object(m_session, definition, objects);
+  metadata::add_rest_object(m_session, definition, objects);
 
   run_grants_of_new_object(
       m_session, id,
@@ -788,25 +788,25 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to update the REST VIEW `" + full_path + "`.");
 
-  const auto schema = db_object_schema(s.on);
-  const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
-  if (!db_object || !is_of_kind(*db_object, Db_object_kind::view)) {
+  const auto schema = rest_object_schema(s.on);
+  const auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  if (!rest_object || !is_of_kind(*rest_object, Rest_object_kind::view)) {
     throw std::runtime_error("The given REST VIEW `" + full_path +
                              "` could not be found.");
   }
 
-  auto changes = db_object_changes(s.options, s.new_path);
-  auto objects = metadata::get_objects(m_session, db_object->id);
+  auto changes = rest_object_changes(s.options, s.new_path);
+  auto objects = metadata::get_objects(m_session, rest_object->id);
   const auto old_grants = metadata::grant_statements(
-      m_session, db_object->schema_name, db_object->name, db_object->object_type,
-      db_object->crud_operations, objects, db_object->options);
+      m_session, rest_object->schema_name, rest_object->name, rest_object->object_type,
+      rest_object->crud_operations, objects, rest_object->options);
 
   bool new_mapping = false;
   if (s.class_def) {
     if (s.class_def->mapping) {
       // A new mapping replaces the whole data mapping
-      Mapping_builder builder(m_session, db_object->id, db_object->schema_name,
-                              db_object->name);
+      Mapping_builder builder(m_session, rest_object->id, rest_object->schema_name,
+                              rest_object->name);
       objects = {builder.view_object(s.class_def->name, s.class_def->crud,
                                      s.class_def->mapping)};
       new_mapping = true;
@@ -826,24 +826,24 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
       object.options = mapping_options(s.class_def->crud);
     }
     changes.crud_operations =
-        metadata::calculate_crud_operations(db_object->object_type, objects);
+        metadata::calculate_crud_operations(rest_object->object_type, objects);
   }
 
   const auto new_grants = metadata::grant_statements(
-      m_session, db_object->schema_name, db_object->name, db_object->object_type,
-      changes.crud_operations.value_or(db_object->crud_operations), objects,
-      metadata::options_after(m_session, *db_object, changes));
-  Grant_restorer restorer(m_session, *db_object, old_grants,
-                          regrant(m_session, *db_object, old_grants, new_grants, r));
+      m_session, rest_object->schema_name, rest_object->name, rest_object->object_type,
+      changes.crud_operations.value_or(rest_object->crud_operations), objects,
+      metadata::options_after(m_session, *rest_object, changes));
+  Grant_restorer restorer(m_session, *rest_object, old_grants,
+                          regrant(m_session, *rest_object, old_grants, new_grants, r));
 
   Db_transaction transaction(m_session);
   if (new_mapping) {
-    metadata::set_objects(m_session, db_object->id, objects);
+    metadata::set_objects(m_session, rest_object->id, objects);
   } else if (s.class_def) {
     const auto &object = objects.front();
     metadata::update_object(m_session, object.id, object.name, object.options);
   }
-  metadata::update_db_object(m_session, db_object->id, changes);
+  metadata::update_rest_object(m_session, rest_object->id, changes);
   transaction.commit();
   restorer.keep();
 
@@ -855,46 +855,46 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to update the REST " + type + " `" + full_path + "`.");
 
-  const auto schema = db_object_schema(s.on);
-  const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
-  if (!db_object || !is_of_kind(*db_object, s.kind)) {
+  const auto schema = rest_object_schema(s.on);
+  const auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  if (!rest_object || !is_of_kind(*rest_object, s.kind)) {
     throw std::runtime_error("The given REST " + type + " `" + full_path +
                              "` could not be found.");
   }
 
-  auto changes = db_object_changes(s.options, s.new_path);
+  auto changes = rest_object_changes(s.options, s.new_path);
 
   // The privileges of a routine (EXECUTE) do not depend on its objects
   const auto old_grants = metadata::grant_statements(
-      m_session, db_object->schema_name, db_object->name, db_object->object_type,
-      db_object->crud_operations, {}, db_object->options);
+      m_session, rest_object->schema_name, rest_object->name, rest_object->object_type,
+      rest_object->crud_operations, {}, rest_object->options);
 
   // A PARAMETERS or RESULT clause replaces the whole data mapping
   const bool new_mapping = s.parameters || !s.results.empty();
-  std::vector<Object_definition> objects;
+  std::vector<Data_mapping> objects;
   if (new_mapping) {
-    Mapping_builder builder(m_session, db_object->id, db_object->schema_name,
-                            db_object->name);
+    Mapping_builder builder(m_session, rest_object->id, rest_object->schema_name,
+                            rest_object->name);
     objects = builder.routine_objects(s.kind, type, s.parameters, s.results,
                                       false);
     changes.crud_operations = metadata::calculate_crud_operations(type, objects);
   }
 
   const auto new_grants = metadata::grant_statements(
-      m_session, db_object->schema_name, db_object->name, db_object->object_type,
-      changes.crud_operations.value_or(db_object->crud_operations), {},
-      metadata::options_after(m_session, *db_object, changes));
-  Grant_restorer restorer(m_session, *db_object, old_grants,
-                          regrant(m_session, *db_object, old_grants, new_grants, r));
+      m_session, rest_object->schema_name, rest_object->name, rest_object->object_type,
+      changes.crud_operations.value_or(rest_object->crud_operations), {},
+      metadata::options_after(m_session, *rest_object, changes));
+  Grant_restorer restorer(m_session, *rest_object, old_grants,
+                          regrant(m_session, *rest_object, old_grants, new_grants, r));
 
   Db_transaction transaction(m_session);
   if (new_mapping) {
     // The old objects go first, so their names are free for the new ones
-    metadata::set_objects(m_session, db_object->id, {});
+    metadata::set_objects(m_session, rest_object->id, {});
     assign_object_names(m_session, schema.id, full_path, true, &objects);
-    metadata::set_objects(m_session, db_object->id, objects);
+    metadata::set_objects(m_session, rest_object->id, objects);
   }
-  metadata::update_db_object(m_session, db_object->id, changes);
+  metadata::update_rest_object(m_session, rest_object->id, changes);
   transaction.commit();
   restorer.keep();
 
@@ -903,22 +903,22 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
 
 // -- DROP ---------------------------------------------------------------------
 
-void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r) {
+void Ddl_executor::do_execute(const Drop_rest_object &s, Statement_result *r) {
   const auto caption = kind_caption(s.kind);
   const auto full_path = full_schema_path(s.from, s.path);
   set_failure_context("Failed to drop the REST " + caption + " `" + full_path + "`.");
 
   Db_transaction transaction(m_session);
 
-  const auto schema = db_object_schema(s.from);
-  auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
-  if (db_object && !is_of_kind(*db_object, s.kind)) db_object.reset();
-  if (!db_object && !s.if_exists) {
+  const auto schema = rest_object_schema(s.from);
+  auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  if (rest_object && !is_of_kind(*rest_object, s.kind)) rest_object.reset();
+  if (!rest_object && !s.if_exists) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +
                              "` could not be found.");
   }
-  if (db_object) {
-    metadata::delete_db_object(m_session, db_object->id);
+  if (rest_object) {
+    metadata::delete_rest_object(m_session, rest_object->id);
   }
 
   transaction.commit();
@@ -927,37 +927,37 @@ void Ddl_executor::do_execute(const Drop_rest_db_object &s, Statement_result *r)
 
 // -- SHOW ---------------------------------------------------------------------
 
-void Ddl_executor::do_execute(const Show_rest_db_objects &s, Statement_result *r) {
+void Ddl_executor::do_execute(const Show_rest_objects &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST db objects.");
 
-  const auto schema = db_object_schema(s.on);
+  const auto schema = rest_object_schema(s.on);
 
   r->columns = {"REST DB Object", "enabled"};
-  for (const auto &db_object :
-       metadata::get_db_objects(m_session, schema.id, object_types_of(s.kind))) {
+  for (const auto &rest_object :
+       metadata::get_rest_objects(m_session, schema.id, object_types_of(s.kind))) {
     auto &row = r->add_row();
-    row.emplace_back(db_object.request_path);
-    row.emplace_back(metadata::enabled_caption(db_object.enabled));
+    row.emplace_back(rest_object.request_path);
+    row.emplace_back(metadata::enabled_caption(rest_object.enabled));
   }
 }
 
-void Ddl_executor::do_execute(const Show_create_rest_db_object &s,
+void Ddl_executor::do_execute(const Show_create_rest_object &s,
                               Statement_result *r) {
   const auto caption = kind_caption(s.kind);
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to get the REST " + caption + " `" + full_path + "`.");
 
-  const auto schema = db_object_schema(s.on);
-  const auto db_object = metadata::find_db_object(m_session, schema.id, s.path);
-  if (!db_object) {
+  const auto schema = rest_object_schema(s.on);
+  const auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  if (!rest_object) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +
                              "` could not be found.");
   }
-  if (!metadata::has_objects(m_session, db_object->id)) {
+  if (!metadata::has_objects(m_session, rest_object->id)) {
     throw std::runtime_error("The given REST object `" + full_path +
                              "` does not have a result definition defined.");
   }
-  if (!is_of_kind(*db_object, s.kind)) {
+  if (!is_of_kind(*rest_object, s.kind)) {
     throw std::runtime_error("The given REST object `" + full_path +
                              "` is not a REST " + caption + ".");
   }
@@ -965,8 +965,8 @@ void Ddl_executor::do_execute(const Show_create_rest_db_object &s,
   r->columns = {"CREATE REST " + caption};
   r->add_row().emplace_back(
       s.format == Output_format::json
-          ? metadata::db_object_json(m_session, *db_object).dump(true)
-          : metadata::db_object_create_statement(m_session, *db_object));
+          ? metadata::rest_object_json(m_session, *rest_object).dump(true)
+          : metadata::rest_object_create_statement(m_session, *rest_object));
 }
 
 // -- SHOW REST COLUMNS ----------------------------------------------------

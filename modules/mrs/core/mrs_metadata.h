@@ -28,7 +28,7 @@
 
 // Access to the MRS metadata schema (`mariadb_rest_service`): the
 // common pieces, the REST services and the REST schemas. The other object
-// types are in mrs_metadata_db_objects.h, mrs_metadata_auth.h and
+// types are in mrs_metadata_rest_objects.h, mrs_metadata_auth.h and
 // mrs_metadata_content.h.
 //
 // The functions take the session explicitly and know nothing about the

@@ -126,15 +126,15 @@ CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_DELETE` BEFORE DELETE ON `
 BEGIN
 	# Since FKs do not fire the triggers on the related tables, manually trigger the DELETEs
 	DELETE FROM `content_set` WHERE `service_id` = OLD.`id`;
-	DELETE FROM `db_schema` WHERE `service_id` = OLD.`id`;
+	DELETE FROM `rest_schema` WHERE `service_id` = OLD.`id`;
     DELETE FROM `service_has_auth_app` WHERE `service_id` = OLD.`id`;
     DELETE FROM `mrs_role` WHERE `specific_to_service_id` = OLD.`id`;
     DELETE FROM `mrs_user_hierarchy_type` WHERE `specific_to_service_id` = OLD.`id`;
     DELETE FROM `mrs_user_group` WHERE `specific_to_service_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_INSERT` BEFORE INSERT ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_INSERT` BEFORE INSERT ON `rest_schema` FOR EACH ROW
 BEGIN
 	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM service se
@@ -148,8 +148,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_UPDATE` BEFORE UPDATE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_UPDATE` BEFORE UPDATE ON `rest_schema` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
 		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
@@ -165,22 +165,22 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_DELETE` BEFORE DELETE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_DELETE` BEFORE DELETE ON `rest_schema` FOR EACH ROW
 BEGIN
-	DELETE FROM `db_object` WHERE `db_schema_id` = OLD.`id`;
+	DELETE FROM `rest_object` WHERE `rest_schema_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_INSERT` BEFORE INSERT ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_INSERT` BEFORE INSERT ON `rest_object` FOR EACH ROW
 BEGIN
     SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
-        FROM db_schema sc
+        FROM rest_schema sc
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
                 ON se.url_host_id = h.id
-        WHERE sc.id = NEW.db_schema_id);
+        WHERE sc.id = NEW.rest_schema_id);
     SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
 
     IF @validPath = 0 THEN
@@ -188,17 +188,17 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_UPDATE` BEFORE UPDATE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_UPDATE` BEFORE UPDATE ON `rest_object` FOR EACH ROW
 BEGIN
-    IF (NEW.request_path <> OLD.request_path OR NEW.db_schema_id <> OLD.db_schema_id) THEN
+    IF (NEW.request_path <> OLD.request_path OR NEW.rest_schema_id <> OLD.rest_schema_id) THEN
         SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
-            FROM db_schema sc
+            FROM rest_schema sc
                 LEFT OUTER JOIN service se
                     ON se.id = sc.service_id
                 LEFT JOIN url_host h
                     ON se.url_host_id = h.id
-            WHERE sc.id = NEW.db_schema_id);
+            WHERE sc.id = NEW.rest_schema_id);
         SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
 
         IF @validPath = 0 THEN
@@ -207,11 +207,11 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_DELETE` BEFORE DELETE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_DELETE` BEFORE DELETE ON `rest_object` FOR EACH ROW
 BEGIN
-    DELETE FROM `mrs_db_object_row_group_security` WHERE `db_object_id` = OLD.`id`;
-    DELETE FROM `object` WHERE `db_object_id` = OLD.`id`;
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `rest_object_id` = OLD.`id`;
+    DELETE FROM `data_mapping` WHERE `rest_object_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `auth_vendor_BEFORE_DELETE`%%
@@ -317,7 +317,7 @@ CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_DELETE` BEFORE DELETE 
 BEGIN
 	DELETE FROM `content_file`
 	WHERE `content_set_id` = OLD.`id`;
-	DELETE FROM `content_set_has_obj_def`
+	DELETE FROM `content_set_has_rest_object`
 	WHERE `content_set_id` = OLD.`id`;
 END%%
 
@@ -387,7 +387,7 @@ DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_BEFORE_DELETE`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `mrs_group_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
 	DELETE FROM `mrs_user_group_hierarchy` WHERE `group_hierarchy_type_id` = OLD.`id`;
-    DELETE FROM `mrs_db_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `rest_daemon_BEFORE_DELETE`%%
@@ -403,25 +403,25 @@ BEGIN
 	DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_session_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `object_BEFORE_DELETE` BEFORE DELETE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_BEFORE_DELETE` BEFORE DELETE ON `data_mapping` FOR EACH ROW
 BEGIN
-	DELETE FROM `object_field` WHERE `object_id` = OLD.`id`;
+	DELETE FROM `data_mapping_field` WHERE `data_mapping_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `object_field_BEFORE_DELETE` BEFORE DELETE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_field_BEFORE_DELETE` BEFORE DELETE ON `data_mapping_field` FOR EACH ROW
 BEGIN
 	SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
-	DELETE FROM `object_reference` WHERE `id` = OLD.`represents_reference_id`;
+	DELETE FROM `data_mapping_reference` WHERE `id` = OLD.`represents_reference_id`;
     SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_obj_def_AFTER_DELETE` AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_rest_object_AFTER_DELETE` AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
-	DELETE FROM `db_object` dbo
-    WHERE OLD.kind = "Script" AND dbo.id = OLD.db_object_id;
+	DELETE FROM `rest_object` dbo
+    WHERE OLD.kind = "Script" AND dbo.id = OLD.rest_object_id;
 END%%
 
 DELIMITER ;
