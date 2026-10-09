@@ -199,6 +199,18 @@ TEST_F(Mrs_schema_deployment, updatable_versions_from_the_script) {
   EXPECT_TRUE(updatable_versions("CREATE TABLE t (a INT);").empty());
 }
 
+TEST_F(Mrs_schema_deployment, released_versions_of_a_folder) {
+  std::ofstream(m_dir / "mysql_rest_service_metadata_deployment_4.1.6.sql") << "";
+  std::ofstream(m_dir / "notes.txt") << "";
+  std::filesystem::create_directories(m_dir / "older_1.0.0.sql");
+  const auto versions = released_versions(dir());
+  ASSERT_EQ(2u, versions.size());
+  EXPECT_EQ((Version{4, 1, 6}), versions[0]);
+  EXPECT_EQ(k_schema_version, versions[1]);
+  EXPECT_EQ(versions, Script_deployer(dir()).available_versions());
+  EXPECT_TRUE(released_versions((m_dir / "nope").string()).empty());
+}
+
 TEST_F(Mrs_schema_deployment, fresh_deployment) {
   Fake_session session;
   Fake_log log;

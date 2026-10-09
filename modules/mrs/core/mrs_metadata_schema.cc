@@ -51,7 +51,10 @@ std::optional<Version> parse_version(const std::string &text) {
 }  // namespace
 
 Status get_status(Db_session *session) {
+  // What this module deploys and needs is known without the schema
   Status status;
+  status.available_metadata_version = k_schema_version.str();
+  status.required_router_version = k_required_router_version.str();
   if (!schema_exists(session)) return status;
 
   if (!view_exists(session, "msm_schema_version") &&
@@ -67,18 +70,17 @@ Status get_status(Db_session *session) {
       version.major == 0 && version.minor == 0 && version.patch == 0;
   status.major_upgrade_required = version.major == 1;
   status.current_metadata_version = version.str();
-  status.available_metadata_version = k_schema_version.str();
-  status.required_router_version = k_required_router_version.str();
 
   if (status.service_being_upgraded) return status;
 
   const auto config = session->query(
-      "SELECT service_enabled, JSON_VALUE(data, '$.ignore_service_upgrades_till') "
-      "AS ignore_till FROM " +
+      "SELECT service_enabled, data, "
+      "JSON_VALUE(data, '$.ignore_service_upgrades_till') AS ignore_till FROM " +
       sql::metadata_table("config") + " WHERE id = 1");
   if (!config.empty()) {
     const auto &row = config.first();
     status.service_enabled = row["service_enabled"].as_int() == 1;
+    if (!row["data"].is_null()) status.configuration_options = row["data"].as_string();
     if (!row["ignore_till"].is_null()) {
       if (const auto ignored = parse_version(row["ignore_till"].as_string())) {
         status.service_upgrade_ignored = !(*ignored < version);

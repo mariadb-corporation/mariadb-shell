@@ -57,6 +57,9 @@ struct Status {
   // The id of the last audit log entry (0 without any): it changes whenever
   // the REST metadata changes, so clients can poll it to refresh.
   std::optional<int64_t> metadata_version;
+  // The data document of the config table: the options CONFIGURE REST
+  // METADATA OPTIONS sets (JSON text).
+  std::optional<std::string> configuration_options;
 };
 
 Status get_status(Db_session *session);

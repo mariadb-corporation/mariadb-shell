@@ -42,6 +42,7 @@
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
 #include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_schema.h"
 
 namespace mrs {
 namespace metadata {
@@ -52,6 +53,11 @@ json::Value service_json(Db_session *session, const Service &service,
                          bool include_database_endpoints);
 
 json::Value schema_json(const Schema &schema);
+
+// The status of the metadata schema with the released versions the shell
+// can deploy and the configuration options.
+json::Value status_json(const Status &status,
+                        const std::vector<Version> &available_versions);
 
 // A MariaDB REST Daemon instance.
 json::Value daemon_json(const Daemon &daemon);

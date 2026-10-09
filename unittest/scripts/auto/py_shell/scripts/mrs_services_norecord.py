@@ -30,6 +30,13 @@ row = res.fetch_one()
 EXPECT_EQ("false", row[0])
 EXPECT_EQ(None, row[7])
 EXPECT_EQ(None, row[10])
+# The JSON form adds the released versions the shell can deploy and the
+# configuration options
+doc = json.loads(rest("SHOW REST METADATA STATUS FORMAT=JSON").fetch_one()[0])
+EXPECT_EQ([False, None, None], [doc["service_configured"], doc["current_metadata_version"], doc["metadata_version"]])
+EXPECT_EQ("5.0.0", doc["available_metadata_version"])
+EXPECT_EQ(["4.1.6", "5.0.0"], doc["available_metadata_versions"])
+EXPECT_EQ({}, doc["configuration_options"])
 
 #@<> CONFIGURE REST METADATA creates the schema
 EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA ENABLED"))
@@ -46,6 +53,12 @@ EXPECT_EQ("5.0.0", row[8])
 # The metadata version is the id of the last audit log entry
 metadata_version = row[10]
 EXPECT_EQ(session.run_sql("SELECT COALESCE(MAX(id), 0) FROM mysql_rest_service_metadata.audit_log").fetch_one()[0], metadata_version)
+res = rest("SHOW REST STATUS FORMAT=JSON")
+EXPECT_EQ(["REST METADATA STATUS"], res.get_column_names())
+doc = json.loads(res.fetch_one()[0])
+EXPECT_EQ({"service_configured": True, "service_enabled": True, "service_count": 0, "current_metadata_version": "5.0.0", "metadata_version": metadata_version}, {k: doc[k] for k in ["service_configured", "service_enabled", "service_count", "current_metadata_version", "metadata_version"]})
+EXPECT_EQ(json.loads(session.run_sql("SELECT data FROM mysql_rest_service_metadata.config").fetch_one()[0]), doc["configuration_options"])
+EXPECT_EQ(dict, type(doc["configuration_options"]))
 
 #@<> CONFIGURE REST METADATA again: no changes, options are applied
 EXPECT_EQ("REST Metadata updated successfully.", rest_info("CONFIGURE REST METADATA DISABLED OPTIONS {\"a\": 1}"))
