@@ -17,6 +17,7 @@
 - The default landing page shows the MariaDB seal and links to the MariaDB REST Service documentation
 - Changed every id column, and every foreign key to one, from `BINARY(16)` to MariaDB's `UUID` type; primary keys default to `UUID_v7()`, and `get_sequence_id()` returns one
 - Ids in JSON (the audit log, `object_fields_with_references`, `sdk_service_data`) are plain UUID strings instead of hex or base64
+- `sdk_service_data` returns one nested JSON document on MariaDB: the rest schemas, rest objects, data mappings and fields are JSON objects instead of strings holding JSON, and the flags (`enabled`, `published`, `requires_auth`, `internal`, `allow_filtering`, `allow_sorting`, `no_check`, `no_update`) are `true`/`false` instead of numbers or the raw `BIT(1)` byte
 - Removed the MySQL-only `UUID_TO_BIN_SWAP` and `BIN_TO_UUID_SWAP` functions
 - Set `NO_AUTO_CREATE_USER` in the SQL mode of the scripts, so a GRANT to a missing account fails instead of creating it
 - Dropped all earlier releases, which only ran on MySQL; no earlier version can be updated to 5.0.0
