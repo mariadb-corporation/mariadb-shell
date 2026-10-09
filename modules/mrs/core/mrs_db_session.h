@@ -134,8 +134,6 @@ struct Db_result {
   bool empty() const { return rows.empty(); }
   size_t size() const { return rows.size(); }
   const Db_row &first() const { return rows.front(); }
-  // The first row, if any.
-  const Db_row *first_or_null() const { return rows.empty() ? nullptr : &rows.front(); }
 };
 
 class Db_session {
@@ -150,9 +148,6 @@ class Db_session {
 
   // Runs a script of statements, honouring DELIMITER commands.
   virtual void execute_script(const std::string &script) = 0;
-
-  // Whether the server is a MariaDB server (as opposed to MySQL).
-  virtual bool is_mariadb() const = 0;
 
   // The id of the connection, used to keep per-connection state.
   virtual uint64_t connection_id() const = 0;

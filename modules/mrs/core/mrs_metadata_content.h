@@ -175,10 +175,6 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
 // bytes outside printable ASCII (an empty content counts as binary).
 bool is_text(std::string_view data);
 
-std::string base64_encode(std::string_view data);
-// Decodes standard base64 (whitespace is skipped). Throws on bad input.
-std::string base64_decode(std::string_view text);
-
 }  // namespace metadata
 }  // namespace mrs
 

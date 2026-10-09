@@ -23,14 +23,13 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-// The REST SERVICE statements: CREATE, ALTER, DROP, CLONE, SHOW, SHOW
-// CREATE, DUMP and LOAD.
+// The REST SERVICE statements: CREATE, ALTER, DROP, CLONE, SHOW and SHOW
+// CREATE.
 
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "modules/mrs/core/mrs_metadata_auth.h"
-#include "modules/mrs/core/mrs_parser.h"
 #include "modules/mrs/core/mrs_metadata_json.h"
 
 namespace mrs {
@@ -76,7 +75,7 @@ void Ddl_executor::link_auth_apps(const Id &service_id,
 }
 
 void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r) {
-  const auto path = service_path(s.path);
+  const auto path = s.path.path;
   const auto full_path = metadata::format_developers(s.path.developers) + path;
   set_failure_context("Failed to create the REST SERVICE `" + full_path + "`.");
 
@@ -125,7 +124,7 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   const auto full_path = full_service_path(s.path);
   set_failure_context("Failed to update the REST SERVICE `" + full_path + "`.");
 
-  const auto service = require_service(s.path);
+  const auto service_id = require_service(s.path);
 
   metadata::Service_changes changes;
   if (s.new_path) {
@@ -147,13 +146,13 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   changes.auth_completed_page_content = change_of(s.options.auth_page_content);
 
   Db_transaction transaction(m_session);
-  metadata::update_service(m_session, service.id, changes);
-  link_auth_apps(service.id, s.options.add_auth_apps, s.options.remove_auth_apps);
+  metadata::update_service(m_session, service_id, changes);
+  link_auth_apps(service_id, s.options.add_auth_apps, s.options.remove_auth_apps);
   transaction.commit();
 
   // Keep the current service in step with a renamed one
-  if (m_state->current_service_id == service.id) {
-    if (const auto updated = metadata::get_service(m_session, service.id)) {
+  if (m_state->current_service_id == service_id) {
+    if (const auto updated = metadata::get_service(m_session, service_id)) {
       const auto schema_id = m_state->current_schema_id;
       const auto schema = m_state->current_schema;
       set_current_service(*updated);
@@ -163,7 +162,7 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   }
 
   r->affected_items_count = 1;
-  r->id = service.id;
+  r->id = service_id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
@@ -192,8 +191,7 @@ void Ddl_executor::do_execute(const Clone_rest_service &s, Statement_result *r) 
   const auto full_path = full_service_path(s.path);
   set_failure_context("Failed to clone the REST SERVICE `" + full_path + "`.");
 
-  const auto resolved = require_service(s.path);
-  const auto service = metadata::get_service(m_session, resolved.id);
+  const auto service = metadata::get_service(m_session, require_service(s.path));
   if (!service) throw std::runtime_error("The given REST SERVICE was not found.");
 
   Db_transaction transaction(m_session);
@@ -297,8 +295,7 @@ void Ddl_executor::do_execute(const Show_create_rest_service &s,
   const auto full_path = full_service_path(s.path);
   set_failure_context("Failed to get the REST SERVICE `" + full_path + "`.");
 
-  const auto resolved = require_service(s.path);
-  const auto service = metadata::get_service(m_session, resolved.id);
+  const auto service = metadata::get_service(m_session, require_service(s.path));
   if (!service) throw std::runtime_error("The given REST SERVICE was not found.");
 
   r->columns = {"CREATE REST SERVICE"};

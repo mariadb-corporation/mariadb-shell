@@ -25,20 +25,14 @@
 
 #include "modules/mrs/core/mrs_lexer.h"
 
-#include <algorithm>
 #include <cctype>
 #include <unordered_map>
+
+#include "modules/mrs/core/mrs_strings.h"
 
 namespace mrs {
 
 namespace {
-
-std::string to_upper(std::string_view s) {
-  std::string result(s);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
-  return result;
-}
 
 const std::unordered_map<std::string, Token::Keyword> &keyword_map() {
   static const std::unordered_map<std::string, Token::Keyword> map = {

@@ -194,8 +194,9 @@ struct Content_set_options {
   std::optional<Json_options> options;
   std::optional<std::string> comments;
   // ALTER only: analyse the stored files and register their MRS scripts
+  // (LOAD SCRIPTS and LOAD TYPESCRIPT SCRIPTS are the same: TypeScript is
+  // the only scripting language)
   bool load_scripts = false;
-  bool typescript = false;
 };
 
 // restContentFileOptions

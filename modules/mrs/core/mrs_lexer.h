@@ -95,7 +95,6 @@ struct Sql_mode {
   X(BY_SYMBOL, "BY")                                   \
   X(ROLE_SYMBOL, "ROLE")                               \
   X(TO_SYMBOL, "TO")                                   \
-  X(IGNORE_SYMBOL, "IGNORE")                           \
   X(CLONE_SYMBOL, "CLONE")                             \
   X(FILE_SYMBOL, "FILE")                               \
   X(FILES_SYMBOL, "FILES")                             \
@@ -309,8 +308,6 @@ class Lexer {
   Token lex_quoted(size_t start, char quote);
   Token lex_request_path(size_t start);
   Token lex_at(size_t start);
-
-  std::string unescape(std::string_view body, char quote) const;
 
   std::string_view m_input;
   Sql_mode m_sql_mode;

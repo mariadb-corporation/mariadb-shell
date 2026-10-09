@@ -94,7 +94,6 @@ class Fake_session : public Db_session {
     version = k_schema_version;
   }
 
-  bool is_mariadb() const override { return true; }
   uint64_t connection_id() const override { return 1; }
   std::string sql_mode() override { return ""; }
 

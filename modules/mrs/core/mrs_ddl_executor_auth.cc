@@ -254,8 +254,7 @@ void Ddl_executor::do_execute(const Show_rest_auth_apps &s, Statement_result *r)
   set_failure_context("Cannot SHOW the REST auth apps.");
 
   // Without a service, all auth apps are listed
-  std::optional<Id> service_id;
-  if (const auto service = resolve_service(s.service)) service_id = service->id;
+  const auto service_id = resolve_service(s.service);
 
   r->columns = {"REST AUTH APP name", "vendor", "comments", "enabled"};
   for (const auto &auth_app : metadata::get_auth_apps(m_session, service_id)) {
@@ -317,9 +316,7 @@ void Ddl_executor::do_execute(const Show_rest_users &s, Statement_result *r) {
   // either, all users are listed
   std::optional<Id> service_id;
   if (s.service || !s.auth_app) {
-    if (const auto service = resolve_service(s.service)) {
-      service_id = service->id;
-    }
+    service_id = resolve_service(s.service);
   }
 
   r->columns = {"REST USER name", "auth_app",       "email",
@@ -551,11 +548,8 @@ void Ddl_executor::do_execute(const Show_rest_roles &s, Statement_result *r) {
   bool any_service = s.on && s.on->any_service;
   std::optional<Id> service_id;
   if (!any_service) {
-    if (const auto service = resolve_service(s.on ? s.on->service : std::nullopt)) {
-      service_id = service->id;
-    } else {
-      any_service = true;
-    }
+    service_id = resolve_service(s.on ? s.on->service : std::nullopt);
+    any_service = !service_id;
   }
 
   const bool for_user = s.user && s.auth_app;

@@ -45,7 +45,6 @@ class Shell_db_session : public ::mrs::Db_session {
   ::mrs::Db_result query(const std::string &sql) override;
   uint64_t execute(const std::string &sql) override;
   void execute_script(const std::string &script) override;
-  bool is_mariadb() const override;
   uint64_t connection_id() const override;
   std::string sql_mode() override;
 

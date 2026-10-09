@@ -40,118 +40,35 @@
 // The analysis reads the code with comments and strings blanked out and
 // matches brackets, as the Python plugin's regular expressions did.
 
-#include <optional>
-#include <string>
+#include <array>
+#include <cstddef>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 #include "modules/mrs/core/mrs_db_session.h"
-#include "modules/mrs/core/mrs_json.h"
 #include "modules/mrs/core/mrs_metadata_content.h"
 
 namespace mrs {
-namespace scripts {
-
-struct Code_file {
-  std::string path;  // the request path of the file in its content set
-  std::string code;
-  std::string last_modification;
-};
-
-using Properties = std::vector<std::pair<std::string, json::Value>>;
-
-struct Position {
-  int line_start = 0;
-  int line_end = 0;
-  size_t character_start = 0;
-  size_t character_end = 0;
-};
-
-struct Parameter {
-  std::string name;
-  std::string type;
-  bool optional = false;
-  bool is_array = false;
-  std::optional<json::Value> default_value;
-};
-
-struct Script {
-  std::string function_name;
-  Position position;
-  std::vector<Parameter> parameters;
-  std::string return_type;
-  bool returns_array = false;
-  Properties properties;
-};
-
-struct Module {
-  const Code_file *file = nullptr;
-  std::string class_name;
-  std::string schema_type;  // SCRIPT_MODULE or DATABASE_SCHEMA
-  Position position;
-  Properties properties;
-  std::vector<Script> scripts;
-  std::vector<Script> triggers;
-};
-
-struct Interface_property {
-  std::string name;
-  std::string type;
-  bool optional = false;
-  bool read_only = false;
-  std::optional<std::string> index_signature_type;
-};
-
-struct Interface {
-  const Code_file *file = nullptr;
-  std::string name;
-  std::optional<std::string> extends;
-  Position position;
-  std::vector<Interface_property> properties;
-};
-
-struct Definitions {
-  std::vector<Module> modules;
-  std::vector<Interface> interfaces;  // the ones the scripts use
-  std::vector<std::string> errors;
-
-  // The script definitions in the layout of the Python plugin's
-  // get_folder_mrs_script_definitions(), stored in the content set options.
-  json::Value to_json() const;
-};
-
-// TypeScript files that can hold MRS scripts: .ts and .mts, but no test
-// (.spec.ts) or declaration (.d.ts) files.
-bool is_script_file(std::string_view path);
-
-// The code with the contents of comments and string literals replaced by
-// spaces (line breaks are kept), so brackets and keywords in them do not
-// count. Positions stay the same.
-std::string blank_comments_and_strings(std::string_view code);
-
-// Whether a file defines an @Mrs.module or @Mrs.schema class.
-bool defines_mrs_module(std::string_view code);
-
-// The modules, scripts and used interfaces of the given TypeScript files.
-// The files have to outlive the result.
-Definitions analyze_typescript(const std::vector<Code_file> &files);
-
-}  // namespace scripts
-
 namespace metadata {
+
+// The content set options LOAD SCRIPTS generates. SHOW CREATE REST CONTENT
+// SET leaves them out, LOAD SCRIPTS writes them again.
+inline constexpr std::string_view k_contains_mrs_scripts = "contains_mrs_scripts";
+inline constexpr std::string_view k_mrs_scripting_language = "mrs_scripting_language";
+inline constexpr std::string_view k_script_module_files = "script_module_files";
+inline constexpr std::string_view k_script_definitions = "script_definitions";
+inline constexpr std::array<std::string_view, 4> k_generated_script_options{
+    k_contains_mrs_scripts, k_mrs_scripting_language, k_script_module_files,
+    k_script_definitions};
 
 struct Registered_scripts {
   size_t modules = 0;
   size_t scripts = 0;
 };
 
-// Analyses the files of a content set and registers their MRS scripts as
-// REST endpoints, replacing the ones registered before. Without a language
-// it is detected from the files. Throws with the analysis errors.
-Registered_scripts register_scripts(Db_session *session,
-                                    const Content_set &content_set,
-                                    const std::optional<std::string> &language);
+// Analyses the TypeScript files of a content set and registers their MRS
+// scripts as REST endpoints, replacing the ones registered before. Throws
+// with the analysis errors.
+Registered_scripts register_scripts(Db_session *session, const Content_set &content_set);
 
 }  // namespace metadata
 }  // namespace mrs

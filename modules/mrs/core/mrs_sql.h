@@ -58,10 +58,6 @@ std::string quote_qualified(std::string_view schema, std::string_view name);
 std::string hex(std::string_view binary);
 // The SQL literal of an id: the quoted UUID text.
 std::string id(const Id &uuid);
-// The id of a UUID text, of the 0x... hex form ids had before metadata
-// schema 5.0.0, or of base64 (ending in ==) of the 16 bytes. Throws on bad
-// input.
-Id id_from_string(std::string_view text, std::string_view context);
 // `mysql_rest_service_metadata`.`table`, or the name itself when it is
 // already qualified.
 std::string metadata_table(std::string_view table);
@@ -148,11 +144,6 @@ class Update {
   std::vector<std::string> m_raw_sets;
   std::vector<std::string> m_wheres;
 };
-
-// "column = value" conditions.
-inline std::string eq(std::string_view column, const Value &value) {
-  return std::string(column) + " = " + value.str();
-}
 
 }  // namespace sql
 }  // namespace mrs

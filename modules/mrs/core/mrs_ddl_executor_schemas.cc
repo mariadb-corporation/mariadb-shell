@@ -42,10 +42,10 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
 
   if (s.flags.or_replace || s.flags.if_not_exists) {
-    const auto existing = metadata::find_schema(m_session, service.id, request_path);
+    const auto existing = metadata::find_schema(m_session, service_id, request_path);
     if (existing) {
       if (s.flags.if_not_exists) {
         r->message = "REST SCHEMA `" + full_path + "` created successfully.";
@@ -59,7 +59,7 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   }
 
   metadata::Schema_definition definition;
-  definition.service_id = service.id;
+  definition.service_id = service_id;
   definition.name = s.schema_name;
   definition.request_path = request_path;
   definition.requires_auth = s.options.requires_auth;
@@ -72,8 +72,8 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   const Id id = metadata::add_schema(m_session, definition);
 
   // The first schema of the current service becomes the current schema
-  if (m_state->current_service_id == service.id &&
-      metadata::get_schemas(m_session, service.id).size() == 1) {
+  if (m_state->current_service_id == service_id &&
+      metadata::get_schemas(m_session, service_id).size() == 1) {
     m_state->current_schema_id = id;
     m_state->current_schema = request_path;
   }
@@ -123,8 +123,8 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto service = require_service(s.service);
-  const auto schema = metadata::find_schema(m_session, service.id, s.schema_path);
+  const auto service_id = require_service(s.service);
+  const auto schema = metadata::find_schema(m_session, service_id, s.schema_path);
   if (!schema && !s.if_exists) {
     throw std::runtime_error("The given REST SCHEMA `" + full_path +
                              "` could not be found.");
@@ -142,10 +142,10 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
 void Ddl_executor::do_execute(const Show_rest_schemas &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST schemas.");
 
-  const auto service = require_service(s.service);
+  const auto service_id = require_service(s.service);
 
   r->columns = {"REST schema path", "enabled"};
-  for (const auto &schema : metadata::get_schemas(m_session, service.id)) {
+  for (const auto &schema : metadata::get_schemas(m_session, service_id)) {
     auto &row = r->add_row();
     row.emplace_back(schema.request_path);
     row.emplace_back(metadata::enabled_caption(schema.enabled));

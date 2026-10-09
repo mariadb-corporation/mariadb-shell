@@ -87,8 +87,6 @@ class Value {
 
   bool as_bool() const { return m_bool; }
   const std::string &as_string() const { return m_text; }
-  // The JSON text of a number.
-  const std::string &number_text() const { return m_text; }
   int64_t as_int() const;
   double as_double() const;
   const Array &as_array() const { return m_array; }

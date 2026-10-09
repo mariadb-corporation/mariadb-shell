@@ -251,16 +251,11 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
 
     std::visit([this, &result](const auto &s) { do_execute(s, &result); },
                statement.value);
-  } catch (const Db_error &e) {
-    result.success = false;
-    result.error_code = e.code();
-    result.sqlstate = e.sqlstate();
-    result.message = m_failure_context.empty()
-                         ? std::string(e.what())
-                         : m_failure_context + " " + e.what();
-    result.columns.clear();
-    result.rows.clear();
   } catch (const std::exception &e) {
+    if (const auto db_error = dynamic_cast<const Db_error *>(&e)) {
+      result.error_code = db_error->code();
+      result.sqlstate = db_error->sqlstate();
+    }
     result.success = false;
     result.message = m_failure_context.empty()
                          ? std::string(e.what())
@@ -282,66 +277,51 @@ void Ddl_executor::validate_state() {
   m_state_validated = true;
 
   if (m_state->current_service_id &&
-      !metadata::get_service(m_session, *m_state->current_service_id)) {
+      !metadata::row_exists(m_session, "service", *m_state->current_service_id)) {
     m_state->clear_service();
   }
   if (m_state->current_schema_id &&
-      !metadata::get_schema(m_session, *m_state->current_schema_id)) {
+      !metadata::row_exists(m_session, "db_schema", *m_state->current_schema_id)) {
     m_state->clear_schema();
   }
 }
 
-std::string Ddl_executor::service_path(const Service_path &path) const {
-  return path.path;
-}
-
-std::optional<Ddl_executor::Resolved_service> Ddl_executor::resolve_service(
+std::optional<Id> Ddl_executor::resolve_service(
     const std::optional<Service_path> &given) {
   if (given) {
-    const auto service = metadata::find_service(m_session, service_path(*given),
+    const auto service = metadata::find_service(m_session, given->path,
                                                 given->developers);
     if (!service) {
       throw std::runtime_error("Could not find the REST SERVICE " +
                                metadata::format_developers(given->developers) +
-                               service_path(*given) + ".");
+                               given->path + ".");
     }
-    return Resolved_service{service->id, service->url_context_root,
-                            service->url_host_name, service->developers};
+    return service->id;
   }
-
-  if (m_state->current_service_id) {
-    return Resolved_service{*m_state->current_service_id,
-                            m_state->current_service,
-                            m_state->current_service_host,
-                            m_state->current_developers};
-  }
-  return std::nullopt;
+  return m_state->current_service_id;
 }
 
-Ddl_executor::Resolved_service Ddl_executor::require_service(
-    const std::optional<Service_path> &given) {
+Id Ddl_executor::require_service(const std::optional<Service_path> &given) {
   auto service = resolve_service(given);
   if (!service) throw std::runtime_error("No REST SERVICE specified.");
   return *service;
 }
 
-Ddl_executor::Resolved_service Ddl_executor::require_service(
-    const std::optional<Schema_selector> &given) {
+Id Ddl_executor::require_service(const std::optional<Schema_selector> &given) {
   return require_service(given ? given->service : std::nullopt);
 }
 
 std::optional<Id> Ddl_executor::resolve_role_service(
     const std::optional<Role_service> &given) {
   if (given && given->any_service) return std::nullopt;
-  return require_service(given ? given->service : std::nullopt).id;
+  return require_service(given ? given->service : std::nullopt);
 }
 
 metadata::Schema Ddl_executor::require_schema(
     const std::optional<Schema_selector> &given) {
   if (given) {
-    const auto service = require_service(given->service);
-    const auto schema =
-        metadata::find_schema(m_session, service.id, given->schema_path);
+    const auto schema = metadata::find_schema(
+        m_session, require_service(given->service), given->schema_path);
     if (!schema) {
       throw std::runtime_error("Could not find the REST SCHEMA " +
                                full_schema_path(given) + ".");
@@ -366,7 +346,7 @@ std::string Ddl_executor::full_service_path(
     const std::optional<Service_path> &given, std::string_view request_path) {
   std::string path;
   if (given) {
-    path = metadata::format_developers(given->developers) + service_path(*given);
+    path = metadata::format_developers(given->developers) + given->path;
   } else {
     path = current_service_path();
   }
@@ -395,18 +375,6 @@ void Ddl_executor::set_current_service(const metadata::Service &service) {
 void Ddl_executor::set_current_schema(const metadata::Schema &schema) {
   m_state->current_schema_id = schema.id;
   m_state->current_schema = schema.request_path;
-}
-
-void Ddl_executor::set_message_rows(
-    Statement_result *result,
-    const std::vector<std::pair<std::string, std::string>> &key_values) {
-  for (const auto &[key, value] : key_values) {
-    result->add_column(key);
-  }
-  auto &row = result->add_row();
-  for (const auto &[key, value] : key_values) {
-    row.emplace_back(value);
-  }
 }
 
 // -- CONFIGURE REST METADATA, SHOW REST METADATA STATUS, USE REST ---------

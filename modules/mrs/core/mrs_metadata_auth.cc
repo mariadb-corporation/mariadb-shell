@@ -24,6 +24,7 @@
  */
 
 #include "modules/mrs/core/mrs_metadata_auth.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 #include <algorithm>
 #include <cctype>
@@ -161,38 +162,6 @@ std::string pbkdf2_sha256(std::string_view password, std::string_view salt,
   return result;
 }
 
-std::string base64_encode(std::string_view data) {
-  static const char alphabet[] =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  std::string result;
-  size_t i = 0;
-  while (i + 2 < data.size()) {
-    const uint32_t triple = (static_cast<unsigned char>(data[i]) << 16) |
-                            (static_cast<unsigned char>(data[i + 1]) << 8) |
-                            static_cast<unsigned char>(data[i + 2]);
-    result += alphabet[(triple >> 18) & 0x3f];
-    result += alphabet[(triple >> 12) & 0x3f];
-    result += alphabet[(triple >> 6) & 0x3f];
-    result += alphabet[triple & 0x3f];
-    i += 3;
-  }
-  const size_t remaining = data.size() - i;
-  if (remaining == 1) {
-    const uint32_t value = static_cast<unsigned char>(data[i]) << 16;
-    result += alphabet[(value >> 18) & 0x3f];
-    result += alphabet[(value >> 12) & 0x3f];
-    result += "==";
-  } else if (remaining == 2) {
-    const uint32_t value = (static_cast<unsigned char>(data[i]) << 16) |
-                           (static_cast<unsigned char>(data[i + 1]) << 8);
-    result += alphabet[(value >> 18) & 0x3f];
-    result += alphabet[(value >> 12) & 0x3f];
-    result += alphabet[(value >> 6) & 0x3f];
-    result += '=';
-  }
-  return result;
-}
-
 std::string random_bytes(size_t count) {
   std::random_device device;
   std::uniform_int_distribution<int> byte(0, 255);
@@ -233,15 +202,6 @@ void check_password(const std::string &password) {
 
 // -- Small helpers --------------------------------------------------------
 
-std::optional<std::string> optional_text(const Db_value &value) {
-  return value.as_optional_string();
-}
-
-std::optional<Id> optional_id(const Db_value &value) {
-  if (value.is_null()) return std::nullopt;
-  return value.as_string();
-}
-
 // "text" as the Python plugin's quote_str writes it.
 std::string double_quote(std::string_view text) {
   std::string result = "\"";
@@ -262,29 +222,6 @@ bool json_has_content(const std::optional<std::string> &text) {
   if (doc->is_object()) return !doc->as_object().empty();
   if (doc->is_array()) return !doc->as_array().empty();
   return true;
-}
-
-std::string join(const std::vector<std::string> &items,
-                 const std::string &separator) {
-  std::string result;
-  for (const auto &item : items) {
-    if (!result.empty()) result += separator;
-    result += item;
-  }
-  return result;
-}
-
-// The members of a SET column value.
-std::vector<std::string> split_set(const std::string &text) {
-  std::vector<std::string> items;
-  size_t start = 0;
-  while (start <= text.size()) {
-    auto end = text.find(',', start);
-    if (end == std::string::npos) end = text.size();
-    if (end > start) items.push_back(text.substr(start, end - start));
-    start = end + 1;
-  }
-  return items;
 }
 
 bool contains(const std::vector<std::string> &items, const std::string &item) {
@@ -327,15 +264,15 @@ FROM `mysql_rest_service_metadata`.`mrs_role` r
 Role role_from_row(const Db_row &row) {
   Role r;
   r.id = row["id"].as_string();
-  r.derived_from_role_id = optional_id(row["derived_from_role_id"]);
-  r.derived_from_role_caption = optional_text(row["derived_from_role_caption"]);
-  r.specific_to_service_id = optional_id(row["specific_to_service_id"]);
-  r.specific_to_service = optional_text(row["specific_to_service"]);
+  r.derived_from_role_id = row["derived_from_role_id"].as_optional_string();
+  r.derived_from_role_caption = row["derived_from_role_caption"].as_optional_string();
+  r.specific_to_service_id = row["specific_to_service_id"].as_optional_string();
+  r.specific_to_service = row["specific_to_service"].as_optional_string();
   r.specific_to_service_request_path =
       row["specific_to_service_request_path"].as_string();
   r.caption = row["caption"].as_string();
-  r.description = optional_text(row["description"]);
-  r.options = optional_text(row["options"]);
+  r.description = row["description"].as_optional_string();
+  r.options = row["options"].as_optional_string();
   return r;
 }
 
@@ -363,7 +300,7 @@ Privilege privilege_from_row(const Db_row &row) {
   p.id = row["id"].as_string();
   p.role_id = row["role_id"].as_string();
   p.role_caption = row["role_caption"].as_string();
-  p.crud_operations = split_set(row["crud_operations"].as_string());
+  p.crud_operations = split(row["crud_operations"].as_string(), ',', true);
   p.service_path = row["service_path"].as_string();
   p.schema_path = row["schema_path"].as_string();
   p.object_path = row["object_path"].as_string();
@@ -386,16 +323,16 @@ Auth_app auth_app_from_row(const Db_row &row) {
   a.auth_vendor_id = row["auth_vendor_id"].as_string();
   a.auth_vendor = row["auth_vendor"].as_string();
   a.name = row["name"].as_string();
-  a.description = optional_text(row["description"]);
-  a.url = optional_text(row["url"]);
-  a.url_direct_auth = optional_text(row["url_direct_auth"]);
-  a.access_token = optional_text(row["access_token"]);
-  a.app_id = optional_text(row["app_id"]);
+  a.description = row["description"].as_optional_string();
+  a.url = row["url"].as_optional_string();
+  a.url_direct_auth = row["url_direct_auth"].as_optional_string();
+  a.access_token = row["access_token"].as_optional_string();
+  a.app_id = row["app_id"].as_optional_string();
   // The column is nullable; an unset flag counts as enabled
   a.enabled = row["enabled"].is_null() || row["enabled"].as_bool();
   a.limit_to_registered_users = row["limit_to_registered_users"].as_bool();
-  a.default_role_id = optional_id(row["default_role_id"]);
-  a.options = optional_text(row["options"]);
+  a.default_role_id = row["default_role_id"].as_optional_string();
+  a.options = row["options"].as_optional_string();
   return a;
 }
 
@@ -427,12 +364,12 @@ User user_from_row(const Db_row &row) {
   u.auth_app_id = row["auth_app_id"].as_string();
   u.auth_app_name = row["auth_app_name"].as_string();
   u.name = row["name"].as_string();
-  u.email = optional_text(row["email"]);
-  u.vendor_user_id = optional_text(row["vendor_user_id"]);
-  u.mapped_user_id = optional_text(row["mapped_user_id"]);
+  u.email = row["email"].as_optional_string();
+  u.vendor_user_id = row["vendor_user_id"].as_optional_string();
+  u.mapped_user_id = row["mapped_user_id"].as_optional_string();
   u.login_permitted = row["login_permitted"].as_bool();
-  u.app_options = optional_text(row["app_options"]);
-  u.options = optional_text(row["options"]);
+  u.app_options = row["app_options"].as_optional_string();
+  u.options = row["options"].as_optional_string();
   u.has_auth_string = row["has_auth_string"].as_bool();
   return u;
 }
@@ -493,7 +430,7 @@ Auth_vendor auth_vendor_from_row(const Db_row &row) {
   vendor.id = row["id"].as_string();
   vendor.name = row["name"].as_string();
   vendor.enabled = row["enabled"].as_bool();
-  vendor.comments = optional_text(row["comments"]);
+  vendor.comments = row["comments"].as_optional_string();
   return vendor;
 }
 
@@ -603,7 +540,7 @@ FROM `mysql_rest_service_metadata`.`mrs_role` r
   for (const auto &row : session->query(query).rows) {
     Granted_role granted;
     granted.role = role_from_row(row);
-    if (include_users) granted.users = optional_text(row["users"]);
+    if (include_users) granted.users = row["users"].as_optional_string();
     roles.push_back(std::move(granted));
   }
   return roles;
@@ -902,9 +839,7 @@ void unlink_auth_app(Db_session *session, const Id &auth_app_id,
 std::string auth_app_create_statement(Db_session *session,
                                       const Auth_app &auth_app,
                                       bool include_users) {
-  std::string upper_vendor = auth_app.auth_vendor;
-  std::transform(upper_vendor.begin(), upper_vendor.end(), upper_vendor.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
+  const std::string upper_vendor = to_upper(auth_app.auth_vendor);
   std::string vendor;
   if (upper_vendor == "MRS") {
     vendor = "MRS";
@@ -1075,8 +1010,8 @@ WHERE ur.user_id = )" + sql::id(user_id) +
   for (const auto &row : session->query(query).rows) {
     User_role user_role;
     user_role.role = role_from_row(row);
-    user_role.comments = optional_text(row["grant_comments"]);
-    user_role.options = optional_text(row["grant_options"]);
+    user_role.comments = row["grant_comments"].as_optional_string();
+    user_role.options = row["grant_options"].as_optional_string();
     roles.push_back(std::move(user_role));
   }
   return roles;

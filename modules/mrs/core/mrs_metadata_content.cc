@@ -24,6 +24,8 @@
  */
 
 #include "modules/mrs/core/mrs_metadata_content.h"
+#include "modules/mrs/core/mrs_scripts.h"
+#include "modules/mrs/core/mrs_strings.h"
 
 #include <cstdint>
 #include <stdexcept>
@@ -34,10 +36,6 @@ namespace metadata {
 using sql::Value;
 
 namespace {
-
-std::optional<std::string> optional_text(const Db_value &value) {
-  return value.as_optional_string();
-}
 
 // -- Content set rows -----------------------------------------------------
 
@@ -62,8 +60,8 @@ Content_set content_set_from_row(const Db_row &row) {
   cs.requires_auth = row["requires_auth"].as_bool();
   cs.enabled = static_cast<int>(row["enabled"].as_int());
   cs.internal = row["internal"].as_bool();
-  cs.comments = optional_text(row["comments"]);
-  cs.options = optional_text(row["options"]);
+  cs.comments = row["comments"].as_optional_string();
+  cs.options = row["options"].as_optional_string();
   cs.host_ctx = row["host_ctx"].as_string();
   return cs;
 }
@@ -108,7 +106,7 @@ Content_file content_file_from_row(const Db_row &row) {
   f.requires_auth = row["requires_auth"].as_bool();
   f.enabled = static_cast<int>(row["enabled"].as_int());
   f.size = row["size"].as_int();
-  f.options = optional_text(row["options"]);
+  f.options = row["options"].as_optional_string();
   f.content_set_request_path = row["content_set_request_path"].as_string();
   f.host_ctx = row["host_ctx"].as_string();
   if (row.has("content")) f.content = row["content"].as_string();
@@ -146,24 +144,7 @@ std::string quote_content(std::string_view text) {
   return result + "'";
 }
 
-// Appends the SET of the options column honouring MERGE OPTIONS: merged
-// into existing options, replaced when there are none yet.
-void set_json_options(Db_session *session, sql::Update *update, const Id &id,
-                      const std::string &options, bool merge) {
-  if (merge) {
-    const auto row = session->query(
-        "SELECT options IS NULL AS options_is_null FROM " +
-        sql::metadata_table("content_set") + " WHERE id = " + sql::id(id));
-    if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
-      update->set_raw("options = JSON_MERGE_PATCH(options, " +
-                      sql::quote(options) + ")");
-      return;
-    }
-  }
-  update->set("options", options);
-}
-
-// -- File system ----------------------------------------------------------
+// -- SHOW CREATE pieces ---------------------------------------------------
 
 std::string enabled_clause(int enabled) {
   if (enabled == 2) return "\n    PRIVATE";
@@ -184,10 +165,7 @@ std::optional<std::string> written_options(const Content_set &content_set) {
   }
   auto doc = json::try_parse(*content_set.options);
   if (!doc || !doc->is_object()) return content_set.options;
-  for (const char *key : {"script_module_files", "script_definitions",
-                          "contains_mrs_scripts", "mrs_scripting_language"}) {
-    doc->remove(key);
-  }
+  for (const auto key : k_generated_script_options) doc->remove(key);
   if (doc->as_object().empty()) return std::nullopt;
   return doc->dump();
 }
@@ -251,7 +229,7 @@ void update_content_set(Db_session *session, const Id &id,
   if (changes.comments) update.set("comments", *changes.comments);
   if (changes.content_type) update.set("content_type", *changes.content_type);
   if (changes.options) {
-    set_json_options(session, &update, id, *changes.options,
+    set_json_options(session, &update, "content_set", id, *changes.options,
                      changes.merge_options);
   }
   if (update.empty()) return;
@@ -364,17 +342,21 @@ std::string content_set_create_statement(const Content_set &content_set) {
 
 std::string content_file_create_statement(Db_session *session,
                                           const Content_file &content_file) {
-  std::string content;
-  if (content_file.content) {
-    content = *content_file.content;
-  } else {
-    const auto with_content = get_content_file(session, content_file.id, true);
+  // The content is loaded only when the given file has none; either way it
+  // is not copied (files can be large).
+  std::optional<Content_file> with_content;
+  if (!content_file.content) {
+    with_content = get_content_file(session, content_file.id, true);
     if (!with_content) {
       throw std::runtime_error("The REST content file " +
                                content_file.request_path + " was not found.");
     }
-    content = with_content->content.value_or("");
   }
+  static const std::string k_no_content;
+  const std::string &content =
+      content_file.content
+          ? *content_file.content
+          : (with_content->content ? *with_content->content : k_no_content);
 
   std::string output = "CREATE OR REPLACE REST CONTENT FILE " +
                        quote_request_path(content_file.request_path) +
@@ -463,70 +445,6 @@ bool is_text(std::string_view data) {
   // 30% or more bytes outside the text range make it binary; so does an
   // empty content, which keeps the Python plugin's behaviour.
   return other * 10 < data.size() * 3;
-}
-
-namespace {
-constexpr std::string_view k_base64_alphabet =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-}  // namespace
-
-std::string base64_encode(std::string_view data) {
-  std::string result;
-  result.reserve((data.size() + 2) / 3 * 4);
-
-  size_t i = 0;
-  for (; i + 3 <= data.size(); i += 3) {
-    const uint32_t triple = (static_cast<unsigned char>(data[i]) << 16) |
-                            (static_cast<unsigned char>(data[i + 1]) << 8) |
-                            static_cast<unsigned char>(data[i + 2]);
-    result += k_base64_alphabet[(triple >> 18) & 0x3f];
-    result += k_base64_alphabet[(triple >> 12) & 0x3f];
-    result += k_base64_alphabet[(triple >> 6) & 0x3f];
-    result += k_base64_alphabet[triple & 0x3f];
-  }
-
-  const size_t rest = data.size() - i;
-  if (rest == 1) {
-    const uint32_t v = static_cast<unsigned char>(data[i]) << 16;
-    result += k_base64_alphabet[(v >> 18) & 0x3f];
-    result += k_base64_alphabet[(v >> 12) & 0x3f];
-    result += "==";
-  } else if (rest == 2) {
-    const uint32_t v = (static_cast<unsigned char>(data[i]) << 16) |
-                       (static_cast<unsigned char>(data[i + 1]) << 8);
-    result += k_base64_alphabet[(v >> 18) & 0x3f];
-    result += k_base64_alphabet[(v >> 12) & 0x3f];
-    result += k_base64_alphabet[(v >> 6) & 0x3f];
-    result += '=';
-  }
-  return result;
-}
-
-std::string base64_decode(std::string_view text) {
-  std::string result;
-  result.reserve(text.size() / 4 * 3);
-
-  uint32_t accumulator = 0;
-  int bits = 0;
-  bool padding = false;
-  for (const char c : text) {
-    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') continue;
-    if (c == '=') {
-      padding = true;
-      continue;
-    }
-    const auto pos = k_base64_alphabet.find(c);
-    if (pos == std::string_view::npos || padding) {
-      throw std::runtime_error("The content is not valid base64.");
-    }
-    accumulator = (accumulator << 6) | static_cast<uint32_t>(pos);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      result += static_cast<char>((accumulator >> bits) & 0xff);
-    }
-  }
-  return result;
 }
 
 }  // namespace metadata

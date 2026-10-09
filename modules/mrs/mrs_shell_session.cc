@@ -154,10 +154,6 @@ void Shell_db_session::execute_script(const std::string &script) {
   session->close();
 }
 
-bool Shell_db_session::is_mariadb() const {
-  return m_session->get_server_vendor() == mysqlshdk::db::ServerVendor::MariaDB;
-}
-
 uint64_t Shell_db_session::connection_id() const {
   return m_session->get_connection_id();
 }

@@ -65,7 +65,6 @@ IDENTIFIED_SYMBOL:     I D E N T I F I E D;
 BY_SYMBOL:             B Y;
 ROLE_SYMBOL:           R O L E;
 TO_SYMBOL:             T O;
-IGNORE_SYMBOL:         I G N O R E;
 CLONE_SYMBOL:          C L O N E;
 FILE_SYMBOL:           F I L E;
 FILES_SYMBOL:          F I L E S;

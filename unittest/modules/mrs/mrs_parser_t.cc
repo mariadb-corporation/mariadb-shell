@@ -549,19 +549,17 @@ TEST(Mrs_parser, content_sets_and_files) {
   // The files of a set arrive inline: no folder, no ignore list, and the
   // scripts are loaded by ALTER once the files are there
   expect_parse_error("CREATE REST CONTENT SET /s FROM './dir'", "unexpected FROM");
-  expect_parse_error("CREATE REST CONTENT SET /s IGNORE '*.txt'", "unexpected IGNORE");
+  expect_parse_error("CREATE REST CONTENT SET /s IGNORE '*.txt'", "unexpected identifier");
   expect_parse_error("CREATE REST CONTENT SET /s LOAD SCRIPTS", "unexpected LOAD");
   {
     const auto &s = parse_as<Alter_rest_content_set>(
         "ALTER REST CONTENT SET /mySet ON SERVICE /svc LOAD TYPESCRIPT SCRIPTS");
     EXPECT_TRUE(s.options.load_scripts);
-    EXPECT_TRUE(s.options.typescript);
   }
   {
     const auto &s = parse_as<Alter_rest_content_set>(
         "ALTER REST CONTENT SET /mySet COMMENT 'x' LOAD SCRIPTS");
     EXPECT_TRUE(s.options.load_scripts);
-    EXPECT_FALSE(s.options.typescript);
   }
   {
     const auto &s = parse_as<Alter_rest_content_set>(
