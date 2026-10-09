@@ -138,7 +138,7 @@ void Ddl_executor::validate_state() {
     m_state->clear_service();
   }
   if (m_state->current_schema_id &&
-      !metadata::row_exists(m_session, "db_schema", *m_state->current_schema_id)) {
+      !metadata::row_exists(m_session, "rest_schema", *m_state->current_schema_id)) {
     m_state->clear_schema();
   }
 }

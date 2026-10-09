@@ -63,7 +63,7 @@ BEGIN
         UNION
         SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path) as full_request_path
-        FROM db_schema sc
+        FROM rest_schema sc
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
@@ -74,9 +74,9 @@ BEGIN
         UNION
         SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path, o.request_path) as full_request_path
-        FROM db_object o
-            LEFT OUTER JOIN db_schema sc
-                ON sc.id = o.db_schema_id
+        FROM rest_object o
+            LEFT OUTER JOIN rest_schema sc
+                ON sc.id = o.rest_schema_id
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
@@ -610,7 +610,7 @@ BEGIN
     DECLARE schema_id UUID;
     DECLARE schema_res JSON;
 
-    -- Get all db_schemas of the given service, fetch the id to do the nested SELECTs and
+    -- Get all rest_schemas of the given service, fetch the id to do the nested SELECTs and
     -- the data as JSON
     DECLARE schema_loop_done TINYINT DEFAULT FALSE;
     DECLARE schema_cursor CURSOR FOR
@@ -624,7 +624,7 @@ BEGIN
                 'internal', s.internal,
                 'options', s.options
             )
-        FROM db_schema AS s
+        FROM rest_schema AS s
         WHERE s.service_id = service_id AND s.enabled = 1;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET schema_loop_done = 1;
 
@@ -644,24 +644,24 @@ BEGIN
     FROM service AS s
     WHERE s.id = service_id;
 
-    -- Initiate the list of db_schemas with an empty JSON array
-    SET service_res = JSON_SET(service_res, '$.db_schemas', json_array());
+    -- Initiate the list of rest_schemas with an empty JSON array
+    SET service_res = JSON_SET(service_res, '$.rest_schemas', json_array());
 
-    -- Loop over all db_schema of the given service
+    -- Loop over all rest_schema of the given service
     OPEN schema_cursor;
     schema_loop: LOOP
-        -- Get the next db_schema of the service
+        -- Get the next rest_schema of the service
         FETCH NEXT FROM schema_cursor INTO schema_id, schema_res;
 
         IF schema_loop_done THEN
             LEAVE schema_loop;
         ELSE schema_block: BEGIN
-            -- Get all db_objects of the given db_schema, fetch the id to do the nested SELECTs and
+            -- Get all rest_objects of the given rest_schema, fetch the id to do the nested SELECTs and
             -- the data as JSON
-            DECLARE db_object_id UUID;
-            DECLARE db_object_res JSON;
-            DECLARE db_object_loop_done TINYINT DEFAULT FALSE;
-            DECLARE db_object_cursor CURSOR FOR
+            DECLARE rest_object_id UUID;
+            DECLARE rest_object_res JSON;
+            DECLARE rest_object_loop_done TINYINT DEFAULT FALSE;
+            DECLARE rest_object_cursor CURSOR FOR
                 SELECT o.id,
                     JSON_OBJECT(
                         'id', o.id,
@@ -674,29 +674,29 @@ BEGIN
                         'requires_auth', o.requires_auth,
                         'options', o.options
                     )
-                FROM db_object AS o
-                WHERE o.db_schema_id = schema_id AND o.enabled = 1;
-            DECLARE CONTINUE HANDLER FOR NOT FOUND SET db_object_loop_done = 1;
+                FROM rest_object AS o
+                WHERE o.rest_schema_id = schema_id AND o.enabled = 1;
+            DECLARE CONTINUE HANDLER FOR NOT FOUND SET rest_object_loop_done = 1;
 
-            -- Initiate the list of db_objects with an empty JSON array
-            SET schema_res = JSON_SET(schema_res, '$.db_objects', json_array());
+            -- Initiate the list of rest_objects with an empty JSON array
+            SET schema_res = JSON_SET(schema_res, '$.rest_objects', json_array());
 
-            -- Loop over all db_objects of the given db_schema
-            OPEN db_object_cursor;
-            db_object_loop: LOOP
-                FETCH NEXT FROM db_object_cursor INTO db_object_id, db_object_res;
+            -- Loop over all rest_objects of the given rest_schema
+            OPEN rest_object_cursor;
+            rest_object_loop: LOOP
+                FETCH NEXT FROM rest_object_cursor INTO rest_object_id, rest_object_res;
 
-                IF db_object_loop_done THEN
-                    LEAVE db_object_loop;
-                ELSE db_object_block: BEGIN
-                    DECLARE object_id UUID;
+                IF rest_object_loop_done THEN
+                    LEAVE rest_object_loop;
+                ELSE rest_object_block: BEGIN
+                    DECLARE data_mapping_id UUID;
                     DECLARE object_res JSON;
                     DECLARE object_loop_done TINYINT DEFAULT FALSE;
                     DECLARE object_cursor CURSOR FOR
                         SELECT o.id,
                           JSON_OBJECT(
                             'id', o.id,
-                            'db_object_id', o.db_object_id,
+                            'rest_object_id', o.rest_object_id,
                             'name', name,
                             'kind', kind,
                             'position', position,
@@ -704,18 +704,18 @@ BEGIN
                             'options', options,
                             'sdk_options', sdk_options
                           )
-                      FROM object AS o
-                      WHERE o.db_object_id = db_object_id
+                      FROM data_mapping AS o
+                      WHERE o.rest_object_id = rest_object_id
                       ORDER BY position;
                     DECLARE CONTINUE HANDLER FOR NOT FOUND SET object_loop_done = 1;
 
                     -- Initiate the list of objects with an empty JSON array
-                    SET db_object_res = JSON_SET(db_object_res, '$.objects', json_array());
+                    SET rest_object_res = JSON_SET(rest_object_res, '$.data_mappings', json_array());
 
-                    -- Loop over all SDK object instances of the given db_object
+                    -- Loop over all SDK object instances of the given rest_object
                     OPEN object_cursor;
                     object_loop: LOOP
-                        FETCH NEXT FROM object_cursor INTO object_id, object_res;
+                        FETCH NEXT FROM object_cursor INTO data_mapping_id, object_res;
 
                         IF object_loop_done THEN
                             LEAVE object_loop;
@@ -732,7 +732,7 @@ BEGIN
                                         'id', f.id,
                                         'represents_reference_id', f.represents_reference_id,
                                         'parent_reference_id', f.parent_reference_id,
-                                        'object_id', f.object_id,
+                                        'data_mapping_id', f.data_mapping_id,
                                         'name', f.name,
                                         'db_column', f.db_column,
                                         'enabled', f.enabled,
@@ -742,10 +742,10 @@ BEGIN
                                         'no_update', f.no_update,
                                         'options', f.options,
                                         'sdk_options', f.sdk_options,
-                                        'object_reference', f.object_reference
+                                        'data_mapping_reference', f.data_mapping_reference
                                     )
-                                FROM object_fields_with_references AS f
-                                WHERE f.object_id = object_id;
+                                FROM data_mapping_fields_with_references AS f
+                                WHERE f.data_mapping_id = data_mapping_id;
                             DECLARE CONTINUE HANDLER FOR NOT FOUND SET field_loop_done = 1;
 
                             -- Initiate the list of fields with an empty JSON array
@@ -764,21 +764,21 @@ BEGIN
                                 END field_block; END IF;
                             END LOOP field_loop;
 
-                            -- Append the SDK object JSON data to the db_objects's objects array
-                            SET db_object_res = JSON_ARRAY_APPEND(db_object_res, '$.objects', object_res);
+                            -- Append the SDK object JSON data to the rest_objects's objects array
+                            SET rest_object_res = JSON_ARRAY_APPEND(rest_object_res, '$.data_mappings', object_res);
                         END object_block; END IF;
                     END LOOP object_loop;
 
-                    -- Append the db_object JSON data to the db_schema's db_objects array
-                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.db_objects', db_object_res);
+                    -- Append the rest_object JSON data to the rest_schema's rest_objects array
+                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.rest_objects', rest_object_res);
 
-                END db_object_block; END IF;
-            END LOOP db_object_loop;
+                END rest_object_block; END IF;
+            END LOOP rest_object_loop;
 
-            -- Append the db_schema JSON data to the service's db_schemas array
-            SET service_res = JSON_ARRAY_APPEND(service_res, '$.db_schemas', schema_res);
+            -- Append the rest_schema JSON data to the service's rest_schemas array
+            SET service_res = JSON_ARRAY_APPEND(service_res, '$.rest_schemas', schema_res);
 
-            CLOSE db_object_cursor;
+            CLOSE rest_object_cursor;
         END schema_block; END IF;
     END LOOP schema_loop;
 

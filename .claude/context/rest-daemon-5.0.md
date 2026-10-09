@@ -41,6 +41,28 @@ The other columns are unchanged. Id types:
 
 Fixed on the way (the daemon only notices that they work now): `rest_daemon_status_do_cleanup()` used MySQL's `ANY_VALUE()`, which MariaDB does not have, so the hourly `rest_daemon_status_cleanup` event always failed (now `MIN()`, which prefers a published `statusVariables` list among the daemons of one version); and `rest_daemon_status_downsample()` deleted the not yet aggregated status rows of the daemons of every version, not only of the one it aggregated.
 
+## 1b. The tables of REST schemas, REST objects and data mappings are renamed
+
+The daemon reads these tables to load every REST endpoint, so every query on them changes. Only names changed; the columns keep their types and meaning.
+
+| 4.x name | 5.0.0 name |
+|---|---|
+| table `db_schema` | `rest_schema` |
+| table `db_object` | `rest_object` |
+| table `object` | `data_mapping` |
+| table `object_field` | `data_mapping_field` |
+| table `object_reference` | `data_mapping_reference` |
+| table `mrs_db_object_row_group_security` | `mrs_rest_object_row_group_security` |
+| table `content_set_has_obj_def` | `content_set_has_rest_object` |
+| view `object_fields_with_references` (its `object_id`, `object_reference` columns) | `data_mapping_fields_with_references` (`data_mapping_id`, `data_mapping_reference`) |
+| column `db_schema_id` (`db_object`) | `rest_schema_id` (`rest_object`) |
+| column `db_object_id` (`object`, `mrs_..._row_group_security`, `content_set_has_...`) | `rest_object_id` |
+| column `object_field.object_id` | `data_mapping_field.data_mapping_id` |
+
+- The audit log names the tables by their new names (`audit_log.table_name` = `rest_schema`, `rest_object`, `data_mapping`, `data_mapping_field`, `data_mapping_reference`, ...), and the JSON of `old_row_data` / `new_row_data` uses the new column names as keys (`rest_schema_id`, `rest_object_id`, `data_mapping_id`). A daemon that dispatches audit log rows by `table_name` must use the new names.
+- `sdk_service_data()` returns `rest_schemas` -> `rest_objects` -> `data_mappings` -> `fields` (was `db_schemas` -> `db_objects` -> `objects` -> `fields`), with `rest_object_id`, `data_mapping_id` and `data_mapping_reference` keys.
+- Constraint and trigger names follow (`fk_rest_objects_rest_schema1`, `rest_schema_max_page_size`, `rest_object_AFTER_INSERT_AUDIT_LOG`, ...); the daemon should not depend on them.
+
 ## 2. Roles
 
 - Renamed, and they carry the schema's prefix and postfix: `<prefix>mariadb_rest_service_<role><postfix>` for `admin`, `schema_admin`, `dev`, `user`, `meta_provider`, `data_provider` (e.g. `acme_mariadb_rest_service_meta_provider_eu`). Derive them from the configured schema name: split it around `mariadb_rest_service` into prefix and postfix (`metadata::role_name()`).
@@ -59,7 +81,7 @@ Fixed on the way (the daemon only notices that they work now): `rest_daemon_stat
 - Every id column and every foreign key to one is MariaDB's `UUID` type (was `BINARY(16)`); primary keys default to `UUID_v7()`, and `get_sequence_id()` returns a UUID. The values read as canonical lower-case text, e.g. `31000000-0000-0000-0000-000000000000` (was `0x31000000000000000000000000000000`).
 - The daemon must stop treating ids as 16 binary bytes (hex conversion, `UUID_TO_BIN`/`BIN_TO_UUID`, base64 of the bytes, byte-wise comparisons) and bind / compare them as UUID text.
 - The MySQL-only functions `UUID_TO_BIN_SWAP` and `BIN_TO_UUID_SWAP` were removed.
-- Ids inside JSON documents are plain UUID strings (was hex or base64): the audit log rows, `object_fields_with_references` and `sdk_service_data`.
+- Ids inside JSON documents are plain UUID strings (was hex or base64): the audit log rows, `data_mapping_fields_with_references` and `sdk_service_data`.
 - `audit_log.id` stays an AUTO_INCREMENT integer but is now `BIGINT UNSIGNED` (was `INT`): read it as a 64-bit unsigned value (see 9). The ids of the daemon's own tables changed too, see 1a.
 - The `MRS` and `MariaDB Internal` vendors have fixed ids `30000000-0000-0000-0000-000000000000` and `31000000-0000-0000-0000-000000000000`; the default auth app (`MariaDB`) and the `Full Access` role have id `31000000-0000-0000-0000-000000000000`.
 

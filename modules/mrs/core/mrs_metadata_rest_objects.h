@@ -23,11 +23,11 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef MODULES_MRS_CORE_MRS_METADATA_DB_OBJECTS_H_
-#define MODULES_MRS_CORE_MRS_METADATA_DB_OBJECTS_H_
+#ifndef MODULES_MRS_CORE_MRS_METADATA_REST_OBJECTS_H_
+#define MODULES_MRS_CORE_MRS_METADATA_REST_OBJECTS_H_
 
-// Access to the REST database objects of the metadata schema: the db_object
-// table and its data mapping (object, object_field, object_reference).
+// Access to the REST database objects of the metadata schema: the rest_object
+// table and its data mapping (object, data_mapping_field, data_mapping_reference).
 
 #include <optional>
 #include <string>
@@ -45,9 +45,9 @@ namespace metadata {
 // k_data_provider_role)); the objects exposed via REST are granted to it.
 inline constexpr std::string_view k_data_provider_role = "data_provider";
 
-struct Db_object {
+struct Rest_object {
   Id id;
-  Id db_schema_id;
+  Id rest_schema_id;
   Id service_id;
   std::string name;         // the table, view, procedure or function
   std::string schema_name;  // its database schema
@@ -73,38 +73,38 @@ struct Db_object {
   }
 };
 
-std::optional<Db_object> get_db_object(Db_session *session, const Id &id);
-std::optional<Db_object> find_db_object(Db_session *session,
+std::optional<Rest_object> get_rest_object(Db_session *session, const Id &id);
+std::optional<Rest_object> find_rest_object(Db_session *session,
                                         const Id &schema_id,
                                         std::string_view request_path);
 // The objects of a schema, optionally limited to the given object types.
-std::vector<Db_object> get_db_objects(Db_session *session, const Id &schema_id,
+std::vector<Rest_object> get_rest_objects(Db_session *session, const Id &schema_id,
                                       const std::vector<std::string> &object_types);
 
-void delete_db_object(Db_session *session, const Id &id);
+void delete_rest_object(Db_session *session, const Id &id);
 
 // The CREATE OR REPLACE REST VIEW / PROCEDURE / FUNCTION statement of an
 // object, with its data mapping. With on_current_service, the
 // statement names no service (ON SERVICE ...) and acts on the current one,
 // as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
-std::string db_object_create_statement(Db_session *session,
-                                       const Db_object &db_object,
+std::string rest_object_create_statement(Db_session *session,
+                                       const Rest_object &rest_object,
                                        bool on_current_service = false);
 
 // Copies an object with its data mapping into another schema.
-Id clone_db_object(Db_session *session, const Db_object &db_object,
+Id clone_rest_object(Db_session *session, const Rest_object &rest_object,
                    const Id &new_schema_id);
 
 // -- The data mapping -----------------------------------------------------
 //
-// A db_object owns a list of objects (the RESULT of a view, the PARAMETERS
+// A rest_object owns a list of objects (the RESULT of a view, the PARAMETERS
 // and RESULTs of a routine). Each object holds a flat list of fields; the
 // fields below a reference carry that reference's id as parent_reference_id,
 // which is also how the metadata stores them.
 
 // A reference from a table to another one (a foreign key in either
 // direction), represented by a field of the mapping.
-struct Object_reference {
+struct Data_mapping_reference {
   Id id;
   std::optional<Id> reduce_to_value_of_field_id;
   std::optional<Id> row_ownership_field_id;
@@ -125,9 +125,9 @@ struct Object_reference {
   std::string kind() const { return reference_mapping.get_string("kind"); }
 };
 
-struct Object_field {
+struct Data_mapping_field {
   Id id;
-  Id object_id;
+  Id data_mapping_id;
   std::optional<Id> parent_reference_id;
   std::string name;  // the name in the JSON document
   int position = 0;
@@ -147,7 +147,7 @@ struct Object_field {
   // The reference this field represents. While a mapping is being built,
   // a field for a reference the statement did not enable keeps only the
   // candidate mapping below and is stored as a plain, disabled field.
-  std::optional<Object_reference> reference;
+  std::optional<Data_mapping_reference> reference;
   std::optional<json::Value> candidate_reference_mapping;
 
   bool is_reference() const { return reference.has_value(); }
@@ -156,7 +156,7 @@ struct Object_field {
   }
 };
 
-struct Object_definition {
+struct Data_mapping {
   Id id;
   std::string name;
   std::string kind = "RESULT";  // RESULT or PARAMETERS
@@ -165,7 +165,7 @@ struct Object_definition {
   std::optional<std::string> options;  // JSON, see mapping_options_json()
   std::optional<std::string> sdk_options;
   std::optional<std::string> comments;
-  std::vector<Object_field> fields;
+  std::vector<Data_mapping_field> fields;
 };
 
 // The options document of an object or reference holding the data mapping
@@ -177,36 +177,36 @@ std::string mapping_options_json(bool insert, bool update, bool del,
 bool mapping_option(const std::optional<std::string> &options,
                     std::string_view key);
 
-// The objects of a db_object with their fields, ordered by position.
-std::vector<Object_definition> get_objects(Db_session *session,
-                                           const Id &db_object_id);
-// Whether a db_object has any object (a result definition).
-bool has_objects(Db_session *session, const Id &db_object_id);
+// The objects of a rest_object with their fields, ordered by position.
+std::vector<Data_mapping> get_objects(Db_session *session,
+                                           const Id &rest_object_id);
+// Whether a rest_object has any object (a result definition).
+bool has_objects(Db_session *session, const Id &rest_object_id);
 
-// Replaces the objects of a db_object. The object names have to be unique
+// Replaces the objects of a rest_object. The object names have to be unique
 // within the REST schema (case-insensitively).
-void set_objects(Db_session *session, const Id &db_object_id,
-                 const std::vector<Object_definition> &objects);
+void set_objects(Db_session *session, const Id &rest_object_id,
+                 const std::vector<Data_mapping> &objects);
 
 // Renames the object and replaces its options, keeping the fields.
-void update_object(Db_session *session, const Id &object_id,
+void update_object(Db_session *session, const Id &data_mapping_id,
                    const std::string &name,
                    const std::optional<std::string> &options);
 
 // Whether an object of the given name exists in the REST schema, other
 // than the one with the given id.
 bool object_name_in_use(Db_session *session, const Id &schema_id,
-                        const Id &object_id, std::string_view name);
+                        const Id &data_mapping_id, std::string_view name);
 
-// The crud_operations of a db_object derived from its type and the options
+// The crud_operations of a rest_object derived from its type and the options
 // of its first object.
 std::vector<std::string> calculate_crud_operations(
-    std::string_view object_type, const std::vector<Object_definition> &objects);
+    std::string_view object_type, const std::vector<Data_mapping> &objects);
 
-// -- db_object rows ------------------------------------------------------
+// -- rest_object rows ------------------------------------------------------
 
-struct Db_object_definition {
-  Id db_schema_id;
+struct Rest_object_definition {
+  Id rest_schema_id;
   std::string name;
   std::string request_path;
   std::string object_type;
@@ -224,13 +224,13 @@ struct Db_object_definition {
   std::optional<Id> id;  // a fixed id, for cloning
 };
 
-// Inserts the db_object with its objects; the crud_operations are
+// Inserts the rest_object with its objects; the crud_operations are
 // calculated from the objects. Returns the id. The GRANTs are not run, see
 // grant_statements().
-Id add_db_object(Db_session *session, const Db_object_definition &definition,
-                 const std::vector<Object_definition> &objects);
+Id add_rest_object(Db_session *session, const Rest_object_definition &definition,
+                 const std::vector<Data_mapping> &objects);
 
-struct Db_object_changes {
+struct Rest_object_changes {
   std::optional<std::string> request_path;
   std::optional<int> enabled;
   std::optional<bool> requires_auth;
@@ -246,25 +246,25 @@ struct Db_object_changes {
   std::optional<std::vector<std::string>> crud_operations;
 };
 
-void update_db_object(Db_session *session, const Id &id,
-                      const Db_object_changes &changes);
+void update_rest_object(Db_session *session, const Id &id,
+                      const Rest_object_changes &changes);
 
-// The options update_db_object() leaves the db_object with: the given ones,
+// The options update_rest_object() leaves the rest_object with: the given ones,
 // or a MERGE OPTIONS patch applied with the server's JSON_MERGE_PATCH.
 std::optional<std::string> options_after(Db_session *session,
-                                         const Db_object &db_object,
-                                         const Db_object_changes &changes);
+                                         const Rest_object &rest_object,
+                                         const Rest_object_changes &changes);
 
 // -- Privileges of the data provider role ---------------------------------
 
 // The GRANT statements that let the data provider role access the database
 // object (and the tables of its references), as the crud_operations of the
-// db_object require, plus the explicit grants of its options document.
+// rest_object require, plus the explicit grants of its options document.
 std::vector<std::string> grant_statements(
     const Db_session *session, std::string_view schema_name, std::string_view name,
     std::string_view object_type,
     const std::vector<std::string> &crud_operations,
-    const std::vector<Object_definition> &objects,
+    const std::vector<Data_mapping> &objects,
     const std::optional<std::string> &options);
 
 // The GRANT statements of the "grants" entry of an options document (one
@@ -274,7 +274,7 @@ std::vector<std::string> option_grant_statements(
 
 // Revokes the privileges of the data provider role on the database object.
 // Privileges that are not granted are not an error.
-void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,
+void revoke_all_from_rest_object(Db_session *session, std::string_view schema_name,
                                std::string_view name,
                                std::string_view object_type);
 
@@ -334,4 +334,4 @@ std::string path_to_pascal_case(std::string_view path);
 }  // namespace metadata
 }  // namespace mrs
 
-#endif  // MODULES_MRS_CORE_MRS_METADATA_DB_OBJECTS_H_
+#endif  // MODULES_MRS_CORE_MRS_METADATA_REST_OBJECTS_H_

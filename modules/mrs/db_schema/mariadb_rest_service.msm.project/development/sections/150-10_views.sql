@@ -12,17 +12,17 @@ VIEW `mrs_user_schema_version` (
 SELECT 4, 0, 0;
 
 -- -----------------------------------------------------------------------------
--- View `object_fields_with_references`
+-- View `data_mapping_fields_with_references`
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE SQL SECURITY INVOKER VIEW `object_fields_with_references` AS
+CREATE OR REPLACE SQL SECURITY INVOKER VIEW `data_mapping_fields_with_references` AS
 WITH RECURSIVE obj_fields (
-    caption, lev, position, id, represents_reference_id, parent_reference_id, object_id,
+    caption, lev, position, id, represents_reference_id, parent_reference_id, data_mapping_id,
     name, db_column, enabled,
     allow_filtering, allow_sorting, no_check, no_update, options, sdk_options, comments,
-    object_reference) AS
+    data_mapping_reference) AS
 (
     SELECT CONCAT('- ', f.name) as caption, 1 AS lev, f.position, f.id,
-		f.represents_reference_id, f.parent_reference_id, f.object_id, f.name,
+		f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
@@ -33,14 +33,14 @@ WITH RECURSIVE obj_fields (
             'options', r.options,
             'sdk_options', r.sdk_options,
             'comments', r.comments
-        )) AS object_reference
-    FROM `object_field` f
-        LEFT OUTER JOIN `object_reference` AS r
+        )) AS data_mapping_reference
+    FROM `data_mapping_field` f
+        LEFT OUTER JOIN `data_mapping_reference` AS r
             ON r.id = f.represents_reference_id
     WHERE ISNULL(parent_reference_id)
     UNION ALL
     SELECT CONCAT(REPEAT('  ', p.lev), '- ', f.name) as caption, p.lev+1 AS lev, f.position,
-        f.id, f.represents_reference_id, f.parent_reference_id, f.object_id, f.name,
+        f.id, f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
@@ -51,12 +51,12 @@ WITH RECURSIVE obj_fields (
             'options', rc.options,
             'sdk_options', rc.sdk_options,
             'comments', rc.comments
-        )) AS object_reference
-    FROM obj_fields AS p JOIN `object_reference` AS r
+        )) AS data_mapping_reference
+    FROM obj_fields AS p JOIN `data_mapping_reference` AS r
             ON r.id = p.represents_reference_id
-        LEFT OUTER JOIN `object_field` AS f
+        LEFT OUTER JOIN `data_mapping_field` AS f
             ON r.id = f.parent_reference_id
-        LEFT OUTER JOIN `object_reference` AS rc
+        LEFT OUTER JOIN `data_mapping_reference` AS rc
             ON rc.id = f.represents_reference_id
 	WHERE f.id IS NOT NULL
 )

@@ -445,15 +445,15 @@ TEST(Mrs_parser, alter_and_drop_rest_view) {
     EXPECT_FALSE(s.new_path.has_value());
   }
   {
-    const auto &s = parse_as<Drop_rest_db_object>(
+    const auto &s = parse_as<Drop_rest_object>(
         "DROP REST DATA MAPPING VIEW IF EXISTS /country FROM SERVICE /svc SCHEMA /sakila");
-    EXPECT_EQ(Db_object_kind::view, s.kind);
+    EXPECT_EQ(Rest_object_kind::view, s.kind);
     EXPECT_TRUE(s.if_exists);
     EXPECT_EQ("/country", s.path);
     EXPECT_EQ("/sakila", s.from->schema_path);
   }
   {
-    const auto &s = parse_as<Drop_rest_db_object>("DROP REST VIEW /actor FROM SCHEMA /s");
+    const auto &s = parse_as<Drop_rest_object>("DROP REST VIEW /actor FROM SCHEMA /s");
     EXPECT_FALSE(s.if_exists);
     EXPECT_FALSE(s.from->service.has_value());
     EXPECT_EQ("/s", s.from->schema_path);
@@ -476,7 +476,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
       RESULT {
           inventoryId2: inventory_id @DATATYPE(int)
       })sql");
-    EXPECT_EQ(Db_object_kind::procedure, s.kind);
+    EXPECT_EQ(Rest_object_kind::procedure, s.kind);
     EXPECT_TRUE(s.force);
     EXPECT_EQ("/filmInStock", s.path);
     EXPECT_EQ("film_in_stock", s.object.name);
@@ -497,7 +497,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
         "CREATE REST FUNCTION IF NOT EXISTS /actorFunc ON SERVICE /svc SCHEMA /s "
         "AS `sakila`.`actor` PARAMETERS { s: s @IN } RESULT R { result: result } "
         "DISABLED");
-    EXPECT_EQ(Db_object_kind::function, s.kind);
+    EXPECT_EQ(Rest_object_kind::function, s.kind);
     EXPECT_TRUE(s.flags.if_not_exists);
     EXPECT_FALSE(s.force);
     EXPECT_FALSE(s.parameters->name.has_value());
@@ -515,7 +515,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
         "ALTER REST PROCEDURE /filmInStock ON SERVICE /svc SCHEMA /sakila "
         "NEW REQUEST PATH /filmInStockUpdated PARAMETERS P { pFilmId: p_film_id @IN } "
         "RESULT R1 { a: a } RESULT R2 { b: b } MERGE OPTIONS {\"test\": 1}");
-    EXPECT_EQ(Db_object_kind::procedure, s.kind);
+    EXPECT_EQ(Rest_object_kind::procedure, s.kind);
     EXPECT_EQ("/filmInStockUpdated", *s.new_path);
     EXPECT_EQ("P", *s.parameters->name);
     EXPECT_EQ(2u, s.results.size());
@@ -524,35 +524,35 @@ TEST(Mrs_parser, rest_procedure_and_function) {
   {
     const auto &s = parse_as<Alter_rest_routine>(
         "ALTER REST FUNCTION /actorFunc NEW REQUEST PATH /actorFuncNew");
-    EXPECT_EQ(Db_object_kind::function, s.kind);
+    EXPECT_EQ(Rest_object_kind::function, s.kind);
     EXPECT_FALSE(s.parameters.has_value());
     EXPECT_TRUE(s.results.empty());
   }
   {
-    const auto &s = parse_as<Drop_rest_db_object>("DROP REST PROCEDURE IF EXISTS /p");
-    EXPECT_EQ(Db_object_kind::procedure, s.kind);
+    const auto &s = parse_as<Drop_rest_object>("DROP REST PROCEDURE IF EXISTS /p");
+    EXPECT_EQ(Rest_object_kind::procedure, s.kind);
     EXPECT_TRUE(s.if_exists);
   }
   {
-    const auto &s = parse_as<Drop_rest_db_object>("DROP REST FUNCTION /f");
-    EXPECT_EQ(Db_object_kind::function, s.kind);
+    const auto &s = parse_as<Drop_rest_object>("DROP REST FUNCTION /f");
+    EXPECT_EQ(Rest_object_kind::function, s.kind);
   }
   {
-    const auto &s = parse_as<Show_create_rest_db_object>(
+    const auto &s = parse_as<Show_create_rest_object>(
         "SHOW CREATE REST FUNCTION /actorFunc ON SERVICE /myTest SCHEMA /test");
-    EXPECT_EQ(Db_object_kind::function, s.kind);
+    EXPECT_EQ(Rest_object_kind::function, s.kind);
     EXPECT_EQ("/actorFunc", s.path);
     EXPECT_EQ("/myTest", s.on->service->path);
   }
   {
-    const auto &s = parse_as<Show_rest_db_objects>("SHOW REST PROCEDURES");
-    EXPECT_EQ(Db_object_kind::procedure, s.kind);
+    const auto &s = parse_as<Show_rest_objects>("SHOW REST PROCEDURES");
+    EXPECT_EQ(Rest_object_kind::procedure, s.kind);
     EXPECT_FALSE(s.on.has_value());
   }
   {
-    const auto &s = parse_as<Show_rest_db_objects>(
+    const auto &s = parse_as<Show_rest_objects>(
         "SHOW REST DATA MAPPING VIEWS FROM SERVICE /myTestService SCHEMA /sakila");
-    EXPECT_EQ(Db_object_kind::view, s.kind);
+    EXPECT_EQ(Rest_object_kind::view, s.kind);
     EXPECT_EQ("/sakila", s.on->schema_path);
   }
 }
@@ -989,7 +989,7 @@ TEST(Mrs_parser, output_format) {
         "SHOW CREATE REST DATA MAPPING VIEW /v FORMAT=JSON",
         "SHOW CREATE REST PROCEDURE /p FORMAT=JSON",
         "SHOW CREATE REST FUNCTION /f ON SERVICE /s SCHEMA /db FORMAT=JSON"}) {
-    EXPECT_EQ(Output_format::json, parse_as<Show_create_rest_db_object>(sql).format)
+    EXPECT_EQ(Output_format::json, parse_as<Show_create_rest_object>(sql).format)
         << sql;
   }
   EXPECT_EQ(Output_format::json,

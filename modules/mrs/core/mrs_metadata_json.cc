@@ -59,7 +59,7 @@ json::Value strings(const std::vector<std::string> &values) {
   return json::Value(std::move(array));
 }
 
-json::Value object_reference_json(const Object_reference &reference) {
+json::Value data_mapping_reference_json(const Data_mapping_reference &reference) {
   json::Value doc = json::Value::object();
   doc.set("id", reference.id);
   doc.set("reduce_to_value_of_field_id", id(reference.reduce_to_value_of_field_id));
@@ -72,10 +72,10 @@ json::Value object_reference_json(const Object_reference &reference) {
   return doc;
 }
 
-json::Value object_field_json(const Object_field &field) {
+json::Value data_mapping_field_json(const Data_mapping_field &field) {
   json::Value doc = json::Value::object();
   doc.set("id", field.id);
-  doc.set("object_id", field.object_id);
+  doc.set("data_mapping_id", field.data_mapping_id);
   doc.set("parent_reference_id", id(field.parent_reference_id));
   doc.set("represents_reference_id",
           field.reference ? json::Value(field.reference->id) : json::Value());
@@ -91,13 +91,13 @@ json::Value object_field_json(const Object_field &field) {
   doc.set("options", document(field.options));
   doc.set("sdk_options", document(field.sdk_options));
   doc.set("comments", text(field.comments));
-  doc.set("object_reference", field.reference
-                                  ? object_reference_json(*field.reference)
+  doc.set("data_mapping_reference", field.reference
+                                  ? data_mapping_reference_json(*field.reference)
                                   : json::Value());
   return doc;
 }
 
-json::Value object_json(const Object_definition &object) {
+json::Value object_json(const Data_mapping &object) {
   json::Value doc = json::Value::object();
   doc.set("id", object.id);
   doc.set("name", object.name);
@@ -109,7 +109,7 @@ json::Value object_json(const Object_definition &object) {
   doc.set("comments", text(object.comments));
   json::Value::Array fields;
   for (const auto &field : object.fields) {
-    fields.push_back(object_field_json(field));
+    fields.push_back(data_mapping_field_json(field));
   }
   doc.set("fields", json::Value(std::move(fields)));
   return doc;
@@ -147,14 +147,14 @@ json::Value service_json(Db_session *session, const Service &service,
     json::Value::Array schemas;
     for (const auto &schema : get_schemas(session, service.id)) {
       json::Value schema_doc = schema_json(schema);
-      json::Value::Array db_objects;
-      for (const auto &db_object : get_db_objects(session, schema.id, {})) {
-        db_objects.push_back(db_object_json(session, db_object));
+      json::Value::Array rest_objects;
+      for (const auto &rest_object : get_rest_objects(session, schema.id, {})) {
+        rest_objects.push_back(rest_object_json(session, rest_object));
       }
-      schema_doc.set("db_objects", json::Value(std::move(db_objects)));
+      schema_doc.set("rest_objects", json::Value(std::move(rest_objects)));
       schemas.push_back(std::move(schema_doc));
     }
-    doc.set("schemas", json::Value(std::move(schemas)));
+    doc.set("rest_schemas", json::Value(std::move(schemas)));
   }
   return doc;
 }
@@ -217,34 +217,34 @@ json::Value schema_json(const Schema &schema) {
   return doc;
 }
 
-json::Value db_object_json(Db_session *session, const Db_object &db_object) {
+json::Value rest_object_json(Db_session *session, const Rest_object &rest_object) {
   json::Value doc = json::Value::object();
-  doc.set("id", db_object.id);
-  doc.set("db_schema_id", db_object.db_schema_id);
-  doc.set("service_id", db_object.service_id);
-  doc.set("name", db_object.name);
-  doc.set("schema_name", db_object.schema_name);
-  doc.set("request_path", db_object.request_path);
-  doc.set("schema_request_path", db_object.schema_request_path);
-  doc.set("host_ctx", db_object.host_ctx);
-  doc.set("object_type", db_object.object_type);
-  doc.set("crud_operations", strings(db_object.crud_operations));
-  doc.set("format", db_object.format);
-  doc.set("enabled", db_object.enabled);
-  doc.set("internal", db_object.internal);
-  doc.set("requires_auth", db_object.requires_auth);
-  doc.set("items_per_page", number(db_object.items_per_page));
-  doc.set("media_type", text(db_object.media_type));
-  doc.set("auto_detect_media_type", db_object.auto_detect_media_type);
-  doc.set("auth_stored_procedure", text(db_object.auth_stored_procedure));
-  doc.set("comments", text(db_object.comments));
-  doc.set("options", document(db_object.options));
-  doc.set("metadata", document(db_object.metadata));
+  doc.set("id", rest_object.id);
+  doc.set("rest_schema_id", rest_object.rest_schema_id);
+  doc.set("service_id", rest_object.service_id);
+  doc.set("name", rest_object.name);
+  doc.set("schema_name", rest_object.schema_name);
+  doc.set("request_path", rest_object.request_path);
+  doc.set("schema_request_path", rest_object.schema_request_path);
+  doc.set("host_ctx", rest_object.host_ctx);
+  doc.set("object_type", rest_object.object_type);
+  doc.set("crud_operations", strings(rest_object.crud_operations));
+  doc.set("format", rest_object.format);
+  doc.set("enabled", rest_object.enabled);
+  doc.set("internal", rest_object.internal);
+  doc.set("requires_auth", rest_object.requires_auth);
+  doc.set("items_per_page", number(rest_object.items_per_page));
+  doc.set("media_type", text(rest_object.media_type));
+  doc.set("auto_detect_media_type", rest_object.auto_detect_media_type);
+  doc.set("auth_stored_procedure", text(rest_object.auth_stored_procedure));
+  doc.set("comments", text(rest_object.comments));
+  doc.set("options", document(rest_object.options));
+  doc.set("metadata", document(rest_object.metadata));
   json::Value::Array objects;
-  for (const auto &object : get_objects(session, db_object.id)) {
+  for (const auto &object : get_objects(session, rest_object.id)) {
     objects.push_back(object_json(object));
   }
-  doc.set("objects", json::Value(std::move(objects)));
+  doc.set("data_mappings", json::Value(std::move(objects)));
   return doc;
 }
 

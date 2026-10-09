@@ -38,7 +38,7 @@
 #include "modules/mrs/core/mrs_json.h"
 
 #include "modules/mrs/core/mrs_metadata.h"
-#include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_rest_objects.h"
 #include "modules/mrs/core/mrs_sql.h"
 #include "modules/mrs/core/mrs_strings.h"
 
@@ -866,11 +866,11 @@ json::Value column(const std::string &name, const std::string &type, bool not_nu
   return doc;
 }
 
-Object_field field(Db_session *session, const Id &object_id, const std::string &name,
+Data_mapping_field field(Db_session *session, const Id &data_mapping_id, const std::string &name,
                    int position, json::Value db_column) {
-  Object_field f;
+  Data_mapping_field f;
   f.id = new_id(session);
-  f.object_id = object_id;
+  f.data_mapping_id = data_mapping_id;
   f.name = name;
   f.position = position;
   f.db_column = std::move(db_column);
@@ -892,8 +892,8 @@ json::Value class_sdk_options(const std::string &class_name) {
 // The fields of an interface (with the ones it extends); properties of an
 // interface type become references, as the Python plugin stored them.
 void add_interface_fields(Db_session *session, const scripts::Definitions &defs,
-                          const std::string &name, const Id &object_id,
-                          std::vector<Object_field> *fields, int depth = 0) {
+                          const std::string &name, const Id &data_mapping_id,
+                          std::vector<Data_mapping_field> *fields, int depth = 0) {
   const auto *f = scripts::find_interface(defs.interfaces, name);
   if (!f || depth > 16) return;
   // The interface's own properties first, then the inherited ones
@@ -902,10 +902,10 @@ void add_interface_fields(Db_session *session, const scripts::Definitions &defs,
     const bool is_array = scripts::strip_array_suffix(&type);
     auto db_column = column(p.name, type, !p.optional, is_array);
     db_column.set("read_only", p.read_only);
-    auto object_field = field(session, object_id, p.name,
+    auto data_mapping_field = field(session, data_mapping_id, p.name,
                               static_cast<int>(fields->size()), std::move(db_column));
     if (!is_simple_type(type)) {
-      Object_reference ref;
+      Data_mapping_reference ref;
       ref.id = new_id(session);
       json::Value mapping = json::Value::object();
       mapping.set("kind", is_array ? "1:n" : "1:1");
@@ -918,12 +918,12 @@ void add_interface_fields(Db_session *session, const scripts::Definitions &defs,
       mapping.set("column_mapping", json::Value(json::Value::Array{std::move(pair)}));
       ref.reference_mapping = std::move(mapping);
       ref.sdk_options = class_sdk_options(type).dump();
-      object_field.reference = std::move(ref);
+      data_mapping_field.reference = std::move(ref);
     }
-    fields->push_back(std::move(object_field));
+    fields->push_back(std::move(data_mapping_field));
   }
   if (f->extends) {
-    add_interface_fields(session, defs, *f->extends, object_id, fields, depth + 1);
+    add_interface_fields(session, defs, *f->extends, data_mapping_id, fields, depth + 1);
   }
 }
 
@@ -1039,7 +1039,7 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
       const auto full_path = service->url_context_root + schema->request_path + path;
       const auto row_ownership = optional_text_property(fprops, "rowOwnershipParameter");
 
-      std::vector<Object_definition> objects(2);
+      std::vector<Data_mapping> objects(2);
       auto &params = objects[0];
       params.id = new_id(session);
       params.name = path_to_pascal_case(full_path) + "Params";
@@ -1071,8 +1071,8 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
       sdk.set("returns_array", s.returns_array);
       result.sdk_options = sdk.dump();
 
-      Db_object_definition definition;
-      definition.db_schema_id = schema->id;
+      Rest_object_definition definition;
+      definition.rest_schema_id = schema->id;
       definition.name = text_property(fprops, "name", s.function_name);
       definition.request_path = path;
       definition.object_type = "SCRIPT";
@@ -1084,13 +1084,13 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
       definition.comments = optional_text_property(fprops, "comments");
       definition.format = text_property(fprops, "format", "FEED");
       definition.media_type = optional_text_property(fprops, "mediaType");
-      const Id db_object_id = add_db_object(session, definition, objects);
+      const Id rest_object_id = add_rest_object(session, definition, objects);
 
       json::Value link_options = json::Value::object();
       link_options.set("file_to_load", file_to_load);
-      session->execute(sql::Insert("content_set_has_obj_def")
+      session->execute(sql::Insert("content_set_has_rest_object")
                            .set("content_set_id", sql::Value::id(content_set.id))
-                           .set("db_object_id", sql::Value::id(db_object_id))
+                           .set("rest_object_id", sql::Value::id(rest_object_id))
                            .set("kind", "Script")
                            .set("priority", 0)
                            .set("language", k_typescript)

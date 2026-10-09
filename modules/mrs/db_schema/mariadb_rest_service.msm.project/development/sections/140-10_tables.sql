@@ -64,9 +64,9 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `db_schema`
+-- Table `rest_schema`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `db_schema` (
+CREATE TABLE IF NOT EXISTS `rest_schema` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
   `service_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS `db_schema` (
   `options` JSON NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_schema_service1_idx` (`service_id` ASC) VISIBLE,
-  CONSTRAINT `fk_db_schema_service1`
+  INDEX `fk_rest_schema_service1_idx` (`service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_schema_service1`
     FOREIGN KEY (`service_id`)
     REFERENCES `service` (`id`)
     ON DELETE NO ACTION
@@ -90,32 +90,32 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `db_object`
+-- Table `rest_object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `db_object` (
+CREATE TABLE IF NOT EXISTS `rest_object` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `db_schema_id` UUID NOT NULL,
+  `rest_schema_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `request_path` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
   `internal` TINYINT NOT NULL DEFAULT 0,
   `object_type` ENUM('TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'SCRIPT') NOT NULL,
-  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '' COMMENT 'Calculated by the duality view options of object and object_reference table, always UPDATE for procedures and functions.',
+  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '' COMMENT 'Calculated by the duality view options of data_mapping and data_mapping_reference table, always UPDATE for procedures and functions.',
   `format` ENUM('FEED', 'ITEM', 'MEDIA') NOT NULL DEFAULT 'FEED' COMMENT 'The HTTP request method for this handler. \'feed\' executes the source query and returns the result set in JSON representation, \'item\' returns a single row instead, \'media\' turns the result set into a binary representation with accompanying HTTP Content-Type header.',
   `items_per_page` INT UNSIGNED NULL,
   `media_type` VARCHAR(45) NULL,
   `auto_detect_media_type` TINYINT NOT NULL DEFAULT 0,
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
   `auth_stored_procedure` VARCHAR(255) NULL DEFAULT 0 COMMENT 'Specifies the STORE PROCEDURE that should be called to identify if the given user is allowed to perform the given CRUD operation. The SP has to be in the same schema as the schema object and it has to accept the following parameters: (user_id, schema, object, crud_operation).  It returns true or false.',
-  `options` JSON NULL COMMENT 'Holds additional options for the db_object, e.g. {\"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using DECIMAL(16) for the primary key.',
+  `options` JSON NULL COMMENT 'Holds additional options for the rest_object, e.g. {\"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using DECIMAL(16) for the primary key.',
   `details` JSON NULL,
   `comments` VARCHAR(512) NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) VISIBLE,
-  CONSTRAINT `fk_db_objects_db_schema1`
-    FOREIGN KEY (`db_schema_id`)
-    REFERENCES `db_schema` (`id`)
+  INDEX `fk_rest_objects_rest_schema1_idx` (`rest_schema_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_objects_rest_schema1`
+    FOREIGN KEY (`rest_schema_id`)
+    REFERENCES `rest_schema` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
@@ -527,24 +527,24 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mrs_db_object_row_group_security`
+-- Table `mrs_rest_object_row_group_security`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mrs_db_object_row_group_security` (
-  `db_object_id` UUID NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_rest_object_row_group_security` (
+  `rest_object_id` UUID NOT NULL,
   `group_hierarchy_type_id` UUID NOT NULL,
   `row_group_ownership_column` VARCHAR(255) NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `match_level` ENUM('HIGHER', 'EQUAL OR HIGHER', 'EQUAL', 'LOWER OR EQUAL', 'LOWER') NOT NULL DEFAULT 'HIGHER',
   `options` JSON NULL,
-  INDEX `fk_table1_db_object1_idx` (`db_object_id` ASC) VISIBLE,
-  INDEX `fk_db_object_row_security_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
-  PRIMARY KEY (`db_object_id`, `group_hierarchy_type_id`),
-  CONSTRAINT `fk_table1_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  INDEX `fk_table1_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
+  INDEX `fk_rest_object_row_security_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
+  PRIMARY KEY (`rest_object_id`, `group_hierarchy_type_id`),
+  CONSTRAINT `fk_table1_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
-  CONSTRAINT `fk_db_object_row_security_group_hierarchy_type1`
+  CONSTRAINT `fk_rest_object_row_security_group_hierarchy_type1`
     FOREIGN KEY (`group_hierarchy_type_id`)
     REFERENCES `mrs_group_hierarchy_type` (`id`)
     ON DELETE NO ACTION
@@ -646,11 +646,11 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `object`
+-- Table `data_mapping`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object` (
+CREATE TABLE IF NOT EXISTS `data_mapping` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `db_object_id` UUID NOT NULL,
+  `rest_object_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `kind` ENUM('RESULT', 'PARAMETERS', 'INTERFACE') NOT NULL DEFAULT 'RESULT',
   `position` INT NOT NULL DEFAULT 0,
@@ -659,22 +659,22 @@ CREATE TABLE IF NOT EXISTS `object` (
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_result_db_object1_idx` (`db_object_id` ASC) VISIBLE,
+  INDEX `fk_result_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
   INDEX `row_ownership_object_idx` (`row_ownership_field_id` ASC) VISIBLE,
-  CONSTRAINT `fk_result_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  CONSTRAINT `fk_result_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `object_reference`
+-- Table `data_mapping_reference`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object_reference` (
+CREATE TABLE IF NOT EXISTS `data_mapping_reference` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
+  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an data_mapping_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
   `row_ownership_field_id` UUID NULL,
   `reference_mapping` JSON NOT NULL COMMENT 'Holds all column mappings of the FK, {kind:\"n:1\", constraint: \"constraint_name\", referenced_schema: \"schema_name\", referenced_table: \"table_name\", column_mapping: [{\"column_name\": \"referenced_column_name\"}, \"to_many\": true, \"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using BINARY(16) for the primary key.',
   `unnest` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to TRUE, the properties will be directly added to the parent',
@@ -683,16 +683,16 @@ CREATE TABLE IF NOT EXISTS `object_reference` (
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
   INDEX `reduce_to_idx` (`reduce_to_value_of_field_id` ASC) VISIBLE,
-  INDEX `row_ownership_object_reference_idx` (`row_ownership_field_id` ASC) VISIBLE)
+  INDEX `row_ownership_data_mapping_reference_idx` (`row_ownership_field_id` ASC) VISIBLE)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `object_field`
+-- Table `data_mapping_field`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object_field` (
+CREATE TABLE IF NOT EXISTS `data_mapping_field` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `object_id` UUID NOT NULL,
+  `data_mapping_id` UUID NOT NULL,
   `parent_reference_id` UUID NULL,
   `represents_reference_id` UUID NULL,
   `name` VARCHAR(255) NOT NULL COMMENT 'The name of the field as returned in the JSON',
@@ -708,22 +708,22 @@ CREATE TABLE IF NOT EXISTS `object_field` (
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_properties_result1_idx` (`object_id` ASC) VISIBLE,
+  INDEX `fk_properties_result1_idx` (`data_mapping_id` ASC) VISIBLE,
   INDEX `fk_result_property_result_reference1_idx` (`parent_reference_id` ASC) VISIBLE,
   INDEX `fk_result_property_result_reference2_idx` (`represents_reference_id` ASC) VISIBLE,
   CONSTRAINT `fk_properties_result1`
-    FOREIGN KEY (`object_id`)
-    REFERENCES `object` (`id`)
+    FOREIGN KEY (`data_mapping_id`)
+    REFERENCES `data_mapping` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference1`
     FOREIGN KEY (`parent_reference_id`)
-    REFERENCES `object_reference` (`id`)
+    REFERENCES `data_mapping_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference2`
     FOREIGN KEY (`represents_reference_id`)
-    REFERENCES `object_reference` (`id`)
+    REFERENCES `data_mapping_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
@@ -753,11 +753,11 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `content_set_has_obj_def`
+-- Table `content_set_has_rest_object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
+CREATE TABLE IF NOT EXISTS `content_set_has_rest_object` (
   `content_set_id` UUID NOT NULL,
-  `db_object_id` UUID NOT NULL,
+  `rest_object_id` UUID NOT NULL,
   `kind` ENUM('Script', 'BeforeCreate', 'BeforeRead', 'BeforeUpdate', 'BeforeDelete', 'AfterCreate', 'AfterRead', 'AfterUpdate', 'AfterDelete') NOT NULL,
   `priority` INT NOT NULL DEFAULT 0,
   `language` VARCHAR(45) NOT NULL,
@@ -765,19 +765,19 @@ CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
   `class_name` VARCHAR(255) NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
-  INDEX `fk_content_set_has_obj_dev_db_object1_idx` (`db_object_id` ASC) VISIBLE,
+  INDEX `fk_content_set_has_obj_dev_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
   INDEX `fk_content_set_has_obj_dev_content_set1_idx` (`content_set_id` ASC) VISIBLE,
   INDEX `content_set_has_obj_dev_priority` (`priority` ASC) VISIBLE,
-  PRIMARY KEY (`content_set_id`, `db_object_id`, `kind`, `priority`),
+  PRIMARY KEY (`content_set_id`, `rest_object_id`, `kind`, `priority`),
   INDEX `content_set_has_obj_dev_method_type` (`kind` ASC) VISIBLE,
-  CONSTRAINT `fk_content_set_has_db_object_content_set1`
+  CONSTRAINT `fk_content_set_has_rest_object_content_set1`
     FOREIGN KEY (`content_set_id`)
     REFERENCES `content_set` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
-  CONSTRAINT `fk_content_set_has_db_object_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  CONSTRAINT `fk_content_set_has_rest_object_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;

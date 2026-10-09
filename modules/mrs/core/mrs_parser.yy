@@ -840,7 +840,7 @@ create_rest_procedure_statement:
     opt_rest_parameters rest_results rest_object_options
     {
       Create_rest_routine s;
-      s.kind = Db_object_kind::procedure;
+      s.kind = Rest_object_kind::procedure;
       s.flags = $1;
       s.path = std::move($2);
       s.on = std::move($3);
@@ -896,7 +896,7 @@ create_rest_function_statement:
     opt_rest_parameters opt_rest_result rest_object_options
     {
       Create_rest_routine s;
-      s.kind = Db_object_kind::function;
+      s.kind = Rest_object_kind::function;
       s.flags = $1;
       s.path = std::move($2);
       s.on = std::move($3);
@@ -1277,7 +1277,7 @@ alter_rest_procedure_statement:
     rest_results rest_object_options
     {
       Alter_rest_routine s;
-      s.kind = Db_object_kind::procedure;
+      s.kind = Rest_object_kind::procedure;
       s.path = std::move($4);
       s.on = std::move($5);
       s.new_path = std::move($6);
@@ -1294,7 +1294,7 @@ alter_rest_function_statement:
     rest_results rest_object_options
     {
       Alter_rest_routine s;
-      s.kind = Db_object_kind::function;
+      s.kind = Rest_object_kind::function;
       s.path = std::move($4);
       s.on = std::move($5);
       s.new_path = std::move($6);
@@ -1380,8 +1380,8 @@ drop_rest_view_statement:
     DROP_SYMBOL REST_SYMBOL opt_data_mapping VIEW_SYMBOL opt_if_exists
     view_request_path opt_from_service_schema_selector
     {
-      Drop_rest_db_object s;
-      s.kind = Db_object_kind::view;
+      Drop_rest_object s;
+      s.kind = Rest_object_kind::view;
       s.if_exists = $5;
       s.path = std::move($6);
       s.from = std::move($7);
@@ -1393,8 +1393,8 @@ drop_rest_procedure_statement:
     DROP_SYMBOL REST_SYMBOL PROCEDURE_SYMBOL opt_if_exists
     procedure_request_path opt_from_service_schema_selector
     {
-      Drop_rest_db_object s;
-      s.kind = Db_object_kind::procedure;
+      Drop_rest_object s;
+      s.kind = Rest_object_kind::procedure;
       s.if_exists = $4;
       s.path = std::move($5);
       s.from = std::move($6);
@@ -1406,8 +1406,8 @@ drop_rest_function_statement:
     DROP_SYMBOL REST_SYMBOL FUNCTION_SYMBOL opt_if_exists function_request_path
     opt_from_service_schema_selector
     {
-      Drop_rest_db_object s;
-      s.kind = Db_object_kind::function;
+      Drop_rest_object s;
+      s.kind = Rest_object_kind::function;
       s.if_exists = $4;
       s.path = std::move($5);
       s.from = std::move($6);
@@ -1651,7 +1651,7 @@ show_rest_views_statement:
     opt_on_from_service_schema_selector
     {
       $$ = make_statement(
-          Show_rest_db_objects{Db_object_kind::view, std::move($5)}, @1);
+          Show_rest_objects{Rest_object_kind::view, std::move($5)}, @1);
     }
   ;
 
@@ -1659,7 +1659,7 @@ show_rest_procedures_statement:
     SHOW_SYMBOL REST_SYMBOL PROCEDURES_SYMBOL opt_on_from_service_schema_selector
     {
       $$ = make_statement(
-          Show_rest_db_objects{Db_object_kind::procedure, std::move($4)}, @1);
+          Show_rest_objects{Rest_object_kind::procedure, std::move($4)}, @1);
     }
   ;
 
@@ -1667,7 +1667,7 @@ show_rest_functions_statement:
     SHOW_SYMBOL REST_SYMBOL FUNCTIONS_SYMBOL opt_on_from_service_schema_selector
     {
       $$ = make_statement(
-          Show_rest_db_objects{Db_object_kind::function, std::move($4)}, @1);
+          Show_rest_objects{Rest_object_kind::function, std::move($4)}, @1);
     }
   ;
 
@@ -1808,7 +1808,7 @@ show_create_rest_view_statement:
     view_request_path opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          with_format(Show_create_rest_db_object{Db_object_kind::view,
+          with_format(Show_create_rest_object{Rest_object_kind::view,
                                                  std::move($6), std::move($7)},
                       $8), @1);
     }
@@ -1819,7 +1819,7 @@ show_create_rest_procedure_statement:
     opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          with_format(Show_create_rest_db_object{Db_object_kind::procedure,
+          with_format(Show_create_rest_object{Rest_object_kind::procedure,
                                                  std::move($5), std::move($6)},
                       $7), @1);
     }
@@ -1830,7 +1830,7 @@ show_create_rest_function_statement:
     opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          with_format(Show_create_rest_db_object{Db_object_kind::function,
+          with_format(Show_create_rest_object{Rest_object_kind::function,
                                                  std::move($5), std::move($6)},
                       $7), @1);
     }

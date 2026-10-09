@@ -23,7 +23,7 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "modules/mrs/core/mrs_metadata_db_objects.h"
+#include "modules/mrs/core/mrs_metadata_rest_objects.h"
 
 #include <algorithm>
 #include <cctype>
@@ -43,9 +43,9 @@ bool is_routine_type(std::string_view object_type) {
   return object_type == "PROCEDURE" || object_type == "FUNCTION";
 }
 
-// The column list of the db_object queries.
-const char *k_db_object_select = R"(
-SELECT o.id, o.db_schema_id, o.name, o.request_path,
+// The column list of the rest_object queries.
+const char *k_rest_object_select = R"(
+SELECT o.id, o.rest_schema_id, o.name, o.request_path,
     o.requires_auth, o.enabled, o.object_type,
     o.items_per_page, o.comments,
     sc.request_path AS schema_request_path,
@@ -55,19 +55,19 @@ SELECT o.id, o.db_schema_id, o.name, o.request_path,
     o.auth_stored_procedure, o.options,
     o.metadata, o.internal,
     se.id AS service_id, sc.name AS schema_name
-FROM `{metadata_schema}`.`db_object` o
-    LEFT OUTER JOIN `{metadata_schema}`.`db_schema` sc
-        ON sc.id = o.db_schema_id
+FROM `{metadata_schema}`.`rest_object` o
+    LEFT OUTER JOIN `{metadata_schema}`.`rest_schema` sc
+        ON sc.id = o.rest_schema_id
     LEFT OUTER JOIN `{metadata_schema}`.`service` se
         ON se.id = sc.service_id
     LEFT JOIN `{metadata_schema}`.`url_host` h
         ON se.url_host_id = h.id
 )";
 
-Db_object db_object_from_row(const Db_row &row) {
-  Db_object o;
+Rest_object rest_object_from_row(const Db_row &row) {
+  Rest_object o;
   o.id = row["id"].as_string();
-  o.db_schema_id = row["db_schema_id"].as_string();
+  o.rest_schema_id = row["rest_schema_id"].as_string();
   o.service_id = row["service_id"].as_string();
   o.name = row["name"].as_string();
   o.schema_name = row["schema_name"].as_string();
@@ -94,18 +94,18 @@ Db_object db_object_from_row(const Db_row &row) {
   return o;
 }
 
-std::vector<Db_object> query_db_objects(Db_session *session,
+std::vector<Rest_object> query_rest_objects(Db_session *session,
                                         const std::string &where,
                                         std::vector<Value> params) {
-  std::string sql = k_db_object_select;
+  std::string sql = k_rest_object_select;
   if (!where.empty()) sql += " WHERE " + where;
   sql += " ORDER BY o.request_path";
 
-  std::vector<Db_object> db_objects;
+  std::vector<Rest_object> rest_objects;
   for (const auto &row : session->query(sql, std::move(params)).rows) {
-    db_objects.push_back(db_object_from_row(row));
+    rest_objects.push_back(rest_object_from_row(row));
   }
-  return db_objects;
+  return rest_objects;
 }
 
 // The router of the previous metadata major version read the data mapping
@@ -140,7 +140,7 @@ sql::Insert &next_row(sql::Insert *insert) {
   return insert->empty() ? *insert : insert->next_row();
 }
 
-void add_reference_row(sql::Insert *insert, const Object_reference &ref) {
+void add_reference_row(sql::Insert *insert, const Data_mapping_reference &ref) {
   next_row(insert)
       .set("id", sql::Value::id(ref.id))
       .set("reduce_to_value_of_field_id",
@@ -154,11 +154,11 @@ void add_reference_row(sql::Insert *insert, const Object_reference &ref) {
       .set("comments", ref.comments);
 }
 
-void add_field_row(sql::Insert *insert, const Id &object_id,
-                   const Object_field &field) {
+void add_field_row(sql::Insert *insert, const Id &data_mapping_id,
+                   const Data_mapping_field &field) {
   next_row(insert)
       .set("id", sql::Value::id(field.id))
-      .set("object_id", sql::Value::id(object_id))
+      .set("data_mapping_id", sql::Value::id(data_mapping_id))
       .set("parent_reference_id", sql::Value::id(field.parent_reference_id))
       .set("represents_reference_id",
            field.reference ? sql::Value::id(field.reference->id) : sql::Value())
@@ -176,11 +176,11 @@ void add_field_row(sql::Insert *insert, const Id &object_id,
       .set("comments", field.comments);
 }
 
-void add_object_row(sql::Insert *insert, const Id &db_object_id,
-                    const Object_definition &object) {
+void add_object_row(sql::Insert *insert, const Id &rest_object_id,
+                    const Data_mapping &object) {
   next_row(insert)
       .set("id", sql::Value::id(object.id))
-      .set("db_object_id", sql::Value::id(db_object_id))
+      .set("rest_object_id", sql::Value::id(rest_object_id))
       .set("name", object.name)
       .set("kind", object.kind)
       .set("position", object.position)
@@ -192,16 +192,16 @@ void add_object_row(sql::Insert *insert, const Id &db_object_id,
       .set("comments", object.comments);
 }
 
-// The objects of a db_object with their references and fields, in three
+// The objects of a rest_object with their references and fields, in three
 // multi-row statements. The fields point to the references, so those go
 // first.
-void insert_objects(Db_session *session, const Id &db_object_id,
-                    const std::vector<Object_definition> &objects) {
-  sql::Insert object_rows("object");
-  sql::Insert reference_rows("object_reference");
-  sql::Insert field_rows("object_field");
+void insert_objects(Db_session *session, const Id &rest_object_id,
+                    const std::vector<Data_mapping> &objects) {
+  sql::Insert object_rows("data_mapping");
+  sql::Insert reference_rows("data_mapping_reference");
+  sql::Insert field_rows("data_mapping_field");
   for (const auto &object : objects) {
-    add_object_row(&object_rows, db_object_id, object);
+    add_object_row(&object_rows, rest_object_id, object);
     for (const auto &field : object.fields) {
       if (field.reference) add_reference_row(&reference_rows, *field.reference);
       add_field_row(&field_rows, object.id, field);
@@ -212,10 +212,10 @@ void insert_objects(Db_session *session, const Id &db_object_id,
   }
 }
 
-Object_field field_from_row(const Db_row &row) {
-  Object_field f;
+Data_mapping_field field_from_row(const Db_row &row) {
+  Data_mapping_field f;
   f.id = row["id"].as_string();
-  f.object_id = row["object_id"].as_string();
+  f.data_mapping_id = row["data_mapping_id"].as_string();
   f.parent_reference_id = row["parent_reference_id"].as_optional_string();
   f.name = row["name"].as_string();
   f.position = static_cast<int>(row["position"].as_int());
@@ -233,7 +233,7 @@ Object_field field_from_row(const Db_row &row) {
   f.comments = row["comments"].as_optional_string();
 
   if (const auto reference_id = row["represents_reference_id"].as_optional_string()) {
-    Object_reference r;
+    Data_mapping_reference r;
     r.id = *reference_id;
     r.reduce_to_value_of_field_id =
         row["reduce_to_value_of_field_id"].as_optional_string();
@@ -248,11 +248,11 @@ Object_field field_from_row(const Db_row &row) {
   return f;
 }
 
-// The fields of all objects of a db_object, in one query, by object id.
-std::map<Id, std::vector<Object_field>> get_object_fields(
-    Db_session *session, const Id &db_object_id) {
+// The fields of all objects of a rest_object, in one query, by object id.
+std::map<Id, std::vector<Data_mapping_field>> get_data_mapping_fields(
+    Db_session *session, const Id &rest_object_id) {
   const auto result = session->query(R"(
-SELECT f.id, f.object_id, f.parent_reference_id, f.represents_reference_id,
+SELECT f.id, f.data_mapping_id, f.parent_reference_id, f.represents_reference_id,
     f.name, f.position, f.db_column, f.enabled, f.allow_filtering,
     f.allow_sorting, f.no_check, f.no_update, f.json_schema, f.options,
     f.sdk_options, f.comments,
@@ -260,36 +260,36 @@ SELECT f.id, f.object_id, f.parent_reference_id, f.represents_reference_id,
     r.row_ownership_field_id AS ref_row_ownership_field_id,
     r.reference_mapping, r.unnest, r.options AS ref_options,
     r.sdk_options AS ref_sdk_options, r.comments AS ref_comments
-FROM `{metadata_schema}`.`object_field` f
-    LEFT OUTER JOIN `{metadata_schema}`.`object_reference` r
+FROM `{metadata_schema}`.`data_mapping_field` f
+    LEFT OUTER JOIN `{metadata_schema}`.`data_mapping_reference` r
         ON r.id = f.represents_reference_id
-WHERE f.object_id IN (SELECT id FROM `{metadata_schema}`.`object`
-                      WHERE db_object_id = ?)
-ORDER BY f.object_id, f.position, f.id)",
-                                     {Value::id(db_object_id)});
+WHERE f.data_mapping_id IN (SELECT id FROM `{metadata_schema}`.`data_mapping`
+                      WHERE rest_object_id = ?)
+ORDER BY f.data_mapping_id, f.position, f.id)",
+                                     {Value::id(rest_object_id)});
 
-  std::map<Id, std::vector<Object_field>> fields;
+  std::map<Id, std::vector<Data_mapping_field>> fields;
   for (const auto &row : result.rows) {
     auto field = field_from_row(row);
-    fields[field.object_id].push_back(std::move(field));
+    fields[field.data_mapping_id].push_back(std::move(field));
   }
   return fields;
 }
 
-Id schema_id_of_db_object(Db_session *session, const Id &db_object_id) {
+Id schema_id_of_rest_object(Db_session *session, const Id &rest_object_id) {
   const auto result = session->query(
-      "SELECT db_schema_id FROM " + sql::metadata_table("db_object") +
+      "SELECT rest_schema_id FROM " + sql::metadata_table("rest_object") +
           " WHERE id = ?",
-      {Value::id(db_object_id)});
+      {Value::id(rest_object_id)});
   if (result.empty()) {
-    throw std::runtime_error("The specified db_object with id " +
-                             db_object_id + " was not found.");
+    throw std::runtime_error("The specified rest_object with id " +
+                             rest_object_id + " was not found.");
   }
-  return result.first()["db_schema_id"].as_string();
+  return result.first()["rest_schema_id"].as_string();
 }
 
 void check_object_names(Db_session *session, const Id &schema_id,
-                        const std::vector<Object_definition> &objects) {
+                        const std::vector<Data_mapping> &objects) {
   std::vector<std::string> assigned;
   for (const auto &object : objects) {
     if (std::find(assigned.begin(), assigned.end(), object.name) != assigned.end()) {
@@ -412,7 +412,7 @@ std::string cut_last_comma(const std::string &text) {
   return text.substr(0, text.size() - 1);
 }
 
-std::string field_attributes(const Object_field &field, bool add_datatype,
+std::string field_attributes(const Data_mapping_field &field, bool add_datatype,
                              const std::optional<Id> &row_ownership_field_id) {
   std::vector<std::string> attributes;
   const auto &column = *field.db_column;
@@ -436,7 +436,7 @@ std::string field_attributes(const Object_field &field, bool add_datatype,
   return join(attributes, " ");
 }
 
-std::string reference_attributes(const Object_reference &reference) {
+std::string reference_attributes(const Data_mapping_reference &reference) {
   std::vector<std::string> attributes;
   if (mapping_option(reference.options, "dataMappingViewInsert")) {
     attributes.push_back("@INSERT");
@@ -459,7 +459,7 @@ std::string reference_attributes(const Object_reference &reference) {
 // The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
 // references with their own block. Every line ends in ",\n"; the caller
 // cuts the last comma.
-std::string walk(const std::vector<Object_field> &fields,
+std::string walk(const std::vector<Data_mapping_field> &fields,
                  const std::optional<Id> &parent_reference_id, int level,
                  bool add_datatype,
                  const std::optional<Id> &row_ownership_field_id) {
@@ -498,7 +498,7 @@ std::string walk(const std::vector<Object_field> &fields,
   return result;
 }
 
-std::string class_header(const Object_definition &object) {
+std::string class_header(const Data_mapping &object) {
   std::string header = "CLASS " + object.name;
   if (mapping_option(object.options, "dataMappingViewInsert")) header += " @INSERT";
   if (mapping_option(object.options, "dataMappingViewUpdate")) header += " @UPDATE";
@@ -514,44 +514,44 @@ bool is_empty_json_object(const std::string &text) {
 
 }  // namespace
 
-// -- db_object rows -----------------------------------------------------------
+// -- rest_object rows -----------------------------------------------------------
 
-std::optional<Db_object> get_db_object(Db_session *session, const Id &id) {
-  auto db_objects = query_db_objects(session, "o.id = ?", {Value::id(id)});
-  if (db_objects.empty()) return std::nullopt;
-  return std::move(db_objects.front());
+std::optional<Rest_object> get_rest_object(Db_session *session, const Id &id) {
+  auto rest_objects = query_rest_objects(session, "o.id = ?", {Value::id(id)});
+  if (rest_objects.empty()) return std::nullopt;
+  return std::move(rest_objects.front());
 }
 
-std::optional<Db_object> find_db_object(Db_session *session,
+std::optional<Rest_object> find_rest_object(Db_session *session,
                                         const Id &schema_id,
                                         std::string_view request_path) {
-  auto db_objects =
-      query_db_objects(session, "o.db_schema_id = ? AND o.request_path = ?",
+  auto rest_objects =
+      query_rest_objects(session, "o.rest_schema_id = ? AND o.request_path = ?",
                        {Value::id(schema_id), request_path});
-  if (db_objects.empty()) return std::nullopt;
-  return std::move(db_objects.front());
+  if (rest_objects.empty()) return std::nullopt;
+  return std::move(rest_objects.front());
 }
 
-std::vector<Db_object> get_db_objects(Db_session *session, const Id &schema_id,
+std::vector<Rest_object> get_rest_objects(Db_session *session, const Id &schema_id,
                                       const std::vector<std::string> &object_types) {
-  std::string where = "o.db_schema_id = ?";
+  std::string where = "o.rest_schema_id = ?";
   std::vector<Value> params{Value::id(schema_id)};
   if (!object_types.empty()) {
     std::vector<std::string> placeholders(object_types.size(), "?");
     where += " AND o.object_type IN (" + join(placeholders, ", ") + ")";
     params.insert(params.end(), object_types.begin(), object_types.end());
   }
-  return query_db_objects(session, where, std::move(params));
+  return query_rest_objects(session, where, std::move(params));
 }
 
-Id add_db_object(Db_session *session, const Db_object_definition &definition,
-                 const std::vector<Object_definition> &objects) {
+Id add_rest_object(Db_session *session, const Rest_object_definition &definition,
+                 const std::vector<Data_mapping> &objects) {
   static const std::vector<std::string> k_types{"TABLE", "VIEW", "PROCEDURE",
                                                 "FUNCTION", "SCRIPT"};
   if (std::find(k_types.begin(), k_types.end(), definition.object_type) ==
       k_types.end()) {
     throw std::runtime_error(
-        "Invalid db_object_type. Only valid types are TABLE, VIEW, PROCEDURE "
+        "Invalid rest_object_type. Only valid types are TABLE, VIEW, PROCEDURE "
         "and FUNCTION.");
   }
 
@@ -559,9 +559,9 @@ Id add_db_object(Db_session *session, const Db_object_definition &definition,
   const auto crud_operations =
       calculate_crud_operations(definition.object_type, objects);
 
-  sql::Insert insert("db_object");
+  sql::Insert insert("rest_object");
   insert.set("id", sql::Value::id(id));
-  insert.set("db_schema_id", sql::Value::id(definition.db_schema_id));
+  insert.set("rest_schema_id", sql::Value::id(definition.rest_schema_id));
   insert.set("name", definition.name);
   insert.set("request_path", definition.request_path);
   insert.set("object_type", definition.object_type);
@@ -579,15 +579,15 @@ Id add_db_object(Db_session *session, const Db_object_definition &definition,
   insert.set("internal", definition.internal);
   session->execute(insert);
 
-  // A new db_object has no objects to delete yet (see set_objects)
-  check_object_names(session, definition.db_schema_id, objects);
+  // A new rest_object has no objects to delete yet (see set_objects)
+  check_object_names(session, definition.rest_schema_id, objects);
   insert_objects(session, id, objects);
   return id;
 }
 
-void update_db_object(Db_session *session, const Id &id,
-                      const Db_object_changes &changes) {
-  sql::Update update("db_object");
+void update_rest_object(Db_session *session, const Id &id,
+                      const Rest_object_changes &changes) {
+  sql::Update update("rest_object");
   update.set_if("request_path", changes.request_path);
   update.set_if("enabled", changes.enabled);
   update.set_if("requires_auth", changes.requires_auth);
@@ -606,7 +606,7 @@ void update_db_object(Db_session *session, const Id &id,
     update.set("crud_operations", join(*changes.crud_operations, ","));
   }
   if (changes.options) {
-    set_json_options(session, &update, "db_object", id, *changes.options,
+    set_json_options(session, &update, "rest_object", id, *changes.options,
                      changes.merge_options);
   }
 
@@ -616,29 +616,29 @@ void update_db_object(Db_session *session, const Id &id,
 }
 
 std::optional<std::string> options_after(Db_session *session,
-                                         const Db_object &db_object,
-                                         const Db_object_changes &changes) {
-  if (!changes.options) return db_object.options;
-  if (!changes.merge_options || !db_object.options) return changes.options;
+                                         const Rest_object &rest_object,
+                                         const Rest_object_changes &changes) {
+  if (!changes.options) return rest_object.options;
+  if (!changes.merge_options || !rest_object.options) return changes.options;
   return session
       ->query("SELECT JSON_MERGE_PATCH(?, ?) AS options",
-              {Value(*db_object.options), Value(*changes.options)})
+              {Value(*rest_object.options), Value(*changes.options)})
       .first()["options"]
       .as_string();
 }
 
-void delete_db_object(Db_session *session, const Id &id) {
-  const auto db_object = get_db_object(session, id);
-  if (!db_object) {
-    throw std::runtime_error("The specified db_object with id " + id +
+void delete_rest_object(Db_session *session, const Id &id) {
+  const auto rest_object = get_rest_object(session, id);
+  if (!rest_object) {
+    throw std::runtime_error("The specified rest_object with id " + id +
                              " was not found.");
   }
-  revoke_all_from_db_object(session, db_object->schema_name, db_object->name,
-                            db_object->object_type);
+  revoke_all_from_rest_object(session, rest_object->schema_name, rest_object->name,
+                            rest_object->object_type);
 
   // The objects, fields and references go with it (BEFORE DELETE triggers)
-  if (session->execute(sql::Delete("db_object").where("id", Value::id(id))) == 0) {
-    throw std::runtime_error("The specified db_object with id " + id +
+  if (session->execute(sql::Delete("rest_object").where("id", Value::id(id))) == 0) {
+    throw std::runtime_error("The specified rest_object with id " + id +
                              " was not found.");
   }
 }
@@ -662,26 +662,26 @@ bool mapping_option(const std::optional<std::string> &options,
   return doc && doc->get_bool(key);
 }
 
-bool has_objects(Db_session *session, const Id &db_object_id) {
+bool has_objects(Db_session *session, const Id &rest_object_id) {
   return !session
-              ->query("SELECT 1 FROM " + sql::metadata_table("object") +
-                          " WHERE db_object_id = ? LIMIT 1",
-                      {Value::id(db_object_id)})
+              ->query("SELECT 1 FROM " + sql::metadata_table("data_mapping") +
+                          " WHERE rest_object_id = ? LIMIT 1",
+                      {Value::id(rest_object_id)})
               .empty();
 }
 
-std::vector<Object_definition> get_objects(Db_session *session,
-                                           const Id &db_object_id) {
+std::vector<Data_mapping> get_objects(Db_session *session,
+                                           const Id &rest_object_id) {
   const auto result = session->query(
       "SELECT id, name, kind, position, row_ownership_field_id, options, "
       "sdk_options, comments FROM " +
-          sql::metadata_table("object") +
-          " WHERE db_object_id = ? ORDER BY position",
-      {Value::id(db_object_id)});
+          sql::metadata_table("data_mapping") +
+          " WHERE rest_object_id = ? ORDER BY position",
+      {Value::id(rest_object_id)});
 
-  std::vector<Object_definition> objects;
+  std::vector<Data_mapping> objects;
   for (const auto &row : result.rows) {
-    Object_definition o;
+    Data_mapping o;
     o.id = row["id"].as_string();
     o.name = row["name"].as_string();
     o.kind = row["kind"].as_string();
@@ -694,7 +694,7 @@ std::vector<Object_definition> get_objects(Db_session *session,
   }
 
   if (!objects.empty()) {
-    auto fields = get_object_fields(session, db_object_id);
+    auto fields = get_data_mapping_fields(session, rest_object_id);
     for (auto &object : objects) {
       if (auto it = fields.find(object.id); it != fields.end()) {
         object.fields = std::move(it->second);
@@ -704,42 +704,42 @@ std::vector<Object_definition> get_objects(Db_session *session,
   return objects;
 }
 
-void set_objects(Db_session *session, const Id &db_object_id,
-                 const std::vector<Object_definition> &objects) {
+void set_objects(Db_session *session, const Id &rest_object_id,
+                 const std::vector<Data_mapping> &objects) {
   // The fields and references of the objects go with them (triggers)
   session->execute(
-      sql::Delete("object").where("db_object_id", Value::id(db_object_id)));
+      sql::Delete("data_mapping").where("rest_object_id", Value::id(rest_object_id)));
 
-  check_object_names(session, schema_id_of_db_object(session, db_object_id),
+  check_object_names(session, schema_id_of_rest_object(session, rest_object_id),
                      objects);
 
-  insert_objects(session, db_object_id, objects);
+  insert_objects(session, rest_object_id, objects);
 }
 
-void update_object(Db_session *session, const Id &object_id,
+void update_object(Db_session *session, const Id &data_mapping_id,
                    const std::string &name,
                    const std::optional<std::string> &options) {
-  sql::Update update("object");
+  sql::Update update("data_mapping");
   update.set("name", name);
   update.set("options", options ? sql::Value(with_legacy_option_keys(*options))
                                 : sql::Value());
-  update.where("id", Value::id(object_id));
+  update.where("id", Value::id(data_mapping_id));
   session->execute(update);
 }
 
 bool object_name_in_use(Db_session *session, const Id &schema_id,
-                        const Id &object_id, std::string_view name) {
+                        const Id &data_mapping_id, std::string_view name) {
   const auto result = session->query(
-      "SELECT o.name FROM " + sql::metadata_table("object") + " o LEFT JOIN " +
-      sql::metadata_table("db_object") +
-          " dbo ON o.db_object_id = dbo.id WHERE dbo.db_schema_id = ? AND "
+      "SELECT o.name FROM " + sql::metadata_table("data_mapping") + " o LEFT JOIN " +
+      sql::metadata_table("rest_object") +
+          " dbo ON o.rest_object_id = dbo.id WHERE dbo.rest_schema_id = ? AND "
           "UPPER(o.name) = UPPER(?) AND o.id <> ?",
-      {Value::id(schema_id), name, Value(object_id)});
+      {Value::id(schema_id), name, Value(data_mapping_id)});
   return !result.empty();
 }
 
 std::vector<std::string> calculate_crud_operations(
-    std::string_view object_type, const std::vector<Object_definition> &objects) {
+    std::string_view object_type, const std::vector<Data_mapping> &objects) {
   if (object_type == "SCRIPT") return {"CREATE", "READ", "UPDATE"};
 
   // A routine is called with POST
@@ -779,7 +779,7 @@ std::vector<std::string> grant_statements(
     const Db_session *session, std::string_view schema_name, std::string_view name,
     std::string_view object_type,
     const std::vector<std::string> &crud_operations,
-    const std::vector<Object_definition> &objects,
+    const std::vector<Data_mapping> &objects,
     const std::optional<std::string> &options) {
   // The information_schema cannot be granted
   if (to_lower(schema_name) == "information_schema") return {};
@@ -840,7 +840,7 @@ std::vector<std::string> option_grant_statements(
                 : std::vector<std::string>{};
 }
 
-void revoke_all_from_db_object(Db_session *session, std::string_view schema_name,
+void revoke_all_from_rest_object(Db_session *session, std::string_view schema_name,
                                std::string_view name,
                                std::string_view object_type) {
   const auto schema = to_lower(schema_name);
@@ -871,21 +871,21 @@ void revoke_all_from_db_object(Db_session *session, std::string_view schema_name
 
 // -- SHOW CREATE --------------------------------------------------------------
 
-std::string db_object_create_statement(Db_session *session,
-                                       const Db_object &db_object,
+std::string rest_object_create_statement(Db_session *session,
+                                       const Rest_object &rest_object,
                                        bool on_current_service) {
-  const auto objects = get_objects(session, db_object.id);
+  const auto objects = get_objects(session, rest_object.id);
   const std::string object_type =
-      db_object.object_type == "TABLE" ? "VIEW" : db_object.object_type;
+      rest_object.object_type == "TABLE" ? "VIEW" : rest_object.object_type;
 
   std::vector<std::string> lines{
       "CREATE OR REPLACE REST " + object_type + " " +
-          quote_request_path(db_object.request_path),
-      "    ON " + (on_current_service ? "" : "SERVICE " + db_object.host_ctx + " ") +
-          "SCHEMA " + quote_request_path(db_object.schema_request_path),
-      "    AS " + sql::quote_qualified(db_object.schema_name, db_object.name)};
+          quote_request_path(rest_object.request_path),
+      "    ON " + (on_current_service ? "" : "SERVICE " + rest_object.host_ctx + " ") +
+          "SCHEMA " + quote_request_path(rest_object.schema_request_path),
+      "    AS " + sql::quote_qualified(rest_object.schema_name, rest_object.name)};
 
-  if (!db_object.is_routine()) {
+  if (!rest_object.is_routine()) {
     if (!objects.empty()) {
       const auto &object = objects.front();
       lines.back() += " " + class_header(object) + " {";
@@ -906,32 +906,32 @@ std::string db_object_create_statement(Db_session *session,
     }
   }
 
-  if (db_object.enabled == 2) {
+  if (rest_object.enabled == 2) {
     lines.push_back("    PRIVATE");
-  } else if (db_object.enabled == 0) {
+  } else if (rest_object.enabled == 0) {
     lines.push_back("    DISABLED");
   }
-  lines.push_back(db_object.requires_auth ? "    AUTHENTICATION REQUIRED"
+  lines.push_back(rest_object.requires_auth ? "    AUTHENTICATION REQUIRED"
                                           : "    AUTHENTICATION NOT REQUIRED");
-  if (db_object.items_per_page && *db_object.items_per_page != 25) {
-    lines.push_back("    ITEMS PER PAGE " + std::to_string(*db_object.items_per_page));
+  if (rest_object.items_per_page && *rest_object.items_per_page != 25) {
+    lines.push_back("    ITEMS PER PAGE " + std::to_string(*rest_object.items_per_page));
   }
-  if (db_object.comments && !db_object.comments->empty()) {
-    lines.push_back("    COMMENT " + sql::quote(*db_object.comments));
+  if (rest_object.comments && !rest_object.comments->empty()) {
+    lines.push_back("    COMMENT " + sql::quote(*rest_object.comments));
   }
-  if (db_object.media_type) {
-    lines.push_back("    MEDIA TYPE " + sql::quote(*db_object.media_type));
+  if (rest_object.media_type) {
+    lines.push_back("    MEDIA TYPE " + sql::quote(*rest_object.media_type));
   }
-  if (db_object.auto_detect_media_type) lines.push_back("    MEDIA TYPE AUTODETECT");
-  if (db_object.format != "FEED") lines.push_back("    FORMAT " + db_object.format);
-  if (db_object.auth_stored_procedure && !db_object.auth_stored_procedure->empty()) {
-    lines.push_back("    AUTHENTICATION PROCEDURE " + *db_object.auth_stored_procedure);
+  if (rest_object.auto_detect_media_type) lines.push_back("    MEDIA TYPE AUTODETECT");
+  if (rest_object.format != "FEED") lines.push_back("    FORMAT " + rest_object.format);
+  if (rest_object.auth_stored_procedure && !rest_object.auth_stored_procedure->empty()) {
+    lines.push_back("    AUTHENTICATION PROCEDURE " + *rest_object.auth_stored_procedure);
   }
-  if (db_object.options && !is_empty_json_object(*db_object.options)) {
-    lines.push_back(format_json_entry("OPTIONS", db_object.options));
+  if (rest_object.options && !is_empty_json_object(*rest_object.options)) {
+    lines.push_back(format_json_entry("OPTIONS", rest_object.options));
   }
-  if (db_object.metadata && !is_empty_json_object(*db_object.metadata)) {
-    lines.push_back(format_json_entry("METADATA", db_object.metadata));
+  if (rest_object.metadata && !is_empty_json_object(*rest_object.metadata)) {
+    lines.push_back(format_json_entry("METADATA", rest_object.metadata));
   }
 
   return join(lines, "\n") + ";";
@@ -939,9 +939,9 @@ std::string db_object_create_statement(Db_session *session,
 
 // -- Cloning ------------------------------------------------------------------
 
-Id clone_db_object(Db_session *session, const Db_object &db_object,
+Id clone_rest_object(Db_session *session, const Rest_object &rest_object,
                    const Id &new_schema_id) {
-  auto objects = get_objects(session, db_object.id);
+  auto objects = get_objects(session, rest_object.id);
 
   // Every id of the mapping gets a new one; the links between fields and
   // references are kept by mapping each old id to the same new id
@@ -959,7 +959,7 @@ Id clone_db_object(Db_session *session, const Db_object &db_object,
     object.id = new_id(session);
     remap_optional(&object.row_ownership_field_id);
     for (auto &field : object.fields) {
-      field.object_id = object.id;
+      field.data_mapping_id = object.id;
       remap(&field.id);
       remap_optional(&field.parent_reference_id);
       if (field.reference) {
@@ -970,25 +970,25 @@ Id clone_db_object(Db_session *session, const Db_object &db_object,
     }
   }
 
-  Db_object_definition definition;
-  definition.db_schema_id = new_schema_id;
-  definition.name = db_object.name;
-  definition.request_path = db_object.request_path;
-  definition.object_type = db_object.object_type;
-  definition.enabled = db_object.enabled;
-  definition.items_per_page = db_object.items_per_page;
-  definition.requires_auth = db_object.requires_auth;
-  definition.format = db_object.format;
-  definition.comments = db_object.comments;
-  definition.media_type = db_object.media_type;
-  definition.auto_detect_media_type = db_object.auto_detect_media_type;
-  definition.auth_stored_procedure = db_object.auth_stored_procedure;
-  definition.options = db_object.options;
-  definition.metadata = db_object.metadata;
-  definition.internal = db_object.internal;
+  Rest_object_definition definition;
+  definition.rest_schema_id = new_schema_id;
+  definition.name = rest_object.name;
+  definition.request_path = rest_object.request_path;
+  definition.object_type = rest_object.object_type;
+  definition.enabled = rest_object.enabled;
+  definition.items_per_page = rest_object.items_per_page;
+  definition.requires_auth = rest_object.requires_auth;
+  definition.format = rest_object.format;
+  definition.comments = rest_object.comments;
+  definition.media_type = rest_object.media_type;
+  definition.auto_detect_media_type = rest_object.auto_detect_media_type;
+  definition.auth_stored_procedure = rest_object.auth_stored_procedure;
+  definition.options = rest_object.options;
+  definition.metadata = rest_object.metadata;
+  definition.internal = rest_object.internal;
 
   // The database object is the same one, so its grants are in place already
-  return add_db_object(session, definition, objects);
+  return add_rest_object(session, definition, objects);
 }
 
 // -- Database schema ----------------------------------------------------------

@@ -72,46 +72,46 @@ GRANT SELECT ON `service`
 -- -----------------------------------------------------
 -- Schema Objects
 
--- `db_schema`
+-- `rest_schema`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `db_schema`
+    ON `rest_schema`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
-GRANT SELECT ON `db_schema`
+GRANT SELECT ON `rest_schema`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `db_object`
+-- `rest_object`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `db_object`
+    ON `rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `db_object`
+GRANT SELECT ON `rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `mrs_db_object_row_group_security`
+-- `mrs_rest_object_row_group_security`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `mrs_db_object_row_group_security`
+    ON `mrs_rest_object_row_group_security`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `mrs_db_object_row_group_security`
+GRANT SELECT ON `mrs_rest_object_row_group_security`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object`
+-- `data_mapping`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object`
+    ON `data_mapping`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object`
+GRANT SELECT ON `data_mapping`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_field`
+-- `data_mapping_field`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object_field`
+    ON `data_mapping_field`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object_field`
+GRANT SELECT ON `data_mapping_field`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_reference`
+-- `data_mapping_reference`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object_reference`
+    ON `data_mapping_reference`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object_reference`
+GRANT SELECT ON `data_mapping_reference`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
@@ -132,11 +132,11 @@ GRANT SELECT ON `content_file`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 
--- `content_set_has_obj_def`
+-- `content_set_has_rest_object`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `content_set_has_obj_def`
+    ON `content_set_has_rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `content_set_has_obj_def`
+GRANT SELECT ON `content_set_has_rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
@@ -328,7 +328,7 @@ GRANT SELECT
     ON `mrs_user_schema_version`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_fields_with_references`
+-- `data_mapping_fields_with_references`
 GRANT SELECT
-    ON `object_fields_with_references`
+    ON `data_mapping_fields_with_references`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;

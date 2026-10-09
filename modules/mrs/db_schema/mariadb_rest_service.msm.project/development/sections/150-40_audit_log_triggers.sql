@@ -5,14 +5,14 @@
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "INSERT",
         NULL,
         JSON_OBJECT(
@@ -35,14 +35,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -77,14 +77,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -229,19 +229,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "db_schema_id", NEW.db_schema_id,
+            "rest_schema_id", NEW.rest_schema_id,
             "name", NEW.name,
             "request_path", NEW.request_path,
             "enabled", NEW.enabled,
@@ -265,18 +265,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_schema_id", OLD.db_schema_id,
+            "rest_schema_id", OLD.rest_schema_id,
             "name", OLD.name,
             "request_path", OLD.request_path,
             "enabled", OLD.enabled,
@@ -295,7 +295,7 @@ BEGIN
             "metadata", OLD.metadata),
         JSON_OBJECT(
             "id", NEW.id,
-            "db_schema_id", NEW.db_schema_id,
+            "rest_schema_id", NEW.rest_schema_id,
             "name", NEW.name,
             "request_path", NEW.request_path,
             "enabled", NEW.enabled,
@@ -319,18 +319,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_schema_id", OLD.db_schema_id,
+            "rest_schema_id", OLD.rest_schema_id,
             "name", OLD.name,
             "request_path", OLD.request_path,
             "enabled", OLD.enabled,
@@ -1797,97 +1797,97 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "INSERT",
         NULL,
         JSON_OBJECT(
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
             "row_group_ownership_column", NEW.row_group_ownership_column,
             "level", NEW.level,
             "match_level", NEW.match_level,
             "options", NEW.options),
         NULL,
-        NEW.db_object_id,
+        NEW.rest_object_id,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "UPDATE",
         JSON_OBJECT(
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
             "row_group_ownership_column", OLD.row_group_ownership_column,
             "level", OLD.level,
             "match_level", OLD.match_level,
             "options", OLD.options),
         JSON_OBJECT(
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
             "row_group_ownership_column", NEW.row_group_ownership_column,
             "level", NEW.level,
             "match_level", NEW.match_level,
             "options", NEW.options),
-        OLD.db_object_id,
-        NEW.db_object_id,
+        OLD.rest_object_id,
+        NEW.rest_object_id,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "DELETE",
         JSON_OBJECT(
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
             "row_group_ownership_column", OLD.row_group_ownership_column,
             "level", OLD.level,
             "match_level", OLD.match_level,
             "options", OLD.options),
         NULL,
-        OLD.db_object_id,
+        OLD.rest_object_id,
         NULL,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "name", NEW.name,
             "kind", NEW.kind,
             "position", NEW.position,
@@ -1902,18 +1902,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "name", OLD.name,
             "kind", OLD.kind,
             "position", OLD.position,
@@ -1923,7 +1923,7 @@ BEGIN
             "comments", OLD.comments),
         JSON_OBJECT(
             "id", NEW.id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "name", NEW.name,
             "kind", NEW.kind,
             "position", NEW.position,
@@ -1938,18 +1938,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "name", OLD.name,
             "kind", OLD.kind,
             "position", OLD.position,
@@ -1965,19 +1965,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "object_id", NEW.object_id,
+            "data_mapping_id", NEW.data_mapping_id,
             "parent_reference_id", NEW.parent_reference_id,
             "represents_reference_id", NEW.represents_reference_id,
             "name", NEW.name,
@@ -1999,18 +1999,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "object_id", OLD.object_id,
+            "data_mapping_id", OLD.data_mapping_id,
             "parent_reference_id", OLD.parent_reference_id,
             "represents_reference_id", OLD.represents_reference_id,
             "name", OLD.name,
@@ -2027,7 +2027,7 @@ BEGIN
             "comments", OLD.comments),
         JSON_OBJECT(
             "id", NEW.id,
-            "object_id", NEW.object_id,
+            "data_mapping_id", NEW.data_mapping_id,
             "parent_reference_id", NEW.parent_reference_id,
             "represents_reference_id", NEW.represents_reference_id,
             "name", NEW.name,
@@ -2049,18 +2049,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "object_id", OLD.object_id,
+            "data_mapping_id", OLD.data_mapping_id,
             "parent_reference_id", OLD.parent_reference_id,
             "represents_reference_id", OLD.represents_reference_id,
             "name", OLD.name,
@@ -2083,14 +2083,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "INSERT",
         NULL,
         JSON_OBJECT(
@@ -2109,14 +2109,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -2143,14 +2143,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -2235,19 +2235,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "content_set_id", NEW.content_set_id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "kind", NEW.kind,
             "priority", NEW.priority,
             "language", NEW.language,
@@ -2262,18 +2262,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "UPDATE",
         JSON_OBJECT(
             "content_set_id", OLD.content_set_id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "kind", OLD.kind,
             "priority", OLD.priority,
             "language", OLD.language,
@@ -2283,7 +2283,7 @@ BEGIN
             "options", OLD.options),
         JSON_OBJECT(
             "content_set_id", NEW.content_set_id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "kind", NEW.kind,
             "priority", NEW.priority,
             "language", NEW.language,
@@ -2298,18 +2298,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "DELETE",
         JSON_OBJECT(
             "content_set_id", OLD.content_set_id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "kind", OLD.kind,
             "priority", OLD.priority,
             "language", OLD.language,

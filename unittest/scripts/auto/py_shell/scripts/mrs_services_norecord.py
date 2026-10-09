@@ -276,7 +276,7 @@ EXPECT_EQ("/full", doc["full_service_path"])
 EXPECT_EQ(session.run_sql("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/full'").fetch_one()[0], doc["id"])
 EXPECT_EQ([], doc["developers"])
 EXPECT_EQ([], doc["auth_apps"])
-EXPECT_FALSE("schemas" in doc)
+EXPECT_FALSE("rest_schemas" in doc)
 # The option columns are embedded as JSON
 EXPECT_EQ(dict, type(doc["options"]))
 EXPECT_EQ(json.loads(session.run_sql("SELECT options FROM mariadb_rest_service.service WHERE url_context_root = '/full'").fetch_one()[0]), doc["options"])
@@ -316,8 +316,8 @@ doc = json.loads(res.fetch_one()[0])
 EXPECT_EQ({"name": "sakila", "schema_type": "DATABASE_SCHEMA", "request_path": "/sakila", "requires_auth": True, "enabled": 0, "items_per_page": 10, "comments": "The sakila schema", "options": {"o": 1}, "metadata": {"m": 2}}, {k: doc[k] for k in ["name", "schema_type", "request_path", "requires_auth", "enabled", "items_per_page", "comments", "options", "metadata"]})
 # A service with its database endpoints carries its schemas
 doc = json.loads(rest("SHOW CREATE REST SERVICE /full INCLUDING DATABASE ENDPOINTS FORMAT=JSON").fetch_one()[0])
-EXPECT_EQ(["/sakila"], [schema["request_path"] for schema in doc["schemas"]])
-EXPECT_EQ([], doc["schemas"][0]["db_objects"])
+EXPECT_EQ(["/sakila"], [schema["request_path"] for schema in doc["rest_schemas"]])
+EXPECT_EQ([], doc["rest_schemas"][0]["rest_objects"])
 
 #@<> CREATE REST SCHEMA: IF NOT EXISTS and OR REPLACE
 EXPECT_EQ("REST SCHEMA `/myService/sakila` created successfully.", rest_info("CREATE REST SCHEMA IF NOT EXISTS /sakila FROM sakila PRIVATE"))

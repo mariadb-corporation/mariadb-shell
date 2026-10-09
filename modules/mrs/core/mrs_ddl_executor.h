@@ -35,7 +35,7 @@
 //   mrs_ddl_executor.cc            dispatch, shared helpers, metadata, USE
 //   mrs_ddl_executor_services.cc   REST SERVICE, CLONE, DUMP, LOAD
 //   mrs_ddl_executor_schemas.cc    REST SCHEMA
-//   mrs_ddl_executor_db_objects.cc REST VIEW, PROCEDURE, FUNCTION
+//   mrs_ddl_executor_rest_objects.cc REST VIEW, PROCEDURE, FUNCTION
 //   mrs_ddl_executor_auth.cc       AUTH APP, USER, ROLE, GRANT, REVOKE
 //   mrs_ddl_executor_content.cc    CONTENT SET, CONTENT FILE
 
@@ -179,7 +179,7 @@ class Ddl_executor {
   void do_execute(const ast::Alter_rest_user &s, Statement_result *r);
   void do_execute(const ast::Drop_rest_service &s, Statement_result *r);
   void do_execute(const ast::Drop_rest_schema &s, Statement_result *r);
-  void do_execute(const ast::Drop_rest_db_object &s, Statement_result *r);
+  void do_execute(const ast::Drop_rest_object &s, Statement_result *r);
   void do_execute(const ast::Drop_rest_content_set &s, Statement_result *r);
   void do_execute(const ast::Drop_rest_content_file &s, Statement_result *r);
   void do_execute(const ast::Drop_rest_auth_app &s, Statement_result *r);
@@ -193,7 +193,7 @@ class Ddl_executor {
   void do_execute(const ast::Show_rest_metadata_status &s, Statement_result *r);
   void do_execute(const ast::Show_rest_services &s, Statement_result *r);
   void do_execute(const ast::Show_rest_schemas &s, Statement_result *r);
-  void do_execute(const ast::Show_rest_db_objects &s, Statement_result *r);
+  void do_execute(const ast::Show_rest_objects &s, Statement_result *r);
   void do_execute(const ast::Show_rest_content_sets &s, Statement_result *r);
   void do_execute(const ast::Show_rest_content_files &s, Statement_result *r);
   void do_execute(const ast::Show_rest_auth_apps &s, Statement_result *r);
@@ -206,7 +206,7 @@ class Ddl_executor {
   void do_execute(const ast::Show_rest_grants &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_service &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_schema &s, Statement_result *r);
-  void do_execute(const ast::Show_create_rest_db_object &s, Statement_result *r);
+  void do_execute(const ast::Show_create_rest_object &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_content_set &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_content_file &s, Statement_result *r);
   void do_execute(const ast::Show_create_rest_auth_app &s, Statement_result *r);
@@ -240,7 +240,7 @@ class Ddl_executor {
   // The schema of a db object statement: ON [SERVICE] SCHEMA, or the
   // current one. Throws when neither is available or the named one does
   // not exist.
-  metadata::Schema db_object_schema(
+  metadata::Schema rest_object_schema(
       const std::optional<ast::Schema_selector> &given);
   // The service part of a schema selector, or the current service.
   Id require_service(const std::optional<ast::Schema_selector> &given);

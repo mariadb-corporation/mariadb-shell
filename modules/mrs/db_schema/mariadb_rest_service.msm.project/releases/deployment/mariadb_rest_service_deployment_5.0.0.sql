@@ -131,9 +131,9 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `db_schema`
+-- Table `rest_schema`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `db_schema` (
+CREATE TABLE IF NOT EXISTS `rest_schema` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
   `service_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
@@ -147,8 +147,8 @@ CREATE TABLE IF NOT EXISTS `db_schema` (
   `options` JSON NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_schema_service1_idx` (`service_id` ASC) VISIBLE,
-  CONSTRAINT `fk_db_schema_service1`
+  INDEX `fk_rest_schema_service1_idx` (`service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_schema_service1`
     FOREIGN KEY (`service_id`)
     REFERENCES `service` (`id`)
     ON DELETE NO ACTION
@@ -157,32 +157,32 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `db_object`
+-- Table `rest_object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `db_object` (
+CREATE TABLE IF NOT EXISTS `rest_object` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `db_schema_id` UUID NOT NULL,
+  `rest_schema_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `request_path` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
   `internal` TINYINT NOT NULL DEFAULT 0,
   `object_type` ENUM('TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'SCRIPT') NOT NULL,
-  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '' COMMENT 'Calculated by the duality view options of object and object_reference table, always UPDATE for procedures and functions.',
+  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '' COMMENT 'Calculated by the duality view options of data_mapping and data_mapping_reference table, always UPDATE for procedures and functions.',
   `format` ENUM('FEED', 'ITEM', 'MEDIA') NOT NULL DEFAULT 'FEED' COMMENT 'The HTTP request method for this handler. \'feed\' executes the source query and returns the result set in JSON representation, \'item\' returns a single row instead, \'media\' turns the result set into a binary representation with accompanying HTTP Content-Type header.',
   `items_per_page` INT UNSIGNED NULL,
   `media_type` VARCHAR(45) NULL,
   `auto_detect_media_type` TINYINT NOT NULL DEFAULT 0,
   `requires_auth` TINYINT NOT NULL DEFAULT 0,
   `auth_stored_procedure` VARCHAR(255) NULL DEFAULT 0 COMMENT 'Specifies the STORE PROCEDURE that should be called to identify if the given user is allowed to perform the given CRUD operation. The SP has to be in the same schema as the schema object and it has to accept the following parameters: (user_id, schema, object, crud_operation).  It returns true or false.',
-  `options` JSON NULL COMMENT 'Holds additional options for the db_object, e.g. {\"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using DECIMAL(16) for the primary key.',
+  `options` JSON NULL COMMENT 'Holds additional options for the rest_object, e.g. {\"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using DECIMAL(16) for the primary key.',
   `details` JSON NULL,
   `comments` VARCHAR(512) NULL,
   `metadata` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_db_objects_db_schema1_idx` (`db_schema_id` ASC) VISIBLE,
-  CONSTRAINT `fk_db_objects_db_schema1`
-    FOREIGN KEY (`db_schema_id`)
-    REFERENCES `db_schema` (`id`)
+  INDEX `fk_rest_objects_rest_schema1_idx` (`rest_schema_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_objects_rest_schema1`
+    FOREIGN KEY (`rest_schema_id`)
+    REFERENCES `rest_schema` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
@@ -594,24 +594,24 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `mrs_db_object_row_group_security`
+-- Table `mrs_rest_object_row_group_security`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `mrs_db_object_row_group_security` (
-  `db_object_id` UUID NOT NULL,
+CREATE TABLE IF NOT EXISTS `mrs_rest_object_row_group_security` (
+  `rest_object_id` UUID NOT NULL,
   `group_hierarchy_type_id` UUID NOT NULL,
   `row_group_ownership_column` VARCHAR(255) NOT NULL,
   `level` INT UNSIGNED NOT NULL DEFAULT 0,
   `match_level` ENUM('HIGHER', 'EQUAL OR HIGHER', 'EQUAL', 'LOWER OR EQUAL', 'LOWER') NOT NULL DEFAULT 'HIGHER',
   `options` JSON NULL,
-  INDEX `fk_table1_db_object1_idx` (`db_object_id` ASC) VISIBLE,
-  INDEX `fk_db_object_row_security_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
-  PRIMARY KEY (`db_object_id`, `group_hierarchy_type_id`),
-  CONSTRAINT `fk_table1_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  INDEX `fk_table1_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
+  INDEX `fk_rest_object_row_security_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
+  PRIMARY KEY (`rest_object_id`, `group_hierarchy_type_id`),
+  CONSTRAINT `fk_table1_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
-  CONSTRAINT `fk_db_object_row_security_group_hierarchy_type1`
+  CONSTRAINT `fk_rest_object_row_security_group_hierarchy_type1`
     FOREIGN KEY (`group_hierarchy_type_id`)
     REFERENCES `mrs_group_hierarchy_type` (`id`)
     ON DELETE NO ACTION
@@ -713,11 +713,11 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `object`
+-- Table `data_mapping`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object` (
+CREATE TABLE IF NOT EXISTS `data_mapping` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `db_object_id` UUID NOT NULL,
+  `rest_object_id` UUID NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `kind` ENUM('RESULT', 'PARAMETERS', 'INTERFACE') NOT NULL DEFAULT 'RESULT',
   `position` INT NOT NULL DEFAULT 0,
@@ -726,22 +726,22 @@ CREATE TABLE IF NOT EXISTS `object` (
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_result_db_object1_idx` (`db_object_id` ASC) VISIBLE,
+  INDEX `fk_result_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
   INDEX `row_ownership_object_idx` (`row_ownership_field_id` ASC) VISIBLE,
-  CONSTRAINT `fk_result_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  CONSTRAINT `fk_result_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `object_reference`
+-- Table `data_mapping_reference`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object_reference` (
+CREATE TABLE IF NOT EXISTS `data_mapping_reference` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an object_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
+  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an data_mapping_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
   `row_ownership_field_id` UUID NULL,
   `reference_mapping` JSON NOT NULL COMMENT 'Holds all column mappings of the FK, {kind:\"n:1\", constraint: \"constraint_name\", referenced_schema: \"schema_name\", referenced_table: \"table_name\", column_mapping: [{\"column_name\": \"referenced_column_name\"}, \"to_many\": true, \"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using BINARY(16) for the primary key.',
   `unnest` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to TRUE, the properties will be directly added to the parent',
@@ -750,16 +750,16 @@ CREATE TABLE IF NOT EXISTS `object_reference` (
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
   INDEX `reduce_to_idx` (`reduce_to_value_of_field_id` ASC) VISIBLE,
-  INDEX `row_ownership_object_reference_idx` (`row_ownership_field_id` ASC) VISIBLE)
+  INDEX `row_ownership_data_mapping_reference_idx` (`row_ownership_field_id` ASC) VISIBLE)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `object_field`
+-- Table `data_mapping_field`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `object_field` (
+CREATE TABLE IF NOT EXISTS `data_mapping_field` (
   `id` UUID NOT NULL DEFAULT UUID_v7(),
-  `object_id` UUID NOT NULL,
+  `data_mapping_id` UUID NOT NULL,
   `parent_reference_id` UUID NULL,
   `represents_reference_id` UUID NULL,
   `name` VARCHAR(255) NOT NULL COMMENT 'The name of the field as returned in the JSON',
@@ -775,22 +775,22 @@ CREATE TABLE IF NOT EXISTS `object_field` (
   `sdk_options` JSON NULL,
   `comments` VARCHAR(512) NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_properties_result1_idx` (`object_id` ASC) VISIBLE,
+  INDEX `fk_properties_result1_idx` (`data_mapping_id` ASC) VISIBLE,
   INDEX `fk_result_property_result_reference1_idx` (`parent_reference_id` ASC) VISIBLE,
   INDEX `fk_result_property_result_reference2_idx` (`represents_reference_id` ASC) VISIBLE,
   CONSTRAINT `fk_properties_result1`
-    FOREIGN KEY (`object_id`)
-    REFERENCES `object` (`id`)
+    FOREIGN KEY (`data_mapping_id`)
+    REFERENCES `data_mapping` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference1`
     FOREIGN KEY (`parent_reference_id`)
-    REFERENCES `object_reference` (`id`)
+    REFERENCES `data_mapping_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_result_property_result_reference2`
     FOREIGN KEY (`represents_reference_id`)
-    REFERENCES `object_reference` (`id`)
+    REFERENCES `data_mapping_reference` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
@@ -820,11 +820,11 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `content_set_has_obj_def`
+-- Table `content_set_has_rest_object`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
+CREATE TABLE IF NOT EXISTS `content_set_has_rest_object` (
   `content_set_id` UUID NOT NULL,
-  `db_object_id` UUID NOT NULL,
+  `rest_object_id` UUID NOT NULL,
   `kind` ENUM('Script', 'BeforeCreate', 'BeforeRead', 'BeforeUpdate', 'BeforeDelete', 'AfterCreate', 'AfterRead', 'AfterUpdate', 'AfterDelete') NOT NULL,
   `priority` INT NOT NULL DEFAULT 0,
   `language` VARCHAR(45) NOT NULL,
@@ -832,19 +832,19 @@ CREATE TABLE IF NOT EXISTS `content_set_has_obj_def` (
   `class_name` VARCHAR(255) NULL,
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
-  INDEX `fk_content_set_has_obj_dev_db_object1_idx` (`db_object_id` ASC) VISIBLE,
+  INDEX `fk_content_set_has_obj_dev_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
   INDEX `fk_content_set_has_obj_dev_content_set1_idx` (`content_set_id` ASC) VISIBLE,
   INDEX `content_set_has_obj_dev_priority` (`priority` ASC) VISIBLE,
-  PRIMARY KEY (`content_set_id`, `db_object_id`, `kind`, `priority`),
+  PRIMARY KEY (`content_set_id`, `rest_object_id`, `kind`, `priority`),
   INDEX `content_set_has_obj_dev_method_type` (`kind` ASC) VISIBLE,
-  CONSTRAINT `fk_content_set_has_db_object_content_set1`
+  CONSTRAINT `fk_content_set_has_rest_object_content_set1`
     FOREIGN KEY (`content_set_id`)
     REFERENCES `content_set` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
-  CONSTRAINT `fk_content_set_has_db_object_db_object1`
-    FOREIGN KEY (`db_object_id`)
-    REFERENCES `db_object` (`id`)
+  CONSTRAINT `fk_content_set_has_rest_object_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
@@ -878,10 +878,10 @@ ALTER TABLE `service`
     CHANGE COLUMN name name VARCHAR(255) NOT NULL DEFAULT (REGEXP_REPLACE(url_context_root, '[^0-9a-zA-Z ]', ''));
 
 -- Ensure page size is within 16K limit
-ALTER TABLE `db_schema`
-	ADD CONSTRAINT db_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
-ALTER TABLE `db_object`
-	ADD CONSTRAINT db_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+ALTER TABLE `rest_schema`
+	ADD CONSTRAINT rest_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+ALTER TABLE `rest_object`
+	ADD CONSTRAINT rest_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
 
 -- Ensure an email cannot be used as user name and a user name cannot be used as email
 ALTER TABLE `mrs_user`
@@ -889,7 +889,7 @@ ALTER TABLE `mrs_user`
     ADD CONSTRAINT `mrs_user_at_symbol_in_email` CHECK (INSTR(email, '@') > 0 OR email IS NULL OR email = '');
 
 -- Ensure that for STORED PROCEDURE parameters at least one of the 'in' and 'out' flag is set to true
-ALTER TABLE `object_field`
+ALTER TABLE `data_mapping_field`
   ADD CONSTRAINT param_mode_not_false CHECK (
     (JSON_EXTRACT(db_column, "$.in") IS NULL AND JSON_EXTRACT(db_column, "$.out") IS NULL) OR
     (JSON_EXTRACT(db_column, "$.in") + JSON_EXTRACT(db_column, "$.out") >= 1));
@@ -968,7 +968,7 @@ VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-0000000
 INSERT INTO `mrs_role` (
     `id`, `derived_from_role_id`, `specific_to_service_id`, `caption`,
     `description`, `options`)
-VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all db_objects', NULL);
+VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all rest_objects', NULL);
 
 -- Default privilege that defines full access
 INSERT INTO `mrs_privilege` (
@@ -1023,17 +1023,17 @@ VIEW `mrs_user_schema_version` (
 SELECT 4, 0, 0;
 
 -- -----------------------------------------------------------------------------
--- View `object_fields_with_references`
+-- View `data_mapping_fields_with_references`
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE SQL SECURITY INVOKER VIEW `object_fields_with_references` AS
+CREATE OR REPLACE SQL SECURITY INVOKER VIEW `data_mapping_fields_with_references` AS
 WITH RECURSIVE obj_fields (
-    caption, lev, position, id, represents_reference_id, parent_reference_id, object_id,
+    caption, lev, position, id, represents_reference_id, parent_reference_id, data_mapping_id,
     name, db_column, enabled,
     allow_filtering, allow_sorting, no_check, no_update, options, sdk_options, comments,
-    object_reference) AS
+    data_mapping_reference) AS
 (
     SELECT CONCAT('- ', f.name) as caption, 1 AS lev, f.position, f.id,
-		f.represents_reference_id, f.parent_reference_id, f.object_id, f.name,
+		f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
@@ -1044,14 +1044,14 @@ WITH RECURSIVE obj_fields (
             'options', r.options,
             'sdk_options', r.sdk_options,
             'comments', r.comments
-        )) AS object_reference
-    FROM `object_field` f
-        LEFT OUTER JOIN `object_reference` AS r
+        )) AS data_mapping_reference
+    FROM `data_mapping_field` f
+        LEFT OUTER JOIN `data_mapping_reference` AS r
             ON r.id = f.represents_reference_id
     WHERE ISNULL(parent_reference_id)
     UNION ALL
     SELECT CONCAT(REPEAT('  ', p.lev), '- ', f.name) as caption, p.lev+1 AS lev, f.position,
-        f.id, f.represents_reference_id, f.parent_reference_id, f.object_id, f.name,
+        f.id, f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
         f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
         f.options, f.sdk_options, f.comments,
         IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
@@ -1062,12 +1062,12 @@ WITH RECURSIVE obj_fields (
             'options', rc.options,
             'sdk_options', rc.sdk_options,
             'comments', rc.comments
-        )) AS object_reference
-    FROM obj_fields AS p JOIN `object_reference` AS r
+        )) AS data_mapping_reference
+    FROM obj_fields AS p JOIN `data_mapping_reference` AS r
             ON r.id = p.represents_reference_id
-        LEFT OUTER JOIN `object_field` AS f
+        LEFT OUTER JOIN `data_mapping_field` AS f
             ON r.id = f.parent_reference_id
-        LEFT OUTER JOIN `object_reference` AS rc
+        LEFT OUTER JOIN `data_mapping_reference` AS rc
             ON rc.id = f.represents_reference_id
 	WHERE f.id IS NOT NULL
 )
@@ -1167,7 +1167,7 @@ BEGIN
         UNION
         SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path) as full_request_path
-        FROM db_schema sc
+        FROM rest_schema sc
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
@@ -1178,9 +1178,9 @@ BEGIN
         UNION
         SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
             sc.request_path, o.request_path) as full_request_path
-        FROM db_object o
-            LEFT OUTER JOIN db_schema sc
-                ON sc.id = o.db_schema_id
+        FROM rest_object o
+            LEFT OUTER JOIN rest_schema sc
+                ON sc.id = o.rest_schema_id
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
@@ -1714,7 +1714,7 @@ BEGIN
     DECLARE schema_id UUID;
     DECLARE schema_res JSON;
 
-    -- Get all db_schemas of the given service, fetch the id to do the nested SELECTs and
+    -- Get all rest_schemas of the given service, fetch the id to do the nested SELECTs and
     -- the data as JSON
     DECLARE schema_loop_done TINYINT DEFAULT FALSE;
     DECLARE schema_cursor CURSOR FOR
@@ -1728,7 +1728,7 @@ BEGIN
                 'internal', s.internal,
                 'options', s.options
             )
-        FROM db_schema AS s
+        FROM rest_schema AS s
         WHERE s.service_id = service_id AND s.enabled = 1;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET schema_loop_done = 1;
 
@@ -1748,24 +1748,24 @@ BEGIN
     FROM service AS s
     WHERE s.id = service_id;
 
-    -- Initiate the list of db_schemas with an empty JSON array
-    SET service_res = JSON_SET(service_res, '$.db_schemas', json_array());
+    -- Initiate the list of rest_schemas with an empty JSON array
+    SET service_res = JSON_SET(service_res, '$.rest_schemas', json_array());
 
-    -- Loop over all db_schema of the given service
+    -- Loop over all rest_schema of the given service
     OPEN schema_cursor;
     schema_loop: LOOP
-        -- Get the next db_schema of the service
+        -- Get the next rest_schema of the service
         FETCH NEXT FROM schema_cursor INTO schema_id, schema_res;
 
         IF schema_loop_done THEN
             LEAVE schema_loop;
         ELSE schema_block: BEGIN
-            -- Get all db_objects of the given db_schema, fetch the id to do the nested SELECTs and
+            -- Get all rest_objects of the given rest_schema, fetch the id to do the nested SELECTs and
             -- the data as JSON
-            DECLARE db_object_id UUID;
-            DECLARE db_object_res JSON;
-            DECLARE db_object_loop_done TINYINT DEFAULT FALSE;
-            DECLARE db_object_cursor CURSOR FOR
+            DECLARE rest_object_id UUID;
+            DECLARE rest_object_res JSON;
+            DECLARE rest_object_loop_done TINYINT DEFAULT FALSE;
+            DECLARE rest_object_cursor CURSOR FOR
                 SELECT o.id,
                     JSON_OBJECT(
                         'id', o.id,
@@ -1778,29 +1778,29 @@ BEGIN
                         'requires_auth', o.requires_auth,
                         'options', o.options
                     )
-                FROM db_object AS o
-                WHERE o.db_schema_id = schema_id AND o.enabled = 1;
-            DECLARE CONTINUE HANDLER FOR NOT FOUND SET db_object_loop_done = 1;
+                FROM rest_object AS o
+                WHERE o.rest_schema_id = schema_id AND o.enabled = 1;
+            DECLARE CONTINUE HANDLER FOR NOT FOUND SET rest_object_loop_done = 1;
 
-            -- Initiate the list of db_objects with an empty JSON array
-            SET schema_res = JSON_SET(schema_res, '$.db_objects', json_array());
+            -- Initiate the list of rest_objects with an empty JSON array
+            SET schema_res = JSON_SET(schema_res, '$.rest_objects', json_array());
 
-            -- Loop over all db_objects of the given db_schema
-            OPEN db_object_cursor;
-            db_object_loop: LOOP
-                FETCH NEXT FROM db_object_cursor INTO db_object_id, db_object_res;
+            -- Loop over all rest_objects of the given rest_schema
+            OPEN rest_object_cursor;
+            rest_object_loop: LOOP
+                FETCH NEXT FROM rest_object_cursor INTO rest_object_id, rest_object_res;
 
-                IF db_object_loop_done THEN
-                    LEAVE db_object_loop;
-                ELSE db_object_block: BEGIN
-                    DECLARE object_id UUID;
+                IF rest_object_loop_done THEN
+                    LEAVE rest_object_loop;
+                ELSE rest_object_block: BEGIN
+                    DECLARE data_mapping_id UUID;
                     DECLARE object_res JSON;
                     DECLARE object_loop_done TINYINT DEFAULT FALSE;
                     DECLARE object_cursor CURSOR FOR
                         SELECT o.id,
                           JSON_OBJECT(
                             'id', o.id,
-                            'db_object_id', o.db_object_id,
+                            'rest_object_id', o.rest_object_id,
                             'name', name,
                             'kind', kind,
                             'position', position,
@@ -1808,18 +1808,18 @@ BEGIN
                             'options', options,
                             'sdk_options', sdk_options
                           )
-                      FROM object AS o
-                      WHERE o.db_object_id = db_object_id
+                      FROM data_mapping AS o
+                      WHERE o.rest_object_id = rest_object_id
                       ORDER BY position;
                     DECLARE CONTINUE HANDLER FOR NOT FOUND SET object_loop_done = 1;
 
                     -- Initiate the list of objects with an empty JSON array
-                    SET db_object_res = JSON_SET(db_object_res, '$.objects', json_array());
+                    SET rest_object_res = JSON_SET(rest_object_res, '$.data_mappings', json_array());
 
-                    -- Loop over all SDK object instances of the given db_object
+                    -- Loop over all SDK object instances of the given rest_object
                     OPEN object_cursor;
                     object_loop: LOOP
-                        FETCH NEXT FROM object_cursor INTO object_id, object_res;
+                        FETCH NEXT FROM object_cursor INTO data_mapping_id, object_res;
 
                         IF object_loop_done THEN
                             LEAVE object_loop;
@@ -1836,7 +1836,7 @@ BEGIN
                                         'id', f.id,
                                         'represents_reference_id', f.represents_reference_id,
                                         'parent_reference_id', f.parent_reference_id,
-                                        'object_id', f.object_id,
+                                        'data_mapping_id', f.data_mapping_id,
                                         'name', f.name,
                                         'db_column', f.db_column,
                                         'enabled', f.enabled,
@@ -1846,10 +1846,10 @@ BEGIN
                                         'no_update', f.no_update,
                                         'options', f.options,
                                         'sdk_options', f.sdk_options,
-                                        'object_reference', f.object_reference
+                                        'data_mapping_reference', f.data_mapping_reference
                                     )
-                                FROM object_fields_with_references AS f
-                                WHERE f.object_id = object_id;
+                                FROM data_mapping_fields_with_references AS f
+                                WHERE f.data_mapping_id = data_mapping_id;
                             DECLARE CONTINUE HANDLER FOR NOT FOUND SET field_loop_done = 1;
 
                             -- Initiate the list of fields with an empty JSON array
@@ -1868,21 +1868,21 @@ BEGIN
                                 END field_block; END IF;
                             END LOOP field_loop;
 
-                            -- Append the SDK object JSON data to the db_objects's objects array
-                            SET db_object_res = JSON_ARRAY_APPEND(db_object_res, '$.objects', object_res);
+                            -- Append the SDK object JSON data to the rest_objects's objects array
+                            SET rest_object_res = JSON_ARRAY_APPEND(rest_object_res, '$.data_mappings', object_res);
                         END object_block; END IF;
                     END LOOP object_loop;
 
-                    -- Append the db_object JSON data to the db_schema's db_objects array
-                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.db_objects', db_object_res);
+                    -- Append the rest_object JSON data to the rest_schema's rest_objects array
+                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.rest_objects', rest_object_res);
 
-                END db_object_block; END IF;
-            END LOOP db_object_loop;
+                END rest_object_block; END IF;
+            END LOOP rest_object_loop;
 
-            -- Append the db_schema JSON data to the service's db_schemas array
-            SET service_res = JSON_ARRAY_APPEND(service_res, '$.db_schemas', schema_res);
+            -- Append the rest_schema JSON data to the service's rest_schemas array
+            SET service_res = JSON_ARRAY_APPEND(service_res, '$.rest_schemas', schema_res);
 
-            CLOSE db_object_cursor;
+            CLOSE rest_object_cursor;
         END schema_block; END IF;
     END LOOP schema_loop;
 
@@ -2031,15 +2031,15 @@ CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_DELETE` BEFORE DELETE ON `
 BEGIN
 	# Since FKs do not fire the triggers on the related tables, manually trigger the DELETEs
 	DELETE FROM `content_set` WHERE `service_id` = OLD.`id`;
-	DELETE FROM `db_schema` WHERE `service_id` = OLD.`id`;
+	DELETE FROM `rest_schema` WHERE `service_id` = OLD.`id`;
     DELETE FROM `service_has_auth_app` WHERE `service_id` = OLD.`id`;
     DELETE FROM `mrs_role` WHERE `specific_to_service_id` = OLD.`id`;
     DELETE FROM `mrs_user_hierarchy_type` WHERE `specific_to_service_id` = OLD.`id`;
     DELETE FROM `mrs_user_group` WHERE `specific_to_service_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_INSERT` BEFORE INSERT ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_INSERT` BEFORE INSERT ON `rest_schema` FOR EACH ROW
 BEGIN
 	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
 		FROM service se
@@ -2053,8 +2053,8 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_UPDATE` BEFORE UPDATE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_UPDATE` BEFORE UPDATE ON `rest_schema` FOR EACH ROW
 BEGIN
 	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
 		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
@@ -2070,22 +2070,22 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_schema_BEFORE_DELETE` BEFORE DELETE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_DELETE` BEFORE DELETE ON `rest_schema` FOR EACH ROW
 BEGIN
-	DELETE FROM `db_object` WHERE `db_schema_id` = OLD.`id`;
+	DELETE FROM `rest_object` WHERE `rest_schema_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_INSERT`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_INSERT` BEFORE INSERT ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_INSERT` BEFORE INSERT ON `rest_object` FOR EACH ROW
 BEGIN
     SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
-        FROM db_schema sc
+        FROM rest_schema sc
             LEFT OUTER JOIN service se
                 ON se.id = sc.service_id
             LEFT JOIN url_host h
                 ON se.url_host_id = h.id
-        WHERE sc.id = NEW.db_schema_id);
+        WHERE sc.id = NEW.rest_schema_id);
     SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
 
     IF @validPath = 0 THEN
@@ -2093,17 +2093,17 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_UPDATE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_UPDATE` BEFORE UPDATE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_UPDATE` BEFORE UPDATE ON `rest_object` FOR EACH ROW
 BEGIN
-    IF (NEW.request_path <> OLD.request_path OR NEW.db_schema_id <> OLD.db_schema_id) THEN
+    IF (NEW.request_path <> OLD.request_path OR NEW.rest_schema_id <> OLD.rest_schema_id) THEN
         SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
-            FROM db_schema sc
+            FROM rest_schema sc
                 LEFT OUTER JOIN service se
                     ON se.id = sc.service_id
                 LEFT JOIN url_host h
                     ON se.url_host_id = h.id
-            WHERE sc.id = NEW.db_schema_id);
+            WHERE sc.id = NEW.rest_schema_id);
         SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
 
         IF @validPath = 0 THEN
@@ -2112,11 +2112,11 @@ BEGIN
     END IF;
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `db_object_BEFORE_DELETE` BEFORE DELETE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_DELETE` BEFORE DELETE ON `rest_object` FOR EACH ROW
 BEGIN
-    DELETE FROM `mrs_db_object_row_group_security` WHERE `db_object_id` = OLD.`id`;
-    DELETE FROM `object` WHERE `db_object_id` = OLD.`id`;
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `rest_object_id` = OLD.`id`;
+    DELETE FROM `data_mapping` WHERE `rest_object_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `auth_vendor_BEFORE_DELETE`%%
@@ -2222,7 +2222,7 @@ CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_DELETE` BEFORE DELETE 
 BEGIN
 	DELETE FROM `content_file`
 	WHERE `content_set_id` = OLD.`id`;
-	DELETE FROM `content_set_has_obj_def`
+	DELETE FROM `content_set_has_rest_object`
 	WHERE `content_set_id` = OLD.`id`;
 END%%
 
@@ -2292,7 +2292,7 @@ DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_BEFORE_DELETE`%%
 CREATE DEFINER = CURRENT_USER TRIGGER `mrs_group_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
 BEGIN
 	DELETE FROM `mrs_user_group_hierarchy` WHERE `group_hierarchy_type_id` = OLD.`id`;
-    DELETE FROM `mrs_db_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `rest_daemon_BEFORE_DELETE`%%
@@ -2308,25 +2308,25 @@ BEGIN
 	DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_session_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `object_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `object_BEFORE_DELETE` BEFORE DELETE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_BEFORE_DELETE` BEFORE DELETE ON `data_mapping` FOR EACH ROW
 BEGIN
-	DELETE FROM `object_field` WHERE `object_id` = OLD.`id`;
+	DELETE FROM `data_mapping_field` WHERE `data_mapping_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `object_field_BEFORE_DELETE` BEFORE DELETE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_field_BEFORE_DELETE` BEFORE DELETE ON `data_mapping_field` FOR EACH ROW
 BEGIN
 	SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
-	DELETE FROM `object_reference` WHERE `id` = OLD.`represents_reference_id`;
+	DELETE FROM `data_mapping_reference` WHERE `id` = OLD.`represents_reference_id`;
     SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_obj_def_AFTER_DELETE` AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_rest_object_AFTER_DELETE` AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
-	DELETE FROM `db_object` dbo
-    WHERE OLD.kind = "Script" AND dbo.id = OLD.db_object_id;
+	DELETE FROM `rest_object` dbo
+    WHERE OLD.kind = "Script" AND dbo.id = OLD.rest_object_id;
 END%%
 
 DELIMITER ;
@@ -2336,14 +2336,14 @@ DELIMITER ;
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "INSERT",
         NULL,
         JSON_OBJECT(
@@ -2366,14 +2366,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -2408,14 +2408,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_schema_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `db_schema_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `db_schema` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_schema` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_schema",
+        "rest_schema",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -2560,19 +2560,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "db_schema_id", NEW.db_schema_id,
+            "rest_schema_id", NEW.rest_schema_id,
             "name", NEW.name,
             "request_path", NEW.request_path,
             "enabled", NEW.enabled,
@@ -2596,18 +2596,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_schema_id", OLD.db_schema_id,
+            "rest_schema_id", OLD.rest_schema_id,
             "name", OLD.name,
             "request_path", OLD.request_path,
             "enabled", OLD.enabled,
@@ -2626,7 +2626,7 @@ BEGIN
             "metadata", OLD.metadata),
         JSON_OBJECT(
             "id", NEW.id,
-            "db_schema_id", NEW.db_schema_id,
+            "rest_schema_id", NEW.rest_schema_id,
             "name", NEW.name,
             "request_path", NEW.request_path,
             "enabled", NEW.enabled,
@@ -2650,18 +2650,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `db_object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `db_object_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `db_object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "db_object",
+        "rest_object",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_schema_id", OLD.db_schema_id,
+            "rest_schema_id", OLD.rest_schema_id,
             "name", OLD.name,
             "request_path", OLD.request_path,
             "enabled", OLD.enabled,
@@ -4128,97 +4128,97 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "INSERT",
         NULL,
         JSON_OBJECT(
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
             "row_group_ownership_column", NEW.row_group_ownership_column,
             "level", NEW.level,
             "match_level", NEW.match_level,
             "options", NEW.options),
         NULL,
-        NEW.db_object_id,
+        NEW.rest_object_id,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "UPDATE",
         JSON_OBJECT(
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
             "row_group_ownership_column", OLD.row_group_ownership_column,
             "level", OLD.level,
             "match_level", OLD.match_level,
             "options", OLD.options),
         JSON_OBJECT(
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
             "row_group_ownership_column", NEW.row_group_ownership_column,
             "level", NEW.level,
             "match_level", NEW.match_level,
             "options", NEW.options),
-        OLD.db_object_id,
-        NEW.db_object_id,
+        OLD.rest_object_id,
+        NEW.rest_object_id,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `mrs_db_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `mrs_db_object_row_group_security` FOR EACH ROW
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_rest_object_row_group_security` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "mrs_db_object_row_group_security",
+        "mrs_rest_object_row_group_security",
         "DELETE",
         JSON_OBJECT(
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
             "row_group_ownership_column", OLD.row_group_ownership_column,
             "level", OLD.level,
             "match_level", OLD.match_level,
             "options", OLD.options),
         NULL,
-        OLD.db_object_id,
+        OLD.rest_object_id,
         NULL,
         SESSION_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "name", NEW.name,
             "kind", NEW.kind,
             "position", NEW.position,
@@ -4233,18 +4233,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "name", OLD.name,
             "kind", OLD.kind,
             "position", OLD.position,
@@ -4254,7 +4254,7 @@ BEGIN
             "comments", OLD.comments),
         JSON_OBJECT(
             "id", NEW.id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "name", NEW.name,
             "kind", NEW.kind,
             "position", NEW.position,
@@ -4269,18 +4269,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object",
+        "data_mapping",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "name", OLD.name,
             "kind", OLD.kind,
             "position", OLD.position,
@@ -4296,19 +4296,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
-            "object_id", NEW.object_id,
+            "data_mapping_id", NEW.data_mapping_id,
             "parent_reference_id", NEW.parent_reference_id,
             "represents_reference_id", NEW.represents_reference_id,
             "name", NEW.name,
@@ -4330,18 +4330,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
-            "object_id", OLD.object_id,
+            "data_mapping_id", OLD.data_mapping_id,
             "parent_reference_id", OLD.parent_reference_id,
             "represents_reference_id", OLD.represents_reference_id,
             "name", OLD.name,
@@ -4358,7 +4358,7 @@ BEGIN
             "comments", OLD.comments),
         JSON_OBJECT(
             "id", NEW.id,
-            "object_id", NEW.object_id,
+            "data_mapping_id", NEW.data_mapping_id,
             "parent_reference_id", NEW.parent_reference_id,
             "represents_reference_id", NEW.represents_reference_id,
             "name", NEW.name,
@@ -4380,18 +4380,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_field_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_field_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object_field` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_field` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_field",
+        "data_mapping_field",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
-            "object_id", OLD.object_id,
+            "data_mapping_id", OLD.data_mapping_id,
             "parent_reference_id", OLD.parent_reference_id,
             "represents_reference_id", OLD.represents_reference_id,
             "name", OLD.name,
@@ -4414,14 +4414,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "INSERT",
         NULL,
         JSON_OBJECT(
@@ -4440,14 +4440,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "UPDATE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -4474,14 +4474,14 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `object_reference_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `object_reference_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `object_reference` FOR EACH ROW
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_reference` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "object_reference",
+        "data_mapping_reference",
         "DELETE",
         JSON_OBJECT(
             "id", OLD.id,
@@ -4566,19 +4566,19 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_INSERT_AUDIT_LOG`
-    AFTER INSERT ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "content_set_id", NEW.content_set_id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "kind", NEW.kind,
             "priority", NEW.priority,
             "language", NEW.language,
@@ -4593,18 +4593,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_UPDATE_AUDIT_LOG`
-    AFTER UPDATE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "UPDATE",
         JSON_OBJECT(
             "content_set_id", OLD.content_set_id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "kind", OLD.kind,
             "priority", OLD.priority,
             "language", OLD.language,
@@ -4614,7 +4614,7 @@ BEGIN
             "options", OLD.options),
         JSON_OBJECT(
             "content_set_id", NEW.content_set_id,
-            "db_object_id", NEW.db_object_id,
+            "rest_object_id", NEW.rest_object_id,
             "kind", NEW.kind,
             "priority", NEW.priority,
             "language", NEW.language,
@@ -4629,18 +4629,18 @@ BEGIN
     );
 END%%
 
-DROP TRIGGER IF EXISTS `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`%%
-CREATE TRIGGER `content_set_has_obj_def_AFTER_DELETE_AUDIT_LOG`
-    AFTER DELETE ON `content_set_has_obj_def` FOR EACH ROW
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "content_set_has_obj_def",
+        "content_set_has_rest_object",
         "DELETE",
         JSON_OBJECT(
             "content_set_id", OLD.content_set_id,
-            "db_object_id", OLD.db_object_id,
+            "rest_object_id", OLD.rest_object_id,
             "kind", OLD.kind,
             "priority", OLD.priority,
             "language", OLD.language,
@@ -4787,46 +4787,46 @@ BEGIN
     -- -----------------------------------------------------
     -- Schema Objects
 
-    -- `db_schema`
+    -- `rest_schema`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `db_schema`
+        ON `rest_schema`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `db_schema`
+    GRANT SELECT ON `rest_schema`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
-    -- `db_object`
+    -- `rest_object`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `db_object`
+        ON `rest_object`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `db_object`
+    GRANT SELECT ON `rest_object`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
-    -- `mrs_db_object_row_group_security`
+    -- `mrs_rest_object_row_group_security`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `mrs_db_object_row_group_security`
+        ON `mrs_rest_object_row_group_security`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `mrs_db_object_row_group_security`
+    GRANT SELECT ON `mrs_rest_object_row_group_security`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
-    -- `object`
+    -- `data_mapping`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `object`
+        ON `data_mapping`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `object`
+    GRANT SELECT ON `data_mapping`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
-    -- `object_field`
+    -- `data_mapping_field`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `object_field`
+        ON `data_mapping_field`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `object_field`
+    GRANT SELECT ON `data_mapping_field`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
-    -- `object_reference`
+    -- `data_mapping_reference`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `object_reference`
+        ON `data_mapping_reference`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `object_reference`
+    GRANT SELECT ON `data_mapping_reference`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
     -- -----------------------------------------------------
@@ -4847,11 +4847,11 @@ BEGIN
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 
-    -- `content_set_has_obj_def`
+    -- `content_set_has_rest_object`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `content_set_has_obj_def`
+        ON `content_set_has_rest_object`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `content_set_has_obj_def`
+    GRANT SELECT ON `content_set_has_rest_object`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
     -- -----------------------------------------------------
@@ -5043,9 +5043,9 @@ BEGIN
         ON `mrs_user_schema_version`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
-    -- `object_fields_with_references`
+    -- `data_mapping_fields_with_references`
     GRANT SELECT
-        ON `object_fields_with_references`
+        ON `data_mapping_fields_with_references`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 END%%
 
@@ -5129,46 +5129,46 @@ GRANT SELECT ON `service`
 -- -----------------------------------------------------
 -- Schema Objects
 
--- `db_schema`
+-- `rest_schema`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `db_schema`
+    ON `rest_schema`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
-GRANT SELECT ON `db_schema`
+GRANT SELECT ON `rest_schema`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `db_object`
+-- `rest_object`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `db_object`
+    ON `rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `db_object`
+GRANT SELECT ON `rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `mrs_db_object_row_group_security`
+-- `mrs_rest_object_row_group_security`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `mrs_db_object_row_group_security`
+    ON `mrs_rest_object_row_group_security`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `mrs_db_object_row_group_security`
+GRANT SELECT ON `mrs_rest_object_row_group_security`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object`
+-- `data_mapping`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object`
+    ON `data_mapping`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object`
+GRANT SELECT ON `data_mapping`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_field`
+-- `data_mapping_field`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object_field`
+    ON `data_mapping_field`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object_field`
+GRANT SELECT ON `data_mapping_field`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_reference`
+-- `data_mapping_reference`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `object_reference`
+    ON `data_mapping_reference`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `object_reference`
+GRANT SELECT ON `data_mapping_reference`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
@@ -5189,11 +5189,11 @@ GRANT SELECT ON `content_file`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 
--- `content_set_has_obj_def`
+-- `content_set_has_rest_object`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `content_set_has_obj_def`
+    ON `content_set_has_rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
-GRANT SELECT ON `content_set_has_obj_def`
+GRANT SELECT ON `content_set_has_rest_object`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
@@ -5385,9 +5385,9 @@ GRANT SELECT
     ON `mrs_user_schema_version`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
--- `object_fields_with_references`
+-- `data_mapping_fields_with_references`
 GRANT SELECT
-    ON `object_fields_with_references`
+    ON `data_mapping_fields_with_references`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- #############################################################################

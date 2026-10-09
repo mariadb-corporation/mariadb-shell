@@ -44,7 +44,7 @@ VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-0000000
 INSERT INTO `mrs_role` (
     `id`, `derived_from_role_id`, `specific_to_service_id`, `caption`,
     `description`, `options`)
-VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all db_objects', NULL);
+VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all rest_objects', NULL);
 
 -- Default privilege that defines full access
 INSERT INTO `mrs_privilege` (
