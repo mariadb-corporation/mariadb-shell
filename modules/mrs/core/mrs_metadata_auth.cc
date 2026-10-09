@@ -26,10 +26,13 @@
 #include "modules/mrs/core/mrs_metadata_auth.h"
 #include "modules/mrs/core/mrs_strings.h"
 
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/rand.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <random>
 #include <stdexcept>
 
 namespace mrs {
@@ -41,180 +44,57 @@ namespace {
 
 // -- Password hashing -----------------------------------------------------
 //
-// The router verifies MRS passwords with a SCRAM-like scheme: the stored
-// key is SHA256(HMAC(PBKDF2(password, salt), "Client Key")). The core may
-// not depend on a crypto library, so SHA-256 is implemented here.
+// The MariaDB REST Daemon verifies MRS passwords with a SCRAM-like scheme:
+// the stored key is SHA256(HMAC(PBKDF2(password, salt), "Client Key")).
+// OpenSSL does the hashing, which the server links as well.
 
-constexpr uint32_t k_sha256_round_constants[64] = {
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
-    0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-    0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
-
-inline uint32_t rotate_right(uint32_t value, int bits) {
-  return (value >> bits) | (value << (32 - bits));
+std::string sha256(std::string_view input) {
+  std::string digest(EVP_MAX_MD_SIZE, '\0');
+  unsigned int size = 0;
+  if (EVP_Digest(input.data(), input.size(),
+                 reinterpret_cast<unsigned char *>(digest.data()), &size,
+                 EVP_sha256(), nullptr) != 1) {
+    throw std::runtime_error("SHA-256 failed.");
+  }
+  digest.resize(size);
+  return digest;
 }
-
-void sha256_transform(uint32_t state[8], const unsigned char block[64]) {
-  uint32_t w[64];
-  for (int i = 0; i < 16; ++i) {
-    w[i] = (static_cast<uint32_t>(block[i * 4]) << 24) |
-           (static_cast<uint32_t>(block[i * 4 + 1]) << 16) |
-           (static_cast<uint32_t>(block[i * 4 + 2]) << 8) |
-           static_cast<uint32_t>(block[i * 4 + 3]);
-  }
-  for (int i = 16; i < 64; ++i) {
-    const uint32_t s0 = rotate_right(w[i - 15], 7) ^ rotate_right(w[i - 15], 18) ^
-                        (w[i - 15] >> 3);
-    const uint32_t s1 = rotate_right(w[i - 2], 17) ^ rotate_right(w[i - 2], 19) ^
-                        (w[i - 2] >> 10);
-    w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-  }
-
-  uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
-  uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
-  for (int i = 0; i < 64; ++i) {
-    const uint32_t s1 = rotate_right(e, 6) ^ rotate_right(e, 11) ^ rotate_right(e, 25);
-    const uint32_t choice = (e & f) ^ (~e & g);
-    const uint32_t t1 = h + s1 + choice + k_sha256_round_constants[i] + w[i];
-    const uint32_t s0 = rotate_right(a, 2) ^ rotate_right(a, 13) ^ rotate_right(a, 22);
-    const uint32_t majority = (a & b) ^ (a & c) ^ (b & c);
-    const uint32_t t2 = s0 + majority;
-    h = g;
-    g = f;
-    f = e;
-    e = d + t1;
-    d = c;
-    c = b;
-    b = a;
-    a = t1 + t2;
-  }
-  state[0] += a;
-  state[1] += b;
-  state[2] += c;
-  state[3] += d;
-  state[4] += e;
-  state[5] += f;
-  state[6] += g;
-  state[7] += h;
-}
-
-// Incremental SHA-256. A copy carries the state, so a hash of a common
-// prefix (an HMAC pad) is computed once and resumed for each message.
-class Sha256 {
- public:
-  Sha256 &update(std::string_view data) {
-    m_length += data.size();
-    for (const char c : data) {
-      m_buffer[m_buffered++] = static_cast<unsigned char>(c);
-      if (m_buffered == 64) {
-        sha256_transform(m_state, m_buffer);
-        m_buffered = 0;
-      }
-    }
-    return *this;
-  }
-
-  // The 32 raw bytes of the digest of everything added so far.
-  std::string digest() const {
-    Sha256 last = *this;
-    const uint64_t bit_length = m_length * 8;
-    last.update(std::string_view("\x80", 1));
-    while (last.m_buffered != 56) last.update(std::string_view("\0", 1));
-    char length[8];
-    for (int i = 0; i < 8; ++i) {
-      length[i] = static_cast<char>((bit_length >> ((7 - i) * 8)) & 0xff);
-    }
-    last.update(std::string_view(length, 8));
-
-    std::string result;
-    result.reserve(32);
-    for (const uint32_t word : last.m_state) {
-      result += static_cast<char>((word >> 24) & 0xff);
-      result += static_cast<char>((word >> 16) & 0xff);
-      result += static_cast<char>((word >> 8) & 0xff);
-      result += static_cast<char>(word & 0xff);
-    }
-    return result;
-  }
-
- private:
-  uint32_t m_state[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                         0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-  unsigned char m_buffer[64] = {};
-  size_t m_buffered = 0;
-  uint64_t m_length = 0;
-};
-
-// The 32 raw bytes of the SHA-256 digest.
-std::string sha256(std::string_view input) { return Sha256().update(input).digest(); }
-
-// HMAC-SHA256 with one key: the inner and outer pads are hashed once, and
-// every mac() resumes from them (two compressions less per call).
-class Hmac_sha256 {
- public:
-  explicit Hmac_sha256(std::string_view key) {
-    std::string block_key(key.size() > 64 ? sha256(key) : std::string(key));
-    block_key.resize(64, '\0');
-    std::string inner(64, '\0');
-    std::string outer(64, '\0');
-    for (size_t i = 0; i < 64; ++i) {
-      inner[i] = static_cast<char>(block_key[i] ^ 0x36);
-      outer[i] = static_cast<char>(block_key[i] ^ 0x5c);
-    }
-    m_inner.update(inner);
-    m_outer.update(outer);
-  }
-
-  std::string mac(std::string_view data) const {
-    Sha256 inner = m_inner;
-    Sha256 outer = m_outer;
-    return outer.update(inner.update(data).digest()).digest();
-  }
-
- private:
-  Sha256 m_inner;
-  Sha256 m_outer;
-};
 
 std::string hmac_sha256(std::string_view key, std::string_view data) {
-  return Hmac_sha256(key).mac(data);
+  std::string mac(EVP_MAX_MD_SIZE, '\0');
+  unsigned int size = 0;
+  if (HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+           reinterpret_cast<const unsigned char *>(data.data()), data.size(),
+           reinterpret_cast<unsigned char *>(mac.data()), &size) == nullptr) {
+    throw std::runtime_error("HMAC-SHA256 failed.");
+  }
+  mac.resize(size);
+  return mac;
 }
 
 // PBKDF2-HMAC-SHA256 with a derived key of one digest length.
 std::string pbkdf2_sha256(std::string_view password, std::string_view salt,
                           int iterations) {
-  const Hmac_sha256 prf(password);
-  std::string block = prf.mac(std::string(salt) + std::string("\0\0\0\1", 4));
-  std::string result = block;
-  for (int i = 1; i < iterations; ++i) {
-    block = prf.mac(block);
-    for (size_t j = 0; j < result.size(); ++j) {
-      result[j] = static_cast<char>(result[j] ^ block[j]);
-    }
+  std::string key(32, '\0');
+  if (PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()),
+                        reinterpret_cast<const unsigned char *>(salt.data()),
+                        static_cast<int>(salt.size()), iterations, EVP_sha256(),
+                        static_cast<int>(key.size()),
+                        reinterpret_cast<unsigned char *>(key.data())) != 1) {
+    throw std::runtime_error("PBKDF2 failed.");
   }
-  return result;
+  return key;
 }
 
 std::string random_bytes(size_t count) {
-  std::random_device device;
-  std::uniform_int_distribution<int> byte(0, 255);
-  std::string result;
-  result.reserve(count);
-  for (size_t i = 0; i < count; ++i) {
-    result += static_cast<char>(byte(device));
+  std::string bytes(count, '\0');
+  if (RAND_bytes(reinterpret_cast<unsigned char *>(bytes.data()),
+                 static_cast<int>(count)) != 1) {
+    throw std::runtime_error("Could not generate a random salt.");
   }
-  return result;
+  return bytes;
 }
 
-// The strength rules of the Python plugin: one of each character class.
 bool password_strength_valid(std::string_view password) {
   constexpr std::string_view special = "!#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
   bool upper = false, lower = false, digit = false, punctuation = false;

@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The REST CONTENT SET and REST CONTENT FILE statements of the mrs module:
 # content given inline as text or base64, and MRS scripts registered from

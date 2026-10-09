@@ -1,3 +1,4 @@
+#@ {__server_is_maria_db}
 #@<> Initialization
 # The mrs global object is extensible: a Python plugin adds its functions to
 # it with the usual decorators, as the mrs_plugin does for the MRS SDK and

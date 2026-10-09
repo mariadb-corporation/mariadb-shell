@@ -74,9 +74,13 @@ class Fake_session : public Db_session {
                                 Db_value(int64_t{version->patch})});
       return result;
     }
-    if (sql.find("GET_LOCK") != std::string::npos) return single("msm_lock", 1);
+    if (sql.find("GET_LOCK") != std::string::npos) {
+      return single("msm_lock", lock_available ? 1 : 0);
+    }
     return {};
   }
+
+  bool lock_available = true;
 
   uint64_t do_execute(const std::string &sql) override {
     statements.push_back(sql);
@@ -397,6 +401,27 @@ TEST_F(Mrs_schema_deployment, failed_restore_is_reported) {
             message.find("The schema could not be restored back to version "
                          "4.1.6. Failed to run the SQL script.\nboom load failed"))
       << message;
+}
+
+TEST_F(Mrs_schema_deployment, update_lock_held_elsewhere_leaves_the_schema) {
+  // Another MSM update holds the lock: the schema it is working on is
+  // neither dropped nor restored, and the backup taken here is discarded
+  Fake_session session;
+  session.exists = true;
+  session.version = Version{4, 1, 6};
+  session.lock_available = false;
+  Fake_backup backup(&session);
+  Script_deployer deployer(dir(), nullptr, &backup);
+
+  const auto message = message_of([&] { deployer.deploy(&session, true); });
+  EXPECT_EQ(
+      "Failed to acquire MSM schema update lock. Please ensure no other "
+      "MSM schema update is running, then try again.",
+      message);
+  EXPECT_EQ(0, session.scripts_run);
+  EXPECT_FALSE(session.ran("DROP SCHEMA"));
+  EXPECT_FALSE(backup.restored);
+  EXPECT_TRUE(backup.discarded);
 }
 
 TEST_F(Mrs_schema_deployment, failed_update_without_backup_keeps_the_schema) {

@@ -7300,7 +7300,6 @@ public class MRSParser extends Parser {
 	public final DropRestDaemonStatementContext dropRestDaemonStatement() throws RecognitionException {
 		DropRestDaemonStatementContext _localctx = new DropRestDaemonStatementContext(_ctx, getState());
 		enterRule(_localctx, 170, RULE_dropRestDaemonStatement);
-		int _la;
 		try {
 			enterOuterAlt(_localctx, 1);
 			{
@@ -7312,16 +7311,16 @@ public class MRSParser extends Parser {
 			match(DAEMON_SYMBOL);
 			setState(1369);
 			_errHandler.sync(this);
-			_la = _input.LA(1);
-			if (_la==IF_SYMBOL) {
+			switch ( getInterpreter().adaptivePredict(_input,163,_ctx) ) {
+			case 1:
 				{
 				setState(1367);
 				match(IF_SYMBOL);
 				setState(1368);
 				match(EXISTS_SYMBOL);
 				}
+				break;
 			}
-
 			setState(1371);
 			daemonId();
 			}
@@ -10096,7 +10095,9 @@ public class MRSParser extends Parser {
 
 	@SuppressWarnings("CheckReturnValue")
 	public static class DaemonIdContext extends ParserRuleContext {
-		public TerminalNode INT_NUMBER() { return getToken(MRSParser.INT_NUMBER, 0); }
+		public TextStringLiteralContext textStringLiteral() {
+			return getRuleContext(TextStringLiteralContext.class,0);
+		}
 		public DaemonIdContext(ParserRuleContext parent, int invokingState) {
 			super(parent, invokingState);
 		}
@@ -10110,7 +10111,7 @@ public class MRSParser extends Parser {
 			enterOuterAlt(_localctx, 1);
 			{
 			setState(1795);
-			match(INT_NUMBER);
+			textStringLiteral();
 			}
 		}
 		catch (RecognitionException re) {
@@ -13897,7 +13898,7 @@ public class MRSParser extends Parser {
 		"n7\u0000\u06fe\u06ff\u0005\u00bc\u0000\u0000\u06ff\u0701\u0003\\.\u0000"+
 		"\u0700\u0702\u0003\u00d8l\u0000\u0701\u0700\u0001\u0000\u0000\u0000\u0701"+
 		"\u0702\u0001\u0000\u0000\u0000\u0702\u00f1\u0001\u0000\u0000\u0000\u0703"+
-		"\u0704\u0005\u00c2\u0000\u0000\u0704\u00f3\u0001\u0000\u0000\u0000\u0705"+
+		"\u0704\u0003\u0156\u00ab\u0000\u0704\u00f3\u0001\u0000\u0000\u0000\u0705"+
 		"\u0707\u0003\u011c\u008e\u0000\u0706\u0705\u0001\u0000\u0000\u0000\u0706"+
 		"\u0707\u0001\u0000\u0000\u0000\u0707\u0708\u0001\u0000\u0000\u0000\u0708"+
 		"\u0709\u0003\u011e\u008f\u0000\u0709\u00f5\u0001\u0000\u0000\u0000\u070a"+

@@ -947,7 +947,9 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
       if (is_static_folder(parts[k])) static_folders.insert(parts[k]);
     }
     if (!scripts::is_script_file(path)) continue;
-    auto content = get_content_file(session, file.id, true)->content.value_or("");
+    const auto stored = get_content_file(session, file.id, true);
+    if (!stored) throw std::runtime_error("The content file " + path + " was not found.");
+    auto content = stored->content.value_or("");
     if (!is_text(content) && !content.empty()) {
       throw std::runtime_error("The content of file " + path + " is binary data, not text.");
     }
@@ -1025,6 +1027,10 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
       definition.comments = optional_text_property(props, "comments");
       definition.schema_type = "SCRIPT_MODULE";
       schema = get_schema(session, add_schema(session, definition));
+      if (!schema) {
+        throw std::runtime_error("The REST schema of the MRS module " +
+                                 m.class_name + " could not be created.");
+      }
     }
 
     for (const auto &s : m.scripts) {

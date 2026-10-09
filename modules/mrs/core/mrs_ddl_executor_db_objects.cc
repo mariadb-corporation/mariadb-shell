@@ -599,29 +599,83 @@ std::pair<std::string, std::string> database_object_name(
   return {object.schema.value_or(schema.name), object.name};
 }
 
-// Grants the privileges the db_object needs after a change: the
-// crud_operations, the options or the references may have changed.
+// REVOKE and GRANT commit the transaction they run in, so the privileges of
+// the data provider role are changed before the metadata transaction of an
+// ALTER, and the old ones are granted again when anything after fails:
+// the db_object and its privileges then stay in step either way. Nothing is
+// revoked when the statements do not change.
+//
 // A db_object created with FORCE may name a routine or table that does not
 // exist (yet); granting on it is then reported as a warning.
-void regrant(Db_session *session, const metadata::Db_object &db_object,
-             const std::vector<Object_definition> &objects, Statement_result *r) {
-  constexpr int k_no_such_routine = 1305;  // ER_SP_DOES_NOT_EXIST
-  constexpr int k_no_such_table = 1146;    // ER_NO_SUCH_TABLE
-
-  metadata::revoke_all_from_db_object(session, db_object.schema_name,
-                                      db_object.name, db_object.object_type);
-  for (const auto &grant : metadata::grant_statements(
-           session, db_object.schema_name, db_object.name, db_object.object_type,
-           db_object.crud_operations, objects, db_object.options)) {
+void restore_grants(Db_session *session, const metadata::Db_object &db_object,
+                    const std::vector<std::string> &old_grants) noexcept {
+  try {
+    metadata::revoke_all_from_db_object(session, db_object.schema_name,
+                                        db_object.name, db_object.object_type);
+  } catch (...) {
+    // The error of the statement is the one to report
+  }
+  for (const auto &grant : old_grants) {
     try {
       session->execute(grant);
-    } catch (const Db_error &e) {
-      if (e.code() != k_no_such_routine && e.code() != k_no_such_table) throw;
-      r->warnings.push_back(
-          Statement_result::Warning{"warning", e.code(), e.what()});
+    } catch (...) {
+      // A grant that was a warning before fails again; the rest go on
     }
   }
 }
+
+// Returns whether the privileges changed, so the caller knows to restore
+// them when its metadata change fails.
+bool regrant(Db_session *session, const metadata::Db_object &db_object,
+             const std::vector<std::string> &old_grants,
+             const std::vector<std::string> &new_grants, Statement_result *r) {
+  constexpr int k_no_such_routine = 1305;  // ER_SP_DOES_NOT_EXIST
+  constexpr int k_no_such_table = 1146;    // ER_NO_SUCH_TABLE
+
+  if (old_grants == new_grants) return false;
+  metadata::revoke_all_from_db_object(session, db_object.schema_name,
+                                      db_object.name, db_object.object_type);
+  try {
+    for (const auto &grant : new_grants) {
+      try {
+        session->execute(grant);
+      } catch (const Db_error &e) {
+        if (e.code() != k_no_such_routine && e.code() != k_no_such_table) throw;
+        r->warnings.push_back(
+            Statement_result::Warning{"warning", e.code(), e.what()});
+      }
+    }
+  } catch (...) {
+    restore_grants(session, db_object, old_grants);
+    throw;
+  }
+  return true;
+}
+
+// Grants the old privileges again when the metadata change after a
+// regrant() fails; keep() once the change is committed.
+class Grant_restorer {
+ public:
+  Grant_restorer(Db_session *session, const metadata::Db_object &db_object,
+                 const std::vector<std::string> &old_grants, bool active)
+      : m_session(session),
+        m_db_object(db_object),
+        m_old_grants(old_grants),
+        m_active(active) {}
+  ~Grant_restorer() {
+    if (m_active) restore_grants(m_session, m_db_object, m_old_grants);
+  }
+  Grant_restorer(const Grant_restorer &) = delete;
+  Grant_restorer &operator=(const Grant_restorer &) = delete;
+
+  void keep() { m_active = false; }
+
+ private:
+  Db_session *m_session;
+  const metadata::Db_object &m_db_object;
+  const std::vector<std::string> &m_old_grants;
+  bool m_active;
+};
 
 }  // namespace
 
@@ -741,22 +795,23 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
                              "` could not be found.");
   }
 
-  Db_transaction transaction(m_session);
-
   auto changes = db_object_changes(s.options, s.new_path);
-  std::vector<Object_definition> objects;
+  auto objects = metadata::get_objects(m_session, db_object->id);
+  const auto old_grants = metadata::grant_statements(
+      m_session, db_object->schema_name, db_object->name, db_object->object_type,
+      db_object->crud_operations, objects, db_object->options);
 
+  bool new_mapping = false;
   if (s.class_def) {
     if (s.class_def->mapping) {
       // A new mapping replaces the whole data mapping
       Mapping_builder builder(m_session, db_object->id, db_object->schema_name,
                               db_object->name);
-      objects.push_back(builder.view_object(s.class_def->name, s.class_def->crud,
-                                            s.class_def->mapping));
-      metadata::set_objects(m_session, db_object->id, objects);
+      objects = {builder.view_object(s.class_def->name, s.class_def->crud,
+                                     s.class_def->mapping)};
+      new_mapping = true;
     } else {
       // Only the name and the data mapping flags change, the fields stay
-      objects = metadata::get_objects(m_session, db_object->id);
       if (objects.empty()) {
         throw std::runtime_error("The given REST object `" + full_path +
                                  "` does not have a result definition defined.");
@@ -769,20 +824,28 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
       }
       object.name = s.class_def->name;
       object.options = mapping_options(s.class_def->crud);
-      metadata::update_object(m_session, object.id, object.name, object.options);
     }
     changes.crud_operations =
         metadata::calculate_crud_operations(db_object->object_type, objects);
   }
 
+  const auto new_grants = metadata::grant_statements(
+      m_session, db_object->schema_name, db_object->name, db_object->object_type,
+      changes.crud_operations.value_or(db_object->crud_operations), objects,
+      metadata::options_after(m_session, *db_object, changes));
+  Grant_restorer restorer(m_session, *db_object, old_grants,
+                          regrant(m_session, *db_object, old_grants, new_grants, r));
+
+  Db_transaction transaction(m_session);
+  if (new_mapping) {
+    metadata::set_objects(m_session, db_object->id, objects);
+  } else if (s.class_def) {
+    const auto &object = objects.front();
+    metadata::update_object(m_session, object.id, object.name, object.options);
+  }
   metadata::update_db_object(m_session, db_object->id, changes);
-
-  const auto updated = metadata::get_db_object(m_session, db_object->id);
-  if (!updated) throw std::runtime_error("The REST VIEW could not be updated.");
-  if (objects.empty()) objects = metadata::get_objects(m_session, db_object->id);
-  regrant(m_session, *updated, objects, r);
-
   transaction.commit();
+  restorer.keep();
 
   r->affected_items_count = 1;
 }
@@ -799,34 +862,41 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
                              "` could not be found.");
   }
 
-  Db_transaction transaction(m_session);
-
   auto changes = db_object_changes(s.options, s.new_path);
-  std::vector<Object_definition> objects;
 
-  // A PARAMETERS or RESULT clause replaces the whole data mapping. The old
-  // objects go first, so their names are free for the new ones.
-  if (s.parameters || !s.results.empty()) {
-    metadata::set_objects(m_session, db_object->id, {});
+  // The privileges of a routine (EXECUTE) do not depend on its objects
+  const auto old_grants = metadata::grant_statements(
+      m_session, db_object->schema_name, db_object->name, db_object->object_type,
+      db_object->crud_operations, {}, db_object->options);
+
+  // A PARAMETERS or RESULT clause replaces the whole data mapping
+  const bool new_mapping = s.parameters || !s.results.empty();
+  std::vector<Object_definition> objects;
+  if (new_mapping) {
     Mapping_builder builder(m_session, db_object->id, db_object->schema_name,
                             db_object->name);
     objects = builder.routine_objects(s.kind, type, s.parameters, s.results,
                                       false);
-    assign_object_names(m_session, schema.id, full_path, true, &objects);
-    metadata::set_objects(m_session, db_object->id, objects);
     changes.crud_operations = metadata::calculate_crud_operations(type, objects);
   }
 
-  metadata::update_db_object(m_session, db_object->id, changes);
+  const auto new_grants = metadata::grant_statements(
+      m_session, db_object->schema_name, db_object->name, db_object->object_type,
+      changes.crud_operations.value_or(db_object->crud_operations), {},
+      metadata::options_after(m_session, *db_object, changes));
+  Grant_restorer restorer(m_session, *db_object, old_grants,
+                          regrant(m_session, *db_object, old_grants, new_grants, r));
 
-  const auto updated = metadata::get_db_object(m_session, db_object->id);
-  if (!updated) {
-    throw std::runtime_error("The REST " + type + " could not be updated.");
+  Db_transaction transaction(m_session);
+  if (new_mapping) {
+    // The old objects go first, so their names are free for the new ones
+    metadata::set_objects(m_session, db_object->id, {});
+    assign_object_names(m_session, schema.id, full_path, true, &objects);
+    metadata::set_objects(m_session, db_object->id, objects);
   }
-  if (objects.empty()) objects = metadata::get_objects(m_session, db_object->id);
-  regrant(m_session, *updated, objects, r);
-
+  metadata::update_db_object(m_session, db_object->id, changes);
   transaction.commit();
+  restorer.keep();
 
   r->affected_items_count = 1;
 }

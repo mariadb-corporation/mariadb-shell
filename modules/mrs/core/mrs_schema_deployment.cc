@@ -261,23 +261,37 @@ std::string Script_deployer::deploy(Db_session *session, bool backup) {
     try {
       m_backup->create(session, name, *current);
     } catch (const std::exception &e) {
+      // The copy may be half made: its folder, and local_infile enabled
+      try {
+        m_backup->discard();
+      } catch (...) {
+        // The backup error is the one to report
+      }
       fail(e.what());
     }
     backup_available = true;
   }
 
+  // Taken before anything touches the schema: another update holding the
+  // lock is a reason to stop, not to drop and restore the schema it is
+  // working on.
+  std::optional<Msm_lock> lock;
+  try {
+    lock.emplace(session);
+  } catch (const std::exception &e) {
+    if (backup_available) m_backup->discard();
+    fail(e.what());
+  }
+
   try {
     log("INFO", "Running SQL script `" + script_path.string() + "` ...");
-    {
-      Msm_lock lock(session);
-      try {
-        session->execute_script(deploy_script);
-      } catch (const std::exception &e) {
-        log("ERROR", "Failed to run the the SQL script `" +
-                         script_path.string() + "`.\n" + e.what());
-        throw std::runtime_error(std::string("Failed to run the SQL script.\n") +
-                                 e.what());
-      }
+    try {
+      session->execute_script(deploy_script);
+    } catch (const std::exception &e) {
+      log("ERROR", "Failed to run the the SQL script `" +
+                       script_path.string() + "`.\n" + e.what());
+      throw std::runtime_error(std::string("Failed to run the SQL script.\n") +
+                               e.what());
     }
     log("INFO", "SQL script " + script_path.string() + " executed successfully.");
 

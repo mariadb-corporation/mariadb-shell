@@ -179,7 +179,17 @@ shcore::Value Mrs::run_rest_sql(
         "The REST SQL statement needs an open session.");
   }
 
-  Shell_db_session db(session->get_core_session());
+  // The metadata schema needs MariaDB (its UUID type, its roles): a MySQL
+  // server is refused before anything is parsed, naming it
+  const auto core = session->get_core_session();
+  if (core->get_server_vendor() != mysqlshdk::db::ServerVendor::MariaDB) {
+    throw shcore::Exception::runtime_error(
+        "The MariaDB REST Service needs a MariaDB server. The session is "
+        "connected to MySQL " +
+        core->get_server_version().get_base() + ".");
+  }
+
+  Shell_db_session db(core);
   std::erase_if(m_states, [](const auto &entry) { return entry.first.expired(); });
   auto &state = m_states[session];
 
