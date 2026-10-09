@@ -14,8 +14,9 @@ the two in step when either changes.
 | --- | --- |
 | `content/` | **The GitBook source.** Markdown plus GitBook blocks, laid out as a GitBook space. This is what gets ported. |
 | `content/SUMMARY.md` | GitBook's navigation. The preview's sidebar is generated from it, so it is the only place the page tree is defined. |
-| `content/README.md` | A stand-in for the Enterprise Tools space landing page. Only its `## MariaDB Shell` section is meant for porting. |
-| `content/mariadb-shell/` | The product docs. |
+| `content/README.md` | A stand-in for the Enterprise Tools space landing page. Only its `## MariaDB Shell` and `## MariaDB REST Service` sections are meant for porting. |
+| `content/mariadb-shell/` | The MariaDB Shell docs. |
+| `content/mariadb-rest-service/` | The MariaDB REST Service (MRS) docs. Its REST SQL reference is checked against the ANTLR grammar in `modules/mrs/antlr_grammar/`, whose railroad diagrams go to `content/.gitbook/assets/mariadb-rest-service/sql/` (see below). |
 | `content/.gitbook/assets/` | Images, as GitBook stores them. Reference them as `.gitbook/assets/<file>` (with the right `../` depth). |
 | `docusaurus.config.js`, `sidebars.js`, `src/`, `static/` | The preview site only. Never ported. |
 
@@ -91,6 +92,20 @@ Specific to MariaDB Shell:
   defaults; check a page against it, and against the code, rather than against
   the MySQL Shell manual.
 
+## MariaDB REST Service Grammar Tools
+
+The REST SQL reference in `content/mariadb-rest-service/rest-sql-reference/`
+follows the ANTLR reference grammar `modules/mrs/antlr_grammar/MRSParser.g4`
+(kept rule for rule in step with the shell's bison grammar). After a grammar
+change, run from the repository root:
+
+```sh
+npm run docs-ref:mrs-grammar-docs   # update the ```antlr rule blocks, list undocumented rules
+npm run docs-ref:mrs-diagrams       # re-render the railroad diagrams, delete those of removed rules
+```
+
+Both need only Python 3. See `modules/mrs/antlr_grammar/README.md`.
+
 ## How the preview renders GitBook blocks
 
 [`docusaurus-plugin-gitbook`](https://github.com/jasny/docusaurus-plugin-gitbook)
@@ -120,12 +135,15 @@ The target is the **Enterprise Tools** space (`tools/` in
 `mariadb-corporation/mariadb-docs`, published at
 `https://mariadb.com/docs/tools/`). The preview uses the same URL layout.
 
-1. Copy `content/mariadb-shell/` to `tools/mariadb-shell/`, and any images
-   from `content/.gitbook/assets/` to `tools/.gitbook/assets/`.
-2. Add the `* [MariaDB Shell](mariadb-shell/README.md)` subtree from
+1. Copy `content/mariadb-shell/` to `tools/mariadb-shell/` and
+   `content/mariadb-rest-service/` to `tools/mariadb-rest-service/`, and any
+   images from `content/.gitbook/assets/` to `tools/.gitbook/assets/`
+   (including the `mariadb-rest-service/` folder).
+2. Add the `* [MariaDB Shell](mariadb-shell/README.md)` and
+   `* [MariaDB REST Service](mariadb-rest-service/README.md)` subtrees from
    `content/SUMMARY.md` to `tools/SUMMARY.md`.
-3. Add the `## MariaDB Shell` section of `content/README.md` to
-   `tools/README.md`.
+3. Add the `## MariaDB Shell` and `## MariaDB REST Service` sections of
+   `content/README.md` to `tools/README.md`.
 4. Rewrite links to other spaces as link aliases, e.g.
    `https://mariadb.com/docs/server/security/cve` → `{server}/security/cve`
    (see `dev-docs/link-aliases.md` there). The preview keeps absolute URLs

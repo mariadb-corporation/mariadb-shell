@@ -76,7 +76,7 @@ function hasGitBookAssets() {
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'MariaDB Documentation',
-  tagline: 'MariaDB Shell reference (offline preview)',
+  tagline: 'MariaDB Shell and MariaDB REST Service reference (offline preview)',
   favicon: 'img/favicon.ico',
 
   // Mirrors the published layout: https://mariadb.com/docs/tools/<product>/…
@@ -151,7 +151,7 @@ const config = {
       announcementBar: {
         id: 'offline-preview',
         content:
-          'Offline preview of the <b>MariaDB Shell</b> reference docs. The published version will live on <a href="https://mariadb.com/docs/tools">mariadb.com/docs</a>.',
+          'Offline preview of the <b>MariaDB Shell</b> and <b>MariaDB REST Service</b> reference docs. The published version will live on <a href="https://mariadb.com/docs/tools">mariadb.com/docs</a>.',
         isCloseable: true,
       },
       navbar: {
