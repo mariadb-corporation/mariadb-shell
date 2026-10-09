@@ -114,18 +114,29 @@ Version schema_version(Db_session *session, std::string *view = nullptr);
 // its version view is stored in `view`, if given.
 Version check_schema(Db_session *session, std::string *view = nullptr);
 
+// The newest id and the number of rows of the audit log. Ids follow the
+// order the rows were inserted in, not the order their transactions
+// committed: with concurrent writers, and much more so on a Galera cluster
+// with several write nodes, a row with a lower id can become visible after
+// a higher one. That leaves MAX(id) unchanged but raises the count.
+struct Audit_log_mark {
+  int64_t max_id = 0;
+  int64_t rows = 0;
+  bool operator==(const Audit_log_mark &) const = default;
+};
+
 // What the checks before each REST statement depend on, read in one query:
-// the session's sql_mode, the schema version and the newest audit log id.
-// Every change of a service or schema writes an audit log row (triggers),
-// so an unchanged id means a current service or schema checked before
-// still exists. A redeployment changes the version, not the audit log.
+// the session's sql_mode, the schema version and the audit log mark. Every
+// change of a service or schema writes an audit log row (triggers), so an
+// unchanged mark means a current service or schema checked before still
+// exists. A redeployment changes the version, not the audit log.
 struct Metadata_fingerprint {
   std::string sql_mode;
   // false when the schema, its version view or the audit log could not be
-  // read; version and audit_id are unset then.
+  // read; version and audit are unset then.
   bool valid = false;
   std::optional<Version> version;
-  std::optional<int64_t> audit_id;  // unset for an empty audit log
+  Audit_log_mark audit;
 };
 Metadata_fingerprint read_fingerprint(Db_session *session,
                                       std::string_view version_view);
@@ -205,11 +216,11 @@ std::vector<Service> get_services_of_auth_app(Db_session *session,
 // -- Daemons --------------------------------------------------------------
 //
 // The MariaDB REST Daemon instances serving the REST services; each one
-// registers itself in the router table of the metadata.
+// registers itself in the rest_daemon table of the metadata.
 
 struct Daemon {
-  int64_t id = 0;
-  std::string name;  // router_name
+  Id id;
+  std::string name;
   std::string address;
   std::string product_name;
   std::optional<std::string> version;
@@ -222,13 +233,14 @@ struct Daemon {
 
 // All daemons, ordered by id.
 std::vector<Daemon> get_daemons(Db_session *session);
-std::optional<Daemon> get_daemon(Db_session *session, int64_t id);
+std::optional<Daemon> get_daemon(Db_session *session, const Id &id);
 
-// The services a daemon serves (the router_services view).
-std::vector<Service> get_services_of_daemon(Db_session *session, int64_t id);
+// The services a daemon serves (the rest_daemon_services view).
+std::vector<Service> get_services_of_daemon(Db_session *session,
+                                            const Id &id);
 
 // Deletes a daemon with its status reports and log entries.
-void delete_daemon(Db_session *session, int64_t id);
+void delete_daemon(Db_session *session, const Id &id);
 
 // The values of a service to create. Unset fields take the column defaults.
 struct Service_definition {

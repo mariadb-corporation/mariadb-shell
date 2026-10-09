@@ -932,9 +932,10 @@ showCreateRestUserStatement:
 
 // Named identifiers ========================================================
 
-// The id of a MariaDB REST Daemon instance, as SHOW REST DAEMONS lists it
+// The id of a MariaDB REST Daemon instance, as SHOW REST DAEMONS lists it:
+// a UUID in its canonical text form
 daemonId:
-    INT_NUMBER
+    textStringLiteral
 ;
 
 serviceRequestPath:

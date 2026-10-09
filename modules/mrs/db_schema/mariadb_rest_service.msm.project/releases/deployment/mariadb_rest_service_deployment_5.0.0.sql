@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS `service` (
   `name` VARCHAR(255) NOT NULL,
   `enabled` TINYINT NOT NULL DEFAULT 1,
   `published` TINYINT NOT NULL DEFAULT 0,
-  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. Routers only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets JSON_UNQUOTE(JSON_EXTRACT(router.option, \"$.developer\")). When bootstrapped with the --mrs-development <user> option the Router also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
+  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. MariaDB REST Daemons only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets JSON_UNQUOTE(JSON_EXTRACT(rest_daemon.attributes, \"$.developer\")). When bootstrapped with the --mrs-development <user> option the MariaDB REST Daemon also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
   `comments` VARCHAR(512) NULL,
   `options` JSON NULL,
   `auth_path` VARCHAR(255) NOT NULL DEFAULT '/authentication' COMMENT 'The path used for authentication. The following sub-paths will be made available for <service_path>/<auth_path>:  /login /status /logout /completed',
@@ -346,7 +346,7 @@ ENGINE = InnoDB;
 -- Table `audit_log`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `audit_log` (
-  `id` INT NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `schema_name` VARCHAR(255) NULL,
   `table_name` VARCHAR(255) NOT NULL,
   `dml_type` ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
@@ -620,29 +620,29 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `router`
+-- Table `rest_daemon`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `router` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'The ID of the router instance that uniquely identifies the router on this MariaDB REST Service setup.',
-  `router_name` VARCHAR(255) NOT NULL COMMENT 'A user specified name for an instance of the router. Should default to address:port, where port is the http server port of the router. Set via --name during router bootstrap.',
-  `address` VARCHAR(255) CHARACTER SET 'ascii' COLLATE 'ascii_general_ci' NOT NULL COMMENT 'Network address of the host the Router is running on. Set via --report--host during bootstrap.',
-  `product_name` VARCHAR(128) NOT NULL COMMENT 'The product name of the routing component, e.g. \'MariaDB REST Daemon\'',
-  `version` VARCHAR(12) NULL COMMENT 'The version of the router instance. Updated on bootstrap and each startup of the router instance. Format: x.y.z, 3 digits for each component. Managed by Router.',
-  `last_check_in` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'A timestamp updated by the router every hour with the current time. This timestamp is used to detect routers that are no longer used or stalled. Managed by Router.',
-  `attributes` JSON NULL COMMENT 'Router specific custom attributes. Managed by Router.',
-  `options` JSON NULL COMMENT 'Router instance specific configuration options.',
+CREATE TABLE IF NOT EXISTS `rest_daemon` (
+  `id` UUID NOT NULL DEFAULT UUID_v7() COMMENT 'The ID of the MariaDB REST Daemon instance that uniquely identifies it on this MariaDB REST Service setup.',
+  `name` VARCHAR(255) NOT NULL COMMENT 'A user specified name for the instance. Should default to address:port, where port is the http server port of the instance. Set via --name during bootstrap.',
+  `address` VARCHAR(255) CHARACTER SET 'ascii' COLLATE 'ascii_general_ci' NOT NULL COMMENT 'Network address of the host the instance is running on. Set via --report-host during bootstrap.',
+  `product_name` VARCHAR(128) NOT NULL COMMENT 'The product name of the instance, e.g. \'MariaDB REST Daemon\'',
+  `version` VARCHAR(12) NULL COMMENT 'The version of the instance. Updated on bootstrap and each startup of the instance. Format: x.y.z, 3 digits for each component. Managed by the MariaDB REST Daemon.',
+  `last_check_in` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'A timestamp updated by the instance regularly with the current time. This timestamp is used to detect instances that are no longer used or stalled. Managed by the MariaDB REST Daemon.',
+  `attributes` JSON NULL COMMENT 'Instance specific custom attributes. Managed by the MariaDB REST Daemon.',
+  `options` JSON NULL COMMENT 'Instance specific configuration options.',
   PRIMARY KEY (`id`),
-  UNIQUE INDEX `address_router_name` (`address` ASC, `router_name` ASC) VISIBLE)
+  UNIQUE INDEX `address_name` (`address` ASC, `name` ASC) VISIBLE)
 ENGINE = InnoDB
 COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `router_status`
+-- Table `rest_daemon_status`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `router_status` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `router_id` INT UNSIGNED NOT NULL,
+CREATE TABLE IF NOT EXISTS `rest_daemon_status` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `rest_daemon_id` UUID NOT NULL,
   `status_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The time the status was reported',
   `timespan` INT UNSIGNED NOT NULL COMMENT 'The timespan of the measuring interval',
   `mariadb_connections` INT UNSIGNED NOT NULL DEFAULT 0,
@@ -654,11 +654,11 @@ CREATE TABLE IF NOT EXISTS `router_status` (
   `active_mariadb_connections` INT UNSIGNED NOT NULL DEFAULT 0,
   `details` JSON NULL COMMENT 'More detailed status information',
   PRIMARY KEY (`id`),
-  INDEX `fk_router_status_router1_idx` (`router_id` ASC) VISIBLE,
+  INDEX `fk_rest_daemon_status_rest_daemon1_idx` (`rest_daemon_id` ASC) VISIBLE,
   INDEX `status_time` (`status_time` ASC) VISIBLE,
-  CONSTRAINT `fk_router_status_router1`
-    FOREIGN KEY (`router_id`)
-    REFERENCES `router` (`id`)
+  CONSTRAINT `fk_rest_daemon_status_rest_daemon1`
+    FOREIGN KEY (`rest_daemon_id`)
+    REFERENCES `rest_daemon` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB
@@ -666,10 +666,10 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `router_session`
+-- Table `rest_daemon_session`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `router_session` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS `rest_daemon_session` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` UUID NOT NULL,
   `service_id` UUID NOT NULL,
   `expires` DATETIME NOT NULL,
@@ -679,12 +679,12 @@ COMMENT = 'no_audit_log';
 
 
 -- -----------------------------------------------------
--- Table `router_general_log`
+-- Table `rest_daemon_general_log`
 -- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `router_general_log` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `router_id` INT UNSIGNED NOT NULL,
-  `router_session_id` INT UNSIGNED NULL,
+CREATE TABLE IF NOT EXISTS `rest_daemon_general_log` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `rest_daemon_id` UUID NOT NULL,
+  `rest_daemon_session_id` BIGINT UNSIGNED NULL,
   `log_time` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   `log_type` ENUM("INFO", "WARNING", "DEBUG", "ERROR", "FATAL", "SYSTEM", "NOTE") NOT NULL,
   `code` INT UNSIGNED NULL,
@@ -693,19 +693,19 @@ CREATE TABLE IF NOT EXISTS `router_general_log` (
   `thread_id` INT UNSIGNED NULL,
   `data` JSON NULL,
   PRIMARY KEY (`id`),
-  INDEX `fk_router_general_log_router1_idx` (`router_id` ASC) VISIBLE,
+  INDEX `fk_rest_daemon_general_log_rest_daemon1_idx` (`rest_daemon_id` ASC) VISIBLE,
   INDEX `log_time` (`log_time` ASC) VISIBLE,
-  INDEX `fk_router_general_log_router_session1_idx` (`router_session_id` ASC) VISIBLE,
-  INDEX `router_log_type` (`log_type` ASC) VISIBLE,
-  INDEX `router_log_thread_id` (`thread_id` ASC) VISIBLE,
-  CONSTRAINT `fk_router_general_log_router1`
-    FOREIGN KEY (`router_id`)
-    REFERENCES `router` (`id`)
+  INDEX `fk_rest_daemon_general_log_rest_daemon_session1_idx` (`rest_daemon_session_id` ASC) VISIBLE,
+  INDEX `log_type` (`log_type` ASC) VISIBLE,
+  INDEX `log_thread_id` (`thread_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_daemon_general_log_rest_daemon1`
+    FOREIGN KEY (`rest_daemon_id`)
+    REFERENCES `rest_daemon` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
-  CONSTRAINT `fk_router_general_log_router_session1`
-    FOREIGN KEY (`router_session_id`)
-    REFERENCES `router_session` (`id`)
+  CONSTRAINT `fk_rest_daemon_general_log_rest_daemon_session1`
+    FOREIGN KEY (`rest_daemon_session_id`)
+    REFERENCES `rest_daemon_session` (`id`)
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB
@@ -1074,11 +1074,11 @@ WITH RECURSIVE obj_fields (
 SELECT * FROM obj_fields;
 
 -- -----------------------------------------------------------------------------
--- View `router_services`
+-- View `rest_daemon_services`
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE SQL SECURITY INVOKER
-VIEW `router_services` AS
-SELECT r.id AS router_id, r.router_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS router_developer,
+VIEW `rest_daemon_services` AS
+SELECT r.id AS rest_daemon_id, r.name AS rest_daemon_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS rest_daemon_developer,
     s.id as service_id, h.name AS service_url_host_name,
     s.url_context_root AS service_url_context_root,
     CONCAT(h.name, s.url_context_root) AS service_host_ctx,
@@ -1090,7 +1090,7 @@ SELECT r.id AS router_id, r.router_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.
 FROM `service` s
     LEFT JOIN `url_host` h
         ON s.url_host_id = h.id
-    JOIN `router` r
+    JOIN `rest_daemon` r
 WHERE
     (enabled = 1)
     AND (
@@ -1120,8 +1120,8 @@ COMMENT 'This procedure needs to be called on a primary instance in an InnoDB Cl
     become a secondary.'
 BEGIN
     ALTER EVENT `delete_old_audit_log_entries` DISABLE;
-    ALTER EVENT `router_status_cleanup` DISABLE;
-    ALTER EVENT `router_log_cleanup` DISABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` DISABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` DISABLE;
 END%%
 
 -- -----------------------------------------------------------------------------
@@ -1135,8 +1135,8 @@ COMMENT 'This procedure needs to be called on an instance in an InnoDB Cluster s
     become the primary.'
 BEGIN
     ALTER EVENT `delete_old_audit_log_entries` ENABLE;
-    ALTER EVENT `router_status_cleanup` ENABLE;
-    ALTER EVENT `router_log_cleanup` ENABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` ENABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` ENABLE;
 END%%
 
 
@@ -1235,7 +1235,7 @@ BEGIN
         IF event_count > 0 THEN
             -- Export all audit_log entries that occurred since the last dump
             SET @sql = CONCAT(
-                'SELECT JSON_OBJECT("changed_at", changed_at, "id", id, "server_uuid", @@server_uuid, ',
+                'SELECT JSON_OBJECT("changed_at", changed_at, "id", id, "server_uid", @@server_uid, ',
                 '    "schema_name", schema_name, "table_name", table_name, "dm_type", dml_type, "changed_by", changed_by, '
                 '    "old_row_data", JSON_REPLACE(old_row_data, "$.data.defaultStaticContent", "BINARY_DATA"), ',
                 '    "new_row_data", JSON_REPLACE(new_row_data, "$.data.defaultStaticContent", "BINARY_DATA")) ',
@@ -1527,10 +1527,10 @@ END%%
 -- sub-daily data is kept for 7 days, then down-sampled to 1 day samples
 -- daily data is kept indefinitely
 
-DROP PROCEDURE IF EXISTS `router_status_downsample`%%
-CREATE PROCEDURE `router_status_downsample`(
+DROP PROCEDURE IF EXISTS `rest_daemon_status_downsample`%%
+CREATE PROCEDURE `rest_daemon_status_downsample`(
     time TIMESTAMP,
-    router_version VARCHAR(12),
+    daemon_version VARCHAR(12),
     status_variables JSON,
     target_interval CHAR)
     SQL SECURITY INVOKER
@@ -1607,32 +1607,34 @@ here:BEGIN
 
     CLOSE cur1;
     DROP TABLE IF EXISTS `aggregated`;
-    CREATE TEMPORARY TABLE `aggregated` LIKE router_status;
+    CREATE TEMPORARY TABLE `aggregated` LIKE rest_daemon_status;
 
     -- aggregate rows with interval < target_interval at the same time
     SET @query = CONCAT('INSERT INTO `aggregated` ',
-        '(id, router_id, `timespan`, status_time, ', direct_columns, '`details`)',
-        ' SELECT min(rs.id) as id, rs.router_id, ', max_interval, ' as `timespan`, ',
+        '(id, rest_daemon_id, `timespan`, status_time, ', direct_columns, '`details`)',
+        ' SELECT min(rs.id) as id, rs.rest_daemon_id, ', max_interval, ' as `timespan`, ',
         'DATE_FORMAT(rs.status_time, ', quote(time_point_format), ') as status_time_rounded, ',
         direct_query, details_query,
-        ' FROM router_status rs JOIN router r ON rs.router_id=r.id WHERE r.version=', quote(router_version),
+        ' FROM rest_daemon_status rs JOIN rest_daemon r ON rs.rest_daemon_id=r.id WHERE r.version=', quote(daemon_version),
         ' AND rs.status_time < ', quote(before_time), ' AND rs.`timespan` < ', max_interval);
-    SET @query = CONCAT(@query, ' GROUP BY rs.router_id, DATE_FORMAT(rs.status_time, ',quote(time_point_format),') ORDER BY status_time_rounded ASC');
+    SET @query = CONCAT(@query, ' GROUP BY rs.rest_daemon_id, DATE_FORMAT(rs.status_time, ',quote(time_point_format),') ORDER BY status_time_rounded ASC');
 
     PREPARE stmt FROM @query;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
 
-    DELETE FROM router_status r
-        WHERE r.router_id=router_id AND r.status_time < before_time AND r.`timespan` < max_interval;
+    -- Only the rows of the daemons of this version were aggregated
+    DELETE FROM rest_daemon_status
+        WHERE rest_daemon_id IN (SELECT id FROM rest_daemon WHERE version = daemon_version)
+            AND status_time < before_time AND `timespan` < max_interval;
 
-    INSERT INTO router_status SELECT * FROM `aggregated`;
+    INSERT INTO rest_daemon_status SELECT * FROM `aggregated`;
 
     COMMIT;
 END%%
 
-DROP PROCEDURE IF EXISTS `router_status_do_cleanup`%%
-CREATE PROCEDURE `router_status_do_cleanup`(time TIMESTAMP)
+DROP PROCEDURE IF EXISTS `rest_daemon_status_do_cleanup`%%
+CREATE PROCEDURE `rest_daemon_status_do_cleanup`(time TIMESTAMP)
     SQL SECURITY INVOKER
 BEGIN
     DECLARE version VARCHAR(12);
@@ -1681,9 +1683,9 @@ BEGIN
 {"name":"sqlQueryTimeouts"}]';
     DECLARE status_variables JSON;
     DECLARE done INT DEFAULT FALSE;
-    DECLARE cur1 CURSOR FOR SELECT router.version, JSON_EXTRACT(ANY_VALUE(router.attributes), '$.statusVariables')
-        FROM router
-        GROUP BY router.version;
+    DECLARE cur1 CURSOR FOR SELECT rest_daemon.version, MIN(JSON_EXTRACT(rest_daemon.attributes, '$.statusVariables'))
+        FROM rest_daemon
+        GROUP BY rest_daemon.version;
     DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
 
     OPEN cur1;
@@ -1696,9 +1698,9 @@ BEGIN
         IF status_variables IS NULL THEN
             SET status_variables = old_status_variables;
         END IF;
-        CALL router_status_downsample(time, version, status_variables, 'M');
-        CALL router_status_downsample(time, version, status_variables, 'H');
-        CALL router_status_downsample(time, version, status_variables, 'D');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'M');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'H');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'D');
     END LOOP;
 
     CLOSE cur1;
@@ -1908,33 +1910,33 @@ DELIMITER ;
 
 DELIMITER %%
 
-DROP TRIGGER IF EXISTS `router_AFTER_INSERT_AUDIT_LOG`%%
-CREATE TRIGGER `router_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `rest_daemon` FOR EACH ROW
 BEGIN
     INSERT INTO `audit_log` (
         table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
     VALUES (
-        "router",
+        "rest_daemon",
         "INSERT",
         NULL,
         JSON_OBJECT(
             "id", NEW.id,
             "options", NEW.options),
         NULL,
-        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+        NEW.id,
         CURRENT_USER(),
         CURRENT_TIMESTAMP
     );
 END%%
 
-DROP TRIGGER IF EXISTS `router_AFTER_UPDATE_AUDIT_LOG`%%
-CREATE TRIGGER `router_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `rest_daemon` FOR EACH ROW
 BEGIN
     IF (COALESCE(OLD.options, '') <> COALESCE(NEW.options, '')) THEN
         INSERT INTO `audit_log` (
             table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
         VALUES (
-            "router",
+            "rest_daemon",
             "UPDATE",
             JSON_OBJECT(
                 "id", OLD.id,
@@ -1942,8 +1944,8 @@ BEGIN
             JSON_OBJECT(
                 "id", NEW.id,
                 "options", NEW.options),
-            CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
-            CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+            OLD.id,
+            NEW.id,
             CURRENT_USER(),
             CURRENT_TIMESTAMP
         );
@@ -2293,17 +2295,17 @@ BEGIN
     DELETE FROM `mrs_db_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `router_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `router_BEFORE_DELETE` BEFORE DELETE ON `router` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon` FOR EACH ROW
 BEGIN
-	DELETE FROM `router_status` WHERE `router_id` = OLD.`id`;
-    DELETE FROM `router_general_log` WHERE `router_id` = OLD.`id`;
+	DELETE FROM `rest_daemon_status` WHERE `rest_daemon_id` = OLD.`id`;
+    DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_id` = OLD.`id`;
 END%%
 
-DROP TRIGGER IF EXISTS `router_session_BEFORE_DELETE`%%
-CREATE DEFINER = CURRENT_USER TRIGGER `router_session_BEFORE_DELETE` BEFORE DELETE ON `router_session` FOR EACH ROW
+DROP TRIGGER IF EXISTS `rest_daemon_session_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_session_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon_session` FOR EACH ROW
 BEGIN
-	DELETE FROM `router_general_log` WHERE `router_session_id` = OLD.`id`;
+	DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_session_id` = OLD.`id`;
 END%%
 
 DROP TRIGGER IF EXISTS `object_BEFORE_DELETE`%%
@@ -4682,22 +4684,22 @@ DO BEGIN
     CALL `dump_audit_log`();
 END%%
 
--- Periodically down-sample router_status rows to keep its size under control.
+-- Periodically down-sample rest_daemon_status rows to keep its size under control.
 
-DROP EVENT IF EXISTS `router_status_cleanup`%%
-CREATE EVENT `router_status_cleanup` ON SCHEDULE EVERY 1 HOUR
-ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up router_status entries' DO
-    CALL router_status_do_cleanup(NOW())%%
+DROP EVENT IF EXISTS `rest_daemon_status_cleanup`%%
+CREATE EVENT `rest_daemon_status_cleanup` ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up rest_daemon_status entries' DO
+    CALL rest_daemon_status_do_cleanup(NOW())%%
 
 
--- Periodically delete the router_general_log
+-- Periodically delete the rest_daemon_general_log
 
-DROP EVENT IF EXISTS `router_log_cleanup`%%
-CREATE EVENT `router_log_cleanup`
+DROP EVENT IF EXISTS `rest_daemon_log_cleanup`%%
+CREATE EVENT `rest_daemon_log_cleanup`
 ON SCHEDULE EVERY 1 HOUR
-ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up router_general_log entries'
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up rest_daemon_general_log entries'
 DO
-    DELETE FROM `router_general_log`
+    DELETE FROM `rest_daemon_general_log`
         WHERE `log_time` <= NOW() - INTERVAL 1 DAY%%
 
 DELIMITER ;
@@ -4969,47 +4971,47 @@ BEGIN
         TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
 
     -- -----------------------------------------------------
-    -- Router Management
+    -- MariaDB REST Daemon Management
 
-    -- `router`
+    -- `rest_daemon`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `router`
+        ON `rest_daemon`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-    GRANT SELECT, INSERT, UPDATE ON `router`
+    GRANT SELECT, INSERT, UPDATE ON `rest_daemon`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
     GRANT SELECT
-        ON `router`
+        ON `rest_daemon`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
-    -- `router_status`
+    -- `rest_daemon_status`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `router_status`
+        ON `rest_daemon_status`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-    GRANT SELECT, INSERT, UPDATE ON `router_status`
+    GRANT SELECT, INSERT, UPDATE ON `rest_daemon_status`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `router_status`
+    GRANT SELECT ON `rest_daemon_status`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
-    -- `router_general_log`
+    -- `rest_daemon_general_log`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `router_general_log`
+        ON `rest_daemon_general_log`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-    GRANT INSERT ON `router_general_log`
+    GRANT INSERT ON `rest_daemon_general_log`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `router_general_log`
+    GRANT SELECT ON `rest_daemon_general_log`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
-    -- `router_session`
+    -- `rest_daemon_session`
     GRANT SELECT, INSERT, UPDATE, DELETE
-        ON `router_session`
+        ON `rest_daemon_session`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-    GRANT SELECT, INSERT ON `router_session`
+    GRANT SELECT, INSERT ON `rest_daemon_session`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-    GRANT SELECT ON `router_session`
+    GRANT SELECT ON `rest_daemon_session`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
-    -- `router_services`
-    GRANT SELECT ON `router_services`
+    -- `rest_daemon_services`
+    GRANT SELECT ON `rest_daemon_services`
         TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
     -- -----------------------------------------------------
@@ -5311,47 +5313,47 @@ GRANT SELECT ON `mrs_user_group_hierarchy`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
--- Router Management
+-- MariaDB REST Daemon Management
 
--- `router`
+-- `rest_daemon`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router`
+    ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT, UPDATE ON `router`
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 GRANT SELECT
-    ON `router`
+    ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_status`
+-- `rest_daemon_status`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_status`
+    ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT, UPDATE ON `router_status`
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_status`
+GRANT SELECT ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_general_log`
+-- `rest_daemon_general_log`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_general_log`
+    ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT INSERT ON `router_general_log`
+GRANT INSERT ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_general_log`
+GRANT SELECT ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_session`
+-- `rest_daemon_session`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_session`
+    ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT ON `router_session`
+GRANT SELECT, INSERT ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_session`
+GRANT SELECT ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_services`
-GRANT SELECT ON `router_services`
+-- `rest_daemon_services`
+GRANT SELECT ON `rest_daemon_services`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------

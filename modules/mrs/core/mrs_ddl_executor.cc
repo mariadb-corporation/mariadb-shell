@@ -107,10 +107,10 @@ void Ddl_executor::check_metadata() {
   }
 
   if (!m_fingerprint->valid || !check.state_checked ||
-      m_fingerprint->audit_id != check.audit_id) {
+      m_fingerprint->audit != check.audit) {
     validate_state();
     check.state_checked = m_fingerprint->valid;
-    check.audit_id = m_fingerprint->audit_id;
+    check.audit = m_fingerprint->audit;
   }
   m_metadata_checked = true;
 }
@@ -296,7 +296,7 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
                 "service_upgradeable",     "service_upgrade_ignored",
                 "service_count",           "service_being_upgraded",
                 "major_upgrade_required",  "current_metadata_version",
-                "available_metadata_version", "required_router_version",
+                "available_metadata_version", "required_rest_daemon_version",
                 "metadata_version", "metadata_schema"};
   auto &row = r->add_row();
   row.push_back(flag(status.service_configured));
@@ -308,7 +308,7 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
   row.push_back(flag(status.major_upgrade_required));
   row.push_back(text(status.current_metadata_version));
   row.push_back(text(status.available_metadata_version));
-  row.push_back(text(status.required_router_version));
+  row.push_back(text(status.required_rest_daemon_version));
   row.push_back(status.metadata_version
                     ? Db_value(*status.metadata_version)
                     : Db_value(nullptr));

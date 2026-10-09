@@ -256,47 +256,47 @@ GRANT SELECT ON `mrs_user_group_hierarchy`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------
--- Router Management
+-- MariaDB REST Daemon Management
 
--- `router`
+-- `rest_daemon`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router`
+    ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT, UPDATE ON `router`
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 GRANT SELECT
-    ON `router`
+    ON `rest_daemon`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_status`
+-- `rest_daemon_status`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_status`
+    ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT, UPDATE ON `router_status`
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_status`
+GRANT SELECT ON `rest_daemon_status`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_general_log`
+-- `rest_daemon_general_log`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_general_log`
+    ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT INSERT ON `router_general_log`
+GRANT INSERT ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_general_log`
+GRANT SELECT ON `rest_daemon_general_log`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_session`
+-- `rest_daemon_session`
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON `router_session`
+    ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
-GRANT SELECT, INSERT ON `router_session`
+GRANT SELECT, INSERT ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
-GRANT SELECT ON `router_session`
+GRANT SELECT ON `rest_daemon_session`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
 
--- `router_services`
-GRANT SELECT ON `router_services`
+-- `rest_daemon_services`
+GRANT SELECT ON `rest_daemon_services`
     TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
 
 -- -----------------------------------------------------

@@ -369,8 +369,9 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
   try {
     const auto result = session->query(
         "SELECT @@SESSION.sql_mode AS sql_mode, v.major, v.minor, v.patch, "
-        "(SELECT MAX(id) FROM " + sql::metadata_table("audit_log") +
-        ") AS audit_id FROM " + sql::metadata_table(version_view) + " v");
+        "a.max_id, a.row_count FROM " + sql::metadata_table(version_view) +
+        " v, (SELECT COALESCE(MAX(id), 0) AS max_id, COUNT(*) AS row_count "
+        "FROM " + sql::metadata_table("audit_log") + ") a");
     if (!result.empty()) {
       const auto &row = result.first();
       fingerprint.sql_mode = row["sql_mode"].as_string();
@@ -379,9 +380,7 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
       fingerprint.version = Version{static_cast<int>(row["major"].as_int()),
                                     static_cast<int>(row["minor"].as_int()),
                                     static_cast<int>(row["patch"].as_int())};
-      if (!row["audit_id"].is_null()) {
-        fingerprint.audit_id = row["audit_id"].as_int();
-      }
+      fingerprint.audit = {row["max_id"].as_int(), row["row_count"].as_int()};
       return fingerprint;
     }
   } catch (const Db_error &) {
@@ -538,19 +537,19 @@ namespace {
 std::vector<Daemon> query_daemons(Db_session *session, const std::string &where,
                                   std::vector<Value> params = {}) {
   std::string query =
-      "SELECT id, router_name, address, product_name, version, last_check_in, "
+      "SELECT id, name, address, product_name, version, last_check_in, "
       "last_check_in > CURRENT_TIMESTAMP - INTERVAL 10 SECOND AS active, "
       "JSON_UNQUOTE(JSON_EXTRACT(options, '$.developer')) AS developer, "
       "attributes, options FROM " +
-      sql::metadata_table("router");
+      sql::metadata_table("rest_daemon");
   if (!where.empty()) query += " WHERE " + where;
   query += " ORDER BY id";
 
   std::vector<Daemon> daemons;
   for (const auto &row : session->query(query, std::move(params)).rows) {
     Daemon d;
-    d.id = row["id"].as_int();
-    d.name = row["router_name"].as_string();
+    d.id = row["id"].as_string();
+    d.name = row["name"].as_string();
     d.address = row["address"].as_string();
     d.product_name = row["product_name"].as_string();
     d.version = row["version"].as_optional_string();
@@ -570,24 +569,27 @@ std::vector<Daemon> get_daemons(Db_session *session) {
   return query_daemons(session, {});
 }
 
-std::optional<Daemon> get_daemon(Db_session *session, int64_t id) {
-  auto daemons = query_daemons(session, "id = ?", {id});
+std::optional<Daemon> get_daemon(Db_session *session, const Id &id) {
+  auto daemons = query_daemons(session, "id = ?", {Value::id(id)});
   if (daemons.empty()) return std::nullopt;
   return std::move(daemons.front());
 }
 
-std::vector<Service> get_services_of_daemon(Db_session *session, int64_t id) {
-  return query_services(
-      session,
-      "se.id IN (SELECT service_id FROM " +
-          sql::metadata_table("router_services") + " WHERE router_id = ?)",
-      {id});
+std::vector<Service> get_services_of_daemon(Db_session *session,
+                                            const Id &id) {
+  return query_services(session,
+                        "se.id IN (SELECT service_id FROM " +
+                            sql::metadata_table("rest_daemon_services") +
+                            " WHERE rest_daemon_id = ?)",
+                        {Value::id(id)});
 }
 
-void delete_daemon(Db_session *session, int64_t id) {
-  session->execute(sql::Delete("router_general_log").where("router_id", id));
-  session->execute(sql::Delete("router_status").where("router_id", id));
-  session->execute(sql::Delete("router").where("id", id));
+void delete_daemon(Db_session *session, const Id &id) {
+  session->execute(sql::Delete("rest_daemon_general_log")
+                       .where("rest_daemon_id", Value::id(id)));
+  session->execute(sql::Delete("rest_daemon_status")
+                       .where("rest_daemon_id", Value::id(id)));
+  session->execute(sql::Delete("rest_daemon").where("id", Value::id(id)));
 }
 
 Id add_service(Db_session *session, const Service_definition &definition) {

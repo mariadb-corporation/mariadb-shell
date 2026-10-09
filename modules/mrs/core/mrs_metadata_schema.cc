@@ -56,7 +56,7 @@ Status get_status(Db_session *session) {
   Status status;
   status.metadata_schema = session->metadata_schema();
   status.available_metadata_version = k_schema_version.str();
-  status.required_router_version = k_required_router_version.str();
+  status.required_rest_daemon_version = k_required_rest_daemon_version.str();
   if (!schema_exists(session)) return status;
 
   if (!view_exists(session, "msm_schema_version") &&

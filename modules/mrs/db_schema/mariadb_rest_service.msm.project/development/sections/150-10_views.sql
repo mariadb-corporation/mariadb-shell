@@ -63,11 +63,11 @@ WITH RECURSIVE obj_fields (
 SELECT * FROM obj_fields;
 
 -- -----------------------------------------------------------------------------
--- View `router_services`
+-- View `rest_daemon_services`
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE SQL SECURITY INVOKER
-VIEW `router_services` AS
-SELECT r.id AS router_id, r.router_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS router_developer,
+VIEW `rest_daemon_services` AS
+SELECT r.id AS rest_daemon_id, r.name AS rest_daemon_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS rest_daemon_developer,
     s.id as service_id, h.name AS service_url_host_name,
     s.url_context_root AS service_url_context_root,
     CONCAT(h.name, s.url_context_root) AS service_host_ctx,
@@ -79,7 +79,7 @@ SELECT r.id AS router_id, r.router_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.
 FROM `service` s
     LEFT JOIN `url_host` h
         ON s.url_host_id = h.id
-    JOIN `router` r
+    JOIN `rest_daemon` r
 WHERE
     (enabled = 1)
     AND (

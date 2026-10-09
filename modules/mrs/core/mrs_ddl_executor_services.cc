@@ -201,8 +201,7 @@ void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) 
   std::vector<metadata::Service> services;
   if (s.daemon) {
     if (!metadata::get_daemon(m_session, *s.daemon)) {
-      throw std::runtime_error("The given REST DAEMON `" +
-                               std::to_string(*s.daemon) +
+      throw std::runtime_error("The given REST DAEMON `" + *s.daemon +
                                "` could not be found.");
     }
     services = metadata::get_services_of_daemon(m_session, *s.daemon);
@@ -263,7 +262,7 @@ void Ddl_executor::do_execute(const Show_rest_daemons &s, Statement_result *r) {
 }
 
 void Ddl_executor::do_execute(const Drop_rest_daemon &s, Statement_result *r) {
-  const auto id = std::to_string(s.id);
+  const auto &id = s.id;
   set_failure_context("Failed to drop the REST DAEMON `" + id + "`.");
 
   Db_transaction transaction(m_session);

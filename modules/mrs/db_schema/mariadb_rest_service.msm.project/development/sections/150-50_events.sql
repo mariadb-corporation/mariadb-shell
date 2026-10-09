@@ -26,22 +26,22 @@ DO BEGIN
     CALL `dump_audit_log`();
 END%%
 
--- Periodically down-sample router_status rows to keep its size under control.
+-- Periodically down-sample rest_daemon_status rows to keep its size under control.
 
-DROP EVENT IF EXISTS `router_status_cleanup`%%
-CREATE EVENT `router_status_cleanup` ON SCHEDULE EVERY 1 HOUR
-ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up router_status entries' DO
-    CALL router_status_do_cleanup(NOW())%%
+DROP EVENT IF EXISTS `rest_daemon_status_cleanup`%%
+CREATE EVENT `rest_daemon_status_cleanup` ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up rest_daemon_status entries' DO
+    CALL rest_daemon_status_do_cleanup(NOW())%%
 
 
--- Periodically delete the router_general_log
+-- Periodically delete the rest_daemon_general_log
 
-DROP EVENT IF EXISTS `router_log_cleanup`%%
-CREATE EVENT `router_log_cleanup`
+DROP EVENT IF EXISTS `rest_daemon_log_cleanup`%%
+CREATE EVENT `rest_daemon_log_cleanup`
 ON SCHEDULE EVERY 1 HOUR
-ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up router_general_log entries'
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up rest_daemon_general_log entries'
 DO
-    DELETE FROM `router_general_log`
+    DELETE FROM `rest_daemon_general_log`
         WHERE `log_time` <= NOW() - INTERVAL 1 DAY%%
 
 DELIMITER ;

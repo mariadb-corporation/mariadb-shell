@@ -40,8 +40,9 @@
 namespace mrs {
 namespace metadata {
 
-// The version of the MariaDB REST Service router this module expects.
-inline constexpr Version k_required_router_version{8, 1, 0};
+// The oldest MariaDB REST Daemon version that serves the metadata schema
+// version this module deploys.
+inline constexpr Version k_required_rest_daemon_version{26, 10, 0};
 
 struct Status {
   // The metadata schema the status is of (the session's)
@@ -55,7 +56,7 @@ struct Status {
   bool service_being_upgraded = false;
   std::optional<std::string> current_metadata_version;
   std::optional<std::string> available_metadata_version;
-  std::optional<std::string> required_router_version;
+  std::optional<std::string> required_rest_daemon_version;
   // The id of the last audit log entry (0 without any): it changes whenever
   // the REST metadata changes, so clients can poll it to refresh.
   std::optional<int64_t> metadata_version;

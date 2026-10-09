@@ -1066,17 +1066,26 @@ TEST(Mrs_parser, daemons) {
   EXPECT_EQ(Output_format::json,
             parse_as<Show_rest_daemons>("SHOW REST DAEMONS FORMAT=JSON").format);
   {
-    const auto &s = parse_as<Show_rest_services>("SHOW REST SERVICES FOR DAEMON 3");
-    EXPECT_EQ(3, *s.daemon);
+    const auto &s = parse_as<Show_rest_services>(
+        "SHOW REST SERVICES FOR DAEMON '0199A1B2-0000-7000-8000-000000000003'");
+    EXPECT_EQ("0199a1b2-0000-7000-8000-000000000003", *s.daemon);
     EXPECT_FALSE(s.auth_app.has_value());
   }
   {
-    const auto &s = parse_as<Drop_rest_daemon>("DROP REST DAEMON 12");
-    EXPECT_EQ(12, s.id);
+    const auto &s = parse_as<Drop_rest_daemon>(
+        "DROP REST DAEMON '0199a1b2-0000-7000-8000-000000000012'");
+    EXPECT_EQ("0199a1b2-0000-7000-8000-000000000012", s.id);
     EXPECT_FALSE(s.if_exists);
   }
-  EXPECT_TRUE(parse_as<Drop_rest_daemon>("DROP REST DAEMON IF EXISTS 1").if_exists);
+  EXPECT_TRUE(parse_as<Drop_rest_daemon>(
+                  "DROP REST DAEMON IF EXISTS '0199a1b2-0000-7000-8000-000000000001'")
+                  .if_exists);
+  // The id is a UUID in quotes
   expect_parse_error("DROP REST DAEMON myDaemon", "unexpected identifier");
+  expect_parse_error("DROP REST DAEMON 12", "unexpected integer");
+  expect_parse_error("DROP REST DAEMON '12'", "Invalid REST daemon id");
+  expect_parse_error("DROP REST DAEMON '0199a1b20000700080000000000000012'",
+                     "Invalid REST daemon id");
   expect_parse_error("SHOW REST SERVICES FOR DAEMON", "unexpected end of input");
   // DAEMON and DAEMONS are also names
   EXPECT_EQ("daemons", parse_as<Create_rest_view>(
