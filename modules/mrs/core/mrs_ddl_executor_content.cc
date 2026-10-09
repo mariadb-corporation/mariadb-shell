@@ -71,17 +71,15 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
 
   const auto service_id = require_service(s.service);
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    const auto existing = metadata::find_content_set(m_session, service_id, s.path);
-    if (existing) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST content set `" + full_path + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_content_set(m_session, existing->id);
-    }
+  if (keep_existing(
+          s.flags,
+          [&] { return metadata::find_content_set(m_session, service_id, s.path); },
+          [&](const auto &existing) {
+            metadata::delete_content_set(m_session, existing.id);
+          })) {
+    r->message = "REST content set `" + full_path + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   metadata::Content_set_definition definition;
@@ -97,7 +95,6 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   transaction.commit();
 
   r->message = "REST content set `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_content_set &s,
@@ -137,7 +134,6 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = content_set->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_content_set &s,
@@ -156,7 +152,6 @@ void Ddl_executor::do_execute(const Drop_rest_content_set &s,
   }
   if (content_set) {
     metadata::delete_content_set(m_session, content_set->id);
-    r->id = content_set->id;
   }
 
   transaction.commit();
@@ -195,7 +190,6 @@ void Ddl_executor::do_execute(const Show_create_rest_content_set &s,
           ? metadata::content_set_json(*content_set).dump(true)
           : join_statements(
                 metadata::content_set_statements(m_session, *content_set)));
-  r->id = content_set->id;
 }
 
 // -- CONTENT FILE ---------------------------------------------------------
@@ -217,19 +211,18 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   }
 
   // The metadata schema has no unique index on the file paths of a set
-  if (const auto existing =
-          metadata::find_content_file(m_session, content_set->id, s.path, false)) {
-    if (!s.flags.or_replace && !s.flags.if_not_exists) {
-      throw std::runtime_error(
-          "The request_path is already used by another entity.");
-    }
-    if (s.flags.if_not_exists) {
-      r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
-      r->id = existing->id;
-      transaction.commit();
-      return;
-    }
-    metadata::delete_content_file(m_session, existing->id);
+  const auto find_file = [&] {
+    return metadata::find_content_file(m_session, content_set->id, s.path, false);
+  };
+  if (!s.flags.or_replace && !s.flags.if_not_exists && find_file()) {
+    throw std::runtime_error("The request_path is already used by another entity.");
+  }
+  if (keep_existing(s.flags, find_file, [&](const auto &existing) {
+        metadata::delete_content_file(m_session, existing.id);
+      })) {
+    r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   metadata::Content_file_definition definition;
@@ -250,7 +243,6 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   transaction.commit();
 
   r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_content_file &s,
@@ -281,7 +273,6 @@ void Ddl_executor::do_execute(const Drop_rest_content_file &s,
   }
   if (content_file) {
     metadata::delete_content_file(m_session, content_file->id);
-    r->id = content_file->id;
   }
 
   transaction.commit();
@@ -338,7 +329,6 @@ void Ddl_executor::do_execute(const Show_create_rest_content_file &s,
       s.format == Output_format::json
           ? metadata::content_file_json(*content_file).dump(true)
           : metadata::content_file_create_statement(m_session, *content_file));
-  r->id = content_file->id;
 }
 
 }  // namespace mrs

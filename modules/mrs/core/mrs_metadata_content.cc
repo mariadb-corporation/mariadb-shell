@@ -67,13 +67,14 @@ Content_set content_set_from_row(const Db_row &row) {
 }
 
 std::vector<Content_set> query_content_sets(Db_session *session,
-                                            const std::string &where) {
+                                            const std::string &where,
+                                            std::vector<Value> params) {
   std::string sql = k_content_set_select;
   if (!where.empty()) sql += " WHERE " + where;
   sql += " ORDER BY cs.request_path";
 
   std::vector<Content_set> content_sets;
-  for (const auto &row : session->query(sql).rows) {
+  for (const auto &row : session->query(sql, std::move(params)).rows) {
     content_sets.push_back(content_set_from_row(row));
   }
   return content_sets;
@@ -115,13 +116,14 @@ Content_file content_file_from_row(const Db_row &row) {
 
 std::vector<Content_file> query_content_files(Db_session *session,
                                               const std::string &where,
+                                              std::vector<Value> params,
                                               bool include_content) {
   std::string sql = content_file_select(include_content);
   if (!where.empty()) sql += " WHERE " + where;
   sql += " ORDER BY f.request_path";
 
   std::vector<Content_file> files;
-  for (const auto &row : session->query(sql).rows) {
+  for (const auto &row : session->query(sql, std::move(params)).rows) {
     files.push_back(content_file_from_row(row));
   }
   return files;
@@ -133,15 +135,13 @@ Value blob_value(const std::string &content) {
   return content.empty() ? Value("") : Value::raw(sql::hex(content));
 }
 
-// A text literal quoted the way the Python plugin did it in its SHOW
-// CREATE output: only backslashes and quotes are escaped, newlines stay.
-std::string quote_content(std::string_view text) {
-  std::string result = "'";
-  for (const char c : text) {
-    if (c == '\\' || c == '\'' || c == '"') result += '\\';
-    result += c;
-  }
-  return result + "'";
+// Whether a file's content can be written as CONTENT '...': text without
+// the characters that only a backslash escape can write, so the literal
+// reads the same with and without NO_BACKSLASH_ESCAPES (sql::quote then
+// only doubles quotes). Everything else is written as base64.
+bool is_plain_text(std::string_view content) {
+  return is_text(content) &&
+         content.find_first_of(std::string_view("\\\0\032", 3)) == std::string_view::npos;
 }
 
 // -- SHOW CREATE pieces ---------------------------------------------------
@@ -175,7 +175,7 @@ std::optional<std::string> written_options(const Content_set &content_set) {
 // -- Content sets ---------------------------------------------------------
 
 std::optional<Content_set> get_content_set(Db_session *session, const Id &id) {
-  auto sets = query_content_sets(session, "cs.id = " + sql::id(id));
+  auto sets = query_content_sets(session, "cs.id = ?", {Value::id(id)});
   if (sets.empty()) return std::nullopt;
   return std::move(sets.front());
 }
@@ -186,16 +186,17 @@ std::optional<Content_set> find_content_set(Db_session *session,
   if (request_path.empty() || request_path[0] != '/') {
     throw std::runtime_error("The request_path has to start with '/'.");
   }
-  auto sets = query_content_sets(
-      session, "cs.service_id = " + sql::id(service_id) +
-                   " AND cs.request_path = " + sql::quote(request_path));
+  auto sets = query_content_sets(session,
+                                 "cs.service_id = ? AND cs.request_path = ?",
+                                 {Value::id(service_id), request_path});
   if (sets.empty()) return std::nullopt;
   return std::move(sets.front());
 }
 
 std::vector<Content_set> get_content_sets(Db_session *session,
                                           const Id &service_id) {
-  return query_content_sets(session, "cs.service_id = " + sql::id(service_id));
+  return query_content_sets(session, "cs.service_id = ?",
+                            {Value::id(service_id)});
 }
 
 Id add_content_set(Db_session *session, const Content_set_definition &definition) {
@@ -215,7 +216,7 @@ Id add_content_set(Db_session *session, const Content_set_definition &definition
   insert.set("comments", definition.comments.value_or(""));
   insert.set("options", definition.options);
   insert.set("content_type", definition.content_type);
-  session->execute(insert.str());
+  session->execute(insert);
 
   return id;
 }
@@ -223,41 +224,45 @@ Id add_content_set(Db_session *session, const Content_set_definition &definition
 void update_content_set(Db_session *session, const Id &id,
                         const Content_set_changes &changes) {
   sql::Update update("content_set");
-  if (changes.request_path) update.set("request_path", *changes.request_path);
-  if (changes.requires_auth) update.set("requires_auth", *changes.requires_auth);
-  if (changes.enabled) update.set("enabled", *changes.enabled);
-  if (changes.comments) update.set("comments", *changes.comments);
-  if (changes.content_type) update.set("content_type", *changes.content_type);
+  update.set_if("request_path", changes.request_path);
+  update.set_if("requires_auth", changes.requires_auth);
+  update.set_if("enabled", changes.enabled);
+  update.set_if("comments", changes.comments);
+  update.set_if("content_type", changes.content_type);
   if (changes.options) {
     set_json_options(session, &update, "content_set", id, *changes.options,
                      changes.merge_options);
   }
   if (update.empty()) return;
-  update.where("id = " + sql::id(id));
-  session->execute(update.str());
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_registered_scripts(Db_session *session, const Content_set &content_set) {
   // Deleting the links deletes their SCRIPT objects (AFTER DELETE trigger)
-  session->execute("DELETE FROM " + sql::metadata_table("content_set_has_obj_def") +
-                   " WHERE content_set_id = " + sql::id(content_set.id));
+  session->execute(sql::Delete("content_set_has_obj_def")
+                       .where("content_set_id", Value::id(content_set.id)));
 
   // The script modules left without objects go as well. They are looked up
   // first: a DELETE on db_schema whose subquery reads db_object fails with
   // 1442, as the db_schema trigger deletes from db_object.
-  std::string empty_modules;
+  std::string placeholders;
+  std::vector<Value> empty_modules;
   for (const auto &row :
-       session->query("SELECT id FROM " + sql::metadata_table("db_schema") +
-                      " WHERE service_id = " + sql::id(content_set.service_id) +
-                      " AND schema_type = 'SCRIPT_MODULE' AND id NOT IN (SELECT "
-                      "db_schema_id FROM " + sql::metadata_table("db_object") + ")")
+       session
+           ->query("SELECT id FROM " + sql::metadata_table("db_schema") +
+                       " WHERE service_id = ? AND schema_type = 'SCRIPT_MODULE' "
+                       "AND id NOT IN (SELECT db_schema_id FROM " +
+                       sql::metadata_table("db_object") + ")",
+                   {Value::id(content_set.service_id)})
            .rows) {
-    empty_modules += (empty_modules.empty() ? "" : ", ") +
-                     sql::id(row["id"].as_string());
+    placeholders += placeholders.empty() ? "?" : ", ?";
+    empty_modules.push_back(Value::id(row["id"].as_string()));
   }
   if (!empty_modules.empty()) {
-    session->execute("DELETE FROM " + sql::metadata_table("db_schema") +
-                     " WHERE id IN (" + empty_modules + ")");
+    session->execute(sql::Delete("db_schema")
+                         .where_raw("id IN (" + placeholders + ")",
+                                    std::move(empty_modules)));
   }
 }
 
@@ -265,8 +270,8 @@ void delete_content_set(Db_session *session, const Id &id) {
   const auto content_set = get_content_set(session, id);
   if (content_set) delete_registered_scripts(session, *content_set);
 
-  if (session->execute("DELETE FROM " + sql::metadata_table("content_set") +
-                       " WHERE id = " + sql::id(id)) == 0) {
+  if (session->execute(sql::Delete("content_set").where("id", Value::id(id))) ==
+      0) {
     throw std::runtime_error("The specified content_set with id " +
                              id + " was not found.");
   }
@@ -276,8 +281,8 @@ void delete_content_set(Db_session *session, const Id &id) {
 
 std::optional<Content_file> get_content_file(Db_session *session, const Id &id,
                                              bool include_content) {
-  auto files =
-      query_content_files(session, "f.id = " + sql::id(id), include_content);
+  auto files = query_content_files(session, "f.id = ?", {Value::id(id)},
+                                   include_content);
   if (files.empty()) return std::nullopt;
   return std::move(files.front());
 }
@@ -288,9 +293,8 @@ std::optional<Content_file> find_content_file(Db_session *session,
                                               bool include_content) {
   auto files = query_content_files(
       session,
-      "f.content_set_id = " + sql::id(content_set_id) +
-          " AND f.request_path = " + sql::quote(request_path),
-      include_content);
+      "f.content_set_id = ? AND f.request_path = ?",
+      {Value::id(content_set_id), request_path}, include_content);
   if (files.empty()) return std::nullopt;
   return std::move(files.front());
 }
@@ -299,7 +303,7 @@ std::vector<Content_file> get_content_files(Db_session *session,
                                             const Id &content_set_id,
                                             bool include_content) {
   return query_content_files(
-      session, "f.content_set_id = " + sql::id(content_set_id),
+      session, "f.content_set_id = ?", {Value::id(content_set_id)},
       include_content);
 }
 
@@ -314,22 +318,23 @@ Id add_content_file(Db_session *session,
   insert.set("enabled", definition.enabled.value_or(1));
   insert.set("content", blob_value(definition.content));
   insert.set("options", definition.options);
-  session->execute(insert.str());
+  session->execute(insert);
   return id;
 }
 
 void delete_content_file(Db_session *session, const Id &id) {
-  if (session->execute("DELETE FROM " + sql::metadata_table("content_file") +
-                       " WHERE id = " + sql::id(id)) == 0) {
+  if (session->execute(sql::Delete("content_file").where("id", Value::id(id))) ==
+      0) {
     throw std::runtime_error("The specified REST content file with id " +
                              id + " was not found.");
   }
 }
 
-std::string content_set_create_statement(const Content_set &content_set) {
+std::string content_set_create_statement(const Content_set &content_set,
+                                         bool on_current_service) {
   std::string output = "CREATE OR REPLACE REST CONTENT SET " +
-                       quote_request_path(content_set.request_path) +
-                       "\n    ON SERVICE " + content_set.host_ctx;
+                       quote_request_path(content_set.request_path);
+  if (!on_current_service) output += "\n    ON SERVICE " + content_set.host_ctx;
   output += enabled_clause(content_set.enabled);
   if (content_set.comments && !content_set.comments->empty()) {
     output += "\n    COMMENT " + sql::quote(*content_set.comments);
@@ -341,7 +346,8 @@ std::string content_set_create_statement(const Content_set &content_set) {
 }
 
 std::string content_file_create_statement(Db_session *session,
-                                          const Content_file &content_file) {
+                                          const Content_file &content_file,
+                                          bool on_current_service) {
   // The content is loaded only when the given file has none; either way it
   // is not copied (files can be large).
   std::optional<Content_file> with_content;
@@ -360,12 +366,14 @@ std::string content_file_create_statement(Db_session *session,
 
   std::string output = "CREATE OR REPLACE REST CONTENT FILE " +
                        quote_request_path(content_file.request_path) +
-                       "\n    ON SERVICE " +
-                       quote_request_path(content_file.host_ctx) +
-                       " CONTENT SET " +
+                       "\n    ON " +
+                       (on_current_service
+                            ? ""
+                            : "SERVICE " + quote_request_path(content_file.host_ctx) + " ") +
+                       "CONTENT SET " +
                        quote_request_path(content_file.content_set_request_path);
-  if (is_text(content)) {
-    output += "\n    CONTENT " + quote_content(content);
+  if (is_plain_text(content)) {
+    output += "\n    CONTENT " + sql::quote(content);
   } else {
     output += "\n    BINARY CONTENT '" + base64_encode(content) + "'";
   }
@@ -377,16 +385,18 @@ std::string content_file_create_statement(Db_session *session,
 }
 
 std::vector<std::string> content_set_statements(Db_session *session,
-                                                const Content_set &content_set) {
-  std::vector<std::string> statements{content_set_create_statement(content_set)};
+                                                const Content_set &content_set,
+                                                bool on_current_service) {
+  std::vector<std::string> statements{
+      content_set_create_statement(content_set, on_current_service)};
   for (const auto &file : get_content_files(session, content_set.id, true)) {
-    statements.push_back(content_file_create_statement(session, file));
+    statements.push_back(content_file_create_statement(session, file, on_current_service));
   }
   if (content_set.content_type == "SCRIPTS") {
-    statements.push_back("ALTER REST CONTENT SET " +
-                         quote_request_path(content_set.request_path) +
-                         "\n    ON SERVICE " + content_set.host_ctx +
-                         "\n    LOAD TYPESCRIPT SCRIPTS;");
+    statements.push_back(
+        "ALTER REST CONTENT SET " + quote_request_path(content_set.request_path) +
+        (on_current_service ? "" : "\n    ON SERVICE " + content_set.host_ctx) +
+        "\n    LOAD TYPESCRIPT SCRIPTS;");
   }
   return statements;
 }
@@ -397,7 +407,7 @@ std::vector<std::string> content_set_create_statements(Db_session *session,
   std::vector<std::string> statements;
   for (const auto &content_set : get_content_sets(session, service_id)) {
     if (content_set.content_type == "SCRIPTS" && !include_dynamic) continue;
-    for (auto &statement : content_set_statements(session, content_set)) {
+    for (auto &statement : content_set_statements(session, content_set, true)) {
       statements.push_back(std::move(statement));
     }
   }
@@ -417,16 +427,15 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
 
   const Id new_set_id = add_content_set(session, definition);
 
-  for (const auto &file : get_content_files(session, content_set.id, true)) {
-    Content_file_definition copy;
-    copy.content_set_id = new_set_id;
-    copy.request_path = file.request_path;
-    copy.content = file.content.value_or("");
-    copy.requires_auth = file.requires_auth;
-    copy.enabled = file.enabled;
-    copy.options = file.options;
-    add_content_file(session, copy);
-  }
+  // The files are copied on the server: their content never travels to the
+  // client and back. The ids come from the column default (UUID_v7()).
+  const auto table = sql::metadata_table("content_file");
+  session->execute(
+      "INSERT INTO " + table +
+          " (content_set_id, request_path, requires_auth, enabled, content, options)"
+          " SELECT ?, request_path, requires_auth, enabled, content, options FROM " +
+          table + " WHERE content_set_id = ?",
+      {Value::id(new_set_id), Value::id(content_set.id)});
   return new_set_id;
 }
 

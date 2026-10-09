@@ -39,6 +39,8 @@
 #include <variant>
 #include <vector>
 
+#include "modules/mrs/core/mrs_sql.h"
+
 namespace mrs {
 
 // An error reported by the server.
@@ -149,11 +151,45 @@ class Db_session {
   // Runs a script of statements, honouring DELIMITER commands.
   virtual void execute_script(const std::string &script) = 0;
 
-  // The id of the connection, used to keep per-connection state.
-  virtual uint64_t connection_id() const = 0;
-
   // The server's @@sql_mode.
   virtual std::string sql_mode() = 0;
+
+  // Statements with ? placeholders: bind() writes the values in.
+  Db_result query(const sql::Statement &statement) {
+    return query(bind(statement));
+  }
+  Db_result query(std::string_view text, std::vector<sql::Value> params) {
+    return query(sql::Statement(std::string(text), std::move(params)));
+  }
+  uint64_t execute(const sql::Statement &statement) {
+    return execute(bind(statement));
+  }
+  uint64_t execute(std::string_view text, std::vector<sql::Value> params) {
+    return execute(sql::Statement(std::string(text), std::move(params)));
+  }
+
+  // The SQL sent for a statement: its values written as literals in the
+  // quoting the session's sql_mode needs. A server plugin may bind them on
+  // the server instead.
+  virtual std::string bind(const sql::Statement &statement);
+
+  // The sql_mode statements are bound for, e.g. as read with the metadata
+  // fingerprint. Without it, bind() reads the sql_mode first.
+  void set_sql_mode(std::string_view sql_mode) {
+    m_quoting = sql::Quoting::from_sql_mode(sql_mode);
+  }
+
+  // Ids fetched ahead by metadata::new_id(): a statement that creates many
+  // rows needs a few round trips for them, not one per row. Each fetch
+  // takes twice as many ids as the one before, up to 64.
+  struct Id_pool {
+    std::vector<Id> ids;  // the next one at the back
+    size_t next_batch = 1;
+  };
+  Id_pool id_pool;
+
+ private:
+  std::optional<sql::Quoting> m_quoting;
 };
 
 // Runs a block inside a transaction: COMMIT at the end, ROLLBACK when the

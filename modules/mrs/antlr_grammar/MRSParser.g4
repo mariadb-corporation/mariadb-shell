@@ -334,10 +334,11 @@ createRestProcedureStatement:
     ) procedureRequestPath (ON_SYMBOL serviceSchemaSelector)? AS_SYMBOL qualifiedIdentifier
         FORCE_SYMBOL? (
         PARAMETERS_SYMBOL restObjectName? graphQlObj
-    )? restProcedureResult* restObjectOptions?
+    )? restResult* restObjectOptions?
 ;
 
-restProcedureResult:
+// The RESULT of a REST procedure (one per result set) or function
+restResult:
     RESULT_SYMBOL restResultName? graphQlObj
 ;
 
@@ -352,11 +353,7 @@ createRestFunctionStatement:
     ) functionRequestPath (ON_SYMBOL serviceSchemaSelector)? AS_SYMBOL qualifiedIdentifier
         FORCE_SYMBOL? (
         PARAMETERS_SYMBOL restObjectName? graphQlObj
-    )? restFunctionResult? restObjectOptions?
-;
-
-restFunctionResult:
-    RESULT_SYMBOL restResultName? graphQlObj
+    )? restResult? restObjectOptions?
 ;
 
 // - CREATE REST CONTENT SET ------------------------------------------------
@@ -564,7 +561,7 @@ alterRestProcedureStatement:
         ON_SYMBOL serviceSchemaSelector
     )? (
         NEW_SYMBOL REQUEST_SYMBOL PATH_SYMBOL newProcedureRequestPath
-    )? (PARAMETERS_SYMBOL restObjectName? graphQlObj)? restProcedureResult* restObjectOptions?
+    )? (PARAMETERS_SYMBOL restObjectName? graphQlObj)? restResult* restObjectOptions?
 ;
 
 // - ALTER REST FUNCTION ---------------------------------------------------
@@ -574,7 +571,7 @@ alterRestFunctionStatement:
         ON_SYMBOL serviceSchemaSelector
     )? (
         NEW_SYMBOL REQUEST_SYMBOL PATH_SYMBOL newFunctionRequestPath
-    )? (PARAMETERS_SYMBOL restObjectName? graphQlObj)? restFunctionResult* restObjectOptions?
+    )? (PARAMETERS_SYMBOL restObjectName? graphQlObj)? restResult* restObjectOptions?
 ;
 
 // - ALTER REST CONTENT SET -------------------------------------------------

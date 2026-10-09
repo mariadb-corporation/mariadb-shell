@@ -35,8 +35,9 @@ namespace {
 
 bool view_exists(Db_session *session, std::string_view view) {
   const auto result = session->query(
-      "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = " +
-      sql::quote(k_metadata_schema) + " AND TABLE_NAME = " + sql::quote(view));
+      "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES "
+      "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+      {k_metadata_schema, view});
   return !result.empty() && result.first()["c"].as_int() > 0;
 }
 
@@ -146,8 +147,7 @@ Configure_result configure(Db_session *session, const Configure_options &options
   if (options.enabled) {
     session->execute(sql::Update("config")
                          .set("service_enabled", *options.enabled)
-                         .where("id = 1")
-                         .str());
+                         .where("id", 1));
     result.mrs_enabled = *options.enabled;
   } else {
     const auto row = session->query("SELECT service_enabled FROM " +
@@ -157,14 +157,13 @@ Configure_result configure(Db_session *session, const Configure_options &options
 
   if (options.options) {
     if (options.merge_options) {
-      session->execute("UPDATE " + sql::metadata_table("config") +
-                       " SET data = JSON_MERGE_PATCH(data, " +
-                       sql::quote(*options.options) + ") WHERE id = 1");
-    } else {
       session->execute(sql::Update("config")
-                           .set("data", *options.options)
-                           .where("id = 1")
-                           .str());
+                           .set_raw("data = JSON_MERGE_PATCH(data, ?)",
+                                    {*options.options})
+                           .where("id", 1));
+    } else {
+      session->execute(
+          sql::Update("config").set("data", *options.options).where("id", 1));
     }
   }
 

@@ -126,8 +126,8 @@ rest("CREATE OR REPLACE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline BINA
 #@<> SHOW CREATE REST CONTENT FILE: text and binary content
 EXPECT_EQ("""CREATE OR REPLACE REST CONTENT FILE `/readme.txt`
     ON SERVICE /svc CONTENT SET /inline
-    CONTENT 'Line \\'1\\'
-Line \\"2\\"'
+    CONTENT 'Line ''1''
+Line "2"'
     OPTIONS {
         "a": 1
     }
@@ -137,9 +137,9 @@ EXPECT_EQ("""CREATE OR REPLACE REST CONTENT FILE `/bin.dat`
     BINARY CONTENT 'AAECAwQFBgc='
     AUTHENTICATION REQUIRED;""", rest_text("SHOW CREATE REST CONTENT FILE `/bin.dat` ON SERVICE /svc CONTENT SET /inline"))
 # A file that is mostly text is written as text, one with control characters as base64
-EXPECT_CONTAINS("\n    CONTENT 'SELECT 1;'\n    PRIVATE\n", rest_text("SHOW CREATE REST CONTENT FILE /privateFile FROM CONTENT SET /inline"))
-EXPECT_CONTAINS("\n    BINARY CONTENT '" + binary_test_base64 + "'\n", rest_text("SHOW CREATE REST CONTENT FILE /binaryFile FROM CONTENT SET /inline"))
-EXPECT_CONTAINS("\n    DISABLED\n", rest_text("SHOW CREATE REST CONTENT FILE /binaryFile FROM CONTENT SET /inline"))
+EXPECT_IN("\n    CONTENT 'SELECT 1;'\n    PRIVATE\n", rest_text("SHOW CREATE REST CONTENT FILE /privateFile FROM CONTENT SET /inline"))
+EXPECT_IN("\n    BINARY CONTENT '" + binary_test_base64 + "'\n", rest_text("SHOW CREATE REST CONTENT FILE /binaryFile FROM CONTENT SET /inline"))
+EXPECT_IN("\n    DISABLED\n", rest_text("SHOW CREATE REST CONTENT FILE /binaryFile FROM CONTENT SET /inline"))
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST CONTENT FILE /nope FROM CONTENT SET /inline"), "Failed to get the REST CONTENT FILE `/svc/inline/nope`. The given REST content file `/svc/inline/nope` could not be found.")
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST CONTENT FILE /nope FROM CONTENT SET /nope"), "Failed to get the REST CONTENT FILE `/svc/nope/nope`. The given REST content set `/svc/nope` could not be found.")
 
@@ -171,8 +171,8 @@ CREATE OR REPLACE REST CONTENT FILE `/bin.dat`
 
 CREATE OR REPLACE REST CONTENT FILE `/readme.txt`
     ON SERVICE /svc CONTENT SET /inline
-    CONTENT 'Line \\'1\\'
-Line \\"2\\"'
+    CONTENT 'Line ''1''
+Line "2"'
     OPTIONS {
         "a": 1
     }
@@ -192,6 +192,19 @@ EXPECT_EQ(readme_txt.encode().hex().upper(), file_hex("/inline", "/readme.txt"))
 rest_script(inline_statement)
 EXPECT_EQ(inline_statement, rest_text("SHOW CREATE REST CONTENT SET /inline"))
 EXPECT_EQ(2, len(rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /inline")))
+# The script reads the same with NO_BACKSLASH_ESCAPES: quotes are doubled,
+# and text with a backslash is written as base64
+rest("CREATE REST CONTENT FILE `/path.txt` ON CONTENT SET /inline CONTENT 'C:\\\\dir\\\\file'")
+EXPECT_EQ(b"C:\\dir\\file".hex().upper(), file_hex("/inline", "/path.txt"))
+EXPECT_IN("\n    BINARY CONTENT 'QzpcZGlyXGZpbGU='\n", rest_text("SHOW CREATE REST CONTENT FILE `/path.txt` FROM CONTENT SET /inline"))
+script = rest_text("SHOW CREATE REST CONTENT SET /inline")
+sql_mode = session.run_sql("SELECT @@SESSION.sql_mode").fetch_one()[0]
+session.run_sql("SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_BACKSLASH_ESCAPES')")
+rest_script(script)
+session.run_sql("SET SESSION sql_mode = ?", [sql_mode])
+EXPECT_EQ(readme_txt.encode().hex().upper(), file_hex("/inline", "/readme.txt"))
+EXPECT_EQ(b"C:\\dir\\file".hex().upper(), file_hex("/inline", "/path.txt"))
+rest("DROP REST CONTENT FILE `/path.txt` FROM CONTENT SET /inline")
 
 #@<> ALTER REST CONTENT SET
 res = rest("ALTER REST CONTENT SET /assets NEW REQUEST PATH /assets2 ENABLED AUTHENTICATION REQUIRED COMMENT 'Renamed' OPTIONS {\"b\": 2}")
@@ -321,6 +334,24 @@ rest_script(statement)
 EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mysql_rest_service_metadata.db_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 EXPECT_EQ(statement, rest_text("SHOW CREATE REST CONTENT SET /app"))
 rest("DROP REST CONTENT SET /app")
+
+#@<> CLONE REST SERVICE copies the content files on the server, byte for byte
+def service_files(service_path):
+    return query_rows(f"""SELECT cs.request_path, f.request_path, HEX(f.content), f.size, f.enabled, f.options
+        FROM mysql_rest_service_metadata.content_file f
+        JOIN mysql_rest_service_metadata.content_set cs ON cs.id = f.content_set_id
+        JOIN mysql_rest_service_metadata.service se ON se.id = cs.service_id
+        WHERE se.url_context_root = '{service_path}' ORDER BY 1, 2""")
+
+originals = service_files("/svc")
+EXPECT_TRUE(len(originals) > 0)
+rest("CLONE REST SERVICE /svc NEW REQUEST PATH /svcClone")
+EXPECT_EQ(originals, service_files("/svcClone"))
+EXPECT_EQ(0, session.run_sql("""SELECT COUNT(*) FROM mysql_rest_service_metadata.content_file a
+    JOIN mysql_rest_service_metadata.content_file b ON a.id = b.id AND a.content_set_id <> b.content_set_id""").fetch_one()[0])
+rest("DROP REST SERVICE /svcClone")
+rest("USE REST SERVICE /svc")
+EXPECT_EQ(originals, service_files("/svc"))
 
 #@<> DROP REST CONTENT FILE
 EXPECT_EQ("REST CONTENT FILE `/svc/inline/readme.txt` dropped successfully.", rest_info("DROP REST CONTENT FILE `/readme.txt` FROM CONTENT SET /inline"))

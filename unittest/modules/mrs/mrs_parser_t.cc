@@ -451,7 +451,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
       RESULT {
           inventoryId2: inventory_id @DATATYPE(int)
       })sql");
-    EXPECT_EQ(Create_rest_routine::Kind::procedure, s.kind);
+    EXPECT_EQ(Db_object_kind::procedure, s.kind);
     EXPECT_TRUE(s.force);
     EXPECT_EQ("/filmInStock", s.path);
     EXPECT_EQ("film_in_stock", s.object.name);
@@ -472,7 +472,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
         "CREATE REST FUNCTION IF NOT EXISTS /actorFunc ON SERVICE /svc SCHEMA /s "
         "AS `sakila`.`actor` PARAMETERS { s: s @IN } RESULT R { result: result } "
         "DISABLED");
-    EXPECT_EQ(Create_rest_routine::Kind::function, s.kind);
+    EXPECT_EQ(Db_object_kind::function, s.kind);
     EXPECT_TRUE(s.flags.if_not_exists);
     EXPECT_FALSE(s.force);
     EXPECT_FALSE(s.parameters->name.has_value());
@@ -490,7 +490,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
         "ALTER REST PROCEDURE /filmInStock ON SERVICE /svc SCHEMA /sakila "
         "NEW REQUEST PATH /filmInStockUpdated PARAMETERS P { pFilmId: p_film_id @IN } "
         "RESULT R1 { a: a } RESULT R2 { b: b } MERGE OPTIONS {\"test\": 1}");
-    EXPECT_EQ(Create_rest_routine::Kind::procedure, s.kind);
+    EXPECT_EQ(Db_object_kind::procedure, s.kind);
     EXPECT_EQ("/filmInStockUpdated", *s.new_path);
     EXPECT_EQ("P", *s.parameters->name);
     EXPECT_EQ(2u, s.results.size());
@@ -499,7 +499,7 @@ TEST(Mrs_parser, rest_procedure_and_function) {
   {
     const auto &s = parse_as<Alter_rest_routine>(
         "ALTER REST FUNCTION /actorFunc NEW REQUEST PATH /actorFuncNew");
-    EXPECT_EQ(Create_rest_routine::Kind::function, s.kind);
+    EXPECT_EQ(Db_object_kind::function, s.kind);
     EXPECT_FALSE(s.parameters.has_value());
     EXPECT_TRUE(s.results.empty());
   }

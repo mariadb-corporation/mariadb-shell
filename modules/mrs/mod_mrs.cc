@@ -52,8 +52,8 @@ REGISTER_HELP(MRS_DETAIL,
               "e.g. CONFIGURE REST METADATA, CREATE REST SERVICE or SHOW REST "
               "SERVICES, which the shell runs in SQL mode and through "
               "session.runSql(). A file of REST SQL statements is run like "
-              "any SQL script, e.g. with \\source in SQL mode, or with LOAD "
-              "REST SERVICE FROM '<file>'.");
+              "any SQL script, e.g. with \\source in SQL mode or with "
+              "--sql -f <file>.");
 REGISTER_HELP(MRS_DETAIL1,
               "Plugins can add functions to this object with the "
               "plugin_function decorator, e.g. @plugin_function(\"mrs.<name>\"); "
@@ -180,11 +180,18 @@ shcore::Value Mrs::run_rest_sql(
   }
 
   Shell_db_session db(session->get_core_session());
-  auto &state = m_states[db.connection_id()];
+  std::erase_if(m_states, [](const auto &entry) { return entry.first.expired(); });
+  auto &state = m_states[session];
+
+  // One query gives the sql_mode the statements are parsed with and what
+  // the executor's metadata checks depend on
+  auto fingerprint = ::mrs::metadata::read_fingerprint(
+      &db, state.metadata_check.version_view);
 
   ::mrs::ast::Script script;
   try {
-    script = ::mrs::parse_script(sql, ::mrs::Sql_mode::from_string(db.sql_mode()));
+    script = ::mrs::parse_script(
+        sql, ::mrs::Sql_mode::from_string(fingerprint.sql_mode));
   } catch (const ::mrs::Parse_error &e) {
     throw shcore::Exception::runtime_error(e.what());
   }
@@ -192,6 +199,7 @@ shcore::Value Mrs::run_rest_sql(
   const auto deployer = make_schema_deployer(&m_shell_core, session);
   ::mrs::Ddl_executor executor(&db, &state);
   executor.set_schema_deployer(deployer.get());
+  executor.set_fingerprint(std::move(fingerprint));
   const auto results = executor.run(script);
 
   auto shell_results = shcore::make_array();

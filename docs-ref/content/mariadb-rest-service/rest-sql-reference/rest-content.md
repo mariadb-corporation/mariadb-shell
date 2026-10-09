@@ -99,7 +99,7 @@ restContentFileOptions: (
 
 ![Railroad diagram of restContentFileOptions](../../.gitbook/assets/mariadb-rest-service/sql/restContentFileOptions.svg)
 
-The content of the file is given inline as a string. With `BINARY CONTENT`, the string holds the Base64-encoded bytes of the file. Because the statement doesn't read files from disk, it works the same way from any client that sends it to MariaDB Shell.
+The content of the file is given inline as a string. With `BINARY CONTENT`, the string holds the Base64-encoded bytes of the file. `SHOW CREATE` writes text content as `CONTENT` only when it holds no backslash, so the statement reads the same with and without the `NO_BACKSLASH_ESCAPES` SQL mode; other content is written as `BINARY CONTENT`. Because the statement doesn't read files from disk, it works the same way from any client that sends it to MariaDB Shell.
 
 Request paths that contain dots must be quoted with backticks.
 

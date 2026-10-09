@@ -25,13 +25,12 @@
 
 #include "modules/mrs/mrs_shell_session.h"
 
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
 #include "mysqlshdk/libs/db/mysql/session.h"
-#include "mysqlshdk/libs/utils/utils_mysql_parsing.h"
-#include "mysqlshdk/libs/utils/utils_string.h"
+#include "mysqlshdk/libs/mysql/instance.h"
+#include "mysqlshdk/libs/mysql/script.h"
 
 namespace mysqlsh {
 namespace mrs {
@@ -124,26 +123,14 @@ uint64_t Shell_db_session::execute(const std::string &sql) {
 
 void Shell_db_session::execute_script(const std::string &script) {
   // The script changes the current schema (USE), so it runs on its own
-  // connection.
+  // connection, through the shell's script runner (DELIMITER aware).
   auto session = mysqlshdk::db::mysql::Session::create();
   try {
     session->connect(m_session->get_connection_options());
-
-    std::istringstream stream(script);
-    std::string delimiter = ";";
-    const auto statements = mysqlshdk::utils::split_sql_stream(
-        &stream, 1024 * 1024,
-        [](std::string_view error) {
-          throw std::runtime_error("Error splitting the script: " +
-                                   std::string(error));
-        },
-        false, false, true, &delimiter);
-
-    for (const auto &[statement, stmt_delimiter, offset] : statements) {
-      const auto trimmed = shcore::str_strip(statement);
-      if (trimmed.empty()) continue;
-      session->execute(trimmed);
-    }
+    mysqlshdk::mysql::execute_sql_script(
+        mysqlshdk::mysql::Instance(session), script, [](std::string_view error) {
+          throw std::runtime_error("Error splitting the script: " + std::string(error));
+        });
   } catch (const mysqlshdk::db::Error &e) {
     session->close();
     rethrow(e);
@@ -152,10 +139,6 @@ void Shell_db_session::execute_script(const std::string &script) {
     throw;
   }
   session->close();
-}
-
-uint64_t Shell_db_session::connection_id() const {
-  return m_session->get_connection_id();
 }
 
 std::string Shell_db_session::sql_mode() {

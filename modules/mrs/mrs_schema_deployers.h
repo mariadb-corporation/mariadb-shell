@@ -29,7 +29,8 @@
 // How the shell deploys the MRS metadata schema: through the msm plugin's
 // msm.deploySchema() when the plugin is loaded, otherwise with the core's
 // metadata::Script_deployer, which writes msm's update log and backs the
-// schema up with util.dumpSchemas() like msm does.
+// schema up with the shell's schema dumper and loader, like msm does with
+// util.dumpSchemas() and util.loadDump().
 
 #include <memory>
 #include <string>

@@ -123,8 +123,8 @@ EXPECT_EQ("HTTP", session.run_sql("SELECT url_protocol FROM mysql_rest_service_m
 
 #@<> A service gets the default options
 options = session.run_sql("SELECT options FROM mysql_rest_service_metadata.service WHERE url_context_root = '/myService'").fetch_one()[0]
-EXPECT_CONTAINS('"Access-Control-Allow-Credentials": "true"', options)
-EXPECT_CONTAINS('"returnInternalErrorDetails": true', options)
+EXPECT_EQ("true", json.loads(options)["headers"]["Access-Control-Allow-Credentials"])
+EXPECT_EQ(True, json.loads(options)["returnInternalErrorDetails"])
 
 #@<> Services in development
 EXPECT_EQ("REST SERVICE `mike@/myService` created successfully.", rest_info("CREATE REST SERVICE mike@/myService"))
@@ -159,11 +159,11 @@ EXPECT_EQ("""CREATE OR REPLACE REST SERVICE /full
 #@<> ALTER REST SERVICE: options and MERGE OPTIONS
 rest("ALTER REST SERVICE /full OPTIONS {\"test\": 1}")
 rest("ALTER REST SERVICE /full MERGE OPTIONS {\"test2\": 2}")
-EXPECT_CONTAINS('OPTIONS {\n        "test": 1,\n        "test2": 2\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
+EXPECT_IN('OPTIONS {\n        "test": 1,\n        "test2": 2\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
 rest("ALTER REST SERVICE /full MERGE OPTIONS {\"test\": null}")
-EXPECT_CONTAINS('OPTIONS {\n        "test2": 2\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
+EXPECT_IN('OPTIONS {\n        "test2": 2\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
 rest("ALTER REST SERVICE /full OPTIONS {\"test3\": 3}")
-EXPECT_CONTAINS('OPTIONS {\n        "test3": 3\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
+EXPECT_IN('OPTIONS {\n        "test3": 3\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
 
 #@<> ALTER REST SERVICE: new request path and developers
 rest("ALTER REST SERVICE mike@/myService NEW REQUEST PATH mike,alfredo@/myService")
@@ -181,9 +181,54 @@ EXPECT_THROWS(lambda: rest("USE REST SERVICE /nope"), "Cannot USE the specified 
 EXPECT_EQ("Now using REST SERVICE `alfredo,mike@/myService`.", rest_info("USE REST SERVICE mike,alfredo@/myService"))
 rest("USE REST SERVICE /myService")
 
+#@<> Each session has its own current service
+other = shell.open_session(__sandbox_uri1)
+EXPECT_THROWS(lambda: other.run_sql("SHOW REST SCHEMAS"), "No REST SERVICE specified.")
+other.run_sql("USE REST SERVICE /full")
+EXPECT_EQ([["/full", "ENABLED", "YES", ""], ["/myService", "ENABLED", "NO", ""], ["alfredo,mike@/myService", "ENABLED", "NO", ""], ["/myService2", "ENABLED", "NO", ""]], [list(row) for row in other.run_sql("SHOW REST SERVICES").fetch_all()])
+EXPECT_EQ([["/full", "ENABLED", "NO", ""], ["/myService", "ENABLED", "YES", ""], ["alfredo,mike@/myService", "ENABLED", "NO", ""], ["/myService2", "ENABLED", "NO", ""]], rest_rows("SHOW REST SERVICES"))
+
+#@<> A current service dropped by another session is no longer used
+# The checks before a statement are skipped while the metadata fingerprint
+# is unchanged; the DROP writes the audit log, which changes it.
+other.run_sql("CREATE REST SERVICE /gone")
+rest("USE REST SERVICE /gone")
+EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS"))
+other.run_sql("DROP REST SERVICE /gone")
+EXPECT_THROWS(lambda: rest("SHOW REST SCHEMAS"), "Cannot SHOW the REST schemas. No REST SERVICE specified.")
+
+#@<> A metadata version changed by another client is noticed
+view = session.run_sql("SHOW CREATE VIEW mysql_rest_service_metadata.msm_schema_version").fetch_one()[1]
+other.run_sql("CREATE OR REPLACE VIEW mysql_rest_service_metadata.msm_schema_version (major, minor, patch) AS SELECT 4, 1, 6")
+EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema version 4.1.6 is too old to be managed by this version of MariaDB Shell.")
+other.run_sql("DROP VIEW mysql_rest_service_metadata.msm_schema_version")
+other.run_sql(view)
+EXPECT_EQ(4, len(rest_rows("SHOW REST SERVICES")))
+other.close()
+rest("USE REST SERVICE /myService")
+
+#@<> Values are stored as written whatever the session's sql_mode
+# The module binds the values of its metadata statements in the quoting the
+# session's sql_mode needs.
+def stored_comment(path):
+    return session.run_sql("SELECT comments FROM mysql_rest_service_metadata.service WHERE url_context_root = ?", [path]).fetch_one()[0]
+
+old_mode = session.run_sql("SELECT @@SESSION.sql_mode").fetch_one()[0]
+session.run_sql("SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_BACKSLASH_ESCAPES')")
+rest("CREATE REST SERVICE /nbe COMMENT 'a\\b''c'")
+EXPECT_EQ("a\\b'c", stored_comment("/nbe"))
+rest("ALTER REST SERVICE /nbe COMMENT 'x\\y'")
+EXPECT_EQ("x\\y", stored_comment("/nbe"))
+EXPECT_EQ("x\\y", json.loads(rest("SHOW CREATE REST SERVICE /nbe FORMAT=JSON").fetch_one()[0])["comments"])
+session.run_sql("SET SESSION sql_mode = ?", [old_mode])
+rest("CREATE REST SERVICE /bs COMMENT 'a\\\\b\\'c'")
+EXPECT_EQ("a\\b'c", stored_comment("/bs"))
+rest("DROP REST SERVICE /nbe")
+rest("DROP REST SERVICE /bs")
+
 #@<> SHOW CREATE REST SERVICE of the current service
 EXPECT_EQ("CREATE REST SERVICE", rest("SHOW CREATE REST SERVICE").get_column_names()[0])
-EXPECT_CONTAINS("CREATE OR REPLACE REST SERVICE /myService\n", rest("SHOW CREATE REST SERVICE").fetch_one()[0])
+EXPECT_IN("CREATE OR REPLACE REST SERVICE /myService\n", rest("SHOW CREATE REST SERVICE").fetch_one()[0])
 
 #@<> The metadata version changes with the metadata
 EXPECT_LT(metadata_version, rest("SHOW REST METADATA STATUS").fetch_one()[10])
@@ -287,8 +332,12 @@ EXPECT_EQ("REST SERVICE `/myClone` dropped successfully.", rest_info("DROP REST 
 EXPECT_THROWS(lambda: rest("DUMP REST SERVICE /myService AS SCRIPT INCLUDING ALL ENDPOINTS TO '/tmp/x'"), "")
 EXPECT_THROWS(lambda: rest("LOAD REST SERVICE FROM '/tmp/x'"), "")
 dump = rest("SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS").fetch_one()[0]
-EXPECT_CONTAINS("CREATE OR REPLACE REST SERVICE /myService\n", dump)
-EXPECT_CONTAINS("CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /myService\n", dump)
+EXPECT_IN("CREATE OR REPLACE REST SERVICE /myService\n", dump)
+# The script names the service once: the endpoints act on the current one
+EXPECT_IN("CREATE OR REPLACE REST SERVICE /myService\n", dump)
+EXPECT_IN(";\n\nUSE REST SERVICE /myService;\n\n", dump)
+EXPECT_IN("CREATE OR REPLACE REST SCHEMA /sakila\n    FROM `sakila`", dump)
+EXPECT_FALSE("ON SERVICE" in dump, dump)
 EXPECT_EQ(dump, rest("SHOW CREATE REST SERVICE /myService INCLUDING DATABASE AND STATIC AND DYNAMIC ENDPOINTS").fetch_one()[0])
 dump_file = os.path.join(__tmp_dir, "myService.mrs.sql")
 # Loaded under another path by rewriting the script

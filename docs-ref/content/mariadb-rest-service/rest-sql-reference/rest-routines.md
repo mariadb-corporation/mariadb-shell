@@ -24,10 +24,10 @@ createRestProcedureStatement:    (
     ) procedureRequestPath (ON serviceSchemaSelector)? AS qualifiedIdentifier
         FORCE? (
         PARAMETERS restObjectName? graphQlObj
-    )? restProcedureResult* restObjectOptions?
+    )? restResult* restObjectOptions?
 ;
 
-restProcedureResult:
+restResult:
     RESULT restResultName? graphQlObj
 ;
 ```
@@ -36,9 +36,11 @@ restProcedureResult:
 
 ![Railroad diagram of createRestProcedureStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestProcedureStatement.svg)
 
-`restProcedureResult ::=`
+`restResult ::=`
 
-![Railroad diagram of restProcedureResult](../../.gitbook/assets/mariadb-rest-service/sql/restProcedureResult.svg)
+![Railroad diagram of restResult](../../.gitbook/assets/mariadb-rest-service/sql/restResult.svg)
+
+A procedure has a `RESULT` for each of its result sets.
 
 For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view). The JSON options are described in [JSON Options for REST Objects](rest-views.md#json-options-for-rest-objects).
 
@@ -87,11 +89,7 @@ createRestFunctionStatement:    (
     ) functionRequestPath (ON serviceSchemaSelector)? AS qualifiedIdentifier
         FORCE? (
         PARAMETERS restObjectName? graphQlObj
-    )? restFunctionResult? restObjectOptions?
-;
-
-restFunctionResult:
-    RESULT restResultName? graphQlObj
+    )? restResult? restObjectOptions?
 ;
 ```
 
@@ -99,11 +97,7 @@ restFunctionResult:
 
 ![Railroad diagram of createRestFunctionStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestFunctionStatement.svg)
 
-`restFunctionResult ::=`
-
-![Railroad diagram of restFunctionResult](../../.gitbook/assets/mariadb-rest-service/sql/restFunctionResult.svg)
-
-For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view). The JSON options are described in [JSON Options for REST Objects](rest-views.md#json-options-for-rest-objects).
+A function has at most one `RESULT`. For `restResult`, see [CREATE REST PROCEDURE](#create-rest-procedure). For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view). The JSON options are described in [JSON Options for REST Objects](rest-views.md#json-options-for-rest-objects).
 
 ### Examples
 
@@ -133,7 +127,7 @@ alterRestProcedureStatement:
         ON serviceSchemaSelector
     )? (
         NEW REQUEST PATH newProcedureRequestPath
-    )? (PARAMETERS restObjectName? graphQlObj)? restProcedureResult* restObjectOptions?
+    )? (PARAMETERS restObjectName? graphQlObj)? restResult* restObjectOptions?
 ;
 ```
 
@@ -157,7 +151,7 @@ alterRestFunctionStatement:
         ON serviceSchemaSelector
     )? (
         NEW REQUEST PATH newFunctionRequestPath
-    )? (PARAMETERS restObjectName? graphQlObj)? restFunctionResult* restObjectOptions?
+    )? (PARAMETERS restObjectName? graphQlObj)? restResult* restObjectOptions?
 ;
 ```
 

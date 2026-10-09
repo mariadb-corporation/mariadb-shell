@@ -37,6 +37,14 @@ using namespace ast;
 
 namespace {
 
+// The id of a role that is not specific to a service, e.g. the default
+// role of an auth app. Throws when there is none of that name.
+Id global_role_id(Db_session *session, const std::string &name) {
+  const auto role = metadata::find_role(session, name, std::nullopt);
+  if (!role) throw std::runtime_error("Given role \"" + name + "\" not found.");
+  return role->id;
+}
+
 // `user`@`app`, as the messages name a user.
 std::string user_target(const std::string &user, const std::string &auth_app) {
   return "`" + user + "`@`" + auth_app + "`";
@@ -128,29 +136,19 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
 
   Db_transaction transaction(m_session);
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    if (const auto existing = metadata::find_auth_app(m_session, s.name)) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST AUTH APP `" + s.name + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_auth_app(m_session, existing->id);
-    }
+  if (keep_existing(
+          s.flags, [&] { return metadata::find_auth_app(m_session, s.name); },
+          [&](const auto &existing) { metadata::delete_auth_app(m_session, existing.id); })) {
+    r->message = "REST AUTH APP `" + s.name + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   // Auth apps are not specific to a service, so only a global role can be
   // the default role; 'Full Access' is the default
   Id default_role_id = metadata::full_access_role_id();
   if (s.options.default_role) {
-    const auto role =
-        metadata::find_role(m_session, *s.options.default_role, std::nullopt);
-    if (!role) {
-      throw std::runtime_error("Given role \"" + *s.options.default_role +
-                               "\" not found.");
-    }
-    default_role_id = role->id;
+    default_role_id = global_role_id(m_session, *s.options.default_role);
   }
 
   const auto vendor = metadata::find_auth_vendor(m_session, s.vendor);
@@ -189,7 +187,6 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
   transaction.commit();
 
   r->message = "REST AUTH APP `" + s.name + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_auth_app &s, Statement_result *r) {
@@ -211,13 +208,7 @@ void Ddl_executor::do_execute(const Alter_rest_auth_app &s, Statement_result *r)
     changes.limit_to_registered_users = !*s.options.allow_new_users;
   }
   if (s.options.default_role) {
-    const auto role =
-        metadata::find_role(m_session, *s.options.default_role, std::nullopt);
-    if (!role) {
-      throw std::runtime_error("Given role \"" + *s.options.default_role +
-                               "\" not found.");
-    }
-    changes.default_role_id = role->id;
+    changes.default_role_id = global_role_id(m_session, *s.options.default_role);
   }
   changes.url = s.options.url;
   changes.access_token = s.options.app_secret;
@@ -228,7 +219,6 @@ void Ddl_executor::do_execute(const Alter_rest_auth_app &s, Statement_result *r)
 
   r->message = "REST AUTH APP `" + s.name + "` updated successfully.";
   r->affected_items_count = 1;
-  r->id = auth_app->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_auth_app &s, Statement_result *r) {
@@ -243,7 +233,6 @@ void Ddl_executor::do_execute(const Drop_rest_auth_app &s, Statement_result *r) 
   }
   if (auth_app) {
     metadata::delete_auth_app(m_session, auth_app->id);
-    r->id = auth_app->id;
   }
 
   transaction.commit();
@@ -294,7 +283,6 @@ void Ddl_executor::do_execute(const Show_create_rest_auth_app &s,
       s.format == Output_format::json
           ? metadata::auth_app_json(m_session, *auth_app).dump(true)
           : metadata::auth_app_create_statement(m_session, *auth_app, false));
-  r->id = auth_app->id;
 }
 
 // -- REST USER ------------------------------------------------------------
@@ -349,16 +337,12 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
                              " was not found.");
   }
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    if (const auto existing = metadata::find_user(m_session, auth_app->id, s.name)) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST USER `" + full_path + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_user(m_session, existing->id);
-    }
+  if (keep_existing(
+          s.flags, [&] { return metadata::find_user(m_session, auth_app->id, s.name); },
+          [&](const auto &existing) { metadata::delete_user(m_session, existing.id); })) {
+    r->message = "REST USER `" + full_path + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   const auto option_columns = split_user_options(
@@ -380,7 +364,6 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST USER `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_user &s, Statement_result *r) {
@@ -429,7 +412,6 @@ void Ddl_executor::do_execute(const Alter_rest_user &s, Statement_result *r) {
 
   r->message = "REST USER `" + full_path + "` updated successfully.";
   r->affected_items_count = 1;
-  r->id = user->id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_user &s, Statement_result *r) {
@@ -448,7 +430,6 @@ void Ddl_executor::do_execute(const Drop_rest_user &s, Statement_result *r) {
     if (!user && !s.if_exists) throw std::runtime_error("User was not found.");
     if (user) {
       metadata::delete_user(m_session, user->id);
-      r->id = user->id;
     }
   }
 
@@ -474,7 +455,6 @@ void Ddl_executor::do_execute(const Show_create_rest_user &s,
       s.format == Output_format::json
           ? metadata::user_json(m_session, *user).dump(true)
           : metadata::user_create_statement(m_session, *user, false));
-  r->id = user->id;
 }
 
 // -- REST ROLE ------------------------------------------------------------
@@ -495,16 +475,12 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
     parent_role_id = parent->id;
   }
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    if (const auto existing = metadata::find_role(m_session, s.name, service_id)) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST ROLE `" + s.name + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_role(m_session, existing->id);
-    }
+  if (keep_existing(
+          s.flags, [&] { return metadata::find_role(m_session, s.name, service_id); },
+          [&](const auto &existing) { metadata::delete_role(m_session, existing.id); })) {
+    r->message = "REST ROLE `" + s.name + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   metadata::Role_definition definition;
@@ -518,7 +494,6 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
   transaction.commit();
 
   r->message = "REST ROLE `" + s.name + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_role &s, Statement_result *r) {
@@ -534,7 +509,6 @@ void Ddl_executor::do_execute(const Drop_rest_role &s, Statement_result *r) {
   }
   if (role) {
     metadata::delete_role(m_session, role->id);
-    r->id = role->id;
   }
 
   transaction.commit();
@@ -627,7 +601,6 @@ void Ddl_executor::do_execute(const Show_create_rest_role &s,
       s.format == Output_format::json
           ? metadata::role_json(m_session, *role).dump(true)
           : metadata::role_create_statement(m_session, *role));
-  r->id = role->id;
 }
 
 // -- GRANT / REVOKE -------------------------------------------------------
@@ -668,7 +641,6 @@ void Ddl_executor::do_execute(const Rest_privilege_statement &s,
     const Id id = metadata::add_role_privilege(
         m_session, role->id, operations, service_path, schema_path, object_path);
     r->message = "GRANT to `" + s.role + "` added successfully.";
-    r->id = id;
   }
 
   transaction.commit();
@@ -723,7 +695,6 @@ void Ddl_executor::do_execute(const Show_rest_grants &s, Statement_result *r) {
     r->add_row().emplace_back(
         metadata::privilege_grant_statement(privilege, *role));
   }
-  r->id = role->id;
 }
 
 }  // namespace mrs

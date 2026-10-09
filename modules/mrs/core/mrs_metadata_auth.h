@@ -133,11 +133,15 @@ Id add_role(Db_session *session, const Role_definition &definition);
 // ERROR when other roles extend it.
 void delete_role(Db_session *session, const Id &id);
 
-// The CREATE REST ROLE statement of a role.
-std::string role_create_statement(Db_session *session, const Role &role);
+// The CREATE REST ROLE statement of a role. With on_current_service, the
+// statement names no service (ON SERVICE ...) and acts on the current one,
+// as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
+std::string role_create_statement(Db_session *session, const Role &role,
+                                  bool on_current_service = false);
 
 // The CREATE REST ROLE statements of the roles specific to a service, for
-// SHOW CREATE REST SERVICE ... INCLUDING DATABASE ENDPOINTS.
+// SHOW CREATE REST SERVICE ... INCLUDING DATABASE ENDPOINTS (on the current
+// service).
 std::vector<std::string> role_create_statements(Db_session *session,
                                                 const Id &service_id);
 

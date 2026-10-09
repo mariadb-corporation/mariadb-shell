@@ -145,8 +145,11 @@ Service service_from_row(const Db_row &row) {
   return s;
 }
 
+// The services matching a condition with ? placeholders; `params` are the
+// values of the WHERE placeholders, then those of the HAVING ones.
 std::vector<Service> query_services(Db_session *session,
                                     const std::string &where,
+                                    std::vector<Value> params = {},
                                     const std::string &having = {}) {
   std::string sql = k_service_select;
   if (!where.empty()) sql += " WHERE " + where;
@@ -154,7 +157,7 @@ std::vector<Service> query_services(Db_session *session,
   sql += " ORDER BY se.url_context_root, h.name, sorted_developers";
 
   std::vector<Service> services;
-  for (const auto &row : session->query(sql).rows) {
+  for (const auto &row : session->query(sql, std::move(params)).rows) {
     services.push_back(service_from_row(row));
   }
   return services;
@@ -162,15 +165,13 @@ std::vector<Service> query_services(Db_session *session,
 
 Id url_host_id(Db_session *session, const std::string &host_name) {
   const auto result = session->query(
-      "SELECT id FROM " + sql::metadata_table("url_host") +
-      " WHERE name = " + sql::quote(host_name));
+      "SELECT id FROM " + sql::metadata_table("url_host") + " WHERE name = ?",
+      {host_name});
   if (!result.empty()) return result.first()["id"].as_string();
 
   const Id id = new_id(session);
-  session->execute(sql::Insert("url_host")
-                       .set("id", Value::id(id))
-                       .set("name", host_name)
-                       .str());
+  session->execute(
+      sql::Insert("url_host").set("id", Value::id(id)).set("name", host_name));
   return id;
 }
 
@@ -206,13 +207,14 @@ FROM `mysql_rest_service_metadata`.db_schema sc
         ON se.url_host_id = h.id
 )";
 
-std::vector<Schema> query_schemas(Db_session *session, const std::string &where) {
+std::vector<Schema> query_schemas(Db_session *session, const std::string &where,
+                                  std::vector<Value> params) {
   std::string sql = k_schema_select;
   if (!where.empty()) sql += " WHERE " + where;
   sql += " ORDER BY sc.request_path";
 
   std::vector<Schema> schemas;
-  for (const auto &row : session->query(sql).rows) {
+  for (const auto &row : session->query(sql, std::move(params)).rows) {
     schemas.push_back(schema_from_row(row));
   }
   return schemas;
@@ -228,10 +230,10 @@ void set_json_options(Db_session *session, sql::Update *update,
   if (merge) {
     const auto row = session->query(
         "SELECT options IS NULL AS options_is_null FROM " +
-        sql::metadata_table(table) + " WHERE id = " + sql::id(id));
+            sql::metadata_table(table) + " WHERE id = ?",
+        {Value::id(id)});
     if (!row.empty() && !row.first()["options_is_null"].as_bool()) {
-      update->set_raw("options = JSON_MERGE_PATCH(options, " +
-                      sql::quote(options) + ")");
+      update->set_raw("options = JSON_MERGE_PATCH(options, ?)", {options});
       return;
     }
   }
@@ -241,18 +243,19 @@ void set_json_options(Db_session *session, sql::Update *update,
 bool schema_exists(Db_session *session) {
   const auto result = session->query(
       "SELECT COUNT(*) AS schema_exists FROM INFORMATION_SCHEMA.SCHEMATA "
-      "WHERE SCHEMA_NAME = " +
-      sql::quote(k_metadata_schema));
+      "WHERE SCHEMA_NAME = ?",
+      {k_metadata_schema});
   return !result.empty() && result.first()["schema_exists"].as_int() > 0;
 }
 
-Version schema_version(Db_session *session) {
+Version schema_version(Db_session *session, std::string *view_name) {
   for (const auto view : {"msm_schema_version", "schema_version"}) {
     try {
       const auto result = session->query(
           "SELECT major, minor, patch FROM " + sql::metadata_table(view));
       if (result.empty()) continue;
       const auto &row = result.first();
+      if (view_name) *view_name = view;
       return Version{static_cast<int>(row["major"].as_int()),
                      static_cast<int>(row["minor"].as_int()),
                      static_cast<int>(row["patch"].as_int())};
@@ -264,13 +267,13 @@ Version schema_version(Db_session *session) {
       "Unable to fetch MRS metadata database schema version.");
 }
 
-void check_schema(Db_session *session) {
+Version check_schema(Db_session *session, std::string *view) {
   if (!schema_exists(session)) {
     throw std::runtime_error(
         "The MRS metadata schema `mysql_rest_service_metadata` is not "
         "installed. Run CONFIGURE REST METADATA first.");
   }
-  const auto version = schema_version(session);
+  const auto version = schema_version(session, view);
   if (version.major < k_supported_major_version) {
     throw std::runtime_error(
         "The MRS metadata schema version " + version.str() +
@@ -284,20 +287,71 @@ void check_schema(Db_session *session) {
         "schema version " +
         version.str() + ". Please update MariaDB Shell.");
   }
+  return version;
+}
+
+Metadata_fingerprint read_fingerprint(Db_session *session,
+                                      std::string_view version_view) {
+  Metadata_fingerprint fingerprint;
+  try {
+    const auto result = session->query(
+        "SELECT @@SESSION.sql_mode AS sql_mode, v.major, v.minor, v.patch, "
+        "(SELECT MAX(id) FROM " + sql::metadata_table("audit_log") +
+        ") AS audit_id FROM " + sql::metadata_table(version_view) + " v");
+    if (!result.empty()) {
+      const auto &row = result.first();
+      fingerprint.sql_mode = row["sql_mode"].as_string();
+      session->set_sql_mode(fingerprint.sql_mode);
+      fingerprint.valid = true;
+      fingerprint.version = Version{static_cast<int>(row["major"].as_int()),
+                                    static_cast<int>(row["minor"].as_int()),
+                                    static_cast<int>(row["patch"].as_int())};
+      if (!row["audit_id"].is_null()) {
+        fingerprint.audit_id = row["audit_id"].as_int();
+      }
+      return fingerprint;
+    }
+  } catch (const Db_error &) {
+    // No schema, another version view, or no access to the audit log: the
+    // full checks run instead
+  }
+  fingerprint.sql_mode =
+      session->query("SELECT @@SESSION.sql_mode AS sql_mode")
+          .first()["sql_mode"]
+          .as_string();
+  session->set_sql_mode(fingerprint.sql_mode);
+  return fingerprint;
 }
 
 bool row_exists(Db_session *session, std::string_view table, const Id &id) {
   return !session
               ->query("SELECT 1 FROM " + sql::metadata_table(table) +
-                      " WHERE id = " + sql::id(id))
+                          " WHERE id = ?",
+                      {Value::id(id)})
               .empty();
 }
 
 Id new_id(Db_session *session) {
-  const auto result = session->query(
-      "SELECT " + sql::metadata_table("get_sequence_id") + "() AS id");
-  if (result.empty()) throw std::runtime_error("Could not generate a new id.");
-  return result.first()["id"].as_string();
+  auto &pool = session->id_pool;
+  if (pool.ids.empty()) {
+    const auto count = pool.next_batch;
+    pool.next_batch = std::min<size_t>(count * 2, 64);
+    const auto function = sql::metadata_table("get_sequence_id") + "()";
+    const auto result =
+        count == 1
+            ? session->query("SELECT " + function + " AS id")
+            : session->query(
+                  "WITH RECURSIVE n (i) AS (SELECT 1 UNION ALL SELECT i + 1 "
+                  "FROM n WHERE i < ?) SELECT " + function + " AS id FROM n",
+                  {static_cast<uint64_t>(count)});
+    if (result.empty()) throw std::runtime_error("Could not generate a new id.");
+    for (auto row = result.rows.rbegin(); row != result.rows.rend(); ++row) {
+      pool.ids.push_back((*row)["id"].as_string());
+    }
+  }
+  Id id = std::move(pool.ids.back());
+  pool.ids.pop_back();
+  return id;
 }
 
 std::string enabled_caption(int enabled) {
@@ -362,7 +416,7 @@ std::string format_json_entry(std::string_view key,
 // -- Services -------------------------------------------------------------
 
 std::optional<Service> get_service(Db_session *session, const Id &id) {
-  auto services = query_services(session, "se.id = " + sql::id(id));
+  auto services = query_services(session, "se.id = ?", {Value::id(id)});
   if (services.empty()) return std::nullopt;
   return std::move(services.front());
 }
@@ -374,18 +428,19 @@ std::optional<Service> find_service(Db_session *session,
     throw std::runtime_error("The url_context_root has to start with '/'.");
   }
 
-  std::string where = "h.name = '' AND se.url_context_root = " +
-                      sql::quote(url_context_root);
+  std::string where = "h.name = '' AND se.url_context_root = ?";
+  std::vector<Value> params{url_context_root};
   std::string having;
   if (developers.empty()) {
     where += " AND se.in_development IS NULL";
   } else {
     auto sorted = format_developers(developers);
     sorted.pop_back();  // the trailing @
-    having = "sorted_developers = " + sql::quote(sorted);
+    having = "sorted_developers = ?";
+    params.emplace_back(std::move(sorted));
   }
 
-  auto services = query_services(session, where, having);
+  auto services = query_services(session, where, std::move(params), having);
   if (services.size() != 1) return std::nullopt;
   return std::move(services.front());
 }
@@ -399,15 +454,16 @@ std::vector<Service> get_services_of_auth_app(Db_session *session,
   return query_services(
       session,
       "se.id IN (SELECT service_id FROM " +
-          sql::metadata_table("service_has_auth_app") +
-          " WHERE auth_app_id = " + sql::id(auth_app_id) + ")");
+          sql::metadata_table("service_has_auth_app") + " WHERE auth_app_id = ?)",
+      {Value::id(auth_app_id)});
 }
 
 // -- Daemons --------------------------------------------------------------
 
 namespace {
 
-std::vector<Daemon> query_daemons(Db_session *session, const std::string &where) {
+std::vector<Daemon> query_daemons(Db_session *session, const std::string &where,
+                                  std::vector<Value> params = {}) {
   std::string query =
       "SELECT id, router_name, address, product_name, version, last_check_in, "
       "last_check_in > CURRENT_TIMESTAMP - INTERVAL 10 SECOND AS active, "
@@ -418,7 +474,7 @@ std::vector<Daemon> query_daemons(Db_session *session, const std::string &where)
   query += " ORDER BY id";
 
   std::vector<Daemon> daemons;
-  for (const auto &row : session->query(query).rows) {
+  for (const auto &row : session->query(query, std::move(params)).rows) {
     Daemon d;
     d.id = row["id"].as_int();
     d.name = row["router_name"].as_string();
@@ -442,25 +498,23 @@ std::vector<Daemon> get_daemons(Db_session *session) {
 }
 
 std::optional<Daemon> get_daemon(Db_session *session, int64_t id) {
-  auto daemons = query_daemons(session, "id = " + std::to_string(id));
+  auto daemons = query_daemons(session, "id = ?", {id});
   if (daemons.empty()) return std::nullopt;
   return std::move(daemons.front());
 }
 
 std::vector<Service> get_services_of_daemon(Db_session *session, int64_t id) {
   return query_services(
-      session, "se.id IN (SELECT service_id FROM " +
-                   sql::metadata_table("router_services") +
-                   " WHERE router_id = " + std::to_string(id) + ")");
+      session,
+      "se.id IN (SELECT service_id FROM " +
+          sql::metadata_table("router_services") + " WHERE router_id = ?)",
+      {id});
 }
 
 void delete_daemon(Db_session *session, int64_t id) {
-  const auto where = " WHERE router_id = " + std::to_string(id);
-  session->execute("DELETE FROM " + sql::metadata_table("router_general_log") +
-                   where);
-  session->execute("DELETE FROM " + sql::metadata_table("router_status") + where);
-  session->execute("DELETE FROM " + sql::metadata_table("router") +
-                   " WHERE id = " + std::to_string(id));
+  session->execute(sql::Delete("router_general_log").where("router_id", id));
+  session->execute(sql::Delete("router_status").where("router_id", id));
+  session->execute(sql::Delete("router").where("id", id));
 }
 
 Id add_service(Db_session *session, const Service_definition &definition) {
@@ -481,12 +535,12 @@ Id add_service(Db_session *session, const Service_definition &definition) {
   if (!definition.developers.empty()) {
     insert.set("in_development", in_development_json(definition.developers));
   }
-  if (definition.enabled) insert.set("enabled", *definition.enabled);
-  if (definition.published) insert.set("published", *definition.published);
-  if (definition.url_protocol) insert.set("url_protocol", *definition.url_protocol);
-  if (definition.comments) insert.set("comments", *definition.comments);
-  if (definition.metadata) insert.set("metadata", *definition.metadata);
-  if (definition.auth_path) insert.set("auth_path", *definition.auth_path);
+  insert.set_if("enabled", definition.enabled);
+  insert.set_if("published", definition.published);
+  insert.set_if("url_protocol", definition.url_protocol);
+  insert.set_if("comments", definition.comments);
+  insert.set_if("metadata", definition.metadata);
+  insert.set_if("auth_path", definition.auth_path);
   if (definition.auth_completed_url) {
     insert.set("auth_completed_url", *definition.auth_completed_url);
   }
@@ -499,7 +553,7 @@ Id add_service(Db_session *session, const Service_definition &definition) {
                *definition.auth_completed_page_content);
   }
 
-  if (session->execute(insert.str()) == 0) {
+  if (session->execute(insert) == 0) {
     throw std::runtime_error("Failed to add the new service.");
   }
   return id;
@@ -519,11 +573,11 @@ void update_service(Db_session *session, const Id &id,
       update.set("in_development", in_development_json(*changes.developers));
     }
   }
-  if (changes.enabled) update.set("enabled", *changes.enabled);
-  if (changes.published) update.set("published", *changes.published);
-  if (changes.url_protocol) update.set("url_protocol", *changes.url_protocol);
-  if (changes.comments) update.set("comments", *changes.comments);
-  if (changes.metadata) update.set("metadata", *changes.metadata);
+  update.set_if("enabled", changes.enabled);
+  update.set_if("published", changes.published);
+  update.set_if("url_protocol", changes.url_protocol);
+  update.set_if("comments", changes.comments);
+  update.set_if("metadata", changes.metadata);
   if (changes.auth_path) {
     update.set("auth_path", changes.auth_path->has_value()
                                 ? Value(**changes.auth_path)
@@ -546,13 +600,12 @@ void update_service(Db_session *session, const Id &id,
   }
 
   if (update.empty()) return;
-  update.where("id = " + sql::id(id));
-  session->execute(update.str());
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_service(Db_session *session, const Id &id) {
-  if (session->execute("DELETE FROM " + sql::metadata_table("service") +
-                       " WHERE id = " + sql::id(id)) == 0) {
+  if (session->execute(sql::Delete("service").where("id", Value::id(id))) == 0) {
     throw std::runtime_error("The specified service with id " + id +
                              " was not found.");
   }
@@ -604,13 +657,21 @@ std::string service_create_statement(Db_session *session,
 
   std::vector<std::string> statements{output};
 
+  // The endpoints act on the current service, so the script names the
+  // service only here and can be loaded under another path by changing
+  // these two statements.
+  if (include_database_endpoints || include_static_endpoints ||
+      include_dynamic_endpoints) {
+    statements.push_back("USE REST SERVICE " + service.full_service_path + ";");
+  }
+
   if (include_database_endpoints) {
     for (auto &statement : role_create_statements(session, service.id)) {
       statements.push_back(std::move(statement));
     }
     for (const auto &schema : get_schemas(session, service.id)) {
       if (schema.schema_type == "SCRIPT_MODULE") continue;
-      statements.push_back(schema_create_statement(session, schema, true));
+      statements.push_back(schema_create_statement(session, schema, true, true));
     }
   }
 
@@ -668,7 +729,7 @@ Id clone_service(Db_session *session, const Service &service,
 // -- Schemas --------------------------------------------------------------
 
 std::optional<Schema> get_schema(Db_session *session, const Id &id) {
-  auto schemas = query_schemas(session, "sc.id = " + sql::id(id));
+  auto schemas = query_schemas(session, "sc.id = ?", {Value::id(id)});
   if (schemas.empty()) return std::nullopt;
   return std::move(schemas.front());
 }
@@ -678,15 +739,14 @@ std::optional<Schema> find_schema(Db_session *session, const Id &service_id,
   if (request_path.empty() || request_path[0] != '/') {
     throw std::runtime_error("The request_path has to start with '/'.");
   }
-  auto schemas = query_schemas(session, "sc.service_id = " + sql::id(service_id) +
-                                            " AND sc.request_path = " +
-                                            sql::quote(request_path));
+  auto schemas = query_schemas(session, "sc.service_id = ? AND sc.request_path = ?",
+                               {Value::id(service_id), request_path});
   if (schemas.empty()) return std::nullopt;
   return std::move(schemas.front());
 }
 
 std::vector<Schema> get_schemas(Db_session *session, const Id &service_id) {
-  return query_schemas(session, "sc.service_id = " + sql::id(service_id));
+  return query_schemas(session, "sc.service_id = ?", {Value::id(service_id)});
 }
 
 Id add_schema(Db_session *session, const Schema_definition &definition) {
@@ -722,7 +782,7 @@ Id add_schema(Db_session *session, const Schema_definition &definition) {
   insert.set("metadata", definition.metadata);
   insert.set("schema_type", definition.schema_type);
   insert.set("internal", definition.internal);
-  session->execute(insert.str());
+  session->execute(insert);
   return id;
 }
 
@@ -730,36 +790,36 @@ void update_schema(Db_session *session, const Id &id,
                    const Schema_changes &changes) {
   sql::Update update("db_schema");
   if (changes.service_id) update.set("service_id", Value::id(*changes.service_id));
-  if (changes.name) update.set("name", *changes.name);
-  if (changes.request_path) update.set("request_path", *changes.request_path);
-  if (changes.requires_auth) update.set("requires_auth", *changes.requires_auth);
-  if (changes.enabled) update.set("enabled", *changes.enabled);
-  if (changes.items_per_page) update.set("items_per_page", *changes.items_per_page);
-  if (changes.comments) update.set("comments", *changes.comments);
-  if (changes.metadata) update.set("metadata", *changes.metadata);
+  update.set_if("name", changes.name);
+  update.set_if("request_path", changes.request_path);
+  update.set_if("requires_auth", changes.requires_auth);
+  update.set_if("enabled", changes.enabled);
+  update.set_if("items_per_page", changes.items_per_page);
+  update.set_if("comments", changes.comments);
+  update.set_if("metadata", changes.metadata);
   if (changes.options) {
     set_json_options(session, &update, "db_schema", id, *changes.options,
                      changes.merge_options);
   }
   if (update.empty()) return;
-  update.where("id = " + sql::id(id));
-  session->execute(update.str());
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_schema(Db_session *session, const Id &id) {
-  if (session->execute("DELETE FROM " + sql::metadata_table("db_schema") +
-                       " WHERE id = " + sql::id(id)) == 0) {
+  if (session->execute(sql::Delete("db_schema").where("id", Value::id(id))) == 0) {
     throw std::runtime_error("The specified schema with id " + id +
                              " was not found.");
   }
 }
 
 std::string schema_create_statement(Db_session *session, const Schema &schema,
-                                    bool include_database_endpoints) {
-  std::string output = "CREATE OR REPLACE REST SCHEMA " +
-                       quote_request_path(schema.request_path) +
-                       " ON SERVICE " + schema.host_ctx + "\n    FROM " +
-                       sql::quote_identifier(schema.name);
+                                    bool include_database_endpoints,
+                                    bool on_current_service) {
+  std::string output =
+      "CREATE OR REPLACE REST SCHEMA " + quote_request_path(schema.request_path) +
+      (on_current_service ? "" : " ON SERVICE " + schema.host_ctx) + "\n    FROM " +
+      sql::quote_identifier(schema.name);
 
   if (schema.enabled == 2) {
     output += "\n    PRIVATE";
@@ -782,7 +842,8 @@ std::string schema_create_statement(Db_session *session, const Schema &schema,
 
   if (include_database_endpoints) {
     for (const auto &db_object : get_db_objects(session, schema.id, {})) {
-      output += "\n\n" + db_object_create_statement(session, db_object);
+      output += "\n\n" +
+                db_object_create_statement(session, db_object, on_current_service);
     }
   }
   return output;
@@ -816,8 +877,8 @@ Id clone_schema(Db_session *session, const Schema &schema,
 std::optional<std::string> database_schema_name(Db_session *session,
                                                 std::string_view name) {
   const auto result = session->query(
-      "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = " +
-      sql::quote(name));
+      "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?",
+      {name});
   if (result.empty()) return std::nullopt;
   return result.first()["SCHEMA_NAME"].as_string();
 }

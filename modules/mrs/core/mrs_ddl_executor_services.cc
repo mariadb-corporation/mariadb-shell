@@ -56,22 +56,19 @@ std::optional<std::optional<std::string>> change_of(
 void Ddl_executor::link_auth_apps(const Id &service_id,
                                   const std::vector<Auth_app_reference> &add,
                                   const std::vector<Auth_app_reference> &remove) {
-  for (const auto &entry : add) {
-    const auto auth_app = metadata::find_auth_app(m_session, entry.name);
-    if (!auth_app && !entry.if_exists) {
-      throw std::runtime_error("The given REST authentication app `" +
-                               entry.name + "` was not found.");
+  const auto apply = [&](const std::vector<Auth_app_reference> &entries,
+                          auto action) {
+    for (const auto &entry : entries) {
+      const auto auth_app = metadata::find_auth_app(m_session, entry.name);
+      if (!auth_app && !entry.if_exists) {
+        throw std::runtime_error("The given REST authentication app `" +
+                                 entry.name + "` was not found.");
+      }
+      if (auth_app) action(m_session, auth_app->id, service_id);
     }
-    if (auth_app) metadata::link_auth_app(m_session, auth_app->id, service_id);
-  }
-  for (const auto &entry : remove) {
-    const auto auth_app = metadata::find_auth_app(m_session, entry.name);
-    if (!auth_app && !entry.if_exists) {
-      throw std::runtime_error("The given REST authentication app `" +
-                               entry.name + "` was not found.");
-    }
-    if (auth_app) metadata::unlink_auth_app(m_session, auth_app->id, service_id);
-  }
+  };
+  apply(add, metadata::link_auth_app);
+  apply(remove, metadata::unlink_auth_app);
 }
 
 void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r) {
@@ -81,18 +78,15 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
-  if (s.flags.or_replace || s.flags.if_not_exists) {
-    const auto existing =
-        metadata::find_service(m_session, path, s.path.developers);
-    if (existing) {
-      if (s.flags.if_not_exists) {
-        r->message = "REST SERVICE `" + full_path + "` created successfully.";
-        r->id = existing->id;
-        transaction.commit();
-        return;
-      }
-      metadata::delete_service(m_session, existing->id);
-    }
+  if (keep_existing(
+          s.flags,
+          [&] { return metadata::find_service(m_session, path, s.path.developers); },
+          [&](const auto &existing) {
+            metadata::delete_service(m_session, existing.id);
+          })) {
+    r->message = "REST SERVICE `" + full_path + "` created successfully.";
+    transaction.commit();
+    return;
   }
 
   metadata::Service_definition definition;
@@ -117,7 +111,6 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
   transaction.commit();
 
   r->message = "REST SERVICE `" + full_path + "` created successfully.";
-  r->id = id;
 }
 
 void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) {
@@ -162,7 +155,6 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   }
 
   r->affected_items_count = 1;
-  r->id = service_id;
 }
 
 void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
@@ -180,7 +172,6 @@ void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
   if (service) {
     metadata::delete_service(m_session, service->id);
     if (m_state->current_service_id == service->id) m_state->clear_service();
-    r->id = service->id;
   }
 
   transaction.commit();
@@ -200,7 +191,6 @@ void Ddl_executor::do_execute(const Clone_rest_service &s, Statement_result *r) 
   transaction.commit();
 
   r->affected_items_count = 1;
-  r->id = service->id;
 }
 
 void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) {
@@ -307,7 +297,6 @@ void Ddl_executor::do_execute(const Show_create_rest_service &s,
                                                s.endpoints.database,
                                                s.endpoints.static_,
                                                s.endpoints.dynamic));
-  r->id = service->id;
 }
 
 }  // namespace mrs

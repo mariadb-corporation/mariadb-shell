@@ -86,9 +86,12 @@ std::vector<Db_object> get_db_objects(Db_session *session, const Id &schema_id,
 void delete_db_object(Db_session *session, const Id &id);
 
 // The CREATE OR REPLACE REST VIEW / PROCEDURE / FUNCTION statement of an
-// object, with its data mapping.
+// object, with its data mapping. With on_current_service, the
+// statement names no service (ON SERVICE ...) and acts on the current one,
+// as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
 std::string db_object_create_statement(Db_session *session,
-                                       const Db_object &db_object);
+                                       const Db_object &db_object,
+                                       bool on_current_service = false);
 
 // Copies an object with its data mapping into another schema.
 Id clone_db_object(Db_session *session, const Db_object &db_object,

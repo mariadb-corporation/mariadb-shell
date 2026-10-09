@@ -144,23 +144,29 @@ void delete_content_file(Db_session *session, const Id &id);
 // -- SHOW CREATE ----------------------------------------------------------
 
 // The CREATE OR REPLACE REST CONTENT SET statement of a set, without its
-// files. The options the script registration generates are left out.
-std::string content_set_create_statement(const Content_set &content_set);
+// files. The options the script registration generates are left out. With on_current_service, the
+// statement names no service (ON SERVICE ...) and acts on the current one,
+// as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
+std::string content_set_create_statement(const Content_set &content_set,
+                                         bool on_current_service = false);
 
 // The CREATE OR REPLACE REST CONTENT FILE statement of a file; the content
 // is fetched when the struct does not carry it. Text content is written as
 // CONTENT '...', anything else as BINARY CONTENT '<base64>'.
 std::string content_file_create_statement(Db_session *session,
-                                          const Content_file &content_file);
+                                          const Content_file &content_file,
+                                          bool on_current_service = false);
 
 // The statements of one content set: the set, its files and, for a script
 // set, the ALTER REST CONTENT SET ... LOAD SCRIPTS that registers its
 // scripts once the files are there.
 std::vector<std::string> content_set_statements(Db_session *session,
-                                                const Content_set &content_set);
+                                                const Content_set &content_set,
+                                                bool on_current_service = false);
 
 // The CREATE OR REPLACE REST CONTENT SET statements of a service's content
 // sets, with their files; dynamic (script) content sets only when asked.
+// The statements act on the current service.
 std::vector<std::string> content_set_create_statements(Db_session *session,
                                                        const Id &service_id,
                                                        bool include_dynamic);
