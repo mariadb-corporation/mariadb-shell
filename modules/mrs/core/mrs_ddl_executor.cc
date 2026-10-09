@@ -327,12 +327,18 @@ void Ddl_executor::do_execute(const Use_rest_metadata_schema &s,
         "account.");
   }
 
-  switch_metadata_schema(s.schema);
-  m_state->metadata_schema = s.schema;
+  // Choosing the schema in use again keeps the current service and schema
+  // (clients repeat the USE before every call)
+  if (m_state->metadata_schema != s.schema) {
+    switch_metadata_schema(s.schema);
+    m_state->metadata_schema = s.schema;
+  } else {
+    m_session->set_metadata_schema(s.schema);
+  }
   r->message = "Now using REST METADATA SCHEMA `" + s.schema + "`.";
 }
 
-void Ddl_executor::do_execute(const Show_rest_metadata_schemas &,
+void Ddl_executor::do_execute(const Show_rest_metadata_schemas &s,
                               Statement_result *r) {
   set_failure_context("Cannot SHOW the REST metadata schemas.");
 
@@ -348,6 +354,8 @@ void Ddl_executor::do_execute(const Show_rest_metadata_schemas &,
     }
   }
 
+  const bool json = s.format == Output_format::json;
+  json::Value::Array docs;
   r->columns = {"schema_name", "version", "current"};
   for (const auto &name : metadata::find_metadata_schemas(m_session)) {
     std::optional<std::string> version;
@@ -359,11 +367,20 @@ void Ddl_executor::do_execute(const Show_rest_metadata_schemas &,
     } catch (const Db_error &) {
       // The view may not be readable for the account
     }
+    if (json) {
+      json::Value doc = json::Value::object();
+      doc.set("schema_name", name);
+      doc.set("version", version ? json::Value(*version) : json::Value());
+      doc.set("current", name == current);
+      docs.push_back(std::move(doc));
+      continue;
+    }
     auto &row = r->add_row();
     row.emplace_back(name);
     row.push_back(version ? Db_value(*version) : Db_value(nullptr));
     row.emplace_back(name == current ? "YES" : "NO");
   }
+  if (json) r->set_json("REST METADATA SCHEMAS", json::Value(std::move(docs)).dump(true));
 }
 
 void Ddl_executor::do_execute(const Use_rest &s, Statement_result *r) {

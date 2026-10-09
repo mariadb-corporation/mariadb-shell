@@ -217,7 +217,8 @@ json::Value schema_json(const Schema &schema) {
   return doc;
 }
 
-json::Value rest_object_json(Db_session *session, const Rest_object &rest_object) {
+json::Value rest_object_json(Db_session *session, const Rest_object &rest_object,
+                             bool include_data_mappings) {
   json::Value doc = json::Value::object();
   doc.set("id", rest_object.id);
   doc.set("rest_schema_id", rest_object.rest_schema_id);
@@ -240,6 +241,7 @@ json::Value rest_object_json(Db_session *session, const Rest_object &rest_object
   doc.set("comments", text(rest_object.comments));
   doc.set("options", document(rest_object.options));
   doc.set("metadata", document(rest_object.metadata));
+  if (!include_data_mappings) return doc;
   json::Value::Array objects;
   for (const auto &object : get_objects(session, rest_object.id)) {
     objects.push_back(object_json(object));
@@ -260,6 +262,16 @@ json::Value content_set_json(const Content_set &content_set) {
   doc.set("comments", text(content_set.comments));
   doc.set("options", document(content_set.options));
   doc.set("host_ctx", content_set.host_ctx);
+  return doc;
+}
+
+json::Value auth_vendor_json(const Auth_vendor &vendor) {
+  json::Value doc = json::Value::object();
+  doc.set("id", vendor.id);
+  doc.set("name", vendor.name);
+  doc.set("comments", text(vendor.comments));
+  doc.set("enabled", vendor.enabled);
+  doc.set("validation_url", text(vendor.validation_url));
   return doc;
 }
 

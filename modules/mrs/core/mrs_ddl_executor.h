@@ -77,6 +77,14 @@ struct Statement_result {
   bool has_result_set() const { return !columns.empty(); }
   void add_column(std::string name) { columns.push_back(std::move(name)); }
   std::vector<Db_value> &add_row() { return rows.emplace_back(); }
+
+  // The result of a FORMAT=JSON statement: one row with one cell holding
+  // the document, so the column name is kept even for an empty list.
+  void set_json(std::string column, std::string document) {
+    columns = {std::move(column)};
+    rows.clear();
+    add_row().emplace_back(std::move(document));
+  }
 };
 
 // What the checks before the REST statements found last time, so they

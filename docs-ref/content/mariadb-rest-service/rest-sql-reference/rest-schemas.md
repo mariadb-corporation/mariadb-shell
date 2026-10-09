@@ -184,13 +184,15 @@ The `SHOW REST SCHEMAS` statement lists all REST schemas of the given or the cur
 showRestSchemasStatement:
     SHOW REST SCHEMAS (
         (ON | FROM) SERVICE? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 ```
 
 `showRestSchemasStatement ::=`
 
 ![Railroad diagram of showRestSchemasStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestSchemasStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the REST schemas; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

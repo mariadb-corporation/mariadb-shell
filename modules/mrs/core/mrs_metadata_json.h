@@ -64,10 +64,15 @@ json::Value daemon_json(const Daemon &daemon);
 
 // A view, procedure or function with its data mapping: "data_mappings", each
 // with its "fields" in the flat metadata order; a field representing a
-// reference carries it as "data_mapping_reference".
-json::Value rest_object_json(Db_session *session, const Rest_object &rest_object);
+// reference carries it as "data_mapping_reference". Lists (SHOW REST VIEWS
+// ... FORMAT=JSON) leave the data mappings out.
+json::Value rest_object_json(Db_session *session, const Rest_object &rest_object,
+                             bool include_data_mappings = true);
 
 json::Value content_set_json(const Content_set &content_set);
+
+// An auth vendor: id, name, comments, enabled, validation_url.
+json::Value auth_vendor_json(const Auth_vendor &vendor);
 json::Value content_file_json(const Content_file &content_file);
 
 // An auth app with the paths of the services it is linked to. The app

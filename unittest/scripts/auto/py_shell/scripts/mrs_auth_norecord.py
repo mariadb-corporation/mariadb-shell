@@ -105,6 +105,37 @@ vendors = [list(row) for row in session.run_sql("SELECT name, comments, IF(enabl
 EXPECT_EQ(vendors, rest_rows("SHOW REST AUTH VENDORS"))
 EXPECT_EQ(["MRS", "Built-in user management of MRS", "ENABLED"], [row for row in vendors if row[0] == "MRS"][0])
 
+#@<> SHOW REST AUTH VENDORS FORMAT=JSON
+def json_list(sql, column):
+    res = rest(sql)
+    EXPECT_EQ([column], res.get_column_names())
+    rows = res.fetch_all()
+    EXPECT_EQ(1, len(rows))
+    return json.loads(rows[0][0])
+
+docs = json_list("SHOW REST AUTH VENDORS FORMAT=JSON", "REST AUTH VENDORS")
+EXPECT_EQ([v[0] for v in vendors], [d["name"] for d in docs])
+EXPECT_EQ({"id": "30000000-0000-0000-0000-000000000000", "name": "MRS", "comments": "Built-in user management of MRS", "enabled": True, "validation_url": None}, [d for d in docs if d["name"] == "MRS"][0])
+EXPECT_EQ([["id", "name", "comments", "enabled", "validation_url"]], [list(d.keys()) for d in docs][:1])
+
+#@<> SHOW REST AUTH APPS FORMAT=JSON
+# The current service's apps, the SHOW CREATE REST AUTH APP documents
+docs = json_list("SHOW REST AUTH APPS FORMAT=JSON", "REST AUTH APPS")
+EXPECT_EQ(["MRS App"], [d["name"] for d in docs])
+EXPECT_EQ(json.loads(rest_text("SHOW CREATE REST AUTH APP \"MRS App\" FORMAT=JSON")), docs[0])
+EXPECT_EQ(["/svc"], docs[0]["services"])
+EXPECT_FALSE("access_token" in docs[0])
+EXPECT_EQ([], json_list("SHOW REST AUTH APPS FROM SERVICE /other FORMAT=JSON", "REST AUTH APPS"))
+# ON ANY SERVICE lists every app whatever service is current
+all_apps = ["MariaDB", "MariaDB App", "MRS App"]
+EXPECT_EQ(all_apps, [d["name"] for d in json_list("SHOW REST AUTH APPS ON ANY SERVICE FORMAT=JSON", "REST AUTH APPS")])
+EXPECT_EQ(all_apps, [r[0] for r in rest_rows("SHOW REST AUTH APPS ON ANY SERVICE")])
+EXPECT_EQ(all_apps, [r[0] for r in rest_rows("SHOW REST AUTH APPS FROM ANY SERVICE")])
+EXPECT_EQ([["MRS App", "MRS", None, "ENABLED"]], rest_rows("SHOW REST AUTH APPS FORMAT=TRADITIONAL"))
+# SHOW REST SERVICES FOR AUTH APP
+EXPECT_EQ(["/svc"], [d["full_service_path"] for d in json_list("SHOW REST SERVICES FOR AUTH APP \"MRS App\" FORMAT=JSON", "REST SERVICES")])
+EXPECT_EQ([], json_list("SHOW REST SERVICES FOR AUTH APP \"MariaDB App\" FORMAT=JSON", "REST SERVICES"))
+
 #@<> SHOW CREATE REST AUTH APP
 EXPECT_EQ("""CREATE OR REPLACE REST AUTH APP `MRS App`
     VENDOR MRS
@@ -220,6 +251,17 @@ EXPECT_THROWS(lambda: rest("SHOW REST USERS ON SERVICE /nope"), "Cannot SHOW the
 other_session = shell.open_session(__sandbox_uri1)
 EXPECT_EQ([["root", "MariaDB App", None, None, None, "YES"]] + mrs_app_users, [list(row) for row in other_session.run_sql("SHOW REST USERS").fetch_all()])
 other_session.close()
+
+#@<> SHOW REST USERS FORMAT=JSON
+docs = json_list("SHOW REST USERS FORMAT=JSON", "REST USERS")
+EXPECT_EQ(["boss", "mike"], [d["name"] for d in docs])
+for doc in docs:
+    EXPECT_EQ(json.loads(rest_text("SHOW CREATE REST USER \"%s\"@\"MRS App\" FORMAT=JSON" % doc["name"])), doc)
+    EXPECT_FALSE("auth_string" in doc)
+    EXPECT_EQ(list, type(doc["roles"]))
+EXPECT_EQ(["root"], [d["name"] for d in json_list("SHOW REST USERS FOR AUTH APP \"MariaDB App\" FORMAT=JSON", "REST USERS")])
+EXPECT_EQ([], json_list("SHOW REST USERS ON SERVICE /other FORMAT=JSON", "REST USERS"))
+EXPECT_EQ(mrs_app_users, rest_rows("SHOW REST USERS FORMAT=TRADITIONAL"))
 
 #@<> SHOW CREATE REST USER
 EXPECT_EQ(["CREATE REST USER"], rest("SHOW CREATE REST USER \"mike\"@\"MRS App\"").get_column_names())
@@ -455,6 +497,22 @@ EXPECT_EQ(["REST roles for @MRS App", "derived_from_role", "description", "optio
 EXPECT_EQ([["reader", "", "", {}, "", "mike@MRS App"], ["reader", "", "", {}, "/svc", "boss@MRS App, mike@MRS App"]], with_parsed_options([list(row) for row in res.fetch_all()]))
 EXPECT_EQ([["reader", "", "", {}, "", "mike@MRS App"]], roles_rows("SHOW REST ROLES ON SERVICE /other FOR @\"MRS App\""))
 EXPECT_EQ([], roles_rows("SHOW REST ROLES FOR @\"MariaDB App\""))
+
+#@<> SHOW REST ROLES FORMAT=JSON
+# Every form lists the SHOW CREATE REST ROLE documents of its rows
+for sql in ["SHOW REST ROLES", "SHOW REST ROLES ON SERVICE /other", "SHOW REST ROLES ON ANY SERVICE",
+            "SHOW REST ROLES FOR \"mike\"@\"MRS App\"", "SHOW REST ROLES ON ANY SERVICE FOR \"mike\"@\"MRS App\"",
+            "SHOW REST ROLES FOR @\"MRS App\""]:
+    docs = json_list(sql + " FORMAT=JSON", "REST ROLES")
+    rows = rest_rows(sql)
+    EXPECT_EQ([r[0] for r in rows], [d["caption"] for d in docs], sql)
+    for doc in docs:
+        EXPECT_EQ(list, type(doc["privileges"]))
+        EXPECT_EQ(doc["specific_to_service"] is None, doc["specific_to_service_id"] is None)
+docs = json_list("SHOW REST ROLES FORMAT=JSON", "REST ROLES")
+writer = [d for d in docs if d["caption"] == "writer"][0]
+EXPECT_EQ(json.loads(rest_text("SHOW CREATE REST ROLE \"writer\" ON SERVICE /svc FORMAT=JSON")), writer)
+EXPECT_EQ([], json_list("SHOW REST ROLES FOR @\"MariaDB App\" FORMAT=JSON", "REST ROLES"))
 
 #@<> REVOKE REST ROLE
 EXPECT_EQ("REVOKE ROLE from `mike`@`MRS App` executed successfully.", rest_info("REVOKE REST ROLE \"reader\" FROM \"mike\"@\"MRS App\""))

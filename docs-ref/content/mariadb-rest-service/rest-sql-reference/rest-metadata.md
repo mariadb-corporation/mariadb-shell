@@ -293,7 +293,7 @@ USE REST SERVICE /myService SCHEMA /sakila;
 
 ### USE REST METADATA SCHEMA
 
-`USE REST METADATA SCHEMA` sets the metadata schema the following REST statements of the session work with. The schema has to be a metadata schema that the account can see. Switching to another metadata schema clears the current REST service and REST schema, as they belong to the previous one.
+`USE REST METADATA SCHEMA` sets the metadata schema the following REST statements of the session work with. The schema has to be a metadata schema that the account can see. Switching to another metadata schema clears the current REST service and REST schema, as they belong to the previous one. Choosing the metadata schema the session already uses again changes nothing and keeps them, so a tool can start every call with the same `USE REST METADATA SCHEMA` statement.
 
 ```sql
 USE REST METADATA SCHEMA acme_mariadb_rest_service;
@@ -319,7 +319,7 @@ The `SHOW REST METADATA SCHEMAS` statement lists the metadata schemas the accoun
 
 ```antlr
 showRestMetadataSchemasStatement:
-    SHOW REST METADATA SCHEMAS
+    SHOW REST METADATA SCHEMAS formatClause?
 ;
 ```
 
@@ -328,6 +328,8 @@ showRestMetadataSchemasStatement:
 ![Railroad diagram of showRestMetadataSchemasStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataSchemasStatement.svg)
 
 The result has the columns `schema_name`, `version`, and `current`. `current` is `YES` for the metadata schema the REST statements of the session use.
+
+With `FORMAT=JSON`, the result is a JSON array of `{schema_name, version, current}` documents, `current` being `true` or `false`. See [Lists in JSON](#lists-in-json).
 
 ### Examples
 
@@ -419,7 +421,7 @@ SHOW REST COLUMNS FROM PROCEDURE sakila.film_in_stock FORMAT=JSON;
 
 ## SHOW CREATE ... FORMAT=JSON
 
-Every `SHOW CREATE REST` statement ends with an optional `FORMAT` clause, as the `EXPLAIN` statement of MariaDB Server does. `FORMAT=TRADITIONAL`, the default, returns the statement that creates the REST object. `FORMAT=JSON` returns a JSON document of the REST object instead, for tools that work with the REST objects, for example an editor for the data mapping of a REST view. `SHOW REST STATUS`, `SHOW REST COLUMNS`, and `SHOW REST DAEMONS` take the same clause.
+Every `SHOW CREATE REST` statement ends with an optional `FORMAT` clause, as the `EXPLAIN` statement of MariaDB Server does. `FORMAT=TRADITIONAL`, the default, returns the statement that creates the REST object. `FORMAT=JSON` returns a JSON document of the REST object instead, for tools that work with the REST objects, for example an editor for the data mapping of a REST view. `SHOW REST STATUS`, `SHOW REST COLUMNS`, `SHOW REST DAEMONS`, and every statement that lists REST objects take the same clause (see [Lists in JSON](#lists-in-json)).
 
 ### Syntax
 
@@ -450,4 +452,19 @@ The following example returns the REST view `/city` with its data mapping as a J
 
 ```sql
 SHOW CREATE REST VIEW /city ON SERVICE /myService SCHEMA /sakila FORMAT=JSON;
+```
+
+### Lists in JSON
+
+The statements that list REST objects take the same `FORMAT` clause: `SHOW REST SERVICES`, `SHOW REST SCHEMAS`, `SHOW REST VIEWS`, `SHOW REST PROCEDURES`, `SHOW REST FUNCTIONS`, `SHOW REST SCRIPTS`, `SHOW REST CONTENT SETS`, `SHOW REST CONTENT FILES`, `SHOW REST AUTH APPS`, `SHOW REST AUTH VENDORS`, `SHOW REST USERS`, `SHOW REST ROLES`, and `SHOW REST METADATA SCHEMAS`. With `FORMAT=JSON`, the result is always one row with one column, named after the statement (`REST SERVICES`, `REST SCHEMAS`, `REST VIEWS`, and so on), that holds a JSON array; an empty list is `[]`. The statements list the same objects as without the clause, in the order described below, and each element is the document that `SHOW CREATE ... FORMAT=JSON` returns for the object, with these differences:
+
+* A REST service has no `rest_schemas`, but `is_current`, which is `true` for the current REST service of the session. The services are ordered by their full path.
+* A REST view, procedure, function, or script has no `data_mappings`, so that lists stay cheap. The objects are ordered by their request path.
+* REST schemas are ordered by their request path; `schema_type` tells a `DATABASE_SCHEMA` from the `SCRIPT_MODULE` that `LOAD SCRIPTS` registers.
+* Content sets and files are ordered by their request path, auth apps and users by their name, and roles by their caption.
+* An auth vendor is `{id, name, comments, enabled, validation_url}`.
+* A metadata schema is `{schema_name, version, current}`.
+
+```sql
+SHOW REST VIEWS ON SERVICE /myService SCHEMA /sakila FORMAT=JSON;
 ```

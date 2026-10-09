@@ -272,7 +272,9 @@ struct Create_rest_view {
 };
 
 // The kind of a REST db object, i.e. which statements it belongs to.
-enum class Rest_object_kind { view, procedure, function };
+// script: the MRS scripts LOAD SCRIPTS registers (only listed by SHOW REST
+// SCRIPTS)
+enum class Rest_object_kind { view, procedure, function, script };
 
 // CREATE REST PROCEDURE and CREATE REST FUNCTION
 struct Create_rest_routine {
@@ -478,7 +480,9 @@ struct Use_rest_metadata_schema {
 };
 
 // SHOW REST METADATA SCHEMAS: the metadata schemas the session can see
-struct Show_rest_metadata_schemas {};
+struct Show_rest_metadata_schemas {
+  Output_format format = Output_format::traditional;
+};
 
 // SHOW REST [METADATA] STATUS [FORMAT=JSON]
 struct Show_rest_metadata_status {
@@ -489,6 +493,7 @@ struct Show_rest_metadata_status {
 struct Show_rest_services {
   std::optional<std::string> auth_app;
   std::optional<std::string> daemon;  // its id
+  Output_format format = Output_format::traditional;
 };
 
 // SHOW REST DAEMONS: the MariaDB REST Daemon instances (the rest_daemon table)
@@ -502,40 +507,55 @@ struct Drop_rest_daemon {
   std::string id;  // a UUID
 };
 
+// The list statements below take a trailing [FORMAT=JSON]: one cell
+// holding a JSON array of the documents SHOW CREATE ... FORMAT=JSON returns
+
 struct Show_rest_schemas {
   std::optional<Service_path> service;
+  Output_format format = Output_format::traditional;
 };
 
+// SHOW REST VIEWS / PROCEDURES / FUNCTIONS / SCRIPTS
 struct Show_rest_objects {
   Rest_object_kind kind = Rest_object_kind::view;
   std::optional<Schema_selector> on;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_rest_content_sets {
   std::optional<Service_path> service;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_rest_content_files {
   std::optional<Service_path> service;
   std::string content_set_path;
+  Output_format format = Output_format::traditional;
 };
 
+// SHOW REST AUTH APPS [(ON|FROM) (ANY SERVICE | [SERVICE] path)]
 struct Show_rest_auth_apps {
   std::optional<Service_path> service;
+  bool any_service = false;  // ON ANY SERVICE: all, whatever service is current
+  Output_format format = Output_format::traditional;
 };
 
-struct Show_rest_auth_vendors {};
+struct Show_rest_auth_vendors {
+  Output_format format = Output_format::traditional;
+};
 
 // SHOW REST USERS [ON SERVICE path] [FOR AUTH APP name]
 struct Show_rest_users {
   std::optional<Service_path> service;
   std::optional<std::string> auth_app;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_rest_roles {
   std::optional<Role_service> on;
   std::optional<std::string> user;
   std::optional<std::string> auth_app;
+  Output_format format = Output_format::traditional;
 };
 
 struct Show_rest_grants {

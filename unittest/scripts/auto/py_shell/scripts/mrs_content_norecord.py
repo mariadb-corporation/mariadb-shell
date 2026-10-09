@@ -157,6 +157,27 @@ EXPECT_EQ(["CREATE REST CONTENT SET"], res.get_column_names())
 doc = json.loads(res.fetch_one()[0])
 EXPECT_EQ({"request_path": "/inline", "content_type": "STATIC", "comments": "inline files", "requires_auth": False}, {k: doc[k] for k in ["request_path", "content_type", "comments", "requires_auth"]})
 
+#@<> SHOW REST CONTENT SETS / FILES FORMAT=JSON
+def json_list(sql, column):
+    res = rest(sql)
+    EXPECT_EQ([column], res.get_column_names())
+    rows = res.fetch_all()
+    EXPECT_EQ(1, len(rows))
+    return json.loads(rows[0][0])
+
+docs = json_list("SHOW REST CONTENT SETS FORMAT=JSON", "REST CONTENT SETS")
+EXPECT_EQ([r[0] for r in rest_rows("SHOW REST CONTENT SETS")], [d["request_path"] for d in docs])
+EXPECT_EQ(sorted(d["request_path"] for d in docs), [d["request_path"] for d in docs])
+for doc in docs:
+    EXPECT_EQ(json.loads(rest_text("SHOW CREATE REST CONTENT SET %s FORMAT=JSON" % doc["request_path"])), doc)
+EXPECT_EQ([d["request_path"] for d in docs], [d["request_path"] for d in json_list("SHOW REST CONTENT SETS ON SERVICE /svc FORMAT=JSON", "REST CONTENT SETS")])
+docs = json_list("SHOW REST CONTENT FILES FROM CONTENT SET /inline FORMAT=JSON", "REST CONTENT FILES")
+EXPECT_EQ([r[0] for r in rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /inline")], [d["request_path"] for d in docs])
+for doc in docs:
+    EXPECT_EQ(json.loads(rest_text("SHOW CREATE REST CONTENT FILE `%s` FROM CONTENT SET /inline FORMAT=JSON" % doc["request_path"])), doc)
+    EXPECT_FALSE("content" in doc)
+EXPECT_EQ([], json_list("SHOW REST CONTENT FILES ON SERVICE /svc CONTENT SET /static FORMAT=JSON", "REST CONTENT FILES"))
+
 #@<> SHOW CREATE REST CONTENT SET lists the set and its files
 rest("DROP REST CONTENT FILE /binaryFile FROM CONTENT SET /inline")
 rest("DROP REST CONTENT FILE /privateFile FROM CONTENT SET /inline")
@@ -300,6 +321,19 @@ EXPECT_EQ("dist", definitions["build_folder"])
 EXPECT_EQ(["static"], definitions["static_content_folders"])
 # Only the static folders are served; sources and build output are private
 EXPECT_EQ([["/dist/sales.mjs", "PRIVATE"], ["/src/sales.mts", "PRIVATE"], ["/static/index.html", "ENABLED"]], [[r[0], r[2]] for r in rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /app")])
+
+#@<> SHOW REST SCRIPTS lists the registered scripts
+EXPECT_EQ(["REST DB Object", "enabled"], rest("SHOW REST SCRIPTS ON SCHEMA /sales").get_column_names())
+EXPECT_EQ([["/summary", "ENABLED"], ["/total", "ENABLED"]], rest_rows("SHOW REST SCRIPTS FROM SERVICE /svc SCHEMA /sales"))
+docs = json_list("SHOW REST SCRIPTS ON SCHEMA /sales FORMAT=JSON", "REST SCRIPTS")
+EXPECT_EQ([["/summary", "summaryOf", "SCRIPT", "/sales"], ["/total", "total", "SCRIPT", "/sales"]], [[d["request_path"], d["name"], d["object_type"], d["schema_request_path"]] for d in docs])
+EXPECT_FALSE("data_mappings" in docs[0])
+EXPECT_EQ([True, False], [d["requires_auth"] for d in docs])
+# The module is listed with its schema type
+schemas = json_list("SHOW REST SCHEMAS FORMAT=JSON", "REST SCHEMAS")
+EXPECT_EQ([["/sales", "SCRIPT_MODULE"]], [[d["request_path"], d["schema_type"]] for d in schemas if d["schema_type"] != "DATABASE_SCHEMA"])
+# No views, procedures or functions in the module
+EXPECT_EQ([], json_list("SHOW REST VIEWS ON SCHEMA /sales FORMAT=JSON", "REST VIEWS"))
 
 #@<> LOAD SCRIPTS again replaces the registered scripts; the language is detected
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))

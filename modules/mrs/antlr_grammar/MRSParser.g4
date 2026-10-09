@@ -85,6 +85,7 @@ mrsStatement:
     | showRestViewsStatement
     | showRestProceduresStatement
     | showRestFunctionsStatement
+    | showRestScriptsStatement
     | showRestContentSetsStatement
     | showRestContentFilesStatement
     | showRestAuthAppsStatement
@@ -764,7 +765,7 @@ showRestMetadataStatusStatement:
 ;
 
 showRestMetadataSchemasStatement:
-    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL formatClause?
 ;
 
 showRestServicesStatement:
@@ -773,7 +774,7 @@ showRestServicesStatement:
             AUTH_SYMBOL APP_SYMBOL authAppName
             | DAEMON_SYMBOL daemonId
         )
-    )?
+    )? formatClause?
 ;
 
 showRestDaemonsStatement:
@@ -783,54 +784,64 @@ showRestDaemonsStatement:
 showRestSchemasStatement:
     SHOW_SYMBOL REST_SYMBOL DATABASES_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 
 showRestViewsStatement:
     SHOW_SYMBOL REST_SYMBOL DATA_SYMBOL? MAPPING_SYMBOL? VIEWS_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 showRestProceduresStatement:
     SHOW_SYMBOL REST_SYMBOL PROCEDURES_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
 ;
 
 showRestFunctionsStatement:
     SHOW_SYMBOL REST_SYMBOL FUNCTIONS_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
-    )?
+    )? formatClause?
+;
+
+// The SCRIPT objects ALTER REST CONTENT SET ... LOAD SCRIPTS registers
+showRestScriptsStatement:
+    SHOW_SYMBOL REST_SYMBOL SCRIPTS_SYMBOL (
+        (ON_SYMBOL | FROM_SYMBOL) serviceSchemaSelector
+    )? formatClause?
 ;
 
 showRestContentSetsStatement:
     SHOW_SYMBOL REST_SYMBOL CONTENT_SYMBOL SETS_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )?
+    )? formatClause?
 ;
 
 showRestContentFilesStatement:
     SHOW_SYMBOL REST_SYMBOL CONTENT_SYMBOL FILES_SYMBOL (
         ON_SYMBOL
         | FROM_SYMBOL
-    ) (SERVICE_SYMBOL? serviceRequestPath)? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath
+    ) (SERVICE_SYMBOL? serviceRequestPath)? CONTENT_SYMBOL SET_SYMBOL contentSetRequestPath formatClause?
 ;
 
 showRestAuthAppsStatement:
     SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL APPS_SYMBOL (
-        (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )?
+        (ON_SYMBOL | FROM_SYMBOL) (
+            ANY_SYMBOL SERVICE_SYMBOL
+            | SERVICE_SYMBOL? serviceRequestPath
+        )
+    )? formatClause?
 ;
 
 showRestAuthVendorsStatement:
-    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL
+    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL formatClause?
 ;
 
 showRestUsersStatement:
     SHOW_SYMBOL REST_SYMBOL USERS_SYMBOL (
         (ON_SYMBOL | FROM_SYMBOL) SERVICE_SYMBOL? serviceRequestPath
-    )? (FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName)?
+    )? (FOR_SYMBOL AUTH_SYMBOL APP_SYMBOL authAppName)? formatClause?
 ;
 
 showRestColumnsStatement:
@@ -854,7 +865,7 @@ showRestRolesStatement:
             ANY_SYMBOL SERVICE_SYMBOL
             | SERVICE_SYMBOL? serviceRequestPath
         )
-    )? (FOR_SYMBOL userName? AT_SIGN_SYMBOL authAppName)?
+    )? (FOR_SYMBOL userName? AT_SIGN_SYMBOL authAppName)? formatClause?
 ;
 
 showRestGrantsStatement:

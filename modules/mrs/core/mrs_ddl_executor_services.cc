@@ -26,6 +26,7 @@
 // The REST SERVICE statements: CREATE, ALTER, DROP, CLONE, SHOW and SHOW
 // CREATE.
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "modules/mrs/core/mrs_ddl_executor.h"
@@ -216,6 +217,21 @@ void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) 
     services = metadata::get_services(m_session);
   }
 
+  if (s.format == Output_format::json) {
+    std::stable_sort(services.begin(), services.end(),
+                     [](const metadata::Service &a, const metadata::Service &b) {
+                       return a.full_service_path < b.full_service_path;
+                     });
+    json::Value::Array docs;
+    for (const auto &service : services) {
+      auto doc = metadata::service_json(m_session, service, false);
+      doc.set("is_current", m_state->current_service_id == service.id);
+      docs.push_back(std::move(doc));
+    }
+    r->set_json("REST SERVICES", json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
   r->columns = {"REST SERVICE Path", "enabled", "current", "auth_apps"};
   for (const auto &service : services) {
     std::string auth_apps;
@@ -238,8 +254,7 @@ void Ddl_executor::do_execute(const Show_rest_daemons &s, Statement_result *r) {
   if (s.format == Output_format::json) {
     json::Value::Array docs;
     for (const auto &daemon : daemons) docs.push_back(metadata::daemon_json(daemon));
-    r->columns = {"REST DAEMONS"};
-    r->add_row().emplace_back(json::Value(std::move(docs)).dump(true));
+    r->set_json("REST DAEMONS", json::Value(std::move(docs)).dump(true));
     return;
   }
 

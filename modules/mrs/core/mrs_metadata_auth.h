@@ -61,6 +61,7 @@ struct Auth_vendor {
   std::string name;
   bool enabled = true;
   std::optional<std::string> comments;
+  std::optional<std::string> validation_url;
 
   // Every vendor other than MRS and MariaDB Internal is an OAuth2 vendor
   // that needs an URL, an app id and an app secret.

@@ -242,11 +242,23 @@ void Ddl_executor::do_execute(const Drop_rest_auth_app &s, Statement_result *r) 
 void Ddl_executor::do_execute(const Show_rest_auth_apps &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST auth apps.");
 
-  // Without a service, all auth apps are listed
-  const auto service_id = resolve_service(s.service);
+  // Without a service (given or current), and ON ANY SERVICE, all auth apps
+  // are listed
+  std::optional<Id> service_id;
+  if (!s.any_service) service_id = resolve_service(s.service);
+  const auto auth_apps = metadata::get_auth_apps(m_session, service_id);
+
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &auth_app : auth_apps) {
+      docs.push_back(metadata::auth_app_json(m_session, auth_app));
+    }
+    r->set_json("REST AUTH APPS", json::Value(std::move(docs)).dump(true));
+    return;
+  }
 
   r->columns = {"REST AUTH APP name", "vendor", "comments", "enabled"};
-  for (const auto &auth_app : metadata::get_auth_apps(m_session, service_id)) {
+  for (const auto &auth_app : auth_apps) {
     auto &row = r->add_row();
     row.emplace_back(auth_app.name);
     row.emplace_back(auth_app.auth_vendor);
@@ -255,12 +267,20 @@ void Ddl_executor::do_execute(const Show_rest_auth_apps &s, Statement_result *r)
   }
 }
 
-void Ddl_executor::do_execute(const Show_rest_auth_vendors &,
+void Ddl_executor::do_execute(const Show_rest_auth_vendors &s,
                               Statement_result *r) {
   set_failure_context("Cannot SHOW the REST auth vendors.");
 
+  const auto vendors = metadata::get_auth_vendors(m_session);
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &vendor : vendors) docs.push_back(metadata::auth_vendor_json(vendor));
+    r->set_json("REST AUTH VENDORS", json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
   r->columns = {"REST AUTH VENDOR name", "comments", "enabled"};
-  for (const auto &vendor : metadata::get_auth_vendors(m_session)) {
+  for (const auto &vendor : vendors) {
     auto &row = r->add_row();
     row.emplace_back(vendor.name);
     row.push_back(text_or_null(vendor.comments));
@@ -307,10 +327,17 @@ void Ddl_executor::do_execute(const Show_rest_users &s, Statement_result *r) {
     service_id = resolve_service(s.service);
   }
 
+  const auto users = metadata::get_users(m_session, service_id, auth_app_id);
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &user : users) docs.push_back(metadata::user_json(m_session, user));
+    r->set_json("REST USERS", json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
   r->columns = {"REST USER name", "auth_app",       "email",
                 "vendor_user_id", "mapped_user_id", "login_permitted"};
-  for (const auto &user :
-       metadata::get_users(m_session, service_id, auth_app_id)) {
+  for (const auto &user : users) {
     auto &row = r->add_row();
     row.emplace_back(user.name);
     row.emplace_back(user.auth_app_name);
@@ -538,6 +565,13 @@ void Ddl_executor::do_execute(const Show_rest_roles &s, Statement_result *r) {
   }
   r->columns = {first_column, "derived_from_role", "description", "options"};
 
+  // FORMAT=JSON: the SHOW CREATE REST ROLE documents of the same roles
+  const bool json = s.format == Output_format::json;
+  json::Value::Array docs;
+  const auto finish_json = [&] {
+    r->set_json("REST ROLES", json::Value(std::move(docs)).dump(true));
+  };
+
   const auto add_role_row = [r](const metadata::Role &role) -> std::vector<Db_value> & {
     auto &row = r->add_row();
     row.emplace_back(role.caption);
@@ -559,9 +593,14 @@ void Ddl_executor::do_execute(const Show_rest_roles &s, Statement_result *r) {
     }
     r->add_column("comments");
     for (const auto &user_role : metadata::get_user_roles(m_session, user->id)) {
+      if (json) {
+        docs.push_back(metadata::role_json(m_session, user_role.role));
+        continue;
+      }
       auto &row = add_role_row(user_role.role);
       row.push_back(text_or_empty(user_role.comments));
     }
+    if (json) finish_json();
     return;
   }
 
@@ -573,19 +612,29 @@ void Ddl_executor::do_execute(const Show_rest_roles &s, Statement_result *r) {
     r->add_column("users");
     for (const auto &granted : metadata::get_granted_roles(
              m_session, service_id, s.user, s.auth_app, true)) {
+      if (json) {
+        docs.push_back(metadata::role_json(m_session, granted.role));
+        continue;
+      }
       auto &row = add_role_row(granted.role);
       row.emplace_back(granted.role.specific_to_service_request_path);
       if (for_user) row.emplace_back("");
       row.push_back(text_or_empty(granted.users));
     }
+    if (json) finish_json();
     return;
   }
 
   r->add_column("specific_to_service");
   for (const auto &role : metadata::get_roles(m_session, service_id, true)) {
+    if (json) {
+      docs.push_back(metadata::role_json(m_session, role));
+      continue;
+    }
     auto &row = add_role_row(role);
     row.emplace_back(role.specific_to_service_request_path);
   }
+  if (json) finish_json();
 }
 
 void Ddl_executor::do_execute(const Show_create_rest_role &s,

@@ -55,6 +55,8 @@ std::string kind_caption(Rest_object_kind kind) {
       return "PROCEDURE";
     case Rest_object_kind::function:
       return "FUNCTION";
+    case Rest_object_kind::script:
+      return "SCRIPT";
     case Rest_object_kind::view:
       break;
   }
@@ -68,6 +70,8 @@ std::vector<std::string> object_types_of(Rest_object_kind kind) {
       return {"PROCEDURE"};
     case Rest_object_kind::function:
       return {"FUNCTION"};
+    case Rest_object_kind::script:
+      return {"SCRIPT"};
     case Rest_object_kind::view:
       break;
   }
@@ -931,10 +935,21 @@ void Ddl_executor::do_execute(const Show_rest_objects &s, Statement_result *r) {
   set_failure_context("Cannot SHOW the REST db objects.");
 
   const auto schema = rest_object_schema(s.on);
+  const auto rest_objects =
+      metadata::get_rest_objects(m_session, schema.id, object_types_of(s.kind));
+
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &rest_object : rest_objects) {
+      docs.push_back(metadata::rest_object_json(m_session, rest_object, false));
+    }
+    r->set_json("REST " + kind_caption(s.kind) + "S",
+                json::Value(std::move(docs)).dump(true));
+    return;
+  }
 
   r->columns = {"REST DB Object", "enabled"};
-  for (const auto &rest_object :
-       metadata::get_rest_objects(m_session, schema.id, object_types_of(s.kind))) {
+  for (const auto &rest_object : rest_objects) {
     auto &row = r->add_row();
     row.emplace_back(rest_object.request_path);
     row.emplace_back(metadata::enabled_caption(rest_object.enabled));

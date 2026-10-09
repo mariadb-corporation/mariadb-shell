@@ -154,9 +154,19 @@ void Ddl_executor::do_execute(const Show_rest_content_sets &s,
   set_failure_context("Cannot SHOW the REST CONTENT SETs.");
 
   const auto service_id = require_service(s.service);
+  const auto content_sets = metadata::get_content_sets(m_session, service_id);
+
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &content_set : content_sets) {
+      docs.push_back(metadata::content_set_json(content_set));
+    }
+    r->set_json("REST CONTENT SETS", json::Value(std::move(docs)).dump(true));
+    return;
+  }
 
   r->columns = {"REST CONTENT SET path", "enabled"};
-  for (const auto &content_set : metadata::get_content_sets(m_session, service_id)) {
+  for (const auto &content_set : content_sets) {
     auto &row = r->add_row();
     row.emplace_back(content_set.request_path);
     row.emplace_back(metadata::enabled_caption(content_set.enabled));
@@ -283,9 +293,17 @@ void Ddl_executor::do_execute(const Show_rest_content_files &s,
                              "` could not be found.");
   }
 
+  const auto files = metadata::get_content_files(m_session, content_set->id, false);
+
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &file : files) docs.push_back(metadata::content_file_json(file));
+    r->set_json("REST CONTENT FILES", json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
   r->columns = {"REST CONTENT FILE path", "size", "enabled"};
-  for (const auto &file :
-       metadata::get_content_files(m_session, content_set->id, false)) {
+  for (const auto &file : files) {
     auto &row = r->add_row();
     row.emplace_back(file.request_path);
     row.emplace_back(file.size);

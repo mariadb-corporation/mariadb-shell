@@ -139,6 +139,15 @@ void Ddl_executor::do_execute(const Show_rest_schemas &s, Statement_result *r) {
 
   const auto service_id = require_service(s.service);
 
+  if (s.format == Output_format::json) {
+    json::Value::Array docs;
+    for (const auto &schema : metadata::get_schemas(m_session, service_id)) {
+      docs.push_back(metadata::schema_json(schema));
+    }
+    r->set_json("REST SCHEMAS", json::Value(std::move(docs)).dump(true));
+    return;
+  }
+
   r->columns = {"REST schema path", "enabled"};
   for (const auto &schema : metadata::get_schemas(m_session, service_id)) {
     auto &row = r->add_row();

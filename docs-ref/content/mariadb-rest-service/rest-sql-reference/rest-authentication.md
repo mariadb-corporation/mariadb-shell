@@ -202,15 +202,18 @@ DROP REST AUTH APP IF EXISTS "MRS";
 
 ## SHOW REST AUTH APPS
 
-The `SHOW REST AUTH APPS` statement lists all REST auth apps of the given or the current REST service.
+The `SHOW REST AUTH APPS` statement lists all REST auth apps of the given or the current REST service. Without a service and without a current REST service, and with `ON ANY SERVICE`, it lists every REST auth app, whatever REST service is current.
 
 ### Syntax
 
 ```antlr
 showRestAuthAppsStatement:
     SHOW REST AUTH APPS (
-        (ON | FROM) SERVICE? serviceRequestPath
-    )?
+        (ON | FROM) (
+            ANY SERVICE
+            | SERVICE? serviceRequestPath
+        )
+    )? formatClause?
 ;
 ```
 
@@ -218,12 +221,20 @@ showRestAuthAppsStatement:
 
 ![Railroad diagram of showRestAuthAppsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthAppsStatement.svg)
 
+With `FORMAT=JSON`, the result is one JSON array of the REST auth apps, each with the services it is linked to; see [Lists in JSON](rest-metadata.md#lists-in-json).
+
 ### Examples
 
 The following example lists all REST auth apps of the given REST service.
 
 ```sql
 SHOW REST AUTH APPS FROM SERVICE /myService;
+```
+
+The following example lists every REST auth app as a JSON array.
+
+```sql
+SHOW REST AUTH APPS ON ANY SERVICE FORMAT=JSON;
 ```
 
 ## SHOW REST AUTH VENDORS
@@ -234,13 +245,15 @@ The `SHOW REST AUTH VENDORS` statement lists the vendors a REST auth app can be 
 
 ```antlr
 showRestAuthVendorsStatement:
-    SHOW REST AUTH VENDORS
+    SHOW REST AUTH VENDORS formatClause?
 ;
 ```
 
 `showRestAuthVendorsStatement ::=`
 
 ![Railroad diagram of showRestAuthVendorsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthVendorsStatement.svg)
+
+With `FORMAT=JSON`, the result is one JSON array of the auth vendors; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
 ### Examples
 

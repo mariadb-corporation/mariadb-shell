@@ -274,6 +274,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <Statement> show_rest_views_statement
 %nterm <Statement> show_rest_procedures_statement
 %nterm <Statement> show_rest_functions_statement
+%nterm <Statement> show_rest_scripts_statement
 %nterm <Statement> show_rest_content_sets_statement
 %nterm <Statement> show_rest_content_files_statement
 %nterm <Statement> show_rest_auth_apps_statement
@@ -464,6 +465,7 @@ mrs_statement:
   | show_rest_views_statement { $$ = std::move($1); }
   | show_rest_procedures_statement { $$ = std::move($1); }
   | show_rest_functions_statement { $$ = std::move($1); }
+  | show_rest_scripts_statement { $$ = std::move($1); }
   | show_rest_content_sets_statement { $$ = std::move($1); }
   | show_rest_content_files_statement { $$ = std::move($1); }
   | show_rest_auth_apps_statement { $$ = std::move($1); }
@@ -1611,15 +1613,19 @@ show_rest_metadata_status_statement:
   ;
 
 show_rest_metadata_schemas_statement:
-    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL
-    { $$ = make_statement(Show_rest_metadata_schemas{}, @1); }
+    SHOW_SYMBOL REST_SYMBOL METADATA_SYMBOL DATABASES_SYMBOL opt_output_format
+    { $$ = make_statement(Show_rest_metadata_schemas{$5}, @1); }
   ;
 
 show_rest_services_statement:
-    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL opt_for_auth_app
-    { $$ = make_statement(Show_rest_services{std::move($4), std::nullopt}, @1); }
+    SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL opt_for_auth_app opt_output_format
+    {
+      $$ = make_statement(Show_rest_services{std::move($4), std::nullopt, $5},
+                          @1);
+    }
   | SHOW_SYMBOL REST_SYMBOL SERVICES_SYMBOL FOR_SYMBOL DAEMON_SYMBOL daemon_id
-    { $$ = make_statement(Show_rest_services{std::nullopt, $6}, @1); }
+    opt_output_format
+    { $$ = make_statement(Show_rest_services{std::nullopt, $6, $7}, @1); }
   ;
 
 show_rest_daemons_statement:
@@ -1642,46 +1648,60 @@ opt_for_auth_app:
   ;
 
 show_rest_schemas_statement:
-    SHOW_SYMBOL REST_SYMBOL DATABASES_SYMBOL opt_on_from_service
-    { $$ = make_statement(Show_rest_schemas{std::move($4)}, @1); }
+    SHOW_SYMBOL REST_SYMBOL DATABASES_SYMBOL opt_on_from_service opt_output_format
+    { $$ = make_statement(Show_rest_schemas{std::move($4), $5}, @1); }
   ;
 
 show_rest_views_statement:
     SHOW_SYMBOL REST_SYMBOL opt_data_mapping VIEWS_SYMBOL
-    opt_on_from_service_schema_selector
+    opt_on_from_service_schema_selector opt_output_format
     {
       $$ = make_statement(
-          Show_rest_objects{Rest_object_kind::view, std::move($5)}, @1);
+          Show_rest_objects{Rest_object_kind::view, std::move($5), $6}, @1);
     }
   ;
 
 show_rest_procedures_statement:
     SHOW_SYMBOL REST_SYMBOL PROCEDURES_SYMBOL opt_on_from_service_schema_selector
+    opt_output_format
     {
       $$ = make_statement(
-          Show_rest_objects{Rest_object_kind::procedure, std::move($4)}, @1);
+          Show_rest_objects{Rest_object_kind::procedure, std::move($4), $5}, @1);
     }
   ;
 
 show_rest_functions_statement:
     SHOW_SYMBOL REST_SYMBOL FUNCTIONS_SYMBOL opt_on_from_service_schema_selector
+    opt_output_format
     {
       $$ = make_statement(
-          Show_rest_objects{Rest_object_kind::function, std::move($4)}, @1);
+          Show_rest_objects{Rest_object_kind::function, std::move($4), $5}, @1);
+    }
+  ;
+
+/* The SCRIPT objects ALTER REST CONTENT SET ... LOAD SCRIPTS registers */
+show_rest_scripts_statement:
+    SHOW_SYMBOL REST_SYMBOL SCRIPTS_SYMBOL opt_on_from_service_schema_selector
+    opt_output_format
+    {
+      $$ = make_statement(
+          Show_rest_objects{Rest_object_kind::script, std::move($4), $5}, @1);
     }
   ;
 
 show_rest_content_sets_statement:
     SHOW_SYMBOL REST_SYMBOL CONTENT_SYMBOL SETS_SYMBOL opt_on_from_service
-    { $$ = make_statement(Show_rest_content_sets{std::move($5)}, @1); }
+    opt_output_format
+    { $$ = make_statement(Show_rest_content_sets{std::move($5), $6}, @1); }
   ;
 
 show_rest_content_files_statement:
     SHOW_SYMBOL REST_SYMBOL CONTENT_SYMBOL FILES_SYMBOL on_or_from
     opt_service_request_path CONTENT_SYMBOL SET_SYMBOL content_set_request_path
+    opt_output_format
     {
       $$ = make_statement(
-          Show_rest_content_files{std::move($6), std::move($9)}, @1);
+          Show_rest_content_files{std::move($6), std::move($9), $10}, @1);
     }
   ;
 
@@ -1691,19 +1711,30 @@ on_or_from:
   ;
 
 show_rest_auth_apps_statement:
-    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL APPS_SYMBOL opt_on_from_service
-    { $$ = make_statement(Show_rest_auth_apps{std::move($5)}, @1); }
+    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL APPS_SYMBOL opt_on_from_role_service
+    opt_output_format
+    {
+      Show_rest_auth_apps s;
+      if ($5) {
+        s.any_service = $5->any_service;
+        s.service = std::move($5->service);
+      }
+      s.format = $6;
+      $$ = make_statement(std::move(s), @1);
+    }
   ;
 
 show_rest_auth_vendors_statement:
-    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL
-    { $$ = make_statement(Show_rest_auth_vendors{}, @1); }
+    SHOW_SYMBOL REST_SYMBOL AUTH_SYMBOL VENDORS_SYMBOL opt_output_format
+    { $$ = make_statement(Show_rest_auth_vendors{$5}, @1); }
   ;
 
 show_rest_users_statement:
     SHOW_SYMBOL REST_SYMBOL USERS_SYMBOL opt_on_from_service opt_for_auth_app
+    opt_output_format
     {
-      $$ = make_statement(Show_rest_users{std::move($4), std::move($5)}, @1);
+      $$ = make_statement(
+          Show_rest_users{std::move($4), std::move($5), $6}, @1);
     }
   ;
 
@@ -1734,26 +1765,30 @@ opt_columns_source:
 
 show_rest_roles_statement:
     SHOW_SYMBOL REST_SYMBOL ROLES_SYMBOL opt_on_from_role_service
+    opt_output_format
     {
       Show_rest_roles s;
       s.on = std::move($4);
+      s.format = $5;
       $$ = make_statement(std::move(s), @1);
     }
   | SHOW_SYMBOL REST_SYMBOL ROLES_SYMBOL opt_on_from_role_service FOR_SYMBOL
-    AT_SIGN_SYMBOL auth_app_name
+    AT_SIGN_SYMBOL auth_app_name opt_output_format
     {
       Show_rest_roles s;
       s.on = std::move($4);
       s.auth_app = std::move($7);
+      s.format = $8;
       $$ = make_statement(std::move(s), @1);
     }
   | SHOW_SYMBOL REST_SYMBOL ROLES_SYMBOL opt_on_from_role_service FOR_SYMBOL
-    user_name AT_SIGN_SYMBOL auth_app_name
+    user_name AT_SIGN_SYMBOL auth_app_name opt_output_format
     {
       Show_rest_roles s;
       s.on = std::move($4);
       s.user = std::move($6);
       s.auth_app = std::move($8);
+      s.format = $9;
       $$ = make_statement(std::move(s), @1);
     }
   ;
