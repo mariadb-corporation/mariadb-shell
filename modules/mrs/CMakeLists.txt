@@ -108,11 +108,20 @@ set(mrs_core_SOURCES
 )
 
 add_convenience_library(mrs_core ${mrs_core_SOURCES})
-target_include_directories(mrs_core PUBLIC "${MRS_GENERATED_DIR}")
+
+# Except on APPLE, the sources are compiled in the mrs_core_objlib target,
+# so that is where their include directories have to go
+if(APPLE)
+  set(mrs_core_compile_target mrs_core)
+else()
+  set(mrs_core_compile_target mrs_core_objlib)
+endif()
+
+target_include_directories(${mrs_core_compile_target} PRIVATE "${MRS_GENERATED_DIR}")
 
 # The password hashing of REST users uses OpenSSL (the shell's bundled or
 # system one; a server plugin has the server's)
 if(OPENSSL_INCLUDE_DIR)
-  target_include_directories(mrs_core SYSTEM PRIVATE "${OPENSSL_INCLUDE_DIR}")
+  target_include_directories(${mrs_core_compile_target} SYSTEM PRIVATE "${OPENSSL_INCLUDE_DIR}")
 endif()
 target_link_libraries(mrs_core ${SSL_LIBRARIES})
