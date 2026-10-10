@@ -37,6 +37,12 @@
 
 extern "C" const char *g_test_home;
 
+// parse_as() returns a reference to a static, which GCC 13+ cannot tell
+// from a reference into its temporary arguments
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13
+#pragma GCC diagnostic ignored "-Wdangling-reference"
+#endif
+
 namespace mrs {
 
 using namespace ast;
@@ -63,8 +69,12 @@ void expect_parse_error(const std::string &sql, const std::string &message,
   } catch (const Parse_error &e) {
     EXPECT_NE(std::string::npos, std::string(e.what()).find(message))
         << sql << "\n" << e.what();
-    if (line >= 0) EXPECT_EQ(line, e.line()) << sql;
-    if (column >= 0) EXPECT_EQ(column, e.column()) << sql;
+    if (line >= 0) {
+      EXPECT_EQ(line, e.line()) << sql;
+    }
+    if (column >= 0) {
+      EXPECT_EQ(column, e.column()) << sql;
+    }
   }
 }
 
