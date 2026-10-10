@@ -130,8 +130,9 @@ class Value {
 // A statement text with ? placeholders and the values that go there.
 struct Statement {
   Statement() = default;
-  Statement(std::string text, std::vector<Value> params = {})
-      : text(std::move(text)), params(std::move(params)) {}
+  Statement(std::string statement_text,
+            std::vector<Value> statement_params = {})
+      : text(std::move(statement_text)), params(std::move(statement_params)) {}
 
   // The text with every placeholder replaced by its value. A ? inside a
   // quoted string, a quoted identifier or a comment is not a placeholder.
