@@ -176,10 +176,8 @@ std::string mapping_options(const Crud_annotations &crud) {
 // enables, renames and annotates them.
 class Mapping_builder {
  public:
-  Mapping_builder(Db_session *session, Id rest_object_id, std::string schema_name,
-                  std::string name)
+  Mapping_builder(Db_session *session, std::string schema_name, std::string name)
       : m_session(session),
-        m_rest_object_id(std::move(rest_object_id)),
         m_schema_name(std::move(schema_name)),
         m_name(std::move(name)) {}
 
@@ -528,7 +526,6 @@ class Mapping_builder {
   }
 
   Db_session *m_session;
-  Id m_rest_object_id;
   std::string m_schema_name;
   std::string m_name;
 };
@@ -719,7 +716,7 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
   }
 
   const Id id = metadata::new_id(m_session);
-  Mapping_builder builder(m_session, id, schema_name, name);
+  Mapping_builder builder(m_session, schema_name, name);
   std::vector<Data_mapping> objects{
       builder.view_object(s.class_name, s.crud, s.mapping)};
   assign_object_names(m_session, schema.id, full_path, false, &objects);
@@ -764,7 +761,7 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   }
 
   const Id id = metadata::new_id(m_session);
-  Mapping_builder builder(m_session, id, schema_name, name);
+  Mapping_builder builder(m_session, schema_name, name);
   auto objects = builder.routine_objects(s.kind, type, s.parameters,
                                          s.results, s.force);
   assign_object_names(m_session, schema.id, full_path, true, &objects);
@@ -809,8 +806,7 @@ void Ddl_executor::do_execute(const Alter_rest_view &s, Statement_result *r) {
   if (s.class_def) {
     if (s.class_def->mapping) {
       // A new mapping replaces the whole data mapping
-      Mapping_builder builder(m_session, rest_object->id, rest_object->schema_name,
-                              rest_object->name);
+      Mapping_builder builder(m_session, rest_object->schema_name, rest_object->name);
       objects = {builder.view_object(s.class_def->name, s.class_def->crud,
                                      s.class_def->mapping)};
       new_mapping = true;
@@ -877,8 +873,7 @@ void Ddl_executor::do_execute(const Alter_rest_routine &s, Statement_result *r) 
   const bool new_mapping = s.parameters || !s.results.empty();
   std::vector<Data_mapping> objects;
   if (new_mapping) {
-    Mapping_builder builder(m_session, rest_object->id, rest_object->schema_name,
-                            rest_object->name);
+    Mapping_builder builder(m_session, rest_object->schema_name, rest_object->name);
     objects = builder.routine_objects(s.kind, type, s.parameters, s.results,
                                       false);
     changes.crud_operations = metadata::calculate_crud_operations(type, objects);

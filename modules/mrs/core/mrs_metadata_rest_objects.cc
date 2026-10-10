@@ -551,8 +551,8 @@ Id add_rest_object(Db_session *session, const Rest_object_definition &definition
   if (std::find(k_types.begin(), k_types.end(), definition.object_type) ==
       k_types.end()) {
     throw std::runtime_error(
-        "Invalid rest_object_type. Only valid types are TABLE, VIEW, PROCEDURE "
-        "and FUNCTION.");
+        "Invalid rest_object_type. Only valid types are TABLE, VIEW, PROCEDURE, "
+        "FUNCTION and SCRIPT.");
   }
 
   const Id id = definition.id ? *definition.id : new_id(session);

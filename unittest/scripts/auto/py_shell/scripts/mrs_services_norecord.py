@@ -332,11 +332,14 @@ EXPECT_EQ("Now using REST SCHEMA `/sakila` on REST SERVICE `/full`.", rest_info(
 rest("USE REST SERVICE /myService")
 
 #@<> SHOW REST SERVICES FORMAT=JSON
-res = rest("SHOW REST SERVICES FORMAT=JSON")
-EXPECT_EQ(["REST SERVICES"], res.get_column_names())
-rows = res.fetch_all()
-EXPECT_EQ(1, len(rows))
-docs = json.loads(rows[0][0])
+def json_list(sql, column):
+    res = rest(sql)
+    EXPECT_EQ([column], res.get_column_names())
+    rows = res.fetch_all()
+    EXPECT_EQ(1, len(rows))
+    return json.loads(rows[0][0])
+
+docs = json_list("SHOW REST SERVICES FORMAT=JSON", "REST SERVICES")
 EXPECT_EQ(list, type(docs))
 traditional = rest_rows("SHOW REST SERVICES")
 EXPECT_EQ(sorted(r[0] for r in traditional), [d["full_service_path"] for d in docs])
@@ -355,19 +358,15 @@ EXPECT_EQ(["REST SERVICE Path", "enabled", "current", "auth_apps"], rest("SHOW R
 EXPECT_EQ(traditional, rest_rows("SHOW REST SERVICES FORMAT=TRADITIONAL"))
 
 #@<> SHOW REST SCHEMAS FORMAT=JSON
-res = rest("SHOW REST SCHEMAS FROM SERVICE /full FORMAT=JSON")
-EXPECT_EQ(["REST SCHEMAS"], res.get_column_names())
-docs = json.loads(res.fetch_one()[0])
+docs = json_list("SHOW REST SCHEMAS FROM SERVICE /full FORMAT=JSON", "REST SCHEMAS")
 EXPECT_EQ([json.loads(rest("SHOW CREATE REST SCHEMA /sakila ON SERVICE /full FORMAT=JSON").fetch_one()[0])], docs)
 EXPECT_EQ("DATABASE_SCHEMA", docs[0]["schema_type"])
 # The current service is the default
-EXPECT_EQ(["/sakila"], [d["request_path"] for d in json.loads(rest("SHOW REST SCHEMAS FORMAT=JSON").fetch_one()[0])])
+EXPECT_EQ(["/sakila"], [d["request_path"] for d in json_list("SHOW REST SCHEMAS FORMAT=JSON", "REST SCHEMAS")])
 EXPECT_EQ([["/sakila", "PRIVATE"]], rest_rows("SHOW REST SCHEMAS FORMAT=TRADITIONAL"))
 # An empty list is one row holding []
 rest("CREATE REST SERVICE /empty")
-res = rest("SHOW REST SCHEMAS ON /empty FORMAT=JSON")
-EXPECT_EQ(["REST SCHEMAS"], res.get_column_names())
-EXPECT_EQ([["[]"]], [list(r) for r in res.fetch_all()])
+EXPECT_EQ([], json_list("SHOW REST SCHEMAS ON /empty FORMAT=JSON", "REST SCHEMAS"))
 rest("DROP REST SERVICE /empty")
 
 #@<> ALTER REST SCHEMA
@@ -452,7 +451,7 @@ for daemon_id in daemon_ids:
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON '%s'" % missing), "Cannot SHOW the REST services. The given REST DAEMON `%s` could not be found." % missing)
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES FOR DAEMON 999"), "Syntax Error")
 for daemon_id in daemon_ids:
-    docs = json.loads(rest("SHOW REST SERVICES FOR DAEMON '%s' FORMAT=JSON" % daemon_id).fetch_one()[0])
+    docs = json_list("SHOW REST SERVICES FOR DAEMON '%s' FORMAT=JSON" % daemon_id, "REST SERVICES")
     EXPECT_EQ(sorted(r[0] for r in rest_rows("SHOW REST SERVICES FOR DAEMON '%s'" % daemon_id)), [d["full_service_path"] for d in docs])
 
 #@<> The status cleanup aggregates the reports of the daemons of each version
