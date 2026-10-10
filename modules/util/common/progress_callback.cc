@@ -36,24 +36,6 @@
 namespace mysqlsh {
 namespace common {
 
-namespace {
-
-/**
- * A line as the callback gets it: without the line break the console would
- * have added or the text carries at its end.
- */
-std::string trimmed(const std::string &text) {
-  auto end = text.size();
-
-  while (end > 0 && (text[end - 1] == '\n' || text[end - 1] == '\r')) {
-    --end;
-  }
-
-  return text.substr(0, end);
-}
-
-}  // namespace
-
 Progress_callback_console::Progress_callback_console(
     shcore::Function_base_ref callback, std::shared_ptr<IConsole> console,
     std::shared_ptr<shcore::Interrupts> interrupts)
@@ -91,7 +73,7 @@ void Progress_callback_console::message(const char *level,
                                         const std::string &text) const {
   emit(shcore::make_dict("type", shcore::Value("message"), "level",
                          shcore::Value(level), "text",
-                         shcore::Value(trimmed(text))));
+                         shcore::Value(shcore::str_rstrip(text, "\r\n"))));
 }
 
 void Progress_callback_console::raw_print(const std::string &text,

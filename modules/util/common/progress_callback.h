@@ -84,11 +84,6 @@ class Progress_callback_console final : public IConsole {
    */
   void emit(const shcore::Dictionary_t &event) const;
 
-  /**
-   * Whether the callback asked for the utility to stop.
-   */
-  bool cancelled() const noexcept { return m_cancelled; }
-
   bool use_json() const override { return false; }
 
   void raw_print(const std::string &text, Output_stream stream,
