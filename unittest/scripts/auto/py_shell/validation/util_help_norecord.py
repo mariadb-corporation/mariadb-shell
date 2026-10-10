@@ -24,18 +24,20 @@ FUNCTIONS
 ?{}
       copy_instance(connectionData[, options])
             Copies a source instance to the target instance. Requires an open
-            global Shell session to the source instance, if there is none, an
-            exception is raised.
+            global Shell session to the source instance, or one given in the
+            'session' option, if there is none, an exception is raised.
 
       copy_schemas(schemas, connectionData[, options])
             Copies schemas from the source instance to the target instance.
-            Requires an open global Shell session to the source instance, if
-            there is none, an exception is raised.
+            Requires an open global Shell session to the source instance, or
+            one given in the 'session' option, if there is none, an exception
+            is raised.
 
       copy_tables(schema, tables, connectionData[, options])
             Copies tables and views from schema in the source instance to the
             target instance. Requires an open global Shell session to the
-            source instance, if there is none, an exception is raised.
+            source instance, or one given in the 'session' option, if there is
+            none, an exception is raised.
 
 ?{__have_binlog_utils}
       dump_binlogs(outputUrl[, options])
@@ -193,8 +195,9 @@ DESCRIPTION
 #@<OUT> util copy_instance help
 NAME
       copy_instance - Copies a source instance to the target instance. Requires
-                      an open global Shell session to the source instance, if
-                      there is none, an exception is raised.
+                      an open global Shell session to the source instance, or
+                      one given in the 'session' option, if there is none, an
+                      exception is raised.
 
 SYNTAX
       util.copy_instance(connectionData[, options])
@@ -313,6 +316,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable copy progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
       - allowDataMasking: bool (default: false) - Allows to copy data with
@@ -368,7 +385,8 @@ DESCRIPTION
 NAME
       copy_schemas - Copies schemas from the source instance to the target
                      instance. Requires an open global Shell session to the
-                     source instance, if there is none, an exception is raised.
+                     source instance, or one given in the 'session' option, if
+                     there is none, an exception is raised.
 
 SYNTAX
       util.copy_schemas(schemas, connectionData[, options])
@@ -472,6 +490,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable copy progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
       - allowDataMasking: bool (default: false) - Allows to copy data with
@@ -527,8 +559,8 @@ DESCRIPTION
 NAME
       copy_tables - Copies tables and views from schema in the source instance
                     to the target instance. Requires an open global Shell
-                    session to the source instance, if there is none, an
-                    exception is raised.
+                    session to the source instance, or one given in the
+                    'session' option, if there is none, an exception is raised.
 
 SYNTAX
       util.copy_tables(schema, tables, connectionData[, options])
@@ -614,6 +646,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable copy progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the copy.
       - allowDataMasking: bool (default: false) - Allows to copy data with
@@ -933,6 +979,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable dump progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
       - allowDataMasking: bool (default: false) - Allows to dump data with
@@ -996,8 +1056,9 @@ DESCRIPTION
       Table data dumps are written to text files using the specified file
       format, optionally splitting them into multiple chunk files.
 
-      Requires an open, global Shell session, and uses its connection options,
-      such as compression, ssl-mode, etc., to establish additional connections.
+      Requires an open, global Shell session, or the one given in the 'session'
+      option, and uses its connection options, such as compression, ssl-mode,
+      etc., to establish additional connections.
 
       Data dumps cannot be created for the following tables:
 
@@ -1408,6 +1469,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable dump progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
       - allowDataMasking: bool (default: false) - Allows to dump data with
@@ -1471,8 +1546,9 @@ DESCRIPTION
       Table data dumps are written to text files using the specified file
       format, optionally splitting them into multiple chunk files.
 
-      Requires an open, global Shell session, and uses its connection options,
-      such as compression, ssl-mode, etc., to establish additional connections.
+      Requires an open, global Shell session, or the one given in the 'session'
+      option, and uses its connection options, such as compression, ssl-mode,
+      etc., to establish additional connections.
 
       Data dumps cannot be created for the following tables:
 
@@ -1854,6 +1930,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable dump progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
       - allowDataMasking: bool (default: false) - Allows to dump data with
@@ -1925,8 +2015,9 @@ DESCRIPTION
       Table data dumps are written to text files using the specified file
       format, optionally splitting them into multiple chunk files.
 
-      Requires an open, global Shell session, and uses its connection options,
-      such as compression, ssl-mode, etc., to establish additional connections.
+      Requires an open, global Shell session, or the one given in the 'session'
+      option, and uses its connection options, such as compression, ssl-mode,
+      etc., to establish additional connections.
 
       Options
 
@@ -2250,6 +2341,20 @@ DESCRIPTION
         no limit.
       - showProgress: bool (default: true if stdout is a TTY device, false
         otherwise) - Enable or disable dump progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - defaultCharacterSet: string (default: "utf8mb4") - Character set used
         for the dump.
       - allowDataMasking: bool (default: false) - Allows to dump data with
@@ -2306,8 +2411,9 @@ DESCRIPTION
 
       This operation writes table data dump to the specified by the user files.
 
-      Requires an open, global Shell session, and uses its connection options,
-      such as compression, ssl-mode, etc., to establish additional connections.
+      Requires an open, global Shell session, or the one given in the 'session'
+      option, and uses its connection options, such as compression, ssl-mode,
+      etc., to establish additional connections.
 
       Options
 
@@ -2506,6 +2612,20 @@ DESCRIPTION
         limit to 2 kilobytes per second.
       - showProgress: bool (default: true if stdout is a tty, false otherwise)
         - Enable or disable import progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - skipRows: int (default: 0) - Skip first N physical lines from each of
         the imported files. You can use this option to skip an initial header
         line containing column names.
@@ -2921,6 +3041,20 @@ DESCRIPTION
         stored in the dump files, i.e. binary log file name and position.
       - showProgress: bool (default: true if stdout is a tty, false otherwise)
         - Enable or disable import progress information.
+      - session: Session (default: the global Shell session) - The session to
+        run with, in place of the global one. Its connection options are used
+        to establish the additional connections. Not available on the command
+        line.
+      - progressCallback: function (default: not set) - Called with a
+        dictionary for every message the operation would print and for the
+        progress of each of its stages, in place of printing them: its type is
+        "message" (with level and text), "stageStarted" (with stage),
+        "progress" (with stage, current and total, plus throughput in items per
+        second, etaSeconds, items and totalIsApproximate for a stage that
+        measures throughput, or totalKnown for one that counts) or
+        "stageFinished" (with stage and seconds). Returning "cancel" or true
+        stops the operation as ^C does, also when it runs in a thread other
+        than the main one. Not available on the command line.
       - skipBinlog: bool (default: false) - Disables the binary log for the
         sessions used by the loader (set sql_log_bin=0).
       - threads: int (default: 4) - Number of threads to use to import table

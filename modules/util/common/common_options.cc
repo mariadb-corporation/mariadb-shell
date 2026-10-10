@@ -49,6 +49,13 @@ const shcore::Option_pack_def<Common_options> &Common_options::options() {
       shcore::Option_pack_def<Common_options>()
           .include<Storage_options>()
           .optional("showProgress", &Common_options::set_show_progress)
+          // objects, which a command line cannot give
+          .optional("session", &Common_options::m_given_session, "",
+                    shcore::Option_extract_mode::CASE_INSENSITIVE,
+                    shcore::Option_scope::CLI_DISABLED)
+          .optional("progressCallback", &Common_options::m_progress_callback,
+                    "", shcore::Option_extract_mode::CASE_INSENSITIVE,
+                    shcore::Option_scope::CLI_DISABLED)
           .on_log(&Common_options::on_log_options);
 
   return opts;
@@ -62,6 +69,19 @@ Common_options::Common_options(Config config)
 void Common_options::on_log_options(const std::string &msg) const {
   log_info("%s() options: %s", m_config.name,
            mysqlshdk::oci::mask_any_par(msg).c_str());
+}
+
+std::shared_ptr<mysqlshdk::db::ISession> Common_options::given_session() const {
+  if (!m_given_session) {
+    return nullptr;
+  }
+
+  if (!m_given_session->is_open()) {
+    throw std::invalid_argument(
+        "The session given in the 'session' option is not open.");
+  }
+
+  return m_given_session->get_core_session();
 }
 
 void Common_options::set_url(const std::string &url) {

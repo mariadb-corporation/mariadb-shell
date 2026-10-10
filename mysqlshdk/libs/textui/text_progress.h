@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -310,6 +311,13 @@ class Base_progress : public IProgress {
                      const char *item_singular, const char *item_plural,
                      bool space_before_item = true,
                      bool total_is_approx = false);
+
+  /**
+   * The values a progress callback is given for a throughput stage: the work
+   * done, the total, the throughput in items per second, the estimated seconds
+   * left, and what an item is.
+   */
+  shcore::Dictionary_t snapshot() const;
 
  protected:
   /**

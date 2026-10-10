@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -124,6 +125,13 @@ class Numeric_progress : public Spinner_progress {
 
     m_spinner.set_right_label(m_label);
 
+    {
+      std::lock_guard lock{m_values_mutex};
+      m_current = current;
+      m_total = total;
+      m_total_known = total_ready;
+    }
+
     if (m_spinner.uses_json_output()) {
       auto progress_update = shcore::make_dict();
       progress_update->emplace("current", current);
@@ -136,6 +144,13 @@ class Numeric_progress : public Spinner_progress {
     }
 
     return total_ready && current >= total;
+  }
+
+  shcore::Dictionary_t progress() const override {
+    std::lock_guard lock{m_values_mutex};
+    return shcore::make_dict("current", shcore::Value(m_current), "total",
+                             shcore::Value(m_total), "totalKnown",
+                             shcore::Value(m_total_known));
   }
 
  private:
@@ -151,6 +166,11 @@ class Numeric_progress : public Spinner_progress {
 
   Progress_thread::Progress_config m_config;
   std::string m_label;
+
+  mutable std::mutex m_values_mutex;
+  uint64_t m_current = 0;
+  uint64_t m_total = 0;
+  bool m_total_known = false;
 };
 
 class Throughput_progress : public Progress_thread::Stage {
@@ -202,6 +222,15 @@ class Throughput_progress : public Progress_thread::Stage {
   }
 
   void draw() override { draw(false); }
+
+  shcore::Dictionary_t progress() const override {
+    if (!m_progress) {
+      return nullptr;
+    }
+
+    std::lock_guard<std::recursive_mutex> lock(*m_progress_mutex);
+    return m_progress->snapshot();
+  }
 
   void on_display_done() override {
     on_update();
@@ -298,6 +327,8 @@ void Progress_thread::Stage::start() {
   on_stage_starting();
 
   m_started = true;
+
+  report("stageStarted");
 }
 
 void Progress_thread::Stage::finish(bool wait) {
@@ -334,6 +365,9 @@ void Progress_thread::Stage::finish(bool wait) {
       if (!show_progress()) {
         current_console()->print_status(description() + " " + k_done);
       }
+
+      report("stageFinished",
+             shcore::make_dict("seconds", shcore::Value(duration().seconds())));
     }
   }
 }
@@ -345,12 +379,23 @@ void Progress_thread::Stage::display() {
     if (is_started()) {
       on_update();
 
+      if (m_callback) {
+        report("progress", progress());
+      }
+
       if (show_progress()) {
         draw();
       }
     }
 
     wait_for_finish();
+  }
+
+  if (m_callback && !m_terminated && is_started()) {
+    // the values the stage ended with, which a stage shorter than an update
+    // interval never reported
+    on_update();
+    report("progress", progress());
   }
 
   if (show_progress()) {
@@ -377,6 +422,26 @@ void Progress_thread::Stage::on_stage_starting() {
   if (!show_progress()) {
     current_console()->print_status(description() + k_ellipsis);
   }
+}
+
+void Progress_thread::Stage::report(const char *type,
+                                    shcore::Dictionary_t event) const {
+  if (!m_callback) {
+    return;
+  }
+
+  if (!event) {
+    // a stage with nothing to measure has no progress to report
+    if (std::string_view{type} == "progress") {
+      return;
+    }
+
+    event = shcore::make_dict();
+  }
+
+  event->set("type", shcore::Value(type));
+  event->set("stage", shcore::Value(description()));
+  m_callback->emit(event);
 }
 
 void Progress_thread::Stage::on_display_started() {}
@@ -416,6 +481,13 @@ void Progress_thread::Stage::toggle_visibility(bool show) {
 Progress_thread::Progress_thread(std::string description, bool show_progress)
     : m_description(std::move(description)), m_show_progress(show_progress) {
   m_json_output = "off" != mysqlsh::current_shell_options()->get().wrap_json;
+
+  // a utility given a progress callback reports to it, and draws nothing
+  m_callback = mysqlsh::common::current_progress_callback();
+
+  if (m_callback) {
+    m_show_progress = false;
+  }
 
   if (uses_json_output()) {
     m_progress = std::make_unique<mysqlshdk::textui::Json_progress>();
@@ -542,13 +614,14 @@ Progress_thread::Stage *Progress_thread::push_stage(Stage_config stage_config,
     start();
   }
 
-  if (!stage_config.show_progress.has_value()) {
-    stage_config.show_progress = m_show_progress;
+  if (!stage_config.show_progress.has_value() || m_callback) {
+    stage_config.show_progress = m_show_progress.load();
   }
 
   std::unique_ptr<Stage> stage_ptr =
       std::make_unique<T>(std::move(stage_config), std::forward<Args>(args)...);
   auto stage = stage_ptr.get();
+  stage->m_callback = m_callback;
 
   m_stages.emplace_back(std::move(stage_ptr));
 

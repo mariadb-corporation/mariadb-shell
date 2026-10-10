@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +42,8 @@
 #include "mysqlshdk/libs/textui/text_progress.h"
 #include "mysqlshdk/libs/utils/profiling.h"
 #include "mysqlshdk/libs/utils/synchronized_queue.h"
+
+#include "modules/util/common/progress_callback.h"
 
 namespace mysqlsh {
 namespace dump {
@@ -252,6 +255,12 @@ class Progress_thread final {
       return *m_config.show_progress;
     }
 
+    /**
+     * The values a progress callback is given on every update, or nullptr
+     * for a stage that has none.
+     */
+    virtual shcore::Dictionary_t progress() const { return nullptr; }
+
    private:
     friend class Progress_thread;
 
@@ -264,6 +273,8 @@ class Progress_thread final {
     void terminate();
 
     void toggle_visibility(bool show);
+
+    void report(const char *type, shcore::Dictionary_t event = nullptr) const;
 
     // information about the stage
     Duration m_duration;
@@ -282,6 +293,9 @@ class Progress_thread final {
     std::atomic_bool m_started = false;
 
     bool m_json_output = false;
+
+    // where the utility was given a progress callback
+    std::shared_ptr<mysqlsh::common::Progress_callback_console> m_callback;
   };
 
   /**
@@ -597,6 +611,7 @@ class Progress_thread final {
 
   // console
   std::unique_ptr<Scoped_console> m_console;
+  std::shared_ptr<mysqlsh::common::Progress_callback_console> m_callback;
 
   // progress reporting
   Duration m_total_duration;

@@ -6,7 +6,7 @@ description: >-
 
 # Load Dump Utility
 
-`util.load_dump()` loads a dump created by [`util.dump_instance()`, `util.dump_schemas()` or `util.dump_tables()`](dump-utilities.md) into the server of the global session. It loads table data in parallel, records every completed step so that an interrupted load can resume, and can load the whole dump or only part of it, into the original schema or a renamed one.
+`util.load_dump()` loads a dump created by [`util.dump_instance()`, `util.dump_schemas()` or `util.dump_tables()`](dump-utilities.md) into the server of the global session, or of the session given in the `session` option. It loads table data in parallel, records every completed step so that an interrupted load can resume, and can load the whole dump or only part of it, into the original schema or a renamed one.
 
 For the load pipeline and how chunks are scheduled, see [How Dump and Load Work](how-dump-and-load-work.md).
 
@@ -37,7 +37,7 @@ Option names are accepted in camelCase (`--includeSchemas`) or kebab-case (`--in
 | `url` | The dump location: a local directory (`/path` or `file:///path`), a `bucket/path` or `container/path` together with a bucket or container option, or an OCI pre-authenticated request. See [Object Storage](object-storage.md). Compressed files are decompressed transparently, and remote files are streamed. |
 | `options` | A dictionary of options, for example `{"threads": 8, "schema": "shop_restored"}`. |
 
-Load sessions inherit the connection options of the global session, such as TLS and compression.
+Load sessions inherit the connection options of the global session, or of the session given in the `session` option, such as TLS and compression.
 
 ## Requirements
 
@@ -140,6 +140,8 @@ NOTE: One or more objects in the dump already exist in the destination database 
 | `progressFile` | string | `load-progress.<server_id>.json` in the dump location | Where to record load progress: a local path, or an `http://`/`https://` URL written with `PUT` requests. An empty string disables progress tracking, and with it resuming. Required when loading through an OCI pre-authenticated request. |
 | `resetProgress` | bool | `False` | Discard the recorded progress and load the whole dump again. Objects loaded earlier are not removed, so drop them first or combine this with `dropExistingObjects` or `ignoreExistingObjects`. |
 | `showProgress` | bool | `True` when stdout is a terminal | Print progress while loading. |
+| `session` | Session | the global session | The session to load with, in place of the global one. Not available on the command line. See [Running on Your Own Session](dump-utilities.md#running-on-your-own-session). |
+| `progressCallback` | function | not set | A function that gets the output and the progress as dictionaries, in place of printing them, and can stop the load. Not available on the command line. See [Running on Your Own Session](dump-utilities.md#running-on-your-own-session). |
 | `waitDumpTimeout` | float | `0` | Load a dump that is still being written. When all available chunks are loaded, wait up to this many seconds for more before giving up. `0` or less disables waiting. The load ends early when the dump completes. |
 
 On MariaDB the default progress file is named after the target's `server_id`, because MariaDB has no `server_uuid`. The built-in help shows the MySQL name.

@@ -37,6 +37,7 @@
 #include "modules/util/binlog/dump_binlogs_options.h"
 #include "modules/util/binlog/load_binlogs_options.h"
 #endif
+#include "modules/util/common/common_options.h"
 #include "modules/util/copy/copy_instance_options.h"
 #include "modules/util/copy/copy_schemas_options.h"
 #include "modules/util/copy/copy_tables_options.h"
@@ -209,6 +210,12 @@ class SHCORE_PUBLIC Util : public Extensible_object {
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> global_session() const;
+
+  /**
+   * The session given in the options' `session` option, or the global one.
+   */
+  std::shared_ptr<mysqlshdk::db::ISession> session_for(
+      const common::Common_options &options) const;
 
   shcore::IShell_core &_shell_core;
 };

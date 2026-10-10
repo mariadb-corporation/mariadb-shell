@@ -69,6 +69,12 @@ class Interrupts final {
    */
   void stop_background_thread();
 
+  /**
+   * Whether the calling thread created this object: only that thread's
+   * handlers are registered, and only its work can be interrupted by them.
+   */
+  bool in_creator_thread() const;
+
  private:
   friend class Interrupt_handler;
 
@@ -83,8 +89,6 @@ class Interrupts final {
   void push_handler(const std::function<bool()> &signal_safe,
                     const std::function<void()> &signal_unsafe);
   void pop_handler();
-
-  bool in_creator_thread() const;
 
   void setup();
 

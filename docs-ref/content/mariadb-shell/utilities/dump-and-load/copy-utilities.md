@@ -7,7 +7,7 @@ description: >-
 
 # Copy Utilities
 
-The copy utilities run a dump and a load at the same time and connect them in memory. The source is the server of the global session; the target is a second server that you name with connection data. No files are written, and the target starts loading as soon as the first chunks are read from the source.
+The copy utilities run a dump and a load at the same time and connect them in memory. The source is the server of the global session, or of the session given in the `session` option; the target is a second server that you name with connection data. No files are written, and the target starts loading as soon as the first chunks are read from the source.
 
 | Function | Copies | Equivalent to |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ If the target connection fails, the copy stops with `Could not connect to the ta
 
 ## Requirements
 
-* A global session to the source server. Without one, the copy raises an error.
+* A global session to the source server, or a session to it given in the `session` option. Without one, the copy raises an error.
 * **Same vendor on both ends.** A MariaDB source copies only to a MariaDB target. A mismatch is refused before anything is read:
 
   ```text
@@ -130,6 +130,8 @@ Options marked as not accepted are rejected with `Invalid options: <name>`.
 | --- | --- | --- | --- |
 | `dryRun` | bool | `False` | Run all checks on both servers and print what would be done, without changing the target. |
 | `showProgress` | bool | `True` when stdout is a terminal | Print the source's progress. |
+| `session` | Session | the global session | The session to the source, in place of the global one. Not available on the command line. See [Running on Your Own Session](dump-utilities.md#running-on-your-own-session). |
+| `progressCallback` | function | not set | A function that gets the output and the progress of the dump and of the load as dictionaries, in place of printing them, and can stop the copy. Not available on the command line. See [Running on Your Own Session](dump-utilities.md#running-on-your-own-session). |
 
 ### Not Accepted
 

@@ -16,7 +16,7 @@ To back up or copy whole schemas with their DDL, use the [dump and load utilitie
 
 ## Requirements
 
-Both utilities need an open global session. The additional connections they open use the connection options of that session, such as TLS and compression settings.
+Both utilities need an open global session, or a session given in the `session` option. The additional connections they open use the connection options of that session, such as TLS and compression settings.
 
 | Utility | Privileges on the target table | Server setting |
 | --- | --- | --- |
@@ -106,6 +106,8 @@ Binary columns, such as `BLOB` and `BINARY`, are written in Base64. The printed 
 | `defaultCharacterSet` | string | `utf8mb4` | Character set of the export session, and therefore of the file. |
 | `maxRate` | string | `"0"` | Maximum read throughput in bytes per second, with the suffixes `k`, `M`, and `G`. `"0"` means no limit. |
 | `showProgress` | Boolean | `true` on a terminal | Show progress information. |
+| `session` | Session | the global session | The session to run with, in place of the global one. Not available on the command line. See [Running on Your Own Session](dump-and-load/dump-utilities.md#running-on-your-own-session). |
+| `progressCallback` | Function | not set | A function that gets the output and the progress as dictionaries, in place of printing them, and can stop the operation. Not available on the command line. See [Running on Your Own Session](dump-and-load/dump-utilities.md#running-on-your-own-session). |
 
 The export can write to Amazon S3, OCI Object Storage, or Azure Blob Storage instead of a local file. For the storage options, such as `s3BucketName`, see [Object Storage](dump-and-load/object-storage.md).
 
@@ -262,6 +264,8 @@ By default, rows whose primary key or unique key already exists in the table are
 | `characterSet` | string | Not set | Character set of the file. `"binary"` means no conversion. Without it, the server uses `character_set_database`. |
 | `sessionInitSql` | list of strings | `[]` | Statements to run in each import connection before it loads data. |
 | `showProgress` | Boolean | `true` on a terminal | Show progress information. |
+| `session` | Session | the global session | The session to run with, in place of the global one. Not available on the command line. See [Running on Your Own Session](dump-and-load/dump-utilities.md#running-on-your-own-session). |
+| `progressCallback` | Function | not set | A function that gets the output and the progress as dictionaries, in place of printing them, and can stop the operation. Not available on the command line. See [Running on Your Own Session](dump-and-load/dump-utilities.md#running-on-your-own-session). |
 
 The import can read files from Amazon S3, OCI Object Storage, or Azure Blob Storage instead of the local file system. For the storage options, see [Object Storage](dump-and-load/object-storage.md).
 

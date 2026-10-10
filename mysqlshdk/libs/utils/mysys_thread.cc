@@ -44,6 +44,19 @@ Mysys_thread_scope::Mysys_thread_scope() { my_thread_init(); }
 
 Mysys_thread_scope::~Mysys_thread_scope() { my_thread_end(); }
 
+Mysys_thread_guard::Mysys_thread_guard() {
+  if (!my_thread_var) {
+    my_thread_init();
+    m_initialized = true;
+  }
+}
+
+Mysys_thread_guard::~Mysys_thread_guard() {
+  if (m_initialized) {
+    my_thread_end();
+  }
+}
+
 #else  // !MARIADB_BUILD
 
 // The MySQL build does not link the server mysys the same way and has never
@@ -52,6 +65,10 @@ Mysys_thread_scope::~Mysys_thread_scope() { my_thread_end(); }
 Mysys_thread_scope::Mysys_thread_scope() = default;
 
 Mysys_thread_scope::~Mysys_thread_scope() = default;
+
+Mysys_thread_guard::Mysys_thread_guard() = default;
+
+Mysys_thread_guard::~Mysys_thread_guard() = default;
 
 #endif  // !MARIADB_BUILD
 

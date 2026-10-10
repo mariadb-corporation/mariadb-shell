@@ -60,6 +60,31 @@ class Mysys_thread_scope final {
   ~Mysys_thread_scope();
 };
 
+/**
+ * Like Mysys_thread_scope, for code that may run on any thread: it sets the
+ * mysys thread-local state up only where the thread has none yet, and tears
+ * down only what it set up. The main thread and the shell's own worker threads
+ * already have it; a thread a scripting language created (a Python thread
+ * calling into the shell) has not.
+ *
+ * A no-op when the shell is not built against MariaDB's mysys.
+ */
+class Mysys_thread_guard final {
+ public:
+  Mysys_thread_guard();
+
+  Mysys_thread_guard(const Mysys_thread_guard &) = delete;
+  Mysys_thread_guard(Mysys_thread_guard &&) = delete;
+
+  Mysys_thread_guard &operator=(const Mysys_thread_guard &) = delete;
+  Mysys_thread_guard &operator=(Mysys_thread_guard &&) = delete;
+
+  ~Mysys_thread_guard();
+
+ private:
+  [[maybe_unused]] bool m_initialized = false;
+};
+
 }  // namespace utils
 }  // namespace mysqlshdk
 
