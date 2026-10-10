@@ -13,6 +13,7 @@ if not __server_is_maria_db:
 import json
 import os
 import os.path
+import re
 import time
 
 outdir = os.path.join(__tmp_dir, "ldtest_mariadb")
@@ -833,7 +834,8 @@ EXPECT_CONTAINS("`ENCRYPTION_KEY_ID`=2", show_create_table(enc_target, "encdb", 
 wipeout_server(session2)
 shell.connect(__sandbox_uri2)
 EXPECT_THROWS(lambda: util.load_dump(enc_dump, { "showProgress": False, "resetProgress": True }), "Error loading dump")
-EXPECT_STDOUT_CONTAINS("Can't create table `encdb`.`t1` (errno: 140 \"Wrong create options\")")
+# the tables are created in parallel, either one can be the first to fail
+EXPECT_STDOUT_MATCHES(re.compile(r"Can't create table `encdb`\.`t[12]` \(errno: 140 \"Wrong create options\"\)"))
 
 #@<> encrypted tables - cleanup {server_has_key_management}
 enc_source.close()
