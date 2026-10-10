@@ -288,8 +288,8 @@ void Ddl_executor::do_execute(const Show_rest_metadata_status &s,
   }
 
   const auto flag = [](bool b) { return Db_value(b ? "true" : "false"); };
-  const auto text = [](const std::optional<std::string> &s) {
-    return s ? Db_value(*s) : Db_value(nullptr);
+  const auto text = [](const std::optional<std::string> &value) {
+    return value ? Db_value(*value) : Db_value(nullptr);
   };
 
   r->columns = {"service_configured",      "service_enabled",
