@@ -53,8 +53,9 @@ The server's tools are organized in function groups. By default, the server prov
 | `msm` | Create and work with versioned schema projects of [MariaDB Schema Management](../schema-management/README.md), prepare releases, and deploy schemas. |
 | `sandbox` | List the server versions that can be deployed, and deploy, start, stop, and delete local sandbox instances. |
 | `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the [migration tooling](migration-tooling.md) with `mcp setup`. |
+| `util` | Dump, load, copy, export, and import data as [background tasks](dump-and-load-tools.md) that a client follows and can cancel. |
 
-A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` tools work on schema project folders on the developer's own machine, so they are not available on a server that several users reach remotely.
+A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` tools work on schema project folders on the developer's own machine, and the `util` tools run long jobs on the server's machine, so they are not available on a server that several users reach remotely.
 
 ## The mcp Global Object
 
@@ -87,6 +88,10 @@ To show the built-in help, run `\? mcp` in Python mode, or `mariadb-shell -- mcp
 
 {% content-ref url="starting-the-mcp-server.md" %}
 [starting-the-mcp-server.md](starting-the-mcp-server.md)
+{% endcontent-ref %}
+
+{% content-ref url="dump-and-load-tools.md" %}
+[dump-and-load-tools.md](dump-and-load-tools.md)
 {% endcontent-ref %}
 
 {% content-ref url="connecting-mcp-clients.md" %}

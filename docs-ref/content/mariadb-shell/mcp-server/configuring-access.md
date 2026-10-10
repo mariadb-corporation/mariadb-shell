@@ -160,7 +160,7 @@ Removing a connection revokes the agent's access to it. The server checks the co
 
 ## Allowed Paths
 
-Tools that take a file or directory path accept only paths within the allowed directories or their subdirectories. This applies to SQL script files of `db.execute_sql_script`, to the schema projects of the `msm` tools, and to the sandbox directories of the `sandbox` tools. Each directory must exist when you add it. An empty list allows no path at all.
+Tools that take a file or directory path accept only paths within the allowed directories or their subdirectories. This applies to SQL script files of `db.execute_sql_script`, to the schema projects of the `msm` tools, to the sandbox directories of the `sandbox` tools, and to the files and folders that the `util` tools write or read. Each directory must exist when you add it. An empty list allows no path at all.
 
 When a tool receives a path outside the allowed directories, the server asks the MCP client to confirm it, using the MCP elicitation feature:
 
