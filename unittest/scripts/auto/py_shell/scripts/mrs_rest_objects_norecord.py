@@ -312,6 +312,24 @@ EXPECT_IN("CLASS Cities3 {", show_create("SHOW CREATE REST VIEW /city"))
 rest("ALTER REST VIEW /city COMMENT 'same privileges'")
 EXPECT_EQ("Select", table_privileges("city"))
 
+#@<> The column names of an explicit grant are quoted
+def column_privileges(table):
+    return [list(r) for r in session.run_sql("SELECT Column_name, Column_priv FROM mysql.columns_priv WHERE User = 'mariadb_rest_service_data_provider' AND Db = 'sakila' AND Table_name = ? ORDER BY Column_name", [table]).fetch_all()]
+
+def grants_option(columns):
+    return json.dumps({"grants": {"schema": "sakila", "object": "film", "privileges": [{"privilege": "SELECT", "columnList": columns}]}})
+
+rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option(["title", "release_year"]))
+EXPECT_EQ([["release_year", "Select"], ["title", "Select"]], column_privileges("film"))
+rest("DROP REST VIEW /grantColumns")
+# A name that is not a column of the table stays one name, whatever it holds
+EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option(["title`) ON sakila.* TO root -- "])), "Unknown column")
+EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option([1])), "Invalid column name in the columnList of the grants option.")
+EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option([""])), "Invalid column name in the columnList of the grants option.")
+rest("DROP REST VIEW IF EXISTS /grantColumns")
+session.run_sql("REVOKE SELECT (title, release_year) ON sakila.film FROM mariadb_rest_service_data_provider")
+EXPECT_EQ([], column_privileges("film"))
+
 #@<> DROP REST VIEW
 EXPECT_EQ("REST VIEW `/svc/sakila/filmList` dropped successfully.", rest_info("DROP REST VIEW /filmList"))
 EXPECT_EQ(None, table_privileges("film_list"))
