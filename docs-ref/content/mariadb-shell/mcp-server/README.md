@@ -55,7 +55,7 @@ The server's tools are organized in function groups. By default, the server prov
 | `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the [migration tooling](migration-tooling.md) with `mcp setup`. |
 | `util` | Dump, load, copy, export, and import data as [background tasks](dump-and-load-tools.md) that a client follows and can cancel. |
 
-A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` tools work on schema project folders on the developer's own machine, and the `util` tools run long jobs that write to the server's disk, so they are not available on a server that several users reach remotely.
+A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` tools work on schema project folders on the developer's own machine, and the `util` tools run long jobs on the server's machine, so they are not available on a server that several users reach remotely.
 
 ## The mcp Global Object
 
