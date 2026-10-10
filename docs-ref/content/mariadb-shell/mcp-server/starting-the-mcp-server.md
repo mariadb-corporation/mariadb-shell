@@ -24,7 +24,7 @@ Configure the connections and directories the server may access before you start
 | `--transport=<name>` | `streamable-http` | The MCP transport: `stdio` or `streamable-http`. See [Transports](#transports). |
 | `--host=<address>` | `127.0.0.1` | The address that the HTTP server binds to. Only used by `streamable-http`. See [Security and Session Handling](security-and-session-handling.md#network-exposure) before you change it. |
 | `--port=<number>` | `8080` | The TCP port of the HTTP server. Only used by `streamable-http`. |
-| `--functionGroups=<list>` | All groups | The tool groups to provide, as a comma-separated list of `db`, `msm`, `sandbox`, and `migrator`. See [Function Groups](#function-groups). |
+| `--functionGroups=<list>` | All groups | The tool groups to provide, as a comma-separated list of `db`, `msm`, `sandbox`, `migrator`, and `util`. See [Function Groups](#function-groups). |
 | `--allowedHosts=<list>` | None | Additional values of the HTTP `Host` header to accept, for a server that clients reach under another name, for example through a reverse proxy. Only used by `streamable-http`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
 | `--sslCertfile=<file>` | None | A certificate, or certificate chain, in PEM format to serve HTTPS with. Requires `--sslKeyfile`. Only used by `streamable-http`. |
 | `--sslKeyfile=<file>` | None | The private key of `--sslCertfile`, in PEM format. |
@@ -114,6 +114,7 @@ mariadb-shell -- mcp start-server --transport=stdio --functionGroups=db
 | `msm` | Tools for MariaDB Schema Management projects. The `msm.deploy_schema` tool deploys onto a connection opened with the `db` tools, so the server provides it only when `db` is enabled as well. |
 | `sandbox` | Tools for local sandbox instances. |
 | `migrator` | Tools for the migration from MySQL to MariaDB. The server registers them only if the migration tooling is installed; see [Migration Tooling](migration-tooling.md). |
+| `util` | Tools that dump, load, copy, export, and import data as background tasks; see [Dump and Load Tools](dump-and-load-tools.md). They work on connections opened with the `db` tools, so the server provides them only when `db` is enabled as well. |
 
 For example, a server for an agent that should only read schemas and run queries on configured servers provides `db`. A server for schema development on local sandboxes provides `db,msm,sandbox`.
 
@@ -173,7 +174,7 @@ For a `stdio` server, the MCP client captures standard error. Check the MCP log 
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
 | *Unsupported transport '…'. Supported transports are: streamable-http, stdio.* | The value of `--transport` is misspelled, or names a transport that the server doesn't support, such as `sse`. | Use `stdio` or `streamable-http`. |
-| *Unknown function group(s): …* | `--functionGroups` names a group that doesn't exist. | Use `db`, `msm`, `sandbox`, or `migrator`. |
+| *Unknown function group(s): …* | `--functionGroups` names a group that doesn't exist. | Use `db`, `msm`, `sandbox`, `migrator`, or `util`. |
 | *There is no object registered under name 'mcp'* | The `mcp` plugin isn't installed, for example in a MariaDB Shell built from source, or plugins are disabled with `--disable-builtin-plugins`. | Install a MariaDB Shell release package. |
 | *error while attempting to bind on address ('127.0.0.1', 8080): … address already in use* | Another process uses the port. | Choose another port with `--port`. |
 | A client receives HTTP status `421 Misdirected Request`. | The client uses a host name that the server doesn't accept. | Add the name with `--allowedHosts`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |

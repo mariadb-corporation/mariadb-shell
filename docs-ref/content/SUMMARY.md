@@ -56,6 +56,7 @@
     * [Migration Tooling](mariadb-shell/mcp-server/migration-tooling.md)
     * [Automated Setup](mariadb-shell/mcp-server/automated-setup.md)
     * [Starting the MCP Server](mariadb-shell/mcp-server/starting-the-mcp-server.md)
+    * [Dump and Load Tools](mariadb-shell/mcp-server/dump-and-load-tools.md)
     * [Connecting MCP Clients](mariadb-shell/mcp-server/connecting-mcp-clients.md)
     * [Multi-Tenant Mode](mariadb-shell/mcp-server/multi-tenant-mode.md)
     * [OAuth Authentication](mariadb-shell/mcp-server/oauth-authentication.md)
