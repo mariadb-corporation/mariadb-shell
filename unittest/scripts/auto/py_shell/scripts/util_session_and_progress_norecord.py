@@ -85,6 +85,10 @@ finished = [event for event in events if event["type"] == "stageFinished"]
 # every stage that started finished, though not always in the same order
 EXPECT_EQ(sorted(stages(events)), sorted(event["stage"] for event in finished))
 EXPECT_TRUE(all(event["seconds"] >= 0 for event in finished))
+# a stage's final progress comes before its end, however the stage was finished
+for event in finished:
+    later = events[events.index(event) + 1:]
+    EXPECT_FALSE(any(e["type"] == "progress" and e["stage"] == event["stage"] for e in later), "no progress after stageFinished for " + event["stage"])
 
 #@<> a counting stage reports what it counts
 counting = [event for event in events if event["type"] == "progress" and "totalKnown" in event]
@@ -159,6 +163,16 @@ def failing(event):
 dump_dir = dump_dir_for("failing_callback")
 EXPECT_NO_THROWS(lambda: util.dump_schemas(["src"], dump_dir, {"session": session1, "progressCallback": failing}), "dump")
 EXPECT_TRUE(os.path.isfile(os.path.join(dump_dir, "@.done.json")))
+
+#@<> a callback that prints does not hang: its output goes to the console
+def printing(event):
+    if event["type"] == "stageStarted":
+        print("callback: " + event["stage"])
+
+dump_dir = dump_dir_for("printing_callback")
+EXPECT_NO_THROWS(lambda: util.dump_schemas(["src"], dump_dir, {"session": session1, "progressCallback": printing}), "dump")
+EXPECT_TRUE(os.path.isfile(os.path.join(dump_dir, "@.done.json")))
+EXPECT_STDOUT_CONTAINS("callback: Dumping data")
 
 #@<> a session that is closed, or not a session, is refused
 closed = shell.open_session(__sandbox_uri1)

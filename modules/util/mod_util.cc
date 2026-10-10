@@ -1560,8 +1560,8 @@ Undefined Util::loadDump(String url, Dictionary options) {}
 None Util::load_dump(str url, dict options) {}
 #endif
 void Util::load_dump(const std::string &url, Load_dump_options &&options) {
-  const auto session = session_for(options);
   common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.loadDump()"};
 
@@ -2118,8 +2118,8 @@ None Util::export_table(str table, str outputUrl, dict options);
 #endif
 void Util::export_table(const std::string &table, const std::string &file,
                         dump::Export_table_options &&options) {
-  const auto session = session_for(options);
   common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.exportTable()"};
 
@@ -2219,8 +2219,8 @@ void Util::dump_tables(const std::string &schema,
                        const std::vector<std::string> &tables,
                        const std::string &directory,
                        dump::Dump_tables_options &&options) {
-  const auto session = session_for(options);
   common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpTables()"};
 
@@ -2293,8 +2293,8 @@ None Util::dump_schemas(list schemas, str outputUrl, dict options);
 void Util::dump_schemas(const std::vector<std::string> &schemas,
                         const std::string &directory,
                         dump::Dump_schemas_options &&options) {
-  const auto session = session_for(options);
   common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpSchemas()"};
 
@@ -2390,8 +2390,8 @@ None Util::dump_instance(str outputUrl, dict options);
 #endif
 void Util::dump_instance(const std::string &directory,
                          dump::Dump_instance_options &&options) {
-  const auto session = session_for(options);
   common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpInstance()"};
 
@@ -2616,8 +2616,8 @@ None Util::copy_instance(ConnectionData connectionData, dict options);
 void Util::copy_instance(
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_instance_options &&options) {
-  const auto session = session_for(*options.dump_options());
   common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copyInstance()"};
@@ -2666,8 +2666,8 @@ void Util::copy_schemas(
     const std::vector<std::string> &schemas,
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_schemas_options &&options) {
-  const auto session = session_for(*options.dump_options());
   common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copySchemas()"};
@@ -2719,8 +2719,8 @@ void Util::copy_tables(
     const std::string &schema, const std::vector<std::string> &tables,
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_tables_options &&options) {
-  const auto session = session_for(*options.dump_options());
   common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copyTables()"};

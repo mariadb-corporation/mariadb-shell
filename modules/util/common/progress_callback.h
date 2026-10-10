@@ -27,10 +27,12 @@
 #define MODULES_UTIL_COMMON_PROGRESS_CALLBACK_H_
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "mysqlshdk/include/scripting/types.h"
@@ -61,7 +63,9 @@ class Common_options;
  * as it does on ^C. That works from any thread, where ^C reaches only a
  * utility running on the main thread.
  *
- * Prompts and the pager go to the console this one replaced.
+ * Prompts and the pager go to the console this one replaced, and so does what
+ * the callback itself prints while it runs (a Python print() lands on the
+ * current console, which is this one): that is not handed back to it.
  */
 class Progress_callback_console final : public IConsole {
  public:
@@ -142,12 +146,23 @@ class Progress_callback_console final : public IConsole {
       shcore::Interpreter_print_handler *handler) override;
 
  private:
-  void message(const char *level, const std::string &text) const;
+  /**
+   * Hands a message to the callback, or, when the callback itself is printing
+   * it, to the console this one replaced.
+   */
+  void message(const char *level, const std::string &text,
+               const std::function<void()> &forward) const;
+
+  bool in_callback() const noexcept {
+    return m_callback_thread.load() == std::this_thread::get_id();
+  }
 
   shcore::Function_base_ref m_callback;
   std::shared_ptr<IConsole> m_console;
   std::shared_ptr<shcore::Interrupts> m_interrupts;
   mutable std::mutex m_mutex;
+  // the thread running the callback, while it runs
+  mutable std::atomic<std::thread::id> m_callback_thread{};
   mutable std::atomic<bool> m_cancelled = false;
 };
 

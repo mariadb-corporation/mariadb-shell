@@ -36,11 +36,20 @@ give).
   and the dump/load workers, including copy's.
 - `Progress_thread` takes the callback when constructed, forces
   `showProgress` off, and gives it to every stage. `Stage::report()` sends
-  stageStarted (in `start()`), progress (each 250 ms display tick, and once
-  more after the loop so a short stage's final values arrive) and
-  stageFinished (in `finish()`). `Stage::progress()`: `Numeric_progress` keeps
-  its last values under a mutex; `Throughput_progress` uses the new
+  stageStarted (in `start()`), progress (each 250 ms display tick) and, once
+  the display loop ends, the final progress values followed by stageFinished,
+  both from the display thread so that the order holds however the stage was
+  finished (by the utility, by a counting stage reaching its total, or at
+  shutdown). `Stage::progress()`: `Numeric_progress` keeps its last values
+  under a mutex; `Throughput_progress` uses the new
   `Base_progress::snapshot()`.
+- `Progress_callback_console` remembers the thread running the callback: what
+  the callback itself prints (a Python `print()` lands on the current console,
+  which is this one) is forwarded to the console it replaced instead of being
+  handed back to it, which would deadlock on its mutex. A cancel that nothing
+  took (`Interrupts::interrupt()` now returns whether a handler ran; it drops
+  the request when busy or when no handler is registered yet) is asked again
+  on the next event.
 - Cancel: `Interrupts` only registers handlers pushed by the thread that
   created it (`in_creator_thread()`, now public). A utility called from
   another thread gets a fresh `Interrupts::create(nullptr)` pushed by
@@ -59,6 +68,12 @@ give).
   `stop_background_thread()`, or my_end reports "N threads didn't exit".
 - `mysqlsh::dump` has a nested `common` namespace: write
   `mysqlsh::common::` in `modules/util/dump`.
+- **`util.dumpBinlogs()` / `util.loadBinlogs()` accept `session` and
+  `progressCallback` but ignore them.** Their option packs include
+  `Common_options`, yet they still run on `global_session()` with no
+  `Utility_scope`, and their help does not list the options. They are
+  MySQL-only (`HAVE_BINLOG_UTILS`), so neither this machine nor CI can build
+  them; fixing it needs a MySQL build to compile and test against.
 - Scripted tests run line by line: a blank line inside a `def` ends it.
 - The help validations: `util_help_norecord.py` was merged from the shell's
   output (`?{...}` blocks of other builds kept). The js file was patched the

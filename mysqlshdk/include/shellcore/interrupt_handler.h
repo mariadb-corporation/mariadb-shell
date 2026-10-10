@@ -52,7 +52,14 @@ class Interrupts final {
 
   ~Interrupts();
 
-  void interrupt();
+  /**
+   * Runs the registered handlers.
+   *
+   * @returns false if nothing took the interrupt: no handler is registered, or
+   * the object is busy with another interrupt or a handler change (the signal
+   * is then dropped, as it cannot wait); the caller may try again later
+   */
+  bool interrupt();
 
   void wait(uint32_t ms);
 

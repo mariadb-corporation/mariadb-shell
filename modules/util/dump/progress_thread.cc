@@ -343,13 +343,15 @@ void Progress_thread::Stage::finish(bool wait) {
     std::lock_guard<std::mutex> lock(m_finished_mutex);
 
     if (!m_finished) {
+      // before the display can see the stage as finished: it reports the
+      // duration once the display loop ends
+      m_duration.finish();
       m_finished = true;
       has_finished = true;
     }
   }
 
   if (has_finished) {
-    m_duration.finish();
     m_finished_cv.notify_one();
 
     if (wait) {
@@ -365,9 +367,6 @@ void Progress_thread::Stage::finish(bool wait) {
       if (!show_progress()) {
         current_console()->print_status(description() + " " + k_done);
       }
-
-      report("stageFinished",
-             shcore::make_dict("seconds", shcore::Value(duration().seconds())));
     }
   }
 }
@@ -393,9 +392,14 @@ void Progress_thread::Stage::display() {
 
   if (m_callback && !m_terminated && is_started()) {
     // the values the stage ended with, which a stage shorter than an update
-    // interval never reported
+    // interval never reported, and then the end of the stage: reported here,
+    // on the display thread, so that they come in this order however the
+    // stage was finished (by the utility, by a counting stage reaching its
+    // total in on_update(), or at shutdown)
     on_update();
     report("progress", progress());
+    report("stageFinished",
+           shcore::make_dict("seconds", shcore::Value(duration().seconds())));
   }
 
   if (show_progress()) {

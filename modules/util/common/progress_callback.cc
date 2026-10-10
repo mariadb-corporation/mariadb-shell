@@ -44,6 +44,13 @@ Progress_callback_console::Progress_callback_console(
       m_interrupts(std::move(interrupts)) {}
 
 void Progress_callback_console::emit(const shcore::Dictionary_t &event) const {
+  if (in_callback()) {
+    // the callback is running on this thread and made the utility emit again;
+    // handing it its own event would recurse, or wait forever for the lock
+    log_debug("The progress callback emitted an event while running, dropped.");
+    return;
+  }
+
   shcore::Value result;
 
   try {
@@ -51,7 +58,16 @@ void Progress_callback_console::emit(const shcore::Dictionary_t &event) const {
     args.push_back(shcore::Value(event));
 
     std::lock_guard lock{m_mutex};
-    result = m_callback->invoke(args);
+    m_callback_thread = std::this_thread::get_id();
+
+    try {
+      result = m_callback->invoke(args);
+    } catch (...) {
+      m_callback_thread = std::thread::id{};
+      throw;
+    }
+
+    m_callback_thread = std::thread::id{};
   } catch (const std::exception &e) {
     log_warning("The progress callback failed: %s", e.what());
     return;
@@ -64,68 +80,86 @@ void Progress_callback_console::emit(const shcore::Dictionary_t &event) const {
   // asked once: a second interrupt makes some utilities stop at once instead
   // of finishing what they are doing
   if (cancel && !m_cancelled.exchange(true)) {
-    log_info("The progress callback asked to stop the operation.");
-    m_interrupts->interrupt();
+    if (m_interrupts->interrupt()) {
+      log_info("The progress callback asked to stop the operation.");
+    } else {
+      // nothing took it: the utility has not registered its handler yet, or
+      // another interrupt is being handled; the next event asks again
+      log_debug("The progress callback asked to stop the operation, retrying.");
+      m_cancelled = false;
+    }
   }
 }
 
-void Progress_callback_console::message(const char *level,
-                                        const std::string &text) const {
+void Progress_callback_console::message(
+    const char *level, const std::string &text,
+    const std::function<void()> &forward) const {
+  if (in_callback()) {
+    // printed by the callback itself (a Python print() lands on the current
+    // console, which is this one): it goes where prompts go
+    forward();
+    return;
+  }
+
   emit(shcore::make_dict("type", shcore::Value("message"), "level",
                          shcore::Value(level), "text",
                          shcore::Value(shcore::str_rstrip(text, "\r\n"))));
 }
 
 void Progress_callback_console::raw_print(const std::string &text,
-                                          Output_stream stream, bool,
-                                          const Json_attributes &) const {
-  message(stream == Output_stream::STDERR ? "error" : "output", text);
+                                          Output_stream stream,
+                                          bool format_json,
+                                          const Json_attributes &attribs) const {
+  message(stream == Output_stream::STDERR ? "error" : "output", text, [&] {
+    m_console->raw_print(text, stream, format_json, attribs);
+  });
 }
 
 void Progress_callback_console::print(const std::string &text) const {
-  message("output", text);
+  message("output", text, [&] { m_console->print(text); });
 }
 
 void Progress_callback_console::println(const std::string &text) const {
-  message("output", text);
+  message("output", text, [&] { m_console->println(text); });
 }
 
-void Progress_callback_console::print_error(const std::string &text,
-                                            const Json_attributes &) const {
-  message("error", text);
+void Progress_callback_console::print_error(
+    const std::string &text, const Json_attributes &attribs) const {
+  message("error", text, [&] { m_console->print_error(text, attribs); });
 }
 
-void Progress_callback_console::print_warning(const std::string &text,
-                                              const Json_attributes &) const {
-  message("warning", text);
+void Progress_callback_console::print_warning(
+    const std::string &text, const Json_attributes &attribs) const {
+  message("warning", text, [&] { m_console->print_warning(text, attribs); });
 }
 
-void Progress_callback_console::print_note(const std::string &text,
-                                           const Json_attributes &) const {
-  message("note", text);
+void Progress_callback_console::print_note(
+    const std::string &text, const Json_attributes &attribs) const {
+  message("note", text, [&] { m_console->print_note(text, attribs); });
 }
 
-void Progress_callback_console::print_status(const std::string &text,
-                                             const Json_attributes &) const {
-  message("status", text);
+void Progress_callback_console::print_status(
+    const std::string &text, const Json_attributes &attribs) const {
+  message("status", text, [&] { m_console->print_status(text, attribs); });
 }
 
-void Progress_callback_console::print_info(const std::string &text,
-                                           const Json_attributes &) const {
-  message("info", text);
+void Progress_callback_console::print_info(
+    const std::string &text, const Json_attributes &attribs) const {
+  message("info", text, [&] { m_console->print_info(text, attribs); });
 }
 
 void Progress_callback_console::print_para(const std::string &text) const {
-  message("info", text);
+  message("info", text, [&] { m_console->print_para(text); });
 }
 
 void Progress_callback_console::print_value(const shcore::Value &value,
-                                            const std::string &) const {
-  message("output", value.descr());
+                                            const std::string &tag) const {
+  message("output", value.descr(),
+          [&] { m_console->print_value(value, tag); });
 }
 
 void Progress_callback_console::print_diag(const std::string &text) const {
-  message("diag", text);
+  message("diag", text, [&] { m_console->print_diag(text); });
 }
 
 shcore::Prompt_result Progress_callback_console::prompt(
