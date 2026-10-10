@@ -27,7 +27,8 @@
 #define MODULES_MRS_CORE_MRS_METADATA_REST_OBJECTS_H_
 
 // Access to the REST database objects of the metadata schema: the rest_object
-// table and its data mapping (object, data_mapping_field, data_mapping_reference).
+// table and its data mapping (data_mapping, data_mapping_field,
+// data_mapping_reference).
 
 #include <optional>
 #include <string>
