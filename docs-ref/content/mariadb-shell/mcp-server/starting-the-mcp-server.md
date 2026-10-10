@@ -174,7 +174,7 @@ For a `stdio` server, the MCP client captures standard error. Check the MCP log 
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
 | *Unsupported transport '…'. Supported transports are: streamable-http, stdio.* | The value of `--transport` is misspelled, or names a transport that the server doesn't support, such as `sse`. | Use `stdio` or `streamable-http`. |
-| *Unknown function group(s): …* | `--functionGroups` names a group that doesn't exist. | Use `db`, `msm`, `sandbox`, or `migrator`. |
+| *Unknown function group(s): …* | `--functionGroups` names a group that doesn't exist. | Use `db`, `msm`, `sandbox`, `migrator`, or `util`. |
 | *There is no object registered under name 'mcp'* | The `mcp` plugin isn't installed, for example in a MariaDB Shell built from source, or plugins are disabled with `--disable-builtin-plugins`. | Install a MariaDB Shell release package. |
 | *error while attempting to bind on address ('127.0.0.1', 8080): … address already in use* | Another process uses the port. | Choose another port with `--port`. |
 | A client receives HTTP status `421 Misdirected Request`. | The client uses a host name that the server doesn't accept. | Add the name with `--allowedHosts`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
