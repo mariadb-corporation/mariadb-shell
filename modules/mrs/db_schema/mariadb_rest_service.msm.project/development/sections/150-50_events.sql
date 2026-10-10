@@ -1,0 +1,47 @@
+-- Copyright (c) 2025, Oracle and/or its affiliates.
+-- Copyright (c) 2026, MariaDB plc.
+-- -----------------------------------------------------
+-- EVENTs
+
+DELIMITER %%
+
+-- Create an event to delete old audit_log entries that are older than 14 days
+
+DROP EVENT IF EXISTS `delete_old_audit_log_entries`%%
+CREATE EVENT `delete_old_audit_log_entries`
+ON SCHEDULE EVERY 1 DAY ENABLE
+DO BEGIN
+    DELETE FROM `audit_log`
+        WHERE changed_at < NOW() - INTERVAL 14 DAY;
+END%%
+
+-- Create an event to dump the audit log every 15 minutes
+
+DROP EVENT IF EXISTS `audit_log_dump_event`%%
+CREATE EVENT `audit_log_dump_event`
+ON SCHEDULE EVERY 15 MINUTE
+  STARTS '2025-01-01 00:00:00'
+ON COMPLETION PRESERVE DISABLE
+DO BEGIN
+    CALL `dump_audit_log`();
+END%%
+
+-- Periodically down-sample rest_daemon_status rows to keep its size under control.
+
+DROP EVENT IF EXISTS `rest_daemon_status_cleanup`%%
+CREATE EVENT `rest_daemon_status_cleanup` ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up rest_daemon_status entries' DO
+    CALL rest_daemon_status_do_cleanup(NOW())%%
+
+
+-- Periodically delete the rest_daemon_general_log
+
+DROP EVENT IF EXISTS `rest_daemon_log_cleanup`%%
+CREATE EVENT `rest_daemon_log_cleanup`
+ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up rest_daemon_general_log entries'
+DO
+    DELETE FROM `rest_daemon_general_log`
+        WHERE `log_time` <= NOW() - INTERVAL 1 DAY%%
+
+DELIMITER ;

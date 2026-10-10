@@ -1,0 +1,94 @@
+-- Copyright (c) 2025, Oracle and/or its affiliates.
+-- Copyright (c) 2026, MariaDB plc.
+-- -----------------------------------------------------
+-- VIEWs
+
+-- -----------------------------------------------------------------------------
+-- View `mrs_user_schema_version`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `mrs_user_schema_version` (
+    major, minor, patch) AS
+SELECT 4, 0, 0;
+
+-- -----------------------------------------------------------------------------
+-- View `data_mapping_fields_with_references`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER VIEW `data_mapping_fields_with_references` AS
+WITH RECURSIVE obj_fields (
+    caption, lev, position, id, represents_reference_id, parent_reference_id, data_mapping_id,
+    name, db_column, enabled,
+    allow_filtering, allow_sorting, no_check, no_update, options, sdk_options, comments,
+    data_mapping_reference) AS
+(
+    SELECT CONCAT('- ', f.name) as caption, 1 AS lev, f.position, f.id,
+		f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
+        f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
+        f.options, f.sdk_options, f.comments,
+        IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
+            'reduce_to_value_of_field_id', r.reduce_to_value_of_field_id,
+            'row_ownership_field_id', r.row_ownership_field_id,
+            'reference_mapping', r.reference_mapping,
+            'unnest', (r.unnest = 1),
+            'options', r.options,
+            'sdk_options', r.sdk_options,
+            'comments', r.comments
+        )) AS data_mapping_reference
+    FROM `data_mapping_field` f
+        LEFT OUTER JOIN `data_mapping_reference` AS r
+            ON r.id = f.represents_reference_id
+    WHERE ISNULL(parent_reference_id)
+    UNION ALL
+    SELECT CONCAT(REPEAT('  ', p.lev), '- ', f.name) as caption, p.lev+1 AS lev, f.position,
+        f.id, f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
+        f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
+        f.options, f.sdk_options, f.comments,
+        IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
+            'reduce_to_value_of_field_id', rc.reduce_to_value_of_field_id,
+            'row_ownership_field_id', rc.row_ownership_field_id,
+            'reference_mapping', rc.reference_mapping,
+            'unnest', (rc.unnest = 1),
+            'options', rc.options,
+            'sdk_options', rc.sdk_options,
+            'comments', rc.comments
+        )) AS data_mapping_reference
+    FROM obj_fields AS p JOIN `data_mapping_reference` AS r
+            ON r.id = p.represents_reference_id
+        LEFT OUTER JOIN `data_mapping_field` AS f
+            ON r.id = f.parent_reference_id
+        LEFT OUTER JOIN `data_mapping_reference` AS rc
+            ON rc.id = f.represents_reference_id
+	WHERE f.id IS NOT NULL
+)
+SELECT * FROM obj_fields;
+
+-- -----------------------------------------------------------------------------
+-- View `rest_daemon_services`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `rest_daemon_services` AS
+SELECT r.id AS rest_daemon_id, r.name AS rest_daemon_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS rest_daemon_developer,
+    s.id as service_id, h.name AS service_url_host_name,
+    s.url_context_root AS service_url_context_root,
+    CONCAT(h.name, s.url_context_root) AS service_host_ctx,
+    s.published, s.in_development,
+    (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
+        FROM JSON_TABLE(
+        JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
+    ) AS jt) AS sorted_developers
+FROM `service` s
+    LEFT JOIN `url_host` h
+        ON s.url_host_id = h.id
+    JOIN `rest_daemon` r
+WHERE
+    (enabled = 1)
+    AND (
+    ((published = 1) AND (NOT EXISTS (select s2.id from `service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
+    OR
+    ((published = 0) AND (s.id IN (select s2.id from `service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
+    OR
+    ((published = 0) AND (JSON_EXTRACT(r.options, '$.developer') IS NOT NULL
+        OR JSON_EXTRACT(r.attributes, '$.developer') IS NOT NULL) AND s.in_development IS NULL)
+    );

@@ -8,7 +8,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 | Path | What it is |
 | --- | --- |
-| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, page tree in `SUMMARY.md`) |
+| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, 40 under `mariadb-rest-service/` since 2026-10-09, page tree in `SUMMARY.md`) |
+| `modules/mrs/antlr_grammar/` | ANTLR reference grammar of REST SQL + scripts for its railroad diagrams and the reference's rule blocks (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`) |
 | `docs-ref/` (rest) | Docusaurus offline preview, copied from ai-plugins; `npm run docs-ref` from the repo root |
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `build/bin/mariadb-shell` | Local 26.9.5 build, used to check help text and docs examples |
@@ -21,6 +22,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | --- | --- |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
+| [context/mrs-module.md](context/mrs-module.md) | Branch `wip/mrs_module`: the C++ `mrs` module replacing the Python mrs_plugin (bison REST SQL grammar, executor, SQL handler, tests): layout, design decisions, gotchas, state, next steps |
+| [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md) | What the MariaDB REST Daemon (MySQL Router fork, not in these repos) must change to serve metadata schema 5.0.0: schema name/prefix/postfix, renamed `rest_daemon*` tables, roles, UUID ids, vendor names, async tasks, status counters, audit log ids not in commit order (Galera) |
 
 ## Current State
 
@@ -29,6 +32,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
 - **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
+- **Branch `wip/mrs_module` (pushed through `cafcbbc8a`; this checkpoint commits the daemon table round, PR opened with it):** the Python mrs_plugin ported to a built-in C++ `mrs` module with a bison REST SQL grammar and the `MRS` SQL handler. 2026-10-09: no client files in REST SQL, `LOAD SCRIPTS` registers MRS scripts, GitBook docs + ANTLR grammar moved here, per-session state / bound values / batching, dump names the service once (USE), mode-independent SHOW CREATE quoting; then the metadata schema `mariadb_rest_service` (prefix/postfix, `SHOW REST METADATA SCHEMAS`, `USE REST METADATA SCHEMA`, `CONFIGURE REST METADATA SCHEMA`, 5.0.0 its first release), `mysql_task_user` and all async-task support dropped, MySQL names removed (`MariaDB Internal`, app `MariaDB`, `VENDOR MARIADB`); later the same day `router*` tables -> `rest_daemon*` (`rest_daemon.id` UUID, other daemon ids and `audit_log.id` `BIGINT UNSIGNED`, quoted UUID in `DROP REST DAEMON`), the fingerprint counts audit rows (ids not in commit order on Galera), `required_rest_daemon_version` 26.10.0, `ANY_VALUE` / `@@server_uuid` (MySQL only) replaced. MRS suites 80/80; docs preview build clean. See [context/mrs-module.md](context/mrs-module.md) and [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md).
 - **Open:**
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
@@ -54,3 +58,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **The pre-commit copyright hook** adds `Copyright (c) 2026, MariaDB plc.` to touched C++ files and aborts the commit; re-`git add` and commit again.
 - **GitHub returned HTTP 500 on four squash-merge attempts of #62** (2026-10-07) while the PR was clean; the user merged it later from the web UI.
 - **Windows testing:** a Windows 11 ARM64 box with OpenSSH, PowerShell 5.1 and 7 is in the project memory (`windows-test-machine`); used to verify `install.ps1`.
+
+## Git state
+
+Checked 2026-10-09, before this checkpoint's commit. Branch `wip/mrs_module` (tracks `origin/wip/mrs_module`); last pushed commit `cafcbbc8a`. `git status --short` before it: 30 modified files, all of this round (`modules/mrs` core, grammars and `db_schema/mariadb_rest_service.msm.project` incl. releases and the `.mwb`, the mrs unit tests and `mrs_services_norecord.py`, docs-ref `rest-daemons.md`, `rest-metadata.md`, `daemonId.svg`, `.claude/context/{mrs-module,rest-daemon-5.0}.md`), committed with this checkpoint and pushed; a PR to `main` is opened with it.
+

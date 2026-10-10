@@ -62,6 +62,9 @@ file(GLOB api_module_SOURCES
       "mod_sys.cc"
       "mod_utils.cc"
       "mod_mysql_constants.cc"
+      "mrs/mod_mrs.cc"
+      "mrs/mrs_shell_session.cc"
+      "mrs/mrs_schema_deployers.cc"
       "reports/native_report.cc"
       "reports/query.cc"
       "reports/thread.cc"
@@ -217,6 +220,11 @@ ENDIF()
 IF(MYSQL_SOURCE_DIR AND MYSQL_BUILD_DIR)
     ADD_SUBDIRECTORY(adminapi)
 ENDIF()
+
+# The MariaDB REST Service module: REST SQL grammar, executor and the `mrs`
+# global object.
+ADD_SUBDIRECTORY(mrs)
+target_link_libraries(api_modules mrs_core)
 
 ADD_STAN_TARGET(api_modules ${api_module_SOURCES})
 
