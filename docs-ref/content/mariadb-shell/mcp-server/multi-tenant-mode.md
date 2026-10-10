@@ -19,7 +19,7 @@ Use multi-tenant mode when one MCP server is shared, for example by a team, by a
 | Connections and passwords | One list, shared by every client | One list per user |
 | Allowed directories | One list, shared by every client | One list per user |
 | Transport | `stdio` or `streamable-http` | `streamable-http` only |
-| Function groups | `db`, `msm`, `sandbox`, `migrator` | `db` |
+| Function groups | `db`, `msm`, `sandbox`, `migrator`, `util` | `db` |
 | Paths outside the allowed directories | The server asks the client whether to trust them | Refused |
 | Configured with | `mcp setup` | `mcp setup`, and `mcp setup-oauth` for OAuth2 |
 
@@ -234,7 +234,7 @@ Start the server as described in [Starting the MCP Server](starting-the-mcp-serv
 
 * serves only over `streamable-http`, and refuses to start with `--transport=stdio`, because a `stdio` server has no request that could carry a user's credentials;
 * refuses `--gui`;
-* provides only the `db` group, and refuses to start if `--functionGroups` names another one: the `sandbox` and `migrator` tools run local servers and long jobs on the server's machine, and the `msm` tools work on schema project folders on the developer's own machine;
+* provides only the `db` group, and refuses to start if `--functionGroups` names another one: the `sandbox`, `migrator`, and `util` tools run local servers and long jobs on the server's machine, and the `msm` tools work on schema project folders on the developer's own machine;
 * refuses to start if there is no enabled user, unless an [OAuth2](oauth-authentication.md) mode creates users at their first sign-in (`--autoProvision`, the default), because then the first sign-in adds the first user.
 
 ```text
