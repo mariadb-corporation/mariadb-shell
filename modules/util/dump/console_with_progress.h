@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -121,6 +122,13 @@ class Console_with_progress final : public IConsole {
   void disable_global_pager() override;
 
   bool is_global_pager_enabled() const override;
+
+  /**
+   * The console this one prints to.
+   */
+  const std::shared_ptr<IConsole> &console() const noexcept {
+    return m_console;
+  }
 
   void add_print_handler(shcore::Interpreter_print_handler *handler) override;
 

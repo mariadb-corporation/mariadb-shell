@@ -285,7 +285,7 @@ void Interrupts::pop_handler() {
   m_unsafe_handlers[m_num_handlers] = 0;
 }
 
-void Interrupts::interrupt() {
+bool Interrupts::interrupt() {
   // lock this object, is can be unlocked only after asynchronous handling is
   // done
 #if MYSQLSH_SYNCHRONOUS_SIGNAL_DELIVERY
@@ -294,12 +294,14 @@ void Interrupts::interrupt() {
   if (!try_lock()) {
     // handler is being added/removed or asynchronous callbacks are still being
     // executed, ignore the signal
-    return;
+    return false;
   }
 #else   // !MYSQLSH_SYNCHRONOUS_SIGNAL_DELIVERY
   // signal is delivered from a new thread, we can lock here
   lock();
 #endif  // !MYSQLSH_SYNCHRONOUS_SIGNAL_DELIVERY
+
+  bool taken = false;
 
   if (m_num_handlers > 0) {
     try {
@@ -313,11 +315,13 @@ void Interrupts::interrupt() {
         }
       }
 
+      taken = true;
+
       // the helper thread unlocks this object once it has run the unsafe
       // handlers; if it is already gone - shutdown stops it before mysys is
       // torn down, see stop_background_thread() - nobody would, so fall through
       // to the unlock below
-      if (write_to_thread(stop_at)) return;
+      if (write_to_thread(stop_at)) return true;
     } catch (const std::exception &e) {
       // logging is not signal safe, but this is an extraordinary situation
       log_error("Unexpected exception in safe interrupt handler: %s", e.what());
@@ -328,6 +332,8 @@ void Interrupts::interrupt() {
 
   // there are no handlers, or abnormal situation, just unlock right away
   unlock();
+
+  return taken;
 }
 
 void Interrupts::wait(uint32_t ms) { m_sigint_event.wait(ms); }

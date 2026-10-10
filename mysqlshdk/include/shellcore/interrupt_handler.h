@@ -52,7 +52,14 @@ class Interrupts final {
 
   ~Interrupts();
 
-  void interrupt();
+  /**
+   * Runs the registered handlers.
+   *
+   * @returns false if nothing took the interrupt: no handler is registered, or
+   * the object is busy with another interrupt or a handler change (the signal
+   * is then dropped, as it cannot wait); the caller may try again later
+   */
+  bool interrupt();
 
   void wait(uint32_t ms);
 
@@ -69,6 +76,12 @@ class Interrupts final {
    */
   void stop_background_thread();
 
+  /**
+   * Whether the calling thread created this object: only that thread's
+   * handlers are registered, and only its work can be interrupted by them.
+   */
+  bool in_creator_thread() const;
+
  private:
   friend class Interrupt_handler;
 
@@ -83,8 +96,6 @@ class Interrupts final {
   void push_handler(const std::function<bool()> &signal_safe,
                     const std::function<void()> &signal_unsafe);
   void pop_handler();
-
-  bool in_creator_thread() const;
 
   void setup();
 

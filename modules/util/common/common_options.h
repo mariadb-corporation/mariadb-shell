@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +30,9 @@
 #include <memory>
 #include <string>
 
+#include "mysqlshdk/include/scripting/types.h"
 #include "mysqlshdk/include/scripting/types/option_pack.h"
+#include "mysqlshdk/include/shellcore/base_session.h"
 
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/db/session.h"
@@ -73,6 +76,21 @@ class Common_options : public Storage_options {
 
   bool show_progress() const noexcept { return m_show_progress; }
 
+  /**
+   * The session given with the `session` option, to use in place of the
+   * shell's global session, or nullptr where none was given.
+   *
+   * @throws std::invalid_argument if the session given is not open
+   */
+  std::shared_ptr<mysqlshdk::db::ISession> given_session() const;
+
+  /**
+   * The function given with the `progressCallback` option, or nullptr.
+   */
+  const shcore::Function_base_ref &progress_callback() const noexcept {
+    return m_progress_callback;
+  }
+
   void validate_and_configure();
 
  protected:
@@ -107,6 +125,9 @@ class Common_options : public Storage_options {
   mysqlshdk::db::Connection_options m_connection_options;
 
   bool m_show_progress;
+
+  std::shared_ptr<ShellBaseSession> m_given_session;
+  shcore::Function_base_ref m_progress_callback;
 };
 
 }  // namespace common

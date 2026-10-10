@@ -36,6 +36,7 @@
 #include "modules/util/binlog/binlog_dumper.h"
 #include "modules/util/binlog/binlog_loader.h"
 #endif
+#include "modules/util/common/progress_callback.h"
 #include "modules/util/copy/copy_operation.h"
 #include "modules/util/dump/dump_instance.h"
 #include "modules/util/dump/dump_instance_options.h"
@@ -935,6 +936,23 @@ option is given
 @li <b>azure/container/path</b> - Azure Blob Storage, when the
 <b>azureContainerName</b> option is given)*");
 
+REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_SESSION_AND_PROGRESS_OPTIONS, R"*(
+@li <b>session</b>: Session (default: the global %Shell session) - The session
+to run with, in place of the global one. Its connection options are used to
+establish the additional connections. Not available on the command line.
+@li <b>progressCallback</b>: function (default: not set) - Called with a
+dictionary for every message the operation would print and for the progress of
+each of its stages, in place of printing them: its <b>type</b> is "message"
+(with <b>level</b> and <b>text</b>), "stageStarted" (with <b>stage</b>),
+"progress" (with <b>stage</b>, <b>current</b> and <b>total</b>, plus
+<b>throughput</b> in items per second, <b>etaSeconds</b>, <b>items</b> and
+<b>totalIsApproximate</b> for a stage that measures throughput, or
+<b>totalKnown</b> for one that counts) or "stageFinished" (with <b>stage</b>
+and <b>seconds</b>). Returning "cancel" or true stops the operation as ^C does,
+also when it runs in a thread other than the main one. Not available on the
+command line.
+)*");
+
 REGISTER_HELP_FUNCTION(importTable, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_IMPORTTABLE, R"*(
 Import table dump stored in files to target table using LOAD DATA LOCAL
@@ -1010,6 +1028,7 @@ M - for Megabytes (n * 1'000'000 bytes), G - for Gigabytes (n * 1'000'000'000
 bytes), maxRate="2k" - limit to 2 kilobytes per second.
 @li <b>showProgress</b>: bool (default: true if stdout is a tty, false
 otherwise) - Enable or disable import progress information.
+${TOPIC_UTIL_SESSION_AND_PROGRESS_OPTIONS}
 @li <b>skipRows</b>: int (default: 0) - Skip first N physical lines from each of
 the imported files. You can use this option to skip an initial header line
 containing column names.
@@ -1188,10 +1207,11 @@ void Util::import_table_files(
   using import_table::Import_table;
   using mysqlshdk::utils::format_bytes;
 
+  common::Utility_scope utility_scope{options};
   import_table::Import_table_options opt(options);
 
   opt.set_filenames(files);
-  opt.set_session(global_session());
+  opt.set_session(session_for(options));
 
   opt.validate_and_configure();
 
@@ -1454,6 +1474,7 @@ list of SQL statements in each session about to load data.
 information stored in the dump files, i.e. binary log file name and position.
 @li <b>showProgress</b>: bool (default: true if stdout is a tty, false
 otherwise) - Enable or disable import progress information.
+${TOPIC_UTIL_SESSION_AND_PROGRESS_OPTIONS}
 @li <b>skipBinlog</b>: bool (default: false) - Disables the binary log
 for the sessions used by the loader (set sql_log_bin=0).
 @li <b>threads</b>: int (default: 4) - Number of threads to use to import table
@@ -1539,7 +1560,8 @@ Undefined Util::loadDump(String url, Dictionary options) {}
 None Util::load_dump(str url, dict options) {}
 #endif
 void Util::load_dump(const std::string &url, Load_dump_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.loadDump()"};
 
@@ -1784,6 +1806,7 @@ maximum rate, measured in bytes per second per thread. Use maxRate="0" to set no
 limit.
 @li <b>showProgress</b>: bool (default: true if stdout is a TTY device, false
 otherwise) - Enable or disable dump progress information.
+${TOPIC_UTIL_SESSION_AND_PROGRESS_OPTIONS}
 @li <b>defaultCharacterSet</b>: string (default: "utf8mb4") - Character set used
 for the dump.
 @li <b>allowDataMasking</b>: bool (default: false) - Allows to dump data with
@@ -1912,8 +1935,9 @@ library objects to be included in the dump in the format of
 )*");
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_SESSION_DETAILS, R"*(
-Requires an open, global %Shell session, and uses its connection options, such
-as compression, ssl-mode, etc., to establish additional connections.
+Requires an open, global %Shell session, or the one given in the 'session'
+option, and uses its connection options, such as compression, ssl-mode, etc., to
+establish additional connections.
 )*");
 
 REGISTER_HELP_DETAIL_TEXT(TOPIC_UTIL_DUMP_EXPORT_COMMON_REQUIREMENTS, R"*(
@@ -2094,7 +2118,8 @@ None Util::export_table(str table, str outputUrl, dict options);
 #endif
 void Util::export_table(const std::string &table, const std::string &file,
                         dump::Export_table_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.exportTable()"};
 
@@ -2194,7 +2219,8 @@ void Util::dump_tables(const std::string &schema,
                        const std::vector<std::string> &tables,
                        const std::string &directory,
                        dump::Dump_tables_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpTables()"};
 
@@ -2267,7 +2293,8 @@ None Util::dump_schemas(list schemas, str outputUrl, dict options);
 void Util::dump_schemas(const std::vector<std::string> &schemas,
                         const std::string &directory,
                         dump::Dump_schemas_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpSchemas()"};
 
@@ -2363,7 +2390,8 @@ None Util::dump_instance(str outputUrl, dict options);
 #endif
 void Util::dump_instance(const std::string &directory,
                          dump::Dump_instance_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{options};
+  const auto session = session_for(options);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.dumpInstance()"};
 
@@ -2484,6 +2512,7 @@ maximum rate, measured in bytes per second per thread. Use maxRate="0" to set no
 limit.
 @li <b>showProgress</b>: bool (default: true if stdout is a TTY device, false
 otherwise) - Enable or disable copy progress information.
+${TOPIC_UTIL_SESSION_AND_PROGRESS_OPTIONS}
 @li <b>defaultCharacterSet</b>: string (default: "utf8mb4") - Character set used
 for the copy.
 @li <b>allowDataMasking</b>: bool (default: false) - Allows to copy data with
@@ -2537,7 +2566,8 @@ while it is not replicating.
 REGISTER_HELP_FUNCTION(copyInstance, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_COPYINSTANCE, R"*(
 Copies a source instance to the target instance. Requires an open global %Shell
-session to the source instance, if there is none, an exception is raised.
+session to the source instance, or one given in the 'session' option, if there
+is none, an exception is raised.
 
 @param connectionData Specifies the connection information required to establish
 a connection to the target instance.
@@ -2586,7 +2616,8 @@ None Util::copy_instance(ConnectionData connectionData, dict options);
 void Util::copy_instance(
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_instance_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copyInstance()"};
@@ -2599,8 +2630,8 @@ void Util::copy_instance(
 REGISTER_HELP_FUNCTION(copySchemas, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_COPYSCHEMAS, R"*(
 Copies schemas from the source instance to the target instance. Requires an open
-global %Shell session to the source instance, if there is none, an exception is
-raised.
+global %Shell session to the source instance, or one given in the 'session'
+option, if there is none, an exception is raised.
 
 @param schemas List of strings with names of schemas to be copied.
 @param connectionData Specifies the connection information required to establish
@@ -2635,7 +2666,8 @@ void Util::copy_schemas(
     const std::vector<std::string> &schemas,
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_schemas_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copySchemas()"};
@@ -2649,8 +2681,8 @@ void Util::copy_schemas(
 REGISTER_HELP_FUNCTION(copyTables, util);
 REGISTER_HELP_FUNCTION_TEXT(UTIL_COPYTABLES, R"*(
 Copies tables and views from schema in the source instance to the target
-instance. Requires an open global %Shell session to the source instance, if
-there is none, an exception is raised.
+instance. Requires an open global %Shell session to the source instance, or one
+given in the 'session' option, if there is none, an exception is raised.
 
 @param schema Name of the schema that contains tables and views to be copied.
 @param tables List of strings with names of tables and views to be copied.
@@ -2687,7 +2719,8 @@ void Util::copy_tables(
     const std::string &schema, const std::vector<std::string> &tables,
     const mysqlshdk::db::Connection_options &connection_options,
     copy::Copy_tables_options &&options) {
-  const auto session = global_session();
+  common::Utility_scope utility_scope{*options.dump_options()};
+  const auto session = session_for(*options.dump_options());
   session->set_option_tracker_feature_id(Shell_feature::UTIL_COPY);
   Scoped_log_sql log_sql{log_sql_for_dump_and_load()};
   shcore::Log_sql_guard log_sql_context{"util.copyTables()"};
@@ -2698,6 +2731,15 @@ void Util::copy_tables(
   options.dump_options()->set_session(session);
 
   copy::copy<mysqlsh::dump::Dump_tables>(connection_options, &options);
+}
+
+std::shared_ptr<mysqlshdk::db::ISession> Util::session_for(
+    const common::Common_options &options) const {
+  if (auto session = options.given_session()) {
+    return session;
+  }
+
+  return global_session();
 }
 
 std::shared_ptr<mysqlshdk::db::ISession> Util::global_session() const {

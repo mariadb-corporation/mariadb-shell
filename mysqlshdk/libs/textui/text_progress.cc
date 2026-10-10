@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -228,6 +229,17 @@ void Json_progress::show_status(bool force) {
       m_status_shown = true;
     }
   }
+}
+
+shcore::Dictionary_t Base_progress::snapshot() const {
+  auto result = shcore::make_dict();
+  result->emplace("current", m_current);
+  result->emplace("total", m_total);
+  result->emplace("totalIsApproximate", m_total_is_approx);
+  result->emplace("throughput", throughput_rate());
+  result->emplace("etaSeconds", eta());
+  result->emplace("items", m_items_full);
+  return result;
 }
 
 void Json_progress::render_status() {

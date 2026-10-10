@@ -37,6 +37,7 @@ file(GLOB api_module_SOURCES
       "dynamic_*.cc"
       "util/common/common_options.cc"
       "util/common/data_masking.cc"
+      "util/common/progress_callback.cc"
       "util/common/storage_options.cc"
       "util/common/utils.cc"
 

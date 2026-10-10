@@ -51,12 +51,12 @@ Option names are accepted in camelCase (`--outputUrl`) or kebab-case (`--output-
 | `tables` | `dump_tables` only. A list of table, view and sequence names in `schema`. Every name must exist. Pass an empty list together with `{"all": True}` to dump every table and view of the schema. |
 | `options` | A dictionary of options. Keys use camelCase, for example `{"threads": 8, "ddlOnly": True}`. |
 
-All three functions use the global session's connection and open additional connections with the same options (TLS, compression and so on), one per thread.
+All three functions use the global session's connection, or the session given in the `session` option, and open additional connections with the same options (TLS, compression and so on), one per thread.
 
 ## Requirements
 
 * MariaDB Server 10.11 or later as the source.
-* An open global session to the source server.
+* An open global session to the source server, or a session to it given in the `session` option.
 * Schema object names in the `latin1` or `utf8` character set.
 * Data is guaranteed consistent only for transactional tables (InnoDB, and Aria with `TRANSACTIONAL=1`). See [How Dump and Load Work](how-dump-and-load-work.md).
 
@@ -228,6 +228,8 @@ The dialect presets set these values:
 | --- | --- | --- | --- |
 | `dryRun` | bool | `False` | Check privileges and options, and report what would be dumped, without taking locks or writing files. |
 | `showProgress` | bool | `True` when stdout is a terminal | Print progress while dumping. |
+| `session` | Session | the global session | The session to dump from, in place of the global one. Not available on the command line. See [Running on Your Own Session](#running-on-your-own-session). |
+| `progressCallback` | function | not set | A function that gets the output and the progress as dictionaries, in place of printing them, and can stop the dump. Not available on the command line. See [Running on Your Own Session](#running-on-your-own-session). |
 | `targetVersion` | string | the MariaDB version the shell was built against | The MariaDB Server version you plan to load the dump into. It is validated and recorded in the dump's metadata. For a MariaDB source this is a MariaDB version, not a MySQL or Shell version, and it cannot be newer than the build's MariaDB version (13.1.0 for MariaDB Shell 26.9.5). |
 
 A `targetVersion` that is too new is refused:
@@ -245,6 +247,52 @@ ValueError: Target MariaDB version '99.0.0' is newer than the MariaDB version th
 | `azureContainerName` | string | not set | Azure Blob Storage container. Related options: `azureConfigFile`, `azureStorageAccount`, `azureStorageSasToken`. |
 
 The bucket or container must already exist. Individual files are limited to 1.2 TiB. For every storage option, see [Object Storage](object-storage.md).
+
+## Running on Your Own Session
+
+A program that runs the shell, such as a plugin or the MCP server, may hold sessions of its own and keep the global session for something else, and may want to run a dump in the background while it does other work. Every dump, load, copy, export and import utility takes two options for this:
+
+* `session`: the session to run with. The utility uses it, and its connection options for its additional connections, as it would use the global session, which can be empty.
+* `progressCallback`: a function that is called with a dictionary for everything the utility would print and for the progress of each of its stages. While it is set, the utility prints nothing and draws no progress.
+
+The callback gets these events, each with a `type`:
+
+| `type` | Other keys | When |
+| --- | --- | --- |
+| `message` | `level` (`output`, `info`, `status`, `note`, `warning`, `error` or `diag`), `text` | For every line the utility would print, such as `Dumping data...` or a warning. |
+| `stageStarted` | `stage` | When a stage starts, such as `Gathering information`, `Writing DDL` or `Dumping data`. |
+| `progress` | `stage`, `current`, `total`, and either `throughput` (items per second), `etaSeconds`, `items` (`bytes` or `rows`) and `totalIsApproximate`, or `totalKnown` | About four times a second while a stage that measures something runs, and once more when it ends. |
+| `stageFinished` | `stage`, `seconds` | When a stage ends. |
+
+Stages can end in a different order than they started, since some run at the same time.
+
+The callback stops the utility by returning `"cancel"` or `True`: the utility then stops as it does when you press Ctrl+C, and raises `Interrupted by user`. This also works for a utility running in a thread other than the main one, which Ctrl+C does not reach. An error the callback raises is logged and does not stop the utility.
+
+A dump in a Python thread, on a session that is not the global one, stopped after a minute:
+
+```python
+import threading, time
+from mysqlsh import globals as g
+
+session = g.shell.open_session("root@localhost:3306")
+started = time.time()
+progress = {}
+
+def report(event):
+    if event["type"] == "progress":
+        progress[event["stage"]] = (event["current"], event["total"])
+    elif event["type"] == "message" and event["level"] in ("warning", "error"):
+        print(event["text"])
+    if time.time() - started > 60:
+        return "cancel"
+
+def dump():
+    g.util.dump_schemas(["shop"], "/backups/shop",
+                        {"session": session, "progressCallback": report})
+
+worker = threading.Thread(target=dump)
+worker.start()
+```
 
 ## Examples
 

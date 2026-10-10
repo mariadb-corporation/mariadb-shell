@@ -21,6 +21,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | --- | --- |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
+| [context/util-any-session.md](context/util-any-session.md) | Branch `wip/util_any_session`: `session` and `progressCallback` options for the dump/load/copy/export/import utilities, thread and cancel handling, tests, gotchas |
 
 ## Current State
 
