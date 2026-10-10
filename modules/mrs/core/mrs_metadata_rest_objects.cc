@@ -362,7 +362,14 @@ std::string explicit_privilege(const json::Value &value) {
   if (const auto *columns = value.get("columnList"); columns && columns->is_array()) {
     std::vector<std::string> names;
     for (const auto &column : columns->as_array()) {
-      names.push_back(column.is_string() ? column.as_string() : column.dump());
+      // the names reach the GRANT text, which takes no bound values, and the
+      // grants of stored options run with the privileges of whoever ALTERs
+      // the object later: quoted, so a name stays a name
+      if (!column.is_string() || column.as_string().empty()) {
+        throw std::runtime_error(
+            "Invalid column name in the columnList of the grants option.");
+      }
+      names.push_back(sql::quote_identifier(column.as_string()));
     }
     result += " (" + join(names, ", ") + ")";
   }

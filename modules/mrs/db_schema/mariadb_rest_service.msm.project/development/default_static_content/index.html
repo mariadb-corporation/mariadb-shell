@@ -346,6 +346,46 @@
     <script type="module">
         import { h, render, Component, createRef, html } from './standalone-preact.js'
 
+        /**
+         * A path on this page's own server, as the service and authPath URL parameters must be: anything else
+         * (an absolute URL, or a path starting with // or /\, which browsers read as another host) would send the
+         * page's requests, and the login, elsewhere
+         *
+         * @param value The URL parameter
+         *
+         * @returns The value, or undefined if it is not such a path
+         */
+        const localPath = (value) => {
+            if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") ||
+                value.startsWith("/\\")) {
+                return undefined;
+            }
+
+            return value;
+        };
+
+        /**
+         * A URL the page may send the browser to after the login: http or https only, so that the redirectUrl URL
+         * parameter cannot run script in this page's origin (javascript:, data: and the like)
+         *
+         * @param value The URL parameter
+         *
+         * @returns The value, or undefined if it is not an http or https URL
+         */
+        const redirectTarget = (value) => {
+            if (typeof value !== "string" || value === "") {
+                return undefined;
+            }
+
+            try {
+                const url = new URL(value, globalThis.location.href);
+
+                return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+            } catch {
+                return undefined;
+            }
+        };
+
         class MrsBaseSession {
             loginState = {};
 
@@ -733,10 +773,11 @@
             startLogin = (authApp) => {
                 if (authApp !== undefined) {
                     // Encode current URL but replace the location.search with the authApp name
-                    const redirectUrl = encodeURIComponent(MrsBaseApp.getUrlWithNewSearchString(`authApp=${authApp}`));
+                    const redirectUrl = encodeURIComponent(MrsBaseApp.getUrlWithNewSearchString(
+                        `authApp=${encodeURIComponent(authApp)}`));
 
                     globalThis.location.href =
-                        `${this.serviceUrl}/authentication/login?app=${authApp}&sessionType=cookie` +
+                        `${this.serviceUrl}/authentication/login?app=${encodeURIComponent(authApp)}&sessionType=cookie` +
                         `&onCompletionRedirect=${redirectUrl}`;
                 } else {
                     globalThis.location.href = MrsBaseApp.getUrlWithNewSearchString();
@@ -1017,10 +1058,11 @@
 
                 const oracleCloudAuthLink = (appName) => {
                     const currentLocation = (new URL(window.location.href));
-                    const servicePath = currentLocation.searchParams.get("service");
-                    const redirectUrl = currentLocation.searchParams.get("redirectUrl");
+                    const servicePath = localPath(currentLocation.searchParams.get("service")) ?? "";
+                    const redirectUrl = redirectTarget(currentLocation.searchParams.get("redirectUrl")) ?? "";
                     const ociUrl = `${currentLocation.protocol}//${currentLocation.host}${servicePath}/` +
-                        `authentication/login?authApp=${appName}&sessionType=cookie&onCompletionRedirect=${redirectUrl}`
+                        `authentication/login?authApp=${encodeURIComponent(appName)}&sessionType=cookie` +
+                        `&onCompletionRedirect=${encodeURIComponent(redirectUrl)}`
 
                     return html`
                         <a href="${ociUrl}">
@@ -1102,9 +1144,9 @@
 
                 // Encode current URL but replace the location.search with the authApp name
                 const fullRedirectUrl = encodeURIComponent(this.getUrlWithNewSearchString(
-                    `authApp=${authApp}&redirectUrl=${redirectUrl}`));
+                    `authApp=${encodeURIComponent(authApp)}&redirectUrl=${encodeURIComponent(redirectUrl ?? "")}`));
 
-                const loginPath = `${serviceUrl}${authPath}/login?app=${authApp}&sessionType=cookie` +
+                const loginPath = `${serviceUrl}${authPath}/login?app=${encodeURIComponent(authApp)}&sessionType=cookie` +
                     `&onCompletionRedirect=${fullRedirectUrl}`;
 
                 window.location.href = loginPath;
@@ -1208,8 +1250,10 @@
             get: (searchParams, prop) => searchParams.get(prop),
         });
 
-        render(html`<${App} service=${urlParams.service} authPath=${urlParams.authPath} authApp=${urlParams.authApp}
-            redirectUrl=${urlParams.redirectUrl}/>`, document.querySelector('#root'))
+        // service and authPath are paths on this server, redirectUrl an http or https URL; others are ignored
+        render(html`<${App} service=${localPath(urlParams.service)} authPath=${localPath(urlParams.authPath)}
+            authApp=${urlParams.authApp} redirectUrl=${redirectTarget(urlParams.redirectUrl)}/>`,
+            document.querySelector('#root'))
     </script>
 </body>
 
