@@ -57,7 +57,6 @@ A token carries the scopes that the user granted the client when they signed in,
 | Scope | Tools |
 | --- | --- |
 | `mcp:db` | The `db` tools |
-| `mcp:msm` | The `msm` tools |
 
 A client sees only the tools of the scopes its token grants. A token that grants none of the scopes is answered with status `403 Forbidden` and `error="insufficient_scope"`, which tells the client which scopes to request. A token never grants more than the user's [scopes](multi-tenant-mode.md#scopes) in the configuration.
 
@@ -71,7 +70,7 @@ In `keycloak` mode, Keycloak signs users in and issues the access tokens. The MC
 
 The realm needs the following, all of which `mcp setup-keycloak-realm` creates for you:
 
-* The client scopes `mcp:db` and `mcp:msm`, each with an **Audience** mapper that adds the MCP server's public URL to the `aud` claim of the access token. The server refuses tokens without it.
+* The client scope `mcp:db`, with an **Audience** mapper that adds the MCP server's public URL to the `aud` claim of the access token. The server refuses tokens without it.
 * The realm role `mcp-user`, which a token must carry for the server to create a user automatically at their first sign-in.
 * A public client for MCP clients that don't register themselves, by default `mariadb-mcp`, with PKCE required and redirect URIs on the loopback address.
 
@@ -86,12 +85,10 @@ mariadb-shell -- mcp setup-keycloak-realm --server=https://kc.example.com --real
 Keycloak administrator password:
 Client scope mcp:db created.
 Audience https://mcp.example.com/mcp added to mcp:db.
-Client scope mcp:msm created.
-Audience https://mcp.example.com/mcp added to mcp:msm.
 Realm role mcp-user created.
 Realm role mcp-user given to ada.
 Client mariadb-mcp created.
-Client mariadb-mcp may request mcp:db, mcp:msm.
+Client mariadb-mcp may request mcp:db.
 Realm 'mariadb' is prepared for https://mcp.example.com/mcp. Issuer: https://kc.example.com/realms/mariadb
 Public URL set to https://mcp.example.com/mcp.
 OAuth mode: keycloak.
@@ -106,10 +103,10 @@ The command doesn't change the realm's client registration policies. By default,
 
 To prepare the realm by hand instead, in the Keycloak admin console of the realm:
 
-1. Create the client scopes `mcp:db` and `mcp:msm`, of type **Optional**, with **Include in token scope** on.
-2. In each of them, add a mapper by configuration of type **Audience**. Set **Included Custom Audience** to the MCP server's public URL, exactly as configured with `--publicUrl`, and turn **Add to access token** on.
+1. Create the client scope `mcp:db`, of type **Optional**, with **Include in token scope** on.
+2. In it, add a mapper by configuration of type **Audience**. Set **Included Custom Audience** to the MCP server's public URL, exactly as configured with `--publicUrl`, and turn **Add to access token** on.
 3. Create the realm role `mcp-user`, and give it to the users who may use the MCP server.
-4. Create an OpenID Connect client for the MCP clients, with client authentication off, the standard flow on, PKCE method `S256`, and valid redirect URIs `http://127.0.0.1/*` and `http://localhost/*`. Add `mcp:db` and `mcp:msm` as optional client scopes.
+4. Create an OpenID Connect client for the MCP clients, with client authentication off, the standard flow on, PKCE method `S256`, and valid redirect URIs `http://127.0.0.1/*` and `http://localhost/*`. Add `mcp:db` as an optional client scope.
 
 Then configure the MCP server:
 
@@ -377,7 +374,7 @@ For a user who signs in with Keycloak, also end their sessions in Keycloak.
 | `--dynamicClientRegistration=<bool>` | Lets clients register themselves. Default: on. |
 | `--cimd=<bool>` | Accepts clients with a Client ID Metadata Document. Default: on. |
 | `--autoProvision=<bool>` | Creates a user at their first sign-in, in the selected mode. Default: on. |
-| `--defaultScopes=<list>` | The scopes of users created at sign-in. Default: `mcp:db,mcp:msm`. |
+| `--defaultScopes=<list>` | The scopes of users created at sign-in. Default: `mcp:db`. |
 | `--addClient=<name>` | Registers a client, and prints its ID and, if confidential, its secret. |
 | `--confidential` | Makes the client of `--addClient` authenticate with a secret. |
 | `--redirectUris=<list>` | The redirect URIs for `--addClient` or `--setClientRedirectUris`. |
@@ -422,7 +419,7 @@ Clients are named by their client ID or by their name.
 | *OAuth mode 'builtin' signs users in against a MariaDB server, and none is configured.* | No login server is configured. | Add one with `--addLoginServer`. |
 | *Could not read the OpenID configuration of '…'* | The issuer URL is wrong, or Keycloak isn't reachable from the setup. | Check the URL, or save it with `--noVerify`. |
 | The client receives `401 Unauthorized` for a Keycloak token. | The token wasn't issued for the public URL, was issued by another realm, has expired, or belongs to nobody who may use the server. The server log says which. | Check the Audience mapper of the client scopes, and that the user has the realm role `mcp-user` or a verified email address of a configured user. |
-| The client receives `403 Forbidden` with `insufficient_scope`. | The token grants neither `mcp:db` nor `mcp:msm`. | Let the client request the scopes. In Keycloak, add them as optional client scopes of the client. |
+| The client receives `403 Forbidden` with `insufficient_scope`. | The token doesn't grant `mcp:db`. | Let the client request the scope. In Keycloak, add it as an optional client scope of the client. |
 | The sign-in page shows *Your account is not allowed to use this server.* | The account doesn't hold the required role, or new users aren't created automatically. | Grant the role, or add the account to a user with `mcp setup --addIdentity`. |
 | The sign-in page shows *Too many failed attempts. Try again later.* | Too many failed sign-ins for the account or from the address. | Wait 15 minutes. |
 | The browser receives `429 Too Many Requests` instead of the sign-in page. | More than 30 sign-ins were started from the address within a minute, for example behind a reverse proxy. | Retry after a minute. |

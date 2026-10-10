@@ -135,7 +135,7 @@ The server then provides `db_list_connections`, `msm_create_project`, and so on.
 
 ## Multi-Tenant Servers
 
-When [multi-tenant mode](multi-tenant-mode.md) is on, `mcp start-server` serves authenticated users: it refuses `--transport=stdio` and `--gui`, provides only the `db` and `msm` groups, and refuses to start if `--functionGroups` names another group, or if there is no enabled user and no OAuth2 mode that creates users at sign-in. In an [OAuth2](oauth-authentication.md) mode, it also needs a public URL, from `mcp setup-oauth --publicUrl` or from its own `--publicUrl`. Everything else on this page applies unchanged.
+When [multi-tenant mode](multi-tenant-mode.md) is on, `mcp start-server` serves authenticated users: it refuses `--transport=stdio` and `--gui`, provides only the `db` group, and refuses to start if `--functionGroups` names another group, or if there is no enabled user and no OAuth2 mode that creates users at sign-in. In an [OAuth2](oauth-authentication.md) mode, it also needs a public URL, from `mcp setup-oauth --publicUrl` or from its own `--publicUrl`. Everything else on this page applies unchanged.
 
 ## Log Output
 
