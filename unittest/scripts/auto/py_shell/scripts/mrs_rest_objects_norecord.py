@@ -95,7 +95,7 @@ full_city = """CREATE OR REPLACE REST VIEW /city
         },
         addresses: sakila.address @INSERT {
             addressId: address_id @KEY,
-            address: address
+            address: address JSON SCHEMA {"type":"string"}
         }
     }
     DISABLED
@@ -141,6 +141,32 @@ EXPECT_EQ("country", metadata_value("SELECT p.name FROM mariadb_rest_service.dat
 EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info(full_city))
 EXPECT_EQ(full_city, show_create("SHOW CREATE REST VIEW /city"))
 EXPECT_EQ(full_city, show_create("SHOW CREATE REST DATA MAPPING VIEW /city ON SERVICE /svc SCHEMA /sakila"))
+
+#@<> SHOW CREATE REST VIEW writes the annotations in the order they parse
+# The value options, @DATATYPE, the CRUD options, JSON SCHEMA; @UNNEST before
+# a reference's CRUD options. A lone @NOCHECK on a reference is the
+# reference's. @DATATYPE only where it is not the column's own type.
+annotated = """CREATE OR REPLACE REST VIEW /payment
+    ON SERVICE /svc SCHEMA /sakila
+    AS `sakila`.`payment` CLASS SvcSakilaPayment {
+        paymentId: payment_id @KEY @SORTABLE @NOUPDATE,
+        amount: amount @NOFILTERING @DATATYPE("varchar(12)") @NOUPDATE JSON SCHEMA {"type":"string"},
+        paymentDate: payment_date @DATATYPE("datetime"),
+        customer: sakila.customer @NOCHECK {
+            customerId: customer_id @KEY,
+            email: email JSON SCHEMA {"format":"email"}
+        },
+        rental: sakila.rental @UNNEST @INSERT {
+            rentalDate: rental_date
+        }
+    }
+    AUTHENTICATION REQUIRED;"""
+EXPECT_EQ("REST VIEW `/svc/sakila/payment` created successfully.", rest_info(annotated))
+# payment_date is a DATETIME: its @DATATYPE says nothing and is not written
+EXPECT_EQ(annotated.replace(' @DATATYPE("datetime")', ''), show_create("SHOW CREATE REST VIEW /payment"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(r.options, '$.dataMappingViewNoCheck') FROM mariadb_rest_service.data_mapping_reference r JOIN mariadb_rest_service.data_mapping_field f ON f.represents_reference_id = r.id WHERE f.name = 'customer'"))
+EXPECT_EQ("true", metadata_value("SELECT JSON_EXTRACT(r.options, '$.dataMappingViewInsert') FROM mariadb_rest_service.data_mapping_reference r JOIN mariadb_rest_service.data_mapping_field f ON f.represents_reference_id = r.id WHERE f.name = 'rental'"))
+rest("DROP REST VIEW /payment")
 
 #@<> SHOW CREATE REST VIEW FORMAT=JSON
 res = rest("SHOW CREATE REST VIEW /city FORMAT=JSON")
@@ -235,7 +261,7 @@ EXPECT_EQ("""CREATE OR REPLACE REST VIEW /cities
         },
         addresses: sakila.address @INSERT {
             addressId: address_id @KEY,
-            address: address
+            address: address JSON SCHEMA {"type":"string"}
         }
     }
     AUTHENTICATION REQUIRED
@@ -264,7 +290,7 @@ res = rest("ALTER REST VIEW /cities CLASS Cities2 @INSERT")
 EXPECT_EQ(1, res.get_affected_items_count())
 altered = show_create("SHOW CREATE REST VIEW /cities")
 EXPECT_IN("    AS `sakila`.`city` CLASS Cities2 @INSERT {\n        cityId: city_id @KEY @NOCHECK @SORTABLE,\n", altered)
-EXPECT_IN("        addresses: sakila.address @INSERT {\n            addressId: address_id @KEY,\n            address: address\n        }\n    }\n", altered)
+EXPECT_IN("        addresses: sakila.address @INSERT {\n            addressId: address_id @KEY,\n            address: address JSON SCHEMA {\"type\":\"string\"}\n        }\n    }\n", altered)
 # CREATE + READ from the class, UPDATE from the reference that allows inserts
 EXPECT_EQ("CREATE,READ,UPDATE", rest_object_column("/cities", "crud_operations"))
 EXPECT_EQ("Select,Insert,Update", table_privileges("city"))

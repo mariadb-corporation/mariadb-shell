@@ -466,7 +466,11 @@ class Mapping_builder {
     Data_mapping_reference reference;
     reference.id = metadata::new_id(m_session);
     reference.reference_mapping = std::move(*field->candidate_reference_mapping);
-    reference.options = mapping_options(pair.crud);
+    // A @NOCHECK that no other CRUD option precedes is taken as a value
+    // option by the grammar; on a reference it can only be the reference's
+    Crud_annotations crud = pair.crud;
+    if (pair.no_check) crud.no_check = true;
+    reference.options = mapping_options(crud);
     reference.unnest = pair.unnest;
     const Id reference_id = reference.id;
     const bool to_many = reference.kind() == "1:n";

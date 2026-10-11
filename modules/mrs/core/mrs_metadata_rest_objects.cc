@@ -419,7 +419,44 @@ std::string cut_last_comma(const std::string &text) {
   return text.substr(0, text.size() - 1);
 }
 
-std::string field_attributes(const Data_mapping_field &field, bool add_datatype,
+// Which fields of a mapping are written with their @DATATYPE.
+struct Datatype_check {
+  // The RESULT of a routine: every field, its type being the mapping's own.
+  bool always = false;
+  // A view: the fields whose type differs from that of their column, i.e.
+  // those created with a @DATATYPE. Null for a mapping without columns.
+  Db_session *session = nullptr;
+  // The column types of each table asked about, by schema and table.
+  std::map<std::pair<std::string, std::string>,
+           std::map<std::string, std::string>>
+      column_types;
+
+  bool written(const std::string &datatype, const std::string &schema,
+               const std::string &table, const std::string &column) {
+    if (always) return true;
+    if (!session) return false;
+
+    auto [types, added] = column_types.try_emplace({schema, table});
+    if (added) {
+      const auto result = session->query(
+          "SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS "
+          "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+          {schema, table});
+      for (const auto &row : result.rows) {
+        types->second[to_lower(row["COLUMN_NAME"].as_string())] =
+            to_lower(row["COLUMN_TYPE"].as_string());
+      }
+    }
+    const auto type = types->second.find(to_lower(column));
+    return type == types->second.end() || type->second != to_lower(datatype);
+  }
+};
+
+// The annotations of a field in the order the grammar takes them: the mode,
+// the value options, @DATATYPE, the CRUD options, JSON SCHEMA.
+std::string field_attributes(const Data_mapping_field &field,
+                             Datatype_check *datatype_check,
+                             const std::string &schema, const std::string &table,
                              const std::optional<Id> &row_ownership_field_id) {
   std::vector<std::string> attributes;
   const auto &column = *field.db_column;
@@ -431,20 +468,31 @@ std::string field_attributes(const Data_mapping_field &field, bool add_datatype,
 
   if (column.get_bool("is_primary")) attributes.push_back("@KEY");
   if (field.no_check) attributes.push_back("@NOCHECK");
-  if (field.no_update) attributes.push_back("@NOUPDATE");
   if (field.allow_sorting) attributes.push_back("@SORTABLE");
   if (!field.allow_filtering) attributes.push_back("@NOFILTERING");
-  if (add_datatype) {
-    const auto datatype = column.get_string("datatype");
-    if (!datatype.empty()) attributes.push_back("@DATATYPE(\"" + datatype + "\")");
-  }
   if (row_ownership_field_id == field.id) attributes.push_back("@ROWOWNERSHIP");
+  const auto datatype = column.get_string("datatype");
+  if (!datatype.empty() &&
+      datatype_check->written(datatype, schema, table, field.column_name())) {
+    attributes.push_back("@DATATYPE(\"" + datatype + "\")");
+  }
+  if (field.no_update) attributes.push_back("@NOUPDATE");
+  if (field.json_schema) {
+    if (const auto schema_doc = json::try_parse(*field.json_schema);
+        schema_doc && !schema_doc->is_null()) {
+      attributes.push_back("JSON SCHEMA " + schema_doc->dump());
+    }
+  }
 
   return join(attributes, " ");
 }
 
+// The value option first, then the CRUD options, as the grammar takes them.
 std::string reference_attributes(const Data_mapping_reference &reference) {
   std::vector<std::string> attributes;
+  if (reference.unnest || reference.reduce_to_value_of_field_id) {
+    attributes.push_back("@UNNEST");
+  }
   if (mapping_option(reference.options, "dataMappingViewInsert")) {
     attributes.push_back("@INSERT");
   }
@@ -457,18 +505,20 @@ std::string reference_attributes(const Data_mapping_reference &reference) {
   if (mapping_option(reference.options, "dataMappingViewNoCheck")) {
     attributes.push_back("@NOCHECK");
   }
-  if (reference.unnest || reference.reduce_to_value_of_field_id) {
-    attributes.push_back("@UNNEST");
-  }
   return join(attributes, " ");
 }
 
 // The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
 // references with their own block. Every line ends in ",\n"; the caller
 // cuts the last comma.
+// The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
+// references with their own block. Every line ends in ",\n"; the caller
+// cuts the last comma. schema and table are those the fields' columns are
+// in.
 std::string walk(const std::vector<Data_mapping_field> &fields,
                  const std::optional<Id> &parent_reference_id, int level,
-                 bool add_datatype,
+                 Datatype_check *datatype_check, const std::string &schema,
+                 const std::string &table,
                  const std::optional<Id> &row_ownership_field_id) {
   const std::string indent(static_cast<size_t>(level) * 4, ' ');
   std::string result;
@@ -479,8 +529,8 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
     if (!field.reference) {
       if (!field.enabled || !field.db_column) continue;
       result += indent + field.name + ": " + field.column_name();
-      const auto attributes =
-          field_attributes(field, add_datatype, row_ownership_field_id);
+      const auto attributes = field_attributes(field, datatype_check, schema,
+                                               table, row_ownership_field_id);
       if (!attributes.empty()) result += " " + attributes;
       result += ",\n";
       continue;
@@ -494,9 +544,10 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
     const auto attributes = reference_attributes(reference);
     if (!attributes.empty()) result += " " + attributes;
 
-    const auto children =
-        cut_last_comma(walk(fields, reference.id, level + 1, add_datatype,
-                            reference.row_ownership_field_id));
+    const auto children = cut_last_comma(
+        walk(fields, reference.id, level + 1, datatype_check,
+             reference.referenced_schema(), reference.referenced_table(),
+             reference.row_ownership_field_id));
     if (!children.empty()) {
       result += " {\n" + children + "\n" + indent + "}";
     }
@@ -896,16 +947,21 @@ std::string rest_object_create_statement(Db_session *session,
     if (!objects.empty()) {
       const auto &object = objects.front();
       lines.back() += " " + class_header(object) + " {";
+      Datatype_check datatype_check{.session = session};
       lines.push_back(cut_last_comma(
-          walk(object.fields, std::nullopt, 2, false, object.row_ownership_field_id)));
+          walk(object.fields, std::nullopt, 2, &datatype_check,
+               rest_object.schema_name, rest_object.name,
+               object.row_ownership_field_id)));
       lines.push_back("    }");
     }
   } else {
     for (const auto &object : objects) {
       std::string line = "    " + object.kind + " " + object.name;
-      const auto children =
-          cut_last_comma(walk(object.fields, std::nullopt, 2, object.kind == "RESULT",
-                              object.row_ownership_field_id));
+      Datatype_check datatype_check{.always = object.kind == "RESULT"};
+      const auto children = cut_last_comma(
+          walk(object.fields, std::nullopt, 2, &datatype_check,
+               rest_object.schema_name, rest_object.name,
+               object.row_ownership_field_id));
       // The grammar needs the braces, also when there are no fields
       line += children.empty() ? std::string(" {}")
                                : " {\n" + children + "\n    }";
