@@ -179,7 +179,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
   std::shared_ptr<mysqlsh::dba::Dba> _global_dba;
 #endif
   std::shared_ptr<mysqlsh::Util> _global_util;
-  std::shared_ptr<mysqlsh::mrs::Mrs> m_global_mrs;
+  std::shared_ptr<mysqlsh::mrs::Rest_sql_handler> m_rest_sql_handler;
   std::shared_ptr<mysqlsh::Os> m_global_js_os;
 
 #ifdef HAVE_ADMIN_API

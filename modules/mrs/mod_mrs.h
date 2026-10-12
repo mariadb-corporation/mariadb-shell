@@ -30,7 +30,6 @@
 #include <memory>
 #include <string>
 
-#include "modules/mod_extensible_object.h"
 #include "modules/mrs/core/mrs_ddl_executor.h"
 #include "mysqlshdk/include/scripting/types.h"
 
@@ -44,16 +43,13 @@ class ShellBaseSession;
 
 namespace mrs {
 
-/**
- * \defgroup mrs mrs
- * \ingroup ShellAPI
- * $(MRS_BRIEF)
- */
-class SHCORE_PUBLIC Mrs : public Extensible_object {
+// The REST SQL statements of the MariaDB REST Service: the shell's `MRS` SQL
+// handler parses them and runs them against the MRS metadata schema. The
+// `mrs` global object is not created here; the mrs_plugin defines it.
+class SHCORE_PUBLIC Rest_sql_handler
+    : public std::enable_shared_from_this<Rest_sql_handler> {
  public:
-  explicit Mrs(shcore::IShell_core *owner);
-
-  std::string class_name() const override { return "Mrs"; }
+  explicit Rest_sql_handler(shcore::IShell_core *owner);
 
   // Registers the SQL handler that runs the REST SQL statements. Does
   // nothing when no SQL handler registry is active.

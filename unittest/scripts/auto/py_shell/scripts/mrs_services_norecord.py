@@ -498,9 +498,6 @@ EXPECT_STDOUT_CONTAINS("/cli\tENABLED\tNO\t")
 EXPECT_STDOUT_CONTAINS("REST SERVICE `/cli` dropped successfully.")
 WIPE_OUTPUT()
 
-#@<> The mrs global object has no functions of its own
-EXPECT_EQ(["help"], dir(mrs))
-
 #@<> A REST SQL script runs like any SQL script
 script_file = os.path.join(__tmp_dir, "mrs_script.sql")
 testutil.create_file(script_file, "CREATE REST SERVICE /scripted COMMENT 'from a script';\nSELECT 1 AS plain_sql;\nSHOW REST SERVICES;\n")

@@ -86,7 +86,6 @@ The following modules and objects are ready for use when the shell starts:
 
 ?{__have_admin_api and __have_x_protocol}
  - dba    Used for InnoDB Cluster, ReplicaSet, and ClusterSet administration.
- - mrs    Global object for the MariaDB REST Service (MRS).
  - mysql  Support for connecting to MySQL servers using the classic MySQL
           protocol.
  - mysqlx Used to work with X Protocol sessions using the MySQL X DevAPI.
@@ -95,7 +94,6 @@ The following modules and objects are ready for use when the shell starts:
           and JSON import.
 ?{}
 ?{not __have_admin_api and not __have_x_protocol}
- - mrs   Global object for the MariaDB REST Service (MRS).
  - mysql Support for connecting to MySQL servers using the classic MySQL
          protocol.
  - shell Gives access to general purpose functions and properties.
@@ -413,7 +411,6 @@ Contains information about the shell and util global objects as well as the
 mysql module that enables executing SQL on MySQL Servers.
 
 OBJECTS
- - mrs   Global object for the MariaDB REST Service (MRS).
  - shell Gives access to general purpose functions and properties.
  - util  Global object that groups miscellaneous tools like upgrade checker and
          JSON import.

@@ -38,27 +38,9 @@
 #include "mysqlshdk/include/shellcore/custom_result.h"
 #include "mysqlshdk/include/shellcore/shell_core.h"
 #include "mysqlshdk/include/shellcore/sql_handler_registry.h"
-#include "mysqlshdk/include/shellcore/utils_help.h"
 
 namespace mysqlsh {
 namespace mrs {
-
-REGISTER_HELP_GLOBAL_OBJECT(mrs, shellapi);
-REGISTER_HELP(MRS_GLOBAL_BRIEF,
-              "Global object for the MariaDB REST Service (MRS).");
-REGISTER_HELP(MRS_BRIEF, "Global object for the MariaDB REST Service (MRS).");
-REGISTER_HELP(MRS_DETAIL,
-              "The MariaDB REST Service is managed with REST SQL statements, "
-              "e.g. CONFIGURE REST METADATA, CREATE REST SERVICE or SHOW REST "
-              "SERVICES, which the shell runs in SQL mode and through "
-              "session.runSql(). A file of REST SQL statements is run like "
-              "any SQL script, e.g. with \\source in SQL mode or with "
-              "--sql -f <file>.");
-REGISTER_HELP(MRS_DETAIL1,
-              "Plugins can add functions to this object with the "
-              "plugin_function decorator, e.g. @plugin_function(\"mrs.<name>\"); "
-              "the mrs_plugin adds the generation of the MRS SDK files and the "
-              "dumping and loading of MRS projects this way.");
 
 namespace {
 
@@ -130,26 +112,27 @@ shcore::Dictionary_t to_shell_result(const ::mrs::Statement_result &result) {
 
 }  // namespace
 
-Mrs::Mrs(shcore::IShell_core *owner)
-    : Extensible_object("mrs", "mrs", true), m_shell_core(*owner) {}
+Rest_sql_handler::Rest_sql_handler(shcore::IShell_core *owner)
+    : m_shell_core(*owner) {}
 
 namespace {
 
-// The handler is registered once per process, but the shell (and its mrs
-// object) can be recreated, e.g. by the tests. The callback therefore runs
-// on the mrs object that registered last, and never on a destroyed one.
-std::weak_ptr<Mrs> &active_mrs() {
-  static std::weak_ptr<Mrs> mrs;
-  return mrs;
+// The handler is registered once per process, but the shell (and its
+// Rest_sql_handler) can be recreated, e.g. by the tests. The callback
+// therefore runs on the instance that registered last, and never on a
+// destroyed one.
+std::weak_ptr<Rest_sql_handler> &active_handler() {
+  static std::weak_ptr<Rest_sql_handler> handler;
+  return handler;
 }
 
 }  // namespace
 
-void Mrs::register_sql_handler() {
+void Rest_sql_handler::register_sql_handler() {
   auto registry = shcore::current_sql_handler_registry(true);
   if (!registry) return;
 
-  active_mrs() = std::static_pointer_cast<Mrs>(shared_from_this());
+  active_handler() = shared_from_this();
 
   // Already registered, e.g. by another shell instance of the same process
   if (registry->get_sql_handlers().count(k_handler_name) > 0) return;
@@ -158,13 +141,13 @@ void Mrs::register_sql_handler() {
       "mrsSqlHandler",
       [](const shcore::Argument_list &args) -> shcore::Value {
         args.ensure_count(2, "MRS SQL handler");
-        const auto mrs = active_mrs().lock();
-        if (!mrs) {
+        const auto handler = active_handler().lock();
+        if (!handler) {
           throw shcore::Exception::runtime_error(
               "The MRS module is not available.");
         }
-        return mrs->run_rest_sql(args.object_at<ShellBaseSession>(0),
-                                 args.string_at(1));
+        return handler->run_rest_sql(args.object_at<ShellBaseSession>(0),
+                                     args.string_at(1));
       },
       {{"session", shcore::Object}, {"sql", shcore::String}});
 
@@ -172,7 +155,7 @@ void Mrs::register_sql_handler() {
                                  ::mrs::rest_sql_prefixes(), callback);
 }
 
-shcore::Value Mrs::run_rest_sql(
+shcore::Value Rest_sql_handler::run_rest_sql(
     const std::shared_ptr<ShellBaseSession> &session, const std::string &sql) {
   if (!session || !session->is_open()) {
     throw shcore::Exception::runtime_error(

@@ -26,7 +26,7 @@
 # core/ holds the parts that are meant to be shared with a server plugin: the
 # REST SQL grammar (bison), its lexer and AST, and the DDL executor that runs
 # the statements against the MRS metadata schema through an abstract session.
-# The shell specific parts (the `mrs` global object and the SQL handler) live
+# The shell specific parts (the SQL handler and the shell session) live
 # next to this file and are compiled into api_modules.
 
 set(MRS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
