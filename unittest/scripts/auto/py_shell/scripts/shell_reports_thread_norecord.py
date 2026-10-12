@@ -115,7 +115,9 @@ EXPECT_STDOUT_CONTAINS("--all, -A")
 \show thread -t <<<__test_ids['tid']>>>
 
 #@ WL11651-TSFR13_X - Invalid thread ID
-invalid_tid = session.run_sql("SELECT MAX(THREAD_ID) FROM performance_schema.threads").fetch_one()[0] + 1
+# far beyond the newest thread: the server starts background threads at any
+# time, and the next one would take MAX(THREAD_ID) + 1
+invalid_tid = session.run_sql("SELECT MAX(THREAD_ID) FROM performance_schema.threads").fetch_one()[0] + 1000000
 \show thread --tid <<<invalid_tid>>>
 
 # WL11651-TSFR14_2 - Validate that when the --cid (-c) option is used, the argument given is treated as a connection ID. The report must display information about the connection ID.
@@ -141,7 +143,8 @@ invalid_tid = session.run_sql("SELECT MAX(THREAD_ID) FROM performance_schema.thr
 \show thread -t <<<__test_ids['tid']>>> -c <<<__test_ids['cid']>>>
 
 #@ WL11651-TSFR14_X - Invalid connection ID [USE: WL11651-TSFR13_X - Invalid thread ID]
-invalid_cid = session.run_sql("SELECT MAX(PROCESSLIST_ID) FROM performance_schema.threads").fetch_one()[0] + 1
+# far beyond the newest connection, for the same reason as the thread ID
+invalid_cid = session.run_sql("SELECT MAX(PROCESSLIST_ID) FROM performance_schema.threads").fetch_one()[0] + 1000000
 \show thread --cid <<<invalid_cid>>>
 
 # WL11651-TSFR15_2 - When using the --brief (-B) option, validate that the report is presented in one line containing the fields: thread ID, connection ID (if available), user@host (if available).
