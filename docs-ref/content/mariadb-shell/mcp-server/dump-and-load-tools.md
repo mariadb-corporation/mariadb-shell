@@ -27,7 +27,7 @@ The server provides these tools only when it provides the `db` group as well, an
 | `util.list_tasks` | Lists the tasks of the client. | None |
 | `util.cancel_task` | Stops a task. | `task_id` |
 
-`options` holds the utility's own options, with their camelCase names, for example `{"threads": 8, "users": false}`. The tools set `showProgress` themselves, and refuse it, `session`, and `progressCallback` in `options`. The utility runs from MariaDB Shell's [command line](../using-mariadb-shell/command-line-integration.md), which can't pass some values on unchanged, so the tools refuse those too: a string that contains `\,`, `\"`, `\'`, or `\=`, and a name or path such as `2024`, `true`, or `-x` where the command line takes it without an option name.
+`options` holds the utility's own options, with their camelCase names, for example `{"threads": 8, "users": false}`. The tools set `showProgress` themselves, and refuse it, `session`, and `progressCallback` in `options`. The utility runs from MariaDB Shell's [command line](../using-mariadb-shell/command-line-integration.md), which can't pass some values on unchanged, so the tools refuse those too: a string that contains `\,`, `\"`, `\'`, or `\=`, and a name or path such as `2024`, `true`, or `-x` where the command line takes it without an option name. An option name must consist of letters, digits, `_`, and `-`. A copy takes no option that is a connection attribute, such as `host`, `port`, `user`, `password`, `socket`, or an `ssl-` or `ssh-` option, however it's spelled: its target is the connection that `target_connection_id` names, and the options can't change it.
 
 Each start tool returns the task's ID and status:
 
