@@ -59,6 +59,17 @@ The REST SQL statements follow the lexical rules of MariaDB SQL statements.
 * **REST users.** A REST user is written as `name@app`, for example `admin@myApp` or `"admin"@"MRS"`. Quote each part as needed (`MRS` is a keyword).
 * **JSON values.** `OPTIONS`, `METADATA`, `APP OPTIONS`, and `JSON SCHEMA` take a JSON value. Its keys and strings are written in double quotes in every SQL mode. Numbers may be negative and may have a decimal part, for example `{"maxItems": -1, "ratio": 0.5}`.
 
+## Transactions
+
+Each REST SQL statement that changes the REST metadata runs as a whole: when it fails, none of its changes remain.
+
+* **Outside a transaction,** each statement commits its changes when it succeeds.
+* **Inside a transaction you started** (`START TRANSACTION` or `BEGIN`), statements become part of it. A failing statement undoes only its own changes and leaves the transaction open. Your `COMMIT` or `ROLLBACK` then decides on the statements that succeeded.
+* **Statements that change privileges commit implicitly.** Some statements grant or revoke privileges of the MRS roles. Like the `GRANT` and `REVOKE` statements of MariaDB, they commit the open transaction. These are:
+  * `CREATE` and `DROP` of REST views, procedures, and functions;
+  * `ALTER` of REST views, procedures, and functions, when it changes the privileges the object needs;
+  * `ALTER REST CONTENT SET ... LOAD SCRIPTS`, when a script declares grants.
+
 ## Reading the Syntax
 
 Each statement is described with its grammar rules, written in ANTLR notation, followed by a railroad diagram of each rule. In the rules, `?` marks an optional element, `*` an element that can repeat or be left out, `+` an element that occurs at least once, and `|` separates alternatives. Keywords are written in upper case. Rules that several statements share, such as [`jsonOptions`](rest-metadata.md#rest-configuration-json-options) or [`serviceSchemaSelector`](rest-views.md#create-rest-view), are described once and linked from the other statements.

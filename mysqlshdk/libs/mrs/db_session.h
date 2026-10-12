@@ -210,6 +210,14 @@ class Db_session {
 
 // Runs a block inside a transaction: COMMIT at the end, ROLLBACK when the
 // block throws.
+//
+// When the session is in a transaction already (one the caller started, e.g.
+// around several REST SQL statements), the block runs in a SAVEPOINT of it
+// instead: START TRANSACTION would commit the caller's transaction. The end
+// of the block then releases the savepoint and leaves the COMMIT to the
+// caller; a failing block is rolled back to the savepoint only. A GRANT or
+// REVOKE in the block still commits the caller's transaction, as it does in
+// plain SQL.
 class Db_transaction {
  public:
   explicit Db_transaction(Db_session *session);
@@ -222,6 +230,7 @@ class Db_transaction {
 
  private:
   Db_session *m_session;
+  std::string m_savepoint;  // empty when the block has its own transaction
   bool m_done = false;
 };
 

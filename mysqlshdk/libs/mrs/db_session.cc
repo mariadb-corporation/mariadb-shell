@@ -25,6 +25,7 @@
 
 #include "mysqlshdk/libs/mrs/db_session.h"
 
+#include <atomic>
 #include <cstdlib>
 
 namespace mrs {
@@ -152,21 +153,42 @@ std::string Db_session::bind(const sql::Statement &statement) {
 }
 
 Db_transaction::Db_transaction(Db_session *session) : m_session(session) {
-  m_session->execute("START TRANSACTION");
+  if (m_session->query("SELECT @@in_transaction AS t").first()["t"].as_int() == 0) {
+    m_session->execute("START TRANSACTION");
+    return;
+  }
+
+  // Unique, so a block nested in another one keeps the outer savepoint
+  static std::atomic<uint64_t> s_savepoints{0};
+  m_savepoint = "mrs_savepoint_" + std::to_string(++s_savepoints);
+  m_session->execute("SAVEPOINT " + m_savepoint);
 }
 
 Db_transaction::~Db_transaction() {
   if (!m_done) {
     try {
-      m_session->execute("ROLLBACK");
+      m_session->execute(m_savepoint.empty() ? "ROLLBACK"
+                                             : "ROLLBACK TO SAVEPOINT " + m_savepoint);
     } catch (...) {
-      // nothing to be done about it in a destructor
+      // nothing to be done about it in a destructor, and the savepoint is
+      // gone when a statement of the block committed implicitly
     }
   }
 }
 
 void Db_transaction::commit() {
-  m_session->execute("COMMIT");
+  if (m_savepoint.empty()) {
+    m_session->execute("COMMIT");
+  } else {
+    try {
+      m_session->execute("RELEASE SAVEPOINT " + m_savepoint);
+    } catch (const Db_error &e) {
+      // A statement of the block committed implicitly (GRANT, REVOKE),
+      // which ended the savepoint with the transaction
+      constexpr int k_no_such_savepoint = 1305;  // ER_SP_DOES_NOT_EXIST
+      if (e.code() != k_no_such_savepoint) throw;
+    }
+  }
   m_done = true;
 }
 

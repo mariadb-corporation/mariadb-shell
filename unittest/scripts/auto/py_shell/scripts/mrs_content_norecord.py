@@ -124,6 +124,27 @@ EXPECT_EQ("REST CONTENT FILE `/svc/inline/bin.dat` created successfully.", rest_
 EXPECT_EQ("000102", file_hex("/inline", "/bin.dat"))
 rest("CREATE OR REPLACE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline BINARY CONTENT 'AAECAwQFBgc='")
 
+#@<> REST SQL statements join a transaction the caller started
+def in_transaction():
+    return session.run_sql("SELECT @@in_transaction").fetch_one()[0]
+
+session.run_sql("START TRANSACTION")
+rest("CREATE REST CONTENT SET /tx")
+rest("CREATE REST CONTENT FILE /a ON CONTENT SET /tx CONTENT 'a'")
+# A failing statement ends neither the caller's transaction nor its work
+EXPECT_THROWS(lambda: rest("CREATE REST CONTENT FILE /a ON CONTENT SET /tx CONTENT 'again'"), "The request_path is already used by another entity.")
+EXPECT_EQ(1, in_transaction())
+EXPECT_EQ([["/a", 1, "ENABLED"]], rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /tx"))
+# The caller's ROLLBACK undoes the statements
+session.run_sql("ROLLBACK")
+EXPECT_THROWS(lambda: rest("SHOW REST CONTENT FILES FROM CONTENT SET /tx"), "The given REST content set `/svc/tx` could not be found.")
+# and its COMMIT keeps them
+session.run_sql("START TRANSACTION")
+rest("CREATE REST CONTENT SET /tx")
+EXPECT_EQ(1, in_transaction())
+session.run_sql("COMMIT")
+EXPECT_EQ("REST CONTENT SET `/svc/tx` dropped successfully.", rest_info("DROP REST CONTENT SET /tx"))
+
 #@<> SHOW CREATE REST CONTENT FILE: text and binary content
 EXPECT_EQ("""CREATE OR REPLACE REST CONTENT FILE `/readme.txt`
     ON SERVICE /svc CONTENT SET /inline
