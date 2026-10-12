@@ -137,6 +137,34 @@ EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA UPDATE IF AVAILABLE"), "Fail
 #@<> Invalid names are refused
 EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA SCHEMA mysql_rest_service_metadata"), "Invalid REST metadata schema name `mysql_rest_service_metadata`.")
 
+#@<> With the msm plugin loaded, msm deploys on a connection of its own
+# A stand-in for msm.deploySchema() that changes its session like the
+# deployment script does, then fails. A global cannot be removed again, so
+# this runs last.
+msm_calls = []
+
+def msm_deploy_schema(options):
+    msm_session = options["session"]
+    msm_calls.append([msm_session.connection_id, options["substitutions"]])
+    msm_session.run_sql("USE mysql")
+    msm_session.run_sql("SET FOREIGN_KEY_CHECKS = 0")
+    raise Exception("msm failed")
+
+msm = shell.create_extension_object()
+shell.add_extension_object_member(msm, "deploySchema", msm_deploy_schema, {
+    "brief": "Stands in for the msm plugin's deploySchema().",
+    "parameters": [{"name": "options", "type": "dictionary"}]})
+shell.register_global("msm", msm, {"brief": "Stands in for the msm plugin."})
+
+current_schema = query_one("SELECT DATABASE()")
+EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA SCHEMA gamma_mariadb_rest_service"), "Failed to configure the REST metadata. msm failed")
+EXPECT_EQ(1, len(msm_calls))
+EXPECT_NE(session.connection_id, msm_calls[0][0])
+EXPECT_EQ({"schema_prefix": "gamma_", "schema_postfix": ""}, msm_calls[0][1])
+# The session the statement ran on is left as it was
+EXPECT_EQ(current_schema, query_one("SELECT DATABASE()"))
+EXPECT_EQ(1, query_one("SELECT @@foreign_key_checks"))
+
 #@<> Cleanup
 session.close()
 testutil.destroy_sandbox(__mysql_sandbox_port1)

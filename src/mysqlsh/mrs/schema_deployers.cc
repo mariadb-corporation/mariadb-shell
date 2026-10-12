@@ -37,6 +37,7 @@
 #include "modules/util/dump/dump_schemas_options.h"
 #include "modules/util/load/dump_loader.h"
 #include "modules/util/load/load_dump_options.h"
+#include "mysqlshdk/libs/db/mysql/session.h"
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
@@ -237,11 +238,27 @@ class Msm_plugin_deployer : public ::mrs::metadata::Schema_deployer {
     ::mrs::metadata::check_metadata_schema_name(schema);
     const auto parts = *::mrs::metadata::schema_name_parts(schema);
 
+    // msm runs the deployment script on the session it is given, which
+    // changes its current schema, FOREIGN_KEY_CHECKS and SQL_MODE (left so
+    // when the script fails), so it gets a connection of its own rather than
+    // the one the statement runs on
+    const auto co = m_session->get_connection_options();  // a copy
+    auto connection = mysqlshdk::db::mysql::Session::create();
+    connection->connect(co);
+    const auto msm_session = ShellBaseSession::wrap_session(connection);
+    shcore::on_leave_scope close_session([&msm_session]() {
+      try {
+        msm_session->close();
+      } catch (...) {
+        // the error of the deployment is the one to report
+      }
+    });
+
     shcore::Argument_list args;
     args.emplace_back(shcore::make_dict(
         "schema_project_path", msm_project_path(), "backup", backup, "session",
         shcore::Value(
-            std::static_pointer_cast<shcore::Object_bridge>(m_session)),
+            std::static_pointer_cast<shcore::Object_bridge>(msm_session)),
         "substitutions",
         shcore::make_dict("schema_prefix", parts.prefix, "schema_postfix",
                           parts.postfix)));
