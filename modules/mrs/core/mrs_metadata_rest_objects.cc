@@ -947,7 +947,10 @@ std::string rest_object_create_statement(Db_session *session,
     if (!objects.empty()) {
       const auto &object = objects.front();
       lines.back() += " " + class_header(object) + " {";
-      Datatype_check datatype_check{.session = session};
+      // set member by member: a designated initializer that leaves members
+      // out trips GCC's -Wmissing-field-initializers, an error in CI
+      Datatype_check datatype_check;
+      datatype_check.session = session;
       lines.push_back(cut_last_comma(
           walk(object.fields, std::nullopt, 2, &datatype_check,
                rest_object.schema_name, rest_object.name,
@@ -957,7 +960,8 @@ std::string rest_object_create_statement(Db_session *session,
   } else {
     for (const auto &object : objects) {
       std::string line = "    " + object.kind + " " + object.name;
-      Datatype_check datatype_check{.always = object.kind == "RESULT"};
+      Datatype_check datatype_check;
+      datatype_check.always = object.kind == "RESULT";
       const auto children = cut_last_comma(
           walk(object.fields, std::nullopt, 2, &datatype_check,
                rest_object.schema_name, rest_object.name,
