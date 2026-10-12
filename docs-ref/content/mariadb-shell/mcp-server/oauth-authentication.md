@@ -121,7 +121,7 @@ The audience is a name, not an address that Keycloak contacts. A public URL on t
 
 ### Use the MariaDB Login Theme
 
-Keycloak shows its own sign-in pages. To give them the look of the MCP server's sign-in page, with the MariaDB seal, the joined user name and password fields, and light and dark color schemes, use the Keycloak login theme `mariadb-mcp`. It changes only how the pages look, and works with identity providers such as Google or Facebook, which appear as buttons below the fields.
+Keycloak shows its own sign-in pages. To give them the look of the MCP server's sign-in page, with the MariaDB logo, the joined user name and password fields, and light and dark color schemes, use the Keycloak login theme `mariadb-mcp`. It changes only how the pages look, and works with identity providers such as Google or Facebook, which appear as buttons below the fields.
 
 The theme ships with MariaDB Shell, in `lib/mariadb-shell/plugins/mcp_plugin/keycloak-theme/mariadb-mcp` below the installation directory. The folder `keycloak-theme` also has a `README.md` with notes on customizing the theme.
 
