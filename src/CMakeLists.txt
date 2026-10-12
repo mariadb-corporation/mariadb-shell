@@ -51,8 +51,8 @@ set(mysh_SRC
     mysqlsh/commands/command_watch.cc
     mysqlsh/commands/command_query_attributes.cc
     mysqlsh/mrs/rest_sql_handler.cc
-    mysqlsh/mrs/mrs_shell_session.cc
-    mysqlsh/mrs/mrs_schema_deployers.cc
+    mysqlsh/mrs/shell_db_session.cc
+    mysqlsh/mrs/schema_deployers.cc
     ${CMAKE_SOURCE_DIR}/mysqlshdk/shellcore/interrupt_helper.cc
     ${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/linenoise.cpp
     ${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp

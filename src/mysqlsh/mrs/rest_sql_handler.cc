@@ -30,9 +30,9 @@
 #include <utility>
 
 #include "modules/mod_shell_result.h"
-#include "mysqlshdk/libs/mrs/mrs_parser.h"
-#include "src/mysqlsh/mrs/mrs_schema_deployers.h"
-#include "src/mysqlsh/mrs/mrs_shell_session.h"
+#include "mysqlshdk/libs/mrs/parser.h"
+#include "src/mysqlsh/mrs/schema_deployers.h"
+#include "src/mysqlsh/mrs/shell_db_session.h"
 #include "mysqlshdk/include/scripting/types/cpp.h"
 #include "mysqlshdk/include/shellcore/base_session.h"
 #include "mysqlshdk/include/shellcore/custom_result.h"

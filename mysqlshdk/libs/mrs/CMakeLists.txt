@@ -34,21 +34,21 @@ file(MAKE_DIRECTORY "${MRS_GENERATED_DIR}")
 
 BISON_TARGET(
     mrs_parser
-    "${CMAKE_CURRENT_SOURCE_DIR}/mrs_parser.yy"
-    "${MRS_GENERATED_DIR}/mrs_parser_gen.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/parser.yy"
+    "${MRS_GENERATED_DIR}/parser_gen.cc"
     COMPILE_FLAGS "${BISON_FLAGS_WARNINGS} ${BISON_NO_LINE_OPT}"
-    DEFINES_FILE "${MRS_GENERATED_DIR}/mrs_parser_gen.h"
+    DEFINES_FILE "${MRS_GENERATED_DIR}/parser_gen.h"
 )
 
 set_property(
-    SOURCE "${MRS_GENERATED_DIR}/mrs_parser_gen.cc" "${MRS_GENERATED_DIR}/mrs_parser_gen.h"
+    SOURCE "${MRS_GENERATED_DIR}/parser_gen.cc" "${MRS_GENERATED_DIR}/parser_gen.h"
     PROPERTY GENERATED 1
 )
 
 # The generated parser sets a counter (yynerrs_) it never reads.
 IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set_property(
-      SOURCE "${MRS_GENERATED_DIR}/mrs_parser_gen.cc"
+      SOURCE "${MRS_GENERATED_DIR}/parser_gen.cc"
       APPEND PROPERTY COMPILE_OPTIONS "-Wno-unused-but-set-variable"
   )
 ENDIF()
@@ -84,27 +84,27 @@ foreach(release_dir versions deployment updates)
 endforeach()
 
 set(mrs_core_SOURCES
-    mrs_db_session.cc
-    mrs_ddl_executor.cc
-    mrs_ddl_executor_services.cc
-    mrs_ddl_executor_schemas.cc
-    mrs_ddl_executor_rest_objects.cc
-    mrs_ddl_executor_auth.cc
-    mrs_ddl_executor_content.cc
-    mrs_json.cc
-    mrs_lexer.cc
-    mrs_metadata.cc
-    mrs_metadata_auth.cc
-    mrs_metadata_content.cc
-    mrs_metadata_rest_objects.cc
-    mrs_metadata_json.cc
-    mrs_metadata_schema.cc
-    mrs_parser.cc
-    mrs_schema_deployment.cc
-    mrs_scripts.cc
-    mrs_sql.cc
-    mrs_strings.cc
-    "${MRS_GENERATED_DIR}/mrs_parser_gen.cc"
+    db_session.cc
+    ddl_executor.cc
+    ddl_executor_services.cc
+    ddl_executor_schemas.cc
+    ddl_executor_rest_objects.cc
+    ddl_executor_auth.cc
+    ddl_executor_content.cc
+    json.cc
+    lexer.cc
+    metadata.cc
+    metadata_auth.cc
+    metadata_content.cc
+    metadata_rest_objects.cc
+    metadata_json.cc
+    metadata_schema.cc
+    parser.cc
+    schema_deployment.cc
+    scripts.cc
+    sql.cc
+    strings.cc
+    "${MRS_GENERATED_DIR}/parser_gen.cc"
 )
 
 # The password hashing of REST users uses OpenSSL (the shell's bundled or

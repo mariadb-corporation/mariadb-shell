@@ -1,7 +1,7 @@
 # MariaDB REST Service (MRS) ANTLR Grammar
 
 The REST SQL statements are run by the MRS library of MariaDB Shell, whose
-parser is the bison grammar `../mrs_parser.yy`. This ANTLR4 grammar
+parser is the bison grammar `../parser.yy`. This ANTLR4 grammar
 (`MRSLexer.g4`, `MRSParser.g4`) is the **reference grammar of the
 documentation**. The two grammars are kept rule for rule in step: a statement
 change goes to both.

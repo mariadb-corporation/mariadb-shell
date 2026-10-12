@@ -30,7 +30,7 @@
 #include <memory>
 #include <string>
 
-#include "mysqlshdk/libs/mrs/mrs_ddl_executor.h"
+#include "mysqlshdk/libs/mrs/ddl_executor.h"
 #include "mysqlshdk/include/scripting/types.h"
 
 namespace shcore {
