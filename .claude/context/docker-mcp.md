@@ -29,7 +29,7 @@ Started 2026-10-12. Goal: a MariaDB Shell container image (Docker Hub, later) th
 
 ## Files
 
-- `docker/mariadb-shell.Dockerfile`, `docker/mcp-entrypoint.sh`, `docker/README.md` (build, modes, env table, reverse proxy) — branch `docker/mcp-image`, PR to `main`.
+- `docker/mariadb-shell.Dockerfile`, `docker/mcp-entrypoint.sh`, `docker/README.md` (build, modes, env table, reverse proxy) — branch `docker/mcp-image`, PR #76 to `main`.
 - `docs-ref/content/mariadb-shell/mcp-server/running-in-a-container.md` — the user-facing page (see [docs-ref.md](docs-ref.md)).
 
 ## Next steps
