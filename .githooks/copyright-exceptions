@@ -24,4 +24,4 @@ unittest/data/mrs/
 # The MSM project of the MRS metadata schema: msm generates its release
 # scripts with their own copyright headers from the project settings, and
 # the Workbench files belong to the schema model.
-modules/mrs/db_schema/
+mysqlshdk/libs/mrs/db_schema/

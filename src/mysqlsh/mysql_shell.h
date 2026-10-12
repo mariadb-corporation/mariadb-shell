@@ -34,7 +34,7 @@
 #include <vector>
 
 #include "modules/adminapi/mod_dba.h"
-#include "modules/mrs/mod_mrs.h"
+#include "src/mysqlsh/mrs/rest_sql_handler.h"
 #include "modules/adminapi/mod_dba_cluster_set.h"
 #include "modules/mod_sys.h"
 #include "mysqlshdk/include/scripting/plugin_definition.h"

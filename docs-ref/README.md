@@ -16,7 +16,7 @@ the two in step when either changes.
 | `content/SUMMARY.md` | GitBook's navigation. The preview's sidebar is generated from it, so it is the only place the page tree is defined. |
 | `content/README.md` | A stand-in for the Enterprise Tools space landing page. Only its `## MariaDB Shell` and `## MariaDB REST Service` sections are meant for porting. |
 | `content/mariadb-shell/` | The MariaDB Shell docs. |
-| `content/mariadb-rest-service/` | The MariaDB REST Service (MRS) docs. Its REST SQL reference is checked against the ANTLR grammar in `modules/mrs/antlr_grammar/`, whose railroad diagrams go to `content/.gitbook/assets/mariadb-rest-service/sql/` (see below). |
+| `content/mariadb-rest-service/` | The MariaDB REST Service (MRS) docs. Its REST SQL reference is checked against the ANTLR grammar in `mysqlshdk/libs/mrs/antlr_grammar/`, whose railroad diagrams go to `content/.gitbook/assets/mariadb-rest-service/sql/` (see below). |
 | `content/.gitbook/assets/` | Images, as GitBook stores them. Reference them as `.gitbook/assets/<file>` (with the right `../` depth). |
 | `docusaurus.config.js`, `sidebars.js`, `src/`, `static/` | The preview site only. Never ported. |
 
@@ -95,7 +95,7 @@ Specific to MariaDB Shell:
 ## MariaDB REST Service Grammar Tools
 
 The REST SQL reference in `content/mariadb-rest-service/rest-sql-reference/`
-follows the ANTLR reference grammar `modules/mrs/antlr_grammar/MRSParser.g4`
+follows the ANTLR reference grammar `mysqlshdk/libs/mrs/antlr_grammar/MRSParser.g4`
 (kept rule for rule in step with the shell's bison grammar). After a grammar
 change, run from the repository root:
 
@@ -104,7 +104,7 @@ npm run docs-ref:mrs-grammar-docs   # update the ```antlr rule blocks, list undo
 npm run docs-ref:mrs-diagrams       # re-render the railroad diagrams, delete those of removed rules
 ```
 
-Both need only Python 3. See `modules/mrs/antlr_grammar/README.md`.
+Both need only Python 3. See `mysqlshdk/libs/mrs/antlr_grammar/README.md`.
 
 ## How the preview renders GitBook blocks
 

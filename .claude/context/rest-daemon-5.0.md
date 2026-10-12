@@ -2,7 +2,7 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Related: [mrs-module.md](mrs-module.md).
 
-The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`modules/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). Nothing of 5.0.0 has been released or installed yet, so the daemon needs no compatibility with 4.x names on a MariaDB server.
+The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). Nothing of 5.0.0 has been released or installed yet, so the daemon needs no compatibility with 4.x names on a MariaDB server.
 
 Collected 2026-10-09 from the work on branch `wip/mrs_module`. Keep it up to date when the schema changes in a way the daemon sees.
 
@@ -11,7 +11,7 @@ Collected 2026-10-09 from the work on branch `wip/mrs_module`. Keep it up to dat
 - The schema is `mariadb_rest_service` (was `mysql_rest_service_metadata`).
 - A server can hold several metadata schemas, one per customer of a cloud provider: `<prefix>mariadb_rest_service<postfix>`, e.g. `acme_mariadb_rest_service_eu`. Prefix: empty, or a letter or `_` followed by `[A-Za-z0-9_]`; postfix: empty, or `_` followed by `[A-Za-z0-9_]`; the base name occurs exactly once; at most 64 characters.
 - **The daemon needs a configuration option for the metadata schema name**, default `mariadb_rest_service`, and must use it in every statement on the metadata (tables, the `rest_daemon_services` view, the `rest_daemon_status_*` procedures, `msm_schema_version`). One daemon instance serves one metadata schema.
-- Optional, for parity with MariaDB Shell: when no name is configured, MariaDB Shell picks `mariadb_rest_service` if visible, else the only visible schema whose name contains `mariadb_rest_service` once (valid parts) and that has an `msm_schema_version` view (`metadata::resolve_metadata_schema()` in `modules/mrs/core/mrs_metadata.cc`). An explicit setting is safer for a long-running service.
+- Optional, for parity with MariaDB Shell: when no name is configured, MariaDB Shell picks `mariadb_rest_service` if visible, else the only visible schema whose name contains `mariadb_rest_service` once (valid parts) and that has an `msm_schema_version` view (`metadata::resolve_metadata_schema()` in `mysqlshdk/libs/mrs/mrs_metadata.cc`). An explicit setting is safer for a long-running service.
 - Inside the schema, routines, triggers, views and events use unqualified names; nothing in the schema names the schema itself. The daemon does not need to rewrite anything in the schema.
 
 ## 1a. The daemon's tables are renamed, `rest_daemon.id` is a UUID
@@ -74,7 +74,7 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 
 - `msm_schema_version` (view, columns `major`, `minor`, `patch`) reports `5.0.0`. The daemon must accept 5.0.x and refuse 4.x.
 - The old `schema_version` view of MySQL's versions before 4.0 does not exist.
-- MariaDB Shell's `SHOW REST METADATA STATUS` reports `required_rest_daemon_version` **26.10.0** (was `required_router_version` 8.1.0, MySQL Router's number; `k_required_rest_daemon_version` in `modules/mrs/core/mrs_metadata_schema.h`): the first MariaDB REST Daemon release must support 5.0.0 and carry version 26.10.0 or later, and should refuse to start on a metadata schema that is newer than it supports.
+- MariaDB Shell's `SHOW REST METADATA STATUS` reports `required_rest_daemon_version` **26.10.0** (was `required_router_version` 8.1.0, MySQL Router's number; `k_required_rest_daemon_version` in `mysqlshdk/libs/mrs/mrs_metadata_schema.h`): the first MariaDB REST Daemon release must support 5.0.0 and carry version 26.10.0 or later, and should refuse to start on a metadata schema that is newer than it supports.
 
 ## 4. Ids are UUIDs
 

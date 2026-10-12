@@ -8,8 +8,8 @@
     "build": "docusaurus build",
     "serve": "docusaurus serve",
     "clear": "docusaurus clear",
-    "mrs-diagrams": "python3 ../modules/mrs/antlr_grammar/scripts/generate_rrd_svg_files.py --prune",
-    "mrs-grammar-docs": "python3 ../modules/mrs/antlr_grammar/scripts/update_grammar_docs.py"
+    "mrs-diagrams": "python3 ../mysqlshdk/libs/mrs/antlr_grammar/scripts/generate_rrd_svg_files.py --prune",
+    "mrs-grammar-docs": "python3 ../mysqlshdk/libs/mrs/antlr_grammar/scripts/update_grammar_docs.py"
   },
   "engines": {
     "node": ">=20.0"
