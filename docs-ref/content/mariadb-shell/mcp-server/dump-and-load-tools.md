@@ -27,7 +27,7 @@ The server provides these tools only when it provides the `db` group as well, an
 | `util.list_tasks` | Lists the tasks of the client. | None |
 | `util.cancel_task` | Stops a task. | `task_id` |
 
-`options` holds the utility's own options, with their camelCase names, for example `{"threads": 8, "users": false}`. The tools set `session`, `progressCallback`, and `showProgress` themselves, and refuse them in `options`.
+`options` holds the utility's own options, with their camelCase names, for example `{"threads": 8, "users": false}`. The tools set `showProgress` themselves, and refuse it, `session`, and `progressCallback` in `options`. The utility runs from MariaDB Shell's [command line](../using-mariadb-shell/command-line-integration.md), which can't pass some values on unchanged, so the tools refuse those too: a string that contains `\,`, `\"`, `\'`, or `\=`, and a name or path such as `2024`, `true`, or `-x` where the command line takes it without an option name.
 
 Each start tool returns the task's ID and status:
 
@@ -59,14 +59,13 @@ Once `status` is `completed`, `failed`, or `cancelled`, the task doesn't change 
 
 ## Cancelling a Task
 
-`util.cancel_task` stops the utility at its next progress update, as Ctrl+C does when you run it in MariaDB Shell, and the task ends as `cancelled`. A load that was cancelled [resumes where it stopped](../utilities/dump-and-load/load-dump-utility.md#resuming-an-interrupted-load) when you load the same dump again.
+`util.cancel_task` interrupts the utility as Ctrl+C does when you run it in MariaDB Shell, and the task ends as `cancelled`. If the utility hasn't stopped 30 seconds later, its process is ended. A load that was cancelled [resumes where it stopped](../utilities/dump-and-load/load-dump-utility.md#resuming-an-interrupted-load) when you load the same dump again.
 
 ## How Tasks Run
 
-* **A task has a session of its own.** It's opened on the connection that `connection_id` names, with the same checks as a session that is [reopened after an idle period](security-and-session-handling.md#session-lifetime). The connection's own session stays free, so other tools can use it while the task runs.
+* **A task runs in a MariaDB Shell process of its own,** connected to the server of the connection that `connection_id` names, with the same checks as a session that is [reopened after an idle period](security-and-session-handling.md#session-lifetime). The password goes to the process's standard input, never on its command line. The connection's own session stays free, so other tools can use it while the task runs, and the process ends with the MCP server.
+* **A crash ends only the task's process.** The task then reports what happened. A load is started again, up to three times, and [resumes where it stopped](../utilities/dump-and-load/load-dump-utility.md#resuming-an-interrupted-load). A crashed dump, copy, export, or import fails, because starting it again wouldn't continue its work.
 * **Tasks belong to the client that started them,** as [connections do](security-and-session-handling.md#connections-belong-to-the-client-that-opened-them). To another client, the task doesn't exist.
 * **Limits:** a client can run four tasks at the same time. A finished task is kept for one hour, and the server keeps 100 finished tasks at most.
 * **Paths** are checked against the [allowed directories](configuring-access.md#allowed-paths). A URL, and an object storage prefix given with `s3BucketName`, `osBucketName`, or `azureContainerName`, are passed to the utility unchecked.
-
-The tools need a MariaDB Shell whose utilities accept the `session` and `progressCallback` options; see [Running on Your Own Session](../utilities/dump-and-load/dump-utilities.md#running-on-your-own-session). With an older shell, every task fails with a message saying so.
 
