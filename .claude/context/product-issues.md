@@ -78,6 +78,7 @@ The full list, by area:
 
 - **The default install skips prereleases.** `install.sh`/`install.ps1` without `MARIADB_SHELL_TAG` skip GitHub prereleases, and every release so far (v26.9.5 included) is one, so the default command fails today. [installation/*, hint]
 - **Release tarballs contain no LICENSE file.** [license.md links to the repo's LICENSE]
+- **The shell hard-codes `setlocale(LC_ALL, "en_US.UTF-8")`** (`src/mysqlsh/main.cc:444`) and prints "Cannot set LC_ALL to locale en_US.UTF-8" on every run where that locale isn't generated, as in slim container images; setting `LC_ALL=C.UTF-8` doesn't help. A fallback to `C.UTF-8` would fix it. [docker/mariadb-shell.Dockerfile generates the locale as a workaround]
 
 ## Help Text and Man Page Out of Date
 

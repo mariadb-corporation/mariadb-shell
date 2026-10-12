@@ -106,6 +106,10 @@ To show the built-in help, run `\? mcp` in Python mode, or `mariadb-shell -- mcp
 [oauth-authentication.md](oauth-authentication.md)
 {% endcontent-ref %}
 
+{% content-ref url="running-in-a-container.md" %}
+[running-in-a-container.md](running-in-a-container.md)
+{% endcontent-ref %}
+
 {% content-ref url="security-and-session-handling.md" %}
 [security-and-session-handling.md](security-and-session-handling.md)
 {% endcontent-ref %}

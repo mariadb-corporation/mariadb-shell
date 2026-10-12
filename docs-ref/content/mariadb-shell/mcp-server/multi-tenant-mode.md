@@ -250,7 +250,13 @@ mariadb-shell -- mcp start-server --host=0.0.0.0 --port=8443 \
   --sslCertfile=/etc/mariadb-mcp/server.pem --sslKeyfile=/etc/mariadb-mcp/server-key.pem
 ```
 
-Alternatively, keep the server on `127.0.0.1` and put a reverse proxy in front of it that terminates TLS. Add the name that clients use to `--allowedHosts`, or set it as the [public URL](oauth-authentication.md#the-public-url), which the server accepts automatically.
+Alternatively, keep the server on `127.0.0.1` and put a reverse proxy in front of it that terminates TLS. Add the name that clients use to `--allowedHosts`, or set it as the [public URL](oauth-authentication.md#the-public-url), which the server accepts automatically. Name the proxy with [`--trustedProxies`](security-and-session-handling.md#client-addresses-behind-a-reverse-proxy) as well, so that the server sees the clients' own addresses:
+
+```bash
+mariadb-shell -- mcp start-server --port=8080 --trustedProxies=127.0.0.1
+```
+
+For a server in a container behind a reverse proxy, see [Running in a Container](running-in-a-container.md).
 
 When a multi-tenant server listens on a non-loopback address without TLS, it prints a warning to standard error:
 
@@ -345,7 +351,7 @@ Each refused token is logged with the address it came from, without the token an
 2026-10-06T17:13:44+0200 [mcp] auth: REFUSED a bearer token from address=203.0.113.24
 ```
 
-After 10 refused tokens within a minute from one address for one user (for an OAuth2 token, the user it names), the server answers that address and user with status `429 Too Many Requests` for the rest of the minute. One address can cause at most 200 refusals a minute in total. The limits apply per address and user, so that one user's wrong key doesn't lock out other users who reach the server through the same gateway or proxy.
+After 10 refused tokens within a minute from one address for one user (for an OAuth2 token, the user it names), the server answers that address and user with status `429 Too Many Requests` for the rest of the minute. One address can cause at most 200 refusals a minute in total. The limits apply per address and user, so that one user's wrong key doesn't lock out other users who reach the server through the same gateway or proxy. The limit of 200 per address still applies to everyone behind a proxy together, unless the server is started with [`--trustedProxies`](security-and-session-handling.md#client-addresses-behind-a-reverse-proxy), which gives every client its own address.
 
 ## Secrets Are Separated, Not Protected
 
