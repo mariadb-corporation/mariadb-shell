@@ -82,7 +82,12 @@ std::optional<Rest_object> find_rest_object(Db_session *session,
 std::vector<Rest_object> get_rest_objects(Db_session *session, const Id &schema_id,
                                       const std::vector<std::string> &object_types);
 
-void delete_rest_object(Db_session *session, const Id &id);
+// Revokes the privileges of the data provider role on the database object
+// (which commits the open transaction) and deletes the rest_object. Without
+// revoke_privileges only the metadata is deleted, so the transaction stays
+// open and can still be rolled back.
+void delete_rest_object(Db_session *session, const Id &id,
+                        bool revoke_privileges = true);
 
 // The CREATE OR REPLACE REST VIEW / PROCEDURE / FUNCTION statement of an
 // object, with its data mapping. With on_current_service, the

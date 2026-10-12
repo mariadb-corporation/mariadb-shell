@@ -207,6 +207,20 @@ EXPECT_EQ("Select", table_privileges("city"))
 EXPECT_EQ("Select,Insert,Update,Delete", table_privileges("address"))
 EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info(full_city))
 
+#@<> CREATE OR REPLACE REST VIEW: a failing new definition keeps the replaced view
+rest("CREATE REST VIEW /takenName AS sakila.country CLASS TakenName")
+city_privileges = table_privileges("city")
+# Fails while building the data mapping, before anything is changed
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST VIEW /city AS sakila.city { nope: nope }"), "The column `nope` does not exist on `sakila`.`city`.")
+EXPECT_EQ(full_city, show_create("SHOW CREATE REST VIEW /city"))
+EXPECT_EQ(city_privileges, table_privileges("city"))
+# Fails on the name after the privileges changed: the old ones come back
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST VIEW /city AS sakila.city CLASS TakenName"), "The object name TakenName is already in use on this REST schema.")
+EXPECT_EQ(full_city, show_create("SHOW CREATE REST VIEW /city"))
+EXPECT_EQ(city_privileges, table_privileges("city"))
+EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE request_path = '/city'"))
+rest("DROP REST VIEW /takenName")
+
 #@<> CREATE REST VIEW: @UNNEST of a 1:n reference reduces to a single column
 rest("""CREATE REST VIEW /country AS sakila.country {
     countryId: country_id @ROWOWNERSHIP,
@@ -438,6 +452,10 @@ EXPECT_THROWS(lambda: rest("CREATE REST PROCEDURE /bad AS sakila.nope"), "Failed
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST FUNCTION /filmInStock"), "Failed to get the REST FUNCTION `/svc/sakila/filmInStock`. The given REST object `/svc/sakila/filmInStock` is not a REST FUNCTION.")
 EXPECT_THROWS(lambda: rest("SHOW CREATE REST VIEW /filmInStock"), "The given REST object `/svc/sakila/filmInStock` is not a REST VIEW.")
 EXPECT_THROWS(lambda: rest("DROP REST VIEW /filmInStock"), "The given REST VIEW `/svc/sakila/filmInStock` could not be found.")
+# A failing OR REPLACE keeps the replaced procedure
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST PROCEDURE /filmInStock AS sakila.film_in_stock PARAMETERS { nope: nope }"), "The column `nope` does not exist on `sakila`.`film_in_stock`.")
+EXPECT_EQ(film_in_stock, show_create("SHOW CREATE REST PROCEDURE /filmInStock"))
+EXPECT_EQ("Execute", routine_privileges("film_in_stock", "PROCEDURE"))
 res = rest("""CREATE REST PROCEDURE /forced AS sakila.nope FORCE
 PARAMETERS {
     a: a @IN,

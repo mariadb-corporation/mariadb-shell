@@ -685,14 +685,17 @@ std::optional<std::string> options_after(Db_session *session,
       .as_string();
 }
 
-void delete_rest_object(Db_session *session, const Id &id) {
+void delete_rest_object(Db_session *session, const Id &id,
+                        bool revoke_privileges) {
   const auto rest_object = get_rest_object(session, id);
   if (!rest_object) {
     throw std::runtime_error("The specified rest_object with id " + id +
                              " was not found.");
   }
-  revoke_all_from_rest_object(session, rest_object->schema_name, rest_object->name,
-                            rest_object->object_type);
+  if (revoke_privileges) {
+    revoke_all_from_rest_object(session, rest_object->schema_name,
+                                rest_object->name, rest_object->object_type);
+  }
 
   // The objects, fields and references go with it (BEFORE DELETE triggers)
   if (session->execute(sql::Delete("rest_object").where("id", Value::id(id))) == 0) {

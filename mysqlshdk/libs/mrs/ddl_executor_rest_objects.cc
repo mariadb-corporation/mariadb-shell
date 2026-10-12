@@ -682,6 +682,48 @@ class Grant_restorer {
   bool m_active;
 };
 
+// Adds the rest_object of a CREATE [OR REPLACE] REST VIEW / PROCEDURE /
+// FUNCTION, whose data mapping is built already. The object it replaces is
+// changed like an ALTER would: the privileges first, then the metadata in a
+// transaction nothing commits implicitly. A new definition that fails, e.g.
+// on a name in use, leaves the replaced object and its privileges as they
+// were.
+void add_new_rest_object(Db_session *session,
+                         const std::optional<metadata::Rest_object> &replaced,
+                         const std::string &full_path, bool is_routine,
+                         const metadata::Rest_object_definition &definition,
+                         std::vector<Data_mapping> objects,
+                         const std::string &schema_name, bool force,
+                         Statement_result *r) {
+  const auto new_grants = metadata::grant_statements(
+      session, schema_name, definition.name, definition.object_type,
+      metadata::calculate_crud_operations(definition.object_type, objects),
+      objects, definition.options);
+
+  std::vector<std::string> old_grants;
+  std::optional<Grant_restorer> restorer;
+  if (replaced) {
+    old_grants = metadata::grant_statements(
+        session, replaced->schema_name, replaced->name, replaced->object_type,
+        replaced->crud_operations, metadata::get_objects(session, replaced->id),
+        replaced->options);
+    restorer.emplace(session, *replaced, old_grants,
+                     regrant(session, *replaced, old_grants, new_grants, r));
+  }
+
+  Db_transaction transaction(session);
+  if (replaced) {
+    // The old objects go first, so their names are free for the new ones
+    metadata::delete_rest_object(session, replaced->id, false);
+  }
+  assign_object_names(session, definition.rest_schema_id, full_path, is_routine,
+                      &objects);
+  const Id id = metadata::add_rest_object(session, definition, objects);
+  if (!replaced) run_grants_of_new_object(session, id, new_grants, force, r);
+  transaction.commit();
+  if (restorer) restorer->keep();
+}
+
 }  // namespace
 
 metadata::Schema Ddl_executor::rest_object_schema(
@@ -697,8 +739,6 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to create the REST VIEW `" + full_path + "`.");
 
-  Db_transaction transaction(m_session);
-
   const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
@@ -708,37 +748,21 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
                              "` does not exist.");
   }
 
+  std::optional<metadata::Rest_object> replaced;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) {
-            metadata::delete_rest_object(m_session, existing.id);
-          })) {
+          [&](const auto &existing) { replaced = existing; })) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
-    transaction.commit();
     return;
   }
 
-  const Id id = metadata::new_id(m_session);
   Mapping_builder builder(m_session, schema_name, name);
-  std::vector<Data_mapping> objects{
-      builder.view_object(s.class_name, s.crud, s.mapping)};
-  assign_object_names(m_session, schema.id, full_path, false, &objects);
-
-  auto definition =
-      rest_object_definition(schema.id, name, s.path, *object_type, s.options);
-  definition.id = id;
-  metadata::add_rest_object(m_session, definition, objects);
-
-  run_grants_of_new_object(
-      m_session, id,
-      metadata::grant_statements(
-          m_session, schema_name, name, *object_type,
-          metadata::calculate_crud_operations(*object_type, objects),
-          objects, definition.options),
-      false, r);
-
-  transaction.commit();
+  add_new_rest_object(
+      m_session, replaced, full_path, false,
+      rest_object_definition(schema.id, name, s.path, *object_type, s.options),
+      {builder.view_object(s.class_name, s.crud, s.mapping)}, schema_name, false,
+      r);
 
   r->message = "REST VIEW `" + full_path + "` created successfully.";
 }
@@ -748,41 +772,24 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   const auto full_path = full_schema_path(s.on, s.path);
   set_failure_context("Failed to create the REST " + type + " `" + full_path + "`.");
 
-  Db_transaction transaction(m_session);
-
   const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
+  std::optional<metadata::Rest_object> replaced;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) {
-            metadata::delete_rest_object(m_session, existing.id);
-          })) {
+          [&](const auto &existing) { replaced = existing; })) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
-    transaction.commit();
     return;
   }
 
-  const Id id = metadata::new_id(m_session);
   Mapping_builder builder(m_session, schema_name, name);
-  auto objects = builder.routine_objects(s.kind, type, s.parameters,
-                                         s.results, s.force);
-  assign_object_names(m_session, schema.id, full_path, true, &objects);
-
-  auto definition = rest_object_definition(schema.id, name, s.path, type, s.options);
-  definition.id = id;
-  metadata::add_rest_object(m_session, definition, objects);
-
-  run_grants_of_new_object(
-      m_session, id,
-      metadata::grant_statements(
-          m_session, schema_name, name, type,
-          metadata::calculate_crud_operations(type, objects),
-          objects, definition.options),
-      s.force, r);
-
-  transaction.commit();
+  add_new_rest_object(
+      m_session, replaced, full_path, true,
+      rest_object_definition(schema.id, name, s.path, type, s.options),
+      builder.routine_objects(s.kind, type, s.parameters, s.results, s.force),
+      schema_name, s.force, r);
 
   r->message = "REST " + type + " `" + full_path + "` created successfully.";
 }
