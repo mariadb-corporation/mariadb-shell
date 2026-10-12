@@ -8,12 +8,15 @@
 #
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     --build-arg VERSION=26.10.1 -f docker/mariadb-shell.Dockerfile docker
+#
+# RELEASE_TAG names the GitHub release when its tag is not v<VERSION>.
 
 ARG BASE_IMAGE=debian:13-slim
 
 FROM ${BASE_IMAGE} AS fetch
 
 ARG VERSION
+ARG RELEASE_TAG
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -29,7 +32,7 @@ RUN set -eu; \
       arm64) arch=arm-64bit ;; \
       *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
-    base="https://github.com/mariadb-corporation/mariadb-shell/releases/download/v${VERSION}"; \
+    base="https://github.com/mariadb-corporation/mariadb-shell/releases/download/${RELEASE_TAG:-v${VERSION}}"; \
     cd /tmp; \
     curl -fsSL --retry 3 -o SHA256SUMS "$base/SHA256SUMS"; \
     grep -E "  mariadb-shell-${VERSION}-linux-glibc[0-9.]+-${arch}\.tar\.gz$" SHA256SUMS > tarball.sha256; \
@@ -64,18 +67,23 @@ RUN apt-get update \
     && sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
     && locale-gen \
     && useradd --uid 10001 --user-group --create-home --home-dir /home/mcp \
-               --shell /usr/sbin/nologin mcp
+               --shell /usr/sbin/nologin mcp \
+    && chgrp 0 /home/mcp && chmod g=u /home/mcp
 
 COPY --from=fetch /opt/mariadb-shell /opt/mariadb-shell
 COPY mcp-entrypoint.sh /usr/local/bin/mcp-entrypoint.sh
 
 ENV PATH=/opt/mariadb-shell/bin:$PATH \
     LANG=en_US.UTF-8 \
-    LC_ALL=en_US.UTF-8
+    LC_ALL=en_US.UTF-8 \
+    HOME=/home/mcp
 
 # The volume is the whole home directory, not just ~/.mariadb-shell: the
 # login-path credential store keeps the users' API keys and connection
-# passwords in ~/.mylogin.cnf.
+# passwords in ~/.mylogin.cnf. HOME is set, and the directory belongs to group
+# 0 as well, for a container started under another uid (docker run --user,
+# OpenShift's random uid in group 0), which has no passwd entry to take HOME
+# from.
 USER mcp
 WORKDIR /home/mcp
 VOLUME /home/mcp

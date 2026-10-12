@@ -18,17 +18,23 @@
 #
 # `start-server` (the default command) configures a multi-tenant MCP server
 # from the MCP_* and KEYCLOAK_* environment variables, then runs it in the
-# foreground. Anything else is passed to mariadb-shell as it is, e.g.
+# foreground. A program of the image, such as `sh`, runs as it is; anything
+# else is passed to mariadb-shell, e.g.
 #
 #   podman exec -it mcp mariadb-shell -- mcp setup --addUser=ada@example.com
 #
 # The configuration is applied again only when one of those variables changes,
-# so the Keycloak administrator password is needed on the first start alone and
-# can be removed afterwards. See docker/README.md for the variables.
+# and the Keycloak realm is prepared again only when the mode, the public URL
+# or a KEYCLOAK_* variable changes, so the Keycloak administrator password is
+# needed on the first start alone and can be removed afterwards. See
+# docker/README.md for the variables.
 
 set -euo pipefail
 
 if [ "${1:-}" != "start-server" ]; then
+  if [ -n "${1:-}" ] && [ "${1#-}" = "$1" ] && command -v "$1" > /dev/null 2>&1; then
+    exec "$@"
+  fi
   exec mariadb-shell "$@"
 fi
 shift
@@ -61,19 +67,38 @@ MODE="${MCP_OAUTH_MODE:-none}"
 STAMP="$HOME/.mariadb-shell/container-config"
 
 # Everything that decides the configuration, and nothing secret: the stamp is
-# a plain file in the volume.
+# a plain file in the volume. No variable set at all is a configuration too.
 fingerprint() {
-  env | grep -E '^(MCP_(OAUTH_MODE|PUBLIC_URL|LOGIN_SERVERS|REQUIRED_ROLE|INITIAL_USER)|KEYCLOAK_(URL|REALM|ADMIN_REALM|ADMIN_USER|CLIENT_ID|GRANT_ROLE_TO|LOGIN_THEME))=' | sort
+  { env | grep -E '^(MCP_(OAUTH_MODE|PUBLIC_URL|LOGIN_SERVERS|REQUIRED_ROLE|INITIAL_USER)|KEYCLOAK_(URL|REALM|ADMIN_REALM|ADMIN_USER|CLIENT_ID|GRANT_ROLE_TO|LOGIN_THEME))=' || true; } | sort
+}
+
+# The part of a fingerprint (on stdin) that the Keycloak realm depends on.
+realm_part() {
+  grep -E '^(MCP_OAUTH_MODE|MCP_PUBLIC_URL|KEYCLOAK_)' || true
+}
+
+# A variable's value as the stamp of the previous configuration has it.
+previous() {
+  sed -n "s/^$1=//p" "$STAMP" 2> /dev/null || true
 }
 
 configure() {
   echo "mcp-entrypoint: applying the configuration ($MODE)" >&2
   msh mcp setup --multiTenant=true
 
+  # MCP_LOGIN_SERVERS names all login servers: the previous ones go first, and
+  # one that is gone already (removed with mcp setup-oauth) is no error.
+  local server
+  if [ "$(previous MCP_LOGIN_SERVERS)" != "${MCP_LOGIN_SERVERS:-}" ]; then
+    for server in $(previous MCP_LOGIN_SERVERS | tr ',' ' '); do
+      msh mcp setup-oauth --removeLoginServer="$server" > /dev/null 2>&1 || true
+    done
+  fi
+
   case "$MODE" in
     none)
-      # API keys only.
-      msh mcp setup-oauth --mode=none ${MCP_PUBLIC_URL:+--publicUrl="$MCP_PUBLIC_URL"}
+      # API keys only. Empty values clear what an earlier start set.
+      msh mcp setup-oauth --mode=none --publicUrl="${MCP_PUBLIC_URL:-}"
       ;;
 
     builtin)
@@ -81,7 +106,7 @@ configure() {
       [ -n "${MCP_LOGIN_SERVERS:-}" ] || die "MCP_OAUTH_MODE=builtin needs MCP_LOGIN_SERVERS"
       msh mcp setup-oauth --mode=builtin --publicUrl="$MCP_PUBLIC_URL" \
         --addLoginServer="$MCP_LOGIN_SERVERS" \
-        ${MCP_REQUIRED_ROLE+--requiredRole="$MCP_REQUIRED_ROLE"}
+        --requiredRole="${MCP_REQUIRED_ROLE:-}"
       ;;
 
     keycloak)
@@ -89,21 +114,25 @@ configure() {
       for var in MCP_PUBLIC_URL KEYCLOAK_URL KEYCLOAK_REALM KEYCLOAK_ADMIN_USER; do
         [ -n "${!var:-}" ] || die "MCP_OAUTH_MODE=keycloak needs $var"
       done
-      MCP_KEYCLOAK_ADMIN_PASSWORD="$(secret KEYCLOAK_ADMIN_PASSWORD)"
-      [ -n "$MCP_KEYCLOAK_ADMIN_PASSWORD" ] ||
-        die "preparing the Keycloak realm needs KEYCLOAK_ADMIN_PASSWORD or KEYCLOAK_ADMIN_PASSWORD_FILE"
-      export MCP_KEYCLOAK_ADMIN_PASSWORD
-      msh mcp setup-oauth --publicUrl="$MCP_PUBLIC_URL"
-      msh mcp setup-keycloak-realm --nonInteractive \
-        --server="$KEYCLOAK_URL" --realm="$KEYCLOAK_REALM" \
-        --adminRealm="${KEYCLOAK_ADMIN_REALM:-master}" \
-        --adminUser="$KEYCLOAK_ADMIN_USER" \
-        --adminPasswordEnv=MCP_KEYCLOAK_ADMIN_PASSWORD \
-        --mcpUrl="$MCP_PUBLIC_URL" \
-        ${KEYCLOAK_CLIENT_ID:+--clientId="$KEYCLOAK_CLIENT_ID"} \
-        ${KEYCLOAK_GRANT_ROLE_TO:+--grantRealmRoleTo="$KEYCLOAK_GRANT_ROLE_TO"} \
-        ${KEYCLOAK_LOGIN_THEME:+--loginTheme="$KEYCLOAK_LOGIN_THEME"}
-      unset MCP_KEYCLOAK_ADMIN_PASSWORD
+      if [ "$(fingerprint | realm_part)" = "$({ cat "$STAMP" 2> /dev/null || true; } | realm_part)" ]; then
+        echo "mcp-entrypoint: the Keycloak realm settings are unchanged" >&2
+      else
+        MCP_KEYCLOAK_ADMIN_PASSWORD="$(secret KEYCLOAK_ADMIN_PASSWORD)"
+        [ -n "$MCP_KEYCLOAK_ADMIN_PASSWORD" ] ||
+          die "preparing the Keycloak realm needs KEYCLOAK_ADMIN_PASSWORD or KEYCLOAK_ADMIN_PASSWORD_FILE"
+        export MCP_KEYCLOAK_ADMIN_PASSWORD
+        msh mcp setup-oauth --publicUrl="$MCP_PUBLIC_URL"
+        msh mcp setup-keycloak-realm --nonInteractive \
+          --server="$KEYCLOAK_URL" --realm="$KEYCLOAK_REALM" \
+          --adminRealm="${KEYCLOAK_ADMIN_REALM:-master}" \
+          --adminUser="$KEYCLOAK_ADMIN_USER" \
+          --adminPasswordEnv=MCP_KEYCLOAK_ADMIN_PASSWORD \
+          --mcpUrl="$MCP_PUBLIC_URL" \
+          ${KEYCLOAK_CLIENT_ID:+--clientId="$KEYCLOAK_CLIENT_ID"} \
+          ${KEYCLOAK_GRANT_ROLE_TO:+--grantRealmRoleTo="$KEYCLOAK_GRANT_ROLE_TO"} \
+          ${KEYCLOAK_LOGIN_THEME:+--loginTheme="$KEYCLOAK_LOGIN_THEME"}
+        unset MCP_KEYCLOAK_ADMIN_PASSWORD
+      fi
       ;;
 
     *)
@@ -125,9 +154,12 @@ configure() {
 }
 
 mkdir -p "$(dirname "$STAMP")"
-if ! fingerprint | cmp -s - "$STAMP"; then
+if [ ! -f "$STAMP" ] || ! fingerprint | cmp -s - "$STAMP"; then
   configure
 fi
+
+# The server needs none of the secrets, and keeps its environment for life.
+unset KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_ADMIN_PASSWORD_FILE
 
 # Inside a container the server has to listen on all addresses to be reachable
 # through a published port. Publish it on the host's loopback address only and

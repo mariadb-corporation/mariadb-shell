@@ -25,9 +25,9 @@ The image is available for `linux/amd64` and `linux/arm64`, and is based on Debi
 | Volume | `/home/mcp`: the configuration, the users, and the [credential store](../connecting/credential-store.md) with the users' API keys and connection passwords |
 | Default command | `start-server` |
 
-On its first start, the container configures the server from [environment variables](#environment-variables) and then starts it. On later starts, it applies the variables again only if one of them changed, so a secret that is needed only for the first start, such as the Keycloak administrator password, can be removed afterwards.
+On its first start, the container configures the server from [environment variables](#environment-variables) and then starts it. On later starts, it applies the variables again only if one of them changed, and prepares the Keycloak realm again only if the mode, the public URL or a `KEYCLOAK_*` variable changed. So a secret that is needed only for the first start, such as the Keycloak administrator password, can be removed afterwards. Removing a variable clears its setting.
 
-Any other command runs `mariadb-shell` with its arguments. Use this to administer a running server:
+A program of the image, such as `sh`, runs as it is. Any other command runs `mariadb-shell` with its arguments. Use this to administer a running server:
 
 ```bash
 docker compose exec mcp mariadb-shell -- mcp setup --show --allUsers
@@ -56,13 +56,13 @@ With Podman and other clients that don't resolve short names through Docker Hub,
 | `MCP_OAUTH_MODE` | All | `none` (API keys only, the default), `builtin`, or `keycloak`. API keys work in every mode. See [OAuth Authentication](oauth-authentication.md). |
 | `MCP_PUBLIC_URL` | `builtin`, `keycloak` | The URL that clients reach the MCP endpoint at, including `/mcp`, for example `https://mcp.example.com/mcp`. See [The Public URL](oauth-authentication.md#the-public-url). |
 | `MCP_INITIAL_USER` | All | A user to create on the first start, by email address or user ID. A server without users starts only in a mode that creates users at their first sign-in. |
-| `MCP_LOGIN_SERVERS` | `builtin` | The MariaDB servers that users sign in to, as connection URIs without a user. |
-| `MCP_REQUIRED_ROLE` | `builtin` | The MariaDB role that an account must hold to sign in. |
+| `MCP_LOGIN_SERVERS` | `builtin` | The MariaDB servers that users sign in to, as connection URIs without a user. The list is complete: a server removed from it is removed from the configuration. |
+| `MCP_REQUIRED_ROLE` | `builtin` | The MariaDB role that an account must hold to sign in. Without it, every account may sign in. |
 | `KEYCLOAK_URL` | `keycloak` | The Keycloak base URL, for example `https://kc.example.com`. |
 | `KEYCLOAK_REALM` | `keycloak` | The realm to prepare. It must exist. |
 | `KEYCLOAK_ADMIN_REALM` | `keycloak` | The realm that the administrator signs in to. Default: `master`. |
 | `KEYCLOAK_ADMIN_USER` | `keycloak` | The Keycloak administrator. |
-| `KEYCLOAK_ADMIN_PASSWORD_FILE` | `keycloak` | A file that contains the administrator's password, for example a Compose secret. `KEYCLOAK_ADMIN_PASSWORD` takes the password itself instead. |
+| `KEYCLOAK_ADMIN_PASSWORD_FILE` | `keycloak` | A file that contains the administrator's password, for example a Compose secret. `KEYCLOAK_ADMIN_PASSWORD` takes the password itself instead, but stays visible in the container's configuration. |
 | `KEYCLOAK_CLIENT_ID` | `keycloak` | The client created for MCP clients. Default: `mariadb-mcp`. |
 | `KEYCLOAK_GRANT_ROLE_TO` | `keycloak` | Comma-separated Keycloak users to give the realm role `mcp-user`. |
 | `KEYCLOAK_LOGIN_THEME` | `keycloak` | A login theme to select for the realm, such as `mariadb-mcp`. See [Use the MariaDB Login Theme](oauth-authentication.md#use-the-mariadb-login-theme). |
@@ -343,7 +343,7 @@ This setup runs Keycloak with its own MariaDB database next to the MCP server. O
     Keycloak issuer: https://kc.example.com/realms/mariadb.
     ```
 
-    Then empty `kc-admin-password`. The container starts without it, as long as the Keycloak variables stay the same.
+    Then empty `kc-admin-password`. The container starts without it, as long as the mode, the public URL and the `KEYCLOAK_*` variables stay the same.
 7.  Give the users their connections. A user who signs in through Keycloak is linked to a user of the MCP server by their **verified** email address, or created at their first sign-in if they hold the realm role `mcp-user`, but without connections. Create the user beforehand with the email address of their Keycloak account, which must be marked as verified in Keycloak, and add their connections. The setup asks for each connection's password:
 
     ```bash

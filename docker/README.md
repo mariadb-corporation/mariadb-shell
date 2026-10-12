@@ -31,7 +31,7 @@ docker buildx build --builder msh --platform linux/amd64,linux/arm64 --push \
   -f docker/mariadb-shell.Dockerfile docker
 ```
 
-The build context is `docker/`, not the repository root. `VERSION` must name a published release (tag `v<VERSION>`).
+The build context is `docker/`, not the repository root. `VERSION` must name a published release, tagged `v<VERSION>`. For a release with another tag, add `--build-arg RELEASE_TAG=<tag>`.
 
 On Colima, foreign-platform builds need QEMU emulation, which Colima sets up by default. To move an image to a machine without a registry, run `docker save mariadb-shell:26.10.1 | ssh <host> podman load`.
 
@@ -93,7 +93,7 @@ podman run -d --name mcp -p 127.0.0.1:8080:8080 -v mcp-data:/home/mcp \
 
 The server runs as uid 10001 in the container. A password file that is bind-mounted instead, as with Docker, keeps its owner and mode from the host, so it has to be readable by that user. Otherwise the container stops with `cannot read … as uid 10001`.
 
-The password is needed for the first start only. Remove it afterwards, for example with `podman secret rm kc-admin-password`. The container starts without it, as long as the Keycloak settings stay the same. Users who hold the realm role `mcp-user` are created at their first sign-in, but without connections. Add their connections with `mcp setup --user=<email> --addConnection=…`.
+The password is needed for the first start only. Remove it afterwards, for example with `podman secret rm kc-admin-password`. The container starts without it, as long as the mode, the public URL and the `KEYCLOAK_*` variables stay the same; other variables, such as `MCP_INITIAL_USER`, can change. Users who hold the realm role `mcp-user` are created at their first sign-in, but without connections. Add their connections with `mcp setup --user=<email> --addConnection=…`.
 
 The container must reach `KEYCLOAK_URL` under the same name that the realm's issuer uses. Keycloak issues tokens for that issuer, and the server reads the realm's keys from it.
 
@@ -104,13 +104,13 @@ The container must reach `KEYCLOAK_URL` under the same name that the realm's iss
 | `MCP_OAUTH_MODE` | all | `none` (API keys only, the default), `builtin`, or `keycloak`. API keys work in every mode. |
 | `MCP_PUBLIC_URL` | `builtin`, `keycloak` | The URL clients reach the MCP endpoint at, including `/mcp`, for example `https://mcp.example.com/mcp`. Tokens are issued for it, and its host name is accepted in the `Host` header. |
 | `MCP_INITIAL_USER` | all | A user to create on the first start, named by email address or user ID. |
-| `MCP_LOGIN_SERVERS` | `builtin` | Comma-separated MariaDB servers that users sign in to, as connection URIs without a user. |
-| `MCP_REQUIRED_ROLE` | `builtin` | The MariaDB role that an account must hold to sign in. |
+| `MCP_LOGIN_SERVERS` | `builtin` | Comma-separated MariaDB servers that users sign in to, as connection URIs without a user. The list is complete: a server removed from it is removed from the configuration. |
+| `MCP_REQUIRED_ROLE` | `builtin` | The MariaDB role that an account must hold to sign in. Without it, every account may sign in. |
 | `KEYCLOAK_URL` | `keycloak` | The Keycloak base URL, for example `https://kc.example.com`. |
 | `KEYCLOAK_REALM` | `keycloak` | The realm to prepare. It must exist. |
 | `KEYCLOAK_ADMIN_REALM` | `keycloak` | The realm the administrator signs in to. Default: `master`. |
 | `KEYCLOAK_ADMIN_USER` | `keycloak` | The Keycloak administrator. |
-| `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD_FILE` | `keycloak` | The administrator's password, or a file that contains it (for Docker and Podman secrets). Prefer the file. |
+| `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD_FILE` | `keycloak` | The administrator's password, or a file that contains it (for Docker and Podman secrets). Prefer the file: a variable is part of the container's configuration, which `docker inspect` and every `docker exec` see, although the server itself doesn't get it. |
 | `KEYCLOAK_CLIENT_ID` | `keycloak` | The client created for MCP clients. Default: `mariadb-mcp`. |
 | `KEYCLOAK_GRANT_ROLE_TO` | `keycloak` | Comma-separated Keycloak users to give the realm role `mcp-user`. |
 | `KEYCLOAK_LOGIN_THEME` | `keycloak` | A login theme to select for the realm, for example `mariadb-mcp`, which gives Keycloak's sign-in pages the look of the MCP server's own. The theme must be installed on the Keycloak server; the image contains it in `/opt/mariadb-shell/lib/mariadb-shell/plugins/mcp_plugin/keycloak-theme`, with installation notes. Needs a release whose `mcp setup-keycloak-realm` has `--loginTheme` (later than 26.10.1). |
@@ -121,7 +121,7 @@ The container must reach `KEYCLOAK_URL` under the same name that the realm's iss
 
 Further arguments after `start-server` go to `mcp start-server`, for example `docker run … mariadb-shell:26.10.1 start-server --sslCertfile=… --sslKeyfile=…` to serve HTTPS from the container itself.
 
-Any other command runs `mariadb-shell` with its arguments. This is how you administer the server:
+A program of the image, such as `sh` or `bash`, runs as it is. Any other command runs `mariadb-shell` with its arguments. This is how you administer the server:
 
 ```bash
 docker exec mcp mariadb-shell -- mcp setup --show --allUsers
