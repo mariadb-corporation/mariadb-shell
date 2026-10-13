@@ -6,6 +6,8 @@
     "rut": "cd bld/bin && CACHE=../../unittest/rut-filter && LAST=$([ -s \"$CACHE\" ] && cat \"$CACHE\" || echo \"*\") && { [ -n \"$RUT_FILTER\" ] || { printf \"Test filter [%s]: \" \"$LAST\" >&2; read -r RUT_FILTER || true; }; } && FILTER=${RUT_FILTER:-$LAST} && printf \"%s\\n\" \"$FILTER\" > \"$CACHE\" && python3 ../../scripts/run_unit_tests.py --binary ./run_unit_tests --shell-binary ./mariadb-shell -t ../../unittest/test-execution-times.txt --gtest_filter=\"$FILTER\"",
     "docs-ref": "npm --prefix docs-ref start",
     "docs-ref:build": "npm --prefix docs-ref run build",
-    "docs-ref:serve": "npm --prefix docs-ref run serve"
+    "docs-ref:serve": "npm --prefix docs-ref run serve",
+    "docs-ref:mrs-diagrams": "npm --prefix docs-ref run mrs-diagrams",
+    "docs-ref:mrs-grammar-docs": "npm --prefix docs-ref run mrs-grammar-docs"
   }
 }

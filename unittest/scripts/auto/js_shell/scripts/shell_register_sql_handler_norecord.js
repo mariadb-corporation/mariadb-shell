@@ -11,9 +11,14 @@ function callMysqlsh(command_line_args) {
     testutil.callMysqlsh(["--disable-builtin-plugins"].concat(command_line_args), "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor", "MARIADB_SHELL_USER_CONFIG_HOME=" + user_path])
 }
 
-//@<> Empty list of SQL Handlers
+//@<> Only the built-in MRS handler is registered
 callMysqlsh([__mysqluripwd, "--", "shell", "list-sql-handlers"])
-EXPECT_OUTPUT_CONTAINS('[]')
+EXPECT_STDOUT_CONTAINS_MULTILINE(`[
+    {
+        "description": "MariaDB REST Service SQL Extension",
+        "name": "MRS"
+    }
+]`)
 
 //@<> SQL Handler Registration Errors
 EXPECT_THROWS(function() {shell.registerSqlHandler(5, 5, 45, null)}, "Argument #1 is expected to be a string")
@@ -111,6 +116,10 @@ testutil.createFile(plugin_path, plugin_code)
 
 callMysqlsh([__mysqluripwd, "--", "shell", "list-sql-handlers"])
 EXPECT_STDOUT_CONTAINS_MULTILINE(`[
+    {
+        "description": "MariaDB REST Service SQL Extension",
+        "name": "MRS"
+    },
     {
         "description": "Handler for SHOW DATABASE",
         "name": "databaseShow"

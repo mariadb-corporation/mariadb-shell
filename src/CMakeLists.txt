@@ -50,6 +50,9 @@ set(mysh_SRC
     mysqlsh/commands/command_system.cc
     mysqlsh/commands/command_watch.cc
     mysqlsh/commands/command_query_attributes.cc
+    mysqlsh/mrs/rest_sql_handler.cc
+    mysqlsh/mrs/shell_db_session.cc
+    mysqlsh/mrs/schema_deployers.cc
     ${CMAKE_SOURCE_DIR}/mysqlshdk/shellcore/interrupt_helper.cc
     ${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/linenoise.cpp
     ${CMAKE_SOURCE_DIR}/ext/linenoise-ng/src/ConvertUTF.cpp
@@ -67,7 +70,7 @@ ENDIF()
 
 ADD_CONVENIENCE_LIBRARY(shellfe ${mysh_SRC})
 ADD_STAN_TARGET(shellfe ${mysh_SRC})
-target_link_libraries(shellfe ssh)
+target_link_libraries(shellfe ssh mrs_core)
 
 set(mysqlsh_SRC
   mysqlsh/main.cc
