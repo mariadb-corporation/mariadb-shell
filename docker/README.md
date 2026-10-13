@@ -50,6 +50,7 @@ On its first start, the container configures the server from environment variabl
 ```bash
 docker run -d --name mcp -p 127.0.0.1:8080:8080 -v mcp-data:/home/mcp \
   -e MCP_INITIAL_USER=ada@example.com \
+  -e MCP_ALLOWED_HOSTS=mcp.example.com \
   mariadb-shell-mcp-server:26.10.1
 
 docker exec mcp mariadb-shell -- mcp setup --showApiKey=ada@example.com
@@ -57,7 +58,7 @@ docker exec mcp mariadb-shell -- mcp setup --user=ada@example.com \
   --addConnection='mariadb://ada@db.example.com:3306' --passwordEnv=ADA_DB_PASSWORD
 ```
 
-A server in this mode needs at least one user to start. `MCP_INITIAL_USER` creates one on the first start. The API key isn't written to the log; read it with `--showApiKey`. For `--passwordEnv`, pass the variable with `docker exec -e ADA_DB_PASSWORD=…`, or run `mcp setup` interactively with `docker exec -it`.
+This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the reverse proxy passes on. Without it, every request through the proxy gets `421 Misdirected Request`. A server in this mode needs at least one user to start. `MCP_INITIAL_USER` creates one on the first start. The API key isn't written to the log; read it with `--showApiKey`. For `--passwordEnv`, pass the variable with `docker exec -e ADA_DB_PASSWORD=…`, or run `mcp setup` interactively with `docker exec -it`.
 
 #### Built-in sign-in (standalone)
 
@@ -115,7 +116,7 @@ The container must reach `KEYCLOAK_URL` under the same name that the realm's iss
 | `KEYCLOAK_GRANT_ROLE_TO` | `keycloak` | Comma-separated Keycloak users to give the realm role `mcp-user`. |
 | `KEYCLOAK_LOGIN_THEME` | `keycloak` | A login theme to select for the realm, for example `mariadb-mcp`, which gives Keycloak's sign-in pages the look of the MCP server's own. The theme must be installed on the Keycloak server; the image contains it in `/opt/mariadb-shell/lib/mariadb-shell/plugins/mcp_plugin/keycloak-theme`, with installation notes. Needs a release whose `mcp setup-keycloak-realm` has `--loginTheme` (later than 26.10.1). |
 | `MCP_TRUSTED_PROXIES` | all | Comma-separated addresses or networks of the reverse proxy, whose `X-Forwarded-For` header the server trusts. See [Reverse Proxy](#reverse-proxy). Needs a release whose `mcp start-server` has `--trustedProxies` (later than 26.10.1). |
-| `MCP_ALLOWED_HOSTS` | all | Additional `Host` header values to accept, for example `127.0.0.1:18080` to reach a port published as 18080 directly, without the proxy. |
+| `MCP_ALLOWED_HOSTS` | all | Additional `Host` header values to accept. In `none` mode behind a reverse proxy, the proxy's host name, for example `mcp.example.com`. Also, for example, `127.0.0.1:18080` to reach a port published as 18080 directly, without the proxy. |
 | `MCP_MAX_CONNECTIONS` | all | The most database connections the server holds open, for all users together. Default: 64. |
 | `MCP_PORT` | all | The port in the container. Default: 8080. |
 
@@ -133,7 +134,7 @@ A running server picks up changes to users, connections, and scopes at once. Cha
 
 ### Reverse Proxy
 
-Proxy everything to the container, not just `/mcp`. The OAuth2 metadata is under `/.well-known/`, and in `builtin` mode the sign-in and token endpoints are at the root. Pass the original `Host` header on, and don't buffer responses, because the streamable HTTP transport answers with server-sent events. An example for nginx:
+Proxy everything to the container, not just `/mcp`. The OAuth2 metadata is under `/.well-known/`, and in `builtin` mode the sign-in and token endpoints are at the root. Pass the original `Host` header on. The server accepts the host name of `MCP_PUBLIC_URL`, and in `none` mode, which has no public URL, the names in `MCP_ALLOWED_HOSTS`. Don't buffer responses, because the streamable HTTP transport answers with server-sent events. An example for nginx:
 
 ```nginx
 location / {

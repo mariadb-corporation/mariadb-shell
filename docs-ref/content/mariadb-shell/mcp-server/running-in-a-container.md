@@ -67,7 +67,7 @@ With Podman and other clients that don't resolve short names through Docker Hub,
 | `KEYCLOAK_GRANT_ROLE_TO` | `keycloak` | Comma-separated Keycloak users to give the realm role `mcp-user`. |
 | `KEYCLOAK_LOGIN_THEME` | `keycloak` | A login theme to select for the realm, such as `mariadb-mcp`. See [Use the MariaDB Login Theme](oauth-authentication.md#use-the-mariadb-login-theme). |
 | `MCP_TRUSTED_PROXIES` | All | The addresses that the reverse proxy's requests arrive from. See [Reverse Proxy](#reverse-proxy). |
-| `MCP_ALLOWED_HOSTS` | All | Additional `Host` header values to accept. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
+| `MCP_ALLOWED_HOSTS` | All | Additional `Host` header values to accept. In `none` mode behind a reverse proxy, the proxy's host name, for example `mcp.example.com`. See [Host and Origin Validation](security-and-session-handling.md#host-and-origin-validation). |
 | `MCP_MAX_CONNECTIONS` | All | The most database connections that the server holds open, for all users together. Default: `64`. |
 | `MCP_PORT` | All | The port in the container. Default: `8080`. |
 
@@ -77,7 +77,7 @@ In `keycloak` mode, the first start runs [`mcp setup-keycloak-realm`](oauth-auth
 
 The server in the container serves plain HTTP and listens on all addresses of the container, so that the published port reaches it. Publish the port on the host's loopback address only, and let a reverse proxy on the host terminate TLS. At startup, the server warns that it listens without TLS; behind a proxy, that is expected.
 
-Pass everything to the container, not just `/mcp`: the OAuth2 metadata is under `/.well-known/`, and in `builtin` mode, the sign-in and token endpoints are at the root. Pass the original `Host` header on; the server accepts the host name of its public URL without `--allowedHosts`. Don't buffer responses, because the streamable HTTP transport answers with server-sent events. For nginx:
+Pass everything to the container, not just `/mcp`: the OAuth2 metadata is under `/.well-known/`, and in `builtin` mode, the sign-in and token endpoints are at the root. Pass the original `Host` header on. In `builtin` and `keycloak` mode, the server accepts the host name of its public URL. In `none` mode, it has no public URL, so set `MCP_ALLOWED_HOSTS` to the host name, for example `mcp.example.com`. Don't buffer responses, because the streamable HTTP transport answers with server-sent events. For nginx:
 
 ```nginx
 server {
@@ -201,8 +201,11 @@ For clients that send an API key instead of signing in, such as scripts and serv
 ```yaml
     environment:
       MCP_INITIAL_USER: ada@example.com
+      MCP_ALLOWED_HOSTS: mcp.example.com
       MCP_TRUSTED_PROXIES: 172.30.0.0/24
 ```
+
+This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the proxy passes on. Without it, the server answers every request through the proxy with `421 Misdirected Request`.
 
 The API key isn't written to the log. Read it, give the user a connection, and register the server with the key, as described in [Multi-Tenant Mode](multi-tenant-mode.md#connect-a-client-with-an-api-key):
 
