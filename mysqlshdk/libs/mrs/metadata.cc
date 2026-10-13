@@ -90,7 +90,8 @@ std::vector<std::string> names_of(const std::optional<std::string> &json_array) 
   return names;
 }
 
-// The column list of the service queries.
+// The column list of the service queries. find_service() orders the names it
+// looks for with the same expression as sorted_developers.
 const char *k_service_select = R"(
 SELECT se.id, se.enabled, se.published, se.url_protocol, h.name AS url_host_name,
     se.url_context_root, se.comments, se.options, se.url_host_id,
@@ -436,8 +437,8 @@ namespace {
 
 // 'text' as the server's QUOTE() writes it: a quote, a backslash, NUL and
 // Ctrl-Z preceded by a backslash. The sorted_developers and
-// full_service_path columns are built with QUOTE(), and find_service()
-// compares against them.
+// full_service_path columns are built with QUOTE(), so format_developers()
+// writes the names the way those columns show them.
 std::string server_quote(std::string_view text) {
   std::string result = "'";
   for (const char c : text) {
@@ -464,7 +465,8 @@ std::string server_quote(std::string_view text) {
 std::string format_developers(std::vector<std::string> developers) {
   if (developers.empty()) return {};
 
-  // The metadata orders the names case-insensitively (collation order).
+  // For messages: ASCII names come out in the metadata's order (it orders
+  // them case-insensitively). Lookups do not rely on it, see find_service().
   std::sort(developers.begin(), developers.end(),
             [](const std::string &a, const std::string &b) {
               const auto la = to_lower(a);
@@ -535,10 +537,17 @@ std::optional<Service> find_service(Db_session *session,
   if (developers.empty()) {
     where += " AND se.in_development IS NULL";
   } else {
-    auto sorted = format_developers(developers);
-    sorted.pop_back();  // the trailing @
-    having = "sorted_developers = ?";
-    params.emplace_back(std::move(sorted));
+    // The given names are ordered by the server, with the expression
+    // sorted_developers uses (k_service_select): ordering them here would
+    // have to match the collation of its JSON_TABLE column, which a byte
+    // order does not for names beyond ASCII ('émile' sorts with 'e')
+    having =
+        "sorted_developers = (SELECT GROUP_CONCAT(IF(item REGEXP "
+        "'^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item) FROM JSON_TABLE("
+        "?, '$[*]' COLUMNS (item text path '$')) AS given)";
+    json::Value::Array names;
+    for (const auto &developer : developers) names.emplace_back(developer);
+    params.emplace_back(json::Value(std::move(names)).dump());
   }
 
   auto services = query_services(session, where, std::move(params), having);

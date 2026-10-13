@@ -151,8 +151,9 @@ bool row_exists(Db_session *session, std::string_view table, const Id &id);
 // The ids and names used as "enabled" captions in SHOW output.
 std::string enabled_caption(int enabled);
 
-// The developer list of a service formatted as `a,'b c'@`, sorted, the way
-// the metadata's sorted_developers column does it. Empty for no developers.
+// The developer list of a service formatted as `a,'b c'@`, sorted, for
+// messages. Its order is the metadata's for ASCII names only, so lookups do
+// not compare against it (see find_service()). Empty for no developers.
 std::string format_developers(std::vector<std::string> developers);
 
 // A request path (/a/b) is returned as is; anything else is backtick quoted.

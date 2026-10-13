@@ -170,15 +170,27 @@ rest("ALTER REST SERVICE /full OPTIONS {\"test3\": 3}")
 EXPECT_IN('OPTIONS {\n        "test3": 3\n    }', rest("SHOW CREATE REST SERVICE /full").fetch_one()[0])
 
 #@<> Developer names with quotes and backslashes are found again
-# The module quotes the names like the server's QUOTE() does (backslash
-# escapes, whatever the sql_mode), which the service lookup compares with
-# the names the metadata view quotes.
+# The names are shown quoted like the server's QUOTE() does (backslash
+# escapes, whatever the sql_mode); the service lookup has the server quote
+# and order both the given names and the stored ones.
 quoted = "'back\\\\slash','o\\'brien'@/quoted"
 EXPECT_EQ("REST SERVICE `%s` created successfully." % quoted, rest_info("CREATE REST SERVICE 'o''brien','back\\\\slash'@/quoted"))
 EXPECT_EQ([quoted], [r[0] for r in rest_rows("SHOW REST SERVICES") if r[0].endswith("/quoted")])
 EXPECT_EQ("Now using REST SERVICE `%s`." % quoted, rest_info("USE REST SERVICE %s" % quoted))
 EXPECT_EQ(["back\\slash", "o'brien"], sorted(json.loads(rest("SHOW CREATE REST SERVICE %s FORMAT=JSON" % quoted).fetch_one()[0])["developers"]))
 EXPECT_EQ("REST SERVICE `%s` dropped successfully." % quoted, rest_info("DROP REST SERVICE %s" % quoted))
+
+#@<> Developer names beyond ASCII are found again
+# The metadata orders the names in the collation of its JSON_TABLE column,
+# where 'émile' sorts with 'e', before 'zoe'; the lookup orders the given
+# names the same way, in whatever order they are written
+rest("CREATE REST SERVICE zoe,'émile',Bob@/accents")
+for developers in ["zoe,'émile',Bob", "'émile',Bob,zoe", "Bob,zoe,'émile'"]:
+    path = developers + "@/accents"
+    EXPECT_EQ("Now using REST SERVICE `Bob,zoe,'émile'@/accents`.", rest_info("USE REST SERVICE %s" % path))
+    rest("ALTER REST SERVICE %s COMMENT 'found'" % path)
+    EXPECT_EQ(sorted(["Bob", "émile", "zoe"]), sorted(json.loads(rest("SHOW CREATE REST SERVICE %s FORMAT=JSON" % path).fetch_one()[0])["developers"]))
+EXPECT_EQ("REST SERVICE `Bob,zoe,'émile'@/accents` dropped successfully.", rest_info("DROP REST SERVICE Bob,zoe,'émile'@/accents"))
 
 #@<> ALTER REST SERVICE: new request path and developers
 rest("ALTER REST SERVICE mike@/myService NEW REQUEST PATH mike,alfredo@/myService")
