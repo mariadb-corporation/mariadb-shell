@@ -8,7 +8,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 | Path | What it is |
 | --- | --- |
-| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, page tree in `SUMMARY.md`) |
+| `docs-ref/content/` | GitBook source of the reference docs (70 pages under `mariadb-shell/`, 40 under `mariadb-rest-service/` since 2026-10-09, page tree in `SUMMARY.md`) |
+| `mysqlshdk/libs/mrs/antlr_grammar/` | ANTLR reference grammar of REST SQL + scripts for its railroad diagrams and the reference's rule blocks (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`) |
 | `docs-ref/` (rest) | Docusaurus offline preview, copied from ai-plugins; `npm run docs-ref` from the repo root |
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `build/bin/mariadb-shell` | Local 26.9.5 build, used to check help text and docs examples |
@@ -21,6 +22,8 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | --- | --- |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
+| [context/mrs-module.md](context/mrs-module.md) | The MariaDB REST Service in the shell, replacing the Python mrs_plugin's REST SQL: core library `mysqlshdk/libs/mrs/` (bison grammar, executor, metadata schema project), integration `src/mysqlsh/mrs/` (SQL handler); layout, design decisions, gotchas, state, next steps |
+| [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md) | What the MariaDB REST Daemon (MySQL Router fork, not in these repos) must change to serve metadata schema 5.0.0: schema name/prefix/postfix, renamed `rest_daemon*` tables, roles, UUID ids, vendor names, async tasks, status counters, audit log ids not in commit order (Galera) |
 
 ## Current State
 

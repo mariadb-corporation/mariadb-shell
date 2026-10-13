@@ -48,6 +48,7 @@ ADD_SUBDIRECTORY(libs/azure)
 ADD_SUBDIRECTORY(libs/ssh)
 ADD_SUBDIRECTORY(libs/aws)
 ADD_SUBDIRECTORY(libs/yparser)
+ADD_SUBDIRECTORY(libs/mrs)
 ADD_SUBDIRECTORY(scripting)
 ADD_SUBDIRECTORY(shellcore)
 

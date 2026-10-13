@@ -1,0 +1,5415 @@
+/*
+ * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License, version 2.0,
+ * as published by the Free Software Foundation.
+ *
+ * This program is designed to work with certain software (including
+ * but not limited to OpenSSL) that is licensed under separate terms, as
+ * designated in a particular file or component or in included license
+ * documentation.  The authors of MySQL hereby grant you an additional
+ * permission to link the program and your derivative works with the
+ * separately licensed software that they have either included with
+ * the program or referenced in the documentation.
+ *
+ * This program is distributed in the hope that it will be useful,  but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
+ * the GNU General Public License, version 2.0, for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+-- #############################################################################
+-- MSM Section 001: Database Schema Create Script
+-- -----------------------------------------------------------------------------
+-- This script contains the current development version of the database schema
+-- `/*<msm:schema_prefix>*/mariadb_rest_service/*<msm:schema_postfix>*/`
+-- #############################################################################
+
+
+-- #############################################################################
+-- MSM Section 010: Server Variable Settings
+-- -----------------------------------------------------------------------------
+-- Set server variables, remember their state to be able to restore accordingly.
+-- #############################################################################
+
+SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
+SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
+SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,'
+    'NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,'
+    'NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+
+-- #############################################################################
+-- MSM Section 110: Database Schema Creation
+-- -----------------------------------------------------------------------------
+-- CREATE SCHEMA statement.
+-- #############################################################################
+
+CREATE SCHEMA IF NOT EXISTS /*<msm:schema_prefix>*/mariadb_rest_service/*<msm:schema_postfix>*/
+    DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+USE /*<msm:schema_prefix>*/mariadb_rest_service/*<msm:schema_postfix>*/;
+
+-- #############################################################################
+-- MSM Section 120: Database Schema Version Creation Indication
+-- -----------------------------------------------------------------------------
+-- Create the `msm_schema_version` VIEW
+-- and initialize it with the version 0, 0, 0 which indicates the ongoing
+-- creation processes of the database schema.
+-- #############################################################################
+
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `msm_schema_version` (
+    `major`,`minor`,`patch`) AS
+SELECT 0, 0, 0;
+
+-- #############################################################################
+-- MSM Section 140: Non-idempotent Schema Objects
+-- -----------------------------------------------------------------------------
+-- This section contains creation of schema TABLEs and the initialization of
+-- base data (standard INSERTs). It is important to note that all other
+-- schema objects (VIEWs, PROCEDUREs, FUNCTIONs, TRIGGERs EVENTs, ...) need to
+-- be created inside the MSM Section 150: idempotent schema object changes.
+-- ROLEs and GRANTs are defined in the MSM Section 170: Authorization.
+-- -----------------------------------------------------------------------------
+-- CREATE TABLE statements and standard INSERTs.
+-- #############################################################################
+
+-- -----------------------------------------------------
+-- Table `url_host`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `url_host` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `name` VARCHAR(255) NOT NULL DEFAULT '' COMMENT 'Specifies the host name of the MRS as represented in the request URLs. Example: example.com',
+  `comments` VARCHAR(512) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `name_UNIQUE` (`name` ASC) VISIBLE)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `service`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `service` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `parent_id` UUID NULL,
+  `url_host_id` UUID NOT NULL,
+  `url_context_root` VARCHAR(255) NOT NULL DEFAULT '/mrs' COMMENT 'Specifies context root of the MRS as represented in the request URLs, default being /mrs. URL Example: https://www.example.com/mrs',
+  `url_protocol` SET('HTTP', 'HTTPS') NOT NULL DEFAULT 'HTTPS',
+  `name` VARCHAR(255) NOT NULL,
+  `enabled` TINYINT NOT NULL DEFAULT 1,
+  `published` TINYINT NOT NULL DEFAULT 0,
+  `in_development` JSON NULL COMMENT 'If not NULL, this column indicates that the REST service is currently \"in development\" and holds the name(s) of the developer(s) who is(/are) allowed to work with the service in the \"$.developers\" string array. REST services with this column not being NULL may use the same url_host+url_context_root context path as existing services. MariaDB REST Daemons only serve REST services with this column being NULL, unless they are bootstrapped with --mrs-development <user> which sets JSON_UNQUOTE(JSON_EXTRACT(rest_daemon.attributes, \"$.developer\")). When bootstrapped with the --mrs-development <user> option the MariaDB REST Daemon also serves REST services marked \"in development\" with this column\'s \"$.developers\" including the same name as the <user> specified during bootstrap, while these REST services marked \"in development\" take priority over services with the same url_host+url_context_root context path and this column being NULL.',
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  `auth_path` VARCHAR(255) NOT NULL DEFAULT '/authentication' COMMENT 'The path used for authentication. The following sub-paths will be made available for <service_path>/<auth_path>:  /login /status /logout /completed',
+  `auth_completed_url` VARCHAR(255) NULL COMMENT 'The authentication workflow will redirect to this URL after successful- or failed login. If this field is not set, the workflow will redirect to <service_path>/<auth_path>/completed if the <service_path>/<auth_path>/login?onCompletionRedirect parameter has not been set.',
+  `auth_completed_url_validation` VARCHAR(512) NULL COMMENT 'A regular expression to validate the <service_path>/<auth_path>/login?onCompletionRedirect parameter. If set, this allows to limit the possible URLs an application can specify for this parameter.',
+  `auth_completed_page_content` TEXT NULL COMMENT 'If this field is set its content will replace the page content of the /completed page.',
+  `enable_sql_endpoint` TINYINT NOT NULL DEFAULT 0,
+  `custom_metadata_schema` VARCHAR(255) NULL,
+  `metadata` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_service_url_host1_idx` (`url_host_id` ASC) VISIBLE,
+  INDEX `fk_service_service1_idx` (`parent_id` ASC) VISIBLE,
+  CONSTRAINT `fk_service_url_host1`
+    FOREIGN KEY (`url_host_id`)
+    REFERENCES `url_host` (`id`)
+    ON DELETE RESTRICT
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_service_service1`
+    FOREIGN KEY (`parent_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE RESTRICT
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `rest_schema`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_schema` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `schema_type` ENUM('DATABASE_SCHEMA', 'SCRIPT_MODULE') NOT NULL DEFAULT 'DATABASE_SCHEMA',
+  `request_path` VARCHAR(255) NOT NULL,
+  `requires_auth` TINYINT NOT NULL DEFAULT 0,
+  `enabled` TINYINT NOT NULL DEFAULT 1,
+  `internal` TINYINT NOT NULL DEFAULT 0,
+  `items_per_page` INT UNSIGNED NULL DEFAULT 25,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  `metadata` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_rest_schema_service1_idx` (`service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_schema_service1`
+    FOREIGN KEY (`service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `rest_object`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_object` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `rest_schema_id` UUID NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `request_path` VARCHAR(255) NOT NULL,
+  `enabled` TINYINT NOT NULL DEFAULT 1,
+  `internal` TINYINT NOT NULL DEFAULT 0,
+  `object_type` ENUM('TABLE', 'VIEW', 'PROCEDURE', 'FUNCTION', 'SCRIPT') NOT NULL,
+  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '' COMMENT 'Calculated by the duality view options of data_mapping and data_mapping_reference table, always UPDATE for procedures and functions.',
+  `format` ENUM('FEED', 'ITEM', 'MEDIA') NOT NULL DEFAULT 'FEED' COMMENT 'The HTTP request method for this handler. \'feed\' executes the source query and returns the result set in JSON representation, \'item\' returns a single row instead, \'media\' turns the result set into a binary representation with accompanying HTTP Content-Type header.',
+  `items_per_page` INT UNSIGNED NULL,
+  `media_type` VARCHAR(45) NULL,
+  `auto_detect_media_type` TINYINT NOT NULL DEFAULT 0,
+  `requires_auth` TINYINT NOT NULL DEFAULT 0,
+  `auth_stored_procedure` VARCHAR(255) NULL DEFAULT 0 COMMENT 'Specifies the STORE PROCEDURE that should be called to identify if the given user is allowed to perform the given CRUD operation. The SP has to be in the same schema as the schema object and it has to accept the following parameters: (user_id, schema, object, crud_operation).  It returns true or false.',
+  `options` JSON NULL COMMENT 'Holds additional options for the rest_object, e.g. {\"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using DECIMAL(16) for the primary key.',
+  `details` JSON NULL,
+  `comments` VARCHAR(512) NULL,
+  `metadata` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_rest_objects_rest_schema1_idx` (`rest_schema_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_objects_rest_schema1`
+    FOREIGN KEY (`rest_schema_id`)
+    REFERENCES `rest_schema` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `auth_vendor`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `auth_vendor` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `name` VARCHAR(65) NOT NULL,
+  `validation_url` VARCHAR(255) NULL COMMENT 'URL used to validate the access_token provided by the client. Example: https://graph.facebook.com/debug_token?input_token=%access_token%&access_token=%app_access_token%',
+  `enabled` TINYINT NOT NULL DEFAULT 1,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `auth_app`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `auth_app` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_vendor_id` UUID NOT NULL,
+  `name` VARCHAR(45) NOT NULL,
+  `description` VARCHAR(512) NULL,
+  `url` VARCHAR(255) NULL,
+  `url_direct_auth` VARCHAR(255) NULL,
+  `access_token` VARCHAR(1024) NULL COMMENT 'The app access token to validate the user login.',
+  `app_id` VARCHAR(1024) NULL,
+  `enabled` TINYINT NULL,
+  `limit_to_registered_users` TINYINT NOT NULL DEFAULT 1 COMMENT 'Limit the users that can log in to the list of users in the auth_user table. The auth_user table can be pre-filled with users by specifying the name and email only. The vendor_user_id will be added on the first login automatically.',
+  `default_role_id` UUID NULL COMMENT 'If set, a new user that has not any auth_roles assigned will get this role assigned when he logs in the first time.',
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_auth_app_auth_vendor1_idx` (`auth_vendor_id` ASC) VISIBLE,
+  UNIQUE INDEX `name_UNIQUE` (`name` ASC) VISIBLE,
+  CONSTRAINT `fk_auth_app_auth_vendor1`
+    FOREIGN KEY (`auth_vendor_id`)
+    REFERENCES `auth_vendor` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `auth_app_id` UUID NOT NULL,
+  `name` VARCHAR(225) NULL,
+  `email` VARCHAR(255) NULL,
+  `vendor_user_id` VARCHAR(255) NULL,
+  `login_permitted` TINYINT NOT NULL DEFAULT 0,
+  `mapped_user_id` VARCHAR(255) NULL,
+  `app_options` JSON NULL,
+  `auth_string` TEXT NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_auth_user_auth_app1_idx` (`auth_app_id` ASC) VISIBLE,
+  INDEX `mrs_use_vendor_user_id` (`vendor_user_id` ASC) VISIBLE,
+  INDEX `mrs_user_name` (`name` ASC) VISIBLE,
+  INDEX `mrs_user_email` (`email` ASC) VISIBLE,
+  CONSTRAINT `fk_auth_user_auth_app1`
+    FOREIGN KEY (`auth_app_id`)
+    REFERENCES `auth_app` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `config`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `config` (
+  `id` TINYINT NOT NULL DEFAULT 1,
+  `service_enabled` TINYINT NULL,
+  `data` JSON NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `redirect`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `redirect` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `pattern` VARCHAR(1024) NOT NULL,
+  `target` VARCHAR(1024) NOT NULL,
+  `kind` ENUM('REDIRECT', 'REWRITE') NOT NULL DEFAULT 'REDIRECT',
+  `in_development` JSON NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `url_host_alias`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `url_host_alias` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `url_host_id` UUID NOT NULL,
+  `alias` VARCHAR(255) NOT NULL COMMENT 'Specifies additional aliases for the given host, e.g. www.example.com',
+  PRIMARY KEY (`id`),
+  INDEX `fk_url_host_alias_url_host1_idx` (`url_host_id` ASC) VISIBLE,
+  CONSTRAINT `fk_url_host_alias_url_host1`
+    FOREIGN KEY (`url_host_id`)
+    REFERENCES `url_host` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `content_set`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `content_set` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `service_id` UUID NOT NULL,
+  `content_type` ENUM('STATIC', 'SCRIPTS') NOT NULL DEFAULT 'STATIC',
+  `request_path` VARCHAR(255) NOT NULL,
+  `requires_auth` TINYINT NOT NULL DEFAULT 0,
+  `enabled` TINYINT NOT NULL DEFAULT 0,
+  `internal` TINYINT NOT NULL DEFAULT 0,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_static_content_version_service1_idx` (`service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_static_content_version_service1`
+    FOREIGN KEY (`service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `content_file`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `content_file` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `content_set_id` UUID NOT NULL,
+  `request_path` VARCHAR(255) NOT NULL DEFAULT '/',
+  `requires_auth` TINYINT NOT NULL DEFAULT 0,
+  `enabled` TINYINT NOT NULL DEFAULT 1,
+  `content` LONGBLOB NOT NULL,
+  `size` BIGINT GENERATED ALWAYS AS (LENGTH(content)) STORED,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_content_content_set1_idx` (`content_set_id` ASC) VISIBLE,
+  CONSTRAINT `fk_content_content_set1`
+    FOREIGN KEY (`content_set_id`)
+    REFERENCES `content_set` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `audit_log`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `schema_name` VARCHAR(255) NULL,
+  `table_name` VARCHAR(255) NOT NULL,
+  `dml_type` ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+  `old_row_data` JSON NULL,
+  `new_row_data` JSON NULL,
+  `changed_by` VARCHAR(255) NOT NULL,
+  `changed_at` TIMESTAMP(6) NOT NULL,
+  `old_row_id` UUID NULL,
+  `new_row_id` UUID NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_table_name` (`table_name` ASC) VISIBLE,
+  INDEX `idx_changed_at` (`changed_at` ASC) VISIBLE,
+  INDEX `idx_changed_by` (`changed_by` ASC) VISIBLE,
+  INDEX `idx_new_row_id` (`new_row_id` ASC) VISIBLE,
+  INDEX `idx_old_row_id` (`old_row_id` ASC) VISIBLE)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_role`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_role` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `derived_from_role_id` UUID NULL,
+  `specific_to_service_id` UUID NULL,
+  `caption` VARCHAR(150) NOT NULL,
+  `description` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_priv_role_priv_role1_idx` (`derived_from_role_id` ASC) VISIBLE,
+  INDEX `fk_auth_role_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
+  UNIQUE INDEX `unique_caption_per_service` (`specific_to_service_id` ASC, `caption` ASC) VISIBLE,
+  CONSTRAINT `fk_priv_role_priv_role1`
+    FOREIGN KEY (`derived_from_role_id`)
+    REFERENCES `mrs_role` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_auth_role_service1`
+    FOREIGN KEY (`specific_to_service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_has_role`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_has_role` (
+  `user_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`user_id`, `role_id`),
+  INDEX `fk_auth_user_has_privilege_role_privilege_role1_idx` (`role_id` ASC) VISIBLE,
+  INDEX `fk_auth_user_has_privilege_role_auth_user1_idx` (`user_id` ASC) VISIBLE,
+  CONSTRAINT `fk_auth_user_has_privilege_role_auth_user1`
+    FOREIGN KEY (`user_id`)
+    REFERENCES `mrs_user` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_auth_user_has_privilege_role_privilege_role1`
+    FOREIGN KEY (`role_id`)
+    REFERENCES `mrs_role` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_hierarchy_type`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy_type` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `caption` VARCHAR(150) NULL,
+  `description` VARCHAR(512) NULL,
+  `specific_to_service_id` UUID NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_user_hierarchy_type_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_user_hierarchy_type_service1`
+    FOREIGN KEY (`specific_to_service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_hierarchy`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_hierarchy` (
+  `user_id` UUID NOT NULL,
+  `reporting_to_user_id` UUID NOT NULL,
+  `user_hierarchy_type_id` UUID NOT NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`user_id`, `reporting_to_user_id`, `user_hierarchy_type_id`),
+  INDEX `fk_user_hierarchy_auth_user2_idx` (`reporting_to_user_id` ASC) VISIBLE,
+  INDEX `fk_user_hierarchy_hierarchy_type1_idx` (`user_hierarchy_type_id` ASC) VISIBLE,
+  CONSTRAINT `fk_user_hierarchy_auth_user1`
+    FOREIGN KEY (`user_id`)
+    REFERENCES `mrs_user` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_user_hierarchy_auth_user2`
+    FOREIGN KEY (`reporting_to_user_id`)
+    REFERENCES `mrs_user` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_user_hierarchy_hierarchy_type1`
+    FOREIGN KEY (`user_hierarchy_type_id`)
+    REFERENCES `mrs_user_hierarchy_type` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_privilege`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_privilege` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `role_id` UUID NOT NULL,
+  `crud_operations` SET('CREATE', 'READ', 'UPDATE', 'DELETE') NOT NULL DEFAULT '',
+  `service_path` VARCHAR(512) NOT NULL DEFAULT '*',
+  `schema_path` VARCHAR(255) NOT NULL DEFAULT '*',
+  `object_path` VARCHAR(255) NOT NULL DEFAULT '*',
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `fk_priv_on_schema_auth_role1`
+    FOREIGN KEY (`role_id`)
+    REFERENCES `mrs_role` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_group`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_group` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `specific_to_service_id` UUID NULL,
+  `caption` VARCHAR(45) NULL,
+  `description` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_user_group_service1_idx` (`specific_to_service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_user_group_service1`
+    FOREIGN KEY (`specific_to_service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_group_has_role`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_group_has_role` (
+  `user_group_id` UUID NOT NULL,
+  `role_id` UUID NOT NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`user_group_id`, `role_id`),
+  INDEX `fk_user_group_has_auth_role_auth_role1_idx` (`role_id` ASC) VISIBLE,
+  INDEX `fk_user_group_has_auth_role_user_group1_idx` (`user_group_id` ASC) VISIBLE,
+  CONSTRAINT `fk_user_group_has_auth_role_user_group1`
+    FOREIGN KEY (`user_group_id`)
+    REFERENCES `mrs_user_group` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_user_group_has_auth_role_auth_role1`
+    FOREIGN KEY (`role_id`)
+    REFERENCES `mrs_role` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_has_group`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_has_group` (
+  `user_id` UUID NOT NULL,
+  `user_group_id` UUID NOT NULL,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`user_id`, `user_group_id`),
+  INDEX `fk_auth_user_has_user_group_user_group1_idx` (`user_group_id` ASC) VISIBLE,
+  INDEX `fk_auth_user_has_user_group_auth_user1_idx` (`user_id` ASC) VISIBLE,
+  CONSTRAINT `fk_auth_user_has_user_group_auth_user1`
+    FOREIGN KEY (`user_id`)
+    REFERENCES `mrs_user` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_auth_user_has_user_group_user_group1`
+    FOREIGN KEY (`user_group_id`)
+    REFERENCES `mrs_user_group` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_group_hierarchy_type`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_group_hierarchy_type` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `caption` VARCHAR(150) NULL,
+  `description` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_user_group_hierarchy`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_user_group_hierarchy` (
+  `user_group_id` UUID NOT NULL,
+  `parent_group_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
+  `level` INT UNSIGNED NOT NULL DEFAULT 0,
+  `options` JSON NULL,
+  PRIMARY KEY (`user_group_id`, `parent_group_id`, `group_hierarchy_type_id`),
+  INDEX `fk_user_group_has_user_group_user_group2_idx` (`parent_group_id` ASC) VISIBLE,
+  INDEX `fk_user_group_has_user_group_user_group1_idx` (`user_group_id` ASC) VISIBLE,
+  INDEX `fk_user_group_hierarchy_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
+  CONSTRAINT `fk_user_group_has_user_group_user_group1`
+    FOREIGN KEY (`user_group_id`)
+    REFERENCES `mrs_user_group` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_user_group_has_user_group_user_group2`
+    FOREIGN KEY (`parent_group_id`)
+    REFERENCES `mrs_user_group` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_user_group_hierarchy_group_hierarchy_type1`
+    FOREIGN KEY (`group_hierarchy_type_id`)
+    REFERENCES `mrs_group_hierarchy_type` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `mrs_rest_object_row_group_security`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mrs_rest_object_row_group_security` (
+  `rest_object_id` UUID NOT NULL,
+  `group_hierarchy_type_id` UUID NOT NULL,
+  `row_group_ownership_column` VARCHAR(255) NOT NULL,
+  `level` INT UNSIGNED NOT NULL DEFAULT 0,
+  `match_level` ENUM('HIGHER', 'EQUAL OR HIGHER', 'EQUAL', 'LOWER OR EQUAL', 'LOWER') NOT NULL DEFAULT 'HIGHER',
+  `options` JSON NULL,
+  INDEX `fk_table1_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
+  INDEX `fk_rest_object_row_security_group_hierarchy_type1_idx` (`group_hierarchy_type_id` ASC) VISIBLE,
+  PRIMARY KEY (`rest_object_id`, `group_hierarchy_type_id`),
+  CONSTRAINT `fk_table1_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_rest_object_row_security_group_hierarchy_type1`
+    FOREIGN KEY (`group_hierarchy_type_id`)
+    REFERENCES `mrs_group_hierarchy_type` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `rest_daemon`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_daemon` (
+  `id` UUID NOT NULL DEFAULT UUID_v7() COMMENT 'The ID of the MariaDB REST Daemon instance that uniquely identifies it on this MariaDB REST Service setup.',
+  `name` VARCHAR(255) NOT NULL COMMENT 'A user specified name for the instance. Should default to address:port, where port is the http server port of the instance. Set via --name during bootstrap.',
+  `address` VARCHAR(255) CHARACTER SET 'ascii' COLLATE 'ascii_general_ci' NOT NULL COMMENT 'Network address of the host the instance is running on. Set via --report-host during bootstrap.',
+  `product_name` VARCHAR(128) NOT NULL COMMENT 'The product name of the instance, e.g. \'MariaDB REST Daemon\'',
+  `version` VARCHAR(12) NULL COMMENT 'The version of the instance. Updated on bootstrap and each startup of the instance. Format: x.y.z, 3 digits for each component. Managed by the MariaDB REST Daemon.',
+  `last_check_in` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'A timestamp updated by the instance regularly with the current time. This timestamp is used to detect instances that are no longer used or stalled. Managed by the MariaDB REST Daemon.',
+  `attributes` JSON NULL COMMENT 'Instance specific custom attributes. Managed by the MariaDB REST Daemon.',
+  `options` JSON NULL COMMENT 'Instance specific configuration options.',
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `address_name` (`address` ASC, `name` ASC) VISIBLE)
+ENGINE = InnoDB
+COMMENT = 'no_audit_log';
+
+
+-- -----------------------------------------------------
+-- Table `rest_daemon_status`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_daemon_status` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `rest_daemon_id` UUID NOT NULL,
+  `status_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The time the status was reported',
+  `timespan` INT UNSIGNED NOT NULL COMMENT 'The timespan of the measuring interval',
+  `mariadb_connections` INT UNSIGNED NOT NULL DEFAULT 0,
+  `mariadb_queries` INT UNSIGNED NOT NULL DEFAULT 0,
+  `http_requests_get` INT UNSIGNED NOT NULL DEFAULT 0,
+  `http_requests_post` INT UNSIGNED NOT NULL DEFAULT 0,
+  `http_requests_put` INT UNSIGNED NOT NULL DEFAULT 0,
+  `http_requests_delete` INT UNSIGNED NOT NULL DEFAULT 0,
+  `active_mariadb_connections` INT UNSIGNED NOT NULL DEFAULT 0,
+  `details` JSON NULL COMMENT 'More detailed status information',
+  PRIMARY KEY (`id`),
+  INDEX `fk_rest_daemon_status_rest_daemon1_idx` (`rest_daemon_id` ASC) VISIBLE,
+  INDEX `status_time` (`status_time` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_daemon_status_rest_daemon1`
+    FOREIGN KEY (`rest_daemon_id`)
+    REFERENCES `rest_daemon` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB
+COMMENT = 'no_audit_log';
+
+
+-- -----------------------------------------------------
+-- Table `rest_daemon_session`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_daemon_session` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` UUID NOT NULL,
+  `service_id` UUID NOT NULL,
+  `expires` DATETIME NOT NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB
+COMMENT = 'no_audit_log';
+
+
+-- -----------------------------------------------------
+-- Table `rest_daemon_general_log`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `rest_daemon_general_log` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `rest_daemon_id` UUID NOT NULL,
+  `rest_daemon_session_id` BIGINT UNSIGNED NULL,
+  `log_time` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `log_type` ENUM("INFO", "WARNING", "DEBUG", "ERROR", "FATAL", "SYSTEM", "NOTE") NOT NULL,
+  `code` INT UNSIGNED NULL,
+  `domain` VARCHAR(255) NULL,
+  `message` VARCHAR(4096) NULL,
+  `thread_id` INT UNSIGNED NULL,
+  `data` JSON NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_rest_daemon_general_log_rest_daemon1_idx` (`rest_daemon_id` ASC) VISIBLE,
+  INDEX `log_time` (`log_time` ASC) VISIBLE,
+  INDEX `fk_rest_daemon_general_log_rest_daemon_session1_idx` (`rest_daemon_session_id` ASC) VISIBLE,
+  INDEX `log_type` (`log_type` ASC) VISIBLE,
+  INDEX `log_thread_id` (`thread_id` ASC) VISIBLE,
+  CONSTRAINT `fk_rest_daemon_general_log_rest_daemon1`
+    FOREIGN KEY (`rest_daemon_id`)
+    REFERENCES `rest_daemon` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_rest_daemon_general_log_rest_daemon_session1`
+    FOREIGN KEY (`rest_daemon_session_id`)
+    REFERENCES `rest_daemon_session` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB
+COMMENT = 'no_audit_log';
+
+
+-- -----------------------------------------------------
+-- Table `data_mapping`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `data_mapping` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `rest_object_id` UUID NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `kind` ENUM('RESULT', 'PARAMETERS', 'INTERFACE') NOT NULL DEFAULT 'RESULT',
+  `position` INT NOT NULL DEFAULT 0,
+  `row_ownership_field_id` UUID NULL,
+  `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
+  `sdk_options` JSON NULL,
+  `comments` VARCHAR(512) NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_result_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
+  INDEX `row_ownership_object_idx` (`row_ownership_field_id` ASC) VISIBLE,
+  CONSTRAINT `fk_result_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `data_mapping_reference`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `data_mapping_reference` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `reduce_to_value_of_field_id` UUID NULL COMMENT 'If set to an data_mapping_field, this reference will be reduced to the value of the given field. Example: \"films\": [ { \"categories\": [ \"Thriller\", \"Action\"] } ] instead of \"films\": [ { \"categories\": [ { \"name\": \"Thriller\" }, { \"name\": \"Action\" } ] } ],',
+  `row_ownership_field_id` UUID NULL,
+  `reference_mapping` JSON NOT NULL COMMENT 'Holds all column mappings of the FK, {kind:\"n:1\", constraint: \"constraint_name\", referenced_schema: \"schema_name\", referenced_table: \"table_name\", column_mapping: [{\"column_name\": \"referenced_column_name\"}, \"to_many\": true, \"id_generation\": \"auto_increment\"}. \"id_generation\" can be undefined or \"auto_increment\" for tables using AUTO_INCREMENT or \"reverse_uuid\" for tables using BINARY(16) for the primary key.',
+  `unnest` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to TRUE, the properties will be directly added to the parent',
+  `options` JSON NULL COMMENT 'Holds data mapping view options for INSERT, UPDATE, DELETE and CHECK, e.g. { dataMappingViewInsert: true, dataMappingViewUpdate: true, dataMappingViewDelete: false, dataMappingViewNoCheck: false }',
+  `sdk_options` JSON NULL,
+  `comments` VARCHAR(512) NULL,
+  PRIMARY KEY (`id`),
+  INDEX `reduce_to_idx` (`reduce_to_value_of_field_id` ASC) VISIBLE,
+  INDEX `row_ownership_data_mapping_reference_idx` (`row_ownership_field_id` ASC) VISIBLE)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `data_mapping_field`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `data_mapping_field` (
+  `id` UUID NOT NULL DEFAULT UUID_v7(),
+  `data_mapping_id` UUID NOT NULL,
+  `parent_reference_id` UUID NULL,
+  `represents_reference_id` UUID NULL,
+  `name` VARCHAR(255) NOT NULL COMMENT 'The name of the field as returned in the JSON',
+  `position` INT NOT NULL,
+  `db_column` JSON NULL COMMENT 'Holds information about the original database column, e.g. {\"name\": \"first_name\", \"datatype\":\"VARCHAR(45)\", \"not_null\": true, \"is_primary\": false, \"is_unique\": false, \"is_generated\": false, \"auto_inc\": false}. When representing a STORED PROCEDURE parameter, two optional fields can be set, {\"in\": true, \"out\": false}',
+  `enabled` BIT(1) NOT NULL DEFAULT 1 COMMENT 'When set to FALSE, the property is hidden from the result',
+  `allow_filtering` BIT(1) NOT NULL DEFAULT 1 COMMENT 'When set to FALSE the property is not available for filtering',
+  `allow_sorting` BIT(1) NOT NULL DEFAULT 0 COMMENT 'When set to TRUE the field can be used for ordering',
+  `no_check` BIT(1) NOT NULL DEFAULT 0 COMMENT 'Specifies whether the field should be ignored in the scope of concurrency control',
+  `no_update` BIT(1) NOT NULL DEFAULT 0 COMMENT 'If set to 1 then no updates of this field are allowed.',
+  `json_schema` JSON NULL,
+  `options` JSON NULL,
+  `sdk_options` JSON NULL,
+  `comments` VARCHAR(512) NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_properties_result1_idx` (`data_mapping_id` ASC) VISIBLE,
+  INDEX `fk_result_property_result_reference1_idx` (`parent_reference_id` ASC) VISIBLE,
+  INDEX `fk_result_property_result_reference2_idx` (`represents_reference_id` ASC) VISIBLE,
+  CONSTRAINT `fk_properties_result1`
+    FOREIGN KEY (`data_mapping_id`)
+    REFERENCES `data_mapping` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_result_property_result_reference1`
+    FOREIGN KEY (`parent_reference_id`)
+    REFERENCES `data_mapping_reference` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_result_property_result_reference2`
+    FOREIGN KEY (`represents_reference_id`)
+    REFERENCES `data_mapping_reference` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `service_has_auth_app`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `service_has_auth_app` (
+  `service_id` UUID NOT NULL,
+  `auth_app_id` UUID NOT NULL,
+  `options` JSON NULL,
+  PRIMARY KEY (`service_id`, `auth_app_id`),
+  INDEX `fk_service_has_auth_app_auth_app1_idx` (`auth_app_id` ASC) VISIBLE,
+  INDEX `fk_service_has_auth_app_service1_idx` (`service_id` ASC) VISIBLE,
+  CONSTRAINT `fk_service_has_auth_app_service1`
+    FOREIGN KEY (`service_id`)
+    REFERENCES `service` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_service_has_auth_app_auth_app1`
+    FOREIGN KEY (`auth_app_id`)
+    REFERENCES `auth_app` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `content_set_has_rest_object`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `content_set_has_rest_object` (
+  `content_set_id` UUID NOT NULL,
+  `rest_object_id` UUID NOT NULL,
+  `kind` ENUM('Script', 'BeforeCreate', 'BeforeRead', 'BeforeUpdate', 'BeforeDelete', 'AfterCreate', 'AfterRead', 'AfterUpdate', 'AfterDelete') NOT NULL,
+  `priority` INT NOT NULL DEFAULT 0,
+  `language` VARCHAR(45) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `class_name` VARCHAR(255) NULL,
+  `comments` VARCHAR(512) NULL,
+  `options` JSON NULL,
+  INDEX `fk_content_set_has_obj_dev_rest_object1_idx` (`rest_object_id` ASC) VISIBLE,
+  INDEX `fk_content_set_has_obj_dev_content_set1_idx` (`content_set_id` ASC) VISIBLE,
+  INDEX `content_set_has_obj_dev_priority` (`priority` ASC) VISIBLE,
+  PRIMARY KEY (`content_set_id`, `rest_object_id`, `kind`, `priority`),
+  INDEX `content_set_has_obj_dev_method_type` (`kind` ASC) VISIBLE,
+  CONSTRAINT `fk_content_set_has_rest_object_content_set1`
+    FOREIGN KEY (`content_set_id`)
+    REFERENCES `content_set` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_content_set_has_rest_object_rest_object1`
+    FOREIGN KEY (`rest_object_id`)
+    REFERENCES `rest_object` (`id`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB;
+
+
+-- -----------------------------------------------------
+-- Table `audit_log_status`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `audit_log_status` (
+  `id` TINYINT NOT NULL,
+  `last_dump_at` TIMESTAMP NULL,
+  `data` JSON NULL,
+  PRIMARY KEY (`id`))
+ENGINE = InnoDB
+COMMENT = 'no_audit_log';
+
+
+-- -----------------------------------------------------
+-- Additional SQL
+
+-- Ensure only one row in `config`
+ALTER TABLE `config`
+	ADD CONSTRAINT Config_OnlyOneRow CHECK (id = 1);
+
+-- Ensure only one row in `audit_log_status`
+ALTER TABLE `audit_log_status`
+	ADD CONSTRAINT AuditLogStatus_OnlyOneRow CHECK (id = 1);
+
+-- Ensure there is a default for service.name taken from url_context_root
+ALTER TABLE `service`
+    CHANGE COLUMN name name VARCHAR(255) NOT NULL DEFAULT (REGEXP_REPLACE(url_context_root, '[^0-9a-zA-Z ]', ''));
+
+-- Ensure page size is within 16K limit
+ALTER TABLE `rest_schema`
+	ADD CONSTRAINT rest_schema_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+ALTER TABLE `rest_object`
+	ADD CONSTRAINT rest_object_max_page_size CHECK (items_per_page IS NULL OR items_per_page < 16384);
+
+-- Ensure an email cannot be used as user name and a user name cannot be used as email
+ALTER TABLE `mrs_user`
+    ADD CONSTRAINT `mrs_user_no_at_symbol_in_user_name` CHECK (INSTR(name, '@') = 0),
+    ADD CONSTRAINT `mrs_user_at_symbol_in_email` CHECK (INSTR(email, '@') > 0 OR email IS NULL OR email = '');
+
+-- Ensure that for STORED PROCEDURE parameters at least one of the 'in' and 'out' flag is set to true
+ALTER TABLE `data_mapping_field`
+  ADD CONSTRAINT param_mode_not_false CHECK (
+    (JSON_EXTRACT(db_column, "$.in") IS NULL AND JSON_EXTRACT(db_column, "$.out") IS NULL) OR
+    (JSON_EXTRACT(db_column, "$.in") + JSON_EXTRACT(db_column, "$.out") >= 1));
+
+-- Ensure the JSON_UNQUOTE(JSON_EXTRACT(service.in_development, '$.developers')) is a list that only holds unique strings
+ALTER TABLE `service`
+  ADD CONSTRAINT in_development_developers_check CHECK(
+    JSON_SCHEMA_VALID('{
+    "id": "https://mariadb.com/mrs/service/in_development",
+    "type": "object",
+    "properties": {
+        "developers": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+        }
+    },
+    "required": [ "developers" ]
+    }', in_development)
+);
+
+-- Ensure roles associated to a service are deleted in order when that service is deleted.
+ALTER TABLE `mrs_role`
+    DROP FOREIGN KEY `fk_priv_role_priv_role1`;
+ALTER TABLE `mrs_role`
+    ALGORITHM = COPY,
+    ADD CONSTRAINT `fk_priv_role_priv_role1`
+        FOREIGN KEY (`derived_from_role_id`)
+        REFERENCES `mrs_role` (`id`)
+        ON DELETE CASCADE;
+
+-- -----------------------------------------------------
+-- INSERTs
+
+-- -----------------------------------------------------------------------------
+-- Host filter that matches any string
+INSERT INTO `url_host` (`id`, `name`, `comments`)
+VALUES ('31000000-0000-0000-0000-000000000000', '', 'Match any host');
+
+-- -----------------------------------------------------------------------------
+-- MRS Authentication Vendors
+INSERT INTO `auth_vendor` (
+    `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
+VALUES ('30000000-0000-0000-0000-000000000000', 'MRS', NULL, 1, 'Built-in user management of MRS', NULL);
+
+INSERT INTO `auth_vendor` (
+    `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
+VALUES ('31000000-0000-0000-0000-000000000000', 'MariaDB Internal', NULL, 1,
+    'Provides basic authentication via MariaDB Server accounts', NULL);
+
+INSERT INTO `auth_vendor` (
+    `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
+VALUES ('32000000-0000-0000-0000-000000000000', 'Facebook', NULL, 1, 'Uses the Facebook Login OAuth2 service',
+    NULL);
+
+INSERT INTO `auth_vendor` (
+    `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
+VALUES ('34000000-0000-0000-0000-000000000000', 'Google', NULL, 1, 'Uses the Google OAuth2 service', NULL);
+
+INSERT INTO `auth_vendor` (
+    `id`, `name`, `validation_url`, `enabled`, `comments`, `options`)
+VALUES ('35000000-0000-0000-0000-000000000000', 'OCI OAuth2', NULL, 1, 'Uses the OCI OAuth2 service', NULL);
+
+-- Default MariaDB auth_app for MariaDB Internal Authentication
+INSERT INTO `auth_app` (
+    `id`, `auth_vendor_id`, `name`, `description`, `enabled`,
+    `limit_to_registered_users`, `default_role_id`, `options`)
+VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-000000000000', 'MariaDB',
+    'Provide login capabilities for MariaDB Server user accounts.',
+    TRUE, FALSE, '31000000-0000-0000-0000-000000000000', NULL);
+
+-- Default role for full access
+INSERT INTO `mrs_role` (
+    `id`, `derived_from_role_id`, `specific_to_service_id`, `caption`,
+    `description`, `options`)
+VALUES ('31000000-0000-0000-0000-000000000000', NULL, NULL, 'Full Access', 'Full access to all rest_objects', NULL);
+
+-- Default privilege that defines full access
+INSERT INTO `mrs_privilege` (
+    `id`, `role_id`, `crud_operations`, `service_path`, `schema_path`,
+    `object_path`, `options`)
+VALUES ('31000000-0000-0000-0000-000000000000', '31000000-0000-0000-0000-000000000000', 'CREATE,READ,UPDATE,DELETE', DEFAULT, DEFAULT, DEFAULT,
+    NULL);
+
+-- User hierarchy types
+INSERT INTO `mrs_user_hierarchy_type` (
+    `id`, `caption`, `description`, `specific_to_service_id`, `options`)
+VALUES ('31000000-0000-0000-0000-000000000000', 'Direct Report', 'An employee directly reporting to the user',
+    NULL, NULL);
+INSERT INTO `mrs_user_hierarchy_type` (
+    `id`, `caption`, `description`, `specific_to_service_id`, `options`)
+VALUES ('32000000-0000-0000-0000-000000000000', 'Dotted Line Report',
+    'An employee reporting to the user via a dotted line relationship',
+    NULL, NULL);
+
+-- -----------------------------------------------------------------------------
+-- Base entry for audit_log_status, indicating that no dump has yet happened
+INSERT INTO `audit_log_status` (
+    `id`, `last_dump_at`, `data`) VALUES (1, NULL, NULL);
+
+-- -----------------------------------------------------
+-- Config
+
+DELETE FROM `config`;
+INSERT INTO `config` (`id`, `service_enabled`, `data`) VALUES (1, 1, '{ "defaultStaticContent": { "index.html": "PCFET0NUWVBFIGh0bWw+PGh0bWw+PGhlYWQ+PHRpdGxlPk1hcmlhREIgUkVTVCBTZXJ2aWNlPC90aXRsZT48bGluayByZWw9Imljb24iIHR5cGU9ImltYWdlL3N2Zyt4bWwiIGhyZWY9Ii4vZmF2aWNvbi5zdmciPjxtZXRhIGNoYXJzZXQ9InV0Zi04Ij48bWV0YSBuYW1lPSJ2aWV3cG9ydCIgY29udGVudD0id2lkdGg9ZGV2aWNlLXdpZHRoLGluaXRpYWwtc2NhbGU9MSI+PHN0eWxlPjpyb290ey0tYm9keS1iYWNrZ3JvdW5kOmhzbCgyNDAsIDUlLCA5MSUpOy0tYm9keS10ZXh0LWNvbG9yOmhzbCgyNDAsIDUlLCAxMiUpOy0taWNvbi1jb2xvcjpoc2woMjAwLCA2NSUsIDQwJSk7LS10ZXh0TGluay1mb3JlZ3JvdW5kOmhzbCgyMDAsIDY1JSwgMzQlKTstLW1haW4tYmFja2dyb3VuZC1jb2xvcjojZmZmOy0tc2Vjb25kYXJ5LWJhY2tncm91bmQtY29sb3I6I2ZmZjstLXRvb2xiYXItYmFja2dyb3VuZC1jb2xvcjojZjVmNWY3Oy0tdG9vbGJhci1zZWNvbmRhcnktYmFja2dyb3VuZC1jb2xvcjojZjhmOGY4Oy0tbGlzdC1iYWNrZ3JvdW5kLWNvbG9yOiNGMkYyRjc7LS1saXN0LWl0ZW0tYmFja2dyb3VuZC1jb2xvcjojZmZmOy0tbGlzdC1pdGVtLXNlbGVjdGVkLWJhY2tncm91bmQtY29sb3I6aHNsKDI0MCwgOCUsIDg4JSk7LS1saXN0LWl0ZW0tc2VsZWN0ZWQtZm9jdXMtYmFja2dyb3VuZC1jb2xvcjpoc2woMjAwLCA2NSUsIDg2JSk7LS1idXR0b24tYmFja2dyb3VuZC1jb2xvcjojNkU2RDcwOy0tcHJpbWFyeS10ZXh0LWNvbG9yOiMzMzMzMzM7LS1zZWNvbmRhcnktdGV4dC1jb2xvcjojQURBREFEOy0tdGl0bGUtdGV4dC1jb2xvcjojMjIyOy0tbGlzdC1pdGVtLWNvbG9yOiMwMDA7LS1saXN0LWl0ZW0tc2Vjb25kYXJ5LWNvbG9yOiM2NjY7LS1idXR0b24tdGV4dC1jb2xvcjojREZERURGOy0tc3BsaXR0ZXItY29sb3I6I0Q0RDRENDstLWljb24tY29sb3I6aHNsKDIwMCwgNjUlLCA0MCUpOy0tZm9jdXMtY29sb3I6aHNsKDIwMCwgNjUlLCA3MCUpOy0tZXJyb3ItY29sb3I6aHNsKDAsIDEwMCUsIDcwJSk7LS1lcnJvci10ZXh0LWNvbG9yOiM1MDB9QG1lZGlhIChwcmVmZXJzLWNvbG9yLXNjaGVtZTpkYXJrKXs6cm9vdHstLWJvZHktYmFja2dyb3VuZDpoc2woMCwgMCUsIDE3JSk7LS1ib2R5LXRleHQtY29sb3I6aHNsKDAsIDAlLCA3NSUpOy0tdGV4dExpbmstZm9yZWdyb3VuZDpoc2woMjAwLCA2NSUsIDU0JSk7LS1tYWluLWJhY2tncm91bmQtY29sb3I6IzBkMGQwZDstLXNlY29uZGFyeS1iYWNrZ3JvdW5kLWNvbG9yOiMxODFBMUI7LS10b29sYmFyLWJhY2tncm91bmQtY29sb3I6IzFEMjAyMTstLXRvb2xiYXItc2Vjb25kYXJ5LWJhY2tncm91bmQtY29sb3I6IzE4MUExQjstLWxpc3QtYmFja2dyb3VuZC1jb2xvcjojMUUyMDIyOy0tbGlzdC1pdGVtLWJhY2tncm91bmQtY29sb3I6IzE4MUExQjstLWxpc3QtaXRlbS1zZWxlY3RlZC1iYWNrZ3JvdW5kLWNvbG9yOmhzbCgyMTAsIDclLCAyMCUpOy0tbGlzdC1pdGVtLXNlbGVjdGVkLWZvY3VzLWJhY2tncm91bmQtY29sb3I6aHNsKDIwMCwgNjUlLCAyMCUpOy0tYnV0dG9uLWJhY2tncm91bmQtY29sb3I6IzY2NjstLXByaW1hcnktdGV4dC1jb2xvcjojYzRjNGM0Oy0tc2Vjb25kYXJ5LXRleHQtY29sb3I6IzU5NTk1OTstLXRpdGxlLXRleHQtY29sb3I6I2U1ZTVlNzstLWxpc3QtaXRlbS1jb2xvcjojRThFNkUzOy0tbGlzdC1pdGVtLXNlY29uZGFyeS1jb2xvcjojNjY2Oy0tc3BsaXR0ZXItY29sb3I6IzNBMzQzNjstLWljb24tY29sb3I6aHNsKDIwMCwgNjUlLCA0MCUpOy0tZm9jdXMtY29sb3I6aHNsKDIwMCwgNjUlLCAzMCUpOy0tZXJyb3ItY29sb3I6aHNsKDAsIDEwMCUsIDIwJSk7LS1lcnJvci10ZXh0LWNvbG9yOiNlMDB9fWJvZHksaHRtbHt3aWR0aDoxMDAlO2hlaWdodDoxMDAlfSp7bWFyZ2luOjA7cGFkZGluZzowfWJvZHl7b3ZlcmZsb3c6aGlkZGVuO2JhY2tncm91bmQtY29sb3I6dmFyKC0tYm9keS1iYWNrZ3JvdW5kKTtmb250LWZhbWlseToiSGVsdmV0aWNhIE5ldWUiLEhlbHZldGljYSxBcmlhbCxzYW5zLXNlcmlmO2ZvbnQtc2l6ZToxMnB4O2NvbG9yOnZhcigtLWJvZHktdGV4dC1jb2xvcil9aDJ7bWFyZ2luOjIwcHggMDtmb250LXdlaWdodDoxMDA7Zm9udC1zaXplOjMzcHh9cHtsaW5lLWhlaWdodDoxOXB4O2ZvbnQtd2VpZ2h0OjIwMDtmb250LXNpemU6MTVweH1he2NvbG9yOnZhcigtLXRleHRMaW5rLWZvcmVncm91bmQpO3RleHQtZGVjb3JhdGlvbjpub25lO2ZvbnQtd2VpZ2h0OjUwMDtwYWRkaW5nOjAgMjBweDtmb250LXNpemU6MTVweH0jcm9vdHtkaXNwbGF5OmZsZXg7d2lkdGg6MTAwJTtoZWlnaHQ6MTAwJTtmbGV4LWRpcmVjdGlvbjpjb2x1bW47YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXJ9LndlbGNvbWVMb2dve21hcmdpbi10b3A6MjBweDt3aWR0aDoxNjBweDtoZWlnaHQ6MTYwcHg7bWluLWhlaWdodDoxNjBweDtiYWNrZ3JvdW5kLWNvbG9yOnZhcigtLWljb24tY29sb3IpOy13ZWJraXQtbWFzay1pbWFnZTp1cmwobWFyaWFkYi1zZWFsLnN2Zyk7bWFzay1pbWFnZTp1cmwobWFyaWFkYi1zZWFsLnN2Zyk7LXdlYmtpdC1tYXNrLXNpemU6Y29udGFpbjttYXNrLXNpemU6Y29udGFpbjstd2Via2l0LW1hc2stcmVwZWF0Om5vLXJlcGVhdDttYXNrLXJlcGVhdDpuby1yZXBlYXQ7LXdlYmtpdC1tYXNrLXBvc2l0aW9uOmNlbnRlcjttYXNrLXBvc2l0aW9uOmNlbnRlcn0ud2VsY29tZVRleHR7ZGlzcGxheTpmbGV4O2ZsZXgtZGlyZWN0aW9uOmNvbHVtbjthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcn0ud2VsY29tZVRleHQgcHt0ZXh0LWFsaWduOmNlbnRlcn0ud2VsY29tZUxpbmtze3BhZGRpbmc6MzBweCAwfS53ZWxjb21lU3BhY2Vye2hlaWdodDo4MHB4fS5mb290ZXJ7cG9zaXRpb246YWJzb2x1dGU7Ym90dG9tOjA7bGluZS1oZWlnaHQ6MTJwdDtmb250LXdlaWdodDoyMDA7Zm9udC1zaXplOjEwcHg7bWFyZ2luOjVweCAwfS5tcnNMb2dpbntkaXNwbGF5OmZsZXg7ZmxleC1kaXJlY3Rpb246Y29sdW1uO3BhZGRpbmctdG9wOjIwcHg7cGFkZGluZy1ib3R0b206MjBweDtnYXA6MTJweDthbGlnbi1pdGVtczpjZW50ZXJ9Lm1yc0xvZ2luIHB7Zm9udC1zaXplOjIwcHg7Zm9udC13ZWlnaHQ6NDAwfS5tcnNMb2dpbkZpZWxkc3tkaXNwbGF5OmZsZXg7ZmxleC1kaXJlY3Rpb246Y29sdW1ufS5tcnNMb2dpbkZpZWxkcyBpbnB1dFt0eXBlPXBhc3N3b3JkXSwubXJzTG9naW5GaWVsZHMgaW5wdXRbdHlwZT10ZXh0XXtib3JkZXI6bm9uZTtvdXRsaW5lOjA7YmFja2dyb3VuZC1jb2xvcjp0cmFuc3BhcmVudDtjb2xvcjp2YXIoLS1wcmltYXJ5LXRleHQtY29sb3IpO2ZvbnQtc2l6ZToxN3B4O2ZvbnQtd2VpZ2h0OjMwMDt3aWR0aDoyNTBweH0ubXJzTG9naW5GaWVsZHtkaXNwbGF5OmZsZXg7ZmxleC1kaXJlY3Rpb246cm93O2JvcmRlcjoxcHggc29saWQgdmFyKC0tc2Vjb25kYXJ5LXRleHQtY29sb3IpO3BhZGRpbmc6OHB4IDhweCA4cHggMTZweH0ubXJzTG9naW5GaWVsZDpmaXJzdC1vZi10eXBle2JvcmRlci10b3AtbGVmdC1yYWRpdXM6NXB4O2JvcmRlci10b3AtcmlnaHQtcmFkaXVzOjVweH0ubXJzTG9naW5GaWVsZDpsYXN0LW9mLXR5cGU6bm90KDpvbmx5LW9mLXR5cGUpe2JvcmRlci10b3A6MH0ubXJzTG9naW5GaWVsZDpsYXN0LW9mLXR5cGV7Ym9yZGVyLWJvdHRvbS1sZWZ0LXJhZGl1czo1cHg7Ym9yZGVyLWJvdHRvbS1yaWdodC1yYWRpdXM6NXB4O21hcmdpbi1ib3R0b206MTZweH0ubXJzTG9naW5GaWVsZCBpbnB1dHtoZWlnaHQ6MjZweH0ubXJzTG9naW5CdG5OZXh0e2JvcmRlcjoxcHggc29saWQgdmFyKC0tc2Vjb25kYXJ5LXRleHQtY29sb3IpO2JvcmRlci1yYWRpdXM6NTAlO3dpZHRoOjI0cHg7aGVpZ2h0OjI0cHg7bWFyZ2luLWxlZnQ6MTJweDtwYWRkaW5nLXJpZ2h0OjB9Lm1yc0xvZ2luQnRuTmV4dC5hY3RpdmV7Ym9yZGVyOjFweCBzb2xpZCB2YXIoLS1wcmltYXJ5LXRleHQtY29sb3IpfS5tcnNMb2dpbkJ0bk5leHQubG9hZGluZ3tib3JkZXI6bm9uZTt3aWR0aDoyNnB4fS5tcnNMb2dpbkJ0bk5leHQ6OmFmdGVye2NvbnRlbnQ6IiI7cG9zaXRpb246cmVsYXRpdmU7Ym9yZGVyOnNvbGlkIHZhcigtLXNlY29uZGFyeS10ZXh0LWNvbG9yKTtib3JkZXItd2lkdGg6MCAzcHggM3B4IDA7ZGlzcGxheTppbmxpbmUtYmxvY2s7cGFkZGluZzozcHg7dHJhbnNmb3JtOnJvdGF0ZSgtNDVkZWcpOy13ZWJraXQtdHJhbnNmb3JtOnJvdGF0ZSgtNDVkZWcpO21hcmdpbi1sZWZ0OjZweDttYXJnaW4tdG9wOjdweH0ubXJzTG9naW5CdG5OZXh0LmFjdGl2ZTo6YWZ0ZXJ7Y29udGVudDoiIjtwb3NpdGlvbjpyZWxhdGl2ZTtib3JkZXI6c29saWQgdmFyKC0tcHJpbWFyeS10ZXh0LWNvbG9yKTtib3JkZXItd2lkdGg6MCAzcHggM3B4IDA7ZGlzcGxheTppbmxpbmUtYmxvY2s7cGFkZGluZzozcHg7dHJhbnNmb3JtOnJvdGF0ZSgtNDVkZWcpOy13ZWJraXQtdHJhbnNmb3JtOnJvdGF0ZSgtNDVkZWcpO21hcmdpbi1sZWZ0OjZweDttYXJnaW4tdG9wOjdweH0ubXJzTG9naW5CdG5OZXh0LmxvYWRpbmc6OmFmdGVye2NvbnRlbnQ6IiAiO2Rpc3BsYXk6YmxvY2s7d2lkdGg6MTdweDtoZWlnaHQ6MTdweDttYXJnaW4tbGVmdDotM3B4O21hcmdpbi10b3A6LTJweDtib3JkZXItcmFkaXVzOjUwJTtib3JkZXI6NHB4IHNvbGlkIHZhcigtLXByaW1hcnktdGV4dC1jb2xvcik7Ym9yZGVyLWNvbG9yOnZhcigtLXByaW1hcnktdGV4dC1jb2xvcikgdHJhbnNwYXJlbnQgdmFyKC0tcHJpbWFyeS10ZXh0LWNvbG9yKSB0cmFuc3BhcmVudDthbmltYXRpb246bXJzTG9hZGVyS2V5ZnJhbWVzIDEuMnMgbGluZWFyIGluZmluaXRlfUBrZXlmcmFtZXMgbXJzTG9hZGVyS2V5ZnJhbWVzezAle3RyYW5zZm9ybTpyb3RhdGUoMCl9MTAwJXt0cmFuc2Zvcm06cm90YXRlKDM2MGRlZyl9fS5tcnNMb2dpbkVycm9ye2JhY2tncm91bmQtY29sb3I6dmFyKC0tZXJyb3ItY29sb3IpO2JveC1zaGFkb3c6cmdiKDAgMCAwIC8gMTAlKSAwIDVweCAxMHB4IDJweDt3aWR0aDoyMjBweDtwYWRkaW5nOjhweCAyMHB4IDhweCAyMHB4O2JvcmRlcjoxcHggc29saWQgdmFyKC0tZXJyb3ItdGV4dC1jb2xvcik7Ym9yZGVyLXJhZGl1czo2cHg7b3ZlcmZsb3ctd3JhcDpicmVhay13b3JkfS5tcnNMb2dpbkVycm9yIHB7Y29sb3I6dmFyKC0tZXJyb3ItdGV4dC1jb2xvcik7Zm9udC1zaXplOjE0cHg7dGV4dC1hbGlnbjpjZW50ZXJ9Lm1yc0xvZ2luRXJyb3I6YmVmb3Jle3dpZHRoOjE1cHg7aGVpZ2h0OjE1cHg7YmFja2dyb3VuZC1jb2xvcjp2YXIoLS1lcnJvci1jb2xvcik7Y29udGVudDoiIjtwb3NpdGlvbjphYnNvbHV0ZTtsZWZ0OjUwJTttYXJnaW4tdG9wOi0xNnB4O21hcmdpbi1sZWZ0Oi0xNXB4O3RyYW5zZm9ybTpyb3RhdGUoMTM1ZGVnKSBza2V3WCg1ZGVnKSBza2V3WSg1ZGVnKTstd2Via2l0LXRyYW5zZm9ybTpyb3RhdGUoMTM1ZGVnKSBza2V3WCg1ZGVnKSBza2V3WSg1ZGVnKTtib3JkZXItbGVmdDoxcHggc29saWQgdmFyKC0tZXJyb3ItdGV4dC1jb2xvcik7Ym9yZGVyLWJvdHRvbToxcHggc29saWQgdmFyKC0tZXJyb3ItdGV4dC1jb2xvcil9Lm1yc0xvZ2luU2VwYXJhdG9ye2JhY2tncm91bmQ6bGluZWFyLWdyYWRpZW50KHRvIHJpZ2h0LHJnYmEoMjAwLDIwMCwyMDAsMCksI2M4YzhjOCwjYzhjOGM4LHJnYmEoMjAwLDIwMCwyMDAsMCkpO3dpZHRoOjQwMHB4O2hlaWdodDoxcHg7bWFyZ2luLXRvcDoyMHB4fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxkaXYgaWQ9InJvb3QiPjwvZGl2PjxzY3JpcHQgdHlwZT0ibW9kdWxlIj5pbXBvcnR7aCxyZW5kZXIsQ29tcG9uZW50LGNyZWF0ZVJlZixodG1sfWZyb20iLi9zdGFuZGFsb25lLXByZWFjdC5qcyI7Y29uc3QgbG9jYWxQYXRoPXQ9PntpZigic3RyaW5nIj09dHlwZW9mIHQmJnQuc3RhcnRzV2l0aCgiLyIpJiYhdC5zdGFydHNXaXRoKCIvLyIpJiYhdC5zdGFydHNXaXRoKCIvXFwiKSlyZXR1cm4gdH0scmVkaXJlY3RUYXJnZXQ9dD0+e2lmKCJzdHJpbmciPT10eXBlb2YgdCYmIiIhPT10KXRyeXtjb25zdCBlPW5ldyBVUkwodCxnbG9iYWxUaGlzLmxvY2F0aW9uLmhyZWYpO3JldHVybiJodHRwOiI9PT1lLnByb3RvY29sfHwiaHR0cHM6Ij09PWUucHJvdG9jb2w/ZS5ocmVmOnZvaWQgMH1jYXRjaHtyZXR1cm59fTtjbGFzcyBNcnNCYXNlU2Vzc2lvbntsb2dpblN0YXRlPXt9O2NvbnN0cnVjdG9yKHQsZSxzPThlMyl7dGhpcy5zZXJ2aWNlVXJsPXQsdGhpcy5hdXRoUGF0aD1lPz8iL2F1dGhlbnRpY2F0aW9uIix0aGlzLmRlZmF1bHRUaW1lb3V0PXN9ZG9GZXRjaD1hc3luYyh0LGUscyxhLG8scik9Pnsib2JqZWN0Ij09dHlwZW9mIHQmJm51bGwhPT10PyhlPXQ/LmVycm9yTXNnPz8iRmFpbGVkIHRvIGZldGNoIGRhdGEuIixzPXQ/Lm1ldGhvZD8/IkdFVCIsYT10Py5ib2R5LHI9dD8udGltZW91dCx0PXQ/LmlucHV0KTooZT1lPz8iRmFpbGVkIHRvIGZldGNoIGRhdGEuIixzPXM/PyJHRVQiKTtjb25zdCBpPW5ldyBBYm9ydENvbnRyb2xsZXIsbj1zZXRUaW1lb3V0KCgoKT0+e2kuYWJvcnQoKX0pLHI/P3RoaXMuZGVmYXVsdFRpbWVvdXQpO2xldCBsO3RyeXtsPWF3YWl0IGZldGNoKGAke3RoaXMuc2VydmljZVVybD8/IiJ9JHt0fWAse21ldGhvZDpzLGJvZHk6dm9pZCAwIT09YT9KU09OLnN0cmluZ2lmeShhKTp2b2lkIDAsc2lnbmFsOmkuc2lnbmFsfSl9Y2F0Y2gocyl7dGhyb3cgbmV3IEVycm9yKGAke2V9XG5cblBsZWFzZSBjaGVjayBpZiBNYXJpYURCIFJFU1QgRGFlbW9uIGlzIHJ1bm5pbmcgYW5kIHRoZSBSRVNUIGVuZHBvaW50ICR7dGhpcy5zZXJ2aWNlVXJsPz8iIn0ke3R9IGRvZXMgZXhpc3QuXG5cbiR7cyBpbnN0YW5jZW9mIEVycm9yP3MubWVzc2FnZTpTdHJpbmcocyl9YCl9ZmluYWxseXtjbGVhclRpbWVvdXQobil9aWYoIWwub2smJm8pe2lmKDQwMT09PWwuc3RhdHVzKXRocm93IG5ldyBFcnJvcihgTm90IGF1dGhlbnRpY2F0ZWQuIFBsZWFzZSBhdXRoZW50aWNhdGUgZmlyc3QgYmVmb3JlIGFjY2Vzc2luZyB0aGUgcGF0aCAke3RoaXMuc2VydmljZVVybD8/IiJ9JHt0fS5gKTtsZXQgczt0cnl7cz1hd2FpdCBsLmpzb24oKX1jYXRjaCh0KXt0aHJvdyBuZXcgRXJyb3IoYCR7bC5zdGF0dXN9LiAke2V9ICgke2wuc3RhdHVzVGV4dH0pYCl9dGhyb3cic3RyaW5nIj09dHlwZW9mIHMubWVzc2FnZT9uZXcgRXJyb3IoU3RyaW5nKHMubWVzc2FnZSkpOm5ldyBFcnJvcihgJHtsLnN0YXR1c30uICR7ZX0gKCR7bC5zdGF0dXNUZXh0fSlgKyh2b2lkIDAhPT1zPyJcblxuIitKU09OLnN0cmluZ2lmeShzLG51bGwsNCkrIlxuIjoiIikpfXJldHVybiBsfTtnZXRBdXRoQXBwcz1hc3luYygpPT57Y29uc3QgdD1hd2FpdCB0aGlzLmRvRmV0Y2goe2lucHV0OmAke3RoaXMuYXV0aFBhdGh9L2F1dGhBcHBzYCx0aW1lb3V0OjNlMyxlcnJvck1zZzoiRmFpbGVkIHRvIGZldGNoIEF1dGhlbnRpY2F0aW9uIEFwcHMuIn0pO2lmKHQub2spe3JldHVybiBhd2FpdCB0Lmpzb24oKX17bGV0IGU9bnVsbDt0cnl7ZT1hd2FpdCB0Lmpzb24oKX1jYXRjaCh0KXt9Y29uc3Qgcz1gRmFpbGVkIHRvIGZldGNoIEF1dGhlbnRpY2F0aW9uIEFwcHMuXG5cblBsZWFzZSBlbnN1cmUgTWFyaWFEQiBSRVNUIERhZW1vbiBpcyBydW5uaW5nIGFuZCB0aGUgUkVTVCBlbmRwb2ludCAke1N0cmluZyh0aGlzLnNlcnZpY2VVcmwpfSR7dGhpcy5hdXRoUGF0aH0vYXV0aEFwcHMgaXMgYWNjZXNzaWJsZS4gYDt0aHJvdyBuZXcgRXJyb3IocytgKCR7dC5zdGF0dXN9OiR7dC5zdGF0dXNUZXh0fSlgKyhudWxsIT1lPyJcblxuIitKU09OLnN0cmluZ2lmeShlLG51bGwsNCkrIlxuIjoiIikpfX07Z2V0QXV0aGVudGljYXRpb25TdGF0dXM9YXN5bmMoKT0+e3RyeXtyZXR1cm4gYXdhaXQoYXdhaXQgdGhpcy5kb0ZldGNoKHtpbnB1dDoiL2F1dGhlbnRpY2F0aW9uL3N0YXR1cyIsZXJyb3JNc2c6IkZhaWxlZCB0byBhdXRoZW50aWNhdGUuIn0pKS5qc29uKCl9Y2F0Y2godCl7cmV0dXJue3N0YXR1czoidW5hdXRob3JpemVkIn19fTt2ZXJpZnlVc2VyTmFtZT1hc3luYyh0LGUpPT57dGhpcy5hdXRoQXBwPXQ7Y29uc3Qgcz10aGlzLmhleChjcnlwdG8uZ2V0UmFuZG9tVmFsdWVzKG5ldyBVaW50OEFycmF5KDEwKSkpLGE9YXdhaXQoYXdhaXQgdGhpcy5kb0ZldGNoKHtpbnB1dDpgJHt0aGlzLmF1dGhQYXRofS9sb2dpbmAsbWV0aG9kOiJQT1NUIixib2R5OnthdXRoQXBwOnQsdXNlcjplLG5vbmNlOnMsc2Vzc2lvblR5cGU6ImNvb2tpZSJ9fSkpLmpzb24oKTthLnNhbHQ9bmV3IFVpbnQ4QXJyYXkoYS5zYWx0KSx0aGlzLmxvZ2luU3RhdGU9e2NsaWVudEZpcnN0OmBuPSR7ZX0scj0ke3N9YCxjbGllbnRGaW5hbDpgcj0ke2Eubm9uY2V9YCxzZXJ2ZXJGaXJzdDp0aGlzLmJ1aWxkU2VydmVyRmlyc3QoYSksY2hhbGxlbmdlOmEsbG9naW5FcnJvcjp2b2lkIDB9fTt2ZXJpZnlDcmVkZW50aWFscz1hc3luYyh0LGUscyk9Pntjb25zdHtjaGFsbGVuZ2U6YSxjbGllbnRGaXJzdDpvLHNlcnZlckZpcnN0OnIsY2xpZW50RmluYWw6aX09dGhpcy5sb2dpblN0YXRlO2lmKHZvaWQgMD09PWV8fCIiPT09ZXx8dm9pZCAwPT09cylyZXR1cm57YXV0aEFwcDpzLGVycm9yQ29kZToxLGVycm9yTWVzc2FnZToiTm8gcGFzc3dvcmQgZ2l2ZW4uIn07dHJ5e2NvbnN0IGE9YXdhaXQgdGhpcy5kb0ZldGNoKHtpbnB1dDpgJHt0aGlzLmF1dGhQYXRofS9sb2dpbmAsbWV0aG9kOiJQT1NUIixib2R5OnthdXRoQXBwOnMsdXNlcm5hbWU6dCxwYXNzd29yZDplLHNlc3Npb25UeXBlOiJjb29raWUifX0sdm9pZCAwLHZvaWQgMCx2b2lkIDAsITEpO2lmKGEub2spe2NvbnN0IHQ9YXdhaXQgYS5qc29uKCk7cmV0dXJuIHRoaXMuYWNjZXNzVG9rZW49U3RyaW5nKHQuYWNjZXNzVG9rZW4pLHthdXRoQXBwOnMsand0OnRoaXMuYWNjZXNzVG9rZW59fXJldHVybiB0aGlzLmFjY2Vzc1Rva2VuPXZvaWQgMCx7YXV0aEFwcDpzLGVycm9yQ29kZTphLnN0YXR1cyxlcnJvck1lc3NhZ2U6NDAxPT09YS5zdGF0dXM/IlRoZSBzaWduIGluIGZhaWxlZC4gUGxlYXNlIGNoZWNrIHlvdXIgdXNlcm5hbWUgYW5kIHBhc3N3b3JkLiI6YFRoZSBzaWduIGluIGZhaWxlZC4gRXJyb3IgY29kZTogJHtTdHJpbmcoYS5zdGF0dXMpfWB9fWNhdGNoKHQpe3JldHVybnthdXRoQXBwOnMsZXJyb3JDb2RlOjIsZXJyb3JNZXNzYWdlOmBUaGUgc2lnbiBpbiBmYWlsZWQuIFNlcnZlciBFcnJvcjogJHtTdHJpbmcodCl9YH19fTt2ZXJpZnlQYXNzd29yZD1hc3luYyB0PT57Y29uc3R7Y2hhbGxlbmdlOmUsY2xpZW50Rmlyc3Q6cyxzZXJ2ZXJGaXJzdDphLGNsaWVudEZpbmFsOm99PXRoaXMubG9naW5TdGF0ZTtpZih2b2lkIDA9PT10fHwiIj09PXR8fHZvaWQgMD09PXRoaXMuYXV0aEFwcHx8dm9pZCAwPT09c3x8dm9pZCAwPT09YXx8dm9pZCAwPT09ZXx8dm9pZCAwPT09bylyZXR1cm57YXV0aEFwcDp0aGlzLmF1dGhBcHAsZXJyb3JDb2RlOjEsZXJyb3JNZXNzYWdlOiJObyBwYXNzd29yZCBnaXZlbi4ifTt7Y29uc3Qgcj1uZXcgVGV4dEVuY29kZXIsaT1gJHtzfSwke2F9LCR7b31gLG49QXJyYXkuZnJvbShhd2FpdCB0aGlzLmNhbGN1bGF0ZUNsaWVudFByb29mKHQsZS5zYWx0LGUuaXRlcmF0aW9ucyxyLmVuY29kZShpKSkpO3RyeXtjb25zdCB0PWF3YWl0IHRoaXMuZG9GZXRjaCh7aW5wdXQ6YCR7dGhpcy5hdXRoUGF0aH0vbG9naW5gLG1ldGhvZDoiUE9TVCIsYm9keTp7Y2xpZW50UHJvb2Y6bixub25jZTplLm5vbmNlLHN0YXRlOiJyZXNwb25zZSJ9fSx2b2lkIDAsdm9pZCAwLHZvaWQgMCwhMSk7aWYodC5vayl7Y29uc3QgZT1hd2FpdCB0Lmpzb24oKTtyZXR1cm4gdGhpcy5hY2Nlc3NUb2tlbj1TdHJpbmcoZS5hY2Nlc3NUb2tlbikse2F1dGhBcHA6dGhpcy5hdXRoQXBwLGp3dDp0aGlzLmFjY2Vzc1Rva2VufX1yZXR1cm4gdGhpcy5hY2Nlc3NUb2tlbj12b2lkIDAse2F1dGhBcHA6dGhpcy5hdXRoQXBwLGVycm9yQ29kZTp0LnN0YXR1cyxlcnJvck1lc3NhZ2U6NDAxPT09dC5zdGF0dXM/IlRoZSBzaWduIGluIGZhaWxlZC4gUGxlYXNlIGNoZWNrIHlvdXIgdXNlcm5hbWUgYW5kIHBhc3N3b3JkLiI6YFRoZSBzaWduIGluIGZhaWxlZC4gRXJyb3IgY29kZTogJHtTdHJpbmcodC5zdGF0dXMpfWB9fWNhdGNoKHQpe3JldHVybnthdXRoQXBwOnRoaXMuYXV0aEFwcCxlcnJvckNvZGU6MixlcnJvck1lc3NhZ2U6YFRoZSBzaWduIGluIGZhaWxlZC4gU2VydmVyIEVycm9yOiAke1N0cmluZyh0KX1gfX19fTtoZXg9dD0+QXJyYXkuZnJvbShuZXcgVWludDhBcnJheSh0KSkubWFwKCh0PT50LnRvU3RyaW5nKDE2KS5wYWRTdGFydCgyLCIwIikpKS5qb2luKCIiKTtidWlsZFNlcnZlckZpcnN0PXQ9Pntjb25zdCBlPXdpbmRvdy5idG9hKFN0cmluZy5mcm9tQ2hhckNvZGUuYXBwbHkobnVsbCxBcnJheS5mcm9tKHQuc2FsdCkpKTtyZXR1cm5gcj0ke3Qubm9uY2V9LHM9JHtlfSxpPSR7U3RyaW5nKHQuaXRlcmF0aW9ucyl9YH07Y2FsY3VsYXRlUGJrZGYyPWFzeW5jKHQsZSxzKT0+e2NvbnN0IGE9YXdhaXQgY3J5cHRvLnN1YnRsZS5pbXBvcnRLZXkoInJhdyIsdCx7bmFtZToiUEJLREYyIn0sITEsWyJkZXJpdmVLZXkiLCJkZXJpdmVCaXRzIl0pO3JldHVybiBuZXcgVWludDhBcnJheShhd2FpdCBjcnlwdG8uc3VidGxlLmRlcml2ZUJpdHMoe25hbWU6IlBCS0RGMiIsaGFzaDoiU0hBLTI1NiIsc2FsdDplLGl0ZXJhdGlvbnM6c30sYSwyNTYpKX07Y2FsY3VsYXRlU2hhMjU2PWFzeW5jIHQ9Pm5ldyBVaW50OEFycmF5KGF3YWl0IGNyeXB0by5zdWJ0bGUuZGlnZXN0KCJTSEEtMjU2Iix0KSk7Y2FsY3VsYXRlSG1hYz1hc3luYyh0LGUpPT57Y29uc3Qgcz1hd2FpdCB3aW5kb3cuY3J5cHRvLnN1YnRsZS5pbXBvcnRLZXkoInJhdyIsdCx7bmFtZToiSE1BQyIsaGFzaDp7bmFtZToiU0hBLTI1NiJ9fSwhMCxbInNpZ24iLCJ2ZXJpZnkiXSksYT1hd2FpdCB3aW5kb3cuY3J5cHRvLnN1YnRsZS5zaWduKCJITUFDIixzLGUpO3JldHVybiBuZXcgVWludDhBcnJheShhKX07Y2FsY3VsYXRlWG9yPSh0LGUpPT57Y29uc3Qgcz10Lmxlbmd0aCxhPWUubGVuZ3RoO2xldCBvLHIsaTtzPmE/KG89bmV3IFVpbnQ4QXJyYXkodCkscj1lLGk9YSk6KG89bmV3IFVpbnQ4QXJyYXkoZSkscj10LGk9cyk7Zm9yKGxldCB0PTA7dDxpOysrdClvW3RdXj1yW3RdO3JldHVybiBvfTtjYWxjdWxhdGVDbGllbnRQcm9vZj1hc3luYyh0LGUscyxhKT0+e2NvbnN0IG89bmV3IFRleHRFbmNvZGVyLHI9YXdhaXQgdGhpcy5jYWxjdWxhdGVQYmtkZjIoby5lbmNvZGUodCksZSxzKSxpPWF3YWl0IHRoaXMuY2FsY3VsYXRlSG1hYyhyLG8uZW5jb2RlKCJDbGllbnQgS2V5IikpLG49YXdhaXQgdGhpcy5jYWxjdWxhdGVTaGEyNTYoaSksbD1hd2FpdCB0aGlzLmNhbGN1bGF0ZUhtYWMobixhKTtyZXR1cm4gdGhpcy5jYWxjdWxhdGVYb3IobCxpKX19Y2xhc3MgTXJzQmFzZUFwcCBleHRlbmRzIENvbXBvbmVudHtjb25zdHJ1Y3Rvcih0LGUpe3N1cGVyKCksdD8/PSIiLGU/Pz17fSx0aGlzLnN0YXRlPXthdXRoZW50aWNhdGluZzohMSxyZXN0YXJ0aW5nOiExLC4uLmV9LGdsb2JhbFRoaXMuYWRkRXZlbnRMaXN0ZW5lcigiaGFzaGNoYW5nZSIsKCgpPT57dGhpcy5mb3JjZVVwZGF0ZSgpfSksITEpLHZvaWQgMCE9PWUuc2VydmljZSYmKHRoaXMuc2Vzc2lvbj1uZXcgTXJzQmFzZVNlc3Npb24oZS5zZXJ2aWNlLGUuYXV0aFBhdGgpLHRoaXMuaGFuZGxlTG9naW4odm9pZCAwLHZvaWQgMCwhMCkpfWdldFVybFdpdGhOZXdTZWFyY2hTdHJpbmc9KHQ9IiIpPT5nbG9iYWxUaGlzLmxvY2F0aW9uLnByb3RvY29sKyIvLyIrZ2xvYmFsVGhpcy5sb2NhdGlvbi5ob3N0K2dsb2JhbFRoaXMubG9jYXRpb24ucGF0aG5hbWUrKCIiIT09dD9gPyR7dH1gOiIiKStnbG9iYWxUaGlzLmxvY2F0aW9uLmhhc2g7c3RhcnRMb2dpbj10PT57aWYodm9pZCAwIT09dCl7Y29uc3QgZT1lbmNvZGVVUklDb21wb25lbnQoTXJzQmFzZUFwcC5nZXRVcmxXaXRoTmV3U2VhcmNoU3RyaW5nKGBhdXRoQXBwPSR7ZW5jb2RlVVJJQ29tcG9uZW50KHQpfWApKTtnbG9iYWxUaGlzLmxvY2F0aW9uLmhyZWY9YCR7dGhpcy5zZXJ2aWNlVXJsfS9hdXRoZW50aWNhdGlvbi9sb2dpbj9hcHA9JHtlbmNvZGVVUklDb21wb25lbnQodCl9JnNlc3Npb25UeXBlPWNvb2tpZSZvbkNvbXBsZXRpb25SZWRpcmVjdD0ke2V9YH1lbHNlIGdsb2JhbFRoaXMubG9jYXRpb24uaHJlZj1NcnNCYXNlQXBwLmdldFVybFdpdGhOZXdTZWFyY2hTdHJpbmcoKX07bG9nb3V0PSgpPT57Z2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbShgJHt0aGlzLmFwcE5hbWV9Snd0QWNjZXNzVG9rZW5gKSxnbG9iYWxUaGlzLmxvY2FsU3RvcmFnZS5yZW1vdmVJdGVtKGAke3RoaXMuYXBwTmFtZX1BdXRoQXBwYCksZ2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbShgJHt0aGlzLmFwcE5hbWV9QnVpbHRJbkF1dGhgKSxnbG9iYWxUaGlzLmhpc3RvcnkucHVzaFN0YXRlKHt9LGRvY3VtZW50LnRpdGxlLGdsb2JhbFRoaXMubG9jYXRpb24ucGF0aG5hbWUpLHRoaXMuc2V0U3RhdGUoe2F1dGhlbnRpY2F0aW5nOiExLGVycm9yOnZvaWQgMH0sdm9pZCB0aGlzLmFmdGVyTG9nb3V0KX07aGFuZGxlTG9naW49KHQsZSxzPSExKT0+e2NvbnN0IGE9bmV3IFVSTFNlYXJjaFBhcmFtcyhnbG9iYWxUaGlzLmxvY2F0aW9uLnNlYXJjaCk7aWYodm9pZCAwPT09dCl7Y29uc3QgZT1hLmdldCgiYXV0aEFwcCIpO3Q9bnVsbCE9PWU/ZTp2b2lkIDB9aWYodm9pZCAwPT09ZSl7Y29uc3QgdD1hLmdldCgiYWNjZXNzVG9rZW4iKTtlPW51bGwhPT10P3Q6dm9pZCAwfWlmKHZvaWQgMD09PWUpe2NvbnN0IHQ9Z2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2UuZ2V0SXRlbShgJHt0aGlzLmFwcE5hbWV9Snd0QWNjZXNzVG9rZW5gKTtlPW51bGwhPT10P3Q6dm9pZCAwfWVsc2UgZ2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2Uuc2V0SXRlbShgJHt0aGlzLmFwcE5hbWV9Snd0QWNjZXNzVG9rZW5gLGUpLGdsb2JhbFRoaXMuaGlzdG9yeS5yZXBsYWNlU3RhdGUodm9pZCAwLCIiLHRoaXMuZ2V0VXJsV2l0aE5ld1NlYXJjaFN0cmluZygpKTtpZih2b2lkIDA9PT10KXtjb25zdCBlPWdsb2JhbFRoaXMubG9jYWxTdG9yYWdlLmdldEl0ZW0oYCR7dGhpcy5hcHBOYW1lfUF1dGhBcHBgKTt0PW51bGwhPT1lP2U6dm9pZCAwO2NvbnN0IGE9Z2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2UuZ2V0SXRlbShgJHt0aGlzLmFwcE5hbWV9QnVpbHRJbkF1dGhgKTtzPW51bGwhPT1hJiYidHJ1ZSI9PT1hfWVsc2UgZ2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2Uuc2V0SXRlbShgJHt0aGlzLmFwcE5hbWV9QXV0aEFwcGAsdCksZ2xvYmFsVGhpcy5sb2NhbFN0b3JhZ2Uuc2V0SXRlbShgJHt0aGlzLmFwcE5hbWV9QnVpbHRJbkF1dGhgLFN0cmluZyhzKSk7dGhpcy5zZXNzaW9uJiZlJiYodGhpcy5zZXNzaW9uLmFjY2Vzc1Rva2VuPWUsdGhpcy5zZXNzaW9uLmF1dGhBcHA9dCksdGhpcy5zZXRTdGF0ZSh7YXV0aGVudGljYXRpbmc6dm9pZCAwIT09dGhpcy5zZXNzaW9uPy5hY2Nlc3NUb2tlbiYmIXN9LCgoKT0+e3ZvaWQgMCE9PXRoaXMuc2Vzc2lvbj8uYWNjZXNzVG9rZW4mJnRoaXMuc2Vzc2lvbi5nZXRBdXRoZW50aWNhdGlvblN0YXR1cygpLnRoZW4oKHQ9PnsiYXV0aG9yaXplZCI9PT10Py5zdGF0dXM/dGhpcy5hZnRlckhhbmRsZUxvZ2luKHQpLmNhdGNoKCgoKT0+e3RoaXMubG9nb3V0KCl9KSk6dGhpcy5sb2dvdXQoKX0pKX0pKX07YWZ0ZXJMb2dvdXQ9YXN5bmMoKT0+e307YWZ0ZXJIYW5kbGVMb2dpbj1hc3luYyB0PT57fX1jbGFzcyBNb2RhbEVycm9yIGV4dGVuZHMgQ29tcG9uZW50e3JlbmRlcj0oe2Vycm9yOnQscmVzZXRFcnJvcjplLGxvZ291dDpzfSk9PnQ/aHRtbGAgPGRpdiBjbGFzcz0ibW9kYWwiPiA8ZGl2IGNsYXNzPSJlcnJvciI+IDxwPiR7dC5zdGFjay5yZXBsYWNlKC9hY2Nlc3NUb2tlbj0uKj9bJjpdL2dtLCJhY2Nlc3NUb2tlbj1YOiIpfTwvcD4gPGRpdiBjbGFzcz0iZXJyb3JCdXR0b25zIj4gPGJ1dHRvbiBjbGFzcz0iZmxhdEJ1dHRvbiIgb25DbGljaz0keygpPT5lKCl9PkNsb3NlPC9idXR0b24+IDxidXR0b24gY2xhc3M9ImZsYXRCdXR0b24iIG9uQ2xpY2s9JHsoKT0+cygpfT5SZXN0YXJ0PC9idXR0b24+IDwvZGl2PiA8L2Rpdj4gPC9kaXY+YDoiIn1jbGFzcyBNcnNMb2dpbiBleHRlbmRzIENvbXBvbmVudHtjb25zdHJ1Y3Rvcih0KXtzdXBlcih0KSx0aGlzLnN0YXRlPXt1c2VyTmFtZToiIix1c2VyTmFtZVZlcmlmaWVkOiExLGF1dGhBcHBzOnZvaWQgMCxlcnJvcjp2b2lkIDAsYXV0aEFwcDp0LmF1dGhBcHB9fWNvbXBvbmVudERpZE1vdW50KCl7Y29uc3R7c2Vzc2lvbjp0fT10aGlzLnByb3BzO3QuZ2V0QXV0aEFwcHMoKS50aGVuKCh0PT57dGhpcy5zZXRTdGF0ZSh7YXV0aEFwcHM6dH0pfSkpLmNhdGNoKCh0PT57dGhpcy5zaG93TG9naW5FcnJvcih0KX0pKX1zZXRTdGF0ZUNsYXNzU3R5bGU9KHQsZSk9Pntjb25zdCBzPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKHQpOyJhY3RpdmUiIT09ZSYmcz8uY2xhc3NMaXN0LnJlbW92ZSgiYWN0aXZlIiksImxvYWRpbmciIT09ZSYmcz8uY2xhc3NMaXN0LnJlbW92ZSgibG9hZGluZyIpLHZvaWQgMCE9PWUmJnM/LmNsYXNzTGlzdC5hZGQoZSl9O3VzZXJOYW1lQ2hhbmdlPXQ9Pnt0aGlzLnNldFN0YXRlQ2xhc3NTdHlsZSgidXNlck5hbWVCdG4iLCIiIT09dD8iYWN0aXZlIjp2b2lkIDApLHRoaXMuc2V0U3RhdGUoe3VzZXJOYW1lOnQsdXNlck5hbWVWZXJpZmllZDohMSxwYXNzd29yZDp2b2lkIDAsbG9naW5FcnJvcjp2b2lkIDB9KX07cGFzc3dvcmRDaGFuZ2U9dD0+e3RoaXMuc2V0U3RhdGVDbGFzc1N0eWxlKCJwYXNzd29yZEJ0biIsIiIhPT10PyJhY3RpdmUiOnZvaWQgMCksdGhpcy5zZXRTdGF0ZSh7cGFzc3dvcmQ6dH0pfTtzaG93TG9naW5FcnJvcj10PT57dGhpcy5zZXRTdGF0ZUNsYXNzU3R5bGUoInVzZXJOYW1lQnRuIiksdGhpcy5zZXRTdGF0ZUNsYXNzU3R5bGUoInBhc3N3b3JkQnRuIiksdGhpcy5zZXRTdGF0ZSh7cGFzc3dvcmQ6dm9pZCAwLGxvZ2luRXJyb3I6dH0sKCgpPT57Y29uc3QgdD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgidXNlck5hbWUiKTt0Py5mb2N1cygpLHQ/LnNlbGVjdCgpfSkpfTt2ZXJpZnlVc2VyTmFtZT1hc3luYyB0PT57Y29uc3R7c2Vzc2lvbjplfT10aGlzLnByb3BzLHt1c2VyTmFtZTpzfT10aGlzLnN0YXRlO3RoaXMuc2V0U3RhdGVDbGFzc1N0eWxlKCJ1c2VyTmFtZUJ0biIsImxvYWRpbmciKTt0cnl7IjB4MzAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiPT09dC52ZW5kb3JJZCYmYXdhaXQgZS52ZXJpZnlVc2VyTmFtZSh0Lm5hbWUscyksdGhpcy5zZXRTdGF0ZSh7dXNlck5hbWVWZXJpZmllZDohMH0sKCgpPT57ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInVzZXJQYXNzd29yZCIpPy5mb2N1cygpfSkpfWZpbmFsbHl7dGhpcy5zZXRTdGF0ZUNsYXNzU3R5bGUoInVzZXJOYW1lQnRuIiwiIiE9PXM/ImFjdGl2ZSI6dm9pZCAwKX19O3ZlcmlmeVBhc3N3b3JkPWFzeW5jIHQ9Pntjb25zdHtoYW5kbGVMb2dpbjplLHNlc3Npb246c309dGhpcy5wcm9wcyx7cGFzc3dvcmQ6YSx1c2VyTmFtZTpvfT10aGlzLnN0YXRlO2xldCByO3RoaXMuc2V0U3RhdGVDbGFzc1N0eWxlKCJwYXNzd29yZEJ0biIsImxvYWRpbmciKSxyPSIweDMwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIj09PXQudmVuZG9ySWQ/YXdhaXQgcy52ZXJpZnlQYXNzd29yZChhKTphd2FpdCBzLnZlcmlmeUNyZWRlbnRpYWxzKG8sYSx0Lm5hbWUpLG51bGwhPT1yLmVycm9yQ29kZSYmdm9pZCAwIT09ci5lcnJvckNvZGUmJnRoaXMuc2hvd0xvZ2luRXJyb3Ioci5lcnJvck1lc3NhZ2UpLGUoci5hdXRoQXBwLHIuand0LCEwKSx0aGlzLnNldFN0YXRlQ2xhc3NTdHlsZSgidXNlck5hbWVCdG4iLCIiIT09YT8iYWN0aXZlIjp2b2lkIDApfTtyZW5kZXI9KHQsZSk9Pntjb25zdHt1c2VyTmFtZTpzLHBhc3N3b3JkOmEsbG9naW5FcnJvcjpvLHVzZXJOYW1lVmVyaWZpZWQ6cixhdXRoQXBwczppLGF1dGhBcHA6bn09ZSxsPVsiMHgzMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIsIjB4MzEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCIweDM1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl07bGV0IGM7aWYoYz1uP2k/LmZpbmQoKHQ9PnQubmFtZS50b0xvd2VyQ2FzZSgpPT09bi50b0xvd2VyQ2FzZSgpKSk6aT8uZmluZCgodD0+bC5pbmRleE9mKHQudmVuZG9ySWQpPi0xKSksdm9pZCAwPT09aSlyZXR1cm4gdm9pZCAwIT09bz9odG1sYDxiciAvPiA8ZGl2IGNsYXNzTmFtZT0ibXJzTG9naW5FcnJvciI+IDxwPiR7U3RyaW5nKG8pfTwvcD4gPC9kaXY+YDpodG1sYCA8ZGl2IGNsYXNzTmFtZT0ibXJzTG9naW4iPiA8cD5Mb2FkaW5nIC4uLjwvcD4gPC9kaXY+YDtpZigwPT09aS5sZW5ndGgpcmV0dXJuIGh0bWxgIDxiciAvPiA8ZGl2IGNsYXNzTmFtZT0ibXJzTG9naW5FcnJvciI+IDxwPk5vIEF1dGhlbnRpY2F0aW9uIEFwcHMgZGVmaW5lZCBmb3IgdGhpcyBSRVNUIFNlcnZpY2UuPC9wPiA8L2Rpdj5gO2lmKG4mJiFjKXJldHVybiBodG1sYCA8YnIgLz4gPGRpdiBjbGFzc05hbWU9Im1yc0xvZ2luRXJyb3IiPiA8cD5SZXF1ZXN0ZWQgQXV0aGVudGljYXRpb24gQXBwICR7bn0gbm90IGZvdW5kIG9uIFJFU1QgU2VydmljZS48L3A+IDwvZGl2PmA7aWYoLTE9PWwuaW5kZXhPZihjLnZlbmRvcklkKSlyZXR1cm4gaHRtbGAgPGRpdiBjbGFzc05hbWU9Im1yc0xvZ2luIj4gPHA+UmVxdWVzdGVkIEF1dGhlbnRpY2F0aW9uIEFwcCAke259IG5vdCBzdXBwb3J0ZWQgeWV0LjwvcD4gPC9kaXY+YDtjb25zdCBoPXQ9Pntjb25zdCBlPW5ldyBVUkwod2luZG93LmxvY2F0aW9uLmhyZWYpLHM9bG9jYWxQYXRoKGUuc2VhcmNoUGFyYW1zLmdldCgic2VydmljZSIpKT8/IiIsYT1yZWRpcmVjdFRhcmdldChlLnNlYXJjaFBhcmFtcy5nZXQoInJlZGlyZWN0VXJsIikpPz8iIixvPWAke2UucHJvdG9jb2x9Ly8ke2UuaG9zdH0ke3N9L2F1dGhlbnRpY2F0aW9uL2xvZ2luP2F1dGhBcHA9JHtlbmNvZGVVUklDb21wb25lbnQodCl9JnNlc3Npb25UeXBlPWNvb2tpZSZvbkNvbXBsZXRpb25SZWRpcmVjdD0ke2VuY29kZVVSSUNvbXBvbmVudChhKX1gO3JldHVybiBodG1sYCA8YSBocmVmPSIke299Ij4gTG9naW4gd2l0aCBPQ0kgPC9hPiBgfTtpZigiMHgzNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCI9PT1jLnZlbmRvcklkKXJldHVybiBoKGMubmFtZSk7Y29uc3QgZD1odG1sYCA8ZGl2IGlkPSJ1c2VyTmFtZUJ0biIgY2xhc3NOYW1lPSJtcnNMb2dpbkJ0bk5leHQiIG9uQ2xpY2s9JHsoKT0+e3RoaXMudmVyaWZ5VXNlck5hbWUoYyl9fSBvbktleVByZXNzPSR7KCk9Pnt9fSByb2xlPSJidXR0b24iIHRhYkluZGV4PXstMX0gLz5gLHA9aHRtbGAgPGRpdiBjbGFzc05hbWU9Im1yc0xvZ2luRmllbGQiPiA8aW5wdXQgdHlwZT0idGV4dCIgaWQ9InVzZXJOYW1lIiBwbGFjZWhvbGRlcj0iVXNlciBOYW1lIG9yIEVtYWlsIiBhdXRvRm9jdXMgdmFsdWU9JHtzfSBvbklucHV0PSR7dD0+e3RoaXMudXNlck5hbWVDaGFuZ2UodC50YXJnZXQudmFsdWUpfX0gb25LZXlQcmVzcz0ke3Q9PnsxMz09PXQua2V5Q29kZSYmdGhpcy52ZXJpZnlVc2VyTmFtZShjKX19IC8+ICR7IXImJmR9IDwvZGl2PmAsdT1odG1sYCA8ZGl2IGNsYXNzTmFtZT0ibXJzTG9naW5GaWVsZCI+IDxpbnB1dCB0eXBlPSJwYXNzd29yZCIgaWQ9InVzZXJQYXNzd29yZCIgcGxhY2Vob2xkZXI9IlBhc3N3b3JkIiB2YWx1ZT0ke2F9IG9uSW5wdXQ9JHt0PT57dGhpcy5wYXNzd29yZENoYW5nZSh0LnRhcmdldC52YWx1ZSl9fSBvbktleVByZXNzPSR7dD0+ezEzPT09dC5rZXlDb2RlJiZ0aGlzLnZlcmlmeVBhc3N3b3JkKGMpfX0gLz4gPGRpdiBpZD0icGFzc3dvcmRCdG4iIGNsYXNzTmFtZT0ibXJzTG9naW5CdG5OZXh0IiBvbkNsaWNrPSR7KCk9Pnt0aGlzLnZlcmlmeVBhc3N3b3JkKGMpfX0gb25LZXlQcmVzcz0keygpPT57fX0gcm9sZT0iYnV0dG9uIiB0YWJJbmRleD17LTJ9IC8+IDwvZGl2PmAsZz1odG1sYCA8ZGl2IGNsYXNzTmFtZT0ibXJzTG9naW4iPiA8cD48YnIvPjxici8+TG9naW4gd2l0aCAke2MubmFtZX08L3A+IDxkaXYgY2xhc3NOYW1lPSJtcnNMb2dpbkZpZWxkcyI+ICR7cH0gJHtyJiZ1fSA8L2Rpdj4gJHt2b2lkIDAhPT1vJiZodG1sYDxkaXYgY2xhc3NOYW1lPSJtcnNMb2dpbkVycm9yIj48cD4ke299PC9wPjwvZGl2PmB9IDxkaXYgY2xhc3NOYW1lPSJtcnNMb2dpblNlcGFyYXRvciIgLz4gPC9kaXY+YCxtPWk/LmZpbmQoKHQ9PiIweDM1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIj09PXQudmVuZG9ySWQpKTtyZXR1cm4gdm9pZCAwPT09bT9nOmh0bWxgJHtnfSR7aChtLm5hbWUpfWB9fWNsYXNzIEFwcCBleHRlbmRzIE1yc0Jhc2VBcHB7Y29uc3RydWN0b3IodCl7c3VwZXIoIk1yc0xvZ2luIix0KX1zdGFydExvZ2luPWFzeW5jIHQ9Pntjb25zdHtzZXJ2aWNlVXJsOmUsYXV0aFBhdGg6cyxyZWRpcmVjdFVybDphfT10aGlzLnByb3BzLG89ZW5jb2RlVVJJQ29tcG9uZW50KHRoaXMuZ2V0VXJsV2l0aE5ld1NlYXJjaFN0cmluZyhgYXV0aEFwcD0ke2VuY29kZVVSSUNvbXBvbmVudCh0KX0mcmVkaXJlY3RVcmw9JHtlbmNvZGVVUklDb21wb25lbnQoYT8/IiIpfWApKSxyPWAke2V9JHtzfS9sb2dpbj9hcHA9JHtlbmNvZGVVUklDb21wb25lbnQodCl9JnNlc3Npb25UeXBlPWNvb2tpZSZvbkNvbXBsZXRpb25SZWRpcmVjdD0ke299YDt3aW5kb3cubG9jYXRpb24uaHJlZj1yfTtzaG93UGFnZT0odCxlPSEwKT0+e3dpbmRvdy5oaXN0b3J5LnB1c2hTdGF0ZSh2b2lkIDAsdm9pZCAwLCIjIit0KSxlJiZ0aGlzLmZvcmNlVXBkYXRlKCl9O3Nob3dFcnJvcj10PT57dGhpcy5zZXRTdGF0ZSh7ZXJyb3I6dH0pfTtyZW5kZXI9KHtzZXJ2aWNlOnQsYXV0aEFwcDplfSx7ZXJyb3I6cyxhdXRoZW50aWNhdGluZzphLHJlc3RhcnRpbmc6byxsb2dpbkNvbXBsZXRlOnJ9KT0+e3dpbmRvdy5sb2NhdGlvbi5oYXNoO2NvbnN0IGk9bz8iIjpodG1sYDwke01vZGFsRXJyb3J9IGVycm9yPSR7c30gcmVzZXRFcnJvcj0ke3RoaXMuc2hvd0Vycm9yfSBsb2dvdXQ9JHt0aGlzLmxvZ291dH0vPmAsbj1odG1sYCA8ZGl2IGNsYXNzPSJ3ZWxjb21lTG9nbyIgLz4gPGRpdiBjbGFzcz0id2VsY29tZVRleHQiPiA8aDI+TWFyaWFEQiBSRVNUIFNlcnZpY2U8L2gyPiA8cD5XZWxjb21lIHRvIHRoZSBNYXJpYURCIFJFU1QgU2VydmljZS48L3A+IDwvZGl2PmAsbD1odG1sYCA8ZGl2IGNsYXNzPSJ3ZWxjb21lU3BhY2VyIj48L2Rpdj4gPGRpdiBjbGFzcz0iZm9vdGVyIj4gQ29weXJpZ2h0IChjKSAyMDIyLCAyMDI1LCBPcmFjbGUgYW5kL29yIGl0cyBhZmZpbGlhdGVzLiA8L2Rpdj4gYDtyZXR1cm4gYT9odG1sYCR7aX0gPGRpdiBjbGFzcz0icGFnZSI+IDxkaXYgY2xhc3M9ImRvQ2VudGVyIj4gPHA+TG9hZGluZyAuLi48L3A+IDwvZGl2PiA8L2Rpdj5gOnQmJiFyP2h0bWxgJHtpfSR7bn0gPCR7TXJzTG9naW59IHN0YXJ0TG9naW49JHt0aGlzLnN0YXJ0TG9naW59IGhhbmRsZUxvZ2luPSR7dGhpcy5oYW5kbGVMb2dpbn0gc2Vzc2lvbj0ke3RoaXMuc2Vzc2lvbn0gYXV0aEFwcD0ke2V9IC8+ICR7bH1gOnI/aHRtbGAke259IDxkaXYgY2xhc3M9IndlbGNvbWVUZXh0Ij4gPHA+TG9nZ2VkIGluIHN1Y2Nlc3NmdWxseS48L3A+IDwvZGl2PiAke2x9YDpodG1sYCR7bn0gPGRpdiBjbGFzcz0id2VsY29tZVRleHQiPiA8cD5QbGVhc2UgdXNlIHRoZSBNYXJpYURCIFNoZWxsIHRvIGNvbmZpZ3VyZSB5b3VyIE1hcmlhREIgUkVTVCBTZXJ2aWNlLjwvcD4gPC9kaXY+IDxkaXYgY2xhc3M9IndlbGNvbWVMaW5rcyI+IDxhIGhyZWY9Imh0dHBzOi8vbWFyaWFkYi5jb20vZG9jcy90b29scy9tYXJpYWRiLXNoZWxsL21hcmlhZGItcmVzdC1zZXJ2aWNlIj5MZWFybiBNb3JlID48L2E+IDxhIGhyZWY9Imh0dHBzOi8vbWFyaWFkYi5jb20vZG9jcy90b29scy9tYXJpYWRiLXNoZWxsL21hcmlhZGItcmVzdC1zZXJ2aWNlL3F1aWNrc3RhcnQiPkJyb3dzZSBUdXRvcmlhbHMgPjwvYT4gPGEgaHJlZj0iaHR0cHM6Ly9tYXJpYWRiLmNvbS9kb2NzL3Rvb2xzL21hcmlhZGItc2hlbGwiPlJlYWQgRG9jcyA+PC9hPiA8L2Rpdj4gJHtsfWB9O2FmdGVySGFuZGxlTG9naW49YXN5bmMgdD0+e2NvbnN0e3JlZGlyZWN0VXJsOmV9PXRoaXMucHJvcHM7ZT93aW5kb3cubG9jYXRpb24uaHJlZj1lOnRoaXMuc2V0U3RhdGUoe2xvZ2luQ29tcGxldGU6ITB9KX19Y29uc3QgdXJsUGFyYW1zPW5ldyBQcm94eShuZXcgVVJMU2VhcmNoUGFyYW1zKHdpbmRvdy5sb2NhdGlvbi5zZWFyY2gpLHtnZXQ6KHQsZSk9PnQuZ2V0KGUpfSk7cmVuZGVyKGh0bWxgPCR7QXBwfSBzZXJ2aWNlPSR7bG9jYWxQYXRoKHVybFBhcmFtcy5zZXJ2aWNlKX0gYXV0aFBhdGg9JHtsb2NhbFBhdGgodXJsUGFyYW1zLmF1dGhQYXRoKX0gYXV0aEFwcD0ke3VybFBhcmFtcy5hdXRoQXBwfSByZWRpcmVjdFVybD0ke3JlZGlyZWN0VGFyZ2V0KHVybFBhcmFtcy5yZWRpcmVjdFVybCl9Lz5gLGRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoIiNyb290IikpPC9zY3JpcHQ+PC9ib2R5PjwvaHRtbD4=", "favicon.ico": "AAABAAMAMDAQAAEABABoBgAANgAAACAgEAABAAQA6AIAAJ4GAAAQEBAAAQAEACgBAACGCQAAKAAAADAAAABgAAAAAQAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIVaCACOZAAAkWsgAJ17LwCoiUMAsJRbALykcADHs4oAz7+ZANrNsgDm3MgA7ujZAPXx6wD++/YA////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAK+7CAAAnYAAAAAAAAAAAAAAAAAAAAAABzYzlAAfHAAAAAAAAAAAAAAAAAAAAAAAJ5QvmAq5wAAAAAAAAAAAAAAAAAAAAAABOkAzmCuYAAAAAAAAAAAAAAAAAAAAAAACuMA7ljYAAAAAAAAAAAAAAAAAAAAAAAALZAA3q6gAAAAAAAAAAAAAAAAAAAAAAAAblAAvuwQAAAAAAAAAAAAAAAAAAAAAAAAnhAAnuUAAAAAAAAAAAAAAAAAAAAAAAAAygAATpAAAAAAAAAAAAAAAAAAAAAAAAAB6QAACiAAAAAAAAAAAAAAAAAAAAAAAAAC5wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC5gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC5wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB6AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA6QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAvAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAngAAAAAAAAAAAAAAAgAAAAAAAAAAAAAG6wAAAAAAAAAAAAAAOgAAAAAAAAAAAABewwAAAAAAAAAAAAADxwAAAAAAAAAAAATrIAAAAAAAAAAAAAAb5AAAAAAAAAAAABvCAAAAAAAAAAAAAACOsAAAAAAAAAAAAH5gAAAAAAAAACVmQgB+UAAAAAAAAAAAA9sAAAAAAAAAa+yqzqQCAAAAAAAAAAAACeUAAAAAAAAqxiAAA36RAAAAAAAAAAAAPqAAAAAAAAPJEAAAAAKrAAAAAAAAAAAArjAAABAAABuABagAqUAakAAAAAAAAAAF6AAAAKIAAHsQXoMAScIC1QAAAAAAAAA8wgAACOIAAuMAbiAABOQAawAAAAAAAAPMUAAAfoAABrAAbgAAA+QAHjAAAAAAADzlAAAAAgAACXAAjgAABOUACmAAAAAABM5QAAAAAAAACmAXyQAAALtgCXAAAAAALeQAAAAAAAAAC1A9owAAAEvQCIAAAAAAjlAAAAFlRDR3CmACrAAAAtgQCXAAAAAAywAAAmze7t7sCJAAfgAABOUADFAAAAAAvDJGne7Jq7uXBMEAbgAAA+QAPhAAAAAAbu7e7sYQAAAAALcAbTAABeMAqAAAAAAABr3LdAAAAAAAAE0wLMcAnKAGwgAAAAAAAAAAAAAAAAAAAAjDAFQAVABdUAAAAAAAAAAAAAAAAAAAAAB+YAAAACjlAAAAAAAAAAAAAAAAAAAAAAAFu4U0WcowAAAAAAAAAAAAAAAAAAAAAAAAFZvduEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoAAAAIAAAAEAAAAABAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAhVoIAIthAACQah8AmnYnAKCANwCtkFIAuKBsAMCpdwDEsYYAz7+aANfIqgDe07oA597OAPDp2gD///8AAAAAAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFpAAAMAAAAAAAAAAAAAAAfs0AS0AAAAAAAAAAAAAAA+OeBeQAAAAAAAAAAAAAAAuAnV5QAAAAAAAAAAAAAAAuEJ7lAAAAAAAAAAAAAAAAawB+sAAAAAAAAAAAAAAAAJgALiAAAAAAAAAAAAAAAAC1AAIAAAAAAAAAAAAAAAAAtQAAAAAAAAAAAAAAAAAAAKYAAAAAAAAAAAAAAAAAAACoAAAAAAAAAAAAAAAAAAAAigAAAAAAAAABAAAAAAAABNgAAAAAAAAAVwAAAAAAAC2AAAAAAAAAA+QAAAAAAAC6AAAAAAAAAAzAAAAAAAAF4QAAAAA6zMpCQAAAAAAADXAAAAAIxAADqhAAAAAAAG0AAAAAiQVwVhagAAAAAALVAAVgArBNMCtglQAAAAAtoABOMAlQWwAIgCsAAAAC2gAAAQAMAGoABqANAAAAHaAAAAAADAbTAALKCxAAAHwAAEqHijwAigAGoBwAAACLE2ztztxJQFsACIArAAAAPu7sYAAAA7BNMCtglQAAAAJUEAAAAACJBnBXBqAAAAAAAAAAAAAACLQAA5oQAAAAAAAAAAAAAABJzMtQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAoAAAAEAAAACAAAAABAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAhVoIAIxiAACQayAAmnYhAJ59MgCnhz4Aq5BRALGVXQC3nGYAuqJvAMGqeADHs4wA0cKeANrQtgDv7uIAAAAAAAAAAAAAAAAAAAAALVBQAAAAAADHvBAAAAAAArXiAAAAAAAHQGAAAAAAAAcwAAAAAAAABVAAAAAAAAAMIAAABjAAAKQAAGg7AAACsAAqQWgAAAwRoJKQtEAAwwAAiUCzgAWTvdmEcLGAAbtgAGSSeRAAAAAAB4mTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "favicon.svg": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDE2IDE2IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHhtbDpzcGFjZT0icHJlc2VydmUiIHhtbG5zOnNlcmlmPSJodHRwOi8vd3d3LnNlcmlmLmNvbS8iIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MjsiPgogICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMS4wMDE0OSwwLDAsMS4wMDE0OSwtMC4wNDkxNjYzLC0wLjA2MTg4KSI+CiAgICAgICAgPHBhdGggZD0iTTE2LjAyNSwxLjYzNkMxNi4wMjUsMC43NjcgMTUuMzIsMC4wNjIgMTQuNDUxLDAuMDYyTDEuNjI0LDAuMDYyQzAuNzU1LDAuMDYyIDAuMDQ5LDAuNzY3IDAuMDQ5LDEuNjM2TDAuMDQ5LDE0LjQ2M0MwLjA0OSwxNS4zMzIgMC43NTUsMTYuMDM4IDEuNjI0LDE2LjAzOEwxNC40NTEsMTYuMDM4QzE1LjMyLDE2LjAzOCAxNi4wMjUsMTUuMzMyIDE2LjAyNSwxNC40NjNMMTYuMDI1LDEuNjM2WiIgc3R5bGU9ImZpbGw6cmdiKDAsOTAsMTMzKTsiLz4KICAgIDwvZz4KICAgIDxnIGlkPSJtcnMiIHRyYW5zZm9ybT0ibWF0cml4KDAuMTA5OTUsLTAuMDE4MTI4NiwwLjAxODIyOTksMC4xMTA1NjQsMi45MjIsMC43NTM4NikiPgogICAgICAgIDxnIGlkPSJzYWtpbGFab29tZWQiIHRyYW5zZm9ybT0ibWF0cml4KDEuNDM1OTMsLTIuMjcwM2UtMTYsLTIuNzc1NTZlLTE3LDEuNDM1OTMsLTQwLjYyNTIsNTYuOTkzNykiPgogICAgICAgICAgICA8cGF0aCBkPSJNNTMuNzE0LC0xNS41ODlDNTIuMDYzLC0xNi4zNjEgNTAuMzM3LC0xNy4wNDMgNDguNTMsLTE3LjU5MkM0Ni4xODQsLTE4LjMwNiA0My4zNzEsLTE3LjkxMSA0MC44NTgsLTE4LjQ4OUwzOS4yNTMsLTE4LjQ4OUMzNy44NDYsLTE4LjkwMiAzNi42NywtMjAuMzk1IDM1LjUwNCwtMjEuMTY1QzMzLjA4MSwtMjIuNzc2IDMwLjY5NCwtMjMuOTA2IDI3LjgzMywtMjUuMDk2QzI2Ljc1NCwtMjUuNTQyIDIzLjg3MiwtMjYuNjEgMjIuODM2LC0yNS44MUMyMi4yMywtMjUuNjExIDIxLjk1OCwtMjUuMzUzIDIxLjc2NiwtMjQuNzQyQzIxLjE2MSwtMjMuODI4IDIxLjcxNiwtMjIuNDA5IDIyLjEyMiwtMjEuNTI0QzIzLjI3LC0xOS4wMzMgMjQuOTI2LC0xNy41MTEgMjYuNDA2LC0xNS40NDdDMjcuNzQyLC0xMy41ODggMjkuMzY5LC0xMS40NzEgMzAuMzMsLTkuMzc0QzMyLjM0MywtNC45OTggMzMuMjM2LC0wLjEzMyAzNS4xNDgsNC4xOTlDMzUuODgzLDUuODYzIDM2Ljk0Myw3Ljc2MyAzOC4wMDQsOS4xOTlDMzguODYxLDEwLjM3IDQwLjM5NCwxMS4yNDcgNDAuODU4LDEyLjc3NkM0MS44MywxNC4zMDEgMzkuNDI4LDE5LjUxOCAzOC44OTUsMjEuMTc0QzM2LjgzOSwyNy41NjQgMzcuMjc0LDM2LjUxMiAzOS42MDksNDIuMDcxQzQwLjUzMyw0NC4yNyA0MS40MDcsNDYuODMxIDQzLjg5Miw0Ny40M0M0NC4wNzUsNDcuMjg4IDQzLjkzNSw0Ny4zNjUgNDQuMjQ4LDQ3LjI1MUM0NC43NzgsNDIuOTczIDQ0Ljk2MiwzOC44NDkgNDYuMzksMzUuNDY0QzQ3LjI4MywzMy4zNDMgNDguOTgzLDMxLjg5NiA1MC4xMzgsMzAuMTAxQzUwLjk4MywzMC41OTUgNTAuOTc5LDMyLjAxOCA1MS4zODUsMzIuOTZDNTIuNDQxLDM1LjQwNyA1My41MjcsMzguMDYzIDU0Ljc3Niw0MC40NjRDNTcuMzk1LDQ1LjQ5NyA2Mi43MzQsNTEuNjk4IDYzLjI0Nyw1Mi4zODJDNjUuMjA5LDU0Ljk5NiA2MS43MjUsNTIuOTY3IDU4Ljk2OSw1MC45NjdDNTYuODA3LDQ5LjM5OSA1NS44NTksNDguMzgyIDU0LjE2NCw0Ni4yNTVDNTIuNjcyLDQ0LjM4MyA1MS41NjQsNDEuNzEyIDUwLjQ5NCwzOS41NjdMNTAuNDk0LDM5LjM5MkM1MC4wNDYsMzkuOTkxIDUwLjE4Niw0MC42NDQgNDkuOTU4LDQxLjUzMkM0OC45NDksNDUuNDY1IDQ5LjczNiw0OS45MjMgNDYuMjEyLDUxLjM2M0M0Mi4xOCw1My4wMDUgMzkuMjQ5LDQ4LjcxNiAzOC4wMDQsNDYuNzE3QzMzLjk0Nyw0MC4xOTkgMzIuODk1LDI5LjI2MSAzNS42ODUsMjAuNDZDMzYuMzAyLDE4LjUwMiAzNi4zNjQsMTYuMTA4IDM3LjQ2OCwxNC41NjJDMzcuMjg5LDEzLjE3NSAzNi4xNjIsMTIuNzggMzUuNTA0LDExLjg4M0MzNC40MzMsMTAuNDE4IDMzLjQ5OSw4LjY5MyAzMi42NSw3LjA1N0MzMC45NzMsMy44MjQgMjkuODQ1LDAuMDE4IDI4LjU0NywtMy40ODFDMjguMDE5LC00LjkgMjcuOTEzLC02LjI0NyAyNy4yOTgsLTcuNTkyQzI2LjM2LC05LjYzMSAyNC42ODIsLTExLjY2NyAyMy4zNzEsLTEzLjQ4NkMyMS41MDQsLTE2LjA3MSAxNi4yODMsLTIxLjA2IDE4LjM3NiwtMjYuMTdDMjEuNjkxLC0zNC4yNjUgMzMuMTcxLC0yOC4xMDcgMzcuNjQ3LC0yNS4yNzdDMzguNzcsLTI0LjU2MyA0MC4wMTcsLTIzLjA5NSA0MS4yMTUsLTIyLjU5N0M0My4xNzcsLTIyLjQ3NCA0NC41NDQsLTIyLjcwMSA0Ny4xMDMsLTIyLjIzN0M1MC4wNDUsLTIxLjcwNSA1Mi44MTEsLTIxLjA0OSA1NS4yNjYsLTE5Ljk1OEw1My43MTQsLTE1LjU4OVpNODcuNjYxLDEwLjY4NEM4OS4yMDYsMTMuNTg5IDkwLjA5NCwxOC45NzkgOTAuMTIsMjEuMDFDOTAuMTQ2LDIzLjEyIDg5LjUxNywyMy4yMjcgODguODE1LDIyLjI5Qzg2LjUwNCwxOS4yMDYgODUuMTQzLDE2LjMzNiA4NC4yMTgsMTQuNTYyQzgzLjg5LDEzLjkzMyA4My41NTQsMTMuMzA5IDgzLjIwOSwxMi42OTJMODcuNjYxLDEwLjY4NFpNNDQuMDcsLTEwLjgwNkM0NC45NzEsLTEwLjYwOCA0NS43LC05Ljc1OCA0Ni4yMTIsLTkuMDE5QzQ2LjU5NSwtOC40NjUgNDYuNzQ2LC04LjA0OSA0Ni44NDcsLTcuMDY4QzQ3LjA0NCwtNS4xNzcgNDYuNjAzLC00LjI2MSA0NS40OTgsLTMuNDgxQzQ1LjQzOCwtMy40MjQgNDUuMzc5LC0zLjM2MyA0NS4zMiwtMy4zMDZDNDQuNzI0LC00LjU1NCA0NC4yNDksLTUuODcgNDMuNTM1LC03LjA1NEM0Mi4yNTEsLTkuMTgzIDQyLjA4NywtOC44MTYgNDEuMDM2LC0xMC4yNzFDNDEuMDAyLC0xMC4zMiA0MC45MTgsLTEwLjI3MSA0MC44NTgsLTEwLjI3MUw0MC44NTgsLTEwLjQ0N0M0MS44MzgsLTEwLjY2MyA0Mi43NjIsLTEwLjgzIDQ0LjA3LC0xMC44MDZaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz4KICAgICAgICA8L2c+CiAgICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMC4wNTYyNjgsMC4wMDkyMjU5OCwtMC4wMDkyNzc1NCwwLjA1NTk1NTYsNDUuMDIzOSw5LjQ5MDExKSI+CiAgICAgICAgICAgIDxwYXRoIGQ9Ik01MTEuNzE1LDEuNTk1Qzc5My45NzYsMS41OTUgMTAyMy4xMywyMzAuNzU1IDEwMjMuMTMsNTEzLjAxNkMxMDIzLjEzLDc5NS4yNzcgNzkzLjk3NiwxMDI0LjQ0IDUxMS43MTUsMTAyNC40NEMyMjkuNDU0LDEwMjQuNDQgMC4yOTQsNzk1LjI3NyAwLjI5NCw1MTMuMDE2QzAuMjk0LDIzMC43NTUgMjI5LjQ1NCwxLjU5NSA1MTEuNzE1LDEuNTk1Wk01MTEuNzE1LDY1LjE5QzI2NC41NTMsNjUuMTkgNjMuODg5LDI2NS44NTQgNjMuODg5LDUxMy4wMTZDNjMuODg5LDc2MC4xNzggMjY0LjU1Myw5NjAuODQyIDUxMS43MTUsOTYwLjg0MkM3NTguODc3LDk2MC44NDIgOTU5LjU0MSw3NjAuMTc4IDk1OS41NDEsNTEzLjAxNkM5NTkuNTQxLDI2NS44NTQgNzU4Ljg3Nyw2NS4xOSA1MTEuNzE1LDY1LjE5WiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+CiAgICAgICAgPC9nPgogICAgICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDMuNjAxMTUsMC41OTA0NjMsLTAuNTkzNzYyLDMuNTgxMTYsNTQuMjYzNSwtMC40NDE5ODYpIj4KICAgICAgICAgICAgPGcgdHJhbnNmb3JtPSJtYXRyaXgoMS4xODU3OCwwLDAsMS4wNDIyNSwtMC43ODEwMDUsLTAuNDY2NTAzKSI+CiAgICAgICAgICAgICAgICA8cGF0aCBkPSJNNC41NjEsMTUuOTE2TDQuODc4LDE1LjkxNkw0Ljg3OCwxNS4wNkw0LjY2MywxNS4wNkM0LjMxOCwxNS4wNiA0LjA3LDE0Ljk3NSAzLjkyLDE0LjgwNkMzLjc2OSwxNC42MzcgMy42OTQsMTQuMzU2IDMuNjk0LDEzLjk2MkwzLjY5NCwxMi4zOTlDMy42OTQsMTIuMDMgMy41OTMsMTEuNzQzIDMuMzkyLDExLjU0QzMuMTksMTEuMzM3IDIuODkxLDExLjIxNCAyLjQ5NCwxMS4xNzNMMi40OTQsMTEuMDM1QzIuODkxLDEwLjk5NCAzLjE5LDEwLjg3MSAzLjM5MiwxMC42NjZDMy41OTMsMTAuNDYxIDMuNjk0LDEwLjE3NCAzLjY5NCw5LjgwNEwzLjY5NCw4LjI2MUMzLjY5NCw3Ljg2OCAzLjc2OSw3LjU4NyAzLjkyLDcuNDE4QzQuMDcsNy4yNDkgNC4zMTgsNy4xNjQgNC42NjMsNy4xNjRMNC44NzgsNy4xNjRMNC44NzgsNi4zMDhMNC41NjEsNi4zMDhDMy44OTcsNi4zMDggMy40MTEsNi40NTUgMy4xMDIsNi43NDlDMi43OTMsNy4wNDMgMi42MzgsNy41MDIgMi42MzgsOC4xMjhMMi42MzgsOS40NTZDMi42MzgsOS44NTYgMi41NTIsMTAuMTM1IDIuMzgyLDEwLjI5NEMyLjIxMSwxMC40NTMgMS45MSwxMC41MzMgMS40NzksMTAuNTMzTDEuNDc5LDExLjY3MUMxLjkxLDExLjY3NCAyLjIxMSwxMS43NTUgMi4zODIsMTEuOTE0QzIuNTUyLDEyLjA3MyAyLjYzOCwxMi4zNTEgMi42MzgsMTIuNzQ3TDIuNjM4LDE0LjA5MUMyLjYzOCwxNC43MTYgMi43OTMsMTUuMTc3IDMuMTAyLDE1LjQ3MkMzLjQxMSwxNS43NjggMy44OTcsMTUuOTE2IDQuNTYxLDE1LjkxNloiIHN0eWxlPSJmaWxsOndoaXRlO2ZpbGwtcnVsZTpub256ZXJvOyIvPgogICAgICAgICAgICA8L2c+CiAgICAgICAgICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEuMTc5MDMsMCwwLDEuMDQyMjUsLTEuMzcxOTYsLTAuNDY2NTAzKSI+CiAgICAgICAgICAgICAgICA8cGF0aCBkPSJNNy4zMzQsMTUuOTE2QzcuOTk3LDE1LjkxNiA4LjQ4MywxNS43NjggOC43OTMsMTUuNDcyQzkuMTAyLDE1LjE3NyA5LjI1NywxNC43MTYgOS4yNTcsMTQuMDkxTDkuMjU3LDEyLjc0N0M5LjI1NywxMi4zNTEgOS4zNDIsMTIuMDczIDkuNTEzLDExLjkxNEM5LjY4NCwxMS43NTUgOS45ODUsMTEuNjc0IDEwLjQxNSwxMS42NzFMMTAuNDE1LDEwLjUzM0M5Ljk4NSwxMC41MzMgOS42ODQsMTAuNDUzIDkuNTEzLDEwLjI5NEM5LjM0MiwxMC4xMzUgOS4yNTcsOS44NTYgOS4yNTcsOS40NTZMOS4yNTcsOC4xMjhDOS4yNTcsNy41MDIgOS4xMDIsNy4wNDMgOC43OTMsNi43NDlDOC40ODMsNi40NTUgNy45OTcsNi4zMDggNy4zMzQsNi4zMDhMNy4wMTYsNi4zMDhMNy4wMTYsNy4xNjRMNy4yMzIsNy4xNjRDNy41OCw3LjE2NCA3LjgyOSw3LjI0OSA3Ljk3OCw3LjQxOEM4LjEyNiw3LjU4NyA4LjIwMSw3Ljg2OCA4LjIwMSw4LjI2MUw4LjIwMSw5LjgwNEM4LjIwMSwxMC4xNzQgOC4zMDEsMTAuNDYxIDguNTAzLDEwLjY2NkM4LjcwNSwxMC44NzEgOS4wMDYsMTAuOTk0IDkuNDA1LDExLjAzNUw5LjQwNSwxMS4xNzNDOS4wMDYsMTEuMjE0IDguNzA1LDExLjMzNyA4LjUwMywxMS41NEM4LjMwMSwxMS43NDMgOC4yMDEsMTIuMDMgOC4yMDEsMTIuMzk5TDguMjAxLDEzLjk2MkM4LjIwMSwxNC4zNTYgOC4xMjUsMTQuNjM3IDcuOTc1LDE0LjgwNkM3LjgyNSwxNC45NzUgNy41NzcsMTUuMDYgNy4yMzIsMTUuMDZMNy4wMTYsMTUuMDZMNy4wMTYsMTUuOTE2TDcuMzM0LDE1LjkxNloiIHN0eWxlPSJmaWxsOndoaXRlO2ZpbGwtcnVsZTpub256ZXJvOyIvPgogICAgICAgICAgICA8L2c+CiAgICAgICAgPC9nPgogICAgPC9nPgo8L3N2Zz4K", "mariadb-seal.svg": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDMwMyAxOTYiIHZlcnNpb249IjEuMSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgeG1sbnM6c2VyaWY9Imh0dHA6Ly93d3cuc2VyaWYuY29tLyIgc3R5bGU9ImZpbGwtcnVsZTpldmVub2RkO2NsaXAtcnVsZTpldmVub2RkO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDoyOyI+CiAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDAsLTMuMzgpIj4KICAgICAgICA8cGF0aCBkPSJNMjk5LjIsNC4zNEMyOTguMzgyLDMuNjYxIDI5Ny4zNDMsMy4zMDUgMjk2LjI4LDMuMzRDMjkzLjM4LDMuMzQgMjg5LjYzLDUuMzQgMjg3LjYyLDYuMzRDMjg3LjI3LDYuNTMgMjg3LDYuNjcgMjg2LjgxLDYuNzVDMjgzLjQzNiw4LjQxMSAyNzkuNzU2LDkuMzU3IDI3Niw5LjUzQzI3Mi4xNCw5LjY1IDI2OC44MSw5Ljg4IDI2NC41LDEwLjMzQzIzOC44MiwxMyAyMjcuNDMsMzIuNiAyMTYuNDIsNTEuNkMyMTAuNDIsNjEuOTIgMjA0LjI0LDcyLjYgMTk1Ljc1LDgwLjg4QzE5My45OTQsODIuNTgzIDE5Mi4xMjcsODQuMTY2IDE5MC4xNiw4NS42MkMxODEuMzgsOTIuMTYgMTcwLjM1LDk2Ljc5IDE2MS43MywxMDAuMDlDMTUzLjQ3LDEwMy4yNCAxNDQuNDUsMTA2LjA5IDEzNS43MywxMDguODNDMTI3LjczLDExMS4zNCAxMjAuMjIsMTEzLjcyIDExMy4yOSwxMTYuMjlDMTEwLjE2LDExNy40NSAxMDcuNSwxMTguMjkgMTA1LjE2LDExOS4xMkM5OC44NSwxMjEuMjIgOTQuMjksMTIyLjc0IDg3LjY1LDEyNy4yOUM4NS4wNiwxMjkuMDYgODIuNDYsMTMwLjk4IDgwLjY1LDEzMi40M0M3NS4zODQsMTM2LjY0NCA3MC43MjQsMTQxLjU2NCA2Ni44LDE0Ny4wNUM2My40MzUsMTUyLjExMSA1OS41NDcsMTU2LjgwMyA1NS4yLDE2MS4wNUM1My44LDE2Mi40MiA1MS4zMSwxNjMuMDUgNDcuNTgsMTYzLjA1QzQzLjIxLDE2My4wNSAzNy45MSwxNjIuMTUgMzIuMywxNjEuMkMyNi41MywxNjAuMiAyMC41NSwxNTkuMiAxNS40MywxNTkuMkMxMS4yNiwxNTkuMiA4LjA4LDE1OS44NyA1LjY5LDE2MS4yNkM1LjY5LDE2MS4yNiAxLjY5LDE2My42IC0wLDE2Ni42MkwxLjY2LDE2Ny4zN0M0LjIzLDE2OC43NTUgNi42MTYsMTcwLjQ1OCA4Ljc2LDE3Mi40NEMxMC45ODIsMTc0LjQ5OCAxMy40NTksMTc2LjI2MyAxNi4xMywxNzcuNjlDMTYuOTgzLDE3OC4wMyAxNy43NTcsMTc4LjU0NCAxOC40LDE3OS4yQzE3LjcsMTgwLjIgMTYuNjcsMTgxLjU1IDE1LjYsMTgyLjk2QzkuNjgsMTkwLjcgNi4yMywxOTUuNTkgOC4yMSwxOTguMjVDOS4xMzIsMTk4Ljc0IDEwLjE2NiwxOTguOTg1IDExLjIxLDE5OC45NkMyNC4xMSwxOTguOTYgMzEuMDMsMTk1LjYgMzkuOCwxOTEuMzZDNDIuMzQsMTkwLjEzIDQ0Ljk2LDE4OC44NiA0Ny45NiwxODcuNTZDNTMuMDgsMTg1LjM0IDU4LjYsMTgxLjggNjQuNDQsMTc4LjA0QzcyLjE4LDE3My4wNCA4MC4xOCwxNjcuOTMgODcuOTMsMTY1LjQ0Qzk0LjMxNSwxNjMuNDk0IDEwMC45NjYsMTYyLjU2IDEwNy42NCwxNjIuNjdDMTE1Ljg3LDE2Mi42NyAxMjQuNDcsMTYzLjc3IDEzMi43OSwxNjQuODRDMTM5LDE2NS42MyAxNDUuNDIsMTY2LjQ1IDE1MS43MiwxNjYuODRDMTU0LjE3LDE2Ni45OSAxNTYuNDQsMTY3LjA2IDE1OC42NCwxNjcuMDZDMTYxLjU5LDE2Ny4wNzIgMTY0LjUzOCwxNjYuOTE1IDE2Ny40NywxNjYuNTlMMTY4LjE3LDE2Ni4zNUMxNzIuNTksMTYzLjYzIDE3NC42NiwxNTcuOCAxNzYuNjcsMTUyLjE3QzE3Ny45NiwxNDguNTQgMTc5LjA0LDE0NS4yOCAxODAuNzIsMTQzLjE3QzE4MC44MjYsMTQzLjA2OCAxODAuOTM5LDE0Mi45NzQgMTgxLjA2LDE0Mi44OUMxODEuMjI2LDE0Mi43OTcgMTgxLjQzNywxNDIuODM1IDE4MS41NiwxNDIuOThDMTgxLjY4MywxNDMuMTI1IDE4MS41NiwxNDMuMDMgMTgxLjU2LDE0My4xM0MxODAuNSwxNjUuMTkgMTcxLjY2LDE3OS4xOCAxNjIuNjgsMTkxLjYyTDE1Ni42OCwxOTguMDVDMTU2LjY4LDE5OC4wNSAxNjUuMDcsMTk4LjA1IDE2OS44NCwxOTYuMjFDMTg3LjI2LDE5MSAyMDAuNDIsMTc5LjUyIDIwOS45OSwxNjEuMjFDMjEyLjM0OSwxNTYuNTExIDIxNC40NTksMTUxLjY5MSAyMTYuMzEsMTQ2Ljc3QzIxNi40NywxNDYuMzYgMjE3Ljk5LDE0NS42IDIxNy44NCwxNDcuNzJDMjE3Ljg0LDE0OC4zNSAyMTcuNzUsMTQ5LjA0IDIxNy43LDE0OS43MkMyMTcuNywxNTAuMTUgMjE3LjY0LDE1MC41OSAyMTcuNjIsMTUxLjAzQzIxNy4zNywxNTQuMDMgMjE2LjYyLDE2MC42IDIxNi42MiwxNjAuNkwyMjIsMTU3LjcyQzIzNSwxNDkuNSAyNDUsMTMyLjk4IDI1Mi41NiwxMDcuMjVDMjU1LjcyLDk2LjUzIDI1OC4wMyw4NS44OCAyNjAuMDcsNzYuNDlDMjYyLjUxLDY1LjI2IDI2NC42Miw1NS41NiAyNjcuMDcsNTEuODFDMjcwLjg1LDQ1LjkyIDI3Ni42Miw0MS45NCAyODIuMiwzOC4wOEwyODQuNDgsMzYuNUMyOTEuNDgsMzEuNTcgMjk4LjQ4LDI1Ljg4IDMwMC4wMiwxNS4yOEwzMDAuMDIsMTUuMDRDMzAxLjIyLDcuMjkgMzAwLjI3LDUuMjcgMjk5LjIsNC4zNFoiIHN0eWxlPSJmaWxsOnJnYigwLDUzLDY5KTtmaWxsLXJ1bGU6bm9uemVybzsiLz4KICAgIDwvZz4KPC9zdmc+Cg==", "standalone-preact.js": "Ly8gcHJlYWN0QDEwLjIzLjEgKGgsIHJlbmRlciwgQ29tcG9uZW50LCBjcmVhdGVSZWYpLCBDb3B5cmlnaHQgKGMpIDIwMjQsIDIwMjUsIE9yYWNsZSBhbmQvb3IgaXRzIGFmZmlsaWF0ZXMuCnZhciBILHYsWSx1ZSx4LEosWixSLEIsJCxBLGZlLE09e30sZWU9W10sY2U9L2FjaXR8ZXgoPzpzfGd8bnxwfCQpfHJwaHxncmlkfG93c3xtbmN8bnR3fGluZVtjaF18em9vfF5vcmR8aXRlcmEvaSxqPUFycmF5LmlzQXJyYXk7ZnVuY3Rpb24gdyhfLGUpe2Zvcih2YXIgdCBpbiBlKV9bdF09ZVt0XTtyZXR1cm4gX31mdW5jdGlvbiBfZShfKXt2YXIgZT1fLnBhcmVudE5vZGU7ZSYmZS5yZW1vdmVDaGlsZChfKX1mdW5jdGlvbiBWKF8sZSx0KXt2YXIgbyxpLG4sbD17fTtmb3IobiBpbiBlKW49PSJrZXkiP289ZVtuXTpuPT0icmVmIj9pPWVbbl06bFtuXT1lW25dO2lmKGFyZ3VtZW50cy5sZW5ndGg+MiYmKGwuY2hpbGRyZW49YXJndW1lbnRzLmxlbmd0aD4zP0guY2FsbChhcmd1bWVudHMsMik6dCksdHlwZW9mIF89PSJmdW5jdGlvbiImJl8uZGVmYXVsdFByb3BzIT1udWxsKWZvcihuIGluIF8uZGVmYXVsdFByb3BzKWxbbl09PT12b2lkIDAmJihsW25dPV8uZGVmYXVsdFByb3BzW25dKTtyZXR1cm4gVyhfLGwsbyxpLG51bGwpfWZ1bmN0aW9uIFcoXyxlLHQsbyxpKXt2YXIgbj17dHlwZTpfLHByb3BzOmUsa2V5OnQscmVmOm8sX19rOm51bGwsX186bnVsbCxfX2I6MCxfX2U6bnVsbCxfX2Q6dm9pZCAwLF9fYzpudWxsLGNvbnN0cnVjdG9yOnZvaWQgMCxfX3Y6aT8/KytZLF9faTotMSxfX3U6MH07cmV0dXJuIGk9PW51bGwmJnYudm5vZGUhPW51bGwmJnYudm5vZGUobiksbn1mdW5jdGlvbiBwZSgpe3JldHVybntjdXJyZW50Om51bGx9fWZ1bmN0aW9uIEkoXyl7cmV0dXJuIF8uY2hpbGRyZW59ZnVuY3Rpb24gVShfLGUpe3RoaXMucHJvcHM9Xyx0aGlzLmNvbnRleHQ9ZX1mdW5jdGlvbiBDKF8sZSl7aWYoZT09bnVsbClyZXR1cm4gXy5fXz9DKF8uX18sXy5fX2krMSk6bnVsbDtmb3IodmFyIHQ7ZTxfLl9fay5sZW5ndGg7ZSsrKWlmKCh0PV8uX19rW2VdKSE9bnVsbCYmdC5fX2UhPW51bGwpcmV0dXJuIHQuX19lO3JldHVybiB0eXBlb2YgXy50eXBlPT0iZnVuY3Rpb24iP0MoXyk6bnVsbH1mdW5jdGlvbiB0ZShfKXt2YXIgZSx0O2lmKChfPV8uX18pIT1udWxsJiZfLl9fYyE9bnVsbCl7Zm9yKF8uX19lPV8uX19jLmJhc2U9bnVsbCxlPTA7ZTxfLl9fay5sZW5ndGg7ZSsrKWlmKCh0PV8uX19rW2VdKSE9bnVsbCYmdC5fX2UhPW51bGwpe18uX19lPV8uX19jLmJhc2U9dC5fX2U7YnJlYWt9cmV0dXJuIHRlKF8pfX1mdW5jdGlvbiBLKF8peyghXy5fX2QmJihfLl9fZD0hMCkmJngucHVzaChfKSYmIUYuX19yKyt8fEohPT12LmRlYm91bmNlUmVuZGVyaW5nKSYmKChKPXYuZGVib3VuY2VSZW5kZXJpbmcpfHxaKShGKX1mdW5jdGlvbiBGKCl7dmFyIF8sZSx0LG8saSxuLGwscztmb3IoeC5zb3J0KFIpO189eC5zaGlmdCgpOylfLl9fZCYmKGU9eC5sZW5ndGgsbz12b2lkIDAsbj0oaT0odD1fKS5fX3YpLl9fZSxsPVtdLHM9W10sdC5fX1AmJigobz13KHt9LGkpKS5fX3Y9aS5fX3YrMSx2LnZub2RlJiZ2LnZub2RlKG8pLHoodC5fX1AsbyxpLHQuX19uLHQuX19QLm5hbWVzcGFjZVVSSSwzMiZpLl9fdT9bbl06bnVsbCxsLG4/P0MoaSksISEoMzImaS5fX3UpLHMpLG8uX192PWkuX192LG8uX18uX19rW28uX19pXT1vLHJlKGwsbyxzKSxvLl9fZSE9biYmdGUobykpLHgubGVuZ3RoPmUmJnguc29ydChSKSk7Ri5fX3I9MH1mdW5jdGlvbiBuZShfLGUsdCxvLGksbixsLHMsZix1LHApe3ZhciByLGEsYyx5LGcsbT1vJiZvLl9fa3x8ZWUsZD1lLmxlbmd0aDtmb3IodC5fX2Q9ZixhZSh0LGUsbSksZj10Ll9fZCxyPTA7cjxkO3IrKykoYz10Ll9fa1tyXSkhPW51bGwmJnR5cGVvZiBjIT0iYm9vbGVhbiImJnR5cGVvZiBjIT0iZnVuY3Rpb24iJiYoYT1jLl9faT09PS0xP006bVtjLl9faV18fE0sYy5fX2k9cix6KF8sYyxhLGksbixsLHMsZix1LHApLHk9Yy5fX2UsYy5yZWYmJmEucmVmIT1jLnJlZiYmKGEucmVmJiZxKGEucmVmLG51bGwsYykscC5wdXNoKGMucmVmLGMuX19jfHx5LGMpKSxnPT1udWxsJiZ5IT1udWxsJiYoZz15KSw2NTUzNiZjLl9fdXx8YS5fX2s9PT1jLl9faz9mPW9lKGMsZixfKTp0eXBlb2YgYy50eXBlPT0iZnVuY3Rpb24iJiZjLl9fZCE9PXZvaWQgMD9mPWMuX19kOnkmJihmPXkubmV4dFNpYmxpbmcpLGMuX19kPXZvaWQgMCxjLl9fdSY9LTE5NjYwOSk7dC5fX2Q9Zix0Ll9fZT1nfWZ1bmN0aW9uIGFlKF8sZSx0KXt2YXIgbyxpLG4sbCxzLGY9ZS5sZW5ndGgsdT10Lmxlbmd0aCxwPXUscj0wO2ZvcihfLl9faz1bXSxvPTA7bzxmO28rKylsPW8rciwoaT1fLl9fa1tvXT0oaT1lW29dKT09bnVsbHx8dHlwZW9mIGk9PSJib29sZWFuInx8dHlwZW9mIGk9PSJmdW5jdGlvbiI/bnVsbDp0eXBlb2YgaT09InN0cmluZyJ8fHR5cGVvZiBpPT0ibnVtYmVyInx8dHlwZW9mIGk9PSJiaWdpbnQifHxpLmNvbnN0cnVjdG9yPT1TdHJpbmc/VyhudWxsLGksbnVsbCxudWxsLG51bGwpOmooaSk/VyhJLHtjaGlsZHJlbjppfSxudWxsLG51bGwsbnVsbCk6aS5jb25zdHJ1Y3Rvcj09PXZvaWQgMCYmaS5fX2I+MD9XKGkudHlwZSxpLnByb3BzLGkua2V5LGkucmVmP2kucmVmOm51bGwsaS5fX3YpOmkpIT1udWxsPyhpLl9fPV8saS5fX2I9Xy5fX2IrMSxzPWRlKGksdCxsLHApLGkuX19pPXMsbj1udWxsLHMhPT0tMSYmKHAtLSwobj10W3NdKSYmKG4uX191fD0xMzEwNzIpKSxuPT1udWxsfHxuLl9fdj09PW51bGw/KHM9PS0xJiZyLS0sdHlwZW9mIGkudHlwZSE9ImZ1bmN0aW9uIiYmKGkuX191fD02NTUzNikpOnMhPT1sJiYocz09bC0xP3I9cy1sOnM9PWwrMT9yKys6cz5sP3A+Zi1sP3IrPXMtbDpyLS06czxsJiZyKysscyE9PW8rciYmKGkuX191fD02NTUzNikpKToobj10W2xdKSYmbi5rZXk9PW51bGwmJm4uX19lJiYhKDEzMTA3MiZuLl9fdSkmJihuLl9fZT09Xy5fX2QmJihfLl9fZD1DKG4pKSxPKG4sbiwhMSksdFtsXT1udWxsLHAtLSk7aWYocClmb3Iobz0wO288dTtvKyspKG49dFtvXSkhPW51bGwmJiEoMTMxMDcyJm4uX191KSYmKG4uX19lPT1fLl9fZCYmKF8uX19kPUMobikpLE8obixuKSl9ZnVuY3Rpb24gb2UoXyxlLHQpe3ZhciBvLGk7aWYodHlwZW9mIF8udHlwZT09ImZ1bmN0aW9uIil7Zm9yKG89Xy5fX2ssaT0wO28mJmk8by5sZW5ndGg7aSsrKW9baV0mJihvW2ldLl9fPV8sZT1vZShvW2ldLGUsdCkpO3JldHVybiBlfV8uX19lIT1lJiYoZSYmXy50eXBlJiYhdC5jb250YWlucyhlKSYmKGU9QyhfKSksdC5pbnNlcnRCZWZvcmUoXy5fX2UsZXx8bnVsbCksZT1fLl9fZSk7ZG8gZT1lJiZlLm5leHRTaWJsaW5nO3doaWxlKGUhPW51bGwmJmUubm9kZVR5cGU9PT04KTtyZXR1cm4gZX1mdW5jdGlvbiBkZShfLGUsdCxvKXt2YXIgaT1fLmtleSxuPV8udHlwZSxsPXQtMSxzPXQrMSxmPWVbdF07aWYoZj09PW51bGx8fGYmJmk9PWYua2V5JiZuPT09Zi50eXBlJiYhKDEzMTA3MiZmLl9fdSkpcmV0dXJuIHQ7aWYobz4oZiE9bnVsbCYmISgxMzEwNzImZi5fX3UpPzE6MCkpZm9yKDtsPj0wfHxzPGUubGVuZ3RoOyl7aWYobD49MCl7aWYoKGY9ZVtsXSkmJiEoMTMxMDcyJmYuX191KSYmaT09Zi5rZXkmJm49PT1mLnR5cGUpcmV0dXJuIGw7bC0tfWlmKHM8ZS5sZW5ndGgpe2lmKChmPWVbc10pJiYhKDEzMTA3MiZmLl9fdSkmJmk9PWYua2V5JiZuPT09Zi50eXBlKXJldHVybiBzO3MrK319cmV0dXJuLTF9ZnVuY3Rpb24gUShfLGUsdCl7ZVswXT09PSItIj9fLnNldFByb3BlcnR5KGUsdD8/IiIpOl9bZV09dD09bnVsbD8iIjp0eXBlb2YgdCE9Im51bWJlciJ8fGNlLnRlc3QoZSk/dDp0KyJweCJ9ZnVuY3Rpb24gTChfLGUsdCxvLGkpe3ZhciBuO2U6aWYoZT09PSJzdHlsZSIpaWYodHlwZW9mIHQ9PSJzdHJpbmciKV8uc3R5bGUuY3NzVGV4dD10O2Vsc2V7aWYodHlwZW9mIG89PSJzdHJpbmciJiYoXy5zdHlsZS5jc3NUZXh0PW89IiIpLG8pZm9yKGUgaW4gbyl0JiZlIGluIHR8fFEoXy5zdHlsZSxlLCIiKTtpZih0KWZvcihlIGluIHQpbyYmdFtlXT09PW9bZV18fFEoXy5zdHlsZSxlLHRbZV0pfWVsc2UgaWYoZVswXT09PSJvIiYmZVsxXT09PSJuIiluPWUhPT0oZT1lLnJlcGxhY2UoLyhQb2ludGVyQ2FwdHVyZSkkfENhcHR1cmUkL2ksIiQxIikpLGU9ZS50b0xvd2VyQ2FzZSgpaW4gX3x8ZT09PSJvbkZvY3VzT3V0Inx8ZT09PSJvbkZvY3VzSW4iP2UudG9Mb3dlckNhc2UoKS5zbGljZSgyKTplLnNsaWNlKDIpLF8ubHx8KF8ubD17fSksXy5sW2Urbl09dCx0P28/dC51PW8udToodC51PUIsXy5hZGRFdmVudExpc3RlbmVyKGUsbj9BOiQsbikpOl8ucmVtb3ZlRXZlbnRMaXN0ZW5lcihlLG4/QTokLG4pO2Vsc2V7aWYoaT09Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIillPWUucmVwbGFjZSgveGxpbmsoSHw6aCkvLCJoIikucmVwbGFjZSgvc05hbWUkLywicyIpO2Vsc2UgaWYoZSE9IndpZHRoIiYmZSE9ImhlaWdodCImJmUhPSJocmVmIiYmZSE9Imxpc3QiJiZlIT0iZm9ybSImJmUhPSJ0YWJJbmRleCImJmUhPSJkb3dubG9hZCImJmUhPSJyb3dTcGFuIiYmZSE9ImNvbFNwYW4iJiZlIT0icm9sZSImJmUhPSJwb3BvdmVyIiYmZSBpbiBfKXRyeXtfW2VdPXQ/PyIiO2JyZWFrIGV9Y2F0Y2h7fXR5cGVvZiB0PT0iZnVuY3Rpb24ifHwodD09bnVsbHx8dD09PSExJiZlWzRdIT09Ii0iP18ucmVtb3ZlQXR0cmlidXRlKGUpOl8uc2V0QXR0cmlidXRlKGUsZT09InBvcG92ZXIiJiZ0PT0xPyIiOnQpKX19ZnVuY3Rpb24gWChfKXtyZXR1cm4gZnVuY3Rpb24oZSl7aWYodGhpcy5sKXt2YXIgdD10aGlzLmxbZS50eXBlK19dO2lmKGUudD09bnVsbCllLnQ9QisrO2Vsc2UgaWYoZS50PHQudSlyZXR1cm47cmV0dXJuIHQodi5ldmVudD92LmV2ZW50KGUpOmUpfX19ZnVuY3Rpb24geihfLGUsdCxvLGksbixsLHMsZix1KXt2YXIgcCxyLGEsYyx5LGcsbSxkLGgsUCxiLFQsUyxHLEQsTixrPWUudHlwZTtpZihlLmNvbnN0cnVjdG9yIT09dm9pZCAwKXJldHVybiBudWxsOzEyOCZ0Ll9fdSYmKGY9ISEoMzImdC5fX3UpLG49W3M9ZS5fX2U9dC5fX2VdKSwocD12Ll9fYikmJnAoZSk7ZTppZih0eXBlb2Ygaz09ImZ1bmN0aW9uIil0cnl7aWYoZD1lLnByb3BzLGg9InByb3RvdHlwZSJpbiBrJiZrLnByb3RvdHlwZS5yZW5kZXIsUD0ocD1rLmNvbnRleHRUeXBlKSYmb1twLl9fY10sYj1wP1A/UC5wcm9wcy52YWx1ZTpwLl9fOm8sdC5fX2M/bT0ocj1lLl9fYz10Ll9fYykuX189ci5fX0U6KGg/ZS5fX2M9cj1uZXcgayhkLGIpOihlLl9fYz1yPW5ldyBVKGQsYiksci5jb25zdHJ1Y3Rvcj1rLHIucmVuZGVyPXZlKSxQJiZQLnN1YihyKSxyLnByb3BzPWQsci5zdGF0ZXx8KHIuc3RhdGU9e30pLHIuY29udGV4dD1iLHIuX19uPW8sYT1yLl9fZD0hMCxyLl9faD1bXSxyLl9zYj1bXSksaCYmci5fX3M9PW51bGwmJihyLl9fcz1yLnN0YXRlKSxoJiZrLmdldERlcml2ZWRTdGF0ZUZyb21Qcm9wcyE9bnVsbCYmKHIuX19zPT1yLnN0YXRlJiYoci5fX3M9dyh7fSxyLl9fcykpLHcoci5fX3Msay5nZXREZXJpdmVkU3RhdGVGcm9tUHJvcHMoZCxyLl9fcykpKSxjPXIucHJvcHMseT1yLnN0YXRlLHIuX192PWUsYSloJiZrLmdldERlcml2ZWRTdGF0ZUZyb21Qcm9wcz09bnVsbCYmci5jb21wb25lbnRXaWxsTW91bnQhPW51bGwmJnIuY29tcG9uZW50V2lsbE1vdW50KCksaCYmci5jb21wb25lbnREaWRNb3VudCE9bnVsbCYmci5fX2gucHVzaChyLmNvbXBvbmVudERpZE1vdW50KTtlbHNle2lmKGgmJmsuZ2V0RGVyaXZlZFN0YXRlRnJvbVByb3BzPT1udWxsJiZkIT09YyYmci5jb21wb25lbnRXaWxsUmVjZWl2ZVByb3BzIT1udWxsJiZyLmNvbXBvbmVudFdpbGxSZWNlaXZlUHJvcHMoZCxiKSwhci5fX2UmJihyLnNob3VsZENvbXBvbmVudFVwZGF0ZSE9bnVsbCYmci5zaG91bGRDb21wb25lbnRVcGRhdGUoZCxyLl9fcyxiKT09PSExfHxlLl9fdj09PXQuX192KSl7Zm9yKGUuX192IT09dC5fX3YmJihyLnByb3BzPWQsci5zdGF0ZT1yLl9fcyxyLl9fZD0hMSksZS5fX2U9dC5fX2UsZS5fX2s9dC5fX2ssZS5fX2suZm9yRWFjaChmdW5jdGlvbihFKXtFJiYoRS5fXz1lKX0pLFQ9MDtUPHIuX3NiLmxlbmd0aDtUKyspci5fX2gucHVzaChyLl9zYltUXSk7ci5fc2I9W10sci5fX2gubGVuZ3RoJiZsLnB1c2gocik7YnJlYWsgZX1yLmNvbXBvbmVudFdpbGxVcGRhdGUhPW51bGwmJnIuY29tcG9uZW50V2lsbFVwZGF0ZShkLHIuX19zLGIpLGgmJnIuY29tcG9uZW50RGlkVXBkYXRlIT1udWxsJiZyLl9faC5wdXNoKGZ1bmN0aW9uKCl7ci5jb21wb25lbnREaWRVcGRhdGUoYyx5LGcpfSl9aWYoci5jb250ZXh0PWIsci5wcm9wcz1kLHIuX19QPV8sci5fX2U9ITEsUz12Ll9fcixHPTAsaCl7Zm9yKHIuc3RhdGU9ci5fX3Msci5fX2Q9ITEsUyYmUyhlKSxwPXIucmVuZGVyKHIucHJvcHMsci5zdGF0ZSxyLmNvbnRleHQpLEQ9MDtEPHIuX3NiLmxlbmd0aDtEKyspci5fX2gucHVzaChyLl9zYltEXSk7ci5fc2I9W119ZWxzZSBkbyByLl9fZD0hMSxTJiZTKGUpLHA9ci5yZW5kZXIoci5wcm9wcyxyLnN0YXRlLHIuY29udGV4dCksci5zdGF0ZT1yLl9fczt3aGlsZShyLl9fZCYmKytHPDI1KTtyLnN0YXRlPXIuX19zLHIuZ2V0Q2hpbGRDb250ZXh0IT1udWxsJiYobz13KHcoe30sbyksci5nZXRDaGlsZENvbnRleHQoKSkpLGgmJiFhJiZyLmdldFNuYXBzaG90QmVmb3JlVXBkYXRlIT1udWxsJiYoZz1yLmdldFNuYXBzaG90QmVmb3JlVXBkYXRlKGMseSkpLG5lKF8saihOPXAhPW51bGwmJnAudHlwZT09PUkmJnAua2V5PT1udWxsP3AucHJvcHMuY2hpbGRyZW46cCk/TjpbTl0sZSx0LG8saSxuLGwscyxmLHUpLHIuYmFzZT1lLl9fZSxlLl9fdSY9LTE2MSxyLl9faC5sZW5ndGgmJmwucHVzaChyKSxtJiYoci5fX0U9ci5fXz1udWxsKX1jYXRjaChFKXtpZihlLl9fdj1udWxsLGZ8fG4hPW51bGwpe2ZvcihlLl9fdXw9Zj8xNjA6MzI7cyYmcy5ub2RlVHlwZT09PTgmJnMubmV4dFNpYmxpbmc7KXM9cy5uZXh0U2libGluZztuW24uaW5kZXhPZihzKV09bnVsbCxlLl9fZT1zfWVsc2UgZS5fX2U9dC5fX2UsZS5fX2s9dC5fX2s7di5fX2UoRSxlLHQpfWVsc2Ugbj09bnVsbCYmZS5fX3Y9PT10Ll9fdj8oZS5fX2s9dC5fX2ssZS5fX2U9dC5fX2UpOmUuX19lPWhlKHQuX19lLGUsdCxvLGksbixsLGYsdSk7KHA9di5kaWZmZWQpJiZwKGUpfWZ1bmN0aW9uIHJlKF8sZSx0KXtlLl9fZD12b2lkIDA7Zm9yKHZhciBvPTA7bzx0Lmxlbmd0aDtvKyspcSh0W29dLHRbKytvXSx0Wysrb10pO3YuX19jJiZ2Ll9fYyhlLF8pLF8uc29tZShmdW5jdGlvbihpKXt0cnl7Xz1pLl9faCxpLl9faD1bXSxfLnNvbWUoZnVuY3Rpb24obil7bi5jYWxsKGkpfSl9Y2F0Y2gobil7di5fX2UobixpLl9fdil9fSl9ZnVuY3Rpb24gaGUoXyxlLHQsbyxpLG4sbCxzLGYpe3ZhciB1LHAscixhLGMseSxnLG09dC5wcm9wcyxkPWUucHJvcHMsaD1lLnR5cGU7aWYoaD09PSJzdmciP2k9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIjpoPT09Im1hdGgiP2k9Imh0dHA6Ly93d3cudzMub3JnLzE5OTgvTWF0aC9NYXRoTUwiOml8fChpPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hodG1sIiksbiE9bnVsbCl7Zm9yKHU9MDt1PG4ubGVuZ3RoO3UrKylpZigoYz1uW3VdKSYmInNldEF0dHJpYnV0ZSJpbiBjPT0hIWgmJihoP2MubG9jYWxOYW1lPT09aDpjLm5vZGVUeXBlPT09Mykpe189YyxuW3VdPW51bGw7YnJlYWt9fWlmKF89PW51bGwpe2lmKGg9PT1udWxsKXJldHVybiBkb2N1bWVudC5jcmVhdGVUZXh0Tm9kZShkKTtfPWRvY3VtZW50LmNyZWF0ZUVsZW1lbnROUyhpLGgsZC5pcyYmZCksbj1udWxsLHM9ITF9aWYoaD09PW51bGwpbT09PWR8fHMmJl8uZGF0YT09PWR8fChfLmRhdGE9ZCk7ZWxzZXtpZihuPW4mJkguY2FsbChfLmNoaWxkTm9kZXMpLG09dC5wcm9wc3x8TSwhcyYmbiE9bnVsbClmb3IobT17fSx1PTA7dTxfLmF0dHJpYnV0ZXMubGVuZ3RoO3UrKyltWyhjPV8uYXR0cmlidXRlc1t1XSkubmFtZV09Yy52YWx1ZTtmb3IodSBpbiBtKWlmKGM9bVt1XSx1IT0iY2hpbGRyZW4iKXtpZih1PT0iZGFuZ2Vyb3VzbHlTZXRJbm5lckhUTUwiKXI9YztlbHNlIGlmKHUhPT0ia2V5IiYmISh1IGluIGQpKXtpZih1PT0idmFsdWUiJiYiZGVmYXVsdFZhbHVlImluIGR8fHU9PSJjaGVja2VkIiYmImRlZmF1bHRDaGVja2VkImluIGQpY29udGludWU7TChfLHUsbnVsbCxjLGkpfX1mb3IodSBpbiBkKWM9ZFt1XSx1PT0iY2hpbGRyZW4iP2E9Yzp1PT0iZGFuZ2Vyb3VzbHlTZXRJbm5lckhUTUwiP3A9Yzp1PT0idmFsdWUiP3k9Yzp1PT0iY2hlY2tlZCI/Zz1jOnU9PT0ia2V5Inx8cyYmdHlwZW9mIGMhPSJmdW5jdGlvbiJ8fG1bdV09PT1jfHxMKF8sdSxjLG1bdV0saSk7aWYocClzfHxyJiYocC5fX2h0bWw9PT1yLl9faHRtbHx8cC5fX2h0bWw9PT1fLmlubmVySFRNTCl8fChfLmlubmVySFRNTD1wLl9faHRtbCksZS5fX2s9W107ZWxzZSBpZihyJiYoXy5pbm5lckhUTUw9IiIpLG5lKF8saihhKT9hOlthXSxlLHQsbyxoPT09ImZvcmVpZ25PYmplY3QiPyJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hodG1sIjppLG4sbCxuP25bMF06dC5fX2smJkModCwwKSxzLGYpLG4hPW51bGwpZm9yKHU9bi5sZW5ndGg7dS0tOyluW3VdIT1udWxsJiZfZShuW3VdKTtzfHwodT0idmFsdWUiLHkhPT12b2lkIDAmJih5IT09X1t1XXx8aD09PSJwcm9ncmVzcyImJiF5fHxoPT09Im9wdGlvbiImJnkhPT1tW3VdKSYmTChfLHUseSxtW3VdLGkpLHU9ImNoZWNrZWQiLGchPT12b2lkIDAmJmchPT1fW3VdJiZMKF8sdSxnLG1bdV0saSkpfXJldHVybiBffWZ1bmN0aW9uIHEoXyxlLHQpe3RyeXtpZih0eXBlb2YgXz09ImZ1bmN0aW9uIil7dmFyIG89dHlwZW9mIF8uX191PT0iZnVuY3Rpb24iO28mJl8uX191KCksbyYmZT09bnVsbHx8KF8uX191PV8oZSkpfWVsc2UgXy5jdXJyZW50PWV9Y2F0Y2goaSl7di5fX2UoaSx0KX19ZnVuY3Rpb24gTyhfLGUsdCl7dmFyIG8saTtpZih2LnVubW91bnQmJnYudW5tb3VudChfKSwobz1fLnJlZikmJihvLmN1cnJlbnQmJm8uY3VycmVudCE9PV8uX19lfHxxKG8sbnVsbCxlKSksKG89Xy5fX2MpIT1udWxsKXtpZihvLmNvbXBvbmVudFdpbGxVbm1vdW50KXRyeXtvLmNvbXBvbmVudFdpbGxVbm1vdW50KCl9Y2F0Y2gobil7di5fX2UobixlKX1vLmJhc2U9by5fX1A9bnVsbH1pZihvPV8uX19rKWZvcihpPTA7aTxvLmxlbmd0aDtpKyspb1tpXSYmTyhvW2ldLGUsdHx8dHlwZW9mIF8udHlwZSE9ImZ1bmN0aW9uIik7dHx8Xy5fX2U9PW51bGx8fF9lKF8uX19lKSxfLl9fYz1fLl9fPV8uX19lPV8uX19kPXZvaWQgMH1mdW5jdGlvbiB2ZShfLGUsdCl7cmV0dXJuIHRoaXMuY29uc3RydWN0b3IoXyx0KX1mdW5jdGlvbiB5ZShfLGUsdCl7dmFyIG8saSxuLGw7di5fXyYmdi5fXyhfLGUpLGk9KG89dHlwZW9mIHQ9PSJmdW5jdGlvbiIpP251bGw6dCYmdC5fX2t8fGUuX19rLG49W10sbD1bXSx6KGUsXz0oIW8mJnR8fGUpLl9faz1WKEksbnVsbCxbX10pLGl8fE0sTSxlLm5hbWVzcGFjZVVSSSwhbyYmdD9bdF06aT9udWxsOmUuZmlyc3RDaGlsZD9ILmNhbGwoZS5jaGlsZE5vZGVzKTpudWxsLG4sIW8mJnQ/dDppP2kuX19lOmUuZmlyc3RDaGlsZCxvLGwpLHJlKG4sXyxsKX1IPWVlLnNsaWNlLHY9e19fZTpmdW5jdGlvbihfLGUsdCxvKXtmb3IodmFyIGksbixsO2U9ZS5fXzspaWYoKGk9ZS5fX2MpJiYhaS5fXyl0cnl7aWYoKG49aS5jb25zdHJ1Y3RvcikmJm4uZ2V0RGVyaXZlZFN0YXRlRnJvbUVycm9yIT1udWxsJiYoaS5zZXRTdGF0ZShuLmdldERlcml2ZWRTdGF0ZUZyb21FcnJvcihfKSksbD1pLl9fZCksaS5jb21wb25lbnREaWRDYXRjaCE9bnVsbCYmKGkuY29tcG9uZW50RGlkQ2F0Y2goXyxvfHx7fSksbD1pLl9fZCksbClyZXR1cm4gaS5fX0U9aX1jYXRjaChzKXtfPXN9dGhyb3cgX319LFk9MCx1ZT1mdW5jdGlvbihfKXtyZXR1cm4gXyE9bnVsbCYmXy5jb25zdHJ1Y3Rvcj09bnVsbH0sVS5wcm90b3R5cGUuc2V0U3RhdGU9ZnVuY3Rpb24oXyxlKXt2YXIgdDt0PXRoaXMuX19zIT1udWxsJiZ0aGlzLl9fcyE9PXRoaXMuc3RhdGU/dGhpcy5fX3M6dGhpcy5fX3M9dyh7fSx0aGlzLnN0YXRlKSx0eXBlb2YgXz09ImZ1bmN0aW9uIiYmKF89Xyh3KHt9LHQpLHRoaXMucHJvcHMpKSxfJiZ3KHQsXyksXyE9bnVsbCYmdGhpcy5fX3YmJihlJiZ0aGlzLl9zYi5wdXNoKGUpLEsodGhpcykpfSxVLnByb3RvdHlwZS5mb3JjZVVwZGF0ZT1mdW5jdGlvbihfKXt0aGlzLl9fdiYmKHRoaXMuX19lPSEwLF8mJnRoaXMuX19oLnB1c2goXyksSyh0aGlzKSl9LFUucHJvdG90eXBlLnJlbmRlcj1JLHg9W10sWj10eXBlb2YgUHJvbWlzZT09ImZ1bmN0aW9uIj9Qcm9taXNlLnByb3RvdHlwZS50aGVuLmJpbmQoUHJvbWlzZS5yZXNvbHZlKCkpOnNldFRpbWVvdXQsUj1mdW5jdGlvbihfLGUpe3JldHVybiBfLl9fdi5fX2ItZS5fX3YuX19ifSxGLl9fcj0wLEI9MCwkPVgoITEpLEE9WCghMCksZmU9MDt2YXIgbGU9ZnVuY3Rpb24oXyxlLHQsbyl7dmFyIGk7ZVswXT0wO2Zvcih2YXIgbj0xO248ZS5sZW5ndGg7bisrKXt2YXIgbD1lW24rK10scz1lW25dPyhlWzBdfD1sPzE6Mix0W2VbbisrXV0pOmVbKytuXTtsPT09Mz9vWzBdPXM6bD09PTQ/b1sxXT1PYmplY3QuYXNzaWduKG9bMV18fHt9LHMpOmw9PT01PyhvWzFdPW9bMV18fHt9KVtlWysrbl1dPXM6bD09PTY/b1sxXVtlWysrbl1dKz1zKyIiOmw/KGk9Xy5hcHBseShzLGxlKF8scyx0LFsiIixudWxsXSkpLG8ucHVzaChpKSxzWzBdP2VbMF18PTI6KGVbbi0yXT0wLGVbbl09aSkpOm8ucHVzaChzKX1yZXR1cm4gb30saWU9bmV3IE1hcDtmdW5jdGlvbiBzZShfKXt2YXIgZT1pZS5nZXQodGhpcyk7cmV0dXJuIGV8fChlPW5ldyBNYXAsaWUuc2V0KHRoaXMsZSkpLChlPWxlKHRoaXMsZS5nZXQoXyl8fChlLnNldChfLGU9ZnVuY3Rpb24odCl7Zm9yKHZhciBvLGksbj0xLGw9IiIscz0iIixmPVswXSx1PWZ1bmN0aW9uKGEpe249PT0xJiYoYXx8KGw9bC5yZXBsYWNlKC9eXHMqXG5ccyp8XHMqXG5ccyokL2csIiIpKSk/Zi5wdXNoKDAsYSxsKTpuPT09MyYmKGF8fGwpPyhmLnB1c2goMyxhLGwpLG49Mik6bj09PTImJmw9PT0iLi4uIiYmYT9mLnB1c2goNCxhLDApOm49PT0yJiZsJiYhYT9mLnB1c2goNSwwLCEwLGwpOm4+PTUmJigobHx8IWEmJm49PT01KSYmKGYucHVzaChuLDAsbCxpKSxuPTYpLGEmJihmLnB1c2gobixhLDAsaSksbj02KSksbD0iIn0scD0wO3A8dC5sZW5ndGg7cCsrKXtwJiYobj09PTEmJnUoKSx1KHApKTtmb3IodmFyIHI9MDtyPHRbcF0ubGVuZ3RoO3IrKylvPXRbcF1bcl0sbj09PTE/bz09PSI8Ij8odSgpLGY9W2ZdLG49Myk6bCs9bzpuPT09ND9sPT09Ii0tIiYmbz09PSI+Ij8obj0xLGw9IiIpOmw9bytsWzBdOnM/bz09PXM/cz0iIjpsKz1vOm89PT0nIid8fG89PT0iJyI/cz1vOm89PT0iPiI/KHUoKSxuPTEpOm4mJihvPT09Ij0iPyhuPTUsaT1sLGw9IiIpOm89PT0iLyImJihuPDV8fHRbcF1bcisxXT09PSI+Iik/KHUoKSxuPT09MyYmKGY9ZlswXSksbj1mLChmPWZbMF0pLnB1c2goMiwwLG4pLG49MCk6bz09PSIgInx8bz09PSIJInx8bz09PWAKYHx8bz09PSJcciI/KHUoKSxuPTIpOmwrPW8pLG49PT0zJiZsPT09IiEtLSImJihuPTQsZj1mWzBdKX1yZXR1cm4gdSgpLGZ9KF8pKSxlKSxhcmd1bWVudHMsW10pKS5sZW5ndGg+MT9lOmVbMF19dmFyIHdlPXNlLmJpbmQoVik7ZXhwb3J0e1UgYXMgQ29tcG9uZW50LHBlIGFzIGNyZWF0ZVJlZixWIGFzIGgsc2UgYXMgaHRtLHdlIGFzIGh0bWwseWUgYXMgcmVuZGVyfTsK" }, "directoryIndexDirective": [ "index.html" ] }');
+
+-- #############################################################################
+-- MSM Section 150: Idempotent Schema Objects
+-- -----------------------------------------------------------------------------
+-- This section contains the creation of all schema objects except TABLEs.
+-- All objects must be created under the assumption that an object of the same
+-- name is already present. Therefore explicit DROP IF EXISTS statements or
+-- CREATE OR REPLACE clauses must be used when creating the objects.
+-- -----------------------------------------------------------------------------
+-- All other schema object definitions (VIEWS, PROCEDUREs, FUNCTIONs, TRIGGERs,
+-- EVENTS, ...).
+-- #############################################################################
+
+-- -----------------------------------------------------
+-- VIEWs
+
+-- -----------------------------------------------------------------------------
+-- View `mrs_user_schema_version`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `mrs_user_schema_version` (
+    major, minor, patch) AS
+SELECT 4, 0, 0;
+
+-- -----------------------------------------------------------------------------
+-- View `data_mapping_fields_with_references`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER VIEW `data_mapping_fields_with_references` AS
+WITH RECURSIVE obj_fields (
+    caption, lev, position, id, represents_reference_id, parent_reference_id, data_mapping_id,
+    name, db_column, enabled,
+    allow_filtering, allow_sorting, no_check, no_update, options, sdk_options, comments,
+    data_mapping_reference) AS
+(
+    SELECT CONCAT('- ', f.name) as caption, 1 AS lev, f.position, f.id,
+		f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
+        f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
+        f.options, f.sdk_options, f.comments,
+        IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
+            'reduce_to_value_of_field_id', r.reduce_to_value_of_field_id,
+            'row_ownership_field_id', r.row_ownership_field_id,
+            'reference_mapping', r.reference_mapping,
+            'unnest', (r.unnest = 1),
+            'options', r.options,
+            'sdk_options', r.sdk_options,
+            'comments', r.comments
+        )) AS data_mapping_reference
+    FROM `data_mapping_field` f
+        LEFT OUTER JOIN `data_mapping_reference` AS r
+            ON r.id = f.represents_reference_id
+    WHERE ISNULL(parent_reference_id)
+    UNION ALL
+    SELECT CONCAT(REPEAT('  ', p.lev), '- ', f.name) as caption, p.lev+1 AS lev, f.position,
+        f.id, f.represents_reference_id, f.parent_reference_id, f.data_mapping_id, f.name,
+        f.db_column, f.enabled, f.allow_filtering, f.allow_sorting, f.no_check, f.no_update,
+        f.options, f.sdk_options, f.comments,
+        IF(ISNULL(f.represents_reference_id), NULL, JSON_OBJECT(
+            'reduce_to_value_of_field_id', rc.reduce_to_value_of_field_id,
+            'row_ownership_field_id', rc.row_ownership_field_id,
+            'reference_mapping', rc.reference_mapping,
+            'unnest', (rc.unnest = 1),
+            'options', rc.options,
+            'sdk_options', rc.sdk_options,
+            'comments', rc.comments
+        )) AS data_mapping_reference
+    FROM obj_fields AS p JOIN `data_mapping_reference` AS r
+            ON r.id = p.represents_reference_id
+        LEFT OUTER JOIN `data_mapping_field` AS f
+            ON r.id = f.parent_reference_id
+        LEFT OUTER JOIN `data_mapping_reference` AS rc
+            ON rc.id = f.represents_reference_id
+	WHERE f.id IS NOT NULL
+)
+SELECT * FROM obj_fields;
+
+-- -----------------------------------------------------------------------------
+-- View `rest_daemon_services`
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `rest_daemon_services` AS
+SELECT r.id AS rest_daemon_id, r.name AS rest_daemon_name, r.address, JSON_UNQUOTE(JSON_EXTRACT(r.attributes, '$.developer')) AS rest_daemon_developer,
+    s.id as service_id, h.name AS service_url_host_name,
+    s.url_context_root AS service_url_context_root,
+    CONCAT(h.name, s.url_context_root) AS service_host_ctx,
+    s.published, s.in_development,
+    (SELECT GROUP_CONCAT(IF(item REGEXP '^[A-Za-z0-9_]+$', item, QUOTE(item)) ORDER BY item)
+        FROM JSON_TABLE(
+        JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), '$[*]' COLUMNS (item text path '$')
+    ) AS jt) AS sorted_developers
+FROM `service` s
+    LEFT JOIN `url_host` h
+        ON s.url_host_id = h.id
+    JOIN `rest_daemon` r
+WHERE
+    (enabled = 1)
+    AND (
+    ((published = 1) AND (NOT EXISTS (select s2.id from `service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
+    OR
+    ((published = 0) AND (s.id IN (select s2.id from `service` s2 where s.url_host_id=s2.url_host_id AND s.url_context_root=s2.url_context_root
+        AND JSON_OVERLAPS(JSON_EXTRACT(r.attributes, '$.developer'), JSON_UNQUOTE(JSON_EXTRACT(s2.in_development, '$.developers'))))))
+    OR
+    ((published = 0) AND (JSON_EXTRACT(r.options, '$.developer') IS NOT NULL
+        OR JSON_EXTRACT(r.attributes, '$.developer') IS NOT NULL) AND s.in_development IS NULL)
+    );
+
+-- -----------------------------------------------------
+-- PROCEDURES and FUNCTIONs
+
+DELIMITER %%
+
+-- -----------------------------------------------------------------------------
+-- CREATE PROCEDURE `msm_instance_demoted`
+-- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS `msm_instance_demoted`%%
+CREATE PROCEDURE `msm_instance_demoted`()
+SQL SECURITY DEFINER
+COMMENT 'This procedure needs to be called on a primary instance in an InnoDB Cluster setup before it is demoted to
+    become a secondary.'
+BEGIN
+    ALTER EVENT `delete_old_audit_log_entries` DISABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` DISABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` DISABLE;
+END%%
+
+-- -----------------------------------------------------------------------------
+-- CREATE PROCEDURE `msm_instance_promoted`
+-- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS `msm_instance_promoted`%%
+CREATE PROCEDURE `msm_instance_promoted`()
+SQL SECURITY DEFINER
+COMMENT 'This procedure needs to be called on an instance in an InnoDB Cluster setup when it is promoted to
+    become the primary.'
+BEGIN
+    ALTER EVENT `delete_old_audit_log_entries` ENABLE;
+    ALTER EVENT `rest_daemon_status_cleanup` ENABLE;
+    ALTER EVENT `rest_daemon_log_cleanup` ENABLE;
+END%%
+
+
+-- -----------------------------------------------------------------------------
+-- CREATE FUNCTIONs
+-- -----------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS `get_sequence_id`%%
+CREATE FUNCTION `get_sequence_id`() RETURNS UUID SQL SECURITY INVOKER NOT DETERMINISTIC NO SQL
+BEGIN
+    -- Time-ordered, like the UUID_v7() DEFAULT of the id columns, so new rows
+    -- append to the primary key index.
+    RETURN UUID_v7();
+END%%
+
+DROP FUNCTION IF EXISTS `valid_request_path`%%
+CREATE FUNCTION `valid_request_path`(path VARCHAR(255))
+RETURNS TINYINT(1) NOT DETERMINISTIC READS SQL DATA
+BEGIN
+    SET @valid := (SELECT COUNT(*) = 0 AS valid FROM
+        (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name,
+            se.url_context_root) as full_request_path
+        FROM service se
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) = path
+            AND se.enabled = TRUE
+        UNION
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+            sc.request_path) as full_request_path
+        FROM rest_schema sc
+            LEFT OUTER JOIN service se
+                ON se.id = sc.service_id
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+                sc.request_path) = path
+            AND se.enabled = TRUE
+        UNION
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+            sc.request_path, o.request_path) as full_request_path
+        FROM rest_object o
+            LEFT OUTER JOIN rest_schema sc
+                ON sc.id = o.rest_schema_id
+            LEFT OUTER JOIN service se
+                ON se.id = sc.service_id
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+                sc.request_path, o.request_path) = path
+            AND se.enabled = TRUE
+        UNION
+        SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+            co.request_path) as full_request_path
+        FROM content_set co
+            LEFT OUTER JOIN service se
+                ON se.id = co.service_id
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root,
+                co.request_path) = path
+            AND se.enabled = TRUE) AS p);
+
+    RETURN @valid;
+END%%
+
+
+-- -----------------------------------------------------------------------------
+-- CREATE PROCEDUREs
+-- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS `dump_audit_log`%%
+CREATE PROCEDURE `dump_audit_log`()
+SQL SECURITY DEFINER
+COMMENT 'The dump_audit_log procedure allows the audit_log table to be exported to a file
+    Please note that the secure_file_priv global variable must be set for this to work in the my.ini / my.cnf file
+    [mysqld]
+    secure-file-priv="/usr/local/mariadb/outfiles"'
+BEGIN
+    DECLARE dump_from TIMESTAMP;
+    DECLARE dump_until TIMESTAMP;
+    DECLARE event_count INT;
+
+    -- Only perform the dump if the secure_file_priv global is set, otherwise the file cannot be written
+    IF @@secure_file_priv IS NOT NULL THEN
+        SELECT IFNULL(last_dump_at, '2025-01-01 00:00:00') INTO dump_from
+        FROM `audit_log_status`
+        WHERE `id` = 1;
+
+        SET dump_until = NOW();
+
+        SELECT COUNT(*) INTO event_count
+        FROM `audit_log`
+        WHERE `changed_at` BETWEEN dump_from AND dump_until;
+
+        IF event_count > 0 THEN
+            -- Export all audit_log entries that occurred since the last dump
+            SET @sql = CONCAT(
+                'SELECT JSON_OBJECT("changed_at", changed_at, "id", id, "server_uid", @@server_uid, ',
+                '    "schema_name", schema_name, "table_name", table_name, "dm_type", dml_type, "changed_by", changed_by, '
+                '    "old_row_data", JSON_REPLACE(old_row_data, "$.data.defaultStaticContent", "BINARY_DATA"), ',
+                '    "new_row_data", JSON_REPLACE(new_row_data, "$.data.defaultStaticContent", "BINARY_DATA")) ',
+                'INTO OUTFILE "', TRIM(TRAILING '/' FROM @@secure_file_priv), '/mrs/mrs_audit_log_',
+                DATE_FORMAT(dump_until, '%Y-%m-%d_%H-%i-%s'),
+                '.log" LINES TERMINATED BY "\\\n" ',
+                'FROM `audit_log` ',
+                'WHERE `changed_at` BETWEEN CAST("', DATE_FORMAT(dump_from, '%Y-%m-%d %H:%i:%s'), '" AS DATETIME) ',
+                '    AND CAST("', DATE_FORMAT(dump_until, '%Y-%m-%d %H:%i:%s'), '" AS DATETIME) ',
+                'ORDER BY `id`');
+
+            CALL sys.execute_prepared_stmt(@sql);
+        END IF;
+
+        UPDATE `audit_log_status`
+        SET `last_dump_at` = dump_until
+        WHERE `id` = 1;
+    ELSE
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Please configure the secure-file-priv variable in the [mysqld] section of my.cnf.',
+            MYSQL_ERRNO = 5400;
+    END IF;
+END%%
+
+-- Procedure to fetch all table columns as well as references to related tables
+
+DROP PROCEDURE IF EXISTS `table_columns_with_references`%%
+CREATE PROCEDURE `table_columns_with_references`(
+    p_schema_name VARCHAR(64), p_table_name VARCHAR(64))
+BEGIN
+    IF NOT @@version LIKE '%MariaDB%' THEN
+        SELECT f.*, js.json_schema_def FROM (
+            -- Get the table columns
+            SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name,
+                NULL AS ref_column_names,
+                JSON_OBJECT(
+                    'name', c.COLUMN_NAME,
+                    'datatype', c.COLUMN_TYPE,
+                    'not_null', c.IS_NULLABLE = 'NO',
+                    'is_primary', c.COLUMN_KEY = 'PRI',
+                    'is_unique', c.COLUMN_KEY = 'UNI',
+                    'is_generated', c.GENERATION_EXPRESSION <> '',
+                    'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc',
+                        IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary' AND c.CHARACTER_MAXIMUM_LENGTH = 16,
+                            'rev_uuid', NULL)),
+                    'comment', c.COLUMN_COMMENT,
+                    'srid', c.SRS_ID,
+                    'column_default', c.COLUMN_DEFAULT,
+                    'charset', c.CHARACTER_SET_NAME,
+                    'collation', c.COLLATION_NAME
+                    ) AS db_column,
+                NULL AS reference_mapping,
+                c.TABLE_SCHEMA as table_schema, c.TABLE_NAME as table_name
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT OUTER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND NOT ISNULL(k.POSITION_IN_UNIQUE_CONSTRAINT)
+            WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            -- Union with the references that point from the table to other tables (n:1)
+            UNION
+            SELECT MAX(c.ORDINAL_POSITION) + 100 AS position, MAX(k.REFERENCED_TABLE_NAME) AS name,
+                GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    JSON_OBJECT('kind', 'n:1'),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', FALSE),
+                    JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', c.COLUMN_NAME,
+                            'ref', k.REFERENCED_COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
+            GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
+            UNION
+            -- Union with the references that point from other tables to the table (1:1 and 1:n)
+            SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
+                MAX(c.TABLE_NAME) AS name,
+                GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    -- If the PKs of the table and the referred table are exactly the same,
+                    -- this is a 1:1 relationship, otherwise an 1:n
+                    JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
+                        '1:1', '1:n')),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
+                    JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', k.REFERENCED_COLUMN_NAME,
+                            'ref', c.COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
+                MAX(k.REFERENCED_TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                -- The PK columns of the table, e.g. ['test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
+                            c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
+                        c2.TABLE_SCHEMA, c2.TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c2
+                        WHERE c2.COLUMN_KEY = 'PRI'
+                        GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
+                    ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
+                        AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
+                -- The PK columns of the referenced table,
+                -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
+                    FROM (SELECT IFNULL(
+                        CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
+                            MAX(k1.REFERENCED_TABLE_NAME), '.', MAX(k1.REFERENCED_COLUMN_NAME)),
+                        CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.', c1.COLUMN_NAME)) AS PK_COL,
+                        c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c1
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
+                                ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
+                                    AND k1.TABLE_NAME = c1.TABLE_NAME
+                                    AND k1.COLUMN_NAME = c1.COLUMN_NAME
+                        WHERE c1.COLUMN_KEY = 'PRI'
+                        GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
+                        GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
+                    ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA AND PK_REF.TABLE_NAME = k.TABLE_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
+            ) AS f
+            -- LEFT JOIN with possible JSON_SCHEMA CHECK constraint for the given column
+            LEFT OUTER JOIN (
+                SELECT co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME, MAX(co.JSON_SCHEMA_DEF) AS json_schema_def
+                FROM (SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, TRIM('`' FROM TRIM(TRAILING ')' FROM
+                        REGEXP_SUBSTR(REGEXP_SUBSTR(cc.CHECK_CLAUSE, 'json_schema_valid\s*\\(.*,\s*`[^`]*`\s*\\)'), '`[^`]*`\\)')
+                        )) AS COLUMN_NAME,
+                        tc.ENFORCED, cc.CONSTRAINT_NAME,
+                        REPLACE(TRIM('\\''' FROM REGEXP_REPLACE(SUBSTRING(cc.CHECK_CLAUSE FROM LOCATE('{', cc.CHECK_CLAUSE)), '\s*,\s*`[^`]*`\\).*', '')), '\\\\n', '\n') AS JSON_SCHEMA_DEF
+                    FROM `information_schema`.`TABLE_CONSTRAINTS` AS tc
+                        LEFT OUTER JOIN information_schema.CHECK_CONSTRAINTS AS cc
+                            ON cc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    ) AS co
+                WHERE co.COLUMN_NAME IS NOT NULL AND co.ENFORCED = 'YES' AND JSON_VALID(co.JSON_SCHEMA_DEF) AND co.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND co.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+                GROUP BY co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME) AS js
+            ON f.TABLE_SCHEMA = js.TABLE_SCHEMA AND f.TABLE_NAME = js.TABLE_NAME AND f.name = js.COLUMN_NAME
+        ORDER BY f.position;
+    ELSE
+        SELECT f.*, js.json_schema_def FROM (
+            -- Get the table columns
+            SELECT c.ORDINAL_POSITION AS position, c.COLUMN_NAME AS name,
+                NULL AS ref_column_names,
+                JSON_OBJECT(
+                    'name', c.COLUMN_NAME,
+                    'datatype', c.COLUMN_TYPE,
+                    'not_null', c.IS_NULLABLE = 'NO',
+                    'is_primary', c.COLUMN_KEY = 'PRI',
+                    'is_unique', c.COLUMN_KEY = 'UNI',
+                    'is_generated', c.GENERATION_EXPRESSION <> '',
+                    'id_generation', IF(c.EXTRA = 'auto_increment', 'auto_inc',
+                        IF(c.COLUMN_KEY = 'PRI' AND c.DATA_TYPE = 'binary' AND c.CHARACTER_MAXIMUM_LENGTH = 16,
+                            'rev_uuid', NULL)),
+                    'comment', c.COLUMN_COMMENT,
+                    'srid', NULL,
+                    'column_default', c.COLUMN_DEFAULT,
+                    'charset', c.CHARACTER_SET_NAME,
+                    'collation', c.COLLATION_NAME
+                    ) AS db_column,
+                NULL AS reference_mapping,
+                c.TABLE_SCHEMA as table_schema, c.TABLE_NAME as table_name
+            FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT OUTER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND NOT ISNULL(k.POSITION_IN_UNIQUE_CONSTRAINT)
+            WHERE c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            -- Union with the references that point from the table to other tables (n:1)
+            UNION
+            SELECT MAX(c.ORDINAL_POSITION) + 100 AS position, MAX(k.REFERENCED_TABLE_NAME) AS name,
+                GROUP_CONCAT(c.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    JSON_OBJECT('kind', 'n:1'),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', FALSE),
+                    JSON_OBJECT('referenced_schema', MAX(k.REFERENCED_TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(k.REFERENCED_TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', c.COLUMN_NAME,
+                            'ref', k.REFERENCED_COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(c.TABLE_SCHEMA) AS table_schema, MAX(c.TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                        AND c.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND c.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            WHERE NOT ISNULL(k.REFERENCED_TABLE_NAME)
+            GROUP BY k.CONSTRAINT_NAME, k.table_schema, k.table_name
+            UNION
+            -- Union with the references that point from other tables to the table (1:1 and 1:n)
+            SELECT MAX(c.ORDINAL_POSITION) + 1000 AS position,
+                MAX(c.TABLE_NAME) AS name,
+                GROUP_CONCAT(k.COLUMN_NAME SEPARATOR ', ') AS ref_column_names,
+                NULL AS db_column,
+                JSON_MERGE_PRESERVE(
+                    -- If the PKs of the table and the referred table are exactly the same,
+                    -- this is a 1:1 relationship, otherwise an 1:n
+                    JSON_OBJECT('kind', IF(JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 1,
+                        '1:1', '1:n')),
+                    JSON_OBJECT('constraint',
+                        CONCAT(MAX(k.CONSTRAINT_SCHEMA), '.', MAX(k.CONSTRAINT_NAME))),
+                    JSON_OBJECT('to_many', JSON_CONTAINS(MAX(PK_TABLE.PK), MAX(PK_REF.PK)) = 0),
+                    JSON_OBJECT('referenced_schema', MAX(c.TABLE_SCHEMA)),
+                    JSON_OBJECT('referenced_table', MAX(c.TABLE_NAME)),
+                    JSON_OBJECT('column_mapping',
+                        JSON_ARRAYAGG(JSON_OBJECT(
+                            'base', k.REFERENCED_COLUMN_NAME,
+                            'ref', c.COLUMN_NAME)))
+                ) AS reference_mapping,
+                MAX(k.REFERENCED_TABLE_SCHEMA) AS table_schema,
+                MAX(k.REFERENCED_TABLE_NAME) AS table_name
+            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k
+                JOIN INFORMATION_SCHEMA.COLUMNS AS c
+                    ON c.TABLE_SCHEMA = k.TABLE_SCHEMA AND c.TABLE_NAME = k.TABLE_NAME
+                        AND c.COLUMN_NAME=k.COLUMN_NAME
+                -- The PK columns of the table, e.g. ['test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(CONCAT(c2.TABLE_SCHEMA, '.',
+                            c2.TABLE_NAME, '.', c2.COLUMN_NAME)) AS PK,
+                        c2.TABLE_SCHEMA, c2.TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c2
+                        WHERE c2.COLUMN_KEY = 'PRI'
+                        GROUP BY c2.COLUMN_KEY, c2.TABLE_SCHEMA, c2.TABLE_NAME) AS PK_TABLE
+                    ON PK_TABLE.TABLE_SCHEMA = k.REFERENCED_TABLE_SCHEMA
+                        AND PK_TABLE.TABLE_NAME = k.REFERENCED_TABLE_NAME
+                -- The PK columns of the referenced table,
+                -- e.g. ['test_fk.product_part.id', 'test_fk.product.id']
+                JOIN (SELECT JSON_ARRAYAGG(PK2.PK_COL) AS PK, PK2.TABLE_SCHEMA, PK2.TABLE_NAME
+                    FROM (SELECT IFNULL(
+                        CONCAT(MAX(k1.REFERENCED_TABLE_SCHEMA), '.',
+                            MAX(k1.REFERENCED_TABLE_NAME), '.', MAX(k1.REFERENCED_COLUMN_NAME)),
+                        CONCAT(c1.TABLE_SCHEMA, '.', c1.TABLE_NAME, '.', c1.COLUMN_NAME)) AS PK_COL,
+                        c1.TABLE_SCHEMA AS TABLE_SCHEMA, c1.TABLE_NAME AS TABLE_NAME
+                        FROM INFORMATION_SCHEMA.COLUMNS AS c1
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k1
+                                ON k1.TABLE_SCHEMA = c1.TABLE_SCHEMA
+                                    AND k1.TABLE_NAME = c1.TABLE_NAME
+                                    AND k1.COLUMN_NAME = c1.COLUMN_NAME
+                        WHERE c1.COLUMN_KEY = 'PRI'
+                        GROUP BY c1.COLUMN_NAME, c1.TABLE_SCHEMA, c1.TABLE_NAME) AS PK2
+                        GROUP BY PK2.TABLE_SCHEMA, PK2.TABLE_NAME) AS PK_REF
+                    ON PK_REF.TABLE_SCHEMA = k.TABLE_SCHEMA AND PK_REF.TABLE_NAME = k.TABLE_NAME
+            WHERE k.REFERENCED_TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND k.REFERENCED_TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+            GROUP BY k.CONSTRAINT_NAME, c.TABLE_SCHEMA, c.TABLE_NAME
+            ) AS f
+            -- LEFT JOIN with possible JSON_SCHEMA CHECK constraint for the given column
+            LEFT OUTER JOIN (
+                SELECT co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME, MAX(co.JSON_SCHEMA_DEF) AS json_schema_def
+                FROM (SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, TRIM('`' FROM TRIM(TRAILING ')' FROM
+                        REGEXP_SUBSTR(REGEXP_SUBSTR(cc.CHECK_CLAUSE, 'json_schema_valid\s*\\(.*,\s*`[^`]*`\s*\\)'), '`[^`]*`\\)')
+                        )) AS COLUMN_NAME,
+                        'YES' AS ENFORCED, cc.CONSTRAINT_NAME,
+                        REPLACE(TRIM('\\''' FROM REGEXP_REPLACE(SUBSTRING(cc.CHECK_CLAUSE FROM LOCATE('{', cc.CHECK_CLAUSE)), '\s*,\s*`[^`]*`\\).*', '')), '\\\\n', '\n') AS JSON_SCHEMA_DEF
+                    FROM `information_schema`.`TABLE_CONSTRAINTS` AS tc
+                        LEFT OUTER JOIN information_schema.CHECK_CONSTRAINTS AS cc
+                            ON cc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                    ) AS co
+                WHERE co.COLUMN_NAME IS NOT NULL AND co.ENFORCED = 'YES' AND JSON_VALID(co.JSON_SCHEMA_DEF) AND co.TABLE_SCHEMA COLLATE utf8mb3_general_ci = p_schema_name AND co.TABLE_NAME COLLATE utf8mb3_general_ci = p_table_name
+                GROUP BY co.TABLE_SCHEMA, co.TABLE_NAME, co.COLUMN_NAME) AS js
+            ON f.TABLE_SCHEMA = js.TABLE_SCHEMA AND f.TABLE_NAME = js.TABLE_NAME AND f.name = js.COLUMN_NAME
+        ORDER BY f.position;
+    END IF;
+END%%
+
+
+-- sub-minute data is kept for 4h, then down-sampled to 1 minute samples
+-- sub-hourly data is kept for 24h, then down-sampled to 1 hour samples
+-- sub-daily data is kept for 7 days, then down-sampled to 1 day samples
+-- daily data is kept indefinitely
+
+DROP PROCEDURE IF EXISTS `rest_daemon_status_downsample`%%
+CREATE PROCEDURE `rest_daemon_status_downsample`(
+    time TIMESTAMP,
+    daemon_version VARCHAR(12),
+    status_variables JSON,
+    target_interval CHAR)
+    SQL SECURITY INVOKER
+here:BEGIN
+    DECLARE max_interval INT DEFAULT 1;
+    DECLARE time_point_format VARCHAR(40) DEFAULT '';
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE direct_columns TEXT DEFAULT '';
+    DECLARE direct_query TEXT DEFAULT '';
+    DECLARE details_query TEXT DEFAULT '';
+    DECLARE before_time TIMESTAMP;
+    DECLARE compress_older_than TIMESTAMP;
+    DECLARE attr_name VARCHAR(80);
+    DECLARE attr_non_resettable BOOLEAN;
+    DECLARE attr_column VARCHAR(32);
+    DECLARE cur1 CURSOR FOR SELECT vars.`name`, vars.`resettable`, vars.`column` FROM
+        JSON_TABLE(status_variables,
+         '$[*]' COLUMNS (
+            `name` VARCHAR(80) PATH '$.name',
+            `resettable` BOOLEAN PATH '$.nonResettable' DEFAULT 'false' ON EMPTY,
+            `column` VARCHAR(32) PATH '$.column'
+            )) vars;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN
+        DROP TABLE IF EXISTS `aggregated`;
+        RESIGNAL;
+    END;
+
+    -- target_interval must be either M (60s or 1min) H (60*60s or 1 hour) or D (24*60*60s or 1 day)
+    IF target_interval = 'M' THEN
+        SET max_interval = 60000;
+        SET time_point_format = '%Y-%m-%d %H:%i:00';
+        SET compress_older_than = DATE_SUB(time, INTERVAL 4 HOUR);
+    ELSEIF target_interval = 'H' THEN
+        SET max_interval = 60*60000;
+        SET time_point_format = '%Y-%m-%d %H:00:00';
+        SET compress_older_than = DATE_SUB(time, INTERVAL 24 HOUR);
+    ELSEIF target_interval = 'D' THEN
+        SET max_interval = 24*60*60000;
+        SET time_point_format = '%Y-%m-%d 00:00:00';
+        SET compress_older_than = DATE_SUB(time, INTERVAL 1 DAY);
+    ELSE
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid value for target_interval, must be M, H or D.', MYSQL_ERRNO = 5400;
+    END IF;
+    SET before_time = DATE_FORMAT(compress_older_than, time_point_format);
+
+    START TRANSACTION;
+    -- generate aggregation query
+    OPEN cur1;
+
+    SET details_query = '';
+    variable_loop: LOOP
+        FETCH cur1 INTO attr_name, attr_non_resettable, attr_column;
+        IF done THEN
+            LEAVE variable_loop;
+        END IF;
+        IF attr_non_resettable THEN
+             IF attr_column IS NOT NULL THEN
+                SET direct_query = CONCAT(direct_query, 'MAX(', attr_column, ') as ', attr_column, ', ');
+                SET direct_columns = CONCAT(direct_columns, attr_column, ',');
+            ELSE
+                SET details_query = CONCAT(details_query, quote(attr_name), ',MAX(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
+            END IF;
+        ELSE
+            IF attr_column IS NOT NULL THEN
+                SET direct_query = CONCAT(direct_query, 'SUM(', attr_column, ') as ', attr_column, ', ');
+                SET direct_columns = CONCAT(direct_columns, attr_column, ',');
+            ELSE
+                SET details_query = CONCAT(details_query, quote(attr_name), ',SUM(JSON_EXTRACT(details, ''$.', attr_name, ''')), ');
+             END IF;
+        END IF;
+    END LOOP;
+    SET details_query = CONCAT('JSON_OBJECT(', SUBSTR(details_query, 1, GREATEST(0, LENGTH(details_query)-2)), ') as details');
+
+    CLOSE cur1;
+    DROP TABLE IF EXISTS `aggregated`;
+    CREATE TEMPORARY TABLE `aggregated` LIKE rest_daemon_status;
+
+    -- aggregate rows with interval < target_interval at the same time
+    SET @query = CONCAT('INSERT INTO `aggregated` ',
+        '(id, rest_daemon_id, `timespan`, status_time, ', direct_columns, '`details`)',
+        ' SELECT min(rs.id) as id, rs.rest_daemon_id, ', max_interval, ' as `timespan`, ',
+        'DATE_FORMAT(rs.status_time, ', quote(time_point_format), ') as status_time_rounded, ',
+        direct_query, details_query,
+        ' FROM rest_daemon_status rs JOIN rest_daemon r ON rs.rest_daemon_id=r.id WHERE r.version=', quote(daemon_version),
+        ' AND rs.status_time < ', quote(before_time), ' AND rs.`timespan` < ', max_interval);
+    SET @query = CONCAT(@query, ' GROUP BY rs.rest_daemon_id, DATE_FORMAT(rs.status_time, ',quote(time_point_format),') ORDER BY status_time_rounded ASC');
+
+    PREPARE stmt FROM @query;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+
+    -- Only the rows of the daemons of this version were aggregated
+    DELETE FROM rest_daemon_status
+        WHERE rest_daemon_id IN (SELECT id FROM rest_daemon WHERE version = daemon_version)
+            AND status_time < before_time AND `timespan` < max_interval;
+
+    INSERT INTO rest_daemon_status SELECT * FROM `aggregated`;
+
+    COMMIT;
+END%%
+
+DROP PROCEDURE IF EXISTS `rest_daemon_status_do_cleanup`%%
+CREATE PROCEDURE `rest_daemon_status_do_cleanup`(time TIMESTAMP)
+    SQL SECURITY INVOKER
+BEGIN
+    DECLARE version VARCHAR(12);
+    DECLARE old_status_variables JSON DEFAULT '[{"name":"httpRequestGet","column":"http_requests_get"},
+{"name":"httpRequestPost","column":"http_requests_post"},
+{"name":"httpRequestPut","column":"http_requests_put"},
+{"name":"httpRequestDelete","column":"http_requests_delete"},
+{"name":"kEntityCounterHttpRequestOptions"},
+{"name":"httpConnectionsReused"},
+{"name":"httpConnectionsCreated"},
+{"name":"httpConnectionsClosed"},
+{"name":"mariadbConnectionsReused"},
+{"name":"mariadbConnectionsCreated","column":"mariadb_connections"},
+{"name":"mariadbConnectionsClosed"},
+{"name":"mariadbConnectionsActive","column":"active_mariadb_connections","nonResettable":true},
+{"name":"mariadbQueries","column":"mariadb_queries"},
+{"name":"mariadbChangeUser"},
+{"name":"mariadbPrepareStmt"},
+{"name":"mariadbExecuteStmt"},
+{"name":"mariadbRemoveStmt"},
+{"name":"restReturnedItems"},
+{"name":"restAffectedItems"},
+{"name":"restCacheItemLoads"},
+{"name":"restCacheItemEjects"},
+{"name":"restCacheItemHits"},
+{"name":"restCacheItemMisses"},
+{"name":"restCachedItems","nonResettable":true},
+{"name":"restCacheFileLoads"},
+{"name":"restCacheFileEjects"},
+{"name":"restCacheFileHits"},
+{"name":"restCacheFileMisses"},
+{"name":"restCachedFiles","nonResettable":true},
+{"name":"restCachedEndpoints","nonResettable":true},
+{"name":"changesHosts","nonResettable":true},
+{"name":"changesServices","nonResettable":true},
+{"name":"changesSchemas","nonResettable":true},
+{"name":"changesContentSets","nonResettable":true},
+{"name":"changesObjects","nonResettable":true},
+{"name":"changesFiles","nonResettable":true},
+{"name":"changesAuthentications","nonResettable":true},
+{"name":"restAsofUsesRo"},
+{"name":"restAsofUsesRw"},
+{"name":"restAsofSwitchesFromRo2Rw"},
+{"name":"restAsofNumberOfTimeouts"},
+{"name":"restMetadataGtids"},
+{"name":"sqlQueryTimeouts"}]';
+    DECLARE status_variables JSON;
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE cur1 CURSOR FOR SELECT rest_daemon.version, MIN(JSON_EXTRACT(rest_daemon.attributes, '$.statusVariables'))
+        FROM rest_daemon
+        GROUP BY rest_daemon.version;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    OPEN cur1;
+
+    variable_loop: LOOP
+        FETCH cur1 INTO version, status_variables;
+        IF done THEN
+            LEAVE variable_loop;
+        END IF;
+        IF status_variables IS NULL THEN
+            SET status_variables = old_status_variables;
+        END IF;
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'M');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'H');
+        CALL rest_daemon_status_downsample(time, version, status_variables, 'D');
+    END LOOP;
+
+    CLOSE cur1;
+END%%
+
+
+DROP PROCEDURE IF EXISTS `sdk_service_data`%%
+CREATE PROCEDURE `sdk_service_data`(IN service_id UUID)
+BEGIN
+    -- MariaDB keeps JSON in variables as text: every document is appended
+    -- through JSON_EXTRACT(x, '$') so it nests as an object, not a string, and
+    -- flag columns (TINYINT and BIT(1)) are compared to 1 so they are booleans
+    DECLARE service_res JSON;
+    DECLARE schema_id UUID;
+    DECLARE schema_res JSON;
+
+    -- Get all rest_schemas of the given service, fetch the id to do the nested SELECTs and
+    -- the data as JSON
+    DECLARE schema_loop_done TINYINT DEFAULT FALSE;
+    DECLARE schema_cursor CURSOR FOR
+        SELECT s.id,
+            JSON_OBJECT(
+                'id', s.id,
+                'name', s.name,
+                'schema_type', s.schema_type,
+                'request_path', s.request_path,
+                'requires_auth', s.requires_auth = 1,
+                'internal', s.internal = 1,
+                'options', s.options
+            )
+        FROM rest_schema AS s
+        WHERE s.service_id = service_id AND s.enabled = 1;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET schema_loop_done = 1;
+
+    -- Get the service data as JSON
+    SELECT
+        JSON_OBJECT(
+            'id', s.id,
+            'url_context_root', s.url_context_root,
+            'name', s.name,
+            'enabled', s.enabled = 1,
+            'published', s.published = 1,
+            'options', s.options,
+            'auth_path', s.auth_path,
+            'auth_completed_url_validation', s.auth_completed_url_validation
+        )
+        INTO service_res
+    FROM service AS s
+    WHERE s.id = service_id;
+
+    -- Initiate the list of rest_schemas with an empty JSON array
+    SET service_res = JSON_SET(service_res, '$.rest_schemas', json_array());
+
+    -- Loop over all rest_schema of the given service
+    OPEN schema_cursor;
+    schema_loop: LOOP
+        -- Get the next rest_schema of the service
+        FETCH NEXT FROM schema_cursor INTO schema_id, schema_res;
+
+        IF schema_loop_done THEN
+            LEAVE schema_loop;
+        ELSE schema_block: BEGIN
+            -- Get all rest_objects of the given rest_schema, fetch the id to do the nested SELECTs and
+            -- the data as JSON
+            DECLARE rest_object_id UUID;
+            DECLARE rest_object_res JSON;
+            DECLARE rest_object_loop_done TINYINT DEFAULT FALSE;
+            DECLARE rest_object_cursor CURSOR FOR
+                SELECT o.id,
+                    JSON_OBJECT(
+                        'id', o.id,
+                        'name', o.name,
+                        'request_path', o.request_path,
+                        'internal', o.internal = 1,
+                        'object_type', o.object_type,
+                        'crud_operations', o.crud_operations,
+                        'format', o.format,
+                        'requires_auth', o.requires_auth = 1,
+                        'options', o.options
+                    )
+                FROM rest_object AS o
+                WHERE o.rest_schema_id = schema_id AND o.enabled = 1;
+            DECLARE CONTINUE HANDLER FOR NOT FOUND SET rest_object_loop_done = 1;
+
+            -- Initiate the list of rest_objects with an empty JSON array
+            SET schema_res = JSON_SET(schema_res, '$.rest_objects', json_array());
+
+            -- Loop over all rest_objects of the given rest_schema
+            OPEN rest_object_cursor;
+            rest_object_loop: LOOP
+                FETCH NEXT FROM rest_object_cursor INTO rest_object_id, rest_object_res;
+
+                IF rest_object_loop_done THEN
+                    LEAVE rest_object_loop;
+                ELSE rest_object_block: BEGIN
+                    DECLARE data_mapping_id UUID;
+                    DECLARE object_res JSON;
+                    DECLARE object_loop_done TINYINT DEFAULT FALSE;
+                    DECLARE object_cursor CURSOR FOR
+                        SELECT o.id,
+                          JSON_OBJECT(
+                            'id', o.id,
+                            'rest_object_id', o.rest_object_id,
+                            'name', name,
+                            'kind', kind,
+                            'position', position,
+                            'row_ownership_field_id', row_ownership_field_id,
+                            'options', options,
+                            'sdk_options', sdk_options
+                          )
+                      FROM data_mapping AS o
+                      WHERE o.rest_object_id = rest_object_id
+                      ORDER BY position;
+                    DECLARE CONTINUE HANDLER FOR NOT FOUND SET object_loop_done = 1;
+
+                    -- Initiate the list of objects with an empty JSON array
+                    SET rest_object_res = JSON_SET(rest_object_res, '$.data_mappings', json_array());
+
+                    -- Loop over all SDK object instances of the given rest_object
+                    OPEN object_cursor;
+                    object_loop: LOOP
+                        FETCH NEXT FROM object_cursor INTO data_mapping_id, object_res;
+
+                        IF object_loop_done THEN
+                            LEAVE object_loop;
+                        ELSE object_block: BEGIN
+                            DECLARE field_id UUID;
+                            DECLARE field_res JSON;
+                            DECLARE field_loop_done TINYINT DEFAULT FALSE;
+                            DECLARE field_cursor CURSOR FOR
+                                SELECT f.id,
+                                    JSON_OBJECT(
+                                        'caption', f.caption,
+                                        'lev', f.lev,
+                                        'position', f.position,
+                                        'id', f.id,
+                                        'represents_reference_id', f.represents_reference_id,
+                                        'parent_reference_id', f.parent_reference_id,
+                                        'data_mapping_id', f.data_mapping_id,
+                                        'name', f.name,
+                                        'db_column', f.db_column,
+                                        'enabled', f.enabled = 1,
+                                        'allow_filtering', f.allow_filtering = 1,
+                                        'allow_sorting', f.allow_sorting = 1,
+                                        'no_check', f.no_check = 1,
+                                        'no_update', f.no_update = 1,
+                                        'options', f.options,
+                                        'sdk_options', f.sdk_options,
+                                        'data_mapping_reference', f.data_mapping_reference
+                                    )
+                                FROM data_mapping_fields_with_references AS f
+                                WHERE f.data_mapping_id = data_mapping_id;
+                            DECLARE CONTINUE HANDLER FOR NOT FOUND SET field_loop_done = 1;
+
+                            -- Initiate the list of fields with an empty JSON array
+                            SET object_res = JSON_SET(object_res, '$.fields', json_array());
+
+                            -- Loop over all fields of the given SDK object
+                            OPEN field_cursor;
+                            field_loop: LOOP
+                                FETCH NEXT FROM field_cursor INTO field_id, field_res;
+
+                                IF field_loop_done THEN
+                                    LEAVE field_loop;
+                                ELSE field_block: BEGIN
+                                    -- Append the field JSON data to the object's fields array
+                                    SET object_res = JSON_ARRAY_APPEND(object_res, '$.fields', JSON_EXTRACT(field_res, '$'));
+                                END field_block; END IF;
+                            END LOOP field_loop;
+
+                            -- Append the SDK object JSON data to the rest_objects's objects array
+                            SET rest_object_res = JSON_ARRAY_APPEND(rest_object_res, '$.data_mappings', JSON_EXTRACT(object_res, '$'));
+                        END object_block; END IF;
+                    END LOOP object_loop;
+
+                    -- Append the rest_object JSON data to the rest_schema's rest_objects array
+                    SET schema_res = JSON_ARRAY_APPEND(schema_res, '$.rest_objects', JSON_EXTRACT(rest_object_res, '$'));
+
+                END rest_object_block; END IF;
+            END LOOP rest_object_loop;
+
+            -- Append the rest_schema JSON data to the service's rest_schemas array
+            SET service_res = JSON_ARRAY_APPEND(service_res, '$.rest_schemas', JSON_EXTRACT(schema_res, '$'));
+
+            CLOSE rest_object_cursor;
+        END schema_block; END IF;
+    END LOOP schema_loop;
+
+    CLOSE schema_cursor;
+
+    -- Return the JSON data as a result set
+    SELECT service_res;
+END%%
+
+-- This is an implementation of the JSON_STORAGE_SIZE function in case it is not available as a system function
+DROP FUNCTION IF EXISTS `JSON_STORAGE_SIZE`%%
+CREATE FUNCTION `JSON_STORAGE_SIZE`(doc JSON)  RETURNS INT SQL SECURITY INVOKER DETERMINISTIC NO SQL
+BEGIN
+    IF NOT @@version LIKE '%MariaDB%' THEN
+        RETURN JSON_STORAGE_SIZE(doc);
+    ELSE
+        RETURN OCTET_LENGTH(doc);
+    END IF;
+END%%
+
+DELIMITER ;
+
+-- -----------------------------------------------------
+-- TRIGGERs
+
+DELIMITER %%
+
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_INSERT_AUDIT_LOG` AFTER INSERT ON `rest_daemon` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_daemon",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        CURRENT_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_daemon_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_daemon_AFTER_UPDATE_AUDIT_LOG` AFTER UPDATE ON `rest_daemon` FOR EACH ROW
+BEGIN
+    IF (COALESCE(OLD.options, '') <> COALESCE(NEW.options, '')) THEN
+        INSERT INTO `audit_log` (
+            table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+        VALUES (
+            "rest_daemon",
+            "UPDATE",
+            JSON_OBJECT(
+                "id", OLD.id,
+                "options", OLD.options),
+            JSON_OBJECT(
+                "id", NEW.id,
+                "options", NEW.options),
+            OLD.id,
+            NEW.id,
+            CURRENT_USER(),
+            CURRENT_TIMESTAMP
+        );
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `url_host_BEFORE_DELETE` BEFORE DELETE ON `url_host` FOR EACH ROW
+BEGIN
+	DELETE FROM `url_host_alias` WHERE `url_host_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `service_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_INSERT` BEFORE INSERT ON `service` FOR EACH ROW
+BEGIN
+    # Check if the full service request_path (including the optional developer setting) already exists
+    IF NEW.enabled = TRUE THEN
+        SET @host_name := (SELECT h.name FROM url_host h WHERE h.id = NEW.url_host_id);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
+        SET @validPath := (SELECT `valid_request_path`(@request_path));
+
+        IF @validPath = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+        END IF;
+
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
+        SET @validDeveloperList := (SELECT MAX(COALESCE(
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
+            FROM `service` AS s JOIN
+                `url_host` AS h ON s.url_host_id = h.id JOIN
+                `url_host` AS h2 ON h2.id = NEW.url_host_id
+            WHERE CONCAT(h.name, s.url_context_root) = CONCAT(h2.name, NEW.url_context_root) AND s.enabled = TRUE
+            GROUP BY CONCAT(h.name, s.url_context_root));
+
+        IF COALESCE(@validDeveloperList, FALSE) = TRUE THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This developer is already registered for a REST service with the same host/url_context_root path.";
+        END IF;
+    END IF;
+
+    IF NEW.in_development IS NOT NULL THEN
+        SET NEW.published = 0;
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `service_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_UPDATE` BEFORE UPDATE ON `service` FOR EACH ROW
+BEGIN
+    # Check if the full service request_path (including the optional developer setting) already exists,
+    # but only when the service is enabled and either of those values was actually changed
+    IF NEW.enabled = TRUE AND (COALESCE(NEW.in_development, '') <> COALESCE(OLD.in_development, '')
+		OR NEW.url_host_id <> OLD.url_host_id OR NEW.url_context_root <> OLD.url_context_root) THEN
+
+        SET @host_name := (SELECT h.name FROM url_host h WHERE h.id = NEW.url_host_id);
+        SET @request_path := CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers')), ''), @host_name, NEW.url_context_root);
+        SET @validPath := (SELECT `valid_request_path`(@request_path));
+
+        IF @validPath = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+        END IF;
+
+        # Check if the same developer is already registered in the JSON_UNQUOTE(JSON_EXTRACT(in_development, '$.developers')) of a service with the very same host_ctx
+        SET @validDeveloperList := (SELECT MAX(COALESCE(
+                JSON_OVERLAPS(JSON_UNQUOTE(JSON_EXTRACT(s.in_development, '$.developers')), JSON_UNQUOTE(JSON_EXTRACT(NEW.in_development, '$.developers'))), FALSE)) AS overlap
+            FROM `service` AS s JOIN
+                `url_host` AS h ON s.url_host_id = h.id JOIN
+                `url_host` AS h2 ON h2.id = NEW.url_host_id
+            WHERE CONCAT(h.name, s.url_context_root) = CONCAT(h2.name, NEW.url_context_root) AND s.enabled = TRUE
+                AND s.id <> NEW.id
+            GROUP BY CONCAT(h.name, s.url_context_root));
+
+        IF COALESCE(@validDeveloperList, FALSE) = TRUE THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This developer is already registered for a REST service with the same host/url_context_root path.";
+        END IF;
+    END IF;
+
+    IF OLD.in_development IS NULL AND NEW.in_development IS NOT NULL AND NEW.published = 1 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A REST service that is in development cannot be published. Please reset the development state first.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `service_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `service_BEFORE_DELETE` BEFORE DELETE ON `service` FOR EACH ROW
+BEGIN
+	# Since FKs do not fire the triggers on the related tables, manually trigger the DELETEs
+	DELETE FROM `content_set` WHERE `service_id` = OLD.`id`;
+	DELETE FROM `rest_schema` WHERE `service_id` = OLD.`id`;
+    DELETE FROM `service_has_auth_app` WHERE `service_id` = OLD.`id`;
+    DELETE FROM `mrs_role` WHERE `specific_to_service_id` = OLD.`id`;
+    DELETE FROM `mrs_user_hierarchy_type` WHERE `specific_to_service_id` = OLD.`id`;
+    DELETE FROM `mrs_user_group` WHERE `specific_to_service_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_INSERT` BEFORE INSERT ON `rest_schema` FOR EACH ROW
+BEGIN
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
+		FROM service se
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+		WHERE se.id = NEW.service_id);
+	SET @validPath := (SELECT `valid_request_path`(CONCAT(@service_path, NEW.request_path)));
+
+    IF @validPath = 0 THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_UPDATE` BEFORE UPDATE ON `rest_schema` FOR EACH ROW
+BEGIN
+	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
+			FROM service se
+				LEFT JOIN url_host h
+					ON se.url_host_id = h.id
+			WHERE se.id = NEW.service_id);
+		SET @validPath := (SELECT `valid_request_path`(CONCAT(@service_path, NEW.request_path)));
+
+		IF @validPath = 0 THEN
+			SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+		END IF;
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_schema_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_schema_BEFORE_DELETE` BEFORE DELETE ON `rest_schema` FOR EACH ROW
+BEGIN
+	DELETE FROM `rest_object` WHERE `rest_schema_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_INSERT` BEFORE INSERT ON `rest_object` FOR EACH ROW
+BEGIN
+    SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
+        FROM rest_schema sc
+            LEFT OUTER JOIN service se
+                ON se.id = sc.service_id
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE sc.id = NEW.rest_schema_id);
+    SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
+
+    IF @validPath = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_UPDATE` BEFORE UPDATE ON `rest_object` FOR EACH ROW
+BEGIN
+    IF (NEW.request_path <> OLD.request_path OR NEW.rest_schema_id <> OLD.rest_schema_id) THEN
+        SET @schema_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root, sc.request_path) AS path
+            FROM rest_schema sc
+                LEFT OUTER JOIN service se
+                    ON se.id = sc.service_id
+                LEFT JOIN url_host h
+                    ON se.url_host_id = h.id
+            WHERE sc.id = NEW.rest_schema_id);
+        SET @validPath := (SELECT `valid_request_path`(CONCAT(@schema_path, NEW.request_path)));
+
+        IF @validPath = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+        END IF;
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_object_BEFORE_DELETE` BEFORE DELETE ON `rest_object` FOR EACH ROW
+BEGIN
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `rest_object_id` = OLD.`id`;
+    DELETE FROM `data_mapping` WHERE `rest_object_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `auth_vendor_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `auth_vendor_BEFORE_DELETE` BEFORE DELETE ON `auth_vendor` FOR EACH ROW
+BEGIN
+	DELETE FROM `auth_app` WHERE `auth_vendor_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `auth_app_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `auth_app_BEFORE_DELETE` BEFORE DELETE ON `auth_app` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user` WHERE `auth_app_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_INSERT` BEFORE INSERT ON `mrs_user` FOR EACH ROW
+BEGIN
+	IF NEW.name IS NOT NULL AND (SELECT COUNT(*) FROM `mrs_user` AS u
+		WHERE UPPER(u.name) = UPPER(NEW.name) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
+	THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This name has already been used.";
+	END IF;
+	IF NEW.email IS NOT NULL AND (SELECT COUNT(*) FROM `mrs_user` AS u
+		WHERE UPPER(u.email) = UPPER(NEW.email) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
+	THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
+    END IF;
+    IF (NEW.auth_string IS NULL AND
+        (SELECT a.auth_vendor_id FROM `auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
+    THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
+    END IF;
+    IF JSON_STORAGE_SIZE(NEW.app_options) > 16384 THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The JSON value stored in app_options must not be bigger than 16KB.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_UPDATE` BEFORE UPDATE ON `mrs_user` FOR EACH ROW
+BEGIN
+	IF NEW.name IS NOT NULL AND (SELECT COUNT(*) FROM `mrs_user` AS u
+		WHERE UPPER(u.name) = UPPER(NEW.name) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
+	THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This name has already been used.";
+	END IF;
+	IF NEW.email IS NOT NULL AND (SELECT COUNT(*) FROM `mrs_user` AS u
+		WHERE UPPER(u.email) = UPPER(NEW.email) AND u.auth_app_id = NEW.auth_app_id AND NEW.id <> u.id) > 0
+	THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "This email has already been used.";
+    END IF;
+    IF (NEW.auth_string IS NULL AND
+        (SELECT a.auth_vendor_id FROM `auth_app` AS a WHERE a.id = NEW.auth_app_id) = '30000000-0000-0000-0000-000000000000')
+    THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "A this account requires a password to be set.";
+    END IF;
+    IF JSON_STORAGE_SIZE(NEW.app_options) > 16384 THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The JSON value stored in app_options must not be bigger than 16KB.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_BEFORE_DELETE` BEFORE DELETE ON `mrs_user` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user_hierarchy` WHERE `user_id` = OLD.`id` OR `reporting_to_user_id` = OLD.`id`;
+    DELETE FROM `mrs_user_has_role` WHERE `user_id` = OLD.`id`;
+    DELETE FROM `mrs_user_has_group` WHERE `user_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_INSERT` BEFORE INSERT ON `content_set` FOR EACH ROW
+BEGIN
+	SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
+		FROM service se
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+		WHERE se.id = NEW.service_id);
+	SET @validPath := (SELECT `valid_request_path`(CONCAT(@service_path, NEW.request_path)));
+
+    IF @validPath = 0 THEN
+		SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_UPDATE` BEFORE UPDATE ON `content_set` FOR EACH ROW
+BEGIN
+	IF (NEW.request_path <> OLD.request_path OR NEW.service_id <> OLD.service_id) THEN
+		SET @service_path := (SELECT CONCAT(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(se.in_development, '$.developers')), ''), h.name, se.url_context_root) AS path
+			FROM service se
+				LEFT JOIN url_host h
+					ON se.url_host_id = h.id
+			WHERE se.id = NEW.service_id);
+		SET @validPath := (SELECT `valid_request_path`(CONCAT(@service_path, NEW.request_path)));
+
+		IF @validPath = 0 THEN
+			SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+		END IF;
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_BEFORE_DELETE` BEFORE DELETE ON `content_set` FOR EACH ROW
+BEGIN
+	DELETE FROM `content_file`
+	WHERE `content_set_id` = OLD.`id`;
+	DELETE FROM `content_set_has_rest_object`
+	WHERE `content_set_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `content_file_BEFORE_INSERT`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_file_BEFORE_INSERT` BEFORE INSERT ON `content_file` FOR EACH ROW
+BEGIN
+    SET @content_set_path := (SELECT CONCAT(h.name, se.url_context_root, co.request_path) AS path
+        FROM content_set co
+            LEFT OUTER JOIN service se
+                ON se.id = co.service_id
+            LEFT JOIN url_host h
+                ON se.url_host_id = h.id
+        WHERE co.id = NEW.content_set_id);
+    SET @validPath := (SELECT `valid_request_path`(CONCAT(@content_set_path, NEW.request_path)));
+
+    IF @validPath = 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `content_file_BEFORE_UPDATE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_file_BEFORE_UPDATE` BEFORE UPDATE ON `content_file` FOR EACH ROW
+BEGIN
+    IF (NEW.request_path <> OLD.request_path OR NEW.content_set_id <> OLD.content_set_id) THEN
+        SET @content_set_path := (SELECT CONCAT(h.name, se.url_context_root, co.request_path) AS path
+            FROM content_set co
+                LEFT OUTER JOIN service se
+                    ON se.id = co.service_id
+                LEFT JOIN url_host h
+                    ON se.url_host_id = h.id
+            WHERE co.id = NEW.content_set_id);
+        SET @validPath := (SELECT `valid_request_path`(CONCAT(@content_set_path, NEW.request_path)));
+
+        IF @validPath = 0 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = "The request_path is already used by another entity.";
+        END IF;
+    END IF;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_role_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_role_BEFORE_DELETE` BEFORE DELETE ON `mrs_role` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user_has_role` WHERE `role_id` = OLD.`id`;
+    -- Workaround to fix issue with recursive delete
+	IF OLD.id <> NULL THEN
+		DELETE FROM `mrs_role` WHERE `derived_from_role_id` = OLD.`id`;
+	END IF;
+    DELETE FROM `mrs_privilege` WHERE `role_id` = OLD.`id`;
+    DELETE FROM `mrs_user_group_has_role` WHERE `role_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_hierarchy_type` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user_hierarchy` WHERE `user_hierarchy_type_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_user_group_BEFORE_DELETE` BEFORE DELETE ON `mrs_user_group` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user_has_group` WHERE `user_group_id` = OLD.`id`;
+    DELETE FROM `mrs_user_group_hierarchy` WHERE `user_group_id` = OLD.`id` OR `parent_group_id` = OLD.`id`;
+    DELETE FROM `mrs_user_group_has_role` WHERE `user_group_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `mrs_group_hierarchy_type_BEFORE_DELETE` BEFORE DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
+BEGIN
+	DELETE FROM `mrs_user_group_hierarchy` WHERE `group_hierarchy_type_id` = OLD.`id`;
+    DELETE FROM `mrs_rest_object_row_group_security` WHERE `group_hierarchy_type_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_daemon_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon` FOR EACH ROW
+BEGIN
+	DELETE FROM `rest_daemon_status` WHERE `rest_daemon_id` = OLD.`id`;
+    DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `rest_daemon_session_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `rest_daemon_session_BEFORE_DELETE` BEFORE DELETE ON `rest_daemon_session` FOR EACH ROW
+BEGIN
+	DELETE FROM `rest_daemon_general_log` WHERE `rest_daemon_session_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_BEFORE_DELETE` BEFORE DELETE ON `data_mapping` FOR EACH ROW
+BEGIN
+	DELETE FROM `data_mapping_field` WHERE `data_mapping_id` = OLD.`id`;
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_field_BEFORE_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `data_mapping_field_BEFORE_DELETE` BEFORE DELETE ON `data_mapping_field` FOR EACH ROW
+BEGIN
+	SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
+	DELETE FROM `data_mapping_reference` WHERE `id` = OLD.`represents_reference_id`;
+    SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE`%%
+CREATE DEFINER = CURRENT_USER TRIGGER `content_set_has_rest_object_AFTER_DELETE` AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
+BEGIN
+	DELETE FROM `rest_object` dbo
+    WHERE OLD.kind = "Script" AND dbo.id = OLD.rest_object_id;
+END%%
+
+DELIMITER ;
+
+-- -----------------------------------------------------
+-- Create audit_log triggers
+
+DELIMITER %%
+
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_schema` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_schema",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_id", NEW.service_id,
+            "name", NEW.name,
+            "schema_type", NEW.schema_type,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "items_per_page", NEW.items_per_page,
+            "comments", NEW.comments,
+            "options", NEW.options,
+            "metadata", NEW.metadata),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_schema` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_schema",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_id", OLD.service_id,
+            "name", OLD.name,
+            "schema_type", OLD.schema_type,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "items_per_page", OLD.items_per_page,
+            "comments", OLD.comments,
+            "options", OLD.options,
+            "metadata", OLD.metadata),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_id", NEW.service_id,
+            "name", NEW.name,
+            "schema_type", NEW.schema_type,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "items_per_page", NEW.items_per_page,
+            "comments", NEW.comments,
+            "options", NEW.options,
+            "metadata", NEW.metadata),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_schema_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_schema_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_schema` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_schema",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_id", OLD.service_id,
+            "name", OLD.name,
+            "schema_type", OLD.schema_type,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "items_per_page", OLD.items_per_page,
+            "comments", OLD.comments,
+            "options", OLD.options,
+            "metadata", OLD.metadata),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `service` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "parent_id", NEW.parent_id,
+            "url_host_id", NEW.url_host_id,
+            "url_context_root", NEW.url_context_root,
+            "url_protocol", NEW.url_protocol,
+            "name", NEW.name,
+            "enabled", NEW.enabled,
+            "published", NEW.published,
+            "in_development", NEW.in_development,
+            "comments", NEW.comments,
+            "options", NEW.options,
+            "auth_path", NEW.auth_path,
+            "auth_completed_url", NEW.auth_completed_url,
+            "auth_completed_url_validation", NEW.auth_completed_url_validation,
+            "enable_sql_endpoint", NEW.enable_sql_endpoint,
+            "custom_metadata_schema", NEW.custom_metadata_schema,
+            "metadata", NEW.metadata),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `service` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "parent_id", OLD.parent_id,
+            "url_host_id", OLD.url_host_id,
+            "url_context_root", OLD.url_context_root,
+            "url_protocol", OLD.url_protocol,
+            "name", OLD.name,
+            "enabled", OLD.enabled,
+            "published", OLD.published,
+            "in_development", OLD.in_development,
+            "comments", OLD.comments,
+            "options", OLD.options,
+            "auth_path", OLD.auth_path,
+            "auth_completed_url", OLD.auth_completed_url,
+            "auth_completed_url_validation", OLD.auth_completed_url_validation,
+            "enable_sql_endpoint", OLD.enable_sql_endpoint,
+            "custom_metadata_schema", OLD.custom_metadata_schema,
+            "metadata", OLD.metadata),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "parent_id", NEW.parent_id,
+            "url_host_id", NEW.url_host_id,
+            "url_context_root", NEW.url_context_root,
+            "url_protocol", NEW.url_protocol,
+            "name", NEW.name,
+            "enabled", NEW.enabled,
+            "published", NEW.published,
+            "in_development", NEW.in_development,
+            "comments", NEW.comments,
+            "options", NEW.options,
+            "auth_path", NEW.auth_path,
+            "auth_completed_url", NEW.auth_completed_url,
+            "auth_completed_url_validation", NEW.auth_completed_url_validation,
+            "enable_sql_endpoint", NEW.enable_sql_endpoint,
+            "custom_metadata_schema", NEW.custom_metadata_schema,
+            "metadata", NEW.metadata),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `service_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `service` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "parent_id", OLD.parent_id,
+            "url_host_id", OLD.url_host_id,
+            "url_context_root", OLD.url_context_root,
+            "url_protocol", OLD.url_protocol,
+            "name", OLD.name,
+            "enabled", OLD.enabled,
+            "published", OLD.published,
+            "in_development", OLD.in_development,
+            "comments", OLD.comments,
+            "options", OLD.options,
+            "auth_path", OLD.auth_path,
+            "auth_completed_url", OLD.auth_completed_url,
+            "auth_completed_url_validation", OLD.auth_completed_url_validation,
+            "enable_sql_endpoint", OLD.enable_sql_endpoint,
+            "custom_metadata_schema", OLD.custom_metadata_schema,
+            "metadata", OLD.metadata),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_object",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "rest_schema_id", NEW.rest_schema_id,
+            "name", NEW.name,
+            "request_path", NEW.request_path,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "object_type", NEW.object_type,
+            "crud_operations", NEW.crud_operations,
+            "format", NEW.format,
+            "items_per_page", NEW.items_per_page,
+            "media_type", NEW.media_type,
+            "auto_detect_media_type", NEW.auto_detect_media_type,
+            "requires_auth", NEW.requires_auth,
+            "auth_stored_procedure", NEW.auth_stored_procedure,
+            "options", NEW.options,
+            "details", NEW.details,
+            "comments", NEW.comments,
+            "metadata", NEW.metadata),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_object",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "rest_schema_id", OLD.rest_schema_id,
+            "name", OLD.name,
+            "request_path", OLD.request_path,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "object_type", OLD.object_type,
+            "crud_operations", OLD.crud_operations,
+            "format", OLD.format,
+            "items_per_page", OLD.items_per_page,
+            "media_type", OLD.media_type,
+            "auto_detect_media_type", OLD.auto_detect_media_type,
+            "requires_auth", OLD.requires_auth,
+            "auth_stored_procedure", OLD.auth_stored_procedure,
+            "options", OLD.options,
+            "details", OLD.details,
+            "comments", OLD.comments,
+            "metadata", OLD.metadata),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "rest_schema_id", NEW.rest_schema_id,
+            "name", NEW.name,
+            "request_path", NEW.request_path,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "object_type", NEW.object_type,
+            "crud_operations", NEW.crud_operations,
+            "format", NEW.format,
+            "items_per_page", NEW.items_per_page,
+            "media_type", NEW.media_type,
+            "auto_detect_media_type", NEW.auto_detect_media_type,
+            "requires_auth", NEW.requires_auth,
+            "auth_stored_procedure", NEW.auth_stored_procedure,
+            "options", NEW.options,
+            "details", NEW.details,
+            "comments", NEW.comments,
+            "metadata", NEW.metadata),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "rest_object",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "rest_schema_id", OLD.rest_schema_id,
+            "name", OLD.name,
+            "request_path", OLD.request_path,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "object_type", OLD.object_type,
+            "crud_operations", OLD.crud_operations,
+            "format", OLD.format,
+            "items_per_page", OLD.items_per_page,
+            "media_type", OLD.media_type,
+            "auto_detect_media_type", OLD.auto_detect_media_type,
+            "requires_auth", OLD.requires_auth,
+            "auth_stored_procedure", OLD.auth_stored_procedure,
+            "options", OLD.options,
+            "details", OLD.details,
+            "comments", OLD.comments,
+            "metadata", OLD.metadata),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "auth_app_id", NEW.auth_app_id,
+            "name", NEW.name,
+            "email", NEW.email,
+            "vendor_user_id", NEW.vendor_user_id,
+            "login_permitted", NEW.login_permitted,
+            "mapped_user_id", NEW.mapped_user_id,
+            "app_options", NEW.app_options,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "auth_app_id", OLD.auth_app_id,
+            "name", OLD.name,
+            "email", OLD.email,
+            "vendor_user_id", OLD.vendor_user_id,
+            "login_permitted", OLD.login_permitted,
+            "mapped_user_id", OLD.mapped_user_id,
+            "app_options", OLD.app_options,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "auth_app_id", NEW.auth_app_id,
+            "name", NEW.name,
+            "email", NEW.email,
+            "vendor_user_id", NEW.vendor_user_id,
+            "login_permitted", NEW.login_permitted,
+            "mapped_user_id", NEW.mapped_user_id,
+            "app_options", NEW.app_options,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "auth_app_id", OLD.auth_app_id,
+            "name", OLD.name,
+            "email", OLD.email,
+            "vendor_user_id", OLD.vendor_user_id,
+            "login_permitted", OLD.login_permitted,
+            "mapped_user_id", OLD.mapped_user_id,
+            "app_options", OLD.app_options,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `auth_vendor` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_vendor",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "name", NEW.name,
+            "validation_url", NEW.validation_url,
+            "enabled", NEW.enabled,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `auth_vendor` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_vendor",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "name", OLD.name,
+            "validation_url", OLD.validation_url,
+            "enabled", OLD.enabled,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "name", NEW.name,
+            "validation_url", NEW.validation_url,
+            "enabled", NEW.enabled,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_vendor_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_vendor_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `auth_vendor` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_vendor",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "name", OLD.name,
+            "validation_url", OLD.validation_url,
+            "enabled", OLD.enabled,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_app_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_app",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "auth_vendor_id", NEW.auth_vendor_id,
+            "name", NEW.name,
+            "description", NEW.description,
+            "url", NEW.url,
+            "url_direct_auth", NEW.url_direct_auth,
+            "access_token", NEW.access_token,
+            "app_id", NEW.app_id,
+            "enabled", NEW.enabled,
+            "limit_to_registered_users", NEW.limit_to_registered_users,
+            "default_role_id", NEW.default_role_id,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_app_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_app",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "auth_vendor_id", OLD.auth_vendor_id,
+            "name", OLD.name,
+            "description", OLD.description,
+            "url", OLD.url,
+            "url_direct_auth", OLD.url_direct_auth,
+            "access_token", OLD.access_token,
+            "app_id", OLD.app_id,
+            "enabled", OLD.enabled,
+            "limit_to_registered_users", OLD.limit_to_registered_users,
+            "default_role_id", OLD.default_role_id,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "auth_vendor_id", NEW.auth_vendor_id,
+            "name", NEW.name,
+            "description", NEW.description,
+            "url", NEW.url,
+            "url_direct_auth", NEW.url_direct_auth,
+            "access_token", NEW.access_token,
+            "app_id", NEW.app_id,
+            "enabled", NEW.enabled,
+            "limit_to_registered_users", NEW.limit_to_registered_users,
+            "default_role_id", NEW.default_role_id,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `auth_app_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `auth_app_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "auth_app",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "auth_vendor_id", OLD.auth_vendor_id,
+            "name", OLD.name,
+            "description", OLD.description,
+            "url", OLD.url,
+            "url_direct_auth", OLD.url_direct_auth,
+            "access_token", OLD.access_token,
+            "app_id", OLD.app_id,
+            "enabled", OLD.enabled,
+            "limit_to_registered_users", OLD.limit_to_registered_users,
+            "default_role_id", OLD.default_role_id,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `config_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `config` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "config",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_enabled", NEW.service_enabled,
+            "data", NEW.data),
+        NULL,
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `config_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `config` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "config",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_enabled", OLD.service_enabled,
+            "data", OLD.data),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_enabled", NEW.service_enabled,
+            "data", NEW.data),
+        CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
+        CAST(LPAD(HEX(NEW.id), 32, '0') AS UUID),
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `config_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `config_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `config` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "config",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_enabled", OLD.service_enabled,
+            "data", OLD.data),
+        NULL,
+        CAST(LPAD(HEX(OLD.id), 32, '0') AS UUID),
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `redirect_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `redirect` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "redirect",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "pattern", NEW.pattern,
+            "target", NEW.target,
+            "kind", NEW.kind,
+            "in_development", NEW.in_development),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `redirect_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `redirect` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "redirect",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "pattern", OLD.pattern,
+            "target", OLD.target,
+            "kind", OLD.kind,
+            "in_development", OLD.in_development),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "pattern", NEW.pattern,
+            "target", NEW.target,
+            "kind", NEW.kind,
+            "in_development", NEW.in_development),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `redirect_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `redirect_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `redirect` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "redirect",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "pattern", OLD.pattern,
+            "target", OLD.target,
+            "kind", OLD.kind,
+            "in_development", OLD.in_development),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `url_host_alias` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host_alias",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "url_host_id", NEW.url_host_id,
+            "alias", NEW.alias),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `url_host_alias` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host_alias",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "url_host_id", OLD.url_host_id,
+            "alias", OLD.alias),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "url_host_id", NEW.url_host_id,
+            "alias", NEW.alias),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_alias_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_alias_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `url_host_alias` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host_alias",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "url_host_id", OLD.url_host_id,
+            "alias", OLD.alias),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `url_host` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "name", NEW.name,
+            "comments", NEW.comments),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `url_host` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "name", OLD.name,
+            "comments", OLD.comments),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "name", NEW.name,
+            "comments", NEW.comments),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `url_host_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `url_host_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `url_host` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "url_host",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "name", OLD.name,
+            "comments", OLD.comments),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_file_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `content_file` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_file",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "content_set_id", NEW.content_set_id,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "size", NEW.size,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_file_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `content_file` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_file",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "content_set_id", OLD.content_set_id,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "size", OLD.size,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "content_set_id", NEW.content_set_id,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "size", NEW.size,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_file_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_file_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `content_file` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_file",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "content_set_id", OLD.content_set_id,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "size", OLD.size,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `content_set` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_id", NEW.service_id,
+            "content_type", NEW.content_type,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `content_set` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_id", OLD.service_id,
+            "content_type", OLD.content_type,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "service_id", NEW.service_id,
+            "content_type", NEW.content_type,
+            "request_path", NEW.request_path,
+            "requires_auth", NEW.requires_auth,
+            "enabled", NEW.enabled,
+            "internal", NEW.internal,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `content_set` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "service_id", OLD.service_id,
+            "content_type", OLD.content_type,
+            "request_path", OLD.request_path,
+            "requires_auth", OLD.requires_auth,
+            "enabled", OLD.enabled,
+            "internal", OLD.internal,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_role",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "derived_from_role_id", NEW.derived_from_role_id,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_role",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "derived_from_role_id", OLD.derived_from_role_id,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "derived_from_role_id", NEW.derived_from_role_id,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_role_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_role",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "derived_from_role_id", OLD.derived_from_role_id,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_role",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "role_id", NEW.role_id,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        NULL,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_role",
+        "UPDATE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "role_id", OLD.role_id,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "role_id", NEW.role_id,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        OLD.user_id,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_role_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_role",
+        "DELETE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "role_id", OLD.role_id,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        NULL,
+        OLD.user_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "reporting_to_user_id", NEW.reporting_to_user_id,
+            "user_hierarchy_type_id", NEW.user_hierarchy_type_id,
+            "options", NEW.options),
+        NULL,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy",
+        "UPDATE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "reporting_to_user_id", OLD.reporting_to_user_id,
+            "user_hierarchy_type_id", OLD.user_hierarchy_type_id,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "reporting_to_user_id", NEW.reporting_to_user_id,
+            "user_hierarchy_type_id", NEW.user_hierarchy_type_id,
+            "options", NEW.options),
+        OLD.user_id,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy",
+        "DELETE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "reporting_to_user_id", OLD.reporting_to_user_id,
+            "user_hierarchy_type_id", OLD.user_hierarchy_type_id,
+            "options", OLD.options),
+        NULL,
+        OLD.user_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy_type",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy_type",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_hierarchy_type",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_privilege` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_privilege",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "role_id", NEW.role_id,
+            "crud_operations", NEW.crud_operations,
+            "service_path", NEW.service_path,
+            "schema_path", NEW.schema_path,
+            "object_path", NEW.object_path,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_privilege` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_privilege",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "role_id", OLD.role_id,
+            "crud_operations", OLD.crud_operations,
+            "service_path", OLD.service_path,
+            "schema_path", OLD.schema_path,
+            "object_path", OLD.object_path,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "role_id", NEW.role_id,
+            "crud_operations", NEW.crud_operations,
+            "service_path", NEW.service_path,
+            "schema_path", NEW.schema_path,
+            "object_path", NEW.object_path,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_privilege_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_privilege_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_privilege` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_privilege",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "role_id", OLD.role_id,
+            "crud_operations", OLD.crud_operations,
+            "service_path", OLD.service_path,
+            "schema_path", OLD.schema_path,
+            "object_path", OLD.object_path,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "specific_to_service_id", NEW.specific_to_service_id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "specific_to_service_id", OLD.specific_to_service_id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_group_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_has_role",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "user_group_id", NEW.user_group_id,
+            "role_id", NEW.role_id,
+            "options", NEW.options),
+        NULL,
+        NEW.user_group_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_group_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_has_role",
+        "UPDATE",
+        JSON_OBJECT(
+            "user_group_id", OLD.user_group_id,
+            "role_id", OLD.role_id,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "user_group_id", NEW.user_group_id,
+            "role_id", NEW.role_id,
+            "options", NEW.options),
+        OLD.user_group_id,
+        NEW.user_group_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_has_role_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_group_has_role` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_has_role",
+        "DELETE",
+        JSON_OBJECT(
+            "user_group_id", OLD.user_group_id,
+            "role_id", OLD.role_id,
+            "options", OLD.options),
+        NULL,
+        OLD.user_group_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_has_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_group",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "user_group_id", NEW.user_group_id,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        NULL,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_has_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_group",
+        "UPDATE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "user_group_id", OLD.user_group_id,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "user_id", NEW.user_id,
+            "user_group_id", NEW.user_group_id,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        OLD.user_id,
+        NEW.user_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_has_group_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_has_group` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_has_group",
+        "DELETE",
+        JSON_OBJECT(
+            "user_id", OLD.user_id,
+            "user_group_id", OLD.user_group_id,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        NULL,
+        OLD.user_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_group_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_group_hierarchy_type",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_group_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_group_hierarchy_type",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "caption", NEW.caption,
+            "description", NEW.description,
+            "options", NEW.options),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_group_hierarchy_type_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_group_hierarchy_type` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_group_hierarchy_type",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "caption", OLD.caption,
+            "description", OLD.description,
+            "options", OLD.options),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_user_group_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_hierarchy",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "user_group_id", NEW.user_group_id,
+            "parent_group_id", NEW.parent_group_id,
+            "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
+            "level", NEW.level,
+            "options", NEW.options),
+        NULL,
+        NEW.user_group_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_user_group_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_hierarchy",
+        "UPDATE",
+        JSON_OBJECT(
+            "user_group_id", OLD.user_group_id,
+            "parent_group_id", OLD.parent_group_id,
+            "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
+            "level", OLD.level,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "user_group_id", NEW.user_group_id,
+            "parent_group_id", NEW.parent_group_id,
+            "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
+            "level", NEW.level,
+            "options", NEW.options),
+        OLD.user_group_id,
+        NEW.user_group_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_user_group_hierarchy_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_user_group_hierarchy` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_user_group_hierarchy",
+        "DELETE",
+        JSON_OBJECT(
+            "user_group_id", OLD.user_group_id,
+            "parent_group_id", OLD.parent_group_id,
+            "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
+            "level", OLD.level,
+            "options", OLD.options),
+        NULL,
+        OLD.user_group_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `mrs_rest_object_row_group_security` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_rest_object_row_group_security",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "rest_object_id", NEW.rest_object_id,
+            "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
+            "row_group_ownership_column", NEW.row_group_ownership_column,
+            "level", NEW.level,
+            "match_level", NEW.match_level,
+            "options", NEW.options),
+        NULL,
+        NEW.rest_object_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `mrs_rest_object_row_group_security` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_rest_object_row_group_security",
+        "UPDATE",
+        JSON_OBJECT(
+            "rest_object_id", OLD.rest_object_id,
+            "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
+            "row_group_ownership_column", OLD.row_group_ownership_column,
+            "level", OLD.level,
+            "match_level", OLD.match_level,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "rest_object_id", NEW.rest_object_id,
+            "group_hierarchy_type_id", NEW.group_hierarchy_type_id,
+            "row_group_ownership_column", NEW.row_group_ownership_column,
+            "level", NEW.level,
+            "match_level", NEW.match_level,
+            "options", NEW.options),
+        OLD.rest_object_id,
+        NEW.rest_object_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `mrs_rest_object_row_group_security_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `mrs_rest_object_row_group_security` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "mrs_rest_object_row_group_security",
+        "DELETE",
+        JSON_OBJECT(
+            "rest_object_id", OLD.rest_object_id,
+            "group_hierarchy_type_id", OLD.group_hierarchy_type_id,
+            "row_group_ownership_column", OLD.row_group_ownership_column,
+            "level", OLD.level,
+            "match_level", OLD.match_level,
+            "options", OLD.options),
+        NULL,
+        OLD.rest_object_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "rest_object_id", NEW.rest_object_id,
+            "name", NEW.name,
+            "kind", NEW.kind,
+            "position", NEW.position,
+            "row_ownership_field_id", NEW.row_ownership_field_id,
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "rest_object_id", OLD.rest_object_id,
+            "name", OLD.name,
+            "kind", OLD.kind,
+            "position", OLD.position,
+            "row_ownership_field_id", OLD.row_ownership_field_id,
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "rest_object_id", NEW.rest_object_id,
+            "name", NEW.name,
+            "kind", NEW.kind,
+            "position", NEW.position,
+            "row_ownership_field_id", NEW.row_ownership_field_id,
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "rest_object_id", OLD.rest_object_id,
+            "name", OLD.name,
+            "kind", OLD.kind,
+            "position", OLD.position,
+            "row_ownership_field_id", OLD.row_ownership_field_id,
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_field` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_field",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "data_mapping_id", NEW.data_mapping_id,
+            "parent_reference_id", NEW.parent_reference_id,
+            "represents_reference_id", NEW.represents_reference_id,
+            "name", NEW.name,
+            "position", NEW.position,
+            "db_column", NEW.db_column,
+            "enabled", IF(NEW.enabled, 1, 0),
+            "allow_filtering", IF(NEW.allow_filtering, 1, 0),
+            "allow_sorting", IF(NEW.allow_sorting, 1, 0),
+            "no_check", IF(NEW.no_check, 1, 0),
+            "no_update", IF(NEW.no_update, 1, 0),
+            "json_schema", NEW.json_schema,
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_field` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_field",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "data_mapping_id", OLD.data_mapping_id,
+            "parent_reference_id", OLD.parent_reference_id,
+            "represents_reference_id", OLD.represents_reference_id,
+            "name", OLD.name,
+            "position", OLD.position,
+            "db_column", OLD.db_column,
+            "enabled", IF(OLD.enabled, 1, 0),
+            "allow_filtering", IF(OLD.allow_filtering, 1, 0),
+            "allow_sorting", IF(OLD.allow_sorting, 1, 0),
+            "no_check", IF(OLD.no_check, 1, 0),
+            "no_update", IF(OLD.no_update, 1, 0),
+            "json_schema", OLD.json_schema,
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "data_mapping_id", NEW.data_mapping_id,
+            "parent_reference_id", NEW.parent_reference_id,
+            "represents_reference_id", NEW.represents_reference_id,
+            "name", NEW.name,
+            "position", NEW.position,
+            "db_column", NEW.db_column,
+            "enabled", IF(NEW.enabled, 1, 0),
+            "allow_filtering", IF(NEW.allow_filtering, 1, 0),
+            "allow_sorting", IF(NEW.allow_sorting, 1, 0),
+            "no_check", IF(NEW.no_check, 1, 0),
+            "no_update", IF(NEW.no_update, 1, 0),
+            "json_schema", NEW.json_schema,
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_field_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_field_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_field` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_field",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "data_mapping_id", OLD.data_mapping_id,
+            "parent_reference_id", OLD.parent_reference_id,
+            "represents_reference_id", OLD.represents_reference_id,
+            "name", OLD.name,
+            "position", OLD.position,
+            "db_column", OLD.db_column,
+            "enabled", IF(OLD.enabled, 1, 0),
+            "allow_filtering", IF(OLD.allow_filtering, 1, 0),
+            "allow_sorting", IF(OLD.allow_sorting, 1, 0),
+            "no_check", IF(OLD.no_check, 1, 0),
+            "no_update", IF(OLD.no_update, 1, 0),
+            "json_schema", OLD.json_schema,
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `data_mapping_reference` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_reference",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "id", NEW.id,
+            "reduce_to_value_of_field_id", NEW.reduce_to_value_of_field_id,
+            "row_ownership_field_id", NEW.row_ownership_field_id,
+            "reference_mapping", NEW.reference_mapping,
+            "unnest", IF(NEW.unnest, 1, 0),
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        NULL,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `data_mapping_reference` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_reference",
+        "UPDATE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "reduce_to_value_of_field_id", OLD.reduce_to_value_of_field_id,
+            "row_ownership_field_id", OLD.row_ownership_field_id,
+            "reference_mapping", OLD.reference_mapping,
+            "unnest", IF(OLD.unnest, 1, 0),
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        JSON_OBJECT(
+            "id", NEW.id,
+            "reduce_to_value_of_field_id", NEW.reduce_to_value_of_field_id,
+            "row_ownership_field_id", NEW.row_ownership_field_id,
+            "reference_mapping", NEW.reference_mapping,
+            "unnest", IF(NEW.unnest, 1, 0),
+            "options", NEW.options,
+            "sdk_options", NEW.sdk_options,
+            "comments", NEW.comments),
+        OLD.id,
+        NEW.id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `data_mapping_reference_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `data_mapping_reference` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "data_mapping_reference",
+        "DELETE",
+        JSON_OBJECT(
+            "id", OLD.id,
+            "reduce_to_value_of_field_id", OLD.reduce_to_value_of_field_id,
+            "row_ownership_field_id", OLD.row_ownership_field_id,
+            "reference_mapping", OLD.reference_mapping,
+            "unnest", IF(OLD.unnest, 1, 0),
+            "options", OLD.options,
+            "sdk_options", OLD.sdk_options,
+            "comments", OLD.comments),
+        NULL,
+        OLD.id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `service_has_auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service_has_auth_app",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "service_id", NEW.service_id,
+            "auth_app_id", NEW.auth_app_id,
+            "options", NEW.options),
+        NULL,
+        NEW.service_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `service_has_auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service_has_auth_app",
+        "UPDATE",
+        JSON_OBJECT(
+            "service_id", OLD.service_id,
+            "auth_app_id", OLD.auth_app_id,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "service_id", NEW.service_id,
+            "auth_app_id", NEW.auth_app_id,
+            "options", NEW.options),
+        OLD.service_id,
+        NEW.service_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `service_has_auth_app_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `service_has_auth_app_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `service_has_auth_app` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "service_has_auth_app",
+        "DELETE",
+        JSON_OBJECT(
+            "service_id", OLD.service_id,
+            "auth_app_id", OLD.auth_app_id,
+            "options", OLD.options),
+        NULL,
+        OLD.service_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_INSERT_AUDIT_LOG`
+    AFTER INSERT ON `content_set_has_rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set_has_rest_object",
+        "INSERT",
+        NULL,
+        JSON_OBJECT(
+            "content_set_id", NEW.content_set_id,
+            "rest_object_id", NEW.rest_object_id,
+            "kind", NEW.kind,
+            "priority", NEW.priority,
+            "language", NEW.language,
+            "name", NEW.name,
+            "class_name", NEW.class_name,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        NULL,
+        NEW.content_set_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_UPDATE_AUDIT_LOG`
+    AFTER UPDATE ON `content_set_has_rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set_has_rest_object",
+        "UPDATE",
+        JSON_OBJECT(
+            "content_set_id", OLD.content_set_id,
+            "rest_object_id", OLD.rest_object_id,
+            "kind", OLD.kind,
+            "priority", OLD.priority,
+            "language", OLD.language,
+            "name", OLD.name,
+            "class_name", OLD.class_name,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        JSON_OBJECT(
+            "content_set_id", NEW.content_set_id,
+            "rest_object_id", NEW.rest_object_id,
+            "kind", NEW.kind,
+            "priority", NEW.priority,
+            "language", NEW.language,
+            "name", NEW.name,
+            "class_name", NEW.class_name,
+            "comments", NEW.comments,
+            "options", NEW.options),
+        OLD.content_set_id,
+        NEW.content_set_id,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DROP TRIGGER IF EXISTS `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`%%
+CREATE TRIGGER `content_set_has_rest_object_AFTER_DELETE_AUDIT_LOG`
+    AFTER DELETE ON `content_set_has_rest_object` FOR EACH ROW
+BEGIN
+    INSERT INTO `audit_log` (
+        table_name, dml_type, old_row_data, new_row_data, old_row_id, new_row_id, changed_by, changed_at)
+    VALUES (
+        "content_set_has_rest_object",
+        "DELETE",
+        JSON_OBJECT(
+            "content_set_id", OLD.content_set_id,
+            "rest_object_id", OLD.rest_object_id,
+            "kind", OLD.kind,
+            "priority", OLD.priority,
+            "language", OLD.language,
+            "name", OLD.name,
+            "class_name", OLD.class_name,
+            "comments", OLD.comments,
+            "options", OLD.options),
+        NULL,
+        OLD.content_set_id,
+        NULL,
+        SESSION_USER(),
+        CURRENT_TIMESTAMP
+    );
+END%%
+
+DELIMITER ;
+
+-- -----------------------------------------------------
+-- EVENTs
+
+DELIMITER %%
+
+-- Create an event to delete old audit_log entries that are older than 14 days
+
+DROP EVENT IF EXISTS `delete_old_audit_log_entries`%%
+CREATE EVENT `delete_old_audit_log_entries`
+ON SCHEDULE EVERY 1 DAY ENABLE
+DO BEGIN
+    DELETE FROM `audit_log`
+        WHERE changed_at < NOW() - INTERVAL 14 DAY;
+END%%
+
+-- Create an event to dump the audit log every 15 minutes
+
+DROP EVENT IF EXISTS `audit_log_dump_event`%%
+CREATE EVENT `audit_log_dump_event`
+ON SCHEDULE EVERY 15 MINUTE
+  STARTS '2025-01-01 00:00:00'
+ON COMPLETION PRESERVE DISABLE
+DO BEGIN
+    CALL `dump_audit_log`();
+END%%
+
+-- Periodically down-sample rest_daemon_status rows to keep its size under control.
+
+DROP EVENT IF EXISTS `rest_daemon_status_cleanup`%%
+CREATE EVENT `rest_daemon_status_cleanup` ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Aggregate and clean up rest_daemon_status entries' DO
+    CALL rest_daemon_status_do_cleanup(NOW())%%
+
+
+-- Periodically delete the rest_daemon_general_log
+
+DROP EVENT IF EXISTS `rest_daemon_log_cleanup`%%
+CREATE EVENT `rest_daemon_log_cleanup`
+ON SCHEDULE EVERY 1 HOUR
+ON COMPLETION NOT PRESERVE ENABLE COMMENT 'Clean up rest_daemon_general_log entries'
+DO
+    DELETE FROM `rest_daemon_general_log`
+        WHERE `log_time` <= NOW() - INTERVAL 1 DAY%%
+
+DELIMITER ;
+
+DELIMITER %%
+
+-- -----------------------------------------------------------------------------
+-- CREATE PROCEDURE `restore_roles`
+-- -----------------------------------------------------------------------------
+
+DROP PROCEDURE IF EXISTS `restore_roles`%%
+CREATE PROCEDURE `restore_roles`()
+SQL SECURITY DEFINER
+COMMENT 'This procedure restores all the ROLEs required by the MariaDB REST Service.'
+BEGIN
+    -- -----------------------------------------------------
+    -- Create roles for the MariaDB REST Service
+
+    -- The mariadb_rest_service_admin ROLE allows to fully manage the REST services
+    -- The mariadb_rest_service_schema_admin ROLE allows to manage the database schemas assigned to REST services
+    -- The mariadb_rest_service_dev ROLE allows to develop new REST objects for given REST services and upload static files
+    -- The mariadb_rest_service_user ROLE can be assigned to MariaDB accounts that are granted access via MariaDB Internal authentication.
+    -- The mariadb_rest_service_meta_provider ROLE is used by the MariaDB REST Daemon to read the mrs metadata and make inserts into the auth_user table
+    -- The mariadb_rest_service_data_provider ROLE is used by the MariaDB REST Daemon to read the actual schema data that is exposed via REST
+
+    CREATE ROLE IF NOT EXISTS /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/,
+        /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- Allow the /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/ role to access the same data as /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/
+    GRANT /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/ TO /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/;
+
+    -- Allow the creation of temporary tables
+    GRANT CREATE TEMPORARY TABLES ON *
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- `msm_schema_version`
+    GRANT SELECT ON `msm_schema_version`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `audit_log`
+    GRANT SELECT ON `audit_log`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- Config
+
+    -- `config`
+    GRANT SELECT, UPDATE
+        ON `config`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `config`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `redirect`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `redirect`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `redirect`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- Service
+
+    -- `url_host`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `url_host`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `url_host`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `url_host_alias`
+    GRANT SELECT, INSERT, DELETE
+        ON `url_host_alias`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `url_host_alias`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `service`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `service`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `service`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- Schema Objects
+
+    -- `rest_schema`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_schema`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `rest_schema`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `rest_object`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_object`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `rest_object`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_rest_object_row_group_security`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_rest_object_row_group_security`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `mrs_rest_object_row_group_security`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `data_mapping`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `data_mapping`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `data_mapping`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `data_mapping_field`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `data_mapping_field`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `data_mapping_field`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `data_mapping_reference`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `data_mapping_reference`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `data_mapping_reference`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- Static Content
+
+    -- `content_set`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `content_set`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `content_set`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `content_file`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `content_file`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `content_file`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+
+    -- `content_set_has_rest_object`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `content_set_has_rest_object`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `content_set_has_rest_object`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- User Authentication
+
+    -- `auth_app`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `auth_app`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `auth_app`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `service_has_auth_app`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `service_has_auth_app`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `service_has_auth_app`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `auth_vendor`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `auth_vendor`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `auth_vendor`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `mrs_user`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT, UPDATE ON `mrs_user`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `mrs_user`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- User Hierarchy
+
+    -- `mrs_user_hierarchy`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `mrs_user_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_user_hierarchy_type`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_hierarchy_type`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_hierarchy_type`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- User Roles
+
+    -- `mrs_user_has_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_has_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_has_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_privilege`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_privilege`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_privilege`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- User Group Management
+
+    -- `mrs_user_has_group`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_has_group`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_has_group`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_user_group`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_group`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_group`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_user_group_has_role`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_group_has_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_group_has_role`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_group_hierarchy_type`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_group_hierarchy_type`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_group_hierarchy_type`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `mrs_user_group_hierarchy`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `mrs_user_group_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `mrs_user_group_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `mrs_user_group_hierarchy`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- MariaDB REST Daemon Management
+
+    -- `rest_daemon`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_daemon`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT, UPDATE ON `rest_daemon`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT
+        ON `rest_daemon`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `rest_daemon_status`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_daemon_status`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT, UPDATE ON `rest_daemon_status`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `rest_daemon_status`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `rest_daemon_general_log`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_daemon_general_log`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT INSERT ON `rest_daemon_general_log`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `rest_daemon_general_log`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `rest_daemon_session`
+    GRANT SELECT, INSERT, UPDATE, DELETE
+        ON `rest_daemon_session`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+    GRANT SELECT, INSERT ON `rest_daemon_session`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+    GRANT SELECT ON `rest_daemon_session`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+    -- `rest_daemon_services`
+    GRANT SELECT ON `rest_daemon_services`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- -----------------------------------------------------
+    -- Procedures and Functions
+
+    -- `get_sequence_id`
+
+    GRANT EXECUTE ON FUNCTION `get_sequence_id`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+    -- `table_columns_with_references`
+    GRANT EXECUTE ON PROCEDURE `table_columns_with_references`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `sdk_service_data`
+    GRANT EXECUTE ON PROCEDURE `sdk_service_data`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `restore_roles`
+    GRANT EXECUTE ON PROCEDURE `restore_roles`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+
+
+    -- -----------------------------------------------------
+    -- Views
+
+    -- `mrs_user_schema_version`
+    GRANT SELECT
+        ON `mrs_user_schema_version`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+    -- `data_mapping_fields_with_references`
+    GRANT SELECT
+        ON `data_mapping_fields_with_references`
+        TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+END%%
+
+DELIMITER ;
+
+-- #############################################################################
+-- MSM Section 170: Authorization
+-- -----------------------------------------------------------------------------
+-- This section is used to define the ROLEs and GRANT statements.
+-- #############################################################################
+
+-- -----------------------------------------------------
+-- Create roles for the MariaDB REST Service
+
+-- The mariadb_rest_service_admin ROLE allows to fully manage the REST services
+-- The mariadb_rest_service_schema_admin ROLE allows to manage the database schemas assigned to REST services
+-- The mariadb_rest_service_dev ROLE allows to develop new REST objects for given REST services and upload static files
+-- The mariadb_rest_service_user ROLE can be assigned to MariaDB accounts that are granted access via MariaDB Internal authentication.
+-- The mariadb_rest_service_meta_provider ROLE is used by the MariaDB REST Daemon to read the mrs metadata and make inserts into the auth_user table
+-- The mariadb_rest_service_data_provider ROLE is used by the MariaDB REST Daemon to read the actual schema data that is exposed via REST
+
+CREATE ROLE IF NOT EXISTS /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/,
+    /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- Allow the /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/ role to access the same data as /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/
+GRANT /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/ TO /*<msm:schema_prefix>*/mariadb_rest_service_user/*<msm:schema_postfix>*/;
+
+-- Allow the creation of temporary tables
+GRANT CREATE TEMPORARY TABLES ON *
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- `msm_schema_version`
+GRANT SELECT ON `msm_schema_version`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `audit_log`
+GRANT SELECT ON `audit_log`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- Config
+
+-- `config`
+GRANT SELECT, UPDATE
+    ON `config`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `config`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `redirect`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `redirect`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `redirect`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- Service
+
+-- `url_host`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `url_host`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `url_host`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `url_host_alias`
+GRANT SELECT, INSERT, DELETE
+    ON `url_host_alias`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `url_host_alias`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `service`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `service`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `service`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- Schema Objects
+
+-- `rest_schema`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_schema`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `rest_schema`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `rest_object`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_object`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `rest_object`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_rest_object_row_group_security`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_rest_object_row_group_security`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `mrs_rest_object_row_group_security`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `data_mapping`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `data_mapping`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `data_mapping`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `data_mapping_field`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `data_mapping_field`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `data_mapping_field`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `data_mapping_reference`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `data_mapping_reference`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `data_mapping_reference`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- Static Content
+
+-- `content_set`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `content_set`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `content_set`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `content_file`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `content_file`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `content_file`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+
+-- `content_set_has_rest_object`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `content_set_has_rest_object`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+GRANT SELECT ON `content_set_has_rest_object`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- User Authentication
+
+-- `auth_app`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `auth_app`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `auth_app`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `service_has_auth_app`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `service_has_auth_app`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `service_has_auth_app`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `auth_vendor`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `auth_vendor`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT ON `auth_vendor`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `mrs_user`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT, UPDATE ON `mrs_user`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `mrs_user`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- User Hierarchy
+
+-- `mrs_user_hierarchy`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `mrs_user_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_user_hierarchy_type`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_hierarchy_type`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_hierarchy_type`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- User Roles
+
+-- `mrs_user_has_role`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_has_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_has_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_role`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_privilege`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_privilege`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_privilege`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- User Group Management
+
+-- `mrs_user_has_group`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_has_group`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_has_group`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_user_group`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_group`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_group`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_user_group_has_role`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_group_has_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_group_has_role`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_group_hierarchy_type`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_group_hierarchy_type`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_group_hierarchy_type`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `mrs_user_group_hierarchy`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `mrs_user_group_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `mrs_user_group_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `mrs_user_group_hierarchy`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- MariaDB REST Daemon Management
+
+-- `rest_daemon`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_daemon`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT
+    ON `rest_daemon`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `rest_daemon_status`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_daemon_status`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT, UPDATE ON `rest_daemon_status`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `rest_daemon_status`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `rest_daemon_general_log`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_daemon_general_log`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT INSERT ON `rest_daemon_general_log`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `rest_daemon_general_log`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `rest_daemon_session`
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON `rest_daemon_session`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+GRANT SELECT, INSERT ON `rest_daemon_session`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+GRANT SELECT ON `rest_daemon_session`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/;
+
+-- `rest_daemon_services`
+GRANT SELECT ON `rest_daemon_services`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- -----------------------------------------------------
+-- Procedures and Functions
+
+-- `get_sequence_id`
+
+GRANT EXECUTE ON FUNCTION `get_sequence_id`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_data_provider/*<msm:schema_postfix>*/;
+
+-- `table_columns_with_references`
+GRANT EXECUTE ON PROCEDURE `table_columns_with_references`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `sdk_service_data`
+GRANT EXECUTE ON PROCEDURE `sdk_service_data`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `restore_roles`
+GRANT EXECUTE ON PROCEDURE `restore_roles`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/;
+
+
+-- -----------------------------------------------------
+-- Views
+
+-- `mrs_user_schema_version`
+GRANT SELECT
+    ON `mrs_user_schema_version`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- `data_mapping_fields_with_references`
+GRANT SELECT
+    ON `data_mapping_fields_with_references`
+    TO /*<msm:schema_prefix>*/mariadb_rest_service_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_schema_admin/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_dev/*<msm:schema_postfix>*/, /*<msm:schema_prefix>*/mariadb_rest_service_meta_provider/*<msm:schema_postfix>*/;
+
+-- #############################################################################
+-- MSM Section 910: Database Schema Version
+-- -----------------------------------------------------------------------------
+-- Setting the correct database schema version.
+-- #############################################################################
+
+CREATE OR REPLACE SQL SECURITY INVOKER
+VIEW `msm_schema_version` (
+    `major`,`minor`,`patch`) AS
+SELECT 5, 0, 0;
+
+-- #############################################################################
+-- MSM Section 920: Server Variable Restoration
+-- -----------------------------------------------------------------------------
+-- Restore the modified server variables to their original state.
+-- #############################################################################
+
+SET SQL_MODE=@OLD_SQL_MODE;
+SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
+SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
