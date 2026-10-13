@@ -82,7 +82,31 @@ previous() {
   sed -n "s/^$1=//p" "$STAMP" 2> /dev/null || true
 }
 
+# Whether the Keycloak realm settings differ from the previous configuration's.
+realm_changed() {
+  [ "$(fingerprint | realm_part)" != "$({ cat "$STAMP" 2> /dev/null || true; } | realm_part)" ]
+}
+
+# Every variable that MODE requires, checked before anything is changed, so
+# that a wrong configuration leaves the previous one in place.
+check_required() {
+  local var required
+  case "$MODE" in
+    none) required="" ;;
+    builtin) required="MCP_PUBLIC_URL MCP_LOGIN_SERVERS" ;;
+    keycloak) required="MCP_PUBLIC_URL KEYCLOAK_URL KEYCLOAK_REALM KEYCLOAK_ADMIN_USER" ;;
+    *) die "MCP_OAUTH_MODE must be none, builtin or keycloak, not '$MODE'" ;;
+  esac
+  for var in $required; do
+    [ -n "${!var:-}" ] || die "MCP_OAUTH_MODE=$MODE needs $var"
+  done
+  if [ "$MODE" = keycloak ] && realm_changed && [ -z "$(secret KEYCLOAK_ADMIN_PASSWORD)" ]; then
+    die "preparing the Keycloak realm needs KEYCLOAK_ADMIN_PASSWORD or KEYCLOAK_ADMIN_PASSWORD_FILE"
+  fi
+}
+
 configure() {
+  check_required
   echo "entrypoint-mcp-server: applying the configuration ($MODE)" >&2
   msh mcp setup --multiTenant=true
 
@@ -102,24 +126,16 @@ configure() {
       ;;
 
     builtin)
-      [ -n "${MCP_PUBLIC_URL:-}" ] || die "MCP_OAUTH_MODE=builtin needs MCP_PUBLIC_URL"
-      [ -n "${MCP_LOGIN_SERVERS:-}" ] || die "MCP_OAUTH_MODE=builtin needs MCP_LOGIN_SERVERS"
       msh mcp setup-oauth --mode=builtin --publicUrl="$MCP_PUBLIC_URL" \
         --addLoginServer="$MCP_LOGIN_SERVERS" \
         --requiredRole="${MCP_REQUIRED_ROLE:-}"
       ;;
 
     keycloak)
-      local var
-      for var in MCP_PUBLIC_URL KEYCLOAK_URL KEYCLOAK_REALM KEYCLOAK_ADMIN_USER; do
-        [ -n "${!var:-}" ] || die "MCP_OAUTH_MODE=keycloak needs $var"
-      done
-      if [ "$(fingerprint | realm_part)" = "$({ cat "$STAMP" 2> /dev/null || true; } | realm_part)" ]; then
+      if ! realm_changed; then
         echo "entrypoint-mcp-server: the Keycloak realm settings are unchanged" >&2
       else
         MCP_KEYCLOAK_ADMIN_PASSWORD="$(secret KEYCLOAK_ADMIN_PASSWORD)"
-        [ -n "$MCP_KEYCLOAK_ADMIN_PASSWORD" ] ||
-          die "preparing the Keycloak realm needs KEYCLOAK_ADMIN_PASSWORD or KEYCLOAK_ADMIN_PASSWORD_FILE"
         export MCP_KEYCLOAK_ADMIN_PASSWORD
         msh mcp setup-oauth --publicUrl="$MCP_PUBLIC_URL"
         msh mcp setup-keycloak-realm --nonInteractive \
@@ -133,10 +149,6 @@ configure() {
           ${KEYCLOAK_LOGIN_THEME:+--loginTheme="$KEYCLOAK_LOGIN_THEME"}
         unset MCP_KEYCLOAK_ADMIN_PASSWORD
       fi
-      ;;
-
-    *)
-      die "MCP_OAUTH_MODE must be none, builtin or keycloak, not '$MODE'"
       ;;
   esac
 
