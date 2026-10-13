@@ -92,6 +92,9 @@ using Privilege_list = std::vector<Privilege>;
 %code {
 #include <algorithm>
 #include <cctype>
+#include <charconv>
+#include <limits>
+#include <system_error>
 
 #include "mysqlshdk/libs/mrs/parser_driver.h"
 
@@ -120,6 +123,12 @@ Output_format output_format(const std::string &name,
 // The id of a REST daemon: a UUID in its canonical text form, returned in
 // lower case like every metadata id.
 std::string daemon_id(const std::string &text, const Parser::location_type &loc);
+
+// The number of ITEMS PER PAGE. Its range is the server's to check (the
+// column and its CHECK constraint), so a number too large for 64 bits is
+// passed on as the largest one, which the server refuses like any other
+// out-of-range value.
+int64_t items_per_page(const std::string &digits);
 
 // A SHOW CREATE statement with the format of its FORMAT=<name> clause.
 template <typename T>
@@ -532,7 +541,7 @@ authentication_required:
 
 items_per_page:
     ITEMS_SYMBOL PER_SYMBOL PAGE_SYMBOL INT_NUMBER
-    { $$ = std::stoll($4); }
+    { $$ = items_per_page($4); }
   ;
 
 service_schema_selector:
@@ -2386,6 +2395,17 @@ Output_format output_format(const std::string &name,
   if (upper == "JSON") return Output_format::json;
   if (upper == "TRADITIONAL") return Output_format::traditional;
   throw Parser::syntax_error(loc, "Unknown REST format name: '" + name + "'");
+}
+
+int64_t items_per_page(const std::string &digits) {
+  // INT_NUMBER is digits only, so the conversion fails only on overflow
+  int64_t value = 0;
+  const auto result =
+      std::from_chars(digits.data(), digits.data() + digits.size(), value);
+  if (result.ec == std::errc::result_out_of_range) {
+    return std::numeric_limits<int64_t>::max();
+  }
+  return value;
 }
 
 std::string daemon_id(const std::string &text, const Parser::location_type &loc) {

@@ -23,6 +23,8 @@
  * 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -273,6 +275,13 @@ TEST(Mrs_parser, rest_schema_statements) {
     EXPECT_EQ(Enabled_state::enabled, *s.options.enabled);
     EXPECT_EQ(25, *s.options.items_per_page);
     EXPECT_EQ("The sakila schema", *s.options.comments);
+  }
+  {
+    // A number too large for 64 bits is no parse error: the server refuses
+    // it as out of range, like any other value its column does not hold
+    const auto &s = parse_as<Create_rest_schema>(
+        "CREATE REST SCHEMA /s FROM sakila ITEMS PER PAGE 99999999999999999999");
+    EXPECT_EQ(std::numeric_limits<int64_t>::max(), *s.options.items_per_page);
   }
   {
     const auto &s = parse_as<Create_rest_schema>(

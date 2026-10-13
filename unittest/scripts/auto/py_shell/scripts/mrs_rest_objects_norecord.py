@@ -346,6 +346,8 @@ EXPECT_EQ([["/city", "DISABLED"], ["/country", "ENABLED"], ["/filmList", "ENABLE
 EXPECT_EQ("Select", table_privileges("city"))
 EXPECT_THROWS(lambda: rest("ALTER REST VIEW /city CLASS Cities4 @INSERT @UPDATE @DELETE { cityId: city_id, city: city } ITEMS PER PAGE 5000000000"), "Out of range value for column 'items_per_page'")
 EXPECT_EQ("Select", table_privileges("city"))
+# A number too large for 64 bits gets the same error from the server
+EXPECT_THROWS(lambda: rest("ALTER REST VIEW /city ITEMS PER PAGE 99999999999999999999"), "Out of range value for column 'items_per_page'")
 EXPECT_EQ("READ", rest_object_column("/city", "crud_operations"))
 EXPECT_IN("CLASS Cities3 {", show_create("SHOW CREATE REST VIEW /city"))
 # Without a change of the privileges nothing is revoked or granted
