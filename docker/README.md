@@ -4,11 +4,11 @@ This directory holds two kinds of images:
 
 | File | Purpose |
 | --- | --- |
-| `mariadb-shell.Dockerfile`, `mcp-entrypoint.sh` | The **MariaDB Shell image**: runs the MariaDB MCP server in multi-tenant mode. Described below. |
+| `debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh` | The **MariaDB Shell MCP Server image** (`mariadb-shell-mcp-server`): runs the MariaDB MCP server in multi-tenant mode. Described below. |
 | `linux-rocky9.Dockerfile`, `entrypoint.sh` | Build environment for the Linux release packages (`rocky-linux.yml`). |
 | `linux-rocky9-server.Dockerfile`, `entrypoint-sandbox-server.sh` | Build environment for the sandbox server packages. |
 
-## The MariaDB Shell Image
+## The MariaDB Shell MCP Server Image
 
 The image contains a MariaDB Shell release and starts a **multi-tenant MCP server** over streamable HTTP. Every request needs an API key or an OAuth2 access token, and each user has their own connections and passwords. It doesn't serve a single-user server or the `stdio` transport: an MCP client on your own machine can start `mariadb-shell -- mcp start-server --transport=stdio` directly.
 
@@ -21,21 +21,21 @@ Nothing is compiled. The build downloads the release's Linux tarball for each pl
 ```bash
 # One platform, loaded into the local image store
 docker buildx build --platform linux/arm64 --load \
-  --build-arg VERSION=26.10.1 -t mariadb-shell:26.10.1 \
-  -f docker/mariadb-shell.Dockerfile docker
+  --build-arg VERSION=26.10.1 -t mariadb-shell-mcp-server:26.10.1 \
+  -f docker/debian13-mcp-server.Dockerfile docker
 
 # Both platforms, pushed as one multi-arch image
 docker buildx create --name msh --driver docker-container   # once; the default builder can't build multi-platform images
 docker buildx build --builder msh --platform linux/amd64,linux/arm64 --push \
-  --build-arg VERSION=26.10.1 -t <registry>/<namespace>/mariadb-shell:26.10.1 \
-  -f docker/mariadb-shell.Dockerfile docker
+  --build-arg VERSION=26.10.1 -t <registry>/<namespace>/mariadb-shell-mcp-server:26.10.1 \
+  -f docker/debian13-mcp-server.Dockerfile docker
 ```
 
 The build context is `docker/`, not the repository root. `VERSION` must name a published release, tagged `v<VERSION>`. For a release with another tag, add `--build-arg RELEASE_TAG=<tag>`.
 
-On Colima, foreign-platform builds need QEMU emulation, which Colima sets up by default. To move an image to a machine without a registry, run `docker save mariadb-shell:26.10.1 | ssh <host> podman load`.
+On Colima, foreign-platform builds need QEMU emulation, which Colima sets up by default. To move an image to a machine without a registry, run `docker save mariadb-shell-mcp-server:26.10.1 | ssh <host> podman load`.
 
-Podman and other clients resolve short image names differently. Pull with the fully qualified name, for example `docker.io/<namespace>/mariadb-shell:26.10.1`.
+Podman and other clients resolve short image names differently. Pull with the fully qualified name, for example `docker.io/<namespace>/mariadb-shell-mcp-server:26.10.1`.
 
 ### Run
 
@@ -50,7 +50,7 @@ On its first start, the container configures the server from environment variabl
 ```bash
 docker run -d --name mcp -p 127.0.0.1:8080:8080 -v mcp-data:/home/mcp \
   -e MCP_INITIAL_USER=ada@example.com \
-  mariadb-shell:26.10.1
+  mariadb-shell-mcp-server:26.10.1
 
 docker exec mcp mariadb-shell -- mcp setup --showApiKey=ada@example.com
 docker exec mcp mariadb-shell -- mcp setup --user=ada@example.com \
@@ -69,7 +69,7 @@ docker run -d --name mcp -p 127.0.0.1:8080:8080 -v mcp-data:/home/mcp \
   -e MCP_PUBLIC_URL=https://mcp.example.com/mcp \
   -e MCP_LOGIN_SERVERS='mariadb://db.example.com:3306' \
   -e MCP_REQUIRED_ROLE=mcp_access \
-  mariadb-shell:26.10.1
+  mariadb-shell-mcp-server:26.10.1
 ```
 
 Users need no setup on the MCP server. They're created at their first sign-in. The login servers must accept TLS connections.
@@ -88,7 +88,7 @@ podman run -d --name mcp -p 127.0.0.1:8080:8080 -v mcp-data:/home/mcp \
   -e KEYCLOAK_ADMIN_USER=admin \
   -e KEYCLOAK_ADMIN_PASSWORD_FILE=/run/secrets/kc-admin-password \
   --secret kc-admin-password,uid=10001,mode=0400 \
-  mariadb-shell:26.10.1
+  mariadb-shell-mcp-server:26.10.1
 ```
 
 The server runs as uid 10001 in the container. A password file that is bind-mounted instead, as with Docker, keeps its owner and mode from the host, so it has to be readable by that user. Otherwise the container stops with `cannot read … as uid 10001`.
@@ -119,7 +119,7 @@ The container must reach `KEYCLOAK_URL` under the same name that the realm's iss
 | `MCP_MAX_CONNECTIONS` | all | The most database connections the server holds open, for all users together. Default: 64. |
 | `MCP_PORT` | all | The port in the container. Default: 8080. |
 
-Further arguments after `start-server` go to `mcp start-server`, for example `docker run … mariadb-shell:26.10.1 start-server --sslCertfile=… --sslKeyfile=…` to serve HTTPS from the container itself.
+Further arguments after `start-server` go to `mcp start-server`, for example `docker run … mariadb-shell-mcp-server:26.10.1 start-server --sslCertfile=… --sslKeyfile=…` to serve HTTPS from the container itself.
 
 A program of the image, such as `sh` or `bash`, runs as it is. Any other command runs `mariadb-shell` with its arguments. This is how you administer the server:
 

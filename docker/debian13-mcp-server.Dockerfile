@@ -1,4 +1,4 @@
-# MariaDB Shell runtime image, made for running the MCP server in multi-tenant
+# MariaDB Shell MCP Server image: runs the MCP server of MariaDB Shell in multi-tenant
 # mode (see docker/README.md).
 #
 # Nothing is compiled here: the image unpacks the released Linux tarball of
@@ -7,7 +7,7 @@
 # so building for a foreign architecture under QEMU only runs curl and tar.
 #
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     --build-arg VERSION=26.10.1 -f docker/mariadb-shell.Dockerfile docker
+#     --build-arg VERSION=26.10.1 -f docker/debian13-mcp-server.Dockerfile docker
 #
 # RELEASE_TAG names the GitHub release when its tag is not v<VERSION>.
 
@@ -48,7 +48,7 @@ FROM ${BASE_IMAGE}
 
 ARG VERSION
 
-LABEL org.opencontainers.image.title="MariaDB Shell" \
+LABEL org.opencontainers.image.title="MariaDB Shell MCP Server" \
       org.opencontainers.image.description="MariaDB Shell with the MariaDB MCP server" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.source="https://github.com/mariadb-corporation/mariadb-shell" \
@@ -71,7 +71,7 @@ RUN apt-get update \
     && chgrp 0 /home/mcp && chmod g=u /home/mcp
 
 COPY --from=fetch /opt/mariadb-shell /opt/mariadb-shell
-COPY mcp-entrypoint.sh /usr/local/bin/mcp-entrypoint.sh
+COPY entrypoint-mcp-server.sh /usr/local/bin/entrypoint-mcp-server.sh
 
 ENV PATH=/opt/mariadb-shell/bin:$PATH \
     LANG=en_US.UTF-8 \
@@ -89,5 +89,5 @@ WORKDIR /home/mcp
 VOLUME /home/mcp
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/mcp-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint-mcp-server.sh"]
 CMD ["start-server"]

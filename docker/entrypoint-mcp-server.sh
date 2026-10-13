@@ -14,7 +14,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA
 
-# Entrypoint of the MariaDB Shell image (docker/mariadb-shell.Dockerfile).
+# Entrypoint of the MariaDB Shell MCP Server image (docker/debian13-mcp-server.Dockerfile).
 #
 # `start-server` (the default command) configures a multi-tenant MCP server
 # from the MCP_* and KEYCLOAK_* environment variables, then runs it in the
@@ -44,7 +44,7 @@ msh() {
 }
 
 die() {
-  echo "mcp-entrypoint: $*" >&2
+  echo "entrypoint-mcp-server: $*" >&2
   exit 1
 }
 
@@ -83,7 +83,7 @@ previous() {
 }
 
 configure() {
-  echo "mcp-entrypoint: applying the configuration ($MODE)" >&2
+  echo "entrypoint-mcp-server: applying the configuration ($MODE)" >&2
   msh mcp setup --multiTenant=true
 
   # MCP_LOGIN_SERVERS names all login servers: the previous ones go first, and
@@ -115,7 +115,7 @@ configure() {
         [ -n "${!var:-}" ] || die "MCP_OAUTH_MODE=keycloak needs $var"
       done
       if [ "$(fingerprint | realm_part)" = "$({ cat "$STAMP" 2> /dev/null || true; } | realm_part)" ]; then
-        echo "mcp-entrypoint: the Keycloak realm settings are unchanged" >&2
+        echo "entrypoint-mcp-server: the Keycloak realm settings are unchanged" >&2
       else
         MCP_KEYCLOAK_ADMIN_PASSWORD="$(secret KEYCLOAK_ADMIN_PASSWORD)"
         [ -n "$MCP_KEYCLOAK_ADMIN_PASSWORD" ] ||
@@ -146,7 +146,7 @@ configure() {
   if [ -n "${MCP_INITIAL_USER:-}" ] &&
      ! msh mcp setup --show --user="$MCP_INITIAL_USER" > /dev/null 2>&1; then
     msh mcp setup --addUser="$MCP_INITIAL_USER" > /dev/null
-    echo "mcp-entrypoint: user $MCP_INITIAL_USER added; show the API key with:" >&2
+    echo "entrypoint-mcp-server: user $MCP_INITIAL_USER added; show the API key with:" >&2
     echo "  <podman|docker> exec <container> mariadb-shell -- mcp setup --showApiKey=$MCP_INITIAL_USER" >&2
   fi
 

@@ -43,11 +43,11 @@ To build the image yourself, use the `docker` folder of the [MariaDB Shell repos
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=<version> -t mariadb/mariadb-shell:<version> \
-  -f docker/mariadb-shell.Dockerfile docker
+  --build-arg VERSION=<version> -t mariadb/mariadb-shell-mcp-server:<version> \
+  -f docker/debian13-mcp-server.Dockerfile docker
 ```
 
-With Podman and other clients that don't resolve short names through Docker Hub, use the fully qualified name, `docker.io/mariadb/mariadb-shell`.
+With Podman and other clients that don't resolve short names through Docker Hub, use the fully qualified name, `docker.io/mariadb/mariadb-shell-mcp-server`.
 
 ## Environment Variables
 
@@ -140,7 +140,7 @@ This setup runs the MCP server with its [built-in authorization server](oauth-au
           - db-data:/var/lib/mysql
 
       mcp:
-        image: mariadb/mariadb-shell:latest
+        image: mariadb/mariadb-shell-mcp-server:latest
         restart: unless-stopped
         depends_on:
           - db
@@ -223,7 +223,7 @@ This setup runs Keycloak with its own MariaDB database next to the MCP server. O
 1.  Copy the login theme out of the image, so that Keycloak can load it:
 
     ```bash
-    docker run --rm --entrypoint tar mariadb/mariadb-shell:latest \
+    docker run --rm --entrypoint tar mariadb/mariadb-shell-mcp-server:latest \
       -C /opt/mariadb-shell/lib/mariadb-shell/plugins/mcp_plugin -cf - keycloak-theme | tar -xf -
     ```
 2.  Create `compose.yaml`:
@@ -264,7 +264,7 @@ This setup runs Keycloak with its own MariaDB database next to the MCP server. O
           - "127.0.0.1:8180:8080"
 
       mcp:
-        image: mariadb/mariadb-shell:latest
+        image: mariadb/mariadb-shell-mcp-server:latest
         restart: unless-stopped
         depends_on:
           - keycloak
@@ -328,7 +328,7 @@ This setup runs Keycloak with its own MariaDB database next to the MCP server. O
     ```
 
     ```text
-    mcp-entrypoint: applying the configuration (keycloak)
+    entrypoint-mcp-server: applying the configuration (keycloak)
     Multi-tenant mode on.
     Public URL set to https://mcp.example.com/mcp.
     Client scope mcp:db created.
@@ -371,8 +371,8 @@ The MCP server reads the realm's keys from `KEYCLOAK_URL`, so the container must
 
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
-| *mcp-entrypoint: KEYCLOAK_ADMIN_PASSWORD_FILE: cannot read … as uid 10001* | The password file isn't readable by the server's user in the container. | Make it readable by uid `10001`, as described in [Setup With Keycloak](#setup-with-keycloak). |
-| *mcp-entrypoint: MCP_OAUTH_MODE=keycloak needs …* | A variable that the mode needs isn't set. | Set the variable the message names. |
+| *entrypoint-mcp-server: KEYCLOAK_ADMIN_PASSWORD_FILE: cannot read … as uid 10001* | The password file isn't readable by the server's user in the container. | Make it readable by uid `10001`, as described in [Setup With Keycloak](#setup-with-keycloak). |
+| *entrypoint-mcp-server: MCP_OAUTH_MODE=keycloak needs …* | A variable that the mode needs isn't set. | Set the variable the message names. |
 | *Keycloak has no login theme 'mariadb-mcp'* | The theme isn't mounted into the Keycloak container, or Keycloak was started before it was. | Mount the theme and restart Keycloak. |
 | A client receives `421 Misdirected Request`. | The client uses a host name other than the public URL's, for example the published port directly. | Use the public URL, or add the name with `MCP_ALLOWED_HOSTS`. |
 | The container restarts again and again, and the log shows that the server refused to start. | The server has no user, and the mode doesn't create users at their first sign-in. | Set `MCP_INITIAL_USER`, or use `builtin` or `keycloak` mode. |
