@@ -21,24 +21,24 @@ Most examples in this guide are written in TypeScript. For the details of each l
 | Scope | TypeScript | Python | Description |
 | ---: | :--- | :--- | --- |
 | All | [getMetadata](typescript-client-api.md#getmetadata) | [get_metadata](python-client-api.md#get_metadata) | Returns the metadata of a REST service, schema, view, function, or procedure. |
-| Service | [getAuthApps](typescript-client-api.md#servicegetauthapps) | [get_auth_apps](python-client-api.md#serviceget_auth_apps) | Returns the REST authentication apps of the REST service. |
-| | [authenticate](typescript-client-api.md#serviceauthenticate) | [authenticate](python-client-api.md#serviceauthenticate) | Authenticates with the REST service. |
-| | [deauthenticate](typescript-client-api.md#servicedeauthenticate) | [deauthenticate](python-client-api.md#servicedeauthenticate) | Closes an authenticated session to the REST service. |
-| View | [create](typescript-client-api.md#viewcreate) | [create](python-client-api.md#viewcreate) | Creates a new document on a REST view endpoint. |
-| | [createMany](typescript-client-api.md#viewcreatemany) | [create_many](python-client-api.md#viewcreate_many) | Creates a list of documents on a REST view endpoint. |
-| | [find](typescript-client-api.md#viewfind) | [find](python-client-api.md#viewfind) | Reads the first page of documents of a search request and returns an iterator. |
-| | [findFirst](typescript-client-api.md#viewfindfirst) | [find_first](python-client-api.md#viewfind_first) | Reads the first matching document of a search request. |
-| | [findFirstOrThrow](typescript-client-api.md#viewfindfirst) | [find_first_or_throw](python-client-api.md#viewfind_first_or_throw) | Reads the first matching document of a search request and throws an error if none is found. |
-| | [findUnique](typescript-client-api.md#viewfindunique) | [find_unique](python-client-api.md#viewfind_unique) | Reads the matching document of a primary key lookup. |
-| | [findUniqueOrThrow](typescript-client-api.md#viewfinduniqueorthrow) | [find_unique_or_throw](python-client-api.md#viewfind_unique_or_throw) | Reads the matching document of a primary key lookup and throws an error if none is found. |
-| | [delete](typescript-client-api.md#viewdelete) | [delete](python-client-api.md#viewdelete) | Deletes a document from a REST view endpoint. |
-| | [deleteMany](typescript-client-api.md#viewdeletemany) | [delete_many](python-client-api.md#viewdelete_many) | Deletes several documents from a REST view endpoint. |
-| | [update](typescript-client-api.md#viewupdate) | [update](python-client-api.md#viewupdate) | Updates a document on a REST view endpoint. |
-| | [updateMany](typescript-client-api.md#viewupdatemany) | [update_many](python-client-api.md#viewupdate_many) | Updates several documents on a REST view endpoint. |
-| Document | [update](typescript-client-api.md#documentupdate) | [update](python-client-api.md#documentupdate) | Updates a REST document that was fetched before. |
-| | [delete](typescript-client-api.md#documentdelete) | [delete](python-client-api.md#documentdelete) | Deletes a REST document that was fetched before. |
-| Function | [call](typescript-client-api.md#functioncall) | [call](python-client-api.md#functioncall) | Calls a REST function. |
-| Procedure | [call](typescript-client-api.md#procedurecall) | [call](python-client-api.md#procedurecall) | Calls a REST procedure. |
+| Service | [getAuthApps](typescript-client-api.md#service.getauthapps) | [get_auth_apps](python-client-api.md#service.get_auth_apps) | Returns the REST authentication apps of the REST service. |
+| | [authenticate](typescript-client-api.md#service.authenticate) | [authenticate](python-client-api.md#service.authenticate) | Authenticates with the REST service. |
+| | [deauthenticate](typescript-client-api.md#service.deauthenticate) | [deauthenticate](python-client-api.md#service.deauthenticate) | Closes an authenticated session to the REST service. |
+| View | [create](typescript-client-api.md#view.create) | [create](python-client-api.md#view.create) | Creates a new document on a REST view endpoint. |
+| | [createMany](typescript-client-api.md#view.createmany) | [create_many](python-client-api.md#view.create_many) | Creates a list of documents on a REST view endpoint. |
+| | [find](typescript-client-api.md#view.find) | [find](python-client-api.md#view.find) | Reads the first page of documents of a search request and returns an iterator. |
+| | [findFirst](typescript-client-api.md#view.findfirst) | [find_first](python-client-api.md#view.find_first) | Reads the first matching document of a search request. |
+| | findFirstOrThrow | [find_first_or_throw](python-client-api.md#view.find_first_or_throw) | Reads the first matching document of a search request and throws an error if none is found. |
+| | [findUnique](typescript-client-api.md#view.findunique) | [find_unique](python-client-api.md#view.find_unique) | Reads the matching document of a primary key lookup. |
+| | [findUniqueOrThrow](typescript-client-api.md#view.finduniqueorthrow) | [find_unique_or_throw](python-client-api.md#view.find_unique_or_throw) | Reads the matching document of a primary key lookup and throws an error if none is found. |
+| | [delete](typescript-client-api.md#view.delete) | [delete](python-client-api.md#view.delete) | Deletes a document from a REST view endpoint. |
+| | [deleteMany](typescript-client-api.md#view.deletemany) | [delete_many](python-client-api.md#view.delete_many) | Deletes several documents from a REST view endpoint. |
+| | [update](typescript-client-api.md#view.update) | [update](python-client-api.md#view.update) | Updates a document on a REST view endpoint. |
+| | [updateMany](typescript-client-api.md#view.updatemany) | [update_many](python-client-api.md#view.update_many) | Updates several documents on a REST view endpoint. |
+| Document | [update](typescript-client-api.md#document.update) | [update](python-client-api.md#document.update) | Updates a REST document that was fetched before. |
+| | [delete](typescript-client-api.md#document.delete) | [delete](python-client-api.md#document.delete) | Deletes a REST document that was fetched before. |
+| Function | [call](typescript-client-api.md#function.call) | [call](python-client-api.md#function.call) | Calls a REST function. |
+| Procedure | [call](typescript-client-api.md#procedure.call) | [call](python-client-api.md#procedure.call) | Calls a REST procedure. |
 
 ## Generating the SDK Files
 

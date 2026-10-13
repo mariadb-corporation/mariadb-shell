@@ -1,8 +1,8 @@
 ---
 description: >-
   Create, change, list, and drop REST authentication apps, which authenticate
-  the users of REST services with MRS accounts, MariaDB accounts, or an OAuth2
-  vendor, and list the available authentication vendors.
+  REST service users with MRS accounts, MariaDB accounts, or an OAuth2 vendor,
+  and list the available vendors.
 ---
 
 # REST Authentication Apps

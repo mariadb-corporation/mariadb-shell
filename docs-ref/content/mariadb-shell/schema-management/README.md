@@ -1,8 +1,8 @@
 ---
 description: >-
   Manage a MariaDB database schema across its lifecycle with the msm global
-  object of MariaDB Shell, from the first version through versioned releases to
-  deployments that create or upgrade the schema on any server.
+  object of MariaDB Shell, from the first version through releases to
+  deployments that create or upgrade the schema.
 icon: code-branch
 ---
 

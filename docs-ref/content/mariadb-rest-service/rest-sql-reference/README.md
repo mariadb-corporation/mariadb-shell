@@ -1,8 +1,8 @@
 ---
 description: >-
-  Manage the MariaDB REST Service with REST SQL, the SQL statements that
-  configure the REST metadata and create, change, list, and drop REST services,
-  schemas, objects, content, authentication apps, users, and roles.
+  REST SQL, the SQL statements that configure the MariaDB REST Service
+  metadata and create, change, list, and drop REST services, schemas, objects,
+  content, authentication apps, users, and roles.
 icon: code
 ---
 

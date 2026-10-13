@@ -1,8 +1,8 @@
 ---
 description: >-
-  Where MariaDB Shell writes its application log, how to control the log level
-  and SQL statement logging, and how to show diagnostic output on the console
-  or send interactive statements to the system log.
+  Where MariaDB Shell writes its application log, how to set the log level and
+  SQL statement logging, and how to show diagnostic output on the console or
+  send interactive statements to the system log.
 icon: file-lines
 ---
 

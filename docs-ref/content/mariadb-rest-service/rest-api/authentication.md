@@ -1,8 +1,8 @@
 ---
 description: >-
-  Authenticate a REST user against a REST service of the MariaDB REST Service
-  over HTTP, with MariaDB internal, MRS, or OAuth authentication, and send the
-  session cookie or bearer token with later requests.
+  Authenticate a REST user against a MariaDB REST Service over HTTP, with
+  MariaDB internal, MRS, or OAuth authentication, and send the session cookie
+  or bearer token with later requests.
 ---
 
 # Authenticating REST Users

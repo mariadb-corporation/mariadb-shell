@@ -1,8 +1,8 @@
 ---
 description: >-
-  Call operations of the util, shell, and sandbox global objects directly from
-  the operating system shell with mariadb-shell -- <object> <operation>, and
-  pass positional, named, list, and dictionary arguments.
+  Call util, shell, and sandbox operations directly from the operating system
+  shell with mariadb-shell -- <object> <operation>, passing positional, named,
+  list, and dictionary arguments.
 ---
 
 # Command Line Integration
