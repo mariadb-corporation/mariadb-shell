@@ -75,12 +75,15 @@ class Fake_session : public Db_session {
       return result;
     }
     if (sql.find("GET_LOCK") != std::string::npos) {
+      if (while_waiting_for_lock) while_waiting_for_lock();
       return single("msm_lock", lock_available ? 1 : 0);
     }
     return {};
   }
 
   bool lock_available = true;
+  // What other clients do while GET_LOCK waits
+  std::function<void()> while_waiting_for_lock;
 
   uint64_t do_execute(const std::string &sql) override {
     statements.push_back(sql);
@@ -405,7 +408,7 @@ TEST_F(Mrs_schema_deployment, failed_restore_is_reported) {
 
 TEST_F(Mrs_schema_deployment, update_lock_held_elsewhere_leaves_the_schema) {
   // Another MSM update holds the lock: the schema it is working on is
-  // neither dropped nor restored, and the backup taken here is discarded
+  // neither dropped, restored nor backed up
   Fake_session session;
   session.exists = true;
   session.version = Version{4, 1, 6};
@@ -420,8 +423,32 @@ TEST_F(Mrs_schema_deployment, update_lock_held_elsewhere_leaves_the_schema) {
       message);
   EXPECT_EQ(0, session.scripts_run);
   EXPECT_FALSE(session.ran("DROP SCHEMA"));
+  EXPECT_FALSE(backup.created);
   EXPECT_FALSE(backup.restored);
-  EXPECT_TRUE(backup.discarded);
+}
+
+TEST_F(Mrs_schema_deployment, schema_deployed_while_waiting_for_the_lock) {
+  // Another client deploys the schema while this one waits for the lock:
+  // the schema is looked at under the lock, so it is found deployed and left
+  // alone, rather than taken as missing, deployed again, and dropped if
+  // that fails
+  Fake_session session;
+  session.script_error = "the script fails on an existing schema";
+  session.while_waiting_for_lock = [&] {
+    session.exists = true;
+    session.managed = true;
+    session.version = k_schema_version;
+  };
+  Script_deployer deployer(dir(), nullptr);
+
+  EXPECT_EQ(
+      "Deployment or update of database schema `mariadb_rest_service` using "
+      "version 5.0.0 requested but the schema is already on the requested "
+      "version. No changes performed.",
+      deployer.deploy(&session, true));
+  EXPECT_EQ(0, session.scripts_run);
+  EXPECT_FALSE(session.ran("DROP SCHEMA"));
+  EXPECT_TRUE(session.exists);
 }
 
 TEST_F(Mrs_schema_deployment, failed_update_without_backup_keeps_the_schema) {

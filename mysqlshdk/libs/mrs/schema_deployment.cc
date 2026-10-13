@@ -205,6 +205,18 @@ std::string Script_deployer::deploy(Db_session *session, bool backup) {
     fail(e.what());
   }
 
+  // Taken before the schema is looked at: what is read below must not
+  // change before the script runs. Read before the lock, a deployment that
+  // waited for another one would take the schema the other one just created
+  // as missing, run the script on it again, and drop it if that fails.
+  // Another deployment holding the lock is a reason to stop.
+  std::optional<Msm_lock> lock;
+  try {
+    lock.emplace(session);
+  } catch (const std::exception &e) {
+    fail(e.what());
+  }
+
   // Whether the schema exists, is managed by MSM, and on which version
   const bool exists = schema_exists(session);
   std::optional<Version> current;
@@ -270,17 +282,6 @@ std::string Script_deployer::deploy(Db_session *session, bool backup) {
       fail(e.what());
     }
     backup_available = true;
-  }
-
-  // Taken before anything touches the schema: another update holding the
-  // lock is a reason to stop, not to drop and restore the schema it is
-  // working on.
-  std::optional<Msm_lock> lock;
-  try {
-    lock.emplace(session);
-  } catch (const std::exception &e) {
-    if (backup_available) m_backup->discard();
-    fail(e.what());
   }
 
   try {
