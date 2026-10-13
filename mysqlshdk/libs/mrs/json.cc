@@ -235,9 +235,15 @@ class Parser {
   Value parse_value() {
     switch (peek()) {
       case '{':
-        return parse_object();
-      case '[':
-        return parse_array();
+      case '[': {
+        // Objects and arrays recurse: a limit keeps deeply nested input
+        // (e.g. the literal of a decorator in an MRS script) from
+        // overflowing the stack
+        if (++m_depth > k_max_depth) fail("Too deeply nested");
+        Value value = peek() == '{' ? parse_object() : parse_array();
+        --m_depth;
+        return value;
+      }
       case '"':
         return Value(parse_string());
       case 't':
@@ -417,8 +423,13 @@ class Parser {
     return Value::number(std::string(m_text.substr(start, m_pos - start)));
   }
 
+  // Far deeper than the documents the module reads and writes (options,
+  // data mappings, decorator literals), far below what the stack holds
+  static constexpr size_t k_max_depth = 512;
+
   std::string_view m_text;
   size_t m_pos = 0;
+  size_t m_depth = 0;
 };
 
 }  // namespace

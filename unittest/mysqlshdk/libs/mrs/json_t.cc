@@ -47,5 +47,27 @@ TEST(Mrs_json, unicode_escapes_and_surrogate_pairs) {
   EXPECT_FALSE(try_parse("{\"a\": \"\\ud83d\\u0041\"}").has_value());
 }
 
+TEST(Mrs_json, nesting_depth_is_limited) {
+  const auto nested = [](size_t depth, char open, char close) {
+    return std::string(depth, open) + std::string(depth, close);
+  };
+
+  // 512 levels parse and dump
+  EXPECT_EQ(nested(512, '[', ']'), parse(nested(512, '[', ']')).dump());
+  std::string objects = "1";
+  for (int i = 0; i < 512; ++i) objects = "{\"a\":" + objects + "}";
+  EXPECT_NO_THROW(parse(objects));
+
+  // Deeper input fails instead of overflowing the stack, however deep
+  EXPECT_THROW(parse(nested(513, '[', ']')), Parse_error);
+  EXPECT_THROW(parse(std::string(100000, '[')), Parse_error);
+  EXPECT_FALSE(try_parse(std::string(100000, '[')).has_value());
+  EXPECT_THROW(parse("{\"a\":" + objects + "}"), Parse_error);
+
+  // Siblings do not add up: the depth is that of the deepest branch
+  EXPECT_NO_THROW(parse("[" + nested(511, '[', ']') + "," +
+                        nested(511, '[', ']') + "]"));
+}
+
 }  // namespace json
 }  // namespace mrs
