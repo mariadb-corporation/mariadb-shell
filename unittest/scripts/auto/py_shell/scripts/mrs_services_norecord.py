@@ -343,6 +343,25 @@ EXPECT_THROWS(lambda: rest("USE REST SCHEMA /nope"), "A REST SCHEMA with the req
 EXPECT_EQ("Now using REST SCHEMA `/sakila` on REST SERVICE `/full`.", rest_info("USE REST SERVICE /full SCHEMA /sakila"))
 rest("USE REST SERVICE /myService")
 
+#@<> A replaced current service or schema stays the current one
+# The statements of one script share the state, which is checked once per
+# script: the replacement takes the place of the replaced object
+def current_service_row(path):
+    return [r for r in rest_rows("SHOW REST SERVICES") if r[0] == path][0]
+
+rest("CREATE REST SERVICE /replaced")
+rest("USE REST SERVICE /replaced; CREATE OR REPLACE REST SERVICE /replaced COMMENT 'new'; CREATE REST SCHEMA /s1 FROM sakila")
+EXPECT_EQ([["/s1", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /replaced"))
+EXPECT_EQ("YES", current_service_row("/replaced")[2])
+# /s1 became the current schema; its replacement does too
+rest("CREATE OR REPLACE REST SCHEMA /s1 FROM sakila COMMENT 'new'; CREATE REST VIEW /city AS sakila.city")
+EXPECT_EQ([["/city", "ENABLED"]], rest_rows("SHOW REST VIEWS ON SERVICE /replaced SCHEMA /s1"))
+# A replacement that fails leaves the state as it was
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST SCHEMA /s1 FROM sakila ITEMS PER PAGE 99999"), "CONSTRAINT `rest_schema_max_page_size` failed")
+EXPECT_EQ([["/city", "ENABLED"]], rest_rows("SHOW REST VIEWS"))
+rest("USE REST SERVICE /myService")
+rest("DROP REST SERVICE /replaced")
+
 #@<> SHOW REST SERVICES FORMAT=JSON
 def json_list(sql, column):
     res = rest(sql)

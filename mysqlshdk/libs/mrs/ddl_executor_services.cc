@@ -79,11 +79,13 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
+  bool replaces_current = false;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_service(m_session, path, s.path.developers); },
           [&](const auto &existing) {
             metadata::delete_service(m_session, existing.id);
+            replaces_current = m_state->current_service_id == existing.id;
           })) {
     r->message = "REST SERVICE `" + full_path + "` created successfully.";
     transaction.commit();
@@ -110,6 +112,14 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
   link_auth_apps(id, s.options.add_auth_apps, {});
 
   transaction.commit();
+
+  // A replaced current service is followed to its replacement, which has
+  // the same path; its schemas went with it. Only after the commit: a
+  // failing statement leaves the session's state as it was.
+  if (replaces_current) {
+    m_state->current_service_id = id;
+    m_state->clear_schema();
+  }
 
   r->message = "REST SERVICE `" + full_path + "` created successfully.";
 }
@@ -170,12 +180,10 @@ void Ddl_executor::do_execute(const Drop_rest_service &s, Statement_result *r) {
     throw std::runtime_error("The given REST SERVICE `" + full_path +
                              "` could not be found.");
   }
-  if (service) {
-    metadata::delete_service(m_session, service->id);
-    if (m_state->current_service_id == service->id) m_state->clear_service();
-  }
+  if (service) metadata::delete_service(m_session, service->id);
 
   transaction.commit();
+  if (service && m_state->current_service_id == service->id) m_state->clear_service();
   r->message = "REST SERVICE `" + full_path + "` dropped successfully.";
 }
 

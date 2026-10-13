@@ -44,12 +44,13 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   const auto service_id = require_service(s.service);
 
+  bool replaces_current = false;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_schema(m_session, service_id, request_path); },
           [&](const auto &existing) {
             metadata::delete_schema(m_session, existing.id);
-            if (m_state->current_schema_id == existing.id) m_state->clear_schema();
+            replaces_current = m_state->current_schema_id == existing.id;
           })) {
     r->message = "REST SCHEMA `" + full_path + "` created successfully.";
     transaction.commit();
@@ -69,14 +70,20 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   const Id id = metadata::add_schema(m_session, definition);
 
-  // The first schema of the current service becomes the current schema
-  if (m_state->current_service_id == service_id &&
-      metadata::get_schemas(m_session, service_id).size() == 1) {
+  // The first schema of the current service becomes the current schema, and
+  // a replaced current schema is followed to its replacement
+  const bool becomes_current =
+      replaces_current ||
+      (m_state->current_service_id == service_id &&
+       metadata::get_schemas(m_session, service_id).size() == 1);
+
+  transaction.commit();
+
+  // Only after the commit: a failing statement leaves the state as it was
+  if (becomes_current) {
     m_state->current_schema_id = id;
     m_state->current_schema = request_path;
   }
-
-  transaction.commit();
 
   r->message = "REST SCHEMA `" + full_path + "` created successfully.";
 }
@@ -125,12 +132,10 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
     throw std::runtime_error("The given REST SCHEMA `" + full_path +
                              "` could not be found.");
   }
-  if (schema) {
-    metadata::delete_schema(m_session, schema->id);
-    if (m_state->current_schema_id == schema->id) m_state->clear_schema();
-  }
+  if (schema) metadata::delete_schema(m_session, schema->id);
 
   transaction.commit();
+  if (schema && m_state->current_schema_id == schema->id) m_state->clear_schema();
   r->message = "REST SCHEMA `" + full_path + "` dropped successfully.";
 }
 
