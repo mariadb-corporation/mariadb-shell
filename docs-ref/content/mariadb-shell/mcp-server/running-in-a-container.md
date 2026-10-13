@@ -44,7 +44,7 @@ To build the image yourself, use the `docker` folder of the [MariaDB Shell repos
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
   --build-arg VERSION=<version> -t mariadb/mariadb-shell-mcp-server:<version> \
-  -f docker/debian13-mcp-server.Dockerfile docker
+  -f docker/linux-debian13-mcp-server.Dockerfile docker
 ```
 
 With Podman and other clients that don't resolve short names through Docker Hub, use the fully qualified name, `docker.io/mariadb/mariadb-shell-mcp-server`.

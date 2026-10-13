@@ -14,7 +14,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `build/bin/mariadb-shell` | Local 26.9.5 build, used to check help text and docs examples |
 | `.githooks/` | pre-commit copyright hook and its `copyright-exceptions` |
-| `docker/` | Build images for the release packages, and (since 2026-10-12) the MariaDB Shell MCP Server image `mariadb-shell-mcp-server` (`debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh`, `README.md`) |
+| `docker/` | Build images for the release packages, and (since 2026-10-12) the MariaDB Shell MCP Server image `mariadb-shell-mcp-server` (`linux-debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh`, `README.md`) |
 | `.claude/commands/checkpoint.md` | This checkpoint command |
 
 ## Context Files

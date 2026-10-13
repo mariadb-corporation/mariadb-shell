@@ -14,7 +14,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1335 USA
 
-# Entrypoint of the MariaDB Shell MCP Server image (docker/debian13-mcp-server.Dockerfile).
+# Entrypoint of the MariaDB Shell MCP Server image (docker/linux-debian13-mcp-server.Dockerfile).
 #
 # `start-server` (the default command) configures a multi-tenant MCP server
 # from the MCP_* and KEYCLOAK_* environment variables, then runs it in the

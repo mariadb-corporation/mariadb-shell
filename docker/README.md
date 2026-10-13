@@ -4,7 +4,7 @@ This directory holds two kinds of images:
 
 | File | Purpose |
 | --- | --- |
-| `debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh` | The **MariaDB Shell MCP Server image** (`mariadb-shell-mcp-server`): runs the MariaDB MCP server in multi-tenant mode. Described below. |
+| `linux-debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh` | The **MariaDB Shell MCP Server image** (`mariadb-shell-mcp-server`): runs the MariaDB MCP server in multi-tenant mode. Described below. |
 | `linux-rocky9.Dockerfile`, `entrypoint.sh` | Build environment for the Linux release packages (`rocky-linux.yml`). |
 | `linux-rocky9-server.Dockerfile`, `entrypoint-sandbox-server.sh` | Build environment for the sandbox server packages. |
 
@@ -22,13 +22,13 @@ Nothing is compiled. The build downloads the release's Linux tarball for each pl
 # One platform, loaded into the local image store
 docker buildx build --platform linux/arm64 --load \
   --build-arg VERSION=26.10.1 -t mariadb-shell-mcp-server:26.10.1 \
-  -f docker/debian13-mcp-server.Dockerfile docker
+  -f docker/linux-debian13-mcp-server.Dockerfile docker
 
 # Both platforms, pushed as one multi-arch image
 docker buildx create --name msh --driver docker-container   # once; the default builder can't build multi-platform images
 docker buildx build --builder msh --platform linux/amd64,linux/arm64 --push \
   --build-arg VERSION=26.10.1 -t <registry>/<namespace>/mariadb-shell-mcp-server:26.10.1 \
-  -f docker/debian13-mcp-server.Dockerfile docker
+  -f docker/linux-debian13-mcp-server.Dockerfile docker
 ```
 
 The build context is `docker/`, not the repository root. `VERSION` must name a published release, tagged `v<VERSION>`. For a release with another tag, add `--build-arg RELEASE_TAG=<tag>`.

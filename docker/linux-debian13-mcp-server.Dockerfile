@@ -7,7 +7,7 @@
 # so building for a foreign architecture under QEMU only runs curl and tar.
 #
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     --build-arg VERSION=26.10.1 -f docker/debian13-mcp-server.Dockerfile docker
+#     --build-arg VERSION=26.10.1 -f docker/linux-debian13-mcp-server.Dockerfile docker
 #
 # RELEASE_TAG names the GitHub release when its tag is not v<VERSION>.
 
