@@ -72,9 +72,12 @@ fingerprint() {
   { env | grep -E '^(MCP_(OAUTH_MODE|PUBLIC_URL|LOGIN_SERVERS|REQUIRED_ROLE|INITIAL_USER)|KEYCLOAK_(URL|REALM|ADMIN_REALM|ADMIN_USER|CLIENT_ID|GRANT_ROLE_TO|LOGIN_THEME))=' || true; } | sort
 }
 
+# The variables of a fingerprint that the Keycloak realm depends on.
+REALM_VARS='^(MCP_OAUTH_MODE|MCP_PUBLIC_URL|KEYCLOAK_)'
+
 # The part of a fingerprint (on stdin) that the Keycloak realm depends on.
 realm_part() {
-  grep -E '^(MCP_OAUTH_MODE|MCP_PUBLIC_URL|KEYCLOAK_)' || true
+  grep -E "$REALM_VARS" || true
 }
 
 # A variable's value as the stamp of the previous configuration has it.
@@ -85,6 +88,18 @@ previous() {
 # Whether the Keycloak realm settings differ from the previous configuration's.
 realm_changed() {
   [ "$(fingerprint | realm_part)" != "$({ cat "$STAMP" 2> /dev/null || true; } | realm_part)" ]
+}
+
+# Records in the stamp that the realm is prepared, keeping the rest of the
+# previous configuration: if a later step fails, the next start runs the
+# configuration again but doesn't prepare the realm, which would need the
+# administrator password again.
+record_realm() {
+  {
+    fingerprint | realm_part
+    { cat "$STAMP" 2> /dev/null || true; } | { grep -vE "$REALM_VARS" || true; }
+  } | sort > "$STAMP.new"
+  mv "$STAMP.new" "$STAMP"
 }
 
 # Every variable that MODE requires, checked before anything is changed, so
@@ -148,6 +163,7 @@ configure() {
           ${KEYCLOAK_GRANT_ROLE_TO:+--grantRealmRoleTo="$KEYCLOAK_GRANT_ROLE_TO"} \
           ${KEYCLOAK_LOGIN_THEME:+--loginTheme="$KEYCLOAK_LOGIN_THEME"}
         unset MCP_KEYCLOAK_ADMIN_PASSWORD
+        record_realm
       fi
       ;;
   esac
