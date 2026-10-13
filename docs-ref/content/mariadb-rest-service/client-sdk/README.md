@@ -28,7 +28,7 @@ Most examples in this guide are written in TypeScript. For the details of each l
 | | [createMany](typescript-client-api.md#view.createmany) | [create_many](python-client-api.md#view.create_many) | Creates a list of documents on a REST view endpoint. |
 | | [find](typescript-client-api.md#view.find) | [find](python-client-api.md#view.find) | Reads the first page of documents of a search request and returns an iterator. |
 | | [findFirst](typescript-client-api.md#view.findfirst) | [find_first](python-client-api.md#view.find_first) | Reads the first matching document of a search request. |
-| | [findFirstOrThrow](typescript-client-api.md#view.findfirst) | [find_first_or_throw](python-client-api.md#view.find_first_or_throw) | Reads the first matching document of a search request and throws an error if none is found. |
+| | findFirstOrThrow | [find_first_or_throw](python-client-api.md#view.find_first_or_throw) | Reads the first matching document of a search request and throws an error if none is found. |
 | | [findUnique](typescript-client-api.md#view.findunique) | [find_unique](python-client-api.md#view.find_unique) | Reads the matching document of a primary key lookup. |
 | | [findUniqueOrThrow](typescript-client-api.md#view.finduniqueorthrow) | [find_unique_or_throw](python-client-api.md#view.find_unique_or_throw) | Reads the matching document of a primary key lookup and throws an error if none is found. |
 | | [delete](typescript-client-api.md#view.delete) | [delete](python-client-api.md#view.delete) | Deletes a document from a REST view endpoint. |
