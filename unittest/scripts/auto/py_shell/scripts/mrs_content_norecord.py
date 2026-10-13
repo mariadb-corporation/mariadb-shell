@@ -271,6 +271,10 @@ rest("CREATE REST CONTENT FILE `/index.html` ON CONTENT SET /noscripts CONTENT '
 EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /noscripts LOAD SCRIPTS"), "Failed to update the REST content set `/svc/noscripts`. The content set holds no MRS scripts: no TypeScript file defines an @Mrs.module class.")
 rest("CREATE REST CONTENT FILE `/src/m.mts` ON CONTENT SET /noscripts CONTENT '@Mrs.module({ name: \"m\" }) class M { }'")
 EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /noscripts LOAD TYPESCRIPT SCRIPTS"), "No build folder (build, dist, out or output) was found for this TypeScript project.")
+# Only a top-level folder is the build output: the daemon would load
+# /dist/m.mjs, which a nested /app/dist does not hold
+rest("CREATE REST CONTENT FILE `/app/dist/m.mjs` ON CONTENT SET /noscripts CONTENT 'export class M {}'")
+EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /noscripts LOAD TYPESCRIPT SCRIPTS"), "No build folder (build, dist, out or output) was found for this TypeScript project.")
 # A failing ALTER changes nothing
 EXPECT_EQ(["STATIC", 1, 1, "", None], content_set_row("/noscripts"))
 rest("DROP REST CONTENT SET /noscripts")

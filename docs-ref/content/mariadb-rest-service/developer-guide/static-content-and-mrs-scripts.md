@@ -62,7 +62,7 @@ class Hello {
 }
 ```
 
-Build the project first, so that its build output folder (`build`, `dist`, `out`, or `output`) holds the compiled modules that the MariaDB REST Daemon executes. Then upload the whole project directory:
+Build the project first, so that its build output folder (`build`, `dist`, `out`, or `output`, at the top level of the project) holds the compiled modules that the MariaDB REST Daemon executes. Then upload the whole project directory:
 
 ```python
 mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
@@ -73,7 +73,7 @@ The function detects the MRS scripts and registers each `@Mrs.module` as a REST 
 
 Registering the scripts also decides which files of the content set are public:
 
-- Files in a static folder of the project (`static`, `assets`, `media`, `web`, `js`, `css`, or `images`) stay public.
+- Files in a static folder at the top level of the project (`static`, `assets`, `media`, `web`, `js`, `css`, or `images`) stay public.
 - All other files, the TypeScript sources and the build output, become private. The MariaDB REST Daemon still reads them to run the scripts, but no client can download them, so the server-side code is not exposed.
 
 {% hint style="warning" %}

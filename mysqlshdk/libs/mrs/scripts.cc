@@ -940,11 +940,13 @@ Registered_scripts register_scripts(Db_session *session, const Content_set &cont
   std::set<std::string> static_folders;
   for (const auto &file : get_content_files(session, content_set.id, false)) {
     const auto &path = file.request_path;
-    // The first two folders of the path count
+    // Only a top-level folder counts, as in the Python plugin: the daemon
+    // loads /<build folder>/<module> and serves /<static folder>/..., so a
+    // nested one (/app/dist) would give paths that do not exist
     const auto parts = split(path, '/', true);
-    for (size_t k = 0; k + 1 < parts.size() && k < 2; ++k) {
-      if (is_build_folder(parts[k])) build_folder = parts[k];
-      if (is_static_folder(parts[k])) static_folders.insert(parts[k]);
+    if (parts.size() > 1) {
+      if (is_build_folder(parts[0])) build_folder = parts[0];
+      if (is_static_folder(parts[0])) static_folders.insert(parts[0]);
     }
     if (!scripts::is_script_file(path)) continue;
     const auto stored = get_content_file(session, file.id, true);
