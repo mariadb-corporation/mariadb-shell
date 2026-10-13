@@ -34,7 +34,7 @@ base64 -i index.min.nr.html -o index.html.b64
 
 base64 -i favicon.ico -o favicon.ico.b64
 base64 -i favicon.svg -o favicon.svg.b64
-base64 -i mariadb-seal.svg -o mariadb-seal.svg.b64
+base64 -i mariadb-logo-vertical.svg -o mariadb-logo-vertical.svg.b64
 base64 -i standalone-preact.js -o standalone-preact.js.b64
 
 echo "Building insert.sql and config.data.json ..."
@@ -42,7 +42,7 @@ echo "Building insert.sql and config.data.json ..."
 export indexHtmlB64=$(cat index.html.b64)
 export faviconIcoB64=$(cat favicon.ico.b64)
 export faviconSvgB64=$(cat favicon.svg.b64)
-export mariadbSealSvgB64=$(cat mariadb-seal.svg.b64)
+export mariadbLogoVerticalSvgB64=$(cat mariadb-logo-vertical.svg.b64)
 export standalonePreactJsB64=$(cat standalone-preact.js.b64)
 
 envsubst < insert.template.sql > ../sections/140-40_default_static_content.sql
@@ -57,7 +57,7 @@ rm index.html.b64
 
 rm favicon.ico.b64
 rm favicon.svg.b64
-rm mariadb-seal.svg.b64
+rm mariadb-logo-vertical.svg.b64
 rm standalone-preact.js.b64
 
 echo "Files generated."

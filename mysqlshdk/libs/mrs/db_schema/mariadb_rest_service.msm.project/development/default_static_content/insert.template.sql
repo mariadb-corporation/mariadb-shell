@@ -4,4 +4,4 @@
 -- Config
 
 DELETE FROM `config`;
-INSERT INTO `config` (`id`, `service_enabled`, `data`) VALUES (1, 1, '{ "defaultStaticContent": { "index.html": "${indexHtmlB64}", "favicon.ico": "${faviconIcoB64}", "favicon.svg": "${faviconSvgB64}", "mariadb-seal.svg": "${mariadbSealSvgB64}", "standalone-preact.js": "${standalonePreactJsB64}" }, "directoryIndexDirective": [ "index.html" ] }');
+INSERT INTO `config` (`id`, `service_enabled`, `data`) VALUES (1, 1, '{ "defaultStaticContent": { "index.html": "${indexHtmlB64}", "favicon.ico": "${faviconIcoB64}", "favicon.svg": "${faviconSvgB64}", "mariadb-logo-vertical.svg": "${mariadbLogoVerticalSvgB64}", "standalone-preact.js": "${standalonePreactJsB64}" }, "directoryIndexDirective": [ "index.html" ] }');

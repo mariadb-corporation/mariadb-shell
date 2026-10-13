@@ -34,6 +34,7 @@
     <style>
         :root {
             --body-background: hsl(240, 5%, 91%);
+            --logo-color: #003545;
             --body-text-color: hsl(240, 5%, 12%);
             --icon-color: hsl(200, 65%, 40%);
             --textLink-foreground: hsl(200, 65%, 34%);
@@ -62,6 +63,7 @@
         @media (prefers-color-scheme:dark) {
             :root {
                 --body-background: hsl(0, 0%, 17%);
+                --logo-color: #fff;
                 --body-text-color: hsl(0, 0%, 75%);
                 --textLink-foreground: hsl(200, 65%, 54%);
                 --main-background-color: #0d0d0d;
@@ -106,8 +108,8 @@
         }
 
         h2 {
-            margin: 20px 0;
-            font-weight: 100;
+            margin: 40px 0 5px 0;
+            font-weight: 400;
             font-size: 33px
         }
 
@@ -136,12 +138,13 @@
 
         .welcomeLogo {
             margin-top: 20px;
-            width: 160px;
-            height: 160px;
-            min-height: 160px;
-            background-color: var(--icon-color);
-            -webkit-mask-image: url(mariadb-seal.svg);
-            mask-image: url(mariadb-seal.svg);
+            margin-bottom: 16px;
+            width: 204px;
+            height: 168px;
+            min-height: 168px;
+            background-color: var(--logo-color);
+            -webkit-mask-image: url(mariadb-logo-vertical.svg);
+            mask-image: url(mariadb-logo-vertical.svg);
             -webkit-mask-size: contain;
             mask-size: contain;
             -webkit-mask-repeat: no-repeat;
@@ -1188,7 +1191,7 @@
                 const headerHtml = html`
                     <div class="welcomeLogo" />
                     <div class="welcomeText">
-                        <h2>MariaDB REST Service</h2>
+                        <h2>REST Service</h2>
                         <p>Welcome to the MariaDB REST Service.</p>
                     </div>`;
                 const footerHtml = html`

@@ -105,7 +105,7 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 
 - The JSON schema of `service.in_development` (CHECK constraint) has the id `https://mariadb.com/mrs/service/in_development` (was `https://dev.mysql.com/mrs/service/in_development`); only relevant if the daemon validates against it by id.
 - `rest_daemon.product_name` is documented as e.g. `'MariaDB REST Daemon'` (was `'MySQL Router'`); the daemon should report its own product name there.
-- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-seal.svg` (was `sakila.svg`); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
+- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-logo-vertical.svg` (was `sakila.svg`, then `mariadb-seal.svg` until 2026-10-13); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
 - `audit_log` and its triggers are unchanged in shape apart from the wider id (see 9).
 - MariaDB Shell's `SHOW REST DAEMONS` treats a daemon as active when `rest_daemon.last_check_in` is less than 10 seconds old.
 
