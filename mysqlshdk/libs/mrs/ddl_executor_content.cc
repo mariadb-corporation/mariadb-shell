@@ -114,15 +114,35 @@ void Ddl_executor::do_execute(const Alter_rest_content_set &s,
   metadata::update_content_set(m_session, content_set->id, changes);
 
   // LOAD SCRIPTS: analyse the stored files and register their MRS scripts
+  metadata::Registered_scripts registered;
   if (s.options.load_scripts) {
     const auto updated = metadata::get_content_set(m_session, content_set->id);
-    const auto registered = metadata::register_scripts(m_session, *updated);
+    registered = metadata::register_scripts(m_session, *updated);
     r->message = "REST content set `" + full_path + "` updated successfully. " +
                  std::to_string(registered.scripts) + " MRS script(s) of " +
                  std::to_string(registered.modules) + " module(s) registered.";
   }
 
   transaction.commit();
+
+  // The grants the scripts declare run after the commit: GRANT commits the
+  // open transaction, which would leave a failure after it with the old
+  // scripts deleted and the new ones half registered. A failing grant leaves
+  // the registration in place; LOAD SCRIPTS can run again once it is fixed.
+  std::string failed_grants;
+  for (const auto &grant : registered.grants) {
+    try {
+      m_session->execute(grant);
+    } catch (const Db_error &e) {
+      failed_grants += "\n" + grant + ": " + e.what();
+    }
+  }
+  if (!failed_grants.empty()) {
+    throw std::runtime_error(
+        "The MRS scripts were registered, but granting the privileges they "
+        "declare failed:" +
+        failed_grants);
+  }
 
   r->affected_items_count = 1;
 }

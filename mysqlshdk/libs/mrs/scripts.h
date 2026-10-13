@@ -42,7 +42,9 @@
 
 #include <array>
 #include <cstddef>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "mysqlshdk/libs/mrs/db_session.h"
 #include "mysqlshdk/libs/mrs/metadata_content.h"
@@ -63,11 +65,16 @@ inline constexpr std::array<std::string_view, 4> k_generated_script_options{
 struct Registered_scripts {
   size_t modules = 0;
   size_t scripts = 0;
+  // The GRANT statements the scripts declare (their "grants" option). They
+  // are not run: GRANT commits the open transaction, so the caller runs them
+  // once the registration is committed.
+  std::vector<std::string> grants;
 };
 
 // Analyses the TypeScript files of a content set and registers their MRS
 // scripts as REST endpoints, replacing the ones registered before. Throws
-// with the analysis errors.
+// with the analysis errors. Changes only metadata, so it can run in a
+// transaction; see Registered_scripts::grants.
 Registered_scripts register_scripts(Db_session *session, const Content_set &content_set);
 
 }  // namespace metadata

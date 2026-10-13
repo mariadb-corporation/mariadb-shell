@@ -173,6 +173,8 @@ loadScripts:
 
 `LOAD SCRIPTS` registers the MRS scripts held by the files of the content set as REST endpoints. Add the files to the content set first. The statement analyzes the stored TypeScript files for the `@Mrs.module`, `@Mrs.script`, and `@Mrs.trigger` decorators, and creates a REST schema for each MRS module and a REST endpoint for each MRS script. Scripts registered by an earlier `LOAD SCRIPTS` on the same content set are replaced.
 
+The privileges that scripts declare with their `grants` option are granted after the scripts are registered. If the analysis or the registration fails, the scripts registered before stay as they were. If a grant fails, the scripts stay registered and the error lists the failing grants; fix the cause and run `LOAD SCRIPTS` again.
+
 Only the files in static folders (`static`, `assets`, `media`, `web`, `js`, `css`, or `images`) stay public. The sources and the build output are made private; the MariaDB REST Daemon still reads them. Upload a web app as its own content set, or build it into a static folder, not into the build output folder of the scripts project. `LOAD TYPESCRIPT SCRIPTS` also records TypeScript as the scripting language of the content set.
 
 `SHOW CREATE REST CONTENT SET` and `SHOW CREATE REST SERVICE` write an `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` statement after the files of a content set that holds MRS scripts, so that the scripts are registered again when the script runs.

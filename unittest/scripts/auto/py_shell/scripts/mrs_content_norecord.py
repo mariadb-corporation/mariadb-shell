@@ -367,6 +367,27 @@ EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The MRS
 EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])
 rest("DROP REST CONTENT FILE `/src/bad.ts` FROM CONTENT SET /app")
 
+#@<> LOAD SCRIPTS that fails after a script's grants keeps the scripts registered before
+# The grants run after the registration is committed: a module that fails
+# after the one with grants (sales) leaves the earlier registration untouched
+def script_ids():
+    return query_rows("SELECT id FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT' ORDER BY id")
+
+rest("CREATE REST SCHEMA /taken FROM `mysql`")
+rest("CREATE REST CONTENT FILE `/src/zclash.mts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/taken\" }) class Clash { @Mrs.script({}) public static async c(): Promise<number> { return 1; } }'")
+registered = script_ids()
+EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The request path /taken of the MRS module Clash is used by a REST schema.")
+EXPECT_EQ(registered, script_ids())
+rest("DROP REST CONTENT FILE `/src/zclash.mts` FROM CONTENT SET /app")
+rest("DROP REST SCHEMA /taken")
+
+# A grant that fails leaves the scripts registered, and says so
+rest("CREATE REST CONTENT FILE `/src/zgrant.mts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/granted\" }) class Granted { @Mrs.script({ grants: { privileges: \"SELECT\", schema: \"mysql\", object: \"no_such_table\" } }) public static async g(): Promise<number> { return 1; } }'")
+EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The MRS scripts were registered, but granting the privileges they declare failed:\nGRANT SELECT ON `mysql`.`no_such_table`")
+EXPECT_EQ(3, len(script_ids()))
+rest("DROP REST CONTENT FILE `/src/zgrant.mts` FROM CONTENT SET /app")
+EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
+
 #@<> SHOW CREATE REST CONTENT SET of a script set: the set, its files, then LOAD SCRIPTS
 statement = rest_text("SHOW CREATE REST CONTENT SET /app")
 EXPECT_TRUE(statement.startswith("""CREATE OR REPLACE REST CONTENT SET /app
