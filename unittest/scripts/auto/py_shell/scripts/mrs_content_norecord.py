@@ -392,6 +392,22 @@ EXPECT_EQ(3, len(script_ids()))
 rest("DROP REST CONTENT FILE `/src/zgrant.mts` FROM CONTENT SET /app")
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
 
+#@<> LOAD SCRIPTS refuses numbers JSON cannot hold
+# Infinity, NaN and 1e999 have no JSON form; the scripts registered before stay
+registered = script_ids()
+for literal in ["Infinity", "NaN", "1e999"]:
+    rest("CREATE OR REPLACE REST CONTENT FILE `/src/znum.mts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/num\" }) class Num { @Mrs.script({}) public static async n(limit: number = %s): Promise<number> { return 1; } }'" % literal)
+    EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The number %s of an MRS script cannot be stored as JSON." % literal)
+    EXPECT_EQ(registered, script_ids())
+rest("CREATE OR REPLACE REST CONTENT FILE `/src/znum.mts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/num\", max: 1e999 }) class Num { }'")
+EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The number 1e999 of an MRS script cannot be stored as JSON.")
+# A whole number beyond 64 bits is stored as a floating point number
+rest("CREATE OR REPLACE REST CONTENT FILE `/src/znum.mts` ON CONTENT SET /app CONTENT '@Mrs.module({ requestPath: \"/num\" }) class Num { @Mrs.script({}) public static async n(limit: number = 1e20): Promise<number> { return 1; } }'")
+EXPECT_EQ("REST content set `/svc/app` updated successfully. 3 MRS script(s) of 2 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
+EXPECT_EQ("1e+20", session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') FROM mariadb_rest_service.data_mapping_field WHERE name = 'limit'").fetch_one()[0])
+rest("DROP REST CONTENT FILE `/src/znum.mts` FROM CONTENT SET /app")
+EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
+
 #@<> SHOW CREATE REST CONTENT SET of a script set: the set, its files, then LOAD SCRIPTS
 statement = rest_text("SHOW CREATE REST CONTENT SET /app")
 EXPECT_TRUE(statement.startswith("""CREATE OR REPLACE REST CONTENT SET /app

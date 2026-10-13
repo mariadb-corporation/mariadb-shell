@@ -27,7 +27,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -246,16 +249,30 @@ size_t find_top_level(const Reader &r, size_t start, size_t end, char c) {
   return std::string_view::npos;
 }
 
+// The number a literal of the code holds, nullopt when it is no number.
+// Infinity, NaN and a number beyond the range of a double (1e999) are
+// numbers JSON cannot hold: the definitions are stored as JSON, so they are
+// refused, as the server refused the Python plugin's output for them.
 std::optional<double> to_number(const std::string &text) {
   if (text.empty()) return std::nullopt;
   char *end = nullptr;
   const double v = std::strtod(text.c_str(), &end);
   if (end != text.c_str() + text.size()) return std::nullopt;
+  if (!std::isfinite(v)) {
+    throw std::runtime_error("The number " + text +
+                             " of an MRS script cannot be stored as JSON.");
+  }
   return v;
 }
 
 json::Value number_value(double v) {
-  if (v == static_cast<double>(static_cast<int64_t>(v))) {
+  // An integral value in the range of int64_t is written as an integer; the
+  // range check comes first, as converting a double outside it is undefined.
+  // As a double the maximum (2^63 - 1) rounds up to 2^63, hence the strict <.
+  constexpr auto k_min = static_cast<double>(std::numeric_limits<int64_t>::min());
+  constexpr auto k_max = static_cast<double>(std::numeric_limits<int64_t>::max());
+  if (v >= k_min && v < k_max &&
+      v == static_cast<double>(static_cast<int64_t>(v))) {
     return json::Value(static_cast<int64_t>(v));
   }
   return json::Value(v);
