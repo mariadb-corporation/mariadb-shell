@@ -138,10 +138,11 @@ EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA UPDATE IF AVAILABLE"), "Fail
 EXPECT_THROWS(lambda: rest("CONFIGURE REST METADATA SCHEMA mysql_rest_service_metadata"), "Invalid REST metadata schema name `mysql_rest_service_metadata`.")
 
 #@<> With the msm plugin loaded, msm deploys on a connection of its own
-# A stand-in for msm.deploySchema() that changes its session like the
-# deployment script does, then fails. A global cannot be removed again, so
-# this runs last.
+# A stand-in for the msm plugin: deploySchema() changes its session like the
+# deployment script does, then fails; version() says which msm it stands
+# for. A global cannot be removed again, so this runs last.
 msm_calls = []
+msm_version = ["26.10.2"]
 
 def msm_deploy_schema(options):
     msm_session = options["session"]
@@ -154,6 +155,8 @@ msm = shell.create_extension_object()
 shell.add_extension_object_member(msm, "deploySchema", msm_deploy_schema, {
     "brief": "Stands in for the msm plugin's deploySchema().",
     "parameters": [{"name": "options", "type": "dictionary"}]})
+shell.add_extension_object_member(msm, "version", lambda: msm_version[0], {
+    "brief": "Stands in for the msm plugin's version()."})
 shell.register_global("msm", msm, {"brief": "Stands in for the msm plugin."})
 
 current_schema = query_one("SELECT DATABASE()")
@@ -164,6 +167,12 @@ EXPECT_EQ({"schema_prefix": "gamma_", "schema_postfix": ""}, msm_calls[0][1])
 # The session the statement ran on is left as it was
 EXPECT_EQ(current_schema, query_one("SELECT DATABASE()"))
 EXPECT_EQ(1, query_one("SELECT @@foreign_key_checks"))
+
+#@<> An msm plugin older than 26.10.2 does not take the substitutions: the shell deploys itself
+msm_version[0] = "26.10.1"
+EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA SCHEMA delta_mariadb_rest_service"))
+EXPECT_EQ(1, len(msm_calls))
+EXPECT_EQ("5.0.0", query_one("SELECT CONCAT(major, '.', minor, '.', patch) FROM delta_mariadb_rest_service.msm_schema_version"))
 
 #@<> Cleanup
 session.close()

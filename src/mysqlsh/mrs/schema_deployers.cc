@@ -41,6 +41,7 @@
 #include "mysqlshdk/libs/utils/utils_file.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
 #include "mysqlshdk/libs/utils/utils_path.h"
+#include "mysqlshdk/libs/utils/version.h"
 
 namespace mysqlsh {
 namespace mrs {
@@ -103,6 +104,21 @@ shcore::Object_bridge_ref global_object(shcore::IShell_core *shell_core,
   const auto value = shell_core->get_global(name);
   if (value.get_type() != shcore::Object) return {};
   return value.as_object();
+}
+
+// Whether the loaded msm plugin takes the substitutions option the deployment
+// passes (the prefix and postfix of the metadata schema name): msm 26.10.2
+// and later. An earlier msm does not know it, so the shell deploys itself.
+bool msm_deploys_substitutions(const shcore::Object_bridge_ref &msm) {
+  constexpr mysqlshdk::utils::Version k_first_version(26, 10, 2);
+  try {
+    const auto version = msm->call("version", shcore::Argument_list());
+    return version.get_type() == shcore::String &&
+           mysqlshdk::utils::Version(version.get_string()) >= k_first_version;
+  } catch (const std::exception &) {
+    // No version() or no version it returns that can be read
+    return false;
+  }
 }
 
 // The schema dumped into the msm plugin's backup folder and loaded back,
@@ -287,7 +303,7 @@ std::string msm_project_path() {
 std::unique_ptr<::mrs::metadata::Schema_deployer> make_schema_deployer(
     shcore::IShell_core *shell_core,
     const std::shared_ptr<ShellBaseSession> &session) {
-  if (auto msm = global_object(shell_core, "msm")) {
+  if (auto msm = global_object(shell_core, "msm"); msm && msm_deploys_substitutions(msm)) {
     return std::make_unique<Msm_plugin_deployer>(std::move(msm), session);
   }
   return std::make_unique<Shell_script_deployer>(session->get_core_session());
