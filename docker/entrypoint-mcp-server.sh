@@ -152,7 +152,8 @@ configure() {
       else
         MCP_KEYCLOAK_ADMIN_PASSWORD="$(secret KEYCLOAK_ADMIN_PASSWORD)"
         export MCP_KEYCLOAK_ADMIN_PASSWORD
-        msh mcp setup-oauth --publicUrl="$MCP_PUBLIC_URL"
+        # Sets the public URL, the mode and the issuer as well, once the realm
+        # is prepared.
         msh mcp setup-keycloak-realm --nonInteractive \
           --server="$KEYCLOAK_URL" --realm="$KEYCLOAK_REALM" \
           --adminRealm="${KEYCLOAK_ADMIN_REALM:-master}" \
