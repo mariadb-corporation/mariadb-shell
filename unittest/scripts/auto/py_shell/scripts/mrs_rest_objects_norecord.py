@@ -370,6 +370,16 @@ rest("DROP REST VIEW IF EXISTS /grantColumns")
 session.run_sql("REVOKE SELECT (title, release_year) ON sakila.film FROM mariadb_rest_service_data_provider")
 EXPECT_EQ([], column_privileges("film"))
 
+#@<> A CREATE whose grants fail keeps the privileges other REST objects use
+# The automatic grant on sakila.city succeeds (and commits), the explicit one
+# fails: the new object is removed again, but nothing is revoked from the
+# data provider role, which /city shares
+city_privileges = table_privileges("city")
+EXPECT_NE(None, city_privileges)
+EXPECT_THROWS(lambda: rest("CREATE REST VIEW /city2 AS sakila.city OPTIONS " + json.dumps({"grants": {"schema": "sakila", "object": "no_such_table", "privileges": "SELECT"}})), "Table 'sakila.no_such_table' doesn't exist")
+EXPECT_EQ(None, rest_object_column("/city2", "id"))
+EXPECT_EQ(city_privileges, table_privileges("city"))
+
 #@<> DROP REST VIEW
 EXPECT_EQ("REST VIEW `/svc/sakila/filmList` dropped successfully.", rest_info("DROP REST VIEW /filmList"))
 EXPECT_EQ(None, table_privileges("film_list"))

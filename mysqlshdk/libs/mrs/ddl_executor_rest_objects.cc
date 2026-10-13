@@ -582,6 +582,10 @@ void run_grants(Db_session *session, const std::vector<std::string> &grants,
 
 // Runs the grants of a rest_object that was just added. GRANT commits the
 // transaction implicitly, so the object is removed again when they fail.
+// Only its metadata: the data provider role is shared by every REST object,
+// so revoking on the database object (even only what this call granted)
+// would take privileges from other objects on it. Grants that succeeded
+// before the failing one stay.
 void run_grants_of_new_object(Db_session *session, const Id &id,
                               const std::vector<std::string> &grants, bool force,
                               Statement_result *r) {
@@ -589,7 +593,7 @@ void run_grants_of_new_object(Db_session *session, const Id &id,
     run_grants(session, grants, force, r);
   } catch (...) {
     try {
-      metadata::delete_rest_object(session, id);
+      metadata::delete_rest_object(session, id, false);
     } catch (...) {
       // The grant error is the one to report
     }
