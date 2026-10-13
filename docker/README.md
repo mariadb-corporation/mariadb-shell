@@ -43,7 +43,7 @@ The server listens on port 8080 in the container and keeps all state in the volu
 
 Publish the port on the loopback address only, and put a TLS-terminating reverse proxy in front of it (see [Reverse Proxy](#reverse-proxy)). Every request carries a user's credentials, and the server in the container serves plain HTTP. At startup it warns about this, which is expected behind a proxy.
 
-On its first start, the container configures the server from environment variables. It applies them again only when one of them changes. Choose one of three modes with `MCP_OAUTH_MODE`.
+On its first start, the container configures the server from environment variables. It applies them again only when one of them changes. Removing a variable doesn't always undo its setting. A server taken out of `MCP_LOGIN_SERVERS` is removed, removing `MCP_REQUIRED_ROLE` clears the role, and the variables that `mcp start-server` reads (`MCP_TRUSTED_PROXIES`, `MCP_ALLOWED_HOSTS`, `MCP_MAX_CONNECTIONS` and `MCP_PORT`) apply on every start. What the others created stays: the user from `MCP_INITIAL_USER`, and the client, role grants and login theme in the Keycloak realm. Remove them with `mcp setup` or in the Keycloak administration console. Choose one of three modes with `MCP_OAUTH_MODE`.
 
 #### API keys only
 
