@@ -81,9 +81,10 @@ ENV PATH=/opt/mariadb-shell/bin:$PATH \
 # The volume is the whole home directory, not just ~/.mariadb-shell: the
 # login-path credential store keeps the users' API keys and connection
 # passwords in ~/.mylogin.cnf. HOME is set, and the directory belongs to group
-# 0 as well, for a container started under another uid (docker run --user,
+# 0 as well, so that a container started under another uid (docker run --user,
 # OpenShift's random uid in group 0), which has no passwd entry to take HOME
-# from.
+# from, can set up a new volume. The files in it are private to the uid that
+# created them, so a volume stays with that uid.
 USER mcp
 WORKDIR /home/mcp
 VOLUME /home/mcp

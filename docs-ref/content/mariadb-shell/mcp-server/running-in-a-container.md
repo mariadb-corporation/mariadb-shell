@@ -37,6 +37,8 @@ docker compose exec mcp mariadb-shell -- mcp setup --show --allUsers
 The volume holds every user's API key and connection passwords. The `login-path` credential store only obfuscates them. Restrict access to the volume and its backups as you would to the passwords themselves.
 {% endhint %}
 
+The files in the volume are private to the user that created them, so a volume stays with that uid. A container started under another uid, for example with `--user` or by OpenShift, can set up a new volume, but stops with *belongs to uid …* on one that another uid set up. Run it as that uid, or change the owner of the volume's files.
+
 ### Build the Image
 
 To build the image yourself, use the `docker` folder of the [MariaDB Shell repository](https://github.com/mariadb-corporation/mariadb-shell/tree/main/docker). The build downloads the release that `VERSION` names for each platform and checks it against the release's checksums; nothing is compiled:
@@ -374,6 +376,7 @@ The MCP server reads the realm's keys from `KEYCLOAK_URL`, so the container must
 
 | Message or symptom | Cause | Solution |
 | --- | --- | --- |
+| *entrypoint-mcp-server: … belongs to uid …, and the container runs as uid …* | The volume was set up by another uid, and its files are private to that uid. | Run the container as the uid named, or give the volume's files to the container's uid. |
 | *entrypoint-mcp-server: KEYCLOAK_ADMIN_PASSWORD_FILE: cannot read … as uid 10001* | The password file isn't readable by the server's user in the container. | Make it readable by uid `10001`, as described in [Setup With Keycloak](#setup-with-keycloak). |
 | *entrypoint-mcp-server: MCP_OAUTH_MODE=keycloak needs …* | A variable that the mode needs isn't set. | Set the variable the message names. |
 | *Keycloak has no login theme 'mariadb-mcp'* | The theme isn't mounted into the Keycloak container, or Keycloak was started before it was. | Mount the theme and restart Keycloak. |

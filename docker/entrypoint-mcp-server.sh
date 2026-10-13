@@ -182,6 +182,14 @@ configure() {
   fingerprint > "$STAMP"
 }
 
+# The files in the volume are private to the uid that created them (the
+# credential store is 0600), so a volume can't change uid.
+for f in "$HOME/.mariadb-shell" "$HOME/.mylogin.cnf"; do
+  if [ -e "$f" ] && ! { [ -r "$f" ] && [ -w "$f" ]; }; then
+    die "$f belongs to uid $(stat -c %u "$f"), and the container runs as uid $(id -u); run it as uid $(stat -c %u "$f"), or give the volume to uid $(id -u)"
+  fi
+done
+
 mkdir -p "$(dirname "$STAMP")"
 if [ ! -f "$STAMP" ] || ! fingerprint | cmp -s - "$STAMP"; then
   configure

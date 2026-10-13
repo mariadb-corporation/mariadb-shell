@@ -39,7 +39,7 @@ Podman and other clients resolve short image names differently. Pull with the fu
 
 ### Run
 
-The server listens on port 8080 in the container and keeps all state in the volume at `/home/mcp`. The volume holds the configuration, the users, and the credential store (`~/.mylogin.cnf`), which contains the users' API keys and connection passwords. Back it up, and don't share it.
+The server listens on port 8080 in the container and keeps all state in the volume at `/home/mcp`. The volume holds the configuration, the users, and the credential store (`~/.mylogin.cnf`), which contains the users' API keys and connection passwords. Back it up, and don't share it. The files in the volume are private to the user that created them, so a volume stays with that uid. A container started under another uid, for example with `--user` or by OpenShift, can set up a new volume, but stops with *belongs to uid …* on one that another uid set up. Run it as that uid, or change the owner of the volume's files.
 
 Publish the port on the loopback address only, and put a TLS-terminating reverse proxy in front of it (see [Reverse Proxy](#reverse-proxy)). Every request carries a user's credentials, and the server in the container serves plain HTTP. At startup it warns about this, which is expected behind a proxy.
 
