@@ -1,8 +1,8 @@
 ---
 description: >-
   Deploy an MSM schema release to a MariaDB server with msm.deploy_schema,
-  creating the schema or upgrading it from an earlier release, with optional
-  backups, the deployment log, and the errors a deployment can report.
+  creating or upgrading the schema, with optional backups, the deployment log,
+  and the errors a deployment can report.
 ---
 
 # Deploying Schemas

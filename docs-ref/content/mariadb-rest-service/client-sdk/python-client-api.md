@@ -73,9 +73,9 @@ The following commands can be accessed from a service object:
   * [tls_context](#tls_context)
 
 * Methods
-  * [get_auth_apps()](#serviceget_auth_apps)
-  * [authenticate()](#serviceauthenticate)
-  * [deauthenticate()](#servicedeauthenticate)
+  * [get_auth_apps()](#service.get_auth_apps)
+  * [authenticate()](#service.authenticate)
+  * [deauthenticate()](#service.deauthenticate)
 
 ### base_url
 
@@ -302,7 +302,7 @@ The following REST resources can be accessed from the corresponding schema names
 `create` is used to insert a record (a REST document) into the database. The REST document is represented as a typed dictionary object whose fields, or keys, should comply with the interface exposed by the type definition `INew${obj_class_name}` where `${obj_class_name}` is a variable containing a string which is a fully-qualified name composed by the names of the *REST Service*, *REST Schema* and *REST View* themselves.
 
 {% hint style="info" %}
-To insert multiple documents, see [create_many](#viewcreate_many).
+To insert multiple documents, see [create_many](#view.create_many).
 {% endhint %}
 
 #### Options
@@ -340,7 +340,7 @@ The `actor_id` and `last_update` columns of the `actor` table of the sakila samp
 `create_many` is used to insert one or more records (REST documents) into the database. A record is represented as a typed dictionary object whose fields, or keys, should comply with the interface exposed by the type definition `INew${obj_class_name}` where `${obj_class_name}` is a variable which value depends on the *service, schema and table* names themselves.
 
 {% hint style="info" %}
-To insert a single record, see [create](#viewcreate).
+To insert a single record, see [create](#view.create).
 {% endhint %}
 
 #### Options
@@ -397,9 +397,9 @@ The `actor_id` and `last_update` columns of the `actor` table of the sakila samp
 `find_first` is used to query the first REST document (**in no specific order**) that matches a given optional filter. It returns `None` if no document is found.
 
 {% hint style="info" %}
-To raise an exception if there are no matches, use [find_first_or_throw](#viewfind_first_or_throw) instead.
+To raise an exception if there are no matches, use [find_first_or_throw](#view.find_first_or_throw) instead.
 
-To find multiple REST documents, see [find](#viewfind).
+To find multiple REST documents, see [find](#view.find).
 {% endhint %}
 
 #### Options
@@ -440,7 +440,7 @@ actor: Optional[Actor] = await self.my_service.sakila.actor.find_first(
 
 In the following subsections, a small usage example is included for each option.
 
-##### Select
+#### Select
 
 ```python
 # Only include the fields specified (`list` use case)
@@ -453,7 +453,7 @@ select={"last_name": True}
 select={"last_name": False}
 ```
 
-##### Where
+#### Where
 
 ```python
 # Equality - these two are equivalent
@@ -500,7 +500,7 @@ where={
 }
 ```
 
-##### Skip
+#### Skip
 
 Offset-based pagination is non-inclusive, meaning that if the position marking the offset is a match, it will not be included in the result set.
 
@@ -519,7 +519,7 @@ else:
 
 The printed actor ID would be `32`.
 
-##### Order By
+#### Order By
 
 ```python
 # Descending order
@@ -529,7 +529,7 @@ order_by={"first_name": "DESC"}
 order_by={"actor_id": "ASC"}
 ```
 
-##### Cursor
+#### Cursor
 
 The position bookmarked by the cursor is non-inclusive, meaning that if the bookmarked position is a match, it will not be included in the result set.
 
@@ -581,7 +581,7 @@ else:
 
 The printed actor ID would be `8`.
 
-##### Read Own Writes
+#### Read Own Writes
 
 ```python
 # ON
@@ -593,17 +593,17 @@ read_own_writes=False
 
 ### View.find_first_or_throw
 
-`find_first_or_throw` is used to retrieve the first REST document that matches a given optional filter in the same way as [find_first](#viewfind_first) does. However, if the query does not find a document, it raises a `MrsDocumentNotFoundError` exception.
+`find_first_or_throw` is used to retrieve the first REST document that matches a given optional filter in the same way as [find_first](#view.find_first) does. However, if the query does not find a document, it raises a `MrsDocumentNotFoundError` exception.
 
 {% hint style="info" %}
-To not raise an exception and get `None` if there are no matches, use [find_first](#viewfind_first) instead.
+To not raise an exception and get `None` if there are no matches, use [find_first](#view.find_first) instead.
 
-To find multiple REST documents, see [find](#viewfind).
+To find multiple REST documents, see [find](#view.find).
 {% endhint %}
 
 #### Options
 
-`find_first_or_throw` and `find_first` implement the very same options. For more details about these, see [find_first](#viewfind_first).
+`find_first_or_throw` and `find_first` implement the very same options. For more details about these, see [find_first](#view.find_first).
 
 #### Return Type
 
@@ -628,7 +628,7 @@ except MrsDocumentNotFoundError:
     warnings.warn("Ups, no matches found")
 ```
 
-See [find_first](#viewfind_first) for additional usage options.
+See [find_first](#view.find_first) for additional usage options.
 
 ### View.find_unique
 
@@ -640,7 +640,7 @@ See [find_first](#viewfind_first) for additional usage options.
 It returns `None` if no document is found.
 
 {% hint style="info" %}
-To raise an exception if there are no matches, use [find_unique_or_throw](#viewfind_unique_or_throw) instead.
+To raise an exception if there are no matches, use [find_unique_or_throw](#view.find_unique_or_throw) instead.
 {% endhint %}
 
 #### Options
@@ -673,7 +673,7 @@ if actor is None:
 assert actor.actor_id == aid
 ```
 
-See [find_first](#viewfind_first) for additional usage options.
+See [find_first](#view.find_first) for additional usage options.
 
 ### View.find_unique_or_throw
 
@@ -685,12 +685,12 @@ See [find_first](#viewfind_first) for additional usage options.
 If no document was found matching the given filter conditions, `MrsDocumentNotFoundError` is raised.
 
 {% hint style="info" %}
-To not raise an exception and get `None` if there are no matches, use [find_unique](#viewfind_unique) instead.
+To not raise an exception and get `None` if there are no matches, use [find_unique](#view.find_unique) instead.
 {% endhint %}
 
 #### Options
 
-`find_unique_or_throw` and `find_unique` implement the very same options. For more details about these, see [find_unique](#viewfind_unique).
+`find_unique_or_throw` and `find_unique` implement the very same options. For more details about these, see [find_unique](#view.find_unique).
 
 #### Return Type
 
@@ -713,7 +713,7 @@ except MrsDocumentNotFoundError:
     warnings.warn("Ups, no matches found")
 ```
 
-See [find_first](#viewfind_first) for additional usage options.
+See [find_first](#view.find_first) for additional usage options.
 
 ### View.find
 
@@ -793,7 +793,7 @@ if actors.has_more is True:
 Due to the way attributes work in Python, for the MyPy type checker to be able to correctly narrow the types returned by `next()`, `has_more` must be explicitly checked against `True`.
 {% endhint %}
 
-See [find_first](#viewfind_first) for additional usage options.
+See [find_first](#view.find_first) for additional usage options.
 
 ### View.delete
 
@@ -803,7 +803,7 @@ See [find_first](#viewfind_first) for additional usage options.
 * Unique column(s)
 
 {% hint style="info" %}
-To delete multiple documents, see [delete_many](#viewdelete_many).
+To delete multiple documents, see [delete_many](#view.delete_many).
 {% endhint %}
 
 #### Options
@@ -837,7 +837,7 @@ else:
 
 ### View.delete_many
 
-`delete_many` is used to delete all REST documents that match a given filter. To delete a single document, see [delete](#viewdelete).
+`delete_many` is used to delete all REST documents that match a given filter. To delete a single document, see [delete](#view.delete).
 
 #### Options
 
@@ -871,7 +871,7 @@ print(num_items_removed)
 `update` is used to update a REST document with a given identifier or primary key.
 
 {% hint style="info" %}
-To update multiple documents, see [update_many](#viewupdate_many).
+To update multiple documents, see [update_many](#view.update_many).
 {% endhint %}
 
 #### Options
@@ -918,7 +918,7 @@ assert actor.actor_id == actor_updated.actor_id
 `update_many` is used to update all REST documents with matching identifiers or primary keys.
 
 {% hint style="info" %}
-To update a single document, see [update](#viewupdate).
+To update a single document, see [update](#view.update).
 {% endhint %}
 
 #### Options

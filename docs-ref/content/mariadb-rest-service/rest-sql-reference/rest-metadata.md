@@ -1,8 +1,8 @@
 ---
 description: >-
-  Configure and update the MariaDB REST Service metadata schema, set the current
-  REST service and schema, check the status of the service, list what a database
-  object can expose, and get REST objects as JSON documents.
+  Configure and update the MariaDB REST Service metadata schema, set the
+  current REST service and schema, check the service status, list what an
+  object can expose, and get REST objects as JSON.
 ---
 
 # REST Metadata

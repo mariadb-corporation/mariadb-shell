@@ -2,7 +2,7 @@
 description: >-
   Configure a MariaDB server for the MariaDB REST Service: deploy the MRS
   metadata schema with CONFIGURE REST METADATA, grant the MRS roles, and
-  connect MariaDB REST Daemon instances to serve the REST endpoints.
+  connect MariaDB REST Daemon instances.
 ---
 
 # Configuring MRS

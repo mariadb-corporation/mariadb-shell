@@ -1,8 +1,8 @@
 ---
 description: >-
   How the dump and load utilities carry sequences, Oracle-mode packages, CHECK
-  constraints, MariaDB roles and DENY, system-versioned tables, MariaDB data
-  types, and MariaDB GTID positions, and which vendor combinations they accept.
+  constraints, roles and DENY, system-versioned tables, MariaDB data types,
+  and GTIDs, and which vendors they accept.
 ---
 
 # MariaDB-Specific Features

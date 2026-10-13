@@ -115,7 +115,7 @@ await myService.deauthenticate();
 
 ## View.create
 
-`create` is used to add a REST Document to a given REST View. The document is represented as a plain TypeScript/JavaScript object or, alternatively, as an instance of a particular class that encapsulates the data required to create a new document. To insert multiple documents, see [createMany](#viewcreatemany).
+`create` is used to add a REST Document to a given REST View. The document is represented as a plain TypeScript/JavaScript object or, alternatively, as an instance of a particular class that encapsulates the data required to create a new document. To insert multiple documents, see [createMany](#view.createmany).
 
 ### Options
 
@@ -346,7 +346,7 @@ await myService.mrsNotes.note.findFirst({ where: { title: { $like: "%foo%" } } }
 * Primary key column(s)
 * Unique column(s)
 
-If no document was found matching the given `where` condition, `undefined` is returned. To have an exception thrown in this case, see [findUniqueOrThrow](#viewfinduniqueorthrow).
+If no document was found matching the given `where` condition, `undefined` is returned. To have an exception thrown in this case, see [findUniqueOrThrow](#view.finduniqueorthrow).
 
 ### Options
 
@@ -390,7 +390,7 @@ await myService.mrsNotes.note.findUnique({ where: { id: { $eq: 4 } } });
 
 ## View.findUniqueOrThrow
 
-`findUniqueOrThrow` retrieves a single REST document in the same way as [findUnique](#viewfindunique). However, if the query does not find a document, it throws a `NotFoundError`.
+`findUniqueOrThrow` retrieves a single REST document in the same way as [findUnique](#view.findunique). However, if the query does not find a document, it throws a `NotFoundError`.
 
 `findUniqueOrThrow` differs from `findUnique` as follows:
 
@@ -703,4 +703,4 @@ await myService.mrsNotes.noteUpdate.call({ noteId: note.id, title: "hello world"
 
 ## Procedure.call
 
-`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). See [Function.call](#functioncall) for more details.
+`call` is used to execute a REST routine (`FUNCTION` or `PROCEDURE`). See [Function.call](#function.call) for more details.
