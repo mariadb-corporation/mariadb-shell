@@ -4,7 +4,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Related: [mrs
 
 The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). Nothing of 5.0.0 has been released or installed yet, so the daemon needs no compatibility with 4.x names on a MariaDB server.
 
-Collected 2026-10-09 from the work on branch `wip/mrs_module`. Keep it up to date when the schema changes in a way the daemon sees.
+Collected 2026-10-09 from the work in PR #71. Keep it up to date when the schema changes in a way the daemon sees.
 
 ## 1. Schema name, prefix and postfix
 

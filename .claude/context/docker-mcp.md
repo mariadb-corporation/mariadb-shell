@@ -16,11 +16,11 @@ Started 2026-10-12. Goal: a MariaDB Shell container image (Docker Hub, later) th
 - **Names (renamed 2026-10-13): image `mariadb-shell-mcp-server`, file `docker/linux-debian13-mcp-server.Dockerfile`** (was `mariadb-shell` / `mariadb-shell.Dockerfile`). The image is MCP-only, so a plain `mariadb-shell` name would mislead and stays free for a shell image. `-mcp-server`, not `-mcp`: `-mcp` images are usually stdio servers a client launches with `docker run -i`; this one is a long-running HTTP server. "shell" stays in the name to avoid confusion with the separate MariaDB MCP server project (`MariaDB/mcp`) and because tags follow the shell version. `linux-` prefix kept although every container image is Linux: the `linux-rocky9*.Dockerfile` files have it too, and matching them was the rule. The entrypoint is `docker/entrypoint-mcp-server.sh` (was `mcp-entrypoint.sh`), following `entrypoint-sandbox-server.sh`; its log prefix changed with it. Both follow the existing pattern (base first, purpose last, as in `linux-rocky9-server.Dockerfile` / `entrypoint-sandbox-server.sh`).
 - **Keycloak can't run side by side with builtin** in one server (`lib/auth.py` `build_auth` picks one mode; API keys work in all). Two modes = two servers with two host names; user chose Keycloak only.
 
-## Plugin changes made for this (mariadb-shell-plugins PRs #46 and #47, both against `main`)
+## Plugin changes made for this (mariadb-shell-plugins PRs #46 and #47)
 
-- **#46, branch `mcp-trusted-proxies`** (`daf64900`, from main `f1b3b6e2`): `mcp start-server --trustedProxies=<IPs/CIDRs>`. Own outermost ASGI middleware rewrites `scope["client"]` from `X-Forwarded-For` (right to left, skip trusted, first untrusted wins; all trusted → leftmost; invalid entry or no header → unchanged) only for requests from a trusted peer; uvicorn `proxy_headers` stays off. Refuses bad entries, `/0`, and stdio. Startup log line `[mcp] server: the client address is taken from X-Forwarded-For …`. 18 tests; the sandbox-backed e2e test has not run yet (needs a `mariadbd` on the test machine). Open question for review: a loopback peer matches loopback networks of either IP version.
-- **#47, branch `mcp-keycloak-theme`** (from main): `4fd15092` adds `mcp_plugin/keycloak-theme/mariadb-mcp` (Keycloak login theme in the look of the builtin sign-in page; parent `base`; own `template.ftl` + `login.ftl`; CSS = `_PAGE_STYLE` + generic styles; logo from `lib/assets/mariadb-logo-vertical.svg` (the official vertical logo, white variant, coloured `#003545` light / `#fff` dark; replaced the seal on 2026-10-12, `678a3dc7`, and the heading below it became "MCP Server", `344f841a`)) with README and `test_keycloak_theme.py` (fails when CSS/seal drift from `oauth_builtin.py`). `6602c1f7` adds `setup-keycloak-realm --loginTheme`: checks `/admin/serverinfo` before changing the realm, then PUTs `{"loginTheme": …}` only when it differs. Full suite: 588 passed, 17 skipped.
-- Both branches need a release after 26.10.1 before the image has the options. 26.10.1 also still advertises `msm` tools/scope in multi-tenant mode (fixed by plugins #42 after that release).
+- **#46** (`daf64900`): `mcp start-server --trustedProxies=<IPs/CIDRs>`. Own outermost ASGI middleware rewrites `scope["client"]` from `X-Forwarded-For` (right to left, skip trusted, first untrusted wins; all trusted → leftmost; invalid entry or no header → unchanged) only for requests from a trusted peer; uvicorn `proxy_headers` stays off. Refuses bad entries, `/0`, and stdio. Startup log line `[mcp] server: the client address is taken from X-Forwarded-For …`. 18 tests; the sandbox-backed e2e test has not run yet (needs a `mariadbd` on the test machine). Open question for review: a loopback peer matches loopback networks of either IP version.
+- **#47**: `4fd15092` adds `mcp_plugin/keycloak-theme/mariadb-mcp` (Keycloak login theme in the look of the builtin sign-in page; parent `base`; own `template.ftl` + `login.ftl`; CSS = `_PAGE_STYLE` + generic styles; logo from `lib/assets/mariadb-logo-vertical.svg` (the official vertical logo, white variant, coloured `#003545` light / `#fff` dark; replaced the seal on 2026-10-12, `678a3dc7`, and the heading below it became "MCP Server", `344f841a`)) with README and `test_keycloak_theme.py` (fails when CSS/seal drift from `oauth_builtin.py`). `6602c1f7` adds `setup-keycloak-realm --loginTheme`: checks `/admin/serverinfo` before changing the realm, then PUTs `{"loginTheme": …}` only when it differs. Full suite: 588 passed, 17 skipped.
+- Both need a release after 26.10.1 before the image has the options. 26.10.1 also still advertises `msm` tools/scope in multi-tenant mode (fixed by plugins #42 after that release).
 
 ## Verified (2026-10-12)
 
@@ -30,12 +30,12 @@ Started 2026-10-12. Goal: a MariaDB Shell container image (Docker Hub, later) th
 
 ## Files
 
-- `docker/linux-debian13-mcp-server.Dockerfile`, `docker/entrypoint-mcp-server.sh`, `docker/README.md` (build, modes, env table, reverse proxy) — branch `docker/mcp-image`, PR #76 to `main`.
+- `docker/linux-debian13-mcp-server.Dockerfile`, `docker/entrypoint-mcp-server.sh`, `docker/README.md` (build, modes, env table, reverse proxy) — PR #76.
 - `docs-ref/content/mariadb-shell/mcp-server/running-in-a-container.md` — the user-facing page (see [docs-ref.md](docs-ref.md)).
 
 ## Next steps
 
-1. Review and merge plugins #46 (security-relevant: trusted proxies) and #47; then this repo's PR (Docker files + docs). None of them conflicts with the other open PRs (tested 2026-10-12 against plugins #41/#43/#44/#45 and shell #71/#73/#74/#75).
+1. Review plugins #46 (security-relevant: trusted proxies) and #47, and PR #76 (Docker files + docs), which documents their options.
 2. CI workflow for the image: on release published / `workflow_dispatch`, QEMU + buildx, smoke test per arch, push to Docker Hub (needs namespace + token from IT), optionally GHCR. Tags `X.Y.Z`, `X.Y`, `latest` (user: `latest` may point at prereleases).
 3. Run the docs' Compose files end to end (both setups) under Docker before publishing.
 4. Optional: `MCP_TRUSTED_PROXIES` default for the image? (Kept explicit so far.)

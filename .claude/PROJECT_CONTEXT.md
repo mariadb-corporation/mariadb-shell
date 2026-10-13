@@ -21,7 +21,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 | File | Covers |
 | --- | --- |
-| [context/docker-mcp.md](context/docker-mcp.md) | The MariaDB Shell container image and the containerized multi-tenant MCP server: decisions, the plugin branches made for it (`--trustedProxies`, Keycloak login theme, `--loginTheme`), what was verified, next steps, gotchas |
+| [context/docker-mcp.md](context/docker-mcp.md) | The MariaDB Shell container image and the containerized multi-tenant MCP server: decisions, the plugin changes made for it (`--trustedProxies`, Keycloak login theme, `--loginTheme`), what was verified, next steps, gotchas |
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
 | [context/mrs-module.md](context/mrs-module.md) | The MariaDB REST Service in the shell, replacing the Python mrs_plugin's REST SQL: core library `mysqlshdk/libs/mrs/` (bison grammar, executor, metadata schema project), integration `src/mysqlsh/mrs/` (SQL handler); layout, design decisions, gotchas, state, next steps |
@@ -29,7 +29,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 ## Current State
 
-- **2026-10-12: container image for the MCP server** (branch `docker/mcp-image`, PR #76 to `main`). Dockerfile, entrypoint and `docker/README.md`; reference docs for `--trustedProxies`, `--loginTheme` and a new page Running in a Container. Depends on mariadb-shell-plugins #46 (`mcp-trusted-proxies`) and #47 (`mcp-keycloak-theme`), both against `main`; merge those first. Tested on an arm64 Podman host behind nginx with Keycloak. Docker Hub namespace pending with IT. See [context/docker-mcp.md](context/docker-mcp.md).
+- **2026-10-12: container image for the MCP server** (PR #76). Dockerfile, entrypoint and `docker/README.md`; reference docs for `--trustedProxies`, `--loginTheme` and a new page Running in a Container. Needs mariadb-shell-plugins #46 and #47 for `--trustedProxies` and `--loginTheme`. Tested on an arm64 Podman host behind nginx with Keycloak. Docker Hub namespace pending with IT. See [context/docker-mcp.md](context/docker-mcp.md).
 - **Merged into `main` on 2026-10-07 as `5d0333dd6` (PR #59, squash).** All pages exist and `npm run build` is clean. The review by mariadb-ReneRamirez (15 threads, all answered and applied) led to: CLI Reference rename, a new Appendix › Credential Helpers page, Migration Tooling as its own MCP page, Extension Objects under Plugins, reports registered via plugins, no pre-release migration notes, `MARIADB_SHELL_TOKEN` dropped. See [context/docs-ref.md](context/docs-ref.md) § Review of PR #59.
 - **Code fixes that came out of the review, all merged:** `--login-path` out of `--help` (#61), exact DECIMAL/FLOAT in the JSON formats (#62), installers without a GitHub token (#63), MCP server log without any part of an ID (mariadb-shell-plugins #37). [context/product-issues.md](context/product-issues.md) marks them fixed.
 - **Added 2026-10-05 (`071346cc1`):** the **MCP Server** section (6 pages in `mcp-server/`, below Sandbox Instances), plus `mcp` rows on Global Objects and `plugin_data/` on Files and Environment Variables. See [context/docs-ref.md](context/docs-ref.md) § MCP Server section.
