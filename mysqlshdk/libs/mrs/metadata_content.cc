@@ -24,11 +24,15 @@
  */
 
 #include "mysqlshdk/libs/mrs/metadata_content.h"
+#include "mysqlshdk/libs/mrs/json.h"
 #include "mysqlshdk/libs/mrs/scripts.h"
 #include "mysqlshdk/libs/mrs/strings.h"
 
 #include <cstdint>
+#include <set>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace mrs {
 namespace metadata {
@@ -36,6 +40,32 @@ namespace metadata {
 using sql::Value;
 
 namespace {
+
+// The request paths of the script modules a content set's stored script
+// definitions name (LOAD SCRIPTS writes them): the module's requestPath, by
+// default /<class name>, as register_scripts() uses it.
+std::vector<std::string> registered_module_paths(const Content_set &content_set) {
+  std::vector<std::string> paths;
+  const auto options =
+      content_set.options ? json::try_parse(*content_set.options) : std::nullopt;
+  const auto *definitions = options ? options->get(k_script_definitions) : nullptr;
+  const auto *modules = definitions ? definitions->get("script_modules") : nullptr;
+  if (!modules || !modules->is_array()) return paths;
+
+  for (const auto &module : modules->as_array()) {
+    std::string path = "/" + module.get_string("class_name");
+    if (const auto *props = module.get("properties"); props && props->is_array()) {
+      for (const auto &p : props->as_array()) {
+        const auto *value = p.get("value");
+        if (p.get_string("name") == "requestPath" && value && value->is_string()) {
+          path = value->as_string();
+        }
+      }
+    }
+    paths.push_back(std::move(path));
+  }
+  return paths;
+}
 
 // -- Content set rows -----------------------------------------------------
 
@@ -239,29 +269,59 @@ void update_content_set(Db_session *session, const Id &id,
 }
 
 void delete_registered_scripts(Db_session *session, const Content_set &content_set) {
+  // The script modules of this content set: the REST schemas of its scripts,
+  // and those of the modules its stored definitions name, which include
+  // modules without a script (only triggers)
+  std::set<Id> modules;
+  for (const auto &row :
+       session
+           ->query("SELECT DISTINCT o.rest_schema_id FROM " +
+                       sql::metadata_table("content_set_has_rest_object") +
+                       " l JOIN " + sql::metadata_table("rest_object") +
+                       " o ON o.id = l.rest_object_id WHERE l.content_set_id = ?",
+                   {Value::id(content_set.id)})
+           .rows) {
+    modules.insert(row["rest_schema_id"].as_string());
+  }
+  for (const auto &request_path : registered_module_paths(content_set)) {
+    if (const auto schema =
+            find_schema(session, content_set.service_id, request_path)) {
+      modules.insert(schema->id);
+    }
+  }
+
   // Deleting the links deletes their SCRIPT objects (AFTER DELETE trigger)
   session->execute(sql::Delete("content_set_has_rest_object")
                        .where("content_set_id", Value::id(content_set.id)));
 
-  // The script modules left without objects go as well. They are looked up
-  // first: a DELETE on rest_schema whose subquery reads rest_object fails with
-  // 1442, as the rest_schema trigger deletes from rest_object.
+  // Of those modules, the ones left without objects go as well; modules of
+  // other content sets stay. They are looked up first: a DELETE on
+  // rest_schema whose subquery reads rest_object fails with 1442, as the
+  // rest_schema trigger deletes from rest_object.
+  if (modules.empty()) return;
   std::string placeholders;
+  std::vector<Value> candidates;
+  for (const auto &id : modules) {
+    placeholders += placeholders.empty() ? "?" : ", ?";
+    candidates.push_back(Value::id(id));
+  }
+  std::string empty_placeholders;
   std::vector<Value> empty_modules;
   for (const auto &row :
        session
            ->query("SELECT id FROM " + sql::metadata_table("rest_schema") +
-                       " WHERE service_id = ? AND schema_type = 'SCRIPT_MODULE' "
-                       "AND id NOT IN (SELECT rest_schema_id FROM " +
+                       " WHERE id IN (" + placeholders +
+                       ") AND schema_type = 'SCRIPT_MODULE' AND id NOT IN "
+                       "(SELECT rest_schema_id FROM " +
                        sql::metadata_table("rest_object") + ")",
-                   {Value::id(content_set.service_id)})
+                   std::move(candidates))
            .rows) {
-    placeholders += placeholders.empty() ? "?" : ", ?";
+    empty_placeholders += empty_placeholders.empty() ? "?" : ", ?";
     empty_modules.push_back(Value::id(row["id"].as_string()));
   }
   if (!empty_modules.empty()) {
     session->execute(sql::Delete("rest_schema")
-                         .where_raw("id IN (" + placeholders + ")",
+                         .where_raw("id IN (" + empty_placeholders + ")",
                                     std::move(empty_modules)));
   }
 }

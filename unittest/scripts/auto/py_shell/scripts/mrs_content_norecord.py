@@ -408,6 +408,25 @@ EXPECT_EQ("1e+20", session.run_sql("SELECT JSON_EXTRACT(db_column, '$.default') 
 rest("DROP REST CONTENT FILE `/src/znum.mts` FROM CONTENT SET /app")
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
 
+#@<> LOAD SCRIPTS and DROP remove only the script modules of their own content set
+# A module with only triggers has no REST objects: its REST schema is empty,
+# which must not make another content set's LOAD SCRIPTS remove it
+def script_modules():
+    return [r[0] for r in query_rows("SELECT request_path FROM mariadb_rest_service.rest_schema WHERE schema_type = 'SCRIPT_MODULE' ORDER BY request_path")]
+
+rest("CREATE REST CONTENT SET /other")
+rest("CREATE REST CONTENT FILE `/src/trig.mts` ON CONTENT SET /other CONTENT '@Mrs.module({ requestPath: \"/trig\" }) class Trig { @Mrs.trigger({}) public static async t(): Promise<void> { } }'")
+rest("CREATE REST CONTENT FILE `/dist/trig.mjs` ON CONTENT SET /other CONTENT 'export class Trig {}'")
+EXPECT_EQ("REST content set `/svc/other` updated successfully. 0 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /other LOAD SCRIPTS"))
+EXPECT_EQ(["/sales", "/trig"], script_modules())
+rest("ALTER REST CONTENT SET /app LOAD SCRIPTS")
+EXPECT_EQ(["/sales", "/trig"], script_modules())
+# Its own LOAD SCRIPTS keeps it, the module being still there; its DROP removes it
+rest("ALTER REST CONTENT SET /other LOAD SCRIPTS")
+EXPECT_EQ(["/sales", "/trig"], script_modules())
+rest("DROP REST CONTENT SET /other")
+EXPECT_EQ(["/sales"], script_modules())
+
 #@<> SHOW CREATE REST CONTENT SET of a script set: the set, its files, then LOAD SCRIPTS
 statement = rest_text("SHOW CREATE REST CONTENT SET /app")
 EXPECT_TRUE(statement.startswith("""CREATE OR REPLACE REST CONTENT SET /app
