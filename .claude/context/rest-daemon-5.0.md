@@ -2,9 +2,9 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Related: [mrs-module.md](mrs-module.md).
 
-The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). Nothing of 5.0.0 has been released or installed yet, so the daemon needs no compatibility with 4.x names on a MariaDB server.
+The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). 5.0.0 is the first release of `mariadb_rest_service`, so the daemon needs no compatibility with 4.x names on a MariaDB server.
 
-Collected 2026-10-09 from the work in PR #71. Keep it up to date when the schema changes in a way the daemon sees.
+Keep it up to date when the schema changes in a way the daemon sees.
 
 ## 1. Schema name, prefix and postfix
 
@@ -105,7 +105,7 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 
 - The JSON schema of `service.in_development` (CHECK constraint) has the id `https://mariadb.com/mrs/service/in_development` (was `https://dev.mysql.com/mrs/service/in_development`); only relevant if the daemon validates against it by id.
 - `rest_daemon.product_name` is documented as e.g. `'MariaDB REST Daemon'` (was `'MySQL Router'`); the daemon should report its own product name there.
-- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-logo-vertical.svg` (was `sakila.svg`, then `mariadb-seal.svg` until 2026-10-13); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
+- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-logo-vertical.svg` (was `sakila.svg`); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
 - `audit_log` and its triggers are unchanged in shape apart from the wider id (see 9).
 - MariaDB Shell's `SHOW REST DAEMONS` treats a daemon as active when `rest_daemon.last_check_in` is less than 10 seconds old.
 
