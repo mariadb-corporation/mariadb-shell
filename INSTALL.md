@@ -60,6 +60,12 @@ development with C++.
 
 Install Python 3.14 using the MSI installer from www.python.org
 
+Install bison, which the REST SQL grammar needs at configure time. The build
+looks for `win_bison` where Chocolatey puts it:
+```bat
+choco install winflexbison3 -y
+```
+
 
 ## 2 Clone the MariaDB Shell Repository
 
