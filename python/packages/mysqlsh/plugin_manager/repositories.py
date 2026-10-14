@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -97,7 +98,7 @@ def set_user_repositories(user_repos, raise_exceptions=False):
         True on success
     """
     user_repo_file_content = {
-        "fileType": "MySQL Shell Plugin Repositories",
+        "fileType": "MariaDB Shell Plugin Repositories",
         "version": "0.0.1",
         "repositories": user_repos
     }
@@ -122,7 +123,7 @@ def set_user_repositories(user_repos, raise_exceptions=False):
 def get_plugin_repositories(**kwargs):
     """Lists all registered plugin repositories
 
-    This function will list all registered MySQL Shell plugin repositories.
+    This function will list all registered MariaDB Shell plugin repositories.
     To add a repository use the plugins.repositories.add() function.
 
     Args:
@@ -150,7 +151,7 @@ def get_plugin_repositories(**kwargs):
         return repos
     else:
         # cSpell:ignore repositor
-        print("Registered MySQL Shell Plugin Repositories.\n\n"
+        print("Registered MariaDB Shell Plugin Repositories.\n\n"
               f"{format_repository_listing(repositories=repos)}"
               f"Total of {len(repos)} repositor"
               f"{'y' if len(repos) == 1 else 'ies'}.\n")
@@ -163,13 +164,13 @@ def add_plugin_repository(url=None, **kwargs):
     By calling this function a new plugin repository can be added. The url
     parameter allows for shortcuts.
 
-    'domain.com' expands to https://domain.com/mysql-shell-plugins-manifest.json
-    'domain.com/plugins' expands to https://domain.com/plugins/mysql-shell-plugins-manifest.json
-    'github/username' expands to https://raw.githubusercontent.com/username/mysql-shell-plugins/master/mysql-shell-plugins-manifest.json
-    'github/username/repo' expands to https://raw.githubusercontent.com/username/repo/master/mysql-shell-plugins-manifest.json
+    'domain.com' expands to https://domain.com/mariadb-shell-plugins-manifest.json
+    'domain.com/plugins' expands to https://domain.com/plugins/mariadb-shell-plugins-manifest.json
+    'github/username' expands to https://raw.githubusercontent.com/username/mariadb-shell-plugins/master/mariadb-shell-plugins-manifest.json
+    'github/username/repo' expands to https://raw.githubusercontent.com/username/repo/master/mariadb-shell-plugins-manifest.json
 
     Args:
-        url (str): The url of a MySQL Shell plugins repository.
+        url (str): The url of a MariaDB Shell plugins repository.
         **kwargs: Optional parameters
 
     Keyword Args:
@@ -183,7 +184,7 @@ def add_plugin_repository(url=None, **kwargs):
     raise_exceptions = kwargs.get('raise_exceptions', True)
 
     if not url and interactive:
-        print("To add a new MySQL Shell plugin repository the URL of the "
+        print("To add a new MariaDB Shell plugin repository the URL of the "
               "repository manifest file\nneeds to be specified.\n\n"
               "Examples:\n"
               "    domain.com\n"
@@ -208,13 +209,13 @@ def add_plugin_repository(url=None, **kwargs):
 
         # Get the github repo
         if len(github_str) == 2:
-            github_repo = "mysql-shell-plugins"
+            github_repo = "mariadb-shell-plugins"
         else:
             github_repo = github_str[2]
 
         url = (
             f"https://raw.githubusercontent.com/{github_user}/{github_repo}/"
-            f"master/mysql-shell-plugins-manifest.json")
+            f"master/mariadb-shell-plugins-manifest.json")
     else:
         # Add https:// if not specified
         if not url.startswith("https://") and not url.startswith("http://"):
@@ -222,9 +223,9 @@ def add_plugin_repository(url=None, **kwargs):
 
         if not url.endswith(".json"):
             if url.endswith("/"):
-                url = f"{url}mysql-shell-plugins-manifest.json"
+                url = f"{url}mariadb-shell-plugins-manifest.json"
             else:
-                url = f"{url}/mysql-shell-plugins-manifest.json"
+                url = f"{url}/mariadb-shell-plugins-manifest.json"
 
     try:
         manifest = general.download_file(url)
@@ -252,14 +253,14 @@ def add_plugin_repository(url=None, **kwargs):
 
         # Warn the user about possible consequences
         print("\nWARNING:\n"
-              "You are about to add an external MySQL Shell plugin repository."
+              "You are about to add an external MariaDB Shell plugin repository."
               "\nExternal plugin repositories and their plugins complement\n"
-              "the functionality of MySQL Shell and can contain system\n"
+              "the functionality of MariaDB Shell and can contain system\n"
               "level software that could be potentially harmful to your\n"
               "system. Please review the description below and only proceed\n"
               "if you have obtained the external plugin repository URL from\n"
               "a trusted source.\n\n"
-              "Oracle and its affiliates cannot be held responsible for\n"
+              "MariaDB plc and its affiliates cannot be held responsible for\n"
               "any potential harm caused by using plugins from external "
               "sources.\n")
 
@@ -337,7 +338,7 @@ def remove_plugin_repository(**kwargs):
         **kwargs: Optional parameters
 
     Keyword Args:
-        url (str): The url of a MySQL Shell plugins repository.
+        url (str): The url of a MariaDB Shell plugins repository.
         interactive (bool): Whether user input is accepted
         raise_exceptions (bool): Whether exceptions are raised
 
@@ -350,7 +351,7 @@ def remove_plugin_repository(**kwargs):
 
     user_repos = get_user_repositories(raise_exceptions=raise_exceptions)
     if not user_repos:
-        print("No custom MySQL Shell plugin repositories registered.\n")
+        print("No custom MariaDB Shell plugin repositories registered.\n")
         return
 
     repo_index = None

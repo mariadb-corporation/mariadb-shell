@@ -108,7 +108,7 @@ EXAMPLES
 The following modules and objects are ready for use when the shell starts:
 
 ${*}
- - plugins [[*]]Plugin to manage MySQL Shell plugins
+ - plugins [[*]]Plugin to manage MariaDB Shell plugins
 ${*}
 
 For additional information on these global objects use: <object>.help()

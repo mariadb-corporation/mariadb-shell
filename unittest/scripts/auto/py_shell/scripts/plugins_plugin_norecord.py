@@ -67,12 +67,12 @@ def version():
     return "--plugin-version-placeholder--"
 '''
 default_manifest = {
-    "fileType": "MySQL Shell Plugins Manifest",
+    "fileType": "MariaDB Shell Plugins Manifest",
     "version": "0.0.1",
     "releaseVersion": "2021.02.26.17.00",
     "repository": {
-        "name": "Official MySQL Shell Plugin Repository",
-        "description": "The official MySQL Shell Plugin Repository maintained by the MySQL Team at Oracle Corp."
+        "name": "Official MariaDB Shell Plugin Repository",
+        "description": "The official MariaDB Shell Plugin Repository maintained by the MariaDB Shell team Corp."
     },
     "plugins": [
         {
@@ -113,11 +113,11 @@ default_manifest = {
 }
 
 base_manifest = {
-    "fileType": "MySQL Shell Plugins Manifest",
+    "fileType": "MariaDB Shell Plugins Manifest",
     "version": "0.0.1",
     "releaseVersion": "2020.09.03.04.00",
     "repository": {
-        "name": "Testing MySQL Shell Plugin Repository",
+        "name": "Testing MariaDB Shell Plugin Repository",
         "description": "A testing repository to be used while testing the plugins builtin plugin."
     },
     "plugins": [
@@ -165,7 +165,7 @@ def add_version_to_manifest(version, changes, shellMin=None, shellMax=None):
     base_manifest["plugins"][0]["versions"].insert(0, version_data)
 
 def create_manifest(folder, data):
-    manifest_fh = open(os.path.join(folder, 'mysql-shell-plugins-manifest.json'), 'w')
+    manifest_fh = open(os.path.join(folder, 'mariadb-shell-plugins-manifest.json'), 'w')
     manifest_fh.write(json.dumps(data, indent=4))
     manifest_fh.close()
 
@@ -266,9 +266,9 @@ def execute(command, prompt_answers=""):
 
 
 #@<> Install the test repository
-TEST_REPOSITORY="http://127.0.0.1:" + str(PORT) + '/mysql-shell-plugins-manifest.json'
+TEST_REPOSITORY="http://127.0.0.1:" + str(PORT) + '/mariadb-shell-plugins-manifest.json'
 # Sends the answer to the following prompts as 'repo' and 'yes':
-# - Are you sure you want to add the repository 'Testing MySQL Shell Plugin Repository' [yes/NO]:
+# - Are you sure you want to add the repository 'Testing MariaDB Shell Plugin Repository' [yes/NO]:
 execute("plugins.repositories.add('" + TEST_REPOSITORY + "')", "yes")
 
 #@<> Help on built-in plugins plugin
