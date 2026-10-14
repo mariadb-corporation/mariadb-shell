@@ -54,10 +54,6 @@ The full list, by area:
 - **`\show threads` always fails** with "The 'where' parameter is not supported in this build". `o.where` defaults to "TRUE" and then hits the `#ifndef HAVE_X_PROTOCOL` throw. [extending-mariadb-shell/reports.md, using-mariadb-shell/shell-commands.md]
 - **`\show thread --vars`, `--raw-locks` and `--all` fail on MariaDB**, which has no `variables_by_thread` or `data_locks` tables. The `thread` report also needs `performance_schema=ON`. [extending-mariadb-shell/reports.md]
 - **A report function gets `argv`/`options` only if the report declares them**; without defaults, the call fails. [extending-mariadb-shell/reports.md]
-- **Command-line integration:**
-  - The dotted forms `shell.options` and `util.debug` fail with exit code 10; only the space form (`shell options set-persist`, `util debug …`) works.
-
-  [using-mariadb-shell/command-line-integration.md]
 - **`--json` prints an empty `{}` first.** [using-mariadb-shell/output-formats.md]
 - **`--pym` prints "Error in my_thread_global_end(): 1 threads didn't exit"** at exit, for example on `--pym pip`.
 - **`--pym pip install` from PyPI timed out** in the bundled Python, while curl reached pypi.org. Installing a local wheel with `--user` or `--target` works. On Windows, pip may be missing from the vcpkg Python (MARIADB_PORT.md §11.1). [customizing/python-module-search-paths.md]
@@ -90,7 +86,6 @@ The original summary, carried over verbatim:
 
 The full list:
 
-- **`\? cmdline`** lists `shell.options` among the objects, but only the space form works (see above).
 - **`mysqlx` scheme accepted at parse time** (to fix as one change across the shell and code_ext):
   - The invalid-scheme error lists `mysqlx`, and `shell.parse_uri("mysqlx://…")` succeeds; `shell.connect` and the command line prompt for the password and only then fail with `Unknown MariaDB URI type mysqlx`.
   - Cause: the default allowed set `{"mariadb","mysql","mysqlx"}` of `IConnection` (`mysqlshdk/libs/utils/connection.h`); the connect-time rejection is `Connection_options::get_session_type`.
