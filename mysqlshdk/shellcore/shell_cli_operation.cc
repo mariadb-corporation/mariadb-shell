@@ -64,11 +64,26 @@ REGISTER_HELP(CLI_CASE_SAMPLES,
 @li Kebab case: (e.g. list-credential-helpers))*");
 #endif
 
+#ifndef MARIADB_BUILD
+REGISTER_HELP(CLI_INTRO,
+              "The MySQL Shell functionality is generally available as API "
+              "calls, this is objects containing methods to perform specific "
+              "tasks, they can be called either in JavaScript or Python "
+              "modes.");
+REGISTER_HELP(CLI_SYNTAX,
+              "  mysqlsh [options] -- <object> <operation> [arguments]");
+#else
+REGISTER_HELP(CLI_INTRO,
+              "The MariaDB Shell functionality is generally available as API "
+              "calls, this is objects containing methods to perform specific "
+              "tasks, they can be called in Python mode.");
+REGISTER_HELP(CLI_SYNTAX,
+              "  mariadb-shell [options] -- <object> <operation> [arguments]");
+#endif
+
 REGISTER_HELP_TOPIC(Command Line, TOPIC, cmdline, Contents, ALL);
 REGISTER_HELP_TOPIC_TEXT(cmdline, R"*(
-The MySQL Shell functionality is generally available as API calls, this is
-objects containing methods to perform specific tasks, they can be called either
-in JavaScript or Python modes.
+${CLI_INTRO}
 
 The most important functionality (available on the shell global objects) has
 been integrated in a way that it is possible to call it directly from the
@@ -76,7 +91,7 @@ command line, by following a specific syntax.
 
 <b>SYNTAX</b>:
 
-  mysqlsh [options] -- <object> <operation> [arguments]
+${CLI_SYNTAX}
 
 <b>WHERE</b>:
 
@@ -168,10 +183,11 @@ REGISTER_HELP(cmdline_EXAMPLE5_DESC,
               "{password:\"\"})");
 #else
 REGISTER_HELP(cmdline_EXAMPLE,
-              "$ mysqlsh -- shell.options set-persist history.autoSave true");
-REGISTER_HELP(cmdline_EXAMPLE_DESC,
-              "mysql-js> shell.options.setPersist(\"history.autoSave\", true)");
-
+              "$ mariadb-shell -- shell options set-persist history.autoSave "
+              "true");
+REGISTER_HELP(
+    cmdline_EXAMPLE_DESC,
+    "MariaDB Py> shell.options.set_persist(\"history.autoSave\", True)");
 #endif
 
 void Shell_cli_operation::add_cmdline_argument(const std::string &cmdline_arg) {

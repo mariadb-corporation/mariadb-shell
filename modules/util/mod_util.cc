@@ -73,12 +73,21 @@ namespace mysqlsh {
 using shcore::option_tracker::Shell_feature;
 
 REGISTER_HELP_GLOBAL_OBJECT(util, shellapi);
+#ifdef HAVE_UPGRADE_CHECKER
 REGISTER_HELP(UTIL_GLOBAL_BRIEF,
               "Global object that groups miscellaneous tools like upgrade "
               "checker and JSON import.");
 REGISTER_HELP(UTIL_BRIEF,
               "Global object that groups miscellaneous tools like upgrade "
               "checker and JSON import.");
+#else
+REGISTER_HELP(UTIL_GLOBAL_BRIEF,
+              "Global object that groups miscellaneous tools like dump, load, "
+              "copy, and table import and export.");
+REGISTER_HELP(UTIL_BRIEF,
+              "Global object that groups miscellaneous tools like dump, load, "
+              "copy, and table import and export.");
+#endif
 
 Util::Util(shcore::IShell_core *owner)
     : Extensible_object("util", "util", true), _shell_core(*owner) {
@@ -1065,7 +1074,9 @@ are used in parallel connections.
 Each parallel connection sets the following session variables:
 @li SET SQL_MODE = ''; -- Clear SQL Mode
 @li SET NAMES ?; -- Set to characterSet option if provided by user.
-@li SET unique_checks = 0
+@li SET unique_checks = 0 -- on MariaDB only when <b>replaceDuplicates</b> is
+true: with duplicates skipped, MariaDB's bulk insert into an empty InnoDB table
+can drop rows without a warning.
 @li SET foreign_key_checks = 0
 @li SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
 constraints per session rather than per constraint.

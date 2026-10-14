@@ -1265,7 +1265,7 @@ package owns is now namespaced to mariadb, so the declaration is gone and the tw
 packages can be installed side by side.
 
 Still deliberately **not** `Provides: mysql-shell`: this build drops AdminAPI,
-dump/load, X DevAPI and the Upgrade Checker, so it must not satisfy dependencies
+X DevAPI, JavaScript and the Upgrade Checker, so it must not satisfy dependencies
 on the upstream package.
 
 ### 14.7 Sandbox directory

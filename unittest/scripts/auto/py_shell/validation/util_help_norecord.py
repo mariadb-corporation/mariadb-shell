@@ -1,11 +1,23 @@
 #@<OUT> util help
 NAME
+?{__have_upgrade_checker}
       util - Global object that groups miscellaneous tools like upgrade checker
              and JSON import.
+?{}
+?{not __have_upgrade_checker}
+      util - Global object that groups miscellaneous tools like dump, load,
+             copy, and table import and export.
+?{}
 
 DESCRIPTION
+?{__have_upgrade_checker}
       Global object that groups miscellaneous tools like upgrade checker and
       JSON import.
+?{}
+?{not __have_upgrade_checker}
+      Global object that groups miscellaneous tools like dump, load, copy, and
+      table import and export.
+?{}
 
 PROPERTIES
       debug
@@ -2594,7 +2606,9 @@ DESCRIPTION
 
       - SET SQL_MODE = ''; -- Clear SQL Mode
       - SET NAMES ?; -- Set to characterSet option if provided by user.
-      - SET unique_checks = 0
+      - SET unique_checks = 0 -- on MariaDB only when replaceDuplicates is
+        true: with duplicates skipped, MariaDB's bulk insert into an empty
+        InnoDB table can drop rows without a warning.
       - SET foreign_key_checks = 0
       - SET check_constraint_checks = 0 -- MariaDB only, which enforces CHECK
         constraints per session rather than per constraint.

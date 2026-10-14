@@ -4,6 +4,9 @@
 #@<OUT> Success test
 This is JS
 
+#@ source with --js without JavaScript
+||JavaScript is not available.
+
 #@ can only override lang when sourcing interactively
 ||Failed to open file '--js', error: No such file or directory
 ||Failed to open file '--js', error: No such file or directory

@@ -196,19 +196,24 @@ DESCRIPTION
       This information will be integrated into the shell help to be available
       through the built in help system (\?).
 
-      When adding a function, the following attribute is also allowed on the
+      When adding a function, the following attributes are also allowed on the
       member definition:
 
       - parameters: a list of parameter definitions for each parameter that the
         function accepts.
+      - cli: a boolean value, false by default, indicating whether the function
+        can also be called from the command line, as in mariadb-shell -- object
+        function.
 
       A parameter definition is a dictionary with the following attributes:
 
       - name: required, the name of the parameter, must be a valid identifier.
-      - type: required, the data type of the parameter, allowed values include:
-        string, integer, bool, float, array, dictionary, object.
+      - type: the data type of the parameter, allowed values include: string,
+        integer, bool, float, array, dictionary, object. If not given, the
+        parameter accepts a value of any type.
       - required: a boolean value indicating whether the parameter is mandatory
         or optional.
+      - default: the value the parameter takes when it is not given.
       - brief: a string with a short description of the parameter.
       - details: a string array with additional details about the parameter.
 
@@ -474,15 +479,32 @@ DESCRIPTION
       - "autoIncrementValue" - the last integer auto generated id (for insert
         operations).
       - "warnings" - a list of warnings associated to the Result.
-      - "data" - a list of dictionaries representing a record in the Result.
+      - "columns" - a list with the columns of the Result, in order.
+      - "data" - a list of records in the Result. A record is either a
+        dictionary, mapping column names to values, or, when "columns" is
+        given, a list of values in the order of the columns. All the records
+        must use the same form.
 
       Creating a Result using an empty Dictionary is the same as creating an OK
       result with no data.
 
+      A column is defined either as a string with its name, or as a dictionary
+      with the following elements:
+
+      - "name" - the name of the column, mandatory.
+      - "type" - one of: string, integer, float, double, json, date, time,
+        datetime, bytes.
+      - "flags" - a string with a list of flags, separated by commas or spaces:
+        blob, timestamp, unsigned, zerofill, binary, enum, set.
+      - "length" - the length of the column.
+
+      The type, flags and length that are not given are deduced from the values
+      of the first record.
+
       A warning is defined as a dictionary with the following elements:
 
-      - "level" - holds the warning type: error, warning, note.
-      - "code" - integer number identifying the warning code.
+      - "level" - holds the warning type: warning or note.
+      - "code" - integer number identifying the warning code, 0 if not given.
       - "message" - describes the actual warning.
 
       When defining warnings, both level and message are mandatory.
@@ -490,6 +512,15 @@ DESCRIPTION
       It is possible to create a multi-result Result object, to do so, instead
       of using a single data dictionary, provide a list of data dictionaries
       following the specification mentioned above.
+
+      An item of that list can also define an error instead of a result, using
+      the following elements:
+
+      - "error" - the error message, mandatory.
+      - "code" - integer number identifying the error code.
+      - "sqlstate" - the SQL state of the error.
+
+      The error is raised when the multi-result Result reaches that item.
 
 #@<OUT> shell.delete_all_credentials
 NAME
@@ -666,7 +697,9 @@ DESCRIPTION
 
       Limitations:
 
+?{not __mariadb_build}
       - The login-path helper cannot store secrets longer than 78 characters.
+?{}
       - The login-path helper cannot store the following characters: '\0',
         '0x03', '0x04', '\n', '\r', '0x0F', '0x11', '0x12', '0x13', '0x15',
         '0x16', '0x17', '0x19', '0x1A', '0x1C', '0x7F'.
@@ -775,6 +808,7 @@ DESCRIPTION
         disable the credential store
       - credentialStore.savePasswords: controls automatic password storage,
         allowed values: "always", "prompt" or "never"
+?{__have_admin_api}
       - dba.connectTimeout: float, default connection timeout used for sessions
         created in AdminAPI operations, in seconds
       - dba.connectivityChecks: bool, checks SSL settings and network
@@ -787,12 +821,15 @@ DESCRIPTION
       - dba.versionCompatibilityChecks: bool, checks version compatibility for
         asynchronous replication when managing a ReplicaSet, ClusterSet, or a
         Cluster with Read-Replicas.
+?{}
       - defaultCompress: Enable compression in client/server protocol by
         default in global shell sessions.
       - defaultMode: shell mode to use when shell is started, allowed values:
         "js", "py" or "sql"
+?{__have_x_protocol}
       - devapi.dbObjectHandles: true to enable schema collection and table name
         aliases in the db object, for DevAPI operations
+?{}
       - history.autoSave: true to save command history when exiting the shell
       - history.maxSize: number of entries to keep in command history
       - history.sql.ignorePattern: colon separated list of glob patterns to
@@ -833,10 +870,15 @@ DESCRIPTION
       - resultFormat: controls the type of output produced for SQL results
       - sandboxDir: default path where the sandbox plugin deploys new sandbox
         instances
+?{__have_x_protocol}
       - showColumnTypeInfo: display column type information in SQL mode. Please
         be aware that output may depend on the protocol you are using to
         connect to the server, e.g. DbType field is approximated when using X
         protocol.
+?{}
+?{not __have_x_protocol}
+      - showColumnTypeInfo: display column type information in SQL mode.
+?{}
       - showWarnings: boolean value to indicate whether warnings shall be
         included when printing a SQL result
       - slashCommands: boolean value, default true, to indicate whether shell
@@ -1277,9 +1319,14 @@ DESCRIPTION
       Shell configuration path (by default it is ~/.mariadb-shell/init.d in
       Unix and %AppData%\MariaDB\mariadb-shell\init.d in Windows).
 
+?{__have_js}
       Custom reports may be written in either JavaScript or Python. The
       standard file extension for each case should be used to get them properly
       loaded.
+?{}
+?{not __have_js}
+      Custom reports are written in Python, in files with the .py extension.
+?{}
 
       All reports registered in those files using the register_report() method
       will be available when Shell starts.
@@ -1552,10 +1599,22 @@ The following options are valid for use either in a URI or in a dictionary:
 - ssl-crl: The path to file that contains certificate revocation lists.
 - ssl-crlpath: The path of directory that contains certificate revocation list
   files.
+?{not __mariadb_build}
 - ssl-cipher: The list of permissible encryption ciphers for connections that
   use TLS protocols up through TLSv1.2.
+?{}
+?{__mariadb_build}
+- ssl-cipher: The list of permissible encryption ciphers. With OpenSSL, the
+  list also selects the TLS v1.3 cipher suites.
+?{}
 - tls-version: List of protocols permitted for secure connections.
-- tls-ciphers: List of TLS v1.3 ciphers to use.
+?{not __mariadb_build}
+- tls-ciphersuites: List of TLS v1.3 ciphers to use.
+?{}
+?{__mariadb_build}
+- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
+  setting of its own for the TLS v1.3 cipher suites.
+?{}
 - auth-method: Authentication method.
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
@@ -1624,7 +1683,19 @@ to be used.
 The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
+?{not __mariadb_build}
 - mysql: for connections using the MySQL protocol.
+?{}
+?{__mariadb_build}
+- mariadb: for connections using the MariaDB client-server protocol, the
+  default.
+- mysql: the same as mariadb, so that URIs written for MySQL Shell keep
+  working.
+
+Either scheme takes the +ssh extension, as in mariadb+ssh://user@host, to
+connect through an SSH tunnel to that host. The ssh-* options of the URI then
+configure the tunnel.
+?{}
 ?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 
@@ -1732,7 +1803,7 @@ Connection compression is governed by following connection options:
 
 - REQUIRED: connection will only be made when compression negotiation is
   succesful.
-- PREFFERED: (default for X protocol connections) shell will attempt to
+- PREFERRED: (default for X protocol connections) shell will attempt to
   establish connection with compression enabled, but if compression negotiation
   fails, connection will be established without compression.
 - DISABLED: (defalut for classic protocol connections) connection will be
@@ -1838,10 +1909,22 @@ The following options are valid for use either in a URI or in a dictionary:
 - ssl-crl: The path to file that contains certificate revocation lists.
 - ssl-crlpath: The path of directory that contains certificate revocation list
   files.
+?{not __mariadb_build}
 - ssl-cipher: The list of permissible encryption ciphers for connections that
   use TLS protocols up through TLSv1.2.
+?{}
+?{__mariadb_build}
+- ssl-cipher: The list of permissible encryption ciphers. With OpenSSL, the
+  list also selects the TLS v1.3 cipher suites.
+?{}
 - tls-version: List of protocols permitted for secure connections.
-- tls-ciphers: List of TLS v1.3 ciphers to use.
+?{not __mariadb_build}
+- tls-ciphersuites: List of TLS v1.3 ciphers to use.
+?{}
+?{__mariadb_build}
+- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
+  setting of its own for the TLS v1.3 cipher suites.
+?{}
 - auth-method: Authentication method.
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
@@ -1910,7 +1993,19 @@ to be used.
 The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
+?{not __mariadb_build}
 - mysql: for connections using the MySQL protocol.
+?{}
+?{__mariadb_build}
+- mariadb: for connections using the MariaDB client-server protocol, the
+  default.
+- mysql: the same as mariadb, so that URIs written for MySQL Shell keep
+  working.
+
+Either scheme takes the +ssh extension, as in mariadb+ssh://user@host, to
+connect through an SSH tunnel to that host. The ssh-* options of the URI then
+configure the tunnel.
+?{}
 ?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 
@@ -2018,7 +2113,7 @@ Connection compression is governed by following connection options:
 
 - REQUIRED: connection will only be made when compression negotiation is
   succesful.
-- PREFFERED: (default for X protocol connections) shell will attempt to
+- PREFERRED: (default for X protocol connections) shell will attempt to
   establish connection with compression enabled, but if compression negotiation
   fails, connection will be established without compression.
 - DISABLED: (defalut for classic protocol connections) connection will be
@@ -2163,7 +2258,7 @@ Connection compression is governed by following connection options:
 
 - REQUIRED: connection will only be made when compression negotiation is
   succesful.
-- PREFFERED: (default for X protocol connections) shell will attempt to
+- PREFERRED: (default for X protocol connections) shell will attempt to
   establish connection with compression enabled, but if compression negotiation
   fails, connection will be established without compression.
 - DISABLED: (defalut for classic protocol connections) connection will be
@@ -2206,10 +2301,22 @@ The following options are valid for use either in a URI or in a dictionary:
 - ssl-crl: The path to file that contains certificate revocation lists.
 - ssl-crlpath: The path of directory that contains certificate revocation list
   files.
+?{not __mariadb_build}
 - ssl-cipher: The list of permissible encryption ciphers for connections that
   use TLS protocols up through TLSv1.2.
+?{}
+?{__mariadb_build}
+- ssl-cipher: The list of permissible encryption ciphers. With OpenSSL, the
+  list also selects the TLS v1.3 cipher suites.
+?{}
 - tls-version: List of protocols permitted for secure connections.
-- tls-ciphers: List of TLS v1.3 ciphers to use.
+?{not __mariadb_build}
+- tls-ciphersuites: List of TLS v1.3 ciphers to use.
+?{}
+?{__mariadb_build}
+- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
+  setting of its own for the TLS v1.3 cipher suites.
+?{}
 - auth-method: Authentication method.
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
@@ -2279,7 +2386,19 @@ to be used.
 The scheme option defines the protocol to be used on the connection, the
 following are the accepted values:
 
+?{not __mariadb_build}
 - mysql: for connections using the MySQL protocol.
+?{}
+?{__mariadb_build}
+- mariadb: for connections using the MariaDB client-server protocol, the
+  default.
+- mysql: the same as mariadb, so that URIs written for MySQL Shell keep
+  working.
+
+Either scheme takes the +ssh extension, as in mariadb+ssh://user@host, to
+connect through an SSH tunnel to that host. The ssh-* options of the URI then
+configure the tunnel.
+?{}
 ?{__have_x_protocol}
 - mysqlx: for connections using the X protocol.
 

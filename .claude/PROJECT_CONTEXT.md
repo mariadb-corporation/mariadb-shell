@@ -33,6 +33,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 - **Added 2026-10-05:** the **Schema Management** section (7 pages in `schema-management/`, between Sandbox Instances and MCP Server), plus an `msm` row on Global Objects. Written assuming mariadb-shell-plugins PR #36 is merged. See [context/docs-ref.md](context/docs-ref.md) § Schema Management section.
 - **PR #64 (`docs/mcp-review-sync`, merged 2026-10-07):** the MCP pages brought in line with the plugin's review fixes (`fe4dbfe6` in mariadb-shell-plugins #37, made after the pages were written): scopes apply at once, auto-provisioning servers start without users, 30 sign-ins per address per minute, `--publicUrl` on `start-server`.
 - **Open:**
+  - the generated **API Reference** is not in `main`: the hidden `--export-help` option (`471e72e9d`), `docs-ref/scripts/api_reference.py` and its 30 pages (`e4d29055d`), the docs link and CI `--check` (`f6005e443`), MariaDB naming in the built-in help (`e525a8264`), and `plugins/external-plugins.txt` (`8ba556850`). They sit on top of the pre-squash docs commits, so rebase only these five onto `main`. Re-check `8ba556850`'s choice to stop bundling mrs now that the REST Service is built in, and `e525a8264` against the help text the REST Service added
   - porting to mariadb-docs (`docs-ref/README.md` § Porting)
   - the placement decision (Enterprise Tools?)
   - whether to keep the object-storage warning

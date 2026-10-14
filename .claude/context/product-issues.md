@@ -85,51 +85,20 @@ These items still describe MySQL Shell, or disagree with the code. The docs foll
 The original summary, carried over verbatim:
 
 - **Help text still describes MySQL Shell:**
-  - `\?` lists dba/mysqlx; `util` is described as "upgrade checker and JSON import"; `\connect` shows an `--mx` example; `\? cmdline` mentions mysqlsh and JS.
   - The dump/load help lists HeatWave/lakehouse options.
-  - `\option -l` shows `dba.*`/`devapi.*`.
   - The manifest field `dumper` says "mysqlsh".
-  - The man page lists `MARIADB_SHELL_JS_MODULE_PATH` and says `mysqlsh` is an alias.
 
 The full list:
 
-- **General help:**
-  - `\?` still mentions the dba and mysqlx topics.
-  - `\help` shows a `\h cluster` example.
-  - `util` is described as "upgrade checker and JSON import".
-- **`\connect`** shows a `--mx` example.
-- **`\? cmdline`:**
-  - it says `mysqlsh` and mentions JavaScript
-  - it says `shell.options` works on the command line, but only the space form does (see above)
-- **`\source`** still lists `--js`. **`\? register_report`** mentions JavaScript init.d files.
-- **`\history`** says `history.autoSave` must be turned on, but it defaults to `true`.
-- **Connection help:**
-  - it lists only the `mysql` scheme, while the code also accepts `mariadb` and the `+ssh` forms
-  - it says `tls-ciphers`, while the code accepts only `tls-ciphersuites`, which has no effect
-  - it gives a 78-character login-path limit that the MariaDB build doesn't apply
-  - the invalid-scheme error still lists `mysqlx`
+- **`\? cmdline`** lists `shell.options` among the objects, but only the space form works (see above).
+- **Connection help:** the invalid-scheme error still lists `mysqlx`. It comes from the scheme list that URI parsing accepts (`IConnection` in `mysqlshdk/libs/utils/connection.h`), so dropping it changes parsing, not just text.
 - **Exposed in help but MySQL-only or meaningless:**
   - `--get-server-public-key`
   - the X values of `auth-method`
   - the OCI, WebAuthn, OpenID Connect and Kerberos connection options
   - `set_query_attributes` and `set_option_tracker_feature_id`
-- **`\option -l`** lists `dba.*` (`connectTimeout`, `gtidWaitTimeout`, …), `devapi.dbObjectHandles` and `oci.*`.
 - **Dump and load help:**
   - it still lists `lakehouseTarget`, `dataMaskingPolicies`, `allowDataMasking`, `libraries`, `convertInnoDbVectorStore`, `heatwaveLoad`, `lakehouseSource`, `disableBulkLoad`, `analyzeTables: "histogram"` and the full HeatWave `compatibility` section
   - it refers to "Section 13.2.10.1"
   - `dump-schemas --help` lists `compatibility` and `allowDataMasking`
-- **`\? util.import_table`** says `SET unique_checks = 0`. On MariaDB the code keeps unique checks on unless `replaceDuplicates` is set.
-- **`export_table`:** `json` is not an allowed dialect. The code rejects it, and the page says so.
-- **`\? create_result`:**
-  - a warning `level` of "error" is rejected; only warning and note work
-  - the `columns` key, list-form rows and `error` entries in multi-results are undocumented
-- **`\? add_extension_object_member`:** it says `type` is required, but it is optional; the `default` and `cli` keys are undocumented.
 - **Plugin manager text** says "MySQL Shell" and "Oracle", and uses `mysql-shell-plugins-manifest.json`.
-- **`--help` typos:** "PREFFERED", "usingUniform", and `-V` says "Prints the version of MySQL Shell". `--auth-method` mentions the X protocol, and other options mention DevAPI.
-- **Man page (`man/`):**
-  - it says `mysqlsh` is an alias, but none is shipped
-  - it says `-S` isn't available on Windows, where it takes a named pipe
-  - it lists `MARIADB_SHELL_JS_MODULE_PATH`
-- **Repo docs:** MARIADB_PORT.md §14.6 says the build "drops dump/load", which is wrong.
-- **`.claude/skills/create-shell-plugin`** describes a `plugins_path` option that nothing sets.
-- **`util.upgradeAuthMethod`** was still registered in the writers' build. Commit a36944d9c, on main, removes it from MariaDB builds; recheck after a rebuild.

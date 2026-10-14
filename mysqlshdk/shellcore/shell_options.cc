@@ -455,7 +455,7 @@ Shell_options::Shell_options(
         "processed file.");
 
   add_startup_options(true)
-    (cmdline("--ssh=<value>"), "Make SSH tunnel connection using"
+    (cmdline("--ssh=<value>"), "Make SSH tunnel connection using "
         "Uniform Resource Identifier. "
         "Format: [user@]host[:port]")
     (&storage.ssh.identity_file, "", cmdline("--ssh-identity-file=<file>"),
@@ -588,11 +588,19 @@ Shell_options::Shell_options(
       "Password for third factor authentication plugin.")
 #endif
     (cmdline("-C", "--compress[=<value>]"),
+#ifdef MARIADB_BUILD
+        // MariaDB Connector/C has one on/off compression option
         "Use compression in client/server protocol. Valid values: 'REQUIRED', "
-        "'PREFFERED', 'DISABLED', 'True', 'False', '1', and '0'. Boolean values"
+        "'PREFERRED', 'DISABLED', 'True', 'False', '1', and '0'. REQUIRED and "
+        "PREFERRED both turn compression on. Boolean values map to REQUIRED "
+        "and DISABLED respectively. By default compression is DISABLED.",
+#else
+        "Use compression in client/server protocol. Valid values: 'REQUIRED', "
+        "'PREFERRED', 'DISABLED', 'True', 'False', '1', and '0'. Boolean values"
         " map to REQUIRED and DISABLED respectively. By default compression is "
         "set to DISABLED in classic protocol and PREFERRED in X protocol "
         "connections.",
+#endif
         [this](const std::string&, const char* value) {
           storage.connection_data.set_compression(
               value == nullptr ? "REQUIRED" : value);
@@ -765,9 +773,11 @@ Shell_options::Shell_options(
         "Enables interactive mode", shcore::opts::Read_only<bool>())
     (&storage.db_name_cache, true, SHCORE_DB_NAME_CACHE,
         "Enable database name caching for autocompletion.")
+#ifdef HAVE_X_PROTOCOL
     (&storage.devapi_schema_object_handles, true,
         SHCORE_DEVAPI_DB_OBJECT_HANDLES,
         "Enable table and collection name handles for the DevAPI db object.")
+#endif
     (&storage.log_sql_ignore, "*SELECT*:SHOW*",
         SHCORE_LOG_SQL_IGNORE,
         "Colon separated list of SQL statement patterns to filter out, unless logSql is set to 'all' or 'unfiltered'."
@@ -901,9 +911,13 @@ Shell_options::Shell_options(
   add_named_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
     (&storage.show_column_type_info, false, "showColumnTypeInfo",
         cmdline("--column-type-info"),
+#ifdef HAVE_X_PROTOCOL
         "Display column type information in SQL mode. Please be aware that "
         "output may depend on the protocol you are using to connect to the "
         "server, e.g. DbType field is approximated when using X protocol.")
+#else
+        "Display column type information in SQL mode.")
+#endif
     (&storage.history_max_size, 1000, SHCORE_HISTORY_MAX_SIZE,
         "Max. number of entries to keep in the command line history.",
         shcore::opts::Range<int>(0, std::numeric_limits<int>::max()))
@@ -913,6 +927,7 @@ Shell_options::Shell_options(
         "Automatically persist command line history when exiting the Shell.")
     (&storage.sandbox_directory, home, SHCORE_SANDBOX_DIR,
         "Default sandbox directory")
+#ifdef HAVE_ADMIN_API
     (&storage.dba_gtid_wait_timeout, 60, SHCORE_DBA_GTID_WAIT_TIMEOUT,
         "Timeout value in seconds to wait for GTIDs to be synchronized.",
         shcore::opts::Range<int>(0, std::numeric_limits<int>::max()))
@@ -927,6 +942,7 @@ Shell_options::Shell_options(
     (&storage.dba_version_compatibility_checks, true, SHCORE_DBA_VERSION_COMPATIBILITY_CHECKS,
         "Checks version compatibility for asynchronous replication when "
         "managing a ReplicaSet, ClusterSet, or a Cluster with Read-Replicas.")
+#endif
     (&storage.wizards, true, SHCORE_USE_WIZARDS, "Enables wizard mode.")
     (&storage.slash_commands, true, SHCORE_SLASH_COMMANDS,
         "Accepts shell commands with a / prefix as well as a \\ prefix, "
@@ -960,15 +976,23 @@ Shell_options::Shell_options(
     (&storage.connect_timeout, 10.0, SHCORE_CONNECT_TIMEOUT,
         "Default connection timeout used by Shell sessions.",
         shcore::opts::Non_negative<double>())
+#ifdef HAVE_ADMIN_API
     (&storage.dba_connect_timeout, 5.0, SHCORE_DBA_CONNECT_TIMEOUT,
         "Default connection timeout used for sessions created in AdminAPI "
         "operations.",
-        shcore::opts::Non_negative<double>());
+        shcore::opts::Non_negative<double>())
+#endif
+    ;
 
   add_startup_bool_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
     ("--name-cache",
+#ifdef HAVE_X_PROTOCOL
       "Enable database name caching for autocompletion and DevAPI (default). "
       "Boolean option.",
+#else
+      "Enable database name caching for autocompletion (default). Boolean "
+      "option.",
+#endif
       [this](const std::string &, const bool value) {
         storage.db_name_cache = value;
         storage.db_name_cache_set = true;
@@ -977,8 +1001,13 @@ Shell_options::Shell_options(
 
   add_startup_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
     (cmdline("-A", "--no-name-cache"),
+#ifdef HAVE_X_PROTOCOL
       "Disable automatic database name caching for autocompletion and DevAPI. "
       "Use \\rehash to load DB names manually.",
+#else
+      "Disable automatic database name caching for autocompletion. Use "
+      "\\rehash to load DB names manually.",
+#endif
       [this](const std::string &, const char *) {
         storage.db_name_cache = false;
         storage.db_name_cache_set = true;
@@ -999,7 +1028,7 @@ Shell_options::Shell_options(
           storage.connection_data.set_password("");
       })
     (cmdline("-V", "--version"),
-        "Prints the version of MySQL Shell.", [this](const std::string&, const char*) {
+        "Prints the version of MariaDB Shell.", [this](const std::string&, const char*) {
         if (print_cmd_line_version) {
           print_cmd_line_version_extra = true;
         }
@@ -1022,8 +1051,13 @@ Shell_options::Shell_options(
         "files in PEM format.",
         std::bind(&Ssl_options::set_capath, &storage.connection_data.get_ssl_options(), _2))
     (cmdline("--ssl-cipher=<cipher_list>"),
+#ifdef MARIADB_BUILD
+        "The list of permissible encryption ciphers. With OpenSSL, the list "
+        "also selects the TLS v1.3 cipher suites.",
+#else
         "The list of permissible encryption ciphers for connections that use "
         "TLS protocols up through TLSv1.2.",
+#endif
         std::bind(&Ssl_options::set_cipher, &storage.connection_data.get_ssl_options(), _2))
     (cmdline("--ssl-crl=<file_name>"),
         "The path to the file containing certificate revocation lists in PEM "
@@ -1039,13 +1073,26 @@ Shell_options::Shell_options(
     (cmdline("--tls-version=<version>"),
         "TLS version to use. Allowed values: TLSv1.2, TLSv1.3.",
         std::bind(&Ssl_options::set_tls_version, &storage.connection_data.get_ssl_options(), _2))
-    (cmdline("--tls-ciphersuites=<name>"), "TLS v1.3 cipher to use.",
+    (cmdline("--tls-ciphersuites=<name>"),
+#ifdef MARIADB_BUILD
+        "Accepted, but has no effect: MariaDB Connector/C has no setting of "
+        "its own for the TLS v1.3 cipher suites.",
+#else
+        "TLS v1.3 cipher to use.",
+#endif
         std::bind(&Ssl_options::set_tls_ciphersuites, &storage.connection_data.get_ssl_options(), _2))
     (cmdline("--auth-method=<method>"),
+#ifdef MARIADB_BUILD
+        // passed to MariaDB Connector/C as default-auth
+        "Authentication method to use: the name of the client authentication "
+        "plugin to start with, e.g. client_ed25519 or caching_sha2_password. "
+        "The server can still switch the connection to another plugin.",
+#else
         "Authentication method to use. In case of classic session, this is the "
         "name of the authentication plugin to use, i.e. caching_sha2_password. "
         "In case of X protocol session, it should be one of: AUTO, "
         "FROM_CAPABILITIES, FALLBACK, MYSQL41, PLAIN, SHA256_MEMORY.",
+#endif
         [this](const std::string&, const char* value) {
           if (storage.connection_data.has_value(mysqlshdk::db::kAuthMethod)) {
             storage.connection_data.remove(mysqlshdk::db::kAuthMethod);

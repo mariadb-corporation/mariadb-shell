@@ -22,8 +22,14 @@ The following objects provide command line operations:
       Gives access to general purpose functions and properties.
 
    util
+?{__have_upgrade_checker}
       Global object that groups miscellaneous tools like upgrade checker and
       JSON import.
+?{}
+?{not __have_upgrade_checker}
+      Global object that groups miscellaneous tools like dump, load, copy, and
+      table import and export.
+?{}
 
 #@<OUT> CLI plugin --help
 The following object provides command line operations at 'cli_tester':
