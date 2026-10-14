@@ -130,6 +130,8 @@ SHOW REST DAEMONS;
 The installation and bootstrap of the MariaDB REST Daemon are documented with its release.
 {% endhint %}
 
+To set up a MariaDB REST Daemon that keeps running for a server, rather than one in development mode, use the MCP server of MariaDB Shell: its `rest.configure_restd` tool installs the daemon if needed, runs its setup, and starts it. The MariaDB extension for Visual Studio Code does the same with the `Configure MariaDB REST Service` option of the `New Sandbox` dialog and the `Set Up MariaDB REST Daemon…` item of a connection's context menu. See [REST Daemon Tools](../../mariadb-shell/mcp-server/rest-daemon-tools.md).
+
 ## Enabling the Microsoft Marketplace on VSCodium
 
 To use extensions from the Microsoft Marketplace in [VSCodium](https://vscodium.com/), create a configuration file:
