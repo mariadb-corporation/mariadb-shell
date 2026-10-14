@@ -28,7 +28,7 @@ The `rest` tools of the MCP server set up a MariaDB REST Daemon, `mariadb-restd`
 | --- | --- |
 | `directory` | The deployment's folder. |
 | `host`, `server_port` | The server that the daemon serves. |
-| `port`, `url` | The port of the daemon, and its address, such as `https://localhost:33100`. |
+| `port`, `url` | The port of the daemon, and its address, such as `https://localhost:8443`. |
 | `status`, `pid` | `running` or `stopped`, and the daemon's process ID, `null` when it is stopped. |
 | `log_path` | The daemon's log file. |
 | `metadata_schema` | The REST metadata schema that the daemon serves. |
@@ -59,7 +59,7 @@ Besides the deployment's state, the tool returns `installed`, whether it install
 
 | Server | Deployment folder | Port of the daemon |
 | --- | --- | --- |
-| A sandbox instance | `mariadb-restd` in the sandbox's folder, `<sandboxDir>/<port>/mariadb-restd` | Ten times the sandbox's port, such as `33100` for a sandbox on `3310`, when that is at most 65535 and free; otherwise the first free port from 8443 up |
+| A sandbox instance | `mariadb-restd` in the sandbox's folder, `<sandboxDir>/<port>/mariadb-restd` | The first free port from 8443 up |
 | Another server | `~/.mariadb-restd/<host>_<port>`, on Windows in `%APPDATA%\MariaDB\mariadb-restd` | The first free port from 8443 up |
 
 To choose the port yourself, pass `port`. The ports of stopped deployments count as taken, so that a deployment can start again on its own port. The daemon serves HTTPS with the self-signed certificate of the setup, so a client must accept that certificate. It logs to `log/mariadb-restd.log` in its deployment folder; `deployment.json` there records the connection that the deployment was set up with.
