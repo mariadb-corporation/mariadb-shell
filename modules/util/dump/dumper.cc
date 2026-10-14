@@ -2856,8 +2856,7 @@ void Dumper::initialize_dumper() {
 void Dumper::run() {
   if (m_options.is_dry_run()) {
     current_console()->print_note(
-        "dryRun enabled, no locks will be acquired and no files will be "
-        "created.");
+        "dryRun enabled, no locks will be held and no files will be created.");
   }
 
   try {
@@ -2978,7 +2977,9 @@ void Dumper::do_run() {
       initialize_instance_cache();
 
       if (m_options.consistent_dump() && !m_worker_interrupt.test()) {
-        current_console()->print_info("All transactions have been started");
+        if (!m_options.is_dry_run()) {
+          current_console()->print_info("All transactions have been started");
+        }
         lock_instance();
       }
 
@@ -3292,7 +3293,10 @@ void Dumper::lock_all_tables() {
   if (m_backup_lock_available &&
       common::supports_lock_instance_for_backup(m_server_version)) {
     current_console()->print_note(
-        "Instance locked for backup, skipping mysql system tables locks");
+        m_options.is_dry_run()
+            ? "Instance would be locked for backup, skipping mysql system "
+              "tables locks"
+            : "Instance locked for backup, skipping mysql system tables locks");
   } else {
     const auto non_fatal_failure = [&console](const std::string &error) {
       console->print_warning("Could not lock mysql system tables: " + error);
@@ -3406,7 +3410,11 @@ void Dumper::acquire_read_locks() {
 
   // This will block until lock_wait_timeout if there are any sessions with open
   // transactions/locks.
-  current_console()->print_info("Acquiring global read lock");
+  // a dry run only checks that the locks can be taken, it holds none of them
+  current_console()->print_info(
+      m_options.is_dry_run()
+          ? "Checking whether the current user can acquire a global read lock"
+          : "Acquiring global read lock");
 
   // user can execute FLUSH statements if has RELOAD privilege or, starting with
   // 8.0.23, FLUSH_TABLES privilege
@@ -3471,7 +3479,10 @@ void Dumper::acquire_read_locks() {
     }
 
     if (m_ftwrl_used) {
-      current_console()->print_info("Global read lock acquired");
+      current_console()->print_info(
+          m_options.is_dry_run()
+              ? "The current user can acquire a global read lock"
+              : "Global read lock acquired");
     }
   }
 
@@ -3492,7 +3503,9 @@ void Dumper::acquire_read_locks() {
     try {
       lock_all_tables();
 
-      current_console()->print_info("Table locks acquired");
+      current_console()->print_info(
+          m_options.is_dry_run() ? "The current user can lock the dumped tables"
+                                 : "Table locks acquired");
     } catch (const mysqlshdk::db::Error &e) {
       handle_error(e.format());
     } catch (const std::runtime_error &e) {
@@ -3525,9 +3538,9 @@ void Dumper::release_read_locks() const {
     execute("UNLOCK TABLES;");
   }
 
-  if (!m_worker_interrupt.test()) {
+  if (!m_worker_interrupt.test() && !m_options.is_dry_run()) {
     // we've been interrupted, we still need to release locks, but don't
-    // inform the user
+    // inform the user; a dry run released its probe lock straight away
     current_console()->print_info("Global read lock has been released");
   }
 }
@@ -3573,7 +3586,9 @@ void Dumper::lock_instance() {
   if (m_backup_lock_available) {
     const auto console = current_console();
 
-    console->print_info("Locking instance for backup");
+    console->print_info(m_options.is_dry_run()
+                            ? "The current user can lock the instance for backup"
+                            : "Locking instance for backup");
 
     if (!m_options.is_dry_run()) {
       try {

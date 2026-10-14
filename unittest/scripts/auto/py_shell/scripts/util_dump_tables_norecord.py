@@ -828,7 +828,7 @@ util.dump_tables(test_schema, test_schema_tables, test_output_absolute, { "dryRu
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 EXPECT_STDOUT_NOT_CONTAINS("Tables dumped: ")
 EXPECT_STDOUT_CONTAINS("Writing global DDL files")
-EXPECT_STDOUT_CONTAINS("NOTE: dryRun enabled, no locks will be acquired and no files will be created.")
+EXPECT_STDOUT_CONTAINS("NOTE: dryRun enabled, no locks will be held and no files will be created.")
 
 for table in test_schema_tables:
     EXPECT_SHELL_LOG_CONTAINS("Writing DDL for table `{0}`.`{1}`".format(test_schema, table))

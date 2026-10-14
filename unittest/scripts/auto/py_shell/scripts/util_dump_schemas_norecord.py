@@ -1155,7 +1155,7 @@ EXPECT_FALSE(os.path.isdir(test_output_absolute))
 util.dump_schemas([test_schema], test_output_absolute, { "dryRun": True, "showProgress": False })
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 EXPECT_STDOUT_NOT_CONTAINS("Schemas dumped: 1")
-EXPECT_STDOUT_CONTAINS("NOTE: dryRun enabled, no locks will be acquired and no files will be created.")
+EXPECT_STDOUT_CONTAINS("NOTE: dryRun enabled, no locks will be held and no files will be created.")
 
 #@<> WL13807-FR4.9.2 - If the `dryRun` option is not given, a default value of `false` must be used instead. (3)
 # WL13807-TSFR4_26
