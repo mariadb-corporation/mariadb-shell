@@ -42,16 +42,20 @@ const std::regex k_api_general_error(
     "^([a-z|A-Z|_][a-z|A-Z|0-9|_]*)\\.([a-z|A-Z|_][a-z|A-Z|0-9|_]*):\\s("
     "Argument #(\\d+):\\s)?(.+)$$");
 
+// On the command line a nested object is a separate argument, as in
+// "shell options", not the "shell.options" of the scripting API.
 #ifndef MARIADB_BUILD
 REGISTER_HELP(CLI_OBJECTS, R"*(@li dba - dba global object.
 @li cluster - cluster returned by calling dba.getCluster().
 @li shell - shell global object.
-@li shell.options - shell.options object.
-@li util - util global object)*");
+@li shell options - shell.options object.
+@li util - util global object.
+@li util debug - util.debug object.)*");
 #else
 REGISTER_HELP(CLI_OBJECTS, R"*(@li shell - shell global object.
-@li shell.options - shell.options object.
-@li util - util global object)*");
+@li shell options - shell.options object.
+@li util - util global object.
+@li util debug - util.debug object.)*");
 #endif
 
 #ifndef MARIADB_BUILD
@@ -105,12 +109,18 @@ The following objects can be called using this format:
 
 !{CLI_OBJECTS}
 
+Plugins can add objects of their own. To list the operations of an object use:<br>
+
+@code
+-- <object> --help
+@endcode
+
 The operation name can be given in the following naming styles:
 
 !{CLI_CASE_SAMPLES}
 
 The arguments syntax allows mixing positional and named arguments (similar to
-args and *kwargs in Python):
+*args and **kwargs in Python):
 
 <b>ARGUMENT SYNTAX</b>:
 
@@ -124,12 +134,14 @@ args and *kwargs in Python):
 A positional_argument is defined by the following rules:
 
 @li positional_argument ::= value
-@li value   ::= string | integer | float | boolean | null
+@li value   ::= string | integer | float | boolean | null | list | dictionary
 @li string  ::= plain string, quoted if contains whitespace characters
 @li integer ::= plain integer
 @li float   ::= plain float
 @li boolean ::= 1 | 0 | true | false
-@li null    ::= "-"
+@li null    ::= null
+@li list    ::= JSON array, e.g. [1,"a"]
+@li dictionary ::= JSON object, e.g. {"key":1}
 
 Positional arguments are passed to the function call in the order they are
 defined.
@@ -145,6 +157,16 @@ specified either using camelCaseNaming or kebab-case-naming, examples:<br>
 
 If the value is not provided the option name will be handled as a boolean
 option with a default value of TRUE.
+
+A value that is valid JSON takes its JSON type, anything else is a string. To
+give the type explicitly, write it after the option name:<br>
+
+@code
+--argument-name:type=value
+@endcode
+
+Where type is one of str, int, uint, float, bool, null, list, dict or json, e.g.
+<b>--port:str=3306</b> passes the string "3306".
 
 Following are some examples of command line calls as well as how they are mapped
 to the API method call.
@@ -164,7 +186,7 @@ REGISTER_HELP(cmdline_EXAMPLE2,
               "$ mysqlsh root@localhost:1234 -- cluster status");
 REGISTER_HELP(cmdline_EXAMPLE2_DESC, "mysql-js> cluster.status()");
 REGISTER_HELP(cmdline_EXAMPLE3,
-              "$ mysqlsh -- shell.options set-persist history.autoSave true");
+              "$ mysqlsh -- shell options set-persist history.autoSave true");
 REGISTER_HELP(cmdline_EXAMPLE3_DESC,
               "mysql-js> shell.options.setPersist(\"history.autoSave\", true)");
 REGISTER_HELP(cmdline_EXAMPLE4,

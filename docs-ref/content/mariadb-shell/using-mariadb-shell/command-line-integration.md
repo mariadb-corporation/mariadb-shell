@@ -87,7 +87,10 @@ A positional argument is a single value. The shell converts it to the type that 
 | `42` | Integer |
 | `0.5` | Float |
 | `true`, `false`, `1`, `0` | Boolean |
-| `-` | `null`, for an optional parameter that you want to skip |
+| `null` | `null`. Only a parameter that accepts any type takes it; a parameter with a declared type, such as a string or an integer, rejects it. |
+| `[1,"a"]`, `{"key":1}` | List or dictionary, written as JSON. Quote it so that the operating system shell passes it unchanged. |
+
+A value that is valid JSON takes its JSON type, and anything else is a string: `-` is the string `-`, not `null`.
 
 ### Named Arguments
 

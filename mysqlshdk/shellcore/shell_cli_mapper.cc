@@ -457,10 +457,9 @@ bool Shell_cli_mapper::empty() const {
 }
 /**
  * Processes command line arguments which could come in the format of:
- * - -     : Indicates a positional parameter with value NULL
- * - VALUE : Indicates a positional parameter with the given value
+ * - VALUE : Indicates a positional parameter with the given value, which
+ *           is null when VALUE is the JSON null
  * - --NAME=VALUE : Indicates a named option with the given value
- * - --NAME=-     : Indicates a named option with NULL value
  * - --NAME       : Indicates a named boolean option to be set to TRUE
  *
  * For each argument, an str,str pair will be added into m_cmdline_arg as

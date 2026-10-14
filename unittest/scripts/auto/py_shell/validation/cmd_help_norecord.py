@@ -646,8 +646,13 @@ The following objects can be called using this format:
 - cluster - cluster returned by calling dba.getCluster().
 ?{}
 - shell - shell global object.
-- shell.options - shell.options object.
-- util - util global object
+- shell options - shell.options object.
+- util - util global object.
+- util debug - util.debug object.
+
+Plugins can add objects of their own. To list the operations of an object use:
+
+-- <object> --help
 
 The operation name can be given in the following naming styles:
 
@@ -661,7 +666,7 @@ The operation name can be given in the following naming styles:
 ?{}
 
 The arguments syntax allows mixing positional and named arguments (similar to
-args and *kwargs in Python):
+*args and **kwargs in Python):
 
 ARGUMENT SYNTAX:
 
@@ -675,12 +680,14 @@ WHERE:
 A positional_argument is defined by the following rules:
 
 - positional_argument ::= value
-- value   ::= string | integer | float | boolean | null
+- value   ::= string | integer | float | boolean | null | list | dictionary
 - string  ::= plain string, quoted if contains whitespace characters
 - integer ::= plain integer
 - float   ::= plain float
 - boolean ::= 1 | 0 | true | false
-- null    ::= "-"
+- null    ::= null
+- list    ::= JSON array, e.g. [1,"a"]
+- dictionary ::= JSON object, e.g. {"key":1}
 
 Positional arguments are passed to the function call in the order they are
 defined.
@@ -694,6 +701,14 @@ specified either using camelCaseNaming or kebab-case-naming, examples:
 
 If the value is not provided the option name will be handled as a boolean
 option with a default value of TRUE.
+
+A value that is valid JSON takes its JSON type, anything else is a string. To
+give the type explicitly, write it after the option name:
+
+--argument-name:type=value
+
+Where type is one of str, int, uint, float, bool, null, list, dict or json,
+e.g. --port:str=3306 passes the string "3306".
 
 Following are some examples of command line calls as well as how they are
 mapped to the API method call.
@@ -716,7 +731,7 @@ $ mysqlsh root@localhost:1234 -- cluster status
 
 ?{}
 ?{not __mariadb_build}
-$ mysqlsh -- shell.options set-persist history.autoSave true
+$ mysqlsh -- shell options set-persist history.autoSave true
       mysql-js> shell.options.setPersist("history.autoSave", true)
 ?{}
 ?{__mariadb_build}
