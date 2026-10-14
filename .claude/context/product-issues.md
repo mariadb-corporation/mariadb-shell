@@ -91,7 +91,12 @@ The original summary, carried over verbatim:
 The full list:
 
 - **`\? cmdline`** lists `shell.options` among the objects, but only the space form works (see above).
-- **Connection help:** the invalid-scheme error still lists `mysqlx`. It comes from the scheme list that URI parsing accepts (`IConnection` in `mysqlshdk/libs/utils/connection.h`), so dropping it changes parsing, not just text.
+- **`mysqlx` scheme accepted at parse time** (to fix as one change across the shell and code_ext):
+  - The invalid-scheme error lists `mysqlx`, and `shell.parse_uri("mysqlx://…")` succeeds; `shell.connect` and the command line prompt for the password and only then fail with `Unknown MariaDB URI type mysqlx`.
+  - Cause: the default allowed set `{"mariadb","mysql","mysqlx"}` of `IConnection` (`mysqlshdk/libs/utils/connection.h`); the connect-time rejection is `Connection_options::get_session_type`.
+  - Fix: build that set without `mysqlx` unless `HAVE_X_PROTOCOL`. Product code that builds a `mysqlx` scheme is already behind `HAVE_X_PROTOCOL`; three unguarded branches in `connection_options.cc` become unreachable.
+  - Tests that use `mysqlx` as a sample scheme without a guard: about 142 lines in `uri_parser_t.cc`, 17 in `shell_cmdline_options_t.cc`, 6 in `connection_options_t.cc`, one weak assertion in `interactive_shell_t.cc`, and the SSH scripted tests `shell_ssh_errors_norecord.py` / `shell_ssh_import_export_norecord.py`. Swap them to `mariadb` in the MariaDB build, or guard the X-specific ones.
+  - mariadb-shell-plugins: code_ext's `CONNECTION_SCHEMES` (`code_ext/src/connections/connectionUri.ts`) mirrors the shell's set and lets the connection editor save a `mysqlx://` connection; drop it there too, with its icon entry (`treeItems.ts`) and about 8 test assertions. mcp_plugin already treats an unparsable URI as "not a connection", and its tests pass either way.
 - **Exposed in help but MySQL-only or meaningless:**
   - `--get-server-public-key`
   - the X values of `auth-method`
@@ -101,4 +106,3 @@ The full list:
   - it still lists `lakehouseTarget`, `dataMaskingPolicies`, `allowDataMasking`, `libraries`, `convertInnoDbVectorStore`, `heatwaveLoad`, `lakehouseSource`, `disableBulkLoad`, `analyzeTables: "histogram"` and the full HeatWave `compatibility` section
   - it refers to "Section 13.2.10.1"
   - `dump-schemas --help` lists `compatibility` and `allowDataMasking`
-- **Plugin manager text** says "MySQL Shell" and "Oracle", and uses `mysql-shell-plugins-manifest.json`.

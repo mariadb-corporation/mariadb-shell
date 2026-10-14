@@ -71,6 +71,7 @@ MariaDB Connector/C replaces the MySQL client library, and some MySQL 8.0 client
 | `~/mysql-sandboxes` | `~/.mariadb-shell/sandboxes` | On Windows, `%USERPROFILE%\MariaDB\mariadb-shell\sandboxes`. |
 | `mysql-secret-store-*` helper executables | `mariadb-secret-store-*` | The `credentialStore.helper` values (`login-path`, `keychain`, `windows-credential`, `secret-service`) are unchanged. |
 | `lib/mysql/plugins` (client authentication plugins) | `lib/mariadb/plugins` | The `mysqlPluginDir` option and `--mysql-plugin-dir` keep their names. |
+| `mysql-shell-plugins-manifest.json` (plugin repository manifest) | `mariadb-shell-plugins-manifest.json` | `plugins.repositories.add()` looks only for the new name, and a `github/<user>` repository defaults to `mariadb-shell-plugins`, so MySQL Shell plugin repositories are not found. See [Plugins](../extending-mariadb-shell/plugins.md). |
 
 The Python module that plugins and scripts import from is still named `mysqlsh` (for example, `from mysqlsh import globals`), so existing Python plugins keep working.
 

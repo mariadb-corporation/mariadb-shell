@@ -23,7 +23,7 @@
 # 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 """Plugin registration
 
-This file is automatically loaded by the MySQL Shell at startup time.
+This file is automatically loaded by the MariaDB Shell at startup time.
 
 It registers the plugin objects and then imports all sub-modules to
 register the plugin object member functions.
@@ -35,13 +35,13 @@ from mysqlsh.plugin_manager import plugin, plugin_function, VERSION
 # @register_plugin decorator to register it
 @plugin
 class plugins:
-    """Plugin to manage MySQL Shell plugins
+    """Plugin to manage MariaDB Shell plugins
 
     This global object exposes a list of shell extensions
-    to manage MySQL Shell plugins
+    to manage MariaDB Shell plugins
 
     Use plugins.about() to get more information about writing
-    MySQL Shell plugins.
+    MariaDB Shell plugins.
     """
     pass
 
@@ -59,7 +59,7 @@ def info():
     Returns:
         None
     """
-    print(f"MySQL Shell Plugin Manager Version {VERSION}")
+    print(f"MariaDB Shell Plugin Manager Version {VERSION}")
 
 
 @plugin_function("plugins.version")
@@ -74,18 +74,18 @@ def version():
 
 @plugin_function("plugins.about")
 def info():
-    """Prints detailed information about the MySQL Shell plugin support.
+    """Prints detailed information about the MariaDB Shell plugin support.
 
     Returns:
         None
     """
     print(
         """
-The MySQL Shell allows extending its base functionality through the creation
+The MariaDB Shell allows extending its base functionality through the creation
 of plugins.
 
 A plugin is a folder containing the code that provides the functionality to
-be made available on the MySQL Shell.
+be made available on the MariaDB Shell.
 
 User defined plugins should be located at plugins folder at the following
 paths:
@@ -105,7 +105,7 @@ corresponding context (JavaScript or Python).
 
 Use Cases
 
-The main use cases for MySQL Shell plugins include:
+The main use cases for MariaDB Shell plugins include:
 
 - Definition of shell reports to be used with the \\show and \\watch Shell
 Commands.
@@ -120,7 +120,7 @@ For additional information on extension objects execute: \\? extension objects
 
 @plugin_function("plugins.list")
 def list_plugins(**kwargs):
-    """Lists all available MySQL Shell plugins.
+    """Lists all available MariaDB Shell plugins.
 
     This function will list all all available plugins in the registered
     plugin repositories. To add a new plugin repository use the
@@ -143,7 +143,7 @@ def list_plugins(**kwargs):
 
 @plugin_function("plugins.install")
 def install_plugin(name=None, **kwargs):
-    """Installs a MySQL Shell plugin.
+    """Installs a MariaDB Shell plugin.
 
     This function download and install a plugin
 
@@ -171,7 +171,7 @@ def install_plugin(name=None, **kwargs):
 
 @plugin_function("plugins.uninstall")
 def uninstall_plugin(name=None, **kwargs):
-    """Uninstalls a MySQL Shell plugin.
+    """Uninstalls a MariaDB Shell plugin.
 
     This function uninstall a plugin
 
@@ -194,7 +194,7 @@ def uninstall_plugin(name=None, **kwargs):
 
 @plugin_function("plugins.update")
 def update_plugin(name=None, **kwargs):
-    """Updates MySQL Shell plugins.
+    """Updates MariaDB Shell plugins.
 
     This function updates on or all plugins
 
@@ -216,7 +216,7 @@ def update_plugin(name=None, **kwargs):
 
 @plugin_function("plugins.details")
 def plugin_details(name=None, **kwargs):
-    """Gives detailed information about a MySQL Shell plugin.
+    """Gives detailed information about a MariaDB Shell plugin.
 
     Args:
         name (str): The name of the plugin.

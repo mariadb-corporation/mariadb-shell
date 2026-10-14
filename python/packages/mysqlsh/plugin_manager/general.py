@@ -39,7 +39,7 @@ URL_OPEN_TIMEOUT_SECONDS = 10
 
 
 def get_shell_user_dir(*argv):
-    """Returns the MySQL Shell's user directory
+    """Returns the MariaDB Shell's user directory
 
     The directory will be created if it does not exist yet
 
@@ -79,7 +79,7 @@ def get_shell_user_dir(*argv):
 
 
 def get_shell_temp_dir(*argv):
-    """Returns the MySQL Shell's temp directory
+    """Returns the MariaDB Shell's temp directory
 
     The directory will be created if it does not exist yet
 
@@ -104,7 +104,7 @@ def get_shell_temp_dir(*argv):
 
 
 def get_plugins_dir(*argv):
-    """Returns the MySQL Shell's plugin directory
+    """Returns the MariaDB Shell's plugin directory
 
     The directory will be created if it does not exist yet
 

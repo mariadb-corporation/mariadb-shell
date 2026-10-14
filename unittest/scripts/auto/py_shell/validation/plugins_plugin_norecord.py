@@ -1,40 +1,40 @@
 #@<OUT> Install the test repository
-[[*]]plugins.repositories.add('http://127.0.0.1:<<<PORT>>>/mysql-shell-plugins-manifest.json')
+[[*]]plugins.repositories.add('http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json')
 
 WARNING:
-You are about to add an external MySQL Shell plugin repository.
+You are about to add an external MariaDB Shell plugin repository.
 External plugin repositories and their plugins complement
-the functionality of MySQL Shell and can contain system
+the functionality of MariaDB Shell and can contain system
 level software that could be potentially harmful to your
 system. Please review the description below and only proceed
 if you have obtained the external plugin repository URL from
 a trusted source.
 
-Oracle and its affiliates cannot be held responsible for
+MariaDB plc and its affiliates cannot be held responsible for
 any potential harm caused by using plugins from external sources.
 
-Repository : Testing MySQL Shell Plugin Repository
+Repository : Testing MariaDB Shell Plugin Repository
 Description: A testing repository to be used while testing the plugins builtin plugin.
-URL: http://127.0.0.1:<<<PORT>>>/mysql-shell-plugins-manifest.json
+URL: http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json
 
 The repository contains the following plugins:
 
   - Repo Testing Plugin
 
 Fetching current user repositories...
-Adding repository 'Testing MySQL Shell Plugin Repository'...
-Repository 'Testing MySQL Shell Plugin Repository' successfully added.
+Adding repository 'Testing MariaDB Shell Plugin Repository'...
+Repository 'Testing MariaDB Shell Plugin Repository' successfully added.
 
 #@<OUT> Help on built-in plugins plugin
 [[*]]\? plugins
 NAME
-      plugins - Plugin to manage MySQL Shell plugins
+      plugins - Plugin to manage MariaDB Shell plugins
 
 DESCRIPTION
-      This global object exposes a list of shell extensions to manage MySQL
+      This global object exposes a list of shell extensions to manage MariaDB
       Shell plugins
 
-      Use plugins.about() to get more information about writing MySQL Shell
+      Use plugins.about() to get more information about writing MariaDB Shell
       plugins.
 
 PROPERTIES
@@ -43,10 +43,10 @@ PROPERTIES
 
 FUNCTIONS
       about()
-            Prints detailed information about the MySQL Shell plugin support.
+            Prints detailed information about the MariaDB Shell plugin support.
 
       details([name][, kwargs])
-            Gives detailed information about a MySQL Shell plugin.
+            Gives detailed information about a MariaDB Shell plugin.
 
       help([member])
             Provides help about this object and it's members
@@ -55,16 +55,16 @@ FUNCTIONS
             Prints basic information about the plugin manager.
 
       install([name][, kwargs])
-            Installs a MySQL Shell plugin.
+            Installs a MariaDB Shell plugin.
 
       list([kwargs])
-            Lists all available MySQL Shell plugins.
+            Lists all available MariaDB Shell plugins.
 
       uninstall([name][, kwargs])
-            Uninstalls a MySQL Shell plugin.
+            Uninstalls a MariaDB Shell plugin.
 
       update([name][, kwargs])
-            Updates MySQL Shell plugins.
+            Updates MariaDB Shell plugins.
 
       version()
             Returns the version number of the plugin manager.
@@ -72,11 +72,11 @@ FUNCTIONS
 #@<OUT> Tests the about function
 [[*]]plugins.about()
 
-The MySQL Shell allows extending its base functionality through the creation
+The MariaDB Shell allows extending its base functionality through the creation
 of plugins.
 
 A plugin is a folder containing the code that provides the functionality to
-be made available on the MySQL Shell.
+be made available on the MariaDB Shell.
 
 User defined plugins should be located at plugins folder at the following
 paths:
@@ -96,7 +96,7 @@ corresponding context (JavaScript or Python).
 
 Use Cases
 
-The main use cases for MySQL Shell plugins include:
+The main use cases for MariaDB Shell plugins include:
 
 - Definition of shell reports to be used with the \show and \watch Shell
 Commands.
@@ -109,7 +109,7 @@ For additional information on extension objects execute: \? extension objects
 
 #@<OUT> Tests the info function
 [[*]]plugins.info()
-MySQL Shell Plugin Manager Version 0.0.1
+MariaDB Shell Plugin Manager Version 0.0.1
 
 #@<OUT> Tests the details function without name specified
 [[*]]plugins.details()
@@ -148,11 +148,11 @@ Repo Testing Plugin
 
 #@<OUT> Lists the plugin repositories
 [[*]]plugins.repositories.list()
-Registered MySQL Shell Plugin Repositories.
+Registered MariaDB Shell Plugin Repositories.
 
-   1 Testing MySQL Shell Plugin Repository
+   1 Testing MariaDB Shell Plugin Repository
      A testing repository to be used while testing the plugins builtin plugin.
-     http://127.0.0.1:<<<PORT>>>/mysql-shell-plugins-manifest.json
+     http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json
 
 Total of 1 repository.
 
@@ -319,14 +319,14 @@ Traceback (most recent call last):
 NameError: name 'repo' is not defined[[*]]
 
 #@<OUT> Removes the test plugin repository
-[[*]]plugins.repositories.remove(url='http://127.0.0.1:<<<PORT>>>/mysql-shell-plugins-manifest.json')
+[[*]]plugins.repositories.remove(url='http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json')
 
-Removing repository 'http://127.0.0.1:<<<PORT>>>/mysql-shell-plugins-manifest.json'...
+Removing repository 'http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json'...
 Repository successfully removed.
 
 #@<OUT> Lists the plugin repositories again
 [[*]]plugins.repositories.list()
-Registered MySQL Shell Plugin Repositories.
+Registered MariaDB Shell Plugin Repositories.
 
 Total of 0 repositories.
 

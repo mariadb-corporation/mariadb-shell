@@ -244,10 +244,10 @@ Without a name, the functions that act on one plugin prompt you to choose. They 
 
 | You enter | Manifest URL |
 | --- | --- |
-| `example.com` | `https://example.com/mysql-shell-plugins-manifest.json` |
-| `example.com/plugins` | `https://example.com/plugins/mysql-shell-plugins-manifest.json` |
-| `github/<user>` | `https://raw.githubusercontent.com/<user>/mysql-shell-plugins/master/mysql-shell-plugins-manifest.json` |
-| `github/<user>/<repo>` | `https://raw.githubusercontent.com/<user>/<repo>/master/mysql-shell-plugins-manifest.json` |
+| `example.com` | `https://example.com/mariadb-shell-plugins-manifest.json` |
+| `example.com/plugins` | `https://example.com/plugins/mariadb-shell-plugins-manifest.json` |
+| `github/<user>` | `https://raw.githubusercontent.com/<user>/mariadb-shell-plugins/master/mariadb-shell-plugins-manifest.json` |
+| `github/<user>/<repo>` | `https://raw.githubusercontent.com/<user>/<repo>/master/mariadb-shell-plugins-manifest.json` |
 
 The registered repositories are stored in `plugin-repositories.json` in the user configuration directory.
 
