@@ -10,6 +10,8 @@ shell.connect(__mysqluripwd)
 \source cmd_source_test.js
 #@ Success test {__have_js}
 \source --js cmd_source_test.js
+#@ source with --js without JavaScript {not __have_js}
+\source --js cmd_source_test.js
 #@ can only override lang when sourcing interactively
 \sql
 \source cmd_source_test.sql

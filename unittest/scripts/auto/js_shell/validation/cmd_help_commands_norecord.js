@@ -105,6 +105,10 @@ The following are the main help categories:
  - X DevAPI       Details the mysqlx module as well as the capabilities of the
                   X DevAPI which enable working with MySQL as a Document Store
 
+      If no pattern is specified a generic help is going to be displayed.
+
+      To display the available help categories use \help contents
+
 EXAMPLES
       \help
             With no parameters this command prints the general shell help.
@@ -142,9 +146,8 @@ DESCRIPTION
       - num- range from num till the end of history.
       - -num last num entries.
 
-      NOTE: The history.autoSave shell option must be set to true to
-      automatically save the contents of the command history when MySQL Shell
-      exits.
+      NOTE: The contents of the command history are saved when MariaDB Shell
+      exits, unless the history.autoSave shell option is set to false.
 
 EXAMPLES
       \history
@@ -339,7 +342,7 @@ DESCRIPTION
       - SQL
 
       The file will be loaded and executed using the active language, unless
-      overriden with one of the --sql, --py or --js options.
+      overridden with one of the --sql, --py or --js options.
 
 //@<OUT> SQL Command
 NAME

@@ -29,8 +29,12 @@ The following are the main help categories:
 
 The available topics include:
 
+?{__have_admin_api}
 - The dba global object and the classes available at the AdminAPI.
+?{}
+?{__have_x_protocol}
 - The mysqlx module and the classes available at the X DevAPI.
+?{}
 - The mysql module and the global objects and classes available at the
   ShellAPI.
 - The functions and properties of the classes exposed by the APIs.
@@ -97,8 +101,14 @@ The following modules and objects are ready for use when the shell starts:
  - mysql Support for connecting to MySQL servers using the classic MySQL
          protocol.
  - shell Gives access to general purpose functions and properties.
+?{}
+?{not __have_admin_api and not __have_x_protocol and __have_upgrade_checker}
  - util  Global object that groups miscellaneous tools like upgrade checker and
          JSON import.
+?{}
+?{not __have_admin_api and not __have_x_protocol and not __have_upgrade_checker}
+ - util  Global object that groups miscellaneous tools like dump, load, copy,
+         and table import and export.
 ?{}
 
 For additional information on these global objects use: <object>.help()
@@ -412,8 +422,14 @@ mysql module that enables executing SQL on MySQL Servers.
 
 OBJECTS
  - shell Gives access to general purpose functions and properties.
+?{__have_upgrade_checker}
  - util  Global object that groups miscellaneous tools like upgrade checker and
          JSON import.
+?{}
+?{not __have_upgrade_checker}
+ - util  Global object that groups miscellaneous tools like dump, load, copy,
+         and table import and export.
+?{}
 
 CLASSES
  - Column Represents the metadata for a column in a result.
@@ -591,9 +607,16 @@ SQL help requires the Shell to be connected to a MySQL server.
 
 
 #@<OUT> Help for API Command Line Integration
+?{not __mariadb_build}
 The MySQL Shell functionality is generally available as API calls, this is
 objects containing methods to perform specific tasks, they can be called either
 in JavaScript or Python modes.
+?{}
+?{__mariadb_build}
+The MariaDB Shell functionality is generally available as API calls, this is
+objects containing methods to perform specific tasks, they can be called in
+Python mode.
+?{}
 
 The most important functionality (available on the shell global objects) has
 been integrated in a way that it is possible to call it directly from the
@@ -601,7 +624,12 @@ command line, by following a specific syntax.
 
 SYNTAX:
 
+?{not __mariadb_build}
   mysqlsh [options] -- <object> <operation> [arguments]
+?{}
+?{__mariadb_build}
+  mariadb-shell [options] -- <object> <operation> [arguments]
+?{}
 
 WHERE:
 
@@ -687,8 +715,14 @@ $ mysqlsh root@localhost:1234 -- cluster status
       mysql-js> cluster.status()
 
 ?{}
+?{not __mariadb_build}
 $ mysqlsh -- shell.options set-persist history.autoSave true
       mysql-js> shell.options.setPersist("history.autoSave", true)
+?{}
+?{__mariadb_build}
+$ mariadb-shell -- shell options set-persist history.autoSave true
+      MariaDB Py> shell.options.set_persist("history.autoSave", True)
+?{}
 ?{__have_upgrade_checker}
 
 $ mysqlsh -- util checkForServerUpgrade root@localhost --outputFormat=JSON

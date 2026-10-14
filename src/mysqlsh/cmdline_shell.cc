@@ -385,9 +385,9 @@ REGISTER_HELP(CMD_HISTORY_DETAIL8,
               "@li <b>num-</b> range from num till the end of history.");
 REGISTER_HELP(CMD_HISTORY_DETAIL9, "@li <b>-num</b> last num entries.");
 REGISTER_HELP(CMD_HISTORY_DETAIL10,
-              "NOTE: The history.autoSave shell option must be set to true to "
-              "automatically save the contents of the command history when "
-              "MySQL Shell exits.");
+              "NOTE: The contents of the command history are saved when "
+              "MariaDB Shell exits, unless the history.autoSave shell option "
+              "is set to false.");
 REGISTER_HELP(CMD_HISTORY_EXAMPLE, "<b>\\history</b>");
 REGISTER_HELP(CMD_HISTORY_EXAMPLE_DESC, "Displays the entire history.");
 REGISTER_HELP(CMD_HISTORY_EXAMPLE1, "<b>\\history del</b> 123");

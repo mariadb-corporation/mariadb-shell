@@ -36,6 +36,49 @@ namespace mysqlsh {
 using shcore::Value;
 
 REGISTER_HELP_OBJECT(options, shell);
+
+// The options of features a build lacks are not registered, so neither is
+// their help.
+#ifdef HAVE_ADMIN_API
+REGISTER_HELP_DETAIL_TEXT(OPTIONS_DBA, R"*(
+@li <b>dba.connectTimeout</b>: float, default connection timeout used for
+sessions created in AdminAPI operations, in seconds
+
+@li <b>dba.connectivityChecks</b>: bool, checks SSL settings and network
+connectivity between instances when creating a cluster, replicaset or
+clusterset, or adding an instance to one
+
+@li <b>dba.gtidWaitTimeout</b>: timeout value in seconds to wait for GTIDs to be
+synchronized
+
+@li <b>dba.restartWaitTimeout</b>: timeout in seconds to wait for MySQL server
+to come back after a restart during clone recovery
+
+@li <b>dba.versionCompatibilityChecks</b>: bool, checks version compatibility
+for asynchronous replication when managing a ReplicaSet, ClusterSet, or a
+Cluster with Read-Replicas.
+)*");
+#endif
+
+#ifdef HAVE_X_PROTOCOL
+REGISTER_HELP_DETAIL_TEXT(OPTIONS_SHOW_COLUMN_TYPE_INFO, R"*(
+@li <b>showColumnTypeInfo</b>: display column type information in SQL mode.
+Please be aware that output may depend on the protocol you are using to
+connect to the server, e.g. DbType field is approximated when using X protocol.
+)*");
+#else
+REGISTER_HELP_DETAIL_TEXT(OPTIONS_SHOW_COLUMN_TYPE_INFO, R"*(
+@li <b>showColumnTypeInfo</b>: display column type information in SQL mode.
+)*");
+#endif
+
+#ifdef HAVE_X_PROTOCOL
+REGISTER_HELP_DETAIL_TEXT(OPTIONS_DEVAPI, R"*(
+@li <b>devapi.dbObjectHandles</b>: true to enable schema collection and table
+name aliases in the db object, for DevAPI operations
+)*");
+#endif
+
 REGISTER_HELP_TOPIC_WITH_BRIEF_TEXT(OPTIONS, R"*(
 Gives access to options impacting shell behavior.
 
@@ -62,22 +105,7 @@ credential store
 @li <b>credentialStore.savePasswords</b>: controls automatic password storage,
 allowed values: "always", "prompt" or "never"
 
-@li <b>dba.connectTimeout</b>: float, default connection timeout used for
-sessions created in AdminAPI operations, in seconds
-
-@li <b>dba.connectivityChecks</b>: bool, checks SSL settings and network
-connectivity between instances when creating a cluster, replicaset or
-clusterset, or adding an instance to one
-
-@li <b>dba.gtidWaitTimeout</b>: timeout value in seconds to wait for GTIDs to be
-synchronized
-
-@li <b>dba.restartWaitTimeout</b>: timeout in seconds to wait for MySQL server
-to come back after a restart during clone recovery
-
-@li <b>dba.versionCompatibilityChecks</b>: bool, checks version compatibility
-for asynchronous replication when managing a ReplicaSet, ClusterSet, or a
-Cluster with Read-Replicas.
+${OPTIONS_DBA}
 
 @li <b>defaultCompress</b>: Enable compression in client/server protocol by
 default in global shell sessions.
@@ -85,8 +113,7 @@ default in global shell sessions.
 @li <b>defaultMode</b>: shell mode to use when shell is started, allowed values:
 "js", "py" or "sql"
 
-@li <b>devapi.dbObjectHandles</b>: true to enable schema collection and table
-name aliases in the db object, for DevAPI operations
+${OPTIONS_DEVAPI}
 
 @li <b>history.autoSave</b>: true to save command history when exiting the shell
 
@@ -145,9 +172,7 @@ read passwords from stdin instead of the tty
 @li <b>sandboxDir</b>: default path where the sandbox plugin deploys new
 sandbox instances
 
-@li <b>showColumnTypeInfo</b>: display column type information in SQL mode.
-Please be aware that output may depend on the protocol you are using to
-connect to the server, e.g. DbType field is approximated when using X protocol.
+${OPTIONS_SHOW_COLUMN_TYPE_INFO}
 
 @li <b>showWarnings</b>: boolean value to indicate whether warnings shall be
 included when printing a SQL result
