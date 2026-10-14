@@ -178,7 +178,7 @@ The binary log fields are empty here because the source runs without a binary lo
 util.copy_schemas(["world"], "root@db2.example.com:3306", {"dryRun": True})
 ```
 
-The dry run checks privileges on the source, connects to the target, checks the versions and looks for existing objects, then reports `No data loaded.` If the schema already exists on the target, the dry run reports the conflicts as the real copy would.
+The dry run checks privileges on the source, connects to the target, checks the versions and looks for existing objects, then reports `No data loaded.` It holds no lock on the source: the lock lines read as checks, such as `SRC: The current user can acquire a global read lock`. If the schema already exists on the target, the dry run reports the conflicts as the real copy would.
 
 ### Copy Some Rows into a Differently Named Schema
 

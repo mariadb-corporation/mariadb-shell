@@ -198,7 +198,7 @@ TEST_BOOL_OPTION("dataOnly")
 
 #@<> WL15298 - test dryRun option (3)
 EXPECT_SUCCESS(__sandbox_uri2, { "dryRun": True })
-EXPECT_STDOUT_CONTAINS("dryRun enabled, no locks will be acquired and no files will be created.")
+EXPECT_STDOUT_CONTAINS("dryRun enabled, no locks will be held and no files will be created.")
 EXPECT_STDOUT_CONTAINS("dryRun enabled, no changes will be made.")
 
 EXPECT_SUCCESS(__sandbox_uri2, { "dryRun": False })

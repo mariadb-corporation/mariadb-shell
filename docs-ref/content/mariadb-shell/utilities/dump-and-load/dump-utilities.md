@@ -226,7 +226,7 @@ The dialect presets set these values:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `dryRun` | bool | `False` | Check privileges and options, and report what would be dumped, without taking locks or writing files. |
+| `dryRun` | bool | `False` | Check privileges and options, and report what would be dumped, without holding locks or writing files. |
 | `showProgress` | bool | `True` when stdout is a terminal | Print progress while dumping. |
 | `targetVersion` | string | the MariaDB version the shell was built against | The MariaDB Server version you plan to load the dump into. It is validated and recorded in the dump's metadata. For a MariaDB source this is a MariaDB version, not a MySQL or Shell version, and it cannot be newer than the build's MariaDB version (13.1.0 for MariaDB Shell 26.9.5). |
 
@@ -319,7 +319,7 @@ The schema count includes the system schemas, which are always skipped.
 util.dump_instance("/backups/full", {"dryRun": True})
 ```
 
-The dry run checks privileges and reports the objects it would dump, without locking anything or creating the directory.
+The dry run checks privileges and reports the objects it would dump, without holding any lock or creating the directory. To check the privileges, it takes the global read lock and releases it at once, and it reports the locks as checks, such as `The current user can acquire a global read lock`, instead of `Global read lock acquired`.
 
 ### Dump Definitions Only
 

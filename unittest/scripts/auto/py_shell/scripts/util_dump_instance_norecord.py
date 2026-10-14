@@ -1359,7 +1359,7 @@ session.run_sql("LOCK TABLES !.! WRITE", [ test_schema, test_table_unique ])
 testutil.call_mysqlsh([uri, "--", "util", "dump-instance", test_output_absolute, "--dry-run", "--show-progress=false"])
 EXPECT_FALSE(os.path.isdir(test_output_absolute))
 EXPECT_STDOUT_NOT_CONTAINS("Schemas dumped: ")
-EXPECT_STDOUT_CONTAINS("dryRun enabled, no locks will be acquired and no files will be created.")
+EXPECT_STDOUT_CONTAINS("dryRun enabled, no locks will be held and no files will be created.")
 # BUG#32695301 - unlock the tables
 session.run_sql("UNLOCK TABLES")
 
@@ -2316,7 +2316,8 @@ session.run_sql("SET GLOBAL SQL_MODE='';")
 session.run_sql("LOCK TABLES !.! WRITE", [ types_schema, types_schema_tables[0] ])
 
 EXPECT_SUCCESS([types_schema], test_output_absolute, { "dryRun": True, "showProgress": False })
-EXPECT_STDOUT_CONTAINS("Global read lock acquired")
+EXPECT_STDOUT_CONTAINS("The current user can acquire a global read lock")
+EXPECT_STDOUT_NOT_CONTAINS("Global read lock acquired")
 
 session.run_sql("UNLOCK TABLES")
 

@@ -604,6 +604,21 @@ blocker = mysql.get_session(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: blocker.run_sql("BACKUP STAGE START"), "stage released")
 blocker.run_sql("BACKUP STAGE END")
 
+#@<> backup lock - a dry run reports the locks as checks and holds none of them
+lock_dry_dump = dump_dir_for("backup_lock_dry")
+EXPECT_NO_THROWS(lambda: dump_schema("locktest", lock_dry_dump, { "dryRun": True }), "dump")
+EXPECT_STDOUT_CONTAINS("NOTE: dryRun enabled, no locks will be held and no files will be created.")
+EXPECT_STDOUT_CONTAINS("Checking whether the current user can acquire a global read lock")
+EXPECT_STDOUT_CONTAINS("The current user can acquire a global read lock")
+EXPECT_STDOUT_CONTAINS("The current user can lock the instance for backup")
+EXPECT_STDOUT_NOT_CONTAINS("Global read lock acquired")
+EXPECT_STDOUT_NOT_CONTAINS("Locking instance for backup")
+EXPECT_STDOUT_NOT_CONTAINS("All transactions have been started")
+EXPECT_STDOUT_NOT_CONTAINS("Global read lock has been released")
+EXPECT_FALSE(os.path.isdir(lock_dry_dump))
+EXPECT_NO_THROWS(lambda: blocker.run_sql("BACKUP STAGE START"), "stage not taken")
+blocker.run_sql("BACKUP STAGE END")
+
 #@<> backup lock - a dump which cannot take it says what is holding it {__dbug}
 # the bound is five minutes, so the timeout itself is injected - what is under
 # test is the report, and that the stage is ended rather than left half-taken
