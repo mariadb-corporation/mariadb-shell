@@ -14,7 +14,7 @@ An MCP client uses the MariaDB MCP server in one of two ways:
 Configure the connections and directories the server may access before you use it with a client. See [Configuring Access](configuring-access.md).
 
 {% hint style="info" %}
-The [MariaDB AI Plugins](https://mariadb.com/docs/tools/mariadb-ai-plugins) register the MCP server with Claude Code, Codex, OpenCode, and Pi automatically, and install MariaDB Shell if needed. If you use one of these coding agents, install the plugin instead of registering the server by hand.
+The [MariaDB AI Plugins](https://mariadb.com/docs/tools/community/mariadb-ai-plugins) register the MCP server with Claude Code, Codex, OpenCode, and Pi automatically, and install MariaDB Shell if needed. If you use one of these coding agents, install the plugin instead of registering the server by hand.
 {% endhint %}
 
 ## The Server Command

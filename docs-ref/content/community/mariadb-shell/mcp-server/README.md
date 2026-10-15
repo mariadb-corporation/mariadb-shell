@@ -13,7 +13,7 @@ MariaDB Shell includes a [Model Context Protocol](https://modelcontextprotocol.i
 The MCP server runs inside MariaDB Shell, as the built-in `mcp` plugin. It uses the shell's own connection handling, [credential store](../connecting/credential-store.md), [sandbox](../sandbox-instances.md) functions, and SSH tunnels, and it brings its own Python runtime and libraries with the shell, so it needs no separate installation.
 
 {% hint style="info" %}
-The pages in this section describe how to set up, start, and secure the MCP server. For the tools themselves and for example requests, see the [MariaDB AI Plugins](https://mariadb.com/docs/tools/mariadb-ai-plugins) documentation. The AI Plugins also start the MCP server for you in Claude Code, Codex, OpenCode, and Pi; in these coding agents, you only need to [configure its access](configuring-access.md).
+The pages in this section describe how to set up, start, and secure the MCP server. For the tools themselves and for example requests, see the [MariaDB AI Plugins](https://mariadb.com/docs/tools/community/mariadb-ai-plugins) documentation. The AI Plugins also start the MCP server for you in Claude Code, Codex, OpenCode, and Pi; in these coding agents, you only need to [configure its access](configuring-access.md).
 {% endhint %}
 
 {% hint style="warning" %}
