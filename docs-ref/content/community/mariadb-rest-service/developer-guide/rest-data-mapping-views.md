@@ -24,7 +24,7 @@ The MariaDB REST Service (MRS) supports REST data mapping views for both the rel
 
 The following figure shows the two use cases:
 
-![A flat REST data mapping view on one table next to a nested one on related tables](../../.gitbook/assets/mariadb-rest-service/rest-view-use-cases.svg)
+![A flat REST data mapping view on one table next to a nested one on related tables](../../../.gitbook/assets/mariadb-rest-service/rest-view-use-cases.svg)
 
 ### REST Data Mapping View Workflow
 
@@ -38,7 +38,7 @@ Once a REST data mapping view exists, the following workflow applies:
 
 The next figure shows a typical JSON document update cycle:
 
-![A JSON document read with GET, changed by the client, and written back with PUT](../../.gitbook/assets/mariadb-rest-service/rest-view-update-cycle.svg)
+![A JSON document read with GET, changed by the client, and written back with PUT](../../../.gitbook/assets/mariadb-rest-service/rest-view-update-cycle.svg)
 
 The database detects the changes in the new document and modifies the underlying rows, including all nested tables. All REST data mapping views that share the same data reflect the change immediately. Unlike with traditional document databases, you don't have to worry about inconsistencies.
 
@@ -114,7 +114,7 @@ MariaDB Shell for VS Code includes the REST object dialog with a **Data Mapping*
 
 A REST data mapping view for a single table or view is straightforward. When you [add the table in MariaDB Shell for VS Code](adding-rest-services.md#adding-a-database-object-using-mariadb-shell-for-vs-code), the REST data mapping view is created with all columns of the table in a **flat** JSON object.
 
-![The REST object editor with the columns of a table mapped to JSON fields](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor.svg)
+![The REST object editor with the columns of a table mapped to JSON fields](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor.svg)
 
 This is equal to a [`CREATE REST VIEW`](../rest-sql-reference/rest-views.md#create-rest-view) statement without a GraphQL definition, which also adds all columns of the table as a **flat** JSON object:
 
@@ -171,7 +171,7 @@ The following table maps the CRUD operations to SQL operations:
 
 When you enable a referenced table, its columns are included as a nested object in the JSON result. This works with 1:1 and 1:n relationships.
 
-![The REST object editor with the referenced table country enabled](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-2-referenced-table.png)
+![The REST object editor with the referenced table country enabled](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-2-referenced-table.png)
 
 The result is the following:
 
@@ -206,7 +206,7 @@ GET /myService/sakila/city/1
 
 To add a column of the referenced table to the level above instead, select it in the **Unnest...** drop-down list. The referenced table is then reduced to that column.
 
-![The REST object editor with the referenced table country unnested to one column](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-4-referenced-table-unnested.png)
+![The REST object editor with the referenced table country unnested to one column](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-4-referenced-table-unnested.png)
 
 The result is the following:
 

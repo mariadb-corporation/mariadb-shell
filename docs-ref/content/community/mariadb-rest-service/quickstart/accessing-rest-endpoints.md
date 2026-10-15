@@ -77,7 +77,7 @@ MariaDB Shell for VS Code supports an interactive workflow to prototype REST acc
 
 When you open a database connection in MariaDB Shell for VS Code, the DB Notebook opens. If it is in SQL mode, switch it to TypeScript mode with `\ts`.
 
-![Switching the DB Notebook from SQL mode to TypeScript mode with the \ts command](../../.gitbook/assets/mariadb-rest-service/msg-db-notebook-switch-to-ts.svg)
+![Switching the DB Notebook from SQL mode to TypeScript mode with the \ts command](../../../.gitbook/assets/mariadb-rest-service/msg-db-notebook-switch-to-ts.svg)
 
 First, check the status of MRS with the `mrs.getStatus()` command. Since the automatically generated client SDK is fully type-safe, auto-completion supports you all the way.
 

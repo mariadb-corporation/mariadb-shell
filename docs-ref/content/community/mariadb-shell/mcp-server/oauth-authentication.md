@@ -176,7 +176,7 @@ Without a required role, every account that can connect may sign in.
 
 The sign-in page shows the client's name and the address it sends the user back to, and lets the user choose which of the requested scopes to grant.
 
-<figure><img src="../../.gitbook/assets/mcp-login.webp" alt="The MariaDB MCP Server sign-in page, showing the name of the client, the scopes it asks for as checkboxes, and the user name and password fields" width="567"><figcaption><p>The sign-in page, opened by Claude Code</p></figcaption></figure>
+<figure><img src="../../../.gitbook/assets/mcp-login.webp" alt="The MariaDB MCP Server sign-in page, showing the name of the client, the scopes it asks for as checkboxes, and the user name and password fields" width="567"><figcaption><p>The sign-in page, opened by Claude Code</p></figcaption></figure>
 
 When the user signs in:
 

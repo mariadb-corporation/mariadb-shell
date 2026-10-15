@@ -29,7 +29,7 @@ The MariaDB account that configures the metadata schema needs the privileges to 
 1. Start VS Code, install the MariaDB Shell for VS Code extension, and add a DB connection to the MariaDB Server that you want to configure for MRS.
 2. Right-click the connection in the DATABASE CONNECTIONS view and select **Configure Instance for MariaDB REST Service Support**.
 
-![The context menu of a DB connection with the command that configures the instance for the REST service](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-configure.png)
+![The context menu of a DB connection with the command that configures the instance for the REST service](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-configure.png)
 
 The MRS metadata schema is now configured.
 

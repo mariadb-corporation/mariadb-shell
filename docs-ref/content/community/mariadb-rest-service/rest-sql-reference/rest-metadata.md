@@ -37,15 +37,15 @@ metadataSchema:
 
 `configureRestMetadataStatement ::=`
 
-![Railroad diagram of configureRestMetadataStatement](../../.gitbook/assets/mariadb-rest-service/sql/configureRestMetadataStatement.svg)
+![Railroad diagram of configureRestMetadataStatement](../../../.gitbook/assets/mariadb-rest-service/sql/configureRestMetadataStatement.svg)
 
 `restMetadataOptions ::=`
 
-![Railroad diagram of restMetadataOptions](../../.gitbook/assets/mariadb-rest-service/sql/restMetadataOptions.svg)
+![Railroad diagram of restMetadataOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restMetadataOptions.svg)
 
 `metadataSchema ::=`
 
-![Railroad diagram of metadataSchema](../../.gitbook/assets/mariadb-rest-service/sql/metadataSchema.svg)
+![Railroad diagram of metadataSchema](../../../.gitbook/assets/mariadb-rest-service/sql/metadataSchema.svg)
 
 ### Examples
 
@@ -86,7 +86,7 @@ enabledDisabled:
 
 `enabledDisabled ::=`
 
-![Railroad diagram of enabledDisabled](../../.gitbook/assets/mariadb-rest-service/sql/enabledDisabled.svg)
+![Railroad diagram of enabledDisabled](../../../.gitbook/assets/mariadb-rest-service/sql/enabledDisabled.svg)
 
 The following example configures the MariaDB REST Service, enables it, and updates the metadata schema if an update is available.
 
@@ -139,7 +139,7 @@ jsonOptions:
 
 `jsonOptions ::=`
 
-![Railroad diagram of jsonOptions](../../.gitbook/assets/mariadb-rest-service/sql/jsonOptions.svg)
+![Railroad diagram of jsonOptions](../../../.gitbook/assets/mariadb-rest-service/sql/jsonOptions.svg)
 
 The options of the MariaDB REST Service can include the following JSON keys.
 
@@ -231,7 +231,7 @@ updateIfAvailable:
 
 `updateIfAvailable ::=`
 
-![Railroad diagram of updateIfAvailable](../../.gitbook/assets/mariadb-rest-service/sql/updateIfAvailable.svg)
+![Railroad diagram of updateIfAvailable](../../../.gitbook/assets/mariadb-rest-service/sql/updateIfAvailable.svg)
 
 The current version of the metadata schema is 5.0.0, the first release of `mariadb_rest_service`, which stores all ids as MariaDB `UUID` values. Without `UPDATE IF AVAILABLE`, `CONFIGURE REST METADATA` leaves an older schema as it is and reports that it needs to be updated, and the other REST statements refuse to work on it.
 
@@ -263,11 +263,11 @@ serviceAndSchemaRequestPaths:
 
 `useStatement ::=`
 
-![Railroad diagram of useStatement](../../.gitbook/assets/mariadb-rest-service/sql/useStatement.svg)
+![Railroad diagram of useStatement](../../../.gitbook/assets/mariadb-rest-service/sql/useStatement.svg)
 
 `serviceAndSchemaRequestPaths ::=`
 
-![Railroad diagram of serviceAndSchemaRequestPaths](../../.gitbook/assets/mariadb-rest-service/sql/serviceAndSchemaRequestPaths.svg)
+![Railroad diagram of serviceAndSchemaRequestPaths](../../../.gitbook/assets/mariadb-rest-service/sql/serviceAndSchemaRequestPaths.svg)
 
 For `serviceRequestPath`, see [CREATE REST SERVICE](rest-services.md#create-rest-service). For `serviceSchemaSelector`, see [CREATE REST VIEW](rest-views.md#create-rest-view).
 
@@ -325,7 +325,7 @@ showRestMetadataSchemasStatement:
 
 `showRestMetadataSchemasStatement ::=`
 
-![Railroad diagram of showRestMetadataSchemasStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataSchemasStatement.svg)
+![Railroad diagram of showRestMetadataSchemasStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataSchemasStatement.svg)
 
 The result has the columns `schema_name`, `version`, and `current`. `current` is `YES` for the metadata schema the REST statements of the session use.
 
@@ -351,7 +351,7 @@ showRestMetadataStatusStatement:
 
 `showRestMetadataStatusStatement ::=`
 
-![Railroad diagram of showRestMetadataStatusStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataStatusStatement.svg)
+![Railroad diagram of showRestMetadataStatusStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestMetadataStatusStatement.svg)
 
 The result reports whether the metadata schema is configured and enabled, the number of enabled REST services, the current and the available version of the metadata schema, and whether it can be updated. `required_rest_daemon_version` is the oldest version of the MariaDB REST Daemon that serves the available version of the metadata schema. The last column, `metadata_schema`, names the metadata schema the status is of: the one the session uses, or the one `CONFIGURE REST METADATA` would deploy.
 
@@ -394,7 +394,7 @@ showRestColumnsStatement:
 
 `showRestColumnsStatement ::=`
 
-![Railroad diagram of showRestColumnsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestColumnsStatement.svg)
+![Railroad diagram of showRestColumnsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestColumnsStatement.svg)
 
 The result has one row per column, reference, or parameter, with the columns `position`, `name`, `kind`, `datatype`, `not_null`, `is_primary`, `id_generation`, and `reference`:
 
@@ -433,7 +433,7 @@ formatClause:
 
 `formatClause ::=`
 
-![Railroad diagram of formatClause](../../.gitbook/assets/mariadb-rest-service/sql/formatClause.svg)
+![Railroad diagram of formatClause](../../../.gitbook/assets/mariadb-rest-service/sql/formatClause.svg)
 
 The format name can be written in any case and in quotes, for example `FORMAT=JSON`, `FORMAT = json`, or `FORMAT='json'`.
 

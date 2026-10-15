@@ -48,15 +48,15 @@ restServiceOptions: (
 
 `createRestServiceStatement ::=`
 
-![Railroad diagram of createRestServiceStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestServiceStatement.svg)
+![Railroad diagram of createRestServiceStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestServiceStatement.svg)
 
 `serviceRequestPath ::=`
 
-![Railroad diagram of serviceRequestPath](../../.gitbook/assets/mariadb-rest-service/sql/serviceRequestPath.svg)
+![Railroad diagram of serviceRequestPath](../../../.gitbook/assets/mariadb-rest-service/sql/serviceRequestPath.svg)
 
 `restServiceOptions ::=`
 
-![Railroad diagram of restServiceOptions](../../.gitbook/assets/mariadb-rest-service/sql/restServiceOptions.svg)
+![Railroad diagram of restServiceOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restServiceOptions.svg)
 
 `removeAuthApp` is described under [ALTER REST SERVICE](#alter-rest-service).
 
@@ -131,11 +131,11 @@ requestPathIdentifier:
 
 `serviceDevelopersIdentifier ::=`
 
-![Railroad diagram of serviceDevelopersIdentifier](../../.gitbook/assets/mariadb-rest-service/sql/serviceDevelopersIdentifier.svg)
+![Railroad diagram of serviceDevelopersIdentifier](../../../.gitbook/assets/mariadb-rest-service/sql/serviceDevelopersIdentifier.svg)
 
 `requestPathIdentifier ::=`
 
-![Railroad diagram of requestPathIdentifier](../../.gitbook/assets/mariadb-rest-service/sql/requestPathIdentifier.svg)
+![Railroad diagram of requestPathIdentifier](../../../.gitbook/assets/mariadb-rest-service/sql/requestPathIdentifier.svg)
 
 ### Enabling or Disabling a REST Service
 
@@ -158,7 +158,7 @@ publishedUnpublished:
 
 `publishedUnpublished ::=`
 
-![Railroad diagram of publishedUnpublished](../../.gitbook/assets/mariadb-rest-service/sql/publishedUnpublished.svg)
+![Railroad diagram of publishedUnpublished](../../../.gitbook/assets/mariadb-rest-service/sql/publishedUnpublished.svg)
 
 ### Setting the REST Service Protocol
 
@@ -178,7 +178,7 @@ restProtocol:
 
 `restProtocol ::=`
 
-![Railroad diagram of restProtocol](../../.gitbook/assets/mariadb-rest-service/sql/restProtocol.svg)
+![Railroad diagram of restProtocol](../../../.gitbook/assets/mariadb-rest-service/sql/restProtocol.svg)
 
 ### Assigning a REST Authentication App to a REST Service
 
@@ -196,7 +196,7 @@ addAuthApp:
 
 `addAuthApp ::=`
 
-![Railroad diagram of addAuthApp](../../.gitbook/assets/mariadb-rest-service/sql/addAuthApp.svg)
+![Railroad diagram of addAuthApp](../../../.gitbook/assets/mariadb-rest-service/sql/addAuthApp.svg)
 
 ### REST Service Authentication Settings
 
@@ -231,23 +231,23 @@ authPageContent:
 
 `restAuthentication ::=`
 
-![Railroad diagram of restAuthentication](../../.gitbook/assets/mariadb-rest-service/sql/restAuthentication.svg)
+![Railroad diagram of restAuthentication](../../../.gitbook/assets/mariadb-rest-service/sql/restAuthentication.svg)
 
 `authPath ::=`
 
-![Railroad diagram of authPath](../../.gitbook/assets/mariadb-rest-service/sql/authPath.svg)
+![Railroad diagram of authPath](../../../.gitbook/assets/mariadb-rest-service/sql/authPath.svg)
 
 `authRedirection ::=`
 
-![Railroad diagram of authRedirection](../../.gitbook/assets/mariadb-rest-service/sql/authRedirection.svg)
+![Railroad diagram of authRedirection](../../../.gitbook/assets/mariadb-rest-service/sql/authRedirection.svg)
 
 `authValidation ::=`
 
-![Railroad diagram of authValidation](../../.gitbook/assets/mariadb-rest-service/sql/authValidation.svg)
+![Railroad diagram of authValidation](../../../.gitbook/assets/mariadb-rest-service/sql/authValidation.svg)
 
 `authPageContent ::=`
 
-![Railroad diagram of authPageContent](../../.gitbook/assets/mariadb-rest-service/sql/authPageContent.svg)
+![Railroad diagram of authPageContent](../../../.gitbook/assets/mariadb-rest-service/sql/authPageContent.svg)
 
 * `AUTHENTICATION PATH`
   * The HTML path used for authentication handling for this REST service, given as a sub-path of the REST service path. The default is `/authentication`.
@@ -329,7 +329,7 @@ comments:
 
 `comments ::=`
 
-![Railroad diagram of comments](../../.gitbook/assets/mariadb-rest-service/sql/comments.svg)
+![Railroad diagram of comments](../../../.gitbook/assets/mariadb-rest-service/sql/comments.svg)
 
 ### REST Service Metadata
 
@@ -343,7 +343,7 @@ metadata:
 
 `metadata ::=`
 
-![Railroad diagram of metadata](../../.gitbook/assets/mariadb-rest-service/sql/metadata.svg)
+![Railroad diagram of metadata](../../../.gitbook/assets/mariadb-rest-service/sql/metadata.svg)
 
 ## CLONE REST SERVICE
 
@@ -360,7 +360,7 @@ cloneRestServiceStatement:
 
 `cloneRestServiceStatement ::=`
 
-![Railroad diagram of cloneRestServiceStatement](../../.gitbook/assets/mariadb-rest-service/sql/cloneRestServiceStatement.svg)
+![Railroad diagram of cloneRestServiceStatement](../../../.gitbook/assets/mariadb-rest-service/sql/cloneRestServiceStatement.svg)
 
 `newServiceRequestPath` has the same form as [`serviceRequestPath`](#building-a-service-request-path).
 
@@ -394,11 +394,11 @@ removeAuthApp:
 
 `alterRestServiceStatement ::=`
 
-![Railroad diagram of alterRestServiceStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestServiceStatement.svg)
+![Railroad diagram of alterRestServiceStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestServiceStatement.svg)
 
 `removeAuthApp ::=`
 
-![Railroad diagram of removeAuthApp](../../.gitbook/assets/mariadb-rest-service/sql/removeAuthApp.svg)
+![Railroad diagram of removeAuthApp](../../../.gitbook/assets/mariadb-rest-service/sql/removeAuthApp.svg)
 
 `REMOVE AUTH APP` unlinks a REST authentication app from the REST service, the counterpart of [`ADD AUTH APP`](#assigning-a-rest-authentication-app-to-a-rest-service).
 
@@ -434,7 +434,7 @@ dropRestServiceStatement:
 
 `dropRestServiceStatement ::=`
 
-![Railroad diagram of dropRestServiceStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestServiceStatement.svg)
+![Railroad diagram of dropRestServiceStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestServiceStatement.svg)
 
 ### Examples
 
@@ -463,7 +463,7 @@ showRestServicesStatement:
 
 `showRestServicesStatement ::=`
 
-![Railroad diagram of showRestServicesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestServicesStatement.svg)
+![Railroad diagram of showRestServicesStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestServicesStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST services, each with `is_current`; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -506,7 +506,7 @@ showCreateRestServiceStatement:
 
 `showCreateRestServiceStatement ::=`
 
-![Railroad diagram of showCreateRestServiceStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestServiceStatement.svg)
+![Railroad diagram of showCreateRestServiceStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestServiceStatement.svg)
 
 Without `INCLUDING ... ENDPOINTS`, only the `CREATE REST SERVICE` statement is shown. The `INCLUDING` clause adds the statements of the endpoints of the service. `DATABASE` and `SCHEMA` are synonyms:
 

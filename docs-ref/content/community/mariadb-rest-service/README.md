@@ -34,7 +34,7 @@ MRS consists of four building blocks that together form an integrated solution f
 3. Powerful data mapping
 4. Client SDK generation
 
-![The four building blocks of the MariaDB REST Service: RESTful web services, the REST SQL extension, data mapping, and client SDK generation](../.gitbook/assets/mariadb-rest-service/MrsFeatureOverview.svg)
+![The four building blocks of the MariaDB REST Service: RESTful web services, the REST SQL extension, data mapping, and client SDK generation](../../.gitbook/assets/mariadb-rest-service/MrsFeatureOverview.svg)
 
 ### Benefits
 
@@ -68,7 +68,7 @@ MRS exposes RESTful web services over HTTPS for the data stored in MariaDB Serve
 - Extending existing applications with microservices.
 - Offering REST endpoints to serverless architecture deployments.
 
-![Client applications such as mobile apps, PWAs, and microservices accessing MariaDB Server data through REST endpoints](../.gitbook/assets/mariadb-rest-service/MrsForAppDevelopment.svg)
+![Client applications such as mobile apps, PWAs, and microservices accessing MariaDB Server data through REST endpoints](../../.gitbook/assets/mariadb-rest-service/MrsForAppDevelopment.svg)
 
 ### Applications That Use a MariaDB Connector
 

@@ -50,15 +50,15 @@ restObjectOptions: (
 
 `createRestViewStatement ::=`
 
-![Railroad diagram of createRestViewStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestViewStatement.svg)
+![Railroad diagram of createRestViewStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestViewStatement.svg)
 
 `serviceSchemaSelector ::=`
 
-![Railroad diagram of serviceSchemaSelector](../../.gitbook/assets/mariadb-rest-service/sql/serviceSchemaSelector.svg)
+![Railroad diagram of serviceSchemaSelector](../../../.gitbook/assets/mariadb-rest-service/sql/serviceSchemaSelector.svg)
 
 `restObjectOptions ::=`
 
-![Railroad diagram of restObjectOptions](../../.gitbook/assets/mariadb-rest-service/sql/restObjectOptions.svg)
+![Railroad diagram of restObjectOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restObjectOptions.svg)
 
 The `serviceSchemaSelector` selects the REST service and the REST schema. Without it, the current REST service and schema are used, see [USE REST](rest-metadata.md#use-rest). [REST procedures and functions](rest-routines.md) use the same `serviceSchemaSelector` and `restObjectOptions`.
 
@@ -120,7 +120,7 @@ AUTHENTICATION REQUIRED;
 
 This is what the REST data mapping view looks like in the interactive REST Object dialog of MariaDB Shell for VS Code.
 
-![The REST Object dialog of MariaDB Shell for VS Code, showing the city table with the referenced country table added](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-2-referenced-table.png)
+![The REST Object dialog of MariaDB Shell for VS Code, showing the city table with the referenced country table added](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-rest-object-editor-2-referenced-table.png)
 
 A TypeScript SDK query against the new REST endpoint returns the following JSON document.
 
@@ -177,7 +177,7 @@ authenticationRequired:
 
 `authenticationRequired ::=`
 
-![Railroad diagram of authenticationRequired](../../.gitbook/assets/mariadb-rest-service/sql/authenticationRequired.svg)
+![Railroad diagram of authenticationRequired](../../../.gitbook/assets/mariadb-rest-service/sql/authenticationRequired.svg)
 
 ### Specifying the Page Size for REST Views
 
@@ -198,7 +198,7 @@ restViewMediaType:
 
 `restViewMediaType ::=`
 
-![Railroad diagram of restViewMediaType](../../.gitbook/assets/mariadb-rest-service/sql/restViewMediaType.svg)
+![Railroad diagram of restViewMediaType](../../../.gitbook/assets/mariadb-rest-service/sql/restViewMediaType.svg)
 
 ### Setting the Result Format for REST Views
 
@@ -216,7 +216,7 @@ restViewFormat:
 
 `restViewFormat ::=`
 
-![Railroad diagram of restViewFormat](../../.gitbook/assets/mariadb-rest-service/sql/restViewFormat.svg)
+![Railroad diagram of restViewFormat](../../../.gitbook/assets/mariadb-rest-service/sql/restViewFormat.svg)
 
 ### Using a Custom Authentication Procedure for a REST View
 
@@ -232,7 +232,7 @@ restViewAuthenticationProcedure:
 
 `restViewAuthenticationProcedure ::=`
 
-![Railroad diagram of restViewAuthenticationProcedure](../../.gitbook/assets/mariadb-rest-service/sql/restViewAuthenticationProcedure.svg)
+![Railroad diagram of restViewAuthenticationProcedure](../../../.gitbook/assets/mariadb-rest-service/sql/restViewAuthenticationProcedure.svg)
 
 ### Defining the GraphQL Definition for a REST View
 
@@ -288,27 +288,27 @@ graphQlValueJsonSchema:
 
 `graphQlObj ::=`
 
-![Railroad diagram of graphQlObj](../../.gitbook/assets/mariadb-rest-service/sql/graphQlObj.svg)
+![Railroad diagram of graphQlObj](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlObj.svg)
 
 `graphQlCrudOptions ::=`
 
-![Railroad diagram of graphQlCrudOptions](../../.gitbook/assets/mariadb-rest-service/sql/graphQlCrudOptions.svg)
+![Railroad diagram of graphQlCrudOptions](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlCrudOptions.svg)
 
 `graphQlPair ::=`
 
-![Railroad diagram of graphQlPair](../../.gitbook/assets/mariadb-rest-service/sql/graphQlPair.svg)
+![Railroad diagram of graphQlPair](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlPair.svg)
 
 `graphQlValueOptions ::=`
 
-![Railroad diagram of graphQlValueOptions](../../.gitbook/assets/mariadb-rest-service/sql/graphQlValueOptions.svg)
+![Railroad diagram of graphQlValueOptions](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlValueOptions.svg)
 
 `graphQlValue ::=`
 
-![Railroad diagram of graphQlValue](../../.gitbook/assets/mariadb-rest-service/sql/graphQlValue.svg)
+![Railroad diagram of graphQlValue](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlValue.svg)
 
 `graphQlValueJsonSchema ::=`
 
-![Railroad diagram of graphQlValueJsonSchema](../../.gitbook/assets/mariadb-rest-service/sql/graphQlValueJsonSchema.svg)
+![Railroad diagram of graphQlValueJsonSchema](../../../.gitbook/assets/mariadb-rest-service/sql/graphQlValueJsonSchema.svg)
 
 The data type given with `@DATATYPE` can be written as an identifier or in single or double quotes, for example `@DATATYPE(int)`, `@DATATYPE('varchar(20)')`, or `@DATATYPE("varchar(20)")`.
 
@@ -436,7 +436,7 @@ alterRestViewStatement:
 
 `alterRestViewStatement ::=`
 
-![Railroad diagram of alterRestViewStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestViewStatement.svg)
+![Railroad diagram of alterRestViewStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestViewStatement.svg)
 
 ### Examples
 
@@ -467,7 +467,7 @@ dropRestViewStatement:
 
 `dropRestViewStatement ::=`
 
-![Railroad diagram of dropRestViewStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestViewStatement.svg)
+![Railroad diagram of dropRestViewStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestViewStatement.svg)
 
 ### Examples
 
@@ -494,7 +494,7 @@ showRestViewsStatement:
 
 `showRestViewsStatement ::=`
 
-![Railroad diagram of showRestViewsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestViewsStatement.svg)
+![Railroad diagram of showRestViewsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestViewsStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST views, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -522,7 +522,7 @@ showCreateRestViewStatement:
 
 `showCreateRestViewStatement ::=`
 
-![Railroad diagram of showCreateRestViewStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestViewStatement.svg)
+![Railroad diagram of showCreateRestViewStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestViewStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 

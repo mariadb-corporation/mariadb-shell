@@ -98,7 +98,7 @@ Applied on the docs branch before the merge (`033274aa5`, `3b0cfe9e1`, `5a743d8d
 ## Files that matter
 
 - `docs-ref/content/SUMMARY.md` -> the page tree and navigation
-- `docs-ref/content/mariadb-shell/` -> the product pages (ported to mariadb-docs `tools/mariadb-shell/`)
+- `docs-ref/content/community/mariadb-shell/` -> the product pages (ported to mariadb-docs `tools/mariadb-shell/`)
 - `docs-ref/content/README.md` -> stand-in for the Enterprise Tools space landing; only its `## MariaDB Shell` section gets ported
 - `docs-ref/README.md` -> preview usage, writing rules and porting steps
 - `docs-ref/docusaurus.config.js`, `sidebars.js`, `src/`, `static/` -> the preview site only, never ported

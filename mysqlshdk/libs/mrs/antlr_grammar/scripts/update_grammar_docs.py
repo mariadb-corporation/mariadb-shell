@@ -31,7 +31,7 @@ import textwrap
 import difflib
 
 # Relative to this script's directory
-DOCS_PATH = "../../../../../docs-ref/content/mariadb-rest-service/rest-sql-reference"
+DOCS_PATH = "../../../../../docs-ref/content/community/mariadb-rest-service/rest-sql-reference"
 IMAGES_PATH = "../../../../../docs-ref/content/.gitbook/assets/mariadb-rest-service/sql"
 PARSER_PATH = "../MRSParser.g4"
 
@@ -197,7 +197,7 @@ if undocumented_rules:
         print()
         print(f"""`{r} ::=`
 
-![{r}](../../.gitbook/assets/mariadb-rest-service/sql/{r}.svg)
+![{r}](../../../.gitbook/assets/mariadb-rest-service/sql/{r}.svg)
 """)
         assert os.path.exists(f"{IMAGES_PATH}/{r}.svg"), r
         print()

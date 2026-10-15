@@ -25,7 +25,7 @@
 
 Writes one SVG per parser rule of mysqlshdk/libs/mrs/antlr_grammar/MRSParser.g4 to
 docs-ref/content/.gitbook/assets/mariadb-rest-service/sql, the images the
-REST SQL reference (docs-ref/content/mariadb-rest-service/rest-sql-reference)
+REST SQL reference (docs-ref/content/community/mariadb-rest-service/rest-sql-reference)
 shows. Run it after every grammar change, from the repository root:
 
     npm run docs-ref:mrs-diagrams          (= --prune)

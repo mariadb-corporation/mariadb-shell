@@ -21,7 +21,7 @@ The MariaDB REST Service (MRS) consists of the following components:
   - Manage MRS through a graphical user interface (GUI) in VS Code.
   - Generate client SDKs for a REST service.
 
-![Architecture of the MariaDB REST Service: client applications send HTTPS requests through a load balancer to MariaDB REST Daemon instances, which serve REST endpoints from the metadata and data in MariaDB Server](../.gitbook/assets/mariadb-rest-service/mrs-architecture.svg)
+![Architecture of the MariaDB REST Service: client applications send HTTPS requests through a load balancer to MariaDB REST Daemon instances, which serve REST endpoints from the metadata and data in MariaDB Server](../../.gitbook/assets/mariadb-rest-service/mrs-architecture.svg)
 
 ## Development Setup
 

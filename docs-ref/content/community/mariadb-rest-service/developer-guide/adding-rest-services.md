@@ -57,7 +57,7 @@ When MRS is configured on a server, its DB connection in the DATABASE CONNECTION
 1. Right-click the **MariaDB REST Service** tree item and select **Add REST Service...** to open the REST service dialog.
 2. Enter the required values and click **OK** to add the REST service.
 
-![The REST service dialog of MariaDB Shell for VS Code](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-service.png)
+![The REST service dialog of MariaDB Shell for VS Code](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-service.png)
 
 ### Adding a REST Service Using MariaDB Shell
 
@@ -141,7 +141,7 @@ CREATE OR REPLACE REST SCHEMA /sakila ON SERVICE /myService
 1. Right-click the schema in the DATABASE CONNECTIONS view and select **Add Schema to REST Service**. A dialog with all REST schema settings opens.
 2. Click **OK** to add the schema.
 
-![The dialog that adds a database schema to a REST service](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-schema.png)
+![The dialog that adds a database schema to a REST service](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-schema.png)
 
 ## Adding a Table, View, or Procedure
 
@@ -149,7 +149,7 @@ When you add database objects such as tables, views, or procedures to MRS, they 
 
 The following figure shows a REST schema and its REST objects:
 
-![A REST schema with its REST objects in the DATABASE CONNECTIONS view](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-schema-and-objects.png)
+![A REST schema with its REST objects in the DATABASE CONNECTIONS view](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-schema-and-objects.png)
 
 Tables and views are added as [REST data mapping views](rest-data-mapping-views.md), stored procedures as REST procedures.
 
@@ -199,4 +199,4 @@ AUTHENTICATION REQUIRED;
 2. Adjust the REST object settings.
 3. Click **OK** to add the database object.
 
-![The REST object dialog for a database object](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-db-object.png)
+![The REST object dialog for a database object](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-db-object.png)

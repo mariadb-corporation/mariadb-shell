@@ -17,7 +17,7 @@ The interactive workflow needs a MariaDB REST Daemon instance that serves the RE
 
 When you open a database connection in MariaDB Shell for VS Code, the DB Notebook opens. If it is in SQL mode, switch it to TypeScript mode with `\ts`.
 
-![A DB Notebook switched from SQL mode to TypeScript mode with the \ts command](../../.gitbook/assets/mariadb-rest-service/msg-db-notebook-switch-to-ts.svg)
+![A DB Notebook switched from SQL mode to TypeScript mode with the \ts command](../../../.gitbook/assets/mariadb-rest-service/msg-db-notebook-switch-to-ts.svg)
 
 ## Choosing a REST Service
 
@@ -74,7 +74,7 @@ The new current REST service is available only after the whole TypeScript code b
 
 In the DATABASE CONNECTIONS view of VS Code's primary sidebar, expand the DB connection and its **MariaDB REST Service** tree item, right-click the REST service, and select **Set as Current REST Service**.
 
-![The context menu of a REST service with the command that sets it as the current REST service](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-context-menu-set-current-service.svg)
+![The context menu of a REST service with the command that sets it as the current REST service](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-context-menu-set-current-service.svg)
 
 The current REST service has a solid, filled icon. All other REST services have an outlined icon.
 

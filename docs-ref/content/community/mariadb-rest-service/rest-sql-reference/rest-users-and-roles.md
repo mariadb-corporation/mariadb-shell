@@ -50,27 +50,27 @@ accountLock:
 
 `createRestUserStatement ::=`
 
-![Railroad diagram of createRestUserStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestUserStatement.svg)
+![Railroad diagram of createRestUserStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestUserStatement.svg)
 
 `userName ::=`
 
-![Railroad diagram of userName](../../.gitbook/assets/mariadb-rest-service/sql/userName.svg)
+![Railroad diagram of userName](../../../.gitbook/assets/mariadb-rest-service/sql/userName.svg)
 
 `userPassword ::=`
 
-![Railroad diagram of userPassword](../../.gitbook/assets/mariadb-rest-service/sql/userPassword.svg)
+![Railroad diagram of userPassword](../../../.gitbook/assets/mariadb-rest-service/sql/userPassword.svg)
 
 `userOptions ::=`
 
-![Railroad diagram of userOptions](../../.gitbook/assets/mariadb-rest-service/sql/userOptions.svg)
+![Railroad diagram of userOptions](../../../.gitbook/assets/mariadb-rest-service/sql/userOptions.svg)
 
 `appOptions ::=`
 
-![Railroad diagram of appOptions](../../.gitbook/assets/mariadb-rest-service/sql/appOptions.svg)
+![Railroad diagram of appOptions](../../../.gitbook/assets/mariadb-rest-service/sql/appOptions.svg)
 
 `accountLock ::=`
 
-![Railroad diagram of accountLock](../../.gitbook/assets/mariadb-rest-service/sql/accountLock.svg)
+![Railroad diagram of accountLock](../../../.gitbook/assets/mariadb-rest-service/sql/accountLock.svg)
 
 For `authAppName`, see [CREATE REST AUTH APP](rest-authentication.md#create-rest-auth-app). For `jsonOptions`, see [REST Configuration JSON Options](rest-metadata.md#rest-configuration-json-options).
 
@@ -106,11 +106,11 @@ restRoleOptions:
 
 `createRestRoleStatement ::=`
 
-![Railroad diagram of createRestRoleStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestRoleStatement.svg)
+![Railroad diagram of createRestRoleStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestRoleStatement.svg)
 
 `restRoleOptions ::=`
 
-![Railroad diagram of restRoleOptions](../../.gitbook/assets/mariadb-rest-service/sql/restRoleOptions.svg)
+![Railroad diagram of restRoleOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restRoleOptions.svg)
 
 For `roleService`, see [SHOW CREATE REST ROLE](#show-create-rest-role).
 
@@ -146,7 +146,7 @@ alterRestUserStatement:
 
 `alterRestUserStatement ::=`
 
-![Railroad diagram of alterRestUserStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestUserStatement.svg)
+![Railroad diagram of alterRestUserStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestUserStatement.svg)
 
 ### Examples
 
@@ -171,7 +171,7 @@ dropRestUserStatement:
 
 `dropRestUserStatement ::=`
 
-![Railroad diagram of dropRestUserStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestUserStatement.svg)
+![Railroad diagram of dropRestUserStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestUserStatement.svg)
 
 ### Examples
 
@@ -193,7 +193,7 @@ dropRestRoleStatement:
 
 `dropRestRoleStatement ::=`
 
-![Railroad diagram of dropRestRoleStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestRoleStatement.svg)
+![Railroad diagram of dropRestRoleStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestRoleStatement.svg)
 
 ### Examples
 
@@ -234,15 +234,15 @@ privilegeName:
 
 `grantRestPrivilegeStatement ::=`
 
-![Railroad diagram of grantRestPrivilegeStatement](../../.gitbook/assets/mariadb-rest-service/sql/grantRestPrivilegeStatement.svg)
+![Railroad diagram of grantRestPrivilegeStatement](../../../.gitbook/assets/mariadb-rest-service/sql/grantRestPrivilegeStatement.svg)
 
 `privilegeList ::=`
 
-![Railroad diagram of privilegeList](../../.gitbook/assets/mariadb-rest-service/sql/privilegeList.svg)
+![Railroad diagram of privilegeList](../../../.gitbook/assets/mariadb-rest-service/sql/privilegeList.svg)
 
 `privilegeName ::=`
 
-![Railroad diagram of privilegeName](../../.gitbook/assets/mariadb-rest-service/sql/privilegeName.svg)
+![Railroad diagram of privilegeName](../../../.gitbook/assets/mariadb-rest-service/sql/privilegeName.svg)
 
 The privileges apply at the level you give: a REST service, a REST schema, or a single REST object. A role with the READ privilege on a REST schema, for example, can read all REST objects of that schema. The request paths can contain the wildcards `*` and `?`.
 
@@ -271,7 +271,7 @@ grantRestRoleStatement:
 
 `grantRestRoleStatement ::=`
 
-![Railroad diagram of grantRestRoleStatement](../../.gitbook/assets/mariadb-rest-service/sql/grantRestRoleStatement.svg)
+![Railroad diagram of grantRestRoleStatement](../../../.gitbook/assets/mariadb-rest-service/sql/grantRestRoleStatement.svg)
 
 ### Examples
 
@@ -300,7 +300,7 @@ revokeRestPrivilegeStatement:
 
 `revokeRestPrivilegeStatement ::=`
 
-![Railroad diagram of revokeRestPrivilegeStatement](../../.gitbook/assets/mariadb-rest-service/sql/revokeRestPrivilegeStatement.svg)
+![Railroad diagram of revokeRestPrivilegeStatement](../../../.gitbook/assets/mariadb-rest-service/sql/revokeRestPrivilegeStatement.svg)
 
 ### Examples
 
@@ -323,7 +323,7 @@ revokeRestRoleStatement:
 
 `revokeRestRoleStatement ::=`
 
-![Railroad diagram of revokeRestRoleStatement](../../.gitbook/assets/mariadb-rest-service/sql/revokeRestRoleStatement.svg)
+![Railroad diagram of revokeRestRoleStatement](../../../.gitbook/assets/mariadb-rest-service/sql/revokeRestRoleStatement.svg)
 
 ### Examples
 
@@ -351,7 +351,7 @@ showRestUsersStatement:
 
 `showRestUsersStatement ::=`
 
-![Railroad diagram of showRestUsersStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestUsersStatement.svg)
+![Railroad diagram of showRestUsersStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestUsersStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST users, each with its roles; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -388,7 +388,7 @@ showRestRolesStatement:
 
 `showRestRolesStatement ::=`
 
-![Railroad diagram of showRestRolesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestRolesStatement.svg)
+![Railroad diagram of showRestRolesStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestRolesStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST roles, each with its privileges; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -419,7 +419,7 @@ showRestGrantsStatement:
 
 `showRestGrantsStatement ::=`
 
-![Railroad diagram of showRestGrantsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestGrantsStatement.svg)
+![Railroad diagram of showRestGrantsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestGrantsStatement.svg)
 
 ### Examples
 
@@ -441,7 +441,7 @@ showCreateRestUserStatement:
 
 `showCreateRestUserStatement ::=`
 
-![Railroad diagram of showCreateRestUserStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestUserStatement.svg)
+![Railroad diagram of showCreateRestUserStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestUserStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 
@@ -474,11 +474,11 @@ roleService:
 
 `showCreateRestRoleStatement ::=`
 
-![Railroad diagram of showCreateRestRoleStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestRoleStatement.svg)
+![Railroad diagram of showCreateRestRoleStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestRoleStatement.svg)
 
 `roleService ::=`
 
-![Railroad diagram of roleService](../../.gitbook/assets/mariadb-rest-service/sql/roleService.svg)
+![Railroad diagram of roleService](../../../.gitbook/assets/mariadb-rest-service/sql/roleService.svg)
 
 The `roleService` clause selects the REST service of a role in all role statements. Without it, the current REST service is used. `ON ANY SERVICE` refers to a role that can be used from any REST service.
 

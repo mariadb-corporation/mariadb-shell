@@ -14,9 +14,10 @@ the two in step when either changes.
 | --- | --- |
 | `content/` | **The GitBook source.** Markdown plus GitBook blocks, laid out as a GitBook space. This is what gets ported. |
 | `content/SUMMARY.md` | GitBook's navigation. The preview's sidebar is generated from it, so it is the only place the page tree is defined. |
-| `content/README.md` | A stand-in for the Enterprise Tools space landing page. Only its `## MariaDB Shell` and `## MariaDB REST Service` sections are meant for porting. |
-| `content/mariadb-shell/` | The MariaDB Shell docs. |
-| `content/mariadb-rest-service/` | The MariaDB REST Service (MRS) docs. Its REST SQL reference is checked against the ANTLR grammar in `mysqlshdk/libs/mrs/antlr_grammar/`, whose railroad diagrams go to `content/.gitbook/assets/mariadb-rest-service/sql/` (see below). |
+| `content/README.md` | A stand-in for the Tools space landing page. Only its `### MariaDB Shell` and `### MariaDB REST Service` sections, under `## Community Tools`, are meant for porting. |
+| `content/community/README.md` | A stand-in for the Community Tools page. Only its `## MariaDB Shell` and `## MariaDB REST Service` sections are meant for porting. |
+| `content/community/mariadb-shell/` | The MariaDB Shell docs. |
+| `content/community/mariadb-rest-service/` | The MariaDB REST Service (MRS) docs. Its REST SQL reference is checked against the ANTLR grammar in `mysqlshdk/libs/mrs/antlr_grammar/`, whose railroad diagrams go to `content/.gitbook/assets/mariadb-rest-service/sql/` (see below). |
 | `content/.gitbook/assets/` | Images, as GitBook stores them. Reference them as `.gitbook/assets/<file>` (with the right `../` depth). |
 | `docusaurus.config.js`, `sidebars.js`, `src/`, `static/` | The preview site only. Never ported. |
 
@@ -25,7 +26,7 @@ the two in step when either changes.
 ```sh
 cd docs-ref
 npm ci            # once
-npm start         # live reload  → http://localhost:3000/docs/tools/mariadb-shell
+npm start         # live reload  → http://localhost:3000/docs/tools/community/mariadb-shell
 npm run build     # static build → build/, then: npm run serve
 ```
 
@@ -60,7 +61,7 @@ rsync -a --delete build/ user@host:/var/www/html/docs/
 ```
 
 Apache's defaults do the rest: `mod_dir` serves `index.html` and redirects
-`/docs/tools/mariadb-shell` to the trailing-slash URL. For `.htaccess` to
+`/docs/tools/community/mariadb-shell` to the trailing-slash URL. For `.htaccess` to
 take effect, the directory needs `AllowOverride FileInfo` (or `All`). Without
 it, everything still works except that unknown URLs get Apache's own 404 page.
 
@@ -84,7 +85,7 @@ Specific to MariaDB Shell:
 
 - Document only what this build ships. JavaScript mode, the X DevAPI,
   AdminAPI, the upgrade checker and the binlog utilities are not part of
-  MariaDB Shell; [`differences-from-mysql-shell.md`](content/mariadb-shell/getting-started/differences-from-mysql-shell.md)
+  MariaDB Shell; [`differences-from-mysql-shell.md`](content/community/mariadb-shell/getting-started/differences-from-mysql-shell.md)
   is the one page that names them.
 - Python is the only scripting language, so API names are snake_case
   (`util.dump_instance`), while option dictionary keys stay camelCase
@@ -95,7 +96,7 @@ Specific to MariaDB Shell:
 
 ## MariaDB REST Service Grammar Tools
 
-The REST SQL reference in `content/mariadb-rest-service/rest-sql-reference/`
+The REST SQL reference in `content/community/mariadb-rest-service/rest-sql-reference/`
 follows the ANTLR reference grammar `mysqlshdk/libs/mrs/antlr_grammar/MRSParser.g4`
 (kept rule for rule in step with the shell's bison grammar). After a grammar
 change, run from the repository root:
@@ -144,19 +145,26 @@ Awesome page icons in the sidebar, and GitBook's search.
 
 ## Porting to mariadb-docs
 
-The target is the **Enterprise Tools** space (`tools/` in
-`mariadb-corporation/mariadb-docs`, published at
-`https://mariadb.com/docs/tools/`). The preview uses the same URL layout.
+The target is the **Community Tools** folder of the Tools space
+(`tools/community/` in `mariadb-corporation/mariadb-docs`, published at
+`https://mariadb.com/docs/tools/community/`). `content/` mirrors the space
+(`tools/`), so the preview uses the same URL layout, and the images stay in
+the space's `.gitbook/assets/`.
 
-1. Copy `content/mariadb-shell/` to `tools/mariadb-shell/` and
-   `content/mariadb-rest-service/` to `tools/mariadb-rest-service/`, and any
-   images from `content/.gitbook/assets/` to `tools/.gitbook/assets/`
-   (including the `mariadb-rest-service/` folder).
-2. Add the `* [MariaDB Shell](mariadb-shell/README.md)` and
-   `* [MariaDB REST Service](mariadb-rest-service/README.md)` subtrees from
-   `content/SUMMARY.md` to `tools/SUMMARY.md`.
+1. Copy `content/community/mariadb-shell/` to `tools/community/mariadb-shell/`
+   and `content/community/mariadb-rest-service/` to
+   `tools/community/mariadb-rest-service/`, and any images from
+   `content/.gitbook/assets/` to `tools/.gitbook/assets/` (including the
+   `mariadb-rest-service/` folder).
+2. Add the `* [MariaDB Shell](community/mariadb-shell/README.md)` and
+   `* [MariaDB REST Service](community/mariadb-rest-service/README.md)`
+   subtrees from `content/SUMMARY.md` to the `* [Community Tools]` entry of
+   `tools/SUMMARY.md`.
 3. Add the `## MariaDB Shell` and `## MariaDB REST Service` sections of
-   `content/README.md` to `tools/README.md`.
+   `content/community/README.md` to `tools/community/README.md`, and the
+   `### MariaDB Shell` and `### MariaDB REST Service` sections of
+   `content/README.md` to the `## Community Tools` section of
+   `tools/README.md`.
 4. Copy the files unchanged. Keep links to other spaces as absolute URLs
    (`https://mariadb.com/docs/server/security/cve`), not link aliases. In
    mariadb-docs, a bot rewrites aliases on every PR, and the synced files must
