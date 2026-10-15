@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <set>
 #include <stdexcept>
 
 namespace mrs {
@@ -162,7 +163,8 @@ std::vector<std::string> canonical_operations(
 
 std::string role_service_clause(const Role &role) {
   if (!role.specific_to_service) return "ON ANY SERVICE";
-  return "ON SERVICE " + quote_request_path(*role.specific_to_service);
+  return "ON SERVICE " + format_developers(role.specific_to_service_developers) +
+         quote_request_path(*role.specific_to_service);
 }
 
 // -- Queries --------------------------------------------------------------
@@ -172,6 +174,7 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options
 FROM `{metadata_schema}`.`mrs_role` r
     LEFT JOIN `{metadata_schema}`.`mrs_role` pr
@@ -189,6 +192,8 @@ Role role_from_row(const Db_row &row) {
   r.derived_from_role_caption = row["derived_from_role_caption"].as_optional_string();
   r.specific_to_service_id = row["specific_to_service_id"].as_optional_string();
   r.specific_to_service = row["specific_to_service"].as_optional_string();
+  r.specific_to_service_developers =
+      developers_of(row["specific_to_service_in_development"].as_optional_string());
   r.specific_to_service_request_path =
       row["specific_to_service_request_path"].as_string();
   r.caption = row["caption"].as_string();
@@ -425,6 +430,7 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options)";
   if (include_users) {
     query +=
@@ -466,7 +472,7 @@ FROM `{metadata_schema}`.`mrs_role` r
   if (include_users) {
     query +=
         " GROUP BY r.id, r.derived_from_role_id, pr.caption,"
-        " r.specific_to_service_id, h.name, s.url_context_root,"
+        " r.specific_to_service_id, h.name, s.url_context_root, s.in_development,"
         " r.caption, r.description, r.options";
   }
   query += " ORDER BY r.caption, specific_to_service_request_path";
@@ -494,7 +500,7 @@ Id add_role(Db_session *session, const Role_definition &definition) {
     throw std::runtime_error(duplicate_message);
   }
 
-  const Id id = new_id(session);
+  const Id id = definition.id ? *definition.id : new_id(session);
   sql::Insert insert("mrs_role");
   insert.set("id", Value::id(id));
   insert.set("derived_from_role_id", Value::id(definition.derived_from_role_id));
@@ -552,11 +558,216 @@ std::string role_create_statement(Db_session *session, const Role &role,
 
 std::vector<std::string> role_create_statements(Db_session *session,
                                                 const Id &service_id) {
+  // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
+  auto roles = get_roles(session, service_id, false);
+  std::set<Id> pending;
+  for (const auto &role : roles) pending.insert(role.id);
+
   std::vector<std::string> statements;
-  for (const auto &role : get_roles(session, service_id, false)) {
-    statements.push_back(role_create_statement(session, role, true));
+  while (!roles.empty()) {
+    const auto before = roles.size();
+    for (auto it = roles.begin(); it != roles.end();) {
+      if (it->derived_from_role_id && pending.count(*it->derived_from_role_id)) {
+        ++it;
+        continue;
+      }
+      statements.push_back(role_create_statement(session, *it, true));
+      for (const auto &privilege : get_role_privileges(session, it->id)) {
+        statements.push_back(privilege_grant_statement(privilege, *it, true) + ";");
+      }
+      pending.erase(it->id);
+      it = roles.erase(it);
+    }
+    if (roles.size() == before) {
+      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
+    }
   }
   return statements;
+}
+
+void delete_service_roles(Db_session *session, const Id &service_id) {
+  auto roles = get_roles(session, service_id, false);
+  while (!roles.empty()) {
+    std::set<Id> parents;
+    for (const auto &role : roles) {
+      if (role.derived_from_role_id) parents.insert(*role.derived_from_role_id);
+    }
+    const auto before = roles.size();
+    for (auto it = roles.begin(); it != roles.end();) {
+      if (parents.count(it->id)) {
+        ++it;
+      } else {
+        delete_role(session, it->id);
+        it = roles.erase(it);
+      }
+    }
+    if (roles.size() == before) {
+      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
+    }
+  }
+}
+
+std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
+                                     const Id &new_service_id,
+                                     const std::string &service_path,
+                                     const std::string &new_service_path) {
+  const auto roles = get_roles(session, service_id, false);
+  std::map<Id, Id> role_ids;
+  for (const auto &role : roles) role_ids.emplace(role.id, new_id(session));
+
+  // A role that extends another role of the service extends that one's copy;
+  // the copies are inserted parents first, for the foreign key
+  std::set<Id> inserted;
+  while (inserted.size() < roles.size()) {
+    const auto before = inserted.size();
+    for (const auto &role : roles) {
+      if (inserted.count(role.id)) continue;
+      auto parent = role.derived_from_role_id;
+      if (parent && role_ids.count(*parent)) {
+        if (!inserted.count(*parent)) continue;
+        parent = role_ids.at(*parent);
+      }
+      Role_definition definition;
+      definition.id = role_ids.at(role.id);
+      definition.derived_from_role_id = parent;
+      definition.specific_to_service_id = new_service_id;
+      definition.caption = role.caption;
+      definition.description = role.description;
+      definition.options = role.options.value_or("{}");
+      add_role(session, definition);
+      inserted.insert(role.id);
+    }
+    if (inserted.size() == before) {
+      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
+    }
+  }
+
+  const auto privileges = sql::metadata_table("mrs_privilege");
+  const auto user_roles = sql::metadata_table("mrs_user_has_role");
+  for (const auto &[role_id, new_role_id] : role_ids) {
+    session->execute(
+        "INSERT INTO " + privileges +
+            " (role_id, crud_operations, service_path, schema_path, object_path,"
+            " options) SELECT ?, crud_operations, IF(service_path = ?, ?,"
+            " service_path), schema_path, object_path, options FROM " +
+            privileges + " WHERE role_id = ?",
+        {Value::id(new_role_id), service_path, new_service_path,
+         Value::id(role_id)});
+    // The users of the auth apps are shared, so they keep their roles
+    session->execute("INSERT INTO " + user_roles +
+                         " (user_id, role_id, comments, options) SELECT user_id,"
+                         " ?, comments, options FROM " + user_roles +
+                         " WHERE role_id = ?",
+                     {Value::id(new_role_id), Value::id(role_id)});
+  }
+
+  // A clone in development on the same path is covered by the same
+  // privileges already
+  if (new_service_path != service_path) {
+    const auto rows = session->query(
+        std::string(k_privilege_select) +
+            " WHERE r.specific_to_service_id IS NULL AND p.service_path = ?",
+        {service_path});
+    for (const auto &row : rows.rows) {
+      const auto privilege = privilege_from_row(row);
+      add_role_privilege(session, privilege.role_id, privilege.crud_operations,
+                         new_service_path, privilege.schema_path,
+                         privilege.object_path);
+    }
+  }
+  return role_ids;
+}
+
+void clone_service_groups(Db_session *session, const Id &service_id,
+                          const Id &new_service_id,
+                          const std::map<Id, Id> &role_ids) {
+  const auto mapped = [](const std::map<Id, Id> &ids, const Id &id) {
+    const auto it = ids.find(id);
+    return it == ids.end() ? id : it->second;
+  };
+
+  // User hierarchy types, with the hierarchies of the users along them
+  const auto types = sql::metadata_table("mrs_user_hierarchy_type");
+  const auto hierarchies = sql::metadata_table("mrs_user_hierarchy");
+  for (const auto &row :
+       session
+           ->query("SELECT id FROM " + types + " WHERE specific_to_service_id = ?",
+                   {Value::id(service_id)})
+           .rows) {
+    const Id type_id = row["id"].as_string();
+    const Id new_type_id = new_id(session);
+    session->execute("INSERT INTO " + types +
+                         " (id, caption, description, specific_to_service_id,"
+                         " options) SELECT ?, caption, description, ?, options"
+                         " FROM " + types + " WHERE id = ?",
+                     {Value::id(new_type_id), Value::id(new_service_id),
+                      Value::id(type_id)});
+    session->execute(
+        "INSERT INTO " + hierarchies +
+            " (user_id, reporting_to_user_id, user_hierarchy_type_id, options)"
+            " SELECT user_id, reporting_to_user_id, ?, options FROM " +
+            hierarchies + " WHERE user_hierarchy_type_id = ?",
+        {Value::id(new_type_id), Value::id(type_id)});
+  }
+
+  // User groups, with their members and roles, then the hierarchies between
+  // them once every group has its copy
+  const auto groups = sql::metadata_table("mrs_user_group");
+  const auto members = sql::metadata_table("mrs_user_has_group");
+  const auto group_roles = sql::metadata_table("mrs_user_group_has_role");
+  const auto group_hierarchies = sql::metadata_table("mrs_user_group_hierarchy");
+  std::map<Id, Id> group_ids;
+  for (const auto &row :
+       session
+           ->query("SELECT id FROM " + groups + " WHERE specific_to_service_id = ?",
+                   {Value::id(service_id)})
+           .rows) {
+    group_ids.emplace(row["id"].as_string(), new_id(session));
+  }
+  for (const auto &[group_id, new_group_id] : group_ids) {
+    session->execute("INSERT INTO " + groups +
+                         " (id, specific_to_service_id, caption, description,"
+                         " options) SELECT ?, ?, caption, description, options"
+                         " FROM " + groups + " WHERE id = ?",
+                     {Value::id(new_group_id), Value::id(new_service_id),
+                      Value::id(group_id)});
+    session->execute("INSERT INTO " + members +
+                         " (user_id, user_group_id, comments, options) SELECT"
+                         " user_id, ?, comments, options FROM " + members +
+                         " WHERE user_group_id = ?",
+                     {Value::id(new_group_id), Value::id(group_id)});
+    for (const auto &role :
+         session
+             ->query("SELECT role_id, options FROM " + group_roles +
+                         " WHERE user_group_id = ?",
+                     {Value::id(group_id)})
+             .rows) {
+      session->execute(
+          sql::Insert("mrs_user_group_has_role")
+              .set("user_group_id", Value::id(new_group_id))
+              .set("role_id", Value::id(mapped(role_ids, role["role_id"].as_string())))
+              .set("options", role["options"].as_optional_string()));
+    }
+  }
+  for (const auto &[group_id, new_group_id] : group_ids) {
+    for (const auto &row :
+         session
+             ->query("SELECT parent_group_id, group_hierarchy_type_id, level, "
+                     "options FROM " + group_hierarchies +
+                         " WHERE user_group_id = ?",
+                     {Value::id(group_id)})
+             .rows) {
+      session->execute(
+          sql::Insert("mrs_user_group_hierarchy")
+              .set("user_group_id", Value::id(new_group_id))
+              .set("parent_group_id",
+                   Value::id(mapped(group_ids, row["parent_group_id"].as_string())))
+              .set("group_hierarchy_type_id",
+                   Value::id(row["group_hierarchy_type_id"].as_string()))
+              .set("level", row["level"].as_int())
+              .set("options", row["options"].as_optional_string()));
+    }
+  }
 }
 
 // -- Privileges -----------------------------------------------------------
@@ -642,7 +853,7 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
 }
 
 std::string privilege_grant_statement(const Privilege &privilege,
-                                      const Role &role) {
+                                      const Role &role, bool on_current_service) {
   // A service path may carry a host name in front of the request path
   std::string host;
   std::string request_path;
@@ -662,8 +873,8 @@ std::string privilege_grant_statement(const Privilege &privilege,
   target += " OBJECT " + quote_request_path(privilege.object_path);
 
   return "GRANT REST " + join(privilege.crud_operations, ",") + " ON " + target +
-         " TO " + sql::quote_identifier(privilege.role_caption) + " " +
-         role_service_clause(role);
+         " TO " + sql::quote_identifier(privilege.role_caption) +
+         (on_current_service ? "" : " " + role_service_clause(role));
 }
 
 // -- Auth apps ------------------------------------------------------------
@@ -920,6 +1131,7 @@ SELECT ur.comments AS grant_comments, ur.options AS grant_options,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options
 FROM `{metadata_schema}`.`mrs_user_has_role` ur
     JOIN `{metadata_schema}`.`mrs_role` r ON ur.role_id = r.id

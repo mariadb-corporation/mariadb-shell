@@ -58,19 +58,6 @@ constexpr std::string_view k_default_service_options = R"({
     "includeLinksInResults": false
 })";
 
-std::vector<std::string> developers_of(const std::optional<std::string> &in_development) {
-  std::vector<std::string> developers;
-  if (!in_development) return developers;
-  const auto doc = json::try_parse(*in_development);
-  if (!doc) return developers;
-  const auto *list = doc->get("developers");
-  if (!list || !list->is_array()) return developers;
-  for (const auto &item : list->as_array()) {
-    if (item.is_string()) developers.push_back(item.as_string());
-  }
-  return developers;
-}
-
 std::string in_development_json(const std::vector<std::string> &developers) {
   json::Value::Array items;
   for (const auto &developer : developers) items.emplace_back(developer);
@@ -462,6 +449,19 @@ std::string server_quote(std::string_view text) {
 
 }  // namespace
 
+std::vector<std::string> developers_of(const std::optional<std::string> &in_development) {
+  std::vector<std::string> developers;
+  if (!in_development) return developers;
+  const auto doc = json::try_parse(*in_development);
+  if (!doc) return developers;
+  const auto *list = doc->get("developers");
+  if (!list || !list->is_array()) return developers;
+  for (const auto &item : list->as_array()) {
+    if (item.is_string()) developers.push_back(item.as_string());
+  }
+  return developers;
+}
+
 std::string format_developers(std::vector<std::string> developers) {
   if (developers.empty()) return {};
 
@@ -718,6 +718,7 @@ void update_service(Db_session *session, const Id &id,
 }
 
 void delete_service(Db_session *session, const Id &id) {
+  delete_service_roles(session, id);
   if (session->execute(sql::Delete("service").where("id", Value::id(id))) == 0) {
     throw std::runtime_error("The specified service with id " + id +
                              " was not found.");
@@ -817,18 +818,35 @@ Id clone_service(Db_session *session, const Service &service,
 
   const Id new_id = add_service(session, definition);
 
-  for (const auto &auth_app : service.auth_apps) {
-    if (const auto app = find_auth_app(session, auth_app)) {
-      link_auth_app(session, app->id, new_id);
-    }
-  }
+  // The columns REST SQL does not set
+  const auto services = sql::metadata_table("service");
+  session->execute(
+      "UPDATE " + services + " n JOIN " + services +
+          " o ON o.id = ? SET n.name = o.name, n.parent_id = o.parent_id,"
+          " n.enable_sql_endpoint = o.enable_sql_endpoint,"
+          " n.custom_metadata_schema = o.custom_metadata_schema WHERE n.id = ?",
+      {Value::id(service.id), Value::id(new_id)});
 
+  const auto auth_app_links = sql::metadata_table("service_has_auth_app");
+  session->execute("INSERT INTO " + auth_app_links +
+                       " (service_id, auth_app_id, options) SELECT ?,"
+                       " auth_app_id, options FROM " + auth_app_links +
+                       " WHERE service_id = ?",
+                   {Value::id(new_id), Value::id(service.id)});
+
+  const auto role_ids = clone_service_roles(session, service.id, new_id,
+                                            service.host_ctx,
+                                            new_url_context_root);
+  clone_service_groups(session, service.id, new_id, role_ids);
+
+  // The content sets come last: their links need the copies of the objects
+  std::map<Id, Id> rest_object_ids;
   for (const auto &schema : get_schemas(session, service.id)) {
-    clone_schema(session, schema, new_id);
+    clone_schema(session, schema, new_id, &rest_object_ids);
   }
 
   for (const auto &content_set : get_content_sets(session, service.id)) {
-    clone_content_set(session, content_set, new_id);
+    clone_content_set(session, content_set, new_id, rest_object_ids);
   }
 
   return new_id;
@@ -958,7 +976,7 @@ std::string schema_create_statement(Db_session *session, const Schema &schema,
 }
 
 Id clone_schema(Db_session *session, const Schema &schema,
-                const Id &new_service_id) {
+                const Id &new_service_id, std::map<Id, Id> *rest_object_ids) {
   Schema_definition definition;
   definition.service_id = new_service_id;
   definition.name = schema.name;
@@ -975,7 +993,8 @@ Id clone_schema(Db_session *session, const Schema &schema,
   const Id new_schema_id = add_schema(session, definition);
 
   for (const auto &rest_object : get_rest_objects(session, schema.id, {})) {
-    clone_rest_object(session, rest_object, new_schema_id);
+    const Id new_object_id = clone_rest_object(session, rest_object, new_schema_id);
+    if (rest_object_ids) rest_object_ids->emplace(rest_object.id, new_object_id);
   }
   return new_schema_id;
 }

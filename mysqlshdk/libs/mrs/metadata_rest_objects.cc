@@ -1058,7 +1058,18 @@ Id clone_rest_object(Db_session *session, const Rest_object &rest_object,
   definition.internal = rest_object.internal;
 
   // The database object is the same one, so its grants are in place already
-  return add_rest_object(session, definition, objects);
+  const Id new_object_id = add_rest_object(session, definition, objects);
+
+  // The group hierarchy types are global: the rows only change the object
+  const auto security = sql::metadata_table("mrs_rest_object_row_group_security");
+  session->execute(
+      "INSERT INTO " + security +
+          " (rest_object_id, group_hierarchy_type_id, row_group_ownership_column,"
+          " level, match_level, options) SELECT ?, group_hierarchy_type_id,"
+          " row_group_ownership_column, level, match_level, options FROM " +
+          security + " WHERE rest_object_id = ?",
+      {Value::id(new_object_id), Value::id(rest_object.id)});
+  return new_object_id;
 }
 
 // -- Database schema ----------------------------------------------------------

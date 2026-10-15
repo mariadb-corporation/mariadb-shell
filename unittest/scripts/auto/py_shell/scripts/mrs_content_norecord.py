@@ -360,6 +360,26 @@ EXPECT_EQ([["/sales", "SCRIPT_MODULE"]], [[d["request_path"], d["schema_type"]] 
 # No views, procedures or functions in the module
 EXPECT_EQ([], json_list("SHOW REST VIEWS ON SCHEMA /sales FORMAT=JSON", "REST VIEWS"))
 
+#@<> CLONE REST SERVICE links the copied content set to the copied scripts
+session.run_sql("UPDATE mariadb_rest_service.content_set SET internal = 1 WHERE request_path = '/app'")
+EXPECT_EQ("REST SERVICE `/svc` cloned to `dev@/svc` successfully.", rest_info("CLONE REST SERVICE /svc NEW REQUEST PATH dev@/svc"))
+EXPECT_EQ([["/summary", "ENABLED"], ["/total", "ENABLED"]], rest_rows("SHOW REST SCRIPTS FROM SERVICE dev@/svc SCHEMA /sales"))
+# Each link joins a content set and a script of the same service
+links = """SELECT s.in_development IS NOT NULL, cs.internal, l.kind, l.name, JSON_VALUE(l.options, '$.file_to_load')
+    FROM mariadb_rest_service.content_set_has_rest_object l
+    JOIN mariadb_rest_service.content_set cs ON cs.id = l.content_set_id
+    JOIN mariadb_rest_service.rest_object o ON o.id = l.rest_object_id
+    JOIN mariadb_rest_service.rest_schema sc ON sc.id = o.rest_schema_id
+    JOIN mariadb_rest_service.service s ON s.id = sc.service_id AND s.id = cs.service_id
+    ORDER BY 1, l.name"""
+source_links = [[0, 1, "Script", "summary", "/dist/sales.mjs"], [0, 1, "Script", "total", "/dist/sales.mjs"]]
+EXPECT_EQ(source_links + [[1, 1, "Script", "summary", "/dist/sales.mjs"], [1, 1, "Script", "total", "/dist/sales.mjs"]], query_rows(links))
+# Dropping the clone deletes its scripts, not the source's
+rest("DROP REST SERVICE dev@/svc")
+EXPECT_EQ([["/summary", "ENABLED"], ["/total", "ENABLED"]], rest_rows("SHOW REST SCRIPTS FROM SERVICE /svc SCHEMA /sales"))
+EXPECT_EQ(source_links, query_rows(links))
+session.run_sql("UPDATE mariadb_rest_service.content_set SET internal = 0 WHERE request_path = '/app'")
+
 #@<> LOAD SCRIPTS again replaces the registered scripts; the language is detected
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
 EXPECT_EQ(2, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE object_type = 'SCRIPT'").fetch_one()[0])

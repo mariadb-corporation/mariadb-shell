@@ -527,7 +527,7 @@ EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_r
 script = rest_text("SHOW CREATE REST SERVICE /svc INCLUDING DATABASE ENDPOINTS")
 EXPECT_TRUE("CREATE OR REPLACE REST SERVICE /svc\n" in script, script)
 # The endpoints act on the service the script names once, with USE
-EXPECT_TRUE("\n\nUSE REST SERVICE /svc;\n\nCREATE REST ROLE `reader`;\n\nCREATE REST ROLE `writer` EXTENDS `reader`\n    COMMENT 'writes';" in script, script)
+EXPECT_TRUE("\n\nUSE REST SERVICE /svc;\n\nCREATE REST ROLE `reader`;\n\nGRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader`;\n\nCREATE REST ROLE `writer` EXTENDS `reader`\n    COMMENT 'writes';\n\nGRANT REST READ ON SERVICE `*` SCHEMA `` OBJECT `` TO `writer`;\n\nGRANT REST READ,DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `writer`;" in script, script)
 EXPECT_FALSE("`optioned`" in script, script)
 EXPECT_FALSE("`otherRole`" in script, script)
 

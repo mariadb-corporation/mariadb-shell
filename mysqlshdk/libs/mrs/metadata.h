@@ -36,6 +36,7 @@
 
 #include <compare>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -150,6 +151,10 @@ bool row_exists(Db_session *session, std::string_view table, const Id &id);
 
 // The ids and names used as "enabled" captions in SHOW output.
 std::string enabled_caption(int enabled);
+
+// The developers of a service's in_development JSON ($.developers).
+std::vector<std::string> developers_of(
+    const std::optional<std::string> &in_development);
 
 // The developer list of a service formatted as `a,'b c'@`, sorted, for
 // messages. Its order is the metadata's for ASCII names only, so lookups do
@@ -295,8 +300,10 @@ std::string service_create_statement(Db_session *session,
                                      bool include_static_endpoints,
                                      bool include_dynamic_endpoints);
 
-// Copies a service with all its schemas, objects, content sets and auth
-// app links under a new request path. Returns the new id.
+// Copies a service under a new request path: its schemas and objects, its
+// content sets with the links of their scripts and triggers, its auth app
+// links, roles, user groups and user hierarchy types. The privileges of the
+// global roles on the service are extended to the copy. Returns the new id.
 Id clone_service(Db_session *session, const Service &service,
                  const std::string &new_url_context_root,
                  const std::vector<std::string> &new_developers);
@@ -369,9 +376,11 @@ std::string schema_create_statement(Db_session *session, const Schema &schema,
                                     bool include_database_endpoints,
                                     bool on_current_service = false);
 
-// Copies a schema with its objects into another service.
+// Copies a schema with its objects into another service. Adds the ids of
+// the objects and of their copies to rest_object_ids when it is given.
 Id clone_schema(Db_session *session, const Schema &schema,
-                const Id &new_service_id);
+                const Id &new_service_id,
+                std::map<Id, Id> *rest_object_ids = nullptr);
 
 // -- Database schema (INFORMATION_SCHEMA) ---------------------------------
 

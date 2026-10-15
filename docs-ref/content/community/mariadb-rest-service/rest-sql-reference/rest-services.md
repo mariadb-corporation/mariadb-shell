@@ -347,7 +347,17 @@ metadata:
 
 ## CLONE REST SERVICE
 
-The `CLONE REST SERVICE` statement duplicates the contents of a REST service to a newly created one. All endpoints and roles of the given service are copied.
+The `CLONE REST SERVICE` statement duplicates the contents of a REST service to a newly created one. The copy gets:
+
+* the REST schemas and their REST objects, with their data mappings and row group security
+* the content sets and their files, with the links of their MRS scripts and triggers to the copied REST objects
+* the links to the same REST auth apps, whose users are shared
+* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege on the path of the source service is copied with the new path
+* the user groups and user hierarchy types specific to the service
+
+Global REST roles keep their privileges on the source service and get the same privileges on the new path. The copy is never published.
+
+To clone a REST service for development, give the new path a developer list. The copy can use the same path: a MariaDB REST Daemon bootstrapped for one of those developers serves the copy in place of the original. Dropping the copy leaves the source service as it is.
 
 ### Syntax
 
@@ -370,6 +380,12 @@ The following example copies the REST service `/myService` to a new REST service
 
 ```sql
 CLONE REST SERVICE /myService NEW REQUEST PATH /myServiceCopy;
+```
+
+The following example copies the REST service `/myService` for the developer `mike`, on the same path.
+
+```sql
+CLONE REST SERVICE /myService NEW REQUEST PATH mike@/myService;
 ```
 
 ## ALTER REST SERVICE
@@ -510,7 +526,7 @@ showCreateRestServiceStatement:
 
 Without `INCLUDING ... ENDPOINTS`, only the `CREATE REST SERVICE` statement is shown. The `INCLUDING` clause adds the statements of the endpoints of the service. `DATABASE` and `SCHEMA` are synonyms:
 
-* `DATABASE`: the REST schemas and their REST objects, like TABLE, VIEW, PROCEDURE, and FUNCTION.
+* `DATABASE`: the REST roles specific to the service with their `GRANT REST` statements, and the REST schemas and their REST objects, like TABLE, VIEW, PROCEDURE, and FUNCTION.
 * `DATABASE AND STATIC`: also the content sets that don't hold MRS scripts, with their files.
 * `DATABASE AND STATIC AND DYNAMIC`: also the content sets that hold MRS scripts, with their files and an `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` statement.
 * `ALL`: short for `DATABASE AND STATIC AND DYNAMIC`.

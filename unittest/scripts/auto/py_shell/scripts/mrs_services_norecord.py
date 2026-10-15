@@ -426,8 +426,105 @@ EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS"))
 #@<> CLONE REST SERVICE
 res = rest("CLONE REST SERVICE /myService NEW REQUEST PATH /myClone")
 EXPECT_EQ(1, res.get_affected_items_count())
+EXPECT_EQ("REST SERVICE `/myService` cloned to `/myClone` successfully.", res.get_info())
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /myClone"))
 EXPECT_EQ("REST SERVICE `/myClone` dropped successfully.", rest_info("DROP REST SERVICE /myClone"))
+
+#@<> CLONE REST SERVICE copies roles, groups, auth app links and row security
+md = "mariadb_rest_service."
+def sql_rows(sql):
+    return [list(r) for r in session.run_sql(sql).fetch_all()]
+def service_id(path, developers=False):
+    return "(SELECT id FROM %sservice WHERE url_context_root = '%s' AND in_development IS %sNULL)" % (md, path, "NOT " if developers else "")
+
+rest("CREATE REST SERVICE /cloneSrc COMMENT 'source'")
+rest("CREATE REST SCHEMA /sakila ON SERVICE /cloneSrc FROM sakila")
+rest("CREATE REST VIEW /city ON SERVICE /cloneSrc SCHEMA /sakila AS sakila.city")
+rest("CREATE REST AUTH APP \"Clone App\" VENDOR MRS")
+rest("ALTER REST SERVICE /cloneSrc ADD AUTH APP \"Clone App\"")
+rest("CREATE REST USER \"cloner\"@\"Clone App\" IDENTIFIED BY \"MariaDBR0cks!\"")
+rest("CREATE REST ROLE \"base\" ON SERVICE /cloneSrc")
+rest("CREATE REST ROLE \"derived\" EXTENDS \"base\" ON SERVICE /cloneSrc COMMENT 'more'")
+rest("GRANT REST READ ON SERVICE /cloneSrc SCHEMA /sakila TO \"base\" ON SERVICE /cloneSrc")
+rest("GRANT REST READ ON SERVICE `*` SCHEMA /sakila OBJECT /city TO \"derived\" ON SERVICE /cloneSrc")
+rest("GRANT REST ROLE \"derived\" ON SERVICE /cloneSrc TO \"cloner\"@\"Clone App\"")
+rest("CREATE REST ROLE \"cloneGlobal\" ON ANY SERVICE")
+rest("GRANT REST READ, UPDATE ON SERVICE /cloneSrc SCHEMA /sakila TO \"cloneGlobal\" ON ANY SERVICE")
+rest("GRANT REST READ ON SERVICE /elsewhere TO \"cloneGlobal\" ON ANY SERVICE")
+# What REST SQL does not reach: service columns, user groups, hierarchies and
+# row group security
+src = service_id("/cloneSrc")
+session.run_sql("UPDATE %sservice SET enable_sql_endpoint = 1, custom_metadata_schema = 'custom' WHERE id = %s" % (md, src))
+session.run_sql("UPDATE %sservice_has_auth_app SET options = '{\"o\": 1}' WHERE service_id = %s" % (md, src))
+session.run_sql("INSERT INTO %smrs_user_hierarchy_type (caption, specific_to_service_id) SELECT 'reports', %s" % (md, src))
+session.run_sql("INSERT INTO %smrs_user_hierarchy (user_id, reporting_to_user_id, user_hierarchy_type_id) SELECT u.id, u.id, t.id FROM %smrs_user u, %smrs_user_hierarchy_type t WHERE u.name = 'cloner' AND t.caption = 'reports'" % (md, md, md))
+session.run_sql("INSERT INTO %smrs_user_group (caption, specific_to_service_id) VALUES ('team', %s), ('dept', %s)" % (md, src, src))
+session.run_sql("INSERT INTO %smrs_user_has_group (user_id, user_group_id) SELECT u.id, g.id FROM %smrs_user u, %smrs_user_group g WHERE u.name = 'cloner' AND g.caption = 'team'" % (md, md, md))
+session.run_sql("INSERT INTO %smrs_user_group_has_role (user_group_id, role_id) SELECT g.id, r.id FROM %smrs_user_group g, %smrs_role r WHERE g.caption = 'team' AND r.caption = 'derived'" % (md, md, md))
+session.run_sql("INSERT INTO %smrs_group_hierarchy_type (caption) VALUES ('org')" % md)
+session.run_sql("INSERT INTO %smrs_user_group_hierarchy (user_group_id, parent_group_id, group_hierarchy_type_id, level) SELECT t.id, d.id, h.id, 1 FROM %smrs_user_group t, %smrs_user_group d, %smrs_group_hierarchy_type h WHERE t.caption = 'team' AND d.caption = 'dept' AND h.caption = 'org'" % (md, md, md, md))
+session.run_sql("INSERT INTO %smrs_rest_object_row_group_security (rest_object_id, group_hierarchy_type_id, row_group_ownership_column, level) SELECT o.id, h.id, 'city_id', 2 FROM %srest_object o, %smrs_group_hierarchy_type h WHERE o.rest_schema_id IN (SELECT id FROM %srest_schema WHERE service_id = %s) AND h.caption = 'org'" % (md, md, md, md, src))
+
+EXPECT_EQ("REST SERVICE `/cloneSrc` cloned to `/cloneCopy` successfully.", rest_info("CLONE REST SERVICE /cloneSrc NEW REQUEST PATH /cloneCopy"))
+copy = service_id("/cloneCopy")
+
+# The dump of the copy is the one of the source under the new path
+EXPECT_EQ(rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0].replace("/cloneSrc", "/cloneCopy"),
+          rest("SHOW CREATE REST SERVICE /cloneCopy INCLUDING ALL ENDPOINTS").fetch_one()[0])
+EXPECT_EQ([[1, "custom", "{\"o\": 1}"]], sql_rows("SELECT s.enable_sql_endpoint, s.custom_metadata_schema, l.options FROM %sservice s JOIN %sservice_has_auth_app l ON l.service_id = s.id WHERE s.id = %s" % (md, md, copy)))
+
+# The roles extend the copies, their privileges name the new path, the user keeps the role
+EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `base` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"base\" ON SERVICE /cloneCopy"))
+EXPECT_EQ([["GRANT REST READ ON SERVICE `*` SCHEMA /sakila OBJECT /city TO `derived` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"derived\" ON SERVICE /cloneCopy"))
+EXPECT_EQ([["base"]], sql_rows("SELECT p.caption FROM %smrs_role r JOIN %smrs_role p ON p.id = r.derived_from_role_id WHERE r.caption = 'derived' AND r.specific_to_service_id = %s AND p.specific_to_service_id = %s" % (md, md, copy, copy)))
+EXPECT_EQ([["cloner"]], sql_rows("SELECT u.name FROM %smrs_user_has_role ur JOIN %smrs_user u ON u.id = ur.user_id JOIN %smrs_role r ON r.id = ur.role_id WHERE r.specific_to_service_id = %s" % (md, md, md, copy)))
+# The global role gets the same privileges on the new path
+EXPECT_EQ([
+    ["GRANT REST READ,UPDATE ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"],
+    ["GRANT REST READ,UPDATE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"],
+    ["GRANT REST READ ON SERVICE /elsewhere SCHEMA `*` OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"]], rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
+
+# Groups with their members, roles and hierarchy; the user hierarchy type
+EXPECT_EQ([["dept", None, None], ["team", "cloner", "derived"]], sql_rows("SELECT g.caption, u.name, r.caption FROM %smrs_user_group g LEFT JOIN %smrs_user_has_group ug ON ug.user_group_id = g.id LEFT JOIN %smrs_user u ON u.id = ug.user_id LEFT JOIN %smrs_user_group_has_role gr ON gr.user_group_id = g.id LEFT JOIN %smrs_role r ON r.id = gr.role_id AND r.specific_to_service_id = %s WHERE g.specific_to_service_id = %s ORDER BY g.caption" % (md, md, md, md, md, copy, copy)))
+EXPECT_EQ([["team", "dept", 1]], sql_rows("SELECT c.caption, p.caption, h.level FROM %smrs_user_group_hierarchy h JOIN %smrs_user_group c ON c.id = h.user_group_id JOIN %smrs_user_group p ON p.id = h.parent_group_id WHERE c.specific_to_service_id = %s AND p.specific_to_service_id = %s" % (md, md, md, copy, copy)))
+EXPECT_EQ([["reports", 1]], sql_rows("SELECT t.caption, COUNT(h.user_id) FROM %smrs_user_hierarchy_type t LEFT JOIN %smrs_user_hierarchy h ON h.user_hierarchy_type_id = t.id WHERE t.specific_to_service_id = %s GROUP BY t.caption" % (md, md, copy)))
+# Row group security of the copied object
+EXPECT_EQ([["/city", "city_id", 2]], sql_rows("SELECT o.request_path, s.row_group_ownership_column, s.level FROM %smrs_rest_object_row_group_security s JOIN %srest_object o ON o.id = s.rest_object_id WHERE o.rest_schema_id IN (SELECT id FROM %srest_schema WHERE service_id = %s)" % (md, md, md, copy)))
+
+#@<> CLONE REST SERVICE for a developer on the same path
+EXPECT_EQ("REST SERVICE `/cloneSrc` cloned to `dev@/cloneSrc` successfully.", rest_info("CLONE REST SERVICE /cloneSrc NEW REQUEST PATH dev@/cloneSrc"))
+EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE dev@/cloneSrc"))
+EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `base` ON SERVICE dev@/cloneSrc"]], rest_rows("SHOW REST GRANTS FOR \"base\" ON SERVICE dev@/cloneSrc"))
+# The global role's privilege on the path already covers the copy
+EXPECT_EQ(3, len(rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE")))
+
+#@<> Dropping a clone leaves the source alone
+dump = rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0]
+rest("DROP REST SERVICE dev@/cloneSrc")
+rest("DROP REST SERVICE /cloneCopy")
+EXPECT_EQ(dump, rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0])
+EXPECT_EQ([[2, 2, 1, 1]], sql_rows("SELECT (SELECT COUNT(*) FROM %smrs_role WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_user_group WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_user_hierarchy_type WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_rest_object_row_group_security)" % (md, src, md, src, md, src, md)))
+
+#@<> The dump of a service holds the GRANTs of its roles, parents before the roles extending them
+rest("CREATE REST ROLE \"aChild\" EXTENDS \"base\" ON SERVICE /cloneSrc")
+rest("GRANT REST DELETE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT /city TO \"aChild\" ON SERVICE /cloneSrc")
+dump = rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0]
+EXPECT_IN("CREATE REST ROLE `base`;\n\nGRANT REST READ ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `base`;\n\n", dump)
+EXPECT_IN("CREATE REST ROLE `aChild` EXTENDS `base`;\n\nGRANT REST DELETE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT /city TO `aChild`;\n\n", dump)
+EXPECT_TRUE(dump.index("CREATE REST ROLE `base`") < dump.index("CREATE REST ROLE `aChild`"), dump)
+dump_file = os.path.join(__tmp_dir, "cloneSrc.mrs.sql")
+testutil.create_file(dump_file, dump.replace("/cloneSrc", "/reloaded"))
+testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", dump_file], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+EXPECT_STDOUT_CONTAINS("REST SERVICE `/reloaded` created successfully.")
+WIPE_OUTPUT()
+EXPECT_EQ(dump.replace("/cloneSrc", "/reloaded"), rest("SHOW CREATE REST SERVICE /reloaded INCLUDING ALL ENDPOINTS").fetch_one()[0])
+os.remove(dump_file)
+rest("DROP REST SERVICE /reloaded")
+rest("DROP REST SERVICE /cloneSrc")
+rest("DROP REST ROLE \"cloneGlobal\" ON ANY SERVICE")
+rest("DROP REST USER \"cloner\"@\"Clone App\"")
+rest("DROP REST AUTH APP \"Clone App\"")
+session.run_sql("DELETE FROM %smrs_group_hierarchy_type WHERE caption = 'org'" % md)
 
 #@<> SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS is the dump; running it loads the service
 # The script any client saves and runs: there are no DUMP or LOAD
