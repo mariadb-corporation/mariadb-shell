@@ -53,6 +53,9 @@ set(db_SOURCE
     replay/recorder.cc
     replay/replayer.cc
     replay/trace.cc
+    # no X protocol dependency: the reports' condition parser uses it in every
+    # build
+    mysqlx/tokenizer.cc
 )
 
 # Binlog streaming uses MySQL's client binlog API and libbinlogevents; MySQL-only
@@ -70,7 +73,6 @@ IF(HAVE_X_PROTOCOL)
     mysqlx/xresult.cc
     mysqlx/xrow.cc
     mysqlx/orderby_parser.cc
-    mysqlx/tokenizer.cc
     mysqlx/expr_parser.cc
     mysqlx/proj_parser.cc
   )

@@ -124,12 +124,24 @@ Only the **shared** DevAPI base classes (`base_constants`, `base_resultset`,
 `dynamic_object`) are still compiled — the classic resultset/object model needs
 them.
 
+The `threads` report's `--where` condition is parsed by `Sql_condition`
+(`modules/reports/utils.cc`), which is built on the X expression parser. Builds
+without the X protocol have a small parser of their own behind the same
+interface: identifiers, literals, the comparison operators, `LIKE`, `AND`/`OR`/
+`NOT` and parentheses, checked by the same identifier and operator validators.
+It reads the tokens of the X tokenizer (`mysqlx/tokenizer.cc`, which has no X
+protocol dependency and is compiled in every build), so both parsers agree on
+names, keywords, numbers and strings, and report errors the same way. It writes
+`AND`/`OR`/`NOT` rather than `&&`/`||`, as `||` concatenates strings under
+`PIPES_AS_CONCAT` and the `ORACLE` mode. One difference: a `NOT` prefix applies
+to the whole comparison, as in SQL (`NOT tid = 1` is `NOT (tid = 1)`), where the
+X parser applies it to the operand that follows (`(NOT tid) = 1`).
+
 ### Features that throw "not supported" at runtime
 (Their backends are X- or MySQL-specific; they compile but are stubbed or refused.)
 
 - `util.importJson` — used the X document store
 - `--register-factor` — used the MySQL FIDO/WebAuthn auth plugin
-- report `--where` / `--having` filtering — used the X expression parser
 - cluster `--redirect-primary` / `--redirect-secondary` — used AdminAPI
 - the `ocimds` and `compatibility` dump options, when the source is MariaDB —
   they rewrite DDL and accounts for MySQL HeatWave Service

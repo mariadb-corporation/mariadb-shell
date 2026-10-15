@@ -142,7 +142,7 @@ The built-in reports are:
 | `thread` | Shows details about one thread of the server. |
 | `threads` | Lists the threads that belong to the current user. |
 
-The `threads` report needs `performance_schema=ON` and has no `--where` option. See [Reports](../extending-mariadb-shell/reports.md#threads).
+The `threads` report needs `performance_schema=ON`. See [Reports](../extending-mariadb-shell/reports.md#threads).
 
 Report names are case-insensitive, and `-` and `_` are interchangeable in them. Every report accepts `--help`, which describes its options and columns. Reports of type list also accept `--vertical` (`-E`), which prints each row as a block of `name: value` lines.
 

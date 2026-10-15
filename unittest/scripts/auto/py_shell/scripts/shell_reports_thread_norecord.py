@@ -240,7 +240,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('SHARED_READ (TRANSACTION)')
 EXPECT_STDOUT_CONTAINS('thread_test@{0}'.format(__host))
 
-#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - metadata {__have_x_protocol}
+#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - metadata
 report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblocked,nwaiting', 'where': 'tid = {0}'.format(__test_ids['tid'])})['report']
 EXPECT_EQ(1, report[1][0])
 EXPECT_EQ(0, report[1][1])
@@ -284,7 +284,7 @@ EXPECT_STDOUT_CONTAINS('`thread_test`.`innodb`')
 EXPECT_STDOUT_CONTAINS('RECORD')
 EXPECT_STDOUT_CONTAINS('thread_test@{0}'.format(__host))
 
-#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - InnoDB {__have_x_protocol}
+#@ WL11651-TSFR7_5 - Validate that all the columns listed in FR5 can be requested using the --format (-o) option. - nblocked, nwaiting - InnoDB {not __server_is_maria_db}
 report = shell.reports.threads(session, [], {'foreground': True, 'format': 'nblocked,nwaiting', 'where': 'tid = {0}'.format(__test_ids['tid'])})['report']
 EXPECT_EQ(3 if __version_num > 80000 else 0, report[1][0])
 EXPECT_EQ(0, report[1][1])
