@@ -23,7 +23,7 @@ The `sakila` schema now appears in the `DATABASE CONNECTIONS` view in the Primar
 
 To create a REST service, right-click the `MariaDB REST Service` child entry of the `MRS Development` connection in the `DATABASE CONNECTIONS` view in the Primary Side Bar, and select `Add REST Service...`.
 
-![The context menu of the REST service entry of a DB connection, with the Add REST Service item selected](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-service.png)
+![The context menu of the REST service entry of a DB connection, with the Add REST Service item selected](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-service.png)
 
 The REST service dialog opens. You can set a REST service path and a REST service name, or accept the default `/myService` for now.
 
@@ -50,7 +50,7 @@ In the `DATABASE CONNECTIONS` view in the Primary Side Bar, expand the `sakila` 
 
 Right-click the `city` table and select `Add Database Object to REST Service` from the context menu.
 
-![The context menu of a table of the sakila schema, with the Add Database Object to REST Service item selected](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-db-object.png)
+![The context menu of a table of the sakila schema, with the Add Database Object to REST Service item selected](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-add-db-object.png)
 
 A notification in the lower-right area of the window asks the following question:
 
@@ -63,7 +63,7 @@ Before you add an object of a database schema as a REST endpoint, you must add i
 
 The REST object dialog opens.
 
-![The REST object dialog with the request path, the access control options, and the Data Mapping tab](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-object-dialog.svg)
+![The REST object dialog with the request path, the access control options, and the Data Mapping tab](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-object-dialog.svg)
 
 The dialog shows the full request path of the REST endpoint, which consists of the `REST Service Path`, the `REST Schema Path`, and the `REST Object Path`. In this case, the path is `/myService/sakila/city`.
 

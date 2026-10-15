@@ -5,20 +5,24 @@ description: >-
   interact with your MariaDB Server deployment.
 ---
 
-# Enterprise Tools
+# Tools
 
-## MariaDB Shell
+## Community Tools
+
+[Community Tools](community/README.md) don't require a MariaDB Enterprise Support subscription.
+
+### MariaDB Shell
 
 MariaDB Shell is an interactive client for MariaDB Server with SQL and Python modes. It adds parallel dump, load, and copy utilities, SSH tunnels written as `mariadb+ssh://` URIs, local sandbox servers, and a Python API for scripting and extending the shell.
 
-{% content-ref url="mariadb-shell/" %}
-[mariadb-shell](mariadb-shell/)
+{% content-ref url="community/mariadb-shell/" %}
+[mariadb-shell](community/mariadb-shell/)
 {% endcontent-ref %}
 
-## MariaDB REST Service
+### MariaDB REST Service
 
 The MariaDB REST Service (MRS) exposes tables, views, stored routines, static content and server-side scripts of MariaDB Server as REST endpoints, defined with REST SQL statements in MariaDB Shell and served by the MariaDB REST Daemon.
 
-{% content-ref url="mariadb-rest-service/" %}
-[mariadb-rest-service](mariadb-rest-service/)
+{% content-ref url="community/mariadb-rest-service/" %}
+[mariadb-rest-service](community/mariadb-rest-service/)
 {% endcontent-ref %}

@@ -46,11 +46,11 @@ restSchemaOptions: (
 
 `createRestSchemaStatement ::=`
 
-![Railroad diagram of createRestSchemaStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestSchemaStatement.svg)
+![Railroad diagram of createRestSchemaStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestSchemaStatement.svg)
 
 `restSchemaOptions ::=`
 
-![Railroad diagram of restSchemaOptions](../../.gitbook/assets/mariadb-rest-service/sql/restSchemaOptions.svg)
+![Railroad diagram of restSchemaOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restSchemaOptions.svg)
 
 For `serviceRequestPath`, see [CREATE REST SERVICE](rest-services.md#building-a-service-request-path). `authenticationRequired` is described under [Requiring Authentication](rest-views.md#requiring-authentication), `comments` under [REST Service Comments](rest-services.md#rest-service-comments), and `metadata` under [REST Service Metadata](rest-services.md#rest-service-metadata).
 
@@ -80,7 +80,7 @@ enabledDisabledPrivate:
 
 `enabledDisabledPrivate ::=`
 
-![Railroad diagram of enabledDisabledPrivate](../../.gitbook/assets/mariadb-rest-service/sql/enabledDisabledPrivate.svg)
+![Railroad diagram of enabledDisabledPrivate](../../../.gitbook/assets/mariadb-rest-service/sql/enabledDisabledPrivate.svg)
 
 ### Specifying the Default Page Size
 
@@ -94,7 +94,7 @@ itemsPerPage:
 
 `itemsPerPage ::=`
 
-![Railroad diagram of itemsPerPage](../../.gitbook/assets/mariadb-rest-service/sql/itemsPerPage.svg)
+![Railroad diagram of itemsPerPage](../../../.gitbook/assets/mariadb-rest-service/sql/itemsPerPage.svg)
 
 You can also specify the number of items per page for each REST object individually.
 
@@ -135,7 +135,7 @@ alterRestSchemaStatement:
 
 `alterRestSchemaStatement ::=`
 
-![Railroad diagram of alterRestSchemaStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestSchemaStatement.svg)
+![Railroad diagram of alterRestSchemaStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestSchemaStatement.svg)
 
 ### Examples
 
@@ -164,7 +164,7 @@ dropRestSchemaStatement:
 
 `dropRestSchemaStatement ::=`
 
-![Railroad diagram of dropRestSchemaStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestSchemaStatement.svg)
+![Railroad diagram of dropRestSchemaStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestSchemaStatement.svg)
 
 ### Examples
 
@@ -190,7 +190,7 @@ showRestSchemasStatement:
 
 `showRestSchemasStatement ::=`
 
-![Railroad diagram of showRestSchemasStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestSchemasStatement.svg)
+![Railroad diagram of showRestSchemasStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestSchemasStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST schemas; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -218,7 +218,7 @@ showCreateRestSchemaStatement:
 
 `showCreateRestSchemaStatement ::=`
 
-![Railroad diagram of showCreateRestSchemaStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestSchemaStatement.svg)
+![Railroad diagram of showCreateRestSchemaStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestSchemaStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 

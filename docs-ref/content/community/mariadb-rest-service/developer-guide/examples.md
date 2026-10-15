@@ -15,7 +15,7 @@ The mrs plugin of MariaDB Shell comes with example projects that show what you c
 
 The [MRS Notes example](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples/mrs_notes) is a simple note-taking application, built as a progressive web app, in which users share notes with each other.
 
-![The MRS Notes app running on a mobile phone](../../.gitbook/assets/mariadb-rest-service/mrs-notes-ss-phone.png)
+![The MRS Notes app running on a mobile phone](../../../.gitbook/assets/mariadb-rest-service/mrs-notes-ss-phone.png)
 
 ### Developer Showcase
 
@@ -68,7 +68,7 @@ mariadb-shell dba@localhost --sql -f examples/mrs_notes/db_schema/mrs_notes.sql
 
 The following diagram shows all components of the `mrs_notes` schema:
 
-![Entity relationship diagram of the mrs_notes schema with its tables, view, and procedures](../../.gitbook/assets/mariadb-rest-service/examples-mrs_notes_schema.svg)
+![Entity relationship diagram of the mrs_notes schema with its tables, view, and procedures](../../../.gitbook/assets/mariadb-rest-service/examples-mrs_notes_schema.svg)
 
 The most important table is `note`. It stores all notes that the users create.
 

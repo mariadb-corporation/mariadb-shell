@@ -116,4 +116,4 @@ The dialog sets the following aspects of a REST object:
   - Which columns of the database object are exposed, and under which names.
   - Which referenced tables are included, either nested, unnested, or reduced to a single field.
 
-![The REST object dialog with its basic settings, security, and data mapping sections](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-object-dialog.svg)
+![The REST object dialog with its basic settings, security, and data mapping sections](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-object-dialog.svg)

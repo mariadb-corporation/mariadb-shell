@@ -46,11 +46,11 @@ restContentSetOptions: (
 
 `createRestContentSetStatement ::=`
 
-![Railroad diagram of createRestContentSetStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestContentSetStatement.svg)
+![Railroad diagram of createRestContentSetStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestContentSetStatement.svg)
 
 `restContentSetOptions ::=`
 
-![Railroad diagram of restContentSetOptions](../../.gitbook/assets/mariadb-rest-service/sql/restContentSetOptions.svg)
+![Railroad diagram of restContentSetOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restContentSetOptions.svg)
 
 The statement creates an empty content set. Add its files with [CREATE REST CONTENT FILE](#create-rest-content-file).
 
@@ -93,11 +93,11 @@ restContentFileOptions: (
 
 `createRestContentFileStatement ::=`
 
-![Railroad diagram of createRestContentFileStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestContentFileStatement.svg)
+![Railroad diagram of createRestContentFileStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestContentFileStatement.svg)
 
 `restContentFileOptions ::=`
 
-![Railroad diagram of restContentFileOptions](../../.gitbook/assets/mariadb-rest-service/sql/restContentFileOptions.svg)
+![Railroad diagram of restContentFileOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restContentFileOptions.svg)
 
 The content of the file is given inline as a string. With `BINARY CONTENT`, the string holds the Base64-encoded bytes of the file. `SHOW CREATE` writes text content as `CONTENT` only when it holds no backslash, so the statement reads the same with and without the `NO_BACKSLASH_ESCAPES` SQL mode; other content is written as `BINARY CONTENT`. Because the statement doesn't read files from disk, it works the same way from any client that sends it to MariaDB Shell.
 
@@ -157,19 +157,19 @@ loadScripts:
 
 `alterRestContentSetStatement ::=`
 
-![Railroad diagram of alterRestContentSetStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestContentSetStatement.svg)
+![Railroad diagram of alterRestContentSetStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestContentSetStatement.svg)
 
 `newContentSetRequestPath ::=`
 
-![Railroad diagram of newContentSetRequestPath](../../.gitbook/assets/mariadb-rest-service/sql/newContentSetRequestPath.svg)
+![Railroad diagram of newContentSetRequestPath](../../../.gitbook/assets/mariadb-rest-service/sql/newContentSetRequestPath.svg)
 
 `alterRestContentSetOptions ::=`
 
-![Railroad diagram of alterRestContentSetOptions](../../.gitbook/assets/mariadb-rest-service/sql/alterRestContentSetOptions.svg)
+![Railroad diagram of alterRestContentSetOptions](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestContentSetOptions.svg)
 
 `loadScripts ::=`
 
-![Railroad diagram of loadScripts](../../.gitbook/assets/mariadb-rest-service/sql/loadScripts.svg)
+![Railroad diagram of loadScripts](../../../.gitbook/assets/mariadb-rest-service/sql/loadScripts.svg)
 
 `LOAD SCRIPTS` registers the MRS scripts held by the files of the content set as REST endpoints. Add the files to the content set first. The statement analyzes the stored TypeScript files for the `@Mrs.module`, `@Mrs.script`, and `@Mrs.trigger` decorators, and creates a REST schema for each MRS module and a REST endpoint for each MRS script. Scripts registered by an earlier `LOAD SCRIPTS` on the same content set are replaced.
 
@@ -204,7 +204,7 @@ dropRestContentSetStatement:
 
 `dropRestContentSetStatement ::=`
 
-![Railroad diagram of dropRestContentSetStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestContentSetStatement.svg)
+![Railroad diagram of dropRestContentSetStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestContentSetStatement.svg)
 
 ### Examples
 
@@ -230,7 +230,7 @@ dropRestContentFileStatement:
 
 `dropRestContentFileStatement ::=`
 
-![Railroad diagram of dropRestContentFileStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestContentFileStatement.svg)
+![Railroad diagram of dropRestContentFileStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestContentFileStatement.svg)
 
 ### Examples
 
@@ -254,7 +254,7 @@ showRestContentSetsStatement:
 
 `showRestContentSetsStatement ::=`
 
-![Railroad diagram of showRestContentSetsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestContentSetsStatement.svg)
+![Railroad diagram of showRestContentSetsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestContentSetsStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST content sets; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -283,7 +283,7 @@ showRestContentFilesStatement:
 
 `showRestContentFilesStatement ::=`
 
-![Railroad diagram of showRestContentFilesStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestContentFilesStatement.svg)
+![Railroad diagram of showRestContentFilesStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestContentFilesStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST content files, without their content; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -309,7 +309,7 @@ showRestScriptsStatement:
 
 `showRestScriptsStatement ::=`
 
-![Railroad diagram of showRestScriptsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestScriptsStatement.svg)
+![Railroad diagram of showRestScriptsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestScriptsStatement.svg)
 
 The result has the columns `REST DB Object`, the request path of the script, and `enabled`. With `FORMAT=JSON`, the result is one JSON array of the REST objects of the scripts (`object_type` `SCRIPT`), without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -337,7 +337,7 @@ showCreateRestContentSetStatement:
 
 `showCreateRestContentSetStatement ::=`
 
-![Railroad diagram of showCreateRestContentSetStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestContentSetStatement.svg)
+![Railroad diagram of showCreateRestContentSetStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestContentSetStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 
@@ -364,7 +364,7 @@ showCreateRestContentFileStatement:
 
 `showCreateRestContentFileStatement ::=`
 
-![Railroad diagram of showCreateRestContentFileStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestContentFileStatement.svg)
+![Railroad diagram of showCreateRestContentFileStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestContentFileStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 

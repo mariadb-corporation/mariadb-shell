@@ -76,35 +76,35 @@ authAppName:
 
 `createRestAuthAppStatement ::=`
 
-![Railroad diagram of createRestAuthAppStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestAuthAppStatement.svg)
+![Railroad diagram of createRestAuthAppStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestAuthAppStatement.svg)
 
 `restAuthAppOptions ::=`
 
-![Railroad diagram of restAuthAppOptions](../../.gitbook/assets/mariadb-rest-service/sql/restAuthAppOptions.svg)
+![Railroad diagram of restAuthAppOptions](../../../.gitbook/assets/mariadb-rest-service/sql/restAuthAppOptions.svg)
 
 `allowNewUsersToRegister ::=`
 
-![Railroad diagram of allowNewUsersToRegister](../../.gitbook/assets/mariadb-rest-service/sql/allowNewUsersToRegister.svg)
+![Railroad diagram of allowNewUsersToRegister](../../../.gitbook/assets/mariadb-rest-service/sql/allowNewUsersToRegister.svg)
 
 `defaultRole ::=`
 
-![Railroad diagram of defaultRole](../../.gitbook/assets/mariadb-rest-service/sql/defaultRole.svg)
+![Railroad diagram of defaultRole](../../../.gitbook/assets/mariadb-rest-service/sql/defaultRole.svg)
 
 `appId ::=`
 
-![Railroad diagram of appId](../../.gitbook/assets/mariadb-rest-service/sql/appId.svg)
+![Railroad diagram of appId](../../../.gitbook/assets/mariadb-rest-service/sql/appId.svg)
 
 `appSecret ::=`
 
-![Railroad diagram of appSecret](../../.gitbook/assets/mariadb-rest-service/sql/appSecret.svg)
+![Railroad diagram of appSecret](../../../.gitbook/assets/mariadb-rest-service/sql/appSecret.svg)
 
 `url ::=`
 
-![Railroad diagram of url](../../.gitbook/assets/mariadb-rest-service/sql/url.svg)
+![Railroad diagram of url](../../../.gitbook/assets/mariadb-rest-service/sql/url.svg)
 
 `authAppName ::=`
 
-![Railroad diagram of authAppName](../../.gitbook/assets/mariadb-rest-service/sql/authAppName.svg)
+![Railroad diagram of authAppName](../../../.gitbook/assets/mariadb-rest-service/sql/authAppName.svg)
 
 For `enabledDisabled`, see [Enabling or Disabling the MariaDB REST Service](rest-metadata.md#enabling-or-disabling-the-mariadb-rest-service). For `comments`, see [REST Service Comments](rest-services.md#rest-service-comments).
 
@@ -166,7 +166,7 @@ alterRestAuthAppStatement:
 
 `alterRestAuthAppStatement ::=`
 
-![Railroad diagram of alterRestAuthAppStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestAuthAppStatement.svg)
+![Railroad diagram of alterRestAuthAppStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestAuthAppStatement.svg)
 
 ### Examples
 
@@ -192,7 +192,7 @@ dropRestAuthAppStatement:
 
 `dropRestAuthAppStatement ::=`
 
-![Railroad diagram of dropRestAuthAppStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestAuthAppStatement.svg)
+![Railroad diagram of dropRestAuthAppStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestAuthAppStatement.svg)
 
 ### Examples
 
@@ -219,7 +219,7 @@ showRestAuthAppsStatement:
 
 `showRestAuthAppsStatement ::=`
 
-![Railroad diagram of showRestAuthAppsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthAppsStatement.svg)
+![Railroad diagram of showRestAuthAppsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthAppsStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST auth apps, each with the services it is linked to; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -251,7 +251,7 @@ showRestAuthVendorsStatement:
 
 `showRestAuthVendorsStatement ::=`
 
-![Railroad diagram of showRestAuthVendorsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthVendorsStatement.svg)
+![Railroad diagram of showRestAuthVendorsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestAuthVendorsStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the auth vendors; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -277,7 +277,7 @@ showCreateRestAuthAppStatement:
 
 `showCreateRestAuthAppStatement ::=`
 
-![Railroad diagram of showCreateRestAuthAppStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestAuthAppStatement.svg)
+![Railroad diagram of showCreateRestAuthAppStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestAuthAppStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 

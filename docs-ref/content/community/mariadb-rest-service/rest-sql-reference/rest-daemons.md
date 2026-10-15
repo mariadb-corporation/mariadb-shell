@@ -30,11 +30,11 @@ daemonId:
 
 `dropRestDaemonStatement ::=`
 
-![Railroad diagram of dropRestDaemonStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestDaemonStatement.svg)
+![Railroad diagram of dropRestDaemonStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestDaemonStatement.svg)
 
 `daemonId ::=`
 
-![Railroad diagram of daemonId](../../.gitbook/assets/mariadb-rest-service/sql/daemonId.svg)
+![Railroad diagram of daemonId](../../../.gitbook/assets/mariadb-rest-service/sql/daemonId.svg)
 
 ### Examples
 
@@ -58,7 +58,7 @@ showRestDaemonsStatement:
 
 `showRestDaemonsStatement ::=`
 
-![Railroad diagram of showRestDaemonsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestDaemonsStatement.svg)
+![Railroad diagram of showRestDaemonsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestDaemonsStatement.svg)
 
 The result has one row per instance, with the columns `id`, `name`, `address`, `product_name`, `version`, `last_check_in`, `active`, and `developer`. An instance is active when it has checked in within the last 10 seconds. `developer` is the developer for whom an instance serves REST services in development.
 

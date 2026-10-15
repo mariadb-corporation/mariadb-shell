@@ -57,7 +57,7 @@ You can configure MRS either in the MariaDB Shell for VS Code extension or with 
 
 In the `DATABASE CONNECTIONS` view in the Primary Side Bar, right-click the DB connection entry `MRS Development` that you created above. Select `Configure Instance for MariaDB REST Service Support` from the context menu. The `MariaDB REST Service` dialog opens.
 
-![The context menu of a DB connection in the DATABASE CONNECTIONS view, with the item that configures the instance for MariaDB REST Service support selected](../../.gitbook/assets/mariadb-rest-service/vsc-mrs-configure.png)
+![The context menu of a DB connection in the DATABASE CONNECTIONS view, with the item that configures the instance for MariaDB REST Service support selected](../../../.gitbook/assets/mariadb-rest-service/vsc-mrs-configure.png)
 
 In the dialog, enter a `REST User Name` and a `REST User Password`. The password must have at least 8 characters and contain a lowercase letter, an uppercase letter, a number, and a special character. You can use this REST user later to log in to REST services.
 

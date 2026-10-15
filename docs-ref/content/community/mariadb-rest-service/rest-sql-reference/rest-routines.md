@@ -34,11 +34,11 @@ restResult:
 
 `createRestProcedureStatement ::=`
 
-![Railroad diagram of createRestProcedureStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestProcedureStatement.svg)
+![Railroad diagram of createRestProcedureStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestProcedureStatement.svg)
 
 `restResult ::=`
 
-![Railroad diagram of restResult](../../.gitbook/assets/mariadb-rest-service/sql/restResult.svg)
+![Railroad diagram of restResult](../../../.gitbook/assets/mariadb-rest-service/sql/restResult.svg)
 
 A procedure has a `RESULT` for each of its result sets.
 
@@ -95,7 +95,7 @@ createRestFunctionStatement:    (
 
 `createRestFunctionStatement ::=`
 
-![Railroad diagram of createRestFunctionStatement](../../.gitbook/assets/mariadb-rest-service/sql/createRestFunctionStatement.svg)
+![Railroad diagram of createRestFunctionStatement](../../../.gitbook/assets/mariadb-rest-service/sql/createRestFunctionStatement.svg)
 
 A function has at most one `RESULT`. For `restResult`, see [CREATE REST PROCEDURE](#create-rest-procedure). For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view). The JSON options are described in [JSON Options for REST Objects](rest-views.md#json-options-for-rest-objects).
 
@@ -133,7 +133,7 @@ alterRestProcedureStatement:
 
 `alterRestProcedureStatement ::=`
 
-![Railroad diagram of alterRestProcedureStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestProcedureStatement.svg)
+![Railroad diagram of alterRestProcedureStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestProcedureStatement.svg)
 
 For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view).
 
@@ -157,7 +157,7 @@ alterRestFunctionStatement:
 
 `alterRestFunctionStatement ::=`
 
-![Railroad diagram of alterRestFunctionStatement](../../.gitbook/assets/mariadb-rest-service/sql/alterRestFunctionStatement.svg)
+![Railroad diagram of alterRestFunctionStatement](../../../.gitbook/assets/mariadb-rest-service/sql/alterRestFunctionStatement.svg)
 
 For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest-views.md#create-rest-view).
 
@@ -177,7 +177,7 @@ dropRestProcedureStatement:
 
 `dropRestProcedureStatement ::=`
 
-![Railroad diagram of dropRestProcedureStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestProcedureStatement.svg)
+![Railroad diagram of dropRestProcedureStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestProcedureStatement.svg)
 
 ### Examples
 
@@ -202,7 +202,7 @@ dropRestFunctionStatement:
 
 `dropRestFunctionStatement ::=`
 
-![Railroad diagram of dropRestFunctionStatement](../../.gitbook/assets/mariadb-rest-service/sql/dropRestFunctionStatement.svg)
+![Railroad diagram of dropRestFunctionStatement](../../../.gitbook/assets/mariadb-rest-service/sql/dropRestFunctionStatement.svg)
 
 ### Examples
 
@@ -227,7 +227,7 @@ showRestProceduresStatement:
 
 `showRestProceduresStatement ::=`
 
-![Railroad diagram of showRestProceduresStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestProceduresStatement.svg)
+![Railroad diagram of showRestProceduresStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestProceduresStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST procedures, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -255,7 +255,7 @@ showRestFunctionsStatement:
 
 `showRestFunctionsStatement ::=`
 
-![Railroad diagram of showRestFunctionsStatement](../../.gitbook/assets/mariadb-rest-service/sql/showRestFunctionsStatement.svg)
+![Railroad diagram of showRestFunctionsStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showRestFunctionsStatement.svg)
 
 With `FORMAT=JSON`, the result is one JSON array of the REST functions, without their data mappings; see [Lists in JSON](rest-metadata.md#lists-in-json).
 
@@ -283,7 +283,7 @@ showCreateRestProcedureStatement:
 
 `showCreateRestProcedureStatement ::=`
 
-![Railroad diagram of showCreateRestProcedureStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestProcedureStatement.svg)
+![Railroad diagram of showCreateRestProcedureStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestProcedureStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 
@@ -311,7 +311,7 @@ showCreateRestFunctionStatement:
 
 `showCreateRestFunctionStatement ::=`
 
-![Railroad diagram of showCreateRestFunctionStatement](../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestFunctionStatement.svg)
+![Railroad diagram of showCreateRestFunctionStatement](../../../.gitbook/assets/mariadb-rest-service/sql/showCreateRestFunctionStatement.svg)
 
 For `formatClause`, see [SHOW CREATE ... FORMAT=JSON](rest-metadata.md).
 
