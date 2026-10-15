@@ -608,11 +608,14 @@ and more maintainable than a local overlay port. This applies to all triplets;
 arm64-windows is just the canary.
 
 Related trap: Visual Studio 2022's developer environment sets `VCPKG_ROOT` to its
-own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` honours
-`$ENV{VCPKG_ROOT}`, then tries to `git clone` into it and fails
-(`destination path already exists and is not an empty directory`). Pass
-`-DVCPKG_ROOT=<sibling path>` (matching the macOS default of `../vcpkg`) or clear
-the env var (`set VCPKG_ROOT=`) for the configure shell.
+own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` used to
+honour `$ENV{VCPKG_ROOT}`, try to `git clone` into it (`destination path already
+exists and is not an empty directory`), and then, in its full-clone fallback,
+**delete that directory**; ports built with autotools also fail under its
+"Program Files" path. It now honours the environment variable only when it names
+a vcpkg git checkout (otherwise it says so and uses `../vcpkg`), and never
+replaces an existing directory that isn't a checkout (configure stops instead),
+so neither `set VCPKG_ROOT=` nor `-DVCPKG_ROOT` is needed any more.
 
 ### 11.10 Use the Ninja generator on Windows (single-config)
 

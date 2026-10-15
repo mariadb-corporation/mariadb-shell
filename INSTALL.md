@@ -116,9 +116,8 @@ cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 
 Using a *Developer Command Prompt* for VS execute the following:
 
 ```bash
-rem Unset VCPKG_ROOT to avoid messing up with the standard vcpkg path on the
-rem installed Visual Studio
-set VCPKG_ROOT=
+rem The prompt's VCPKG_ROOT (Visual Studio's bundled vcpkg) is ignored: only
+rem a vcpkg git checkout is honoured, so vcpkg is cloned to ..\vcpkg
 
 mkdir bld && cd bld
 
@@ -262,7 +261,10 @@ $ cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
 
 vcpkg is cloned to `../vcpkg` (next to the shell source) by default; set
 `-DVCPKG_ROOT=<path>` to clone/reuse it elsewhere (an existing checkout, or the
-`VCPKG_ROOT` environment variable, is reused instead of re-cloning). This runs
+`VCPKG_ROOT` environment variable when it names a vcpkg git checkout, is reused
+instead of re-cloning; Visual Studio's bundled vcpkg, which its developer
+environment puts there, is not one and is ignored). A directory that exists and
+isn't a vcpkg checkout is never replaced: configure stops instead. This runs
 once and is cached. Passing `-DCMAKE_TOOLCHAIN_FILE`/`-DVCPKG_TARGET_TRIPLET`
 explicitly still works and takes precedence over `-DWITH_VCPKG_TRIPLET`.
 
