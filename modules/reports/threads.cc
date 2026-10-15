@@ -488,17 +488,6 @@ class Threads_report : public Native_report {
 
     std::string having;
 
-#ifndef HAVE_X_PROTOCOL
-    // Sql_condition relies on the X protocol expression parser/protobuf, which
-    // is not available in the MariaDB build, so only the default condition
-    // can be used there.
-    if (o.where != "TRUE") {
-      throw shcore::Exception::argument_error(
-          "The 'where' parameter is not supported in this build.");
-    }
-
-    having = "TRUE";
-#else
     try {
       having = Sql_condition{[this](const std::string &ident) {
                  return json_text(add_column(ident));
@@ -507,7 +496,6 @@ class Threads_report : public Native_report {
       throw shcore::Exception::argument_error(
           "Failed to parse 'where' parameter: " + std::string(e.what()));
     }
-#endif
 
     // ORDER BY part of the query
     if (o.order_by.empty()) {

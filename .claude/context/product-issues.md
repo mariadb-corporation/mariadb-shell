@@ -52,7 +52,6 @@ The full list, by area:
 ### Shell, Output and Reports
 
 - **`\show threads`:**
-  - `--where` is refused in the MariaDB build: `Sql_condition` (`modules/reports/utils.cc`), which parses and checks the condition, is built on the X DevAPI expression parser. Port it to a small parser of its own (identifiers, literals, comparisons, LIKE, AND/OR/NOT, parentheses), keeping the identifier and operator checks that stop SQL injection.
   - The `system.<variable>` columns read `performance_schema.variables_by_thread`, which MariaDB doesn't have.
   - The default filter compares the session's connection user/host with `PROCESSLIST_USER`/`PROCESSLIST_HOST`, so a session to `127.0.0.1` that the server records as `localhost` lists nothing (MySQL too).
   [extending-mariadb-shell/reports.md]

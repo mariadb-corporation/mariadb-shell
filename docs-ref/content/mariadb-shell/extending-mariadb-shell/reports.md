@@ -107,9 +107,16 @@ The `threads` report lists the threads of the current user, or all foreground or
 MariaDB localhost:3306 ssl  SQL > \show threads --all --format=tid,name,type --limit=3
 ```
 
+`--where` keeps the rows that match a condition. A condition compares a column with a value or another column, using `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE` or `NOT LIKE`, and combines comparisons with `AND`, `OR`, `NOT` and parentheses. `NOT` applies to the whole comparison that follows it, as in SQL. Keywords are case-insensitive, and strings are quoted with `'` or `"`:
+
+```text
+MariaDB localhost:3306 ssl  SQL > \show threads --all --where "tid > 10 AND name LIKE '%innodb%'"
+```
+
+Other operators, such as `IS`, `IN` or `BETWEEN`, are refused with `Disallowed operator`, and a name that isn't a column of the report with `Unknown column name`.
+
 {% hint style="warning" %}
 * The report reads `performance_schema`, which is off by default in MariaDB Server. Without `performance_schema=ON`, it returns no rows.
-* The `--where` option isn't available: giving it stops the report with `The 'where' parameter is not supported in this build.`
 * The `system.<variable>` columns need `performance_schema.variables_by_thread`, which MariaDB Server doesn't have, so requesting one fails.
 * Without `--foreground`, `--background` or `--all`, the report lists the threads whose user and host match the ones the session connected with. A session that connected to `127.0.0.1` lists nothing when the server records the connection as coming from `localhost`.
 {% endhint %}

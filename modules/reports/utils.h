@@ -189,10 +189,11 @@ shcore::Array_t create_report_from_json_object(
 
 /**
  * Parses an SQL condition (i.e. WHERE, HAVING)
+ *
+ * Builds with the X protocol parse it with its expression parser, the others
+ * with a parser of their own which takes the same conditions: identifiers,
+ * literals, comparisons, LIKE, AND, OR, NOT and parentheses.
  */
-#ifdef HAVE_X_PROTOCOL
-// Sql_condition is built on the X protocol expression parser/protobuf, which is
-// not available in the MariaDB build.
 class Sql_condition {
  public:
   /**
@@ -246,12 +247,13 @@ class Sql_condition {
   std::string parse(const std::string &condition) const;
 
  private:
+#ifdef HAVE_X_PROTOCOL
   std::string validate_expression(const Mysqlx::Expr::Expr &expr) const;
+#endif  // HAVE_X_PROTOCOL
 
   Validator m_identifier;
   Validator m_operator;
 };
-#endif  // HAVE_X_PROTOCOL
 
 }  // namespace reports
 }  // namespace mysqlsh
