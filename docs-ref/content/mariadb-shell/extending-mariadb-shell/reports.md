@@ -101,10 +101,17 @@ MariaDB localhost:3306 ssl  SQL > \show thread --cid 42 --client --status=Bytes,
 
 ### threads
 
-The `threads` report is meant to list the threads of the current user, or all foreground or background threads, with selectable columns.
+The `threads` report lists the threads of the current user, or all foreground or background threads, with selectable columns (`--format`), sorted by any of them (`--order-by`, `--desc`) and limited in number (`--limit`). Run `\show threads --help` for the columns.
+
+```text
+MariaDB localhost:3306 ssl  SQL > \show threads --all --format=tid,name,type --limit=3
+```
 
 {% hint style="warning" %}
-In MariaDB Shell 26.9.5, every run of the `threads` report fails with `The 'where' parameter is not supported in this build.`, even without the `--where` option. The report also depends on `performance_schema` tables and `sys` views that MariaDB Server doesn't provide. To list threads, use the `query` report instead, for example `\watch query SHOW FULL PROCESSLIST`.
+* The report reads `performance_schema`, which is off by default in MariaDB Server. Without `performance_schema=ON`, it returns no rows.
+* The `--where` option isn't available: giving it stops the report with `The 'where' parameter is not supported in this build.`
+* The `system.<variable>` columns need `performance_schema.variables_by_thread`, which MariaDB Server doesn't have, so requesting one fails.
+* Without `--foreground`, `--background` or `--all`, the report lists the threads whose user and host match the ones the session connected with. A session that connected to `127.0.0.1` lists nothing when the server records the connection as coming from `localhost`.
 {% endhint %}
 
 ## Writing a Report
