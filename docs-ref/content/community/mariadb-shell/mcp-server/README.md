@@ -51,11 +51,11 @@ The server's tools are organized in function groups. By default, the server prov
 | --- | --- |
 | `db` | List the configured connections, open and close sessions, list schemas and objects, describe objects, and run SQL statements and scripts. |
 | `msm` | Create and work with versioned schema projects of [MariaDB Schema Management](../schema-management/README.md), prepare releases, and deploy schemas. |
-| `mrs` | Work with the files of the [MariaDB REST Service](../../mariadb-rest-service/README.md): generate client SDKs, dump and load REST services and service projects, and load static content. The REST services themselves are managed with REST SQL, which the `db` tools run. |
+| `mrs` | Work with the files of the MariaDB REST Service: generate client SDKs, dump and load REST services and service projects, and load static content. The REST services themselves are managed with REST SQL, which the `db` tools run. |
 | `sandbox` | List the server versions that can be deployed, and deploy, start, stop, and delete local sandbox instances. A sandbox's MariaDB REST Daemon starts and stops with it. |
 | `migrator` | Plan and run a migration from MySQL to MariaDB. Only available on Linux and macOS, after you install the [migration tooling](migration-tooling.md) with `mcp setup`. |
 | `util` | Dump, load, copy, export, and import data as [background tasks](dump-and-load-tools.md) that a client follows and can cancel. |
-| `rest` | Set up, start, stop, and delete [MariaDB REST Daemons](rest-daemon-tools.md) for sandbox instances and other servers. |
+| `rest` | Set up, start, stop, and delete MariaDB REST Daemons for sandbox instances and other servers. |
 
 A [multi-tenant](multi-tenant-mode.md) server provides only the `db` group. The `msm` and `mrs` tools work on files on the developer's own machine, and the `util` and `rest` tools run long jobs and local processes on the server's machine, so they are not available on a server that several users reach remotely.
 
@@ -94,10 +94,6 @@ To show the built-in help, run `\? mcp` in Python mode, or `mariadb-shell -- mcp
 
 {% content-ref url="dump-and-load-tools.md" %}
 [dump-and-load-tools.md](dump-and-load-tools.md)
-{% endcontent-ref %}
-
-{% content-ref url="rest-daemon-tools.md" %}
-[rest-daemon-tools.md](rest-daemon-tools.md)
 {% endcontent-ref %}
 
 {% content-ref url="connecting-mcp-clients.md" %}

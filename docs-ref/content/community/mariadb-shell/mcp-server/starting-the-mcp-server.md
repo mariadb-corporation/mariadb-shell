@@ -116,7 +116,7 @@ mariadb-shell -- mcp start-server --transport=stdio --functionGroups=db
 | `sandbox` | Tools for local sandbox instances. |
 | `migrator` | Tools for the migration from MySQL to MariaDB. The server registers them only if the migration tooling is installed; see [Migration Tooling](migration-tooling.md). |
 | `util` | Tools that dump, load, copy, export, and import data as background tasks; see [Dump and Load Tools](dump-and-load-tools.md). They work on connections opened with the `db` tools, so the server provides them only when `db` is enabled as well. |
-| `rest` | Tools that set up, start, stop, and delete MariaDB REST Daemons; see [REST Daemon Tools](rest-daemon-tools.md). The `rest.configure_restd` tool sets a daemon up for a connection opened with the `db` tools, so the server provides it only when `db` is enabled as well. |
+| `rest` | Tools that set up, start, stop, and delete MariaDB REST Daemons. The `rest.configure_restd` tool sets a daemon up for a connection opened with the `db` tools, so the server provides it only when `db` is enabled as well. |
 
 For example, a server for an agent that should only read schemas and run queries on configured servers provides `db`. A server for schema development on local sandboxes provides `db,msm,sandbox`.
 
