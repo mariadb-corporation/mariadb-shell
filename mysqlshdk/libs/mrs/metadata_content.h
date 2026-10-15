@@ -175,8 +175,9 @@ std::vector<std::string> content_set_create_statements(Db_session *session,
 
 // Copies a content set with its files into another service. Its links to
 // REST objects (scripts and triggers) are copied for the objects in
-// rest_object_ids, which maps the ids of the cloned objects to their copies;
-// a link to an object that was not cloned is dropped.
+// rest_object_ids, which maps the ids of the cloned objects to their copies.
+// A link to an object that was not cloned keeps pointing at it, except a
+// script link, which is dropped.
 Id clone_content_set(Db_session *session, const Content_set &content_set,
                      const Id &new_service_id,
                      const std::map<Id, Id> &rest_object_ids = {});

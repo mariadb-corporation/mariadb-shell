@@ -303,7 +303,7 @@ std::string service_create_statement(Db_session *session,
 // Copies a service under a new request path: its schemas and objects, its
 // content sets with the links of their scripts and triggers, its auth app
 // links, roles, user groups and user hierarchy types. The privileges of the
-// global roles on the service are extended to the copy. Returns the new id.
+// global roles are not copied. Returns the new id.
 Id clone_service(Db_session *session, const Service &service,
                  const std::string &new_url_context_root,
                  const std::vector<std::string> &new_developers);

@@ -157,9 +157,8 @@ void delete_service_roles(Db_session *session, const Id &service_id);
 
 // For CLONE REST SERVICE: copies the roles specific to a service to another
 // one, with their privileges and their grants to users. A privilege on
-// service_path is copied with new_service_path, and the global roles get a
-// privilege on new_service_path for each one they have on service_path.
-// Returns the ids of the copied roles, mapped from the originals.
+// service_path is copied with new_service_path. The global roles are left as
+// they are. Returns the ids of the copied roles, mapped from the originals.
 std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
                                      const Id &new_service_id,
                                      const std::string &service_path,
