@@ -478,11 +478,11 @@ EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO 
 EXPECT_EQ([["GRANT REST READ ON SERVICE `*` SCHEMA /sakila OBJECT /city TO `derived` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"derived\" ON SERVICE /cloneCopy"))
 EXPECT_EQ([["base"]], sql_rows("SELECT p.caption FROM %smrs_role r JOIN %smrs_role p ON p.id = r.derived_from_role_id WHERE r.caption = 'derived' AND r.specific_to_service_id = %s AND p.specific_to_service_id = %s" % (md, md, copy, copy)))
 EXPECT_EQ([["cloner"]], sql_rows("SELECT u.name FROM %smrs_user_has_role ur JOIN %smrs_user u ON u.id = ur.user_id JOIN %smrs_role r ON r.id = ur.role_id WHERE r.specific_to_service_id = %s" % (md, md, md, copy)))
-# The global role gets the same privileges on the new path
-EXPECT_EQ([
-    ["GRANT REST READ,UPDATE ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"],
+# The privileges of the global role are left as they are: none on the new path
+global_grants = [
     ["GRANT REST READ,UPDATE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"],
-    ["GRANT REST READ ON SERVICE /elsewhere SCHEMA `*` OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"]], rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
+    ["GRANT REST READ ON SERVICE /elsewhere SCHEMA `*` OBJECT `*` TO `cloneGlobal` ON ANY SERVICE"]]
+EXPECT_EQ(global_grants, rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
 
 # Groups with their members, roles and hierarchy; the user hierarchy type
 EXPECT_EQ([["dept", None, None], ["team", "cloner", "derived"]], sql_rows("SELECT g.caption, u.name, r.caption FROM %smrs_user_group g LEFT JOIN %smrs_user_has_group ug ON ug.user_group_id = g.id LEFT JOIN %smrs_user u ON u.id = ug.user_id LEFT JOIN %smrs_user_group_has_role gr ON gr.user_group_id = g.id LEFT JOIN %smrs_role r ON r.id = gr.role_id AND r.specific_to_service_id = %s WHERE g.specific_to_service_id = %s ORDER BY g.caption" % (md, md, md, md, md, copy, copy)))
@@ -496,13 +496,23 @@ EXPECT_EQ("REST SERVICE `/cloneSrc` cloned to `dev@/cloneSrc` successfully.", re
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE dev@/cloneSrc"))
 EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `base` ON SERVICE dev@/cloneSrc"]], rest_rows("SHOW REST GRANTS FOR \"base\" ON SERVICE dev@/cloneSrc"))
 # The global role's privilege on the path already covers the copy
-EXPECT_EQ(3, len(rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE")))
+EXPECT_EQ(global_grants, rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
+
+#@<> CLONE REST SERVICE never extends the privileges of a global role on the new path
+# Privilege paths ignore developers: a clone for dev@/elsewhere must not add the
+# source's operations to the global role's privilege on the published /elsewhere
+rest("CREATE REST SERVICE /elsewhere PUBLISHED")
+EXPECT_EQ("REST SERVICE `/cloneSrc` cloned to `dev@/elsewhere` successfully.", rest_info("CLONE REST SERVICE /cloneSrc NEW REQUEST PATH dev@/elsewhere"))
+EXPECT_EQ(global_grants, rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
+rest("DROP REST SERVICE dev@/elsewhere")
+rest("DROP REST SERVICE /elsewhere")
 
 #@<> Dropping a clone leaves the source alone
 dump = rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0]
 rest("DROP REST SERVICE dev@/cloneSrc")
 rest("DROP REST SERVICE /cloneCopy")
 EXPECT_EQ(dump, rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0])
+EXPECT_EQ(global_grants, rest_rows("SHOW REST GRANTS FOR \"cloneGlobal\" ON ANY SERVICE"))
 EXPECT_EQ([[2, 2, 1, 1]], sql_rows("SELECT (SELECT COUNT(*) FROM %smrs_role WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_user_group WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_user_hierarchy_type WHERE specific_to_service_id = %s), (SELECT COUNT(*) FROM %smrs_rest_object_row_group_security)" % (md, src, md, src, md, src, md)))
 
 #@<> The dump of a service holds the GRANTs of its roles, parents before the roles extending them

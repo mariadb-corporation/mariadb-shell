@@ -772,8 +772,10 @@ std::string service_create_statement(Db_session *session,
   std::vector<std::string> statements{output};
 
   // The endpoints act on the current service, so the script names the
-  // service only here and can be loaded under another path by changing
-  // these two statements.
+  // service here and in the GRANTs of its roles: a GRANT without ON SERVICE
+  // is on any service (`*`), not on the current one. Loading the script
+  // under another path changes these two statements and the GRANTs on the
+  // service's path (mrs.load.service() of the mrs plugin).
   if (include_database_endpoints || include_static_endpoints ||
       include_dynamic_endpoints) {
     statements.push_back("USE REST SERVICE " + service.full_service_path + ";");

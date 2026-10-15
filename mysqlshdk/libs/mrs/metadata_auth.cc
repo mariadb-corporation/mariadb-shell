@@ -556,54 +556,51 @@ std::string role_create_statement(Db_session *session, const Role &role,
   return output + ";";
 }
 
-std::vector<std::string> role_create_statements(Db_session *session,
-                                                const Id &service_id) {
-  // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
-  auto roles = get_roles(session, service_id, false);
-  std::set<Id> pending;
-  for (const auto &role : roles) pending.insert(role.id);
+// The roles specific to the service, each after the role it extends when that
+// one is specific to the service too
+std::vector<Role> service_roles_parents_first(Db_session *session,
+                                              const Id &service_id) {
+  auto pending = get_roles(session, service_id, false);
+  std::set<Id> waiting;
+  for (const auto &role : pending) waiting.insert(role.id);
 
-  std::vector<std::string> statements;
-  while (!roles.empty()) {
-    const auto before = roles.size();
-    for (auto it = roles.begin(); it != roles.end();) {
-      if (it->derived_from_role_id && pending.count(*it->derived_from_role_id)) {
+  std::vector<Role> ordered;
+  while (!pending.empty()) {
+    const auto before = pending.size();
+    for (auto it = pending.begin(); it != pending.end();) {
+      if (it->derived_from_role_id && waiting.count(*it->derived_from_role_id)) {
         ++it;
         continue;
       }
-      statements.push_back(role_create_statement(session, *it, true));
-      for (const auto &privilege : get_role_privileges(session, it->id)) {
-        statements.push_back(privilege_grant_statement(privilege, *it, true) + ";");
-      }
-      pending.erase(it->id);
-      it = roles.erase(it);
+      waiting.erase(it->id);
+      ordered.push_back(std::move(*it));
+      it = pending.erase(it);
     }
-    if (roles.size() == before) {
+    if (pending.size() == before) {
       throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
+    }
+  }
+  return ordered;
+}
+
+std::vector<std::string> role_create_statements(Db_session *session,
+                                                const Id &service_id) {
+  // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
+  std::vector<std::string> statements;
+  for (const auto &role : service_roles_parents_first(session, service_id)) {
+    statements.push_back(role_create_statement(session, role, true));
+    for (const auto &privilege : get_role_privileges(session, role.id)) {
+      statements.push_back(privilege_grant_statement(privilege, role, true) + ";");
     }
   }
   return statements;
 }
 
 void delete_service_roles(Db_session *session, const Id &service_id) {
-  auto roles = get_roles(session, service_id, false);
-  while (!roles.empty()) {
-    std::set<Id> parents;
-    for (const auto &role : roles) {
-      if (role.derived_from_role_id) parents.insert(*role.derived_from_role_id);
-    }
-    const auto before = roles.size();
-    for (auto it = roles.begin(); it != roles.end();) {
-      if (parents.count(it->id)) {
-        ++it;
-      } else {
-        delete_role(session, it->id);
-        it = roles.erase(it);
-      }
-    }
-    if (roles.size() == before) {
-      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
-    }
+  // Children first, for the foreign key
+  const auto roles = service_roles_parents_first(session, service_id);
+  for (auto it = roles.rbegin(); it != roles.rend(); ++it) {
+    delete_role(session, it->id);
   }
 }
 
@@ -611,35 +608,23 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
                                      const Id &new_service_id,
                                      const std::string &service_path,
                                      const std::string &new_service_path) {
-  const auto roles = get_roles(session, service_id, false);
+  const auto roles = service_roles_parents_first(session, service_id);
   std::map<Id, Id> role_ids;
   for (const auto &role : roles) role_ids.emplace(role.id, new_id(session));
 
-  // A role that extends another role of the service extends that one's copy;
-  // the copies are inserted parents first, for the foreign key
-  std::set<Id> inserted;
-  while (inserted.size() < roles.size()) {
-    const auto before = inserted.size();
-    for (const auto &role : roles) {
-      if (inserted.count(role.id)) continue;
-      auto parent = role.derived_from_role_id;
-      if (parent && role_ids.count(*parent)) {
-        if (!inserted.count(*parent)) continue;
-        parent = role_ids.at(*parent);
-      }
-      Role_definition definition;
-      definition.id = role_ids.at(role.id);
-      definition.derived_from_role_id = parent;
-      definition.specific_to_service_id = new_service_id;
-      definition.caption = role.caption;
-      definition.description = role.description;
-      definition.options = role.options.value_or("{}");
-      add_role(session, definition);
-      inserted.insert(role.id);
-    }
-    if (inserted.size() == before) {
-      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
-    }
+  // A role that extends another role of the service extends that one's copy,
+  // inserted before it
+  for (const auto &role : roles) {
+    auto parent = role.derived_from_role_id;
+    if (parent && role_ids.count(*parent)) parent = role_ids.at(*parent);
+    Role_definition definition;
+    definition.id = role_ids.at(role.id);
+    definition.derived_from_role_id = parent;
+    definition.specific_to_service_id = new_service_id;
+    definition.caption = role.caption;
+    definition.description = role.description;
+    definition.options = role.options.value_or("{}");
+    add_role(session, definition);
   }
 
   const auto privileges = sql::metadata_table("mrs_privilege");
@@ -661,20 +646,9 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
                      {Value::id(new_role_id), Value::id(role_id)});
   }
 
-  // A clone in development on the same path is covered by the same
-  // privileges already
-  if (new_service_path != service_path) {
-    const auto rows = session->query(
-        std::string(k_privilege_select) +
-            " WHERE r.specific_to_service_id IS NULL AND p.service_path = ?",
-        {service_path});
-    for (const auto &row : rows.rows) {
-      const auto privilege = privilege_from_row(row);
-      add_role_privilege(session, privilege.role_id, privilege.crud_operations,
-                         new_service_path, privilege.schema_path,
-                         privilege.object_path);
-    }
-  }
+  // The privileges of the global roles are not copied: privilege paths ignore
+  // developers, so a copy on the path of another service would extend that
+  // service's privileges, and nothing would remove it with the copy
   return role_ids;
 }
 
