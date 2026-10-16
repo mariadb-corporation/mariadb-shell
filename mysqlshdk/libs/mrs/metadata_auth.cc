@@ -281,6 +281,22 @@ void merge_privilege(std::vector<Privilege> *privileges, Privilege privilege) {
   }
 }
 
+// The privileges of every role of a service, by role
+std::map<Id, std::vector<Privilege>> get_service_role_privileges(
+    Db_session *session, const Id &service_id) {
+  const std::string query =
+      std::string(k_privilege_select) +
+      " WHERE r.specific_to_service_id = ?"
+      " ORDER BY p.service_path, p.schema_path, p.object_path";
+
+  std::map<Id, std::vector<Privilege>> privileges;
+  for (const auto &row : session->query(query, {Value::id(service_id)}).rows) {
+    auto privilege = privilege_from_row(row);
+    privileges[privilege.role_id].push_back(std::move(privilege));
+  }
+  return privileges;
+}
+
 const char *k_auth_app_select = R"(
 SELECT a.id, a.auth_vendor_id, a.name, a.description, a.url,
     a.url_direct_auth, a.access_token, a.app_id, a.enabled,
@@ -635,13 +651,14 @@ std::vector<std::string> role_create_statements(
     const std::string &service_host_ctx) {
   // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
   std::vector<std::string> statements;
+  auto privileges = get_service_role_privileges(session, service_id);
   for (const auto &role : service_roles_parents_first(session, service_id)) {
     statements.push_back(role_create_statement(session, role, true));
     // Privileges that name the service all become ON CURRENT SERVICE, so
     // those on the same schema and object paths are written as one GRANT:
     // loaded, they would be merged into one privilege anyway
     std::vector<Privilege> grants;
-    for (auto privilege : get_role_privileges(session, role.id)) {
+    for (auto &privilege : privileges[role.id]) {
       if (names_service(privilege.service_path, service_host_ctx)) {
         privilege.service_path = service_host_ctx;
       }
@@ -692,9 +709,10 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
   // on the same paths (`/a` and `/a*`, or `/b` when cloning to /b) become one,
   // as GRANT would have made them (merge_privilege).
   const auto user_roles = sql::metadata_table("mrs_user_has_role");
+  auto privileges = get_service_role_privileges(session, service_id);
   for (const auto &[role_id, new_role_id] : role_ids) {
     std::vector<Privilege> copies;
-    for (auto privilege : get_role_privileges(session, role_id)) {
+    for (auto &privilege : privileges[role_id]) {
       if (names_service(privilege.service_path, service_path)) {
         privilege.service_path = new_service_path;
       }
@@ -705,8 +723,7 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
           sql::Insert("mrs_privilege")
               .set("id", Value::id(new_id(session)))
               .set("role_id", Value::id(new_role_id))
-              .set("crud_operations",
-                   join(canonical_operations(copy.crud_operations), ","))
+              .set("crud_operations", join(copy.crud_operations, ","))
               .set("service_path", copy.service_path)
               .set("schema_path", copy.schema_path)
               .set("object_path", copy.object_path)
@@ -869,11 +886,7 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
                            const std::string &object_path) {
   bool found = false;
   for (const auto &privilege : get_role_privileges(session, role_id)) {
-    if (privilege.service_path != service_path ||
-        privilege.schema_path != schema_path ||
-        privilege.object_path != object_path) {
-      continue;
-    }
+    if (!on_paths(privilege, service_path, schema_path, object_path)) continue;
     found = true;
 
     std::vector<std::string> remaining;
