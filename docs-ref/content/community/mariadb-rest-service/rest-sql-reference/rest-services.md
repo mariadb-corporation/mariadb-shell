@@ -352,7 +352,7 @@ The `CLONE REST SERVICE` statement duplicates the contents of a REST service to 
 * the REST schemas and their REST objects, with their data mappings and row group security
 * the content sets and their files, with the links of their MRS scripts and triggers to the copied REST objects. A link to a REST object of another service is not copied
 * the links to the same REST auth apps, whose users are shared
-* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege whose service path or pattern matches the source service, other than `*`, is copied with the new path, so every privilege that works on the source works on the copy; the copied roles grant access to the copy only
+* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege whose service path or pattern matches the source service, other than `*`, is copied with the new path, so every privilege that works on the source works on the copy, and privileges that end up on the same paths are merged into one; the copied roles grant access to the copy only
 * the user groups and user hierarchy types specific to the service
 
 The copy has no relation with the source: nothing it holds reaches the source service or any other, and dropping it leaves them as they are. The privileges of global REST roles are not copied. A copy for developers on the same path is covered by the privileges on that path already; for a copy on a new path, grant them again if they are needed. The copy is never published.

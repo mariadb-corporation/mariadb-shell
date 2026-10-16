@@ -452,6 +452,8 @@ rest("GRANT REST ROLE \"derived\" ON SERVICE /cloneSrc TO \"cloner\"@\"Clone App
 # differs only in case does not match (the daemon's glob is case-sensitive)
 rest("CREATE REST ROLE \"pattern\" ON SERVICE /cloneSrc")
 rest("GRANT REST READ ON SERVICE `/clone?r*` SCHEMA /sakila TO \"pattern\" ON SERVICE /cloneSrc")
+# Two privileges that end up on the same paths in the clone become one
+rest("GRANT REST DELETE ON SERVICE /cloneSrc SCHEMA /sakila TO \"pattern\" ON SERVICE /cloneSrc")
 rest("CREATE REST ROLE \"otherCase\" ON SERVICE /cloneSrc")
 rest("GRANT REST UPDATE ON SERVICE /CloneSrc SCHEMA /sakila TO \"otherCase\" ON SERVICE /cloneSrc")
 rest("CREATE REST ROLE \"cloneGlobal\" ON ANY SERVICE")
@@ -483,7 +485,7 @@ EXPECT_EQ([[1, "custom", "{\"o\": 1}"]], sql_rows("SELECT s.enable_sql_endpoint,
 EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `base` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"base\" ON SERVICE /cloneCopy"))
 EXPECT_EQ([["GRANT REST READ ON SERVICE `*` SCHEMA /sakila OBJECT /city TO `derived` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"derived\" ON SERVICE /cloneCopy"))
 # The pattern that matches the source names the copy; the dead one stays dead
-EXPECT_EQ([["GRANT REST READ ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `pattern` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"pattern\" ON SERVICE /cloneCopy"))
+EXPECT_EQ([["GRANT REST READ,DELETE ON SERVICE /cloneCopy SCHEMA /sakila OBJECT `*` TO `pattern` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"pattern\" ON SERVICE /cloneCopy"))
 EXPECT_EQ([["GRANT REST UPDATE ON SERVICE /CloneSrc SCHEMA /sakila OBJECT `*` TO `otherCase` ON SERVICE /cloneCopy"]], rest_rows("SHOW REST GRANTS FOR \"otherCase\" ON SERVICE /cloneCopy"))
 EXPECT_EQ([["base"]], sql_rows("SELECT p.caption FROM %smrs_role r JOIN %smrs_role p ON p.id = r.derived_from_role_id WHERE r.caption = 'derived' AND r.specific_to_service_id = %s AND p.specific_to_service_id = %s" % (md, md, copy, copy)))
 EXPECT_EQ([["cloner"]], sql_rows("SELECT u.name FROM %smrs_user_has_role ur JOIN %smrs_user u ON u.id = ur.user_id JOIN %smrs_role r ON r.id = ur.role_id WHERE r.specific_to_service_id = %s" % (md, md, md, copy)))
@@ -533,7 +535,7 @@ dump = rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_
 EXPECT_IN("CREATE REST ROLE `base`;\n\nGRANT REST READ ON CURRENT SERVICE SCHEMA /sakila OBJECT `*` TO `base`;\n\n", dump)
 EXPECT_IN("CREATE REST ROLE `aChild` EXTENDS `base`;\n\nGRANT REST DELETE ON CURRENT SERVICE SCHEMA /sakila OBJECT /city TO `aChild`;\n\n", dump)
 # So is a pattern that matches the service's path; one that does not keeps its path
-EXPECT_IN("GRANT REST READ ON CURRENT SERVICE SCHEMA /sakila OBJECT `*` TO `pattern`;", dump)
+EXPECT_IN("GRANT REST READ,DELETE ON CURRENT SERVICE SCHEMA /sakila OBJECT `*` TO `pattern`;", dump)
 EXPECT_IN("GRANT REST UPDATE ON SERVICE /CloneSrc SCHEMA /sakila OBJECT `*` TO `otherCase`;", dump)
 EXPECT_TRUE(dump.index("CREATE REST ROLE `base`") < dump.index("CREATE REST ROLE `aChild`"), dump)
 EXPECT_EQ(2, dump.count("/cloneSrc"), dump)

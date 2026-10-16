@@ -161,8 +161,9 @@ void delete_service_roles(Db_session *session, const Id &service_id);
 // one, with their privileges and their grants to users. A privilege whose
 // service pattern matches service_path (the source's host_ctx), other than
 // `*`, is copied with new_service_path, so every privilege that works on the
-// source works on the copy. The global roles are left as they are. Returns
-// the ids of the copied roles, mapped from the originals.
+// source works on the copy; privileges that end up on the same paths are
+// merged into one. The global roles are left as they are. Returns the ids of
+// the copied roles, mapped from the originals.
 std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
                                      const Id &new_service_id,
                                      const std::string &service_path,
