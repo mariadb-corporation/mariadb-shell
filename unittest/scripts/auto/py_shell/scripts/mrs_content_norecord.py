@@ -380,9 +380,10 @@ EXPECT_EQ([["/summary", "ENABLED"], ["/total", "ENABLED"]], rest_rows("SHOW REST
 EXPECT_EQ(source_links, query_rows(links))
 session.run_sql("UPDATE mariadb_rest_service.content_set SET internal = 0 WHERE request_path = '/app'")
 
-#@<> CLONE REST SERVICE keeps the trigger links to objects of other services, not the Script links
-# Deleting a Script link deletes its object, so the clone of such a link would
-# take the other service's object with it when the clone is dropped
+#@<> CLONE REST SERVICE does not copy the links to objects of other services
+# The clone owns only what it created; besides, deleting a Script link deletes
+# its object, so the clone of such a link would take the other service's object
+# with it when the clone is dropped
 session.run_sql("""INSERT INTO mariadb_rest_service.rest_schema (service_id, name, request_path)
     SELECT id, 'o', '/o' FROM mariadb_rest_service.service WHERE url_context_root = '/other'""")
 session.run_sql("""INSERT INTO mariadb_rest_service.rest_object (rest_schema_id, name, request_path, object_type)
@@ -402,7 +403,7 @@ other_links = """SELECT cs_s.url_context_root, l.kind, l.name, o_s.url_context_r
 source_other_links = [["/svc", "Script", "otherScript", "/other"], ["/svc", "AfterRead", "otherTrigger", "/other"]]
 EXPECT_EQ(source_other_links, query_rows(other_links))
 rest("CLONE REST SERVICE /svc NEW REQUEST PATH /svcLinks")
-EXPECT_EQ(source_other_links + [["/svcLinks", "AfterRead", "otherTrigger", "/other"]], query_rows(other_links))
+EXPECT_EQ(source_other_links, query_rows(other_links))
 rest("DROP REST SERVICE /svcLinks")
 EXPECT_EQ(source_other_links, query_rows(other_links))
 rest("USE REST SERVICE /svc")

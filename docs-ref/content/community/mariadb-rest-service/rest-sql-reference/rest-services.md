@@ -350,12 +350,12 @@ metadata:
 The `CLONE REST SERVICE` statement duplicates the contents of a REST service to a newly created one. The copy gets:
 
 * the REST schemas and their REST objects, with their data mappings and row group security
-* the content sets and their files, with the links of their MRS scripts and triggers to the copied REST objects. A trigger link to a REST object of another service keeps pointing at that object; an MRS script link to one is not copied
+* the content sets and their files, with the links of their MRS scripts and triggers to the copied REST objects. A link to a REST object of another service is not copied
 * the links to the same REST auth apps, whose users are shared
-* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege on the path of the source service is copied with the new path
+* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege on the path of the source service is copied with the new path; the copied roles grant access to the copy only
 * the user groups and user hierarchy types specific to the service
 
-The privileges of global REST roles are not copied. A copy for developers on the same path is covered by the privileges on that path already; for a copy on a new path, grant them again if they are needed. The copy is never published.
+The copy has no relation with the source: nothing it holds reaches the source service or any other, and dropping it leaves them as they are. The privileges of global REST roles are not copied. A copy for developers on the same path is covered by the privileges on that path already; for a copy on a new path, grant them again if they are needed. The copy is never published.
 
 To clone a REST service for development, give the new path a developer list. The copy can use the same path: a MariaDB REST Daemon bootstrapped for one of those developers serves the copy in place of the original. Dropping the copy leaves the source service as it is.
 

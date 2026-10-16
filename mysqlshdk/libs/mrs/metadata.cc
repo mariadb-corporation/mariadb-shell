@@ -772,10 +772,10 @@ std::string service_create_statement(Db_session *session,
   std::vector<std::string> statements{output};
 
   // The endpoints act on the current service, so the script names the
-  // service here and in the GRANTs of its roles: a GRANT without ON SERVICE
-  // is on any service (`*`), not on the current one. Loading the script
-  // under another path changes these two statements and the GRANTs on the
-  // service's path (mrs.load.service() of the mrs plugin).
+  // service only here and in CREATE: the GRANTs of its roles on the
+  // service's own path are written ON CURRENT SERVICE. Loading the script
+  // under another path changes these two statements (mrs.load.service() of
+  // the mrs plugin), and the grants follow.
   if (include_database_endpoints || include_static_endpoints ||
       include_dynamic_endpoints) {
     statements.push_back("USE REST SERVICE " + service.full_service_path + ";");
@@ -837,9 +837,10 @@ Id clone_service(Db_session *session, const Service &service,
                        " WHERE service_id = ?",
                    {Value::id(new_id), Value::id(service.id)});
 
-  const auto role_ids = clone_service_roles(session, service.id, new_id,
-                                            service.host_ctx,
-                                            new_url_context_root);
+  // Privilege paths are host_ctx values: host name + request path
+  const auto role_ids =
+      clone_service_roles(session, service.id, new_id, service.host_ctx,
+                          service.url_host_name + new_url_context_root);
   clone_service_groups(session, service.id, new_id, role_ids);
 
   // The content sets come last: their links need the copies of the objects

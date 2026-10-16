@@ -86,7 +86,7 @@ CREATE REST USER "ulf"@"TestAuthApp" IDENTIFIED BY "********";
 
 ## CREATE REST ROLE
 
-The `CREATE REST ROLE` statement creates a REST role in the specified or the current REST service. With `EXTENDS`, the role has the privileges of the parent role in addition to its own. With `ON ANY SERVICE`, the role can be used from any REST service.
+The `CREATE REST ROLE` statement creates a REST role in the specified or the current REST service. Such a role grants access to that REST service only, whatever paths its privileges name. With `EXTENDS`, the role has the privileges of the parent role in addition to its own. With `ON ANY SERVICE`, the role can be used from any REST service, and its privileges apply wherever their paths match.
 
 ### Syntax
 
@@ -253,7 +253,7 @@ privilegeName:
 
 The privileges apply at the level you give: a REST service, a REST schema, or a single REST object. A role with the READ privilege on a REST schema, for example, can read all REST objects of that schema. The request paths can contain the wildcards `*` and `?`.
 
-Without a service, the privileges apply to any REST service, as with ``ON SERVICE `*` ``. `ON CURRENT SERVICE` grants them on the current REST service of the session, the one [USE REST SERVICE](rest-metadata.md#use-rest) selects: the privilege is stored with the request path the service has when the statement runs. The script of [SHOW CREATE REST SERVICE](rest-services.md#show-create-rest-service) grants this way, so it can be loaded under another request path.
+Without a service, the privileges apply to any REST service, as with ``ON SERVICE `*` ``; for a role of a REST service, that still means that service only. `ON CURRENT SERVICE` grants them on the current REST service of the session, the one [USE REST SERVICE](rest-metadata.md#use-rest) selects: the privilege is stored with the request path the service has when the statement runs. The script of [SHOW CREATE REST SERVICE](rest-services.md#show-create-rest-service) grants this way, so it can be loaded under another request path.
 
 ### Examples
 

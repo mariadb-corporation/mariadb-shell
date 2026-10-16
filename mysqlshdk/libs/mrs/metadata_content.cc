@@ -501,10 +501,10 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
       {Value::id(new_set_id), Value::id(content_set.id)});
 
   // The links of scripts and triggers to their REST objects, moved to the
-  // copies of the objects. A link to an object of another service keeps
-  // pointing at it, except a Script link: deleting that link deletes the
-  // object (AFTER DELETE trigger), so dropping the clone would take the other
-  // service's object with it.
+  // copies of the objects. A link to an object of another service is not
+  // copied: the clone owns only what it created, and a Script link's AFTER
+  // DELETE trigger deletes the object, so dropping the clone would take the
+  // other service's object with it.
   const auto links = sql::metadata_table("content_set_has_rest_object");
   for (const auto &row :
        session
@@ -515,13 +515,10 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
            .rows) {
     const Id rest_object_id = row["rest_object_id"].as_string();
     const auto it = rest_object_ids.find(rest_object_id);
-    if (it == rest_object_ids.end() && row["kind"].as_string() == "Script") {
-      continue;
-    }
+    if (it == rest_object_ids.end()) continue;
     sql::Insert insert("content_set_has_rest_object");
     insert.set("content_set_id", Value::id(new_set_id));
-    insert.set("rest_object_id",
-               Value::id(it == rest_object_ids.end() ? rest_object_id : it->second));
+    insert.set("rest_object_id", Value::id(it->second));
     insert.set("kind", row["kind"].as_string());
     insert.set("priority", row["priority"].as_int());
     insert.set("language", row["language"].as_string());
