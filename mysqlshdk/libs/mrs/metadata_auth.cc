@@ -25,6 +25,7 @@
 
 #include "mysqlshdk/libs/mrs/metadata_auth.h"
 #include "mysqlshdk/libs/mrs/strings.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -42,6 +43,15 @@ namespace metadata {
 using sql::Value;
 
 namespace {
+
+// Whether a privilege's service pattern names the service with this host_ctx,
+// as the REST daemon matches it (case-sensitive glob, * and ?). The daemon
+// applies a service role's privileges to that service only, so for such a
+// role any matching pattern means the service itself. `*` is left out: it
+// names every service, so it is kept as written.
+bool names_service(const std::string &pattern, const std::string &host_ctx) {
+  return pattern != "*" && shcore::match_glob(pattern, host_ctx, true);
+}
 
 // -- Password hashing -----------------------------------------------------
 //
@@ -629,17 +639,29 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
     add_role(session, definition);
   }
 
+  // A privilege that names the source (names_service) names the copy; the
+  // others are copied as they are: `*` works on the copy as on the source,
+  // and a path of another service works on neither
   const auto privileges = sql::metadata_table("mrs_privilege");
   const auto user_roles = sql::metadata_table("mrs_user_has_role");
   for (const auto &[role_id, new_role_id] : role_ids) {
-    session->execute(
-        "INSERT INTO " + privileges +
-            " (role_id, crud_operations, service_path, schema_path, object_path,"
-            " options) SELECT ?, crud_operations, IF(service_path = ?, ?,"
-            " service_path), schema_path, object_path, options FROM " +
-            privileges + " WHERE role_id = ?",
-        {Value::id(new_role_id), service_path, new_service_path,
-         Value::id(role_id)});
+    for (const auto &row :
+         session
+             ->query("SELECT id, service_path FROM " + privileges +
+                         " WHERE role_id = ?",
+                     {Value::id(role_id)})
+             .rows) {
+      const auto path = row["service_path"].as_string();
+      session->execute(
+          "INSERT INTO " + privileges +
+              " (role_id, crud_operations, service_path, schema_path,"
+              " object_path, options) SELECT ?, crud_operations, ?,"
+              " schema_path, object_path, options FROM " +
+              privileges + " WHERE id = ?",
+          {Value::id(new_role_id),
+           names_service(path, service_path) ? new_service_path : path,
+           Value::id(row["id"].as_string())});
+    }
     // The users of the auth apps are shared, so they keep their roles
     session->execute("INSERT INTO " + user_roles +
                          " (user_id, role_id, comments, options) SELECT user_id,"
@@ -835,7 +857,7 @@ std::string privilege_grant_statement(
   const auto &service = privilege.service_path;
 
   std::string target;
-  if (on_current_service && service == *current_service_host_ctx) {
+  if (on_current_service && names_service(service, *current_service_host_ctx)) {
     target = "CURRENT SERVICE";
   } else {
     // A service path may carry a host name in front of the request path

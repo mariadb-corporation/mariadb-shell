@@ -158,9 +158,11 @@ std::vector<std::string> role_create_statements(
 void delete_service_roles(Db_session *session, const Id &service_id);
 
 // For CLONE REST SERVICE: copies the roles specific to a service to another
-// one, with their privileges and their grants to users. A privilege on
-// service_path is copied with new_service_path. The global roles are left as
-// they are. Returns the ids of the copied roles, mapped from the originals.
+// one, with their privileges and their grants to users. A privilege whose
+// service pattern matches service_path (the source's host_ctx), other than
+// `*`, is copied with new_service_path, so every privilege that works on the
+// source works on the copy. The global roles are left as they are. Returns
+// the ids of the copied roles, mapped from the originals.
 std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
                                      const Id &new_service_id,
                                      const std::string &service_path,
@@ -207,9 +209,10 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
 
 // The GRANT REST ... ON ... TO role statement of a privilege. With
 // current_service_host_ctx, the host name and request path of the current
-// service, the statement names no service for the role, and a privilege on
-// that path is written ON CURRENT SERVICE, as in the script of SHOW CREATE
-// REST SERVICE: loaded under another path, it grants on the new one.
+// service, the statement names no service for the role, and a privilege whose
+// service pattern matches that path (other than `*`) is written ON CURRENT
+// SERVICE, as in the script of SHOW CREATE REST SERVICE: loaded under another
+// path, it grants on the new one.
 std::string privilege_grant_statement(
     const Privilege &privilege, const Role &role,
     const std::optional<std::string> &current_service_host_ctx = std::nullopt);

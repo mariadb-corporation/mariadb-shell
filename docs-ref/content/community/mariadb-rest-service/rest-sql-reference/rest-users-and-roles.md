@@ -253,7 +253,7 @@ privilegeName:
 
 The privileges apply at the level you give: a REST service, a REST schema, or a single REST object. A role with the READ privilege on a REST schema, for example, can read all REST objects of that schema. The request paths can contain the wildcards `*` and `?`.
 
-Without a service, the privileges apply to any REST service, as with ``ON SERVICE `*` ``; for a role of a REST service, that still means that service only. `ON CURRENT SERVICE` grants them on the current REST service of the session, the one [USE REST SERVICE](rest-metadata.md#use-rest) selects: the privilege is stored with the request path the service has when the statement runs. The script of [SHOW CREATE REST SERVICE](rest-services.md#show-create-rest-service) grants this way, so it can be loaded under another request path.
+Without a service, the privileges apply to any REST service, as with ``ON SERVICE `*` ``; for a role of a REST service, that still means that service only. `ON CURRENT SERVICE` grants them on the current REST service of the session, the one [USE REST SERVICE](rest-metadata.md#use-rest) selects: the privilege is stored with the request path the service has when the statement runs. The script of [SHOW CREATE REST SERVICE](rest-services.md#show-create-rest-service) grants this way every privilege of the service's roles whose service path or pattern matches the service, other than `*`, so it can be loaded under another request path.
 
 ### Examples
 
