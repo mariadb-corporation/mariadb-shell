@@ -207,7 +207,7 @@ For clients that send an API key instead of signing in, such as scripts and serv
       MCP_TRUSTED_PROXIES: 172.30.0.0/24
 ```
 
-This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the proxy passes on. Without it, the server answers every request through the proxy with `421 Misdirected Request`.
+This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the proxy passes on. Without it, the server answers every request through the proxy that carries a valid API key with `421 Misdirected Request`. A request without a key gets `401 Unauthorized` first, so the missing host name shows only once a client authenticates.
 
 The API key isn't written to the log. Read it, give the user a connection, and register the server with the key, as described in [Multi-Tenant Mode](multi-tenant-mode.md#connect-a-client-with-an-api-key):
 
@@ -378,8 +378,9 @@ The MCP server reads the realm's keys from `KEYCLOAK_URL`, so the container must
 | --- | --- | --- |
 | *entrypoint-mcp-server: … belongs to uid …, and the container runs as uid …* | The volume was set up by another uid, and its files are private to that uid. | Run the container as the uid named, or give the volume's files to the container's uid. |
 | *entrypoint-mcp-server: KEYCLOAK_ADMIN_PASSWORD_FILE: cannot read … as uid 10001* | The password file isn't readable by the server's user in the container. | Make it readable by uid `10001`, as described in [Setup With Keycloak](#setup-with-keycloak). |
-| *entrypoint-mcp-server: MCP_OAUTH_MODE=keycloak needs …* | A variable that the mode needs isn't set. | Set the variable the message names. |
+| *entrypoint-mcp-server: MCP_OAUTH_MODE=… needs …* | A variable that the mode needs isn't set. The container stops before it changes anything, so the previous configuration stays in place. | Set the variable the message names. |
+| *entrypoint-mcp-server: preparing the Keycloak realm needs KEYCLOAK_ADMIN_PASSWORD or KEYCLOAK_ADMIN_PASSWORD_FILE* | The mode, the public URL or a `KEYCLOAK_*` variable changed since the realm was last prepared, or the realm was never prepared. The container stops before it changes anything. | Pass the administrator password for one start, then empty it again. |
 | *Keycloak has no login theme 'mariadb-mcp'* | The theme isn't mounted into the Keycloak container, or Keycloak was started before it was. | Mount the theme and restart Keycloak. |
-| A client receives `421 Misdirected Request`. | The client uses a host name other than the public URL's, for example the published port directly. | Use the public URL, or add the name with `MCP_ALLOWED_HOSTS`. |
+| A client receives `421 Misdirected Request`. | The client uses a host name other than the public URL's, for example the published port directly. In `none` mode, which has no public URL, the proxy's host name isn't in `MCP_ALLOWED_HOSTS`. | Use the public URL, or add the name with `MCP_ALLOWED_HOSTS`. |
 | The container restarts again and again, and the log shows that the server refused to start. | The server has no user, and the mode doesn't create users at their first sign-in. | Set `MCP_INITIAL_USER`, or use `builtin` or `keycloak` mode. |
 | The server's log lines show the same address for every client. | `MCP_TRUSTED_PROXIES` doesn't contain the address that the proxy's requests arrive from. | Compare it with the address in the access log. See [Reverse Proxy](#reverse-proxy). |

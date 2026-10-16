@@ -58,7 +58,7 @@ docker exec mcp mariadb-shell -- mcp setup --user=ada@example.com \
   --addConnection='mariadb://ada@db.example.com:3306' --passwordEnv=ADA_DB_PASSWORD
 ```
 
-This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the reverse proxy passes on. Without it, every request through the proxy gets `421 Misdirected Request`. A server in this mode needs at least one user to start. `MCP_INITIAL_USER` creates one on the first start. The API key isn't written to the log; read it with `--showApiKey`. For `--passwordEnv`, pass the variable with `docker exec -e ADA_DB_PASSWORD=…`, or run `mcp setup` interactively with `docker exec -it`.
+This mode has no public URL, so `MCP_ALLOWED_HOSTS` names the host that the reverse proxy passes on. Without it, every request through the proxy that carries a valid API key gets `421 Misdirected Request`; one without a key gets `401` first. A server in this mode needs at least one user to start. `MCP_INITIAL_USER` creates one on the first start. The API key isn't written to the log; read it with `--showApiKey`. For `--passwordEnv`, pass the variable with `docker exec -e ADA_DB_PASSWORD=…`, or run `mcp setup` interactively with `docker exec -it`.
 
 #### Built-in sign-in (standalone)
 
