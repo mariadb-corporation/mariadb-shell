@@ -146,9 +146,11 @@ std::string role_create_statement(Db_session *session, const Role &role,
 // The CREATE REST ROLE statements of the roles specific to a service, each
 // followed by its GRANT REST statements, parents before the roles extending
 // them, for SHOW CREATE REST SERVICE ... INCLUDING DATABASE ENDPOINTS (on the
-// current service).
-std::vector<std::string> role_create_statements(Db_session *session,
-                                                const Id &service_id);
+// current service). service_host_ctx is the service's host name and request
+// path: its privileges on that path are written ON CURRENT SERVICE.
+std::vector<std::string> role_create_statements(
+    Db_session *session, const Id &service_id,
+    const std::string &service_host_ctx);
 
 // Deletes the roles specific to a service, the ones that extend others
 // first. The service's BEFORE DELETE trigger deletes them in index order,
@@ -204,11 +206,13 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
                            const std::string &object_path);
 
 // The GRANT REST ... ON ... TO role statement of a privilege. With
-// on_current_service, the statement names no service for the role and acts
-// on the current one, as in the script of SHOW CREATE REST SERVICE.
-std::string privilege_grant_statement(const Privilege &privilege,
-                                      const Role &role,
-                                      bool on_current_service = false);
+// current_service_host_ctx, the host name and request path of the current
+// service, the statement names no service for the role, and a privilege on
+// that path is written ON CURRENT SERVICE, as in the script of SHOW CREATE
+// REST SERVICE: loaded under another path, it grants on the new one.
+std::string privilege_grant_statement(
+    const Privilege &privilege, const Role &role,
+    const std::optional<std::string> &current_service_host_ctx = std::nullopt);
 
 // -- Auth apps ------------------------------------------------------------
 

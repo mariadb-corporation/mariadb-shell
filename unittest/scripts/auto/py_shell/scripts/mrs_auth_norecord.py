@@ -41,6 +41,7 @@ rest("CREATE REST SERVICE /other")
 #@<> Role statements need a service
 EXPECT_THROWS(lambda: rest("CREATE REST ROLE \"reader\""), "Failed to create the REST ROLE `reader`. No REST SERVICE specified.")
 EXPECT_THROWS(lambda: rest("GRANT REST READ TO \"reader\""), "Failed to grant privileges for REST role `reader`. No REST SERVICE specified.")
+EXPECT_THROWS(lambda: rest("GRANT REST READ ON CURRENT SERVICE TO \"reader\" ON ANY SERVICE"), "Failed to grant privileges for REST role `reader`. No REST SERVICE specified.")
 EXPECT_THROWS(lambda: rest("SHOW REST GRANTS FOR \"reader\""), "Cannot SHOW REST GRANTs. No REST SERVICE specified.")
 EXPECT_THROWS(lambda: rest("DROP REST ROLE \"reader\""), "Failed to drop the REST ROLE `reader`. No REST SERVICE specified.")
 rest("USE REST SERVICE /svc")
@@ -459,6 +460,18 @@ EXPECT_THROWS(lambda: rest("REVOKE REST READ FROM \"nope\""), "Failed to revoke 
 rest("REVOKE REST READ FROM \"reader\" ON ANY SERVICE")
 EXPECT_EQ([], rest_rows("SHOW REST GRANTS FOR \"reader\" ON ANY SERVICE"))
 
+#@<> GRANT and REVOKE REST ... ON CURRENT SERVICE
+# The privilege is on the current service's path, whatever role it goes to
+EXPECT_EQ("GRANT to `reader` added successfully.", rest_info("GRANT REST READ ON CURRENT SERVICE SCHEMA /sakila OBJECT /city TO \"reader\" ON ANY SERVICE"))
+EXPECT_EQ([["GRANT REST READ ON SERVICE /svc SCHEMA /sakila OBJECT /city TO `reader` ON ANY SERVICE"]], rest_rows("SHOW REST GRANTS FOR \"reader\" ON ANY SERVICE"))
+rest("REVOKE REST READ ON SERVICE /svc SCHEMA /sakila OBJECT /city FROM \"reader\" ON ANY SERVICE")
+rest("GRANT REST UPDATE ON CURRENT SERVICE TO \"reader\"")
+EXPECT_EQ([
+    ["GRANT REST UPDATE ON SERVICE /svc SCHEMA `*` OBJECT `*` TO `reader` ON SERVICE /svc"],
+    ["GRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader` ON SERVICE /svc"]], rest_rows("SHOW REST GRANTS FOR \"reader\""))
+EXPECT_EQ("REVOKE from `reader` executed successfully.", rest_info("REVOKE REST UPDATE ON CURRENT SERVICE FROM \"reader\""))
+EXPECT_EQ([["GRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader` ON SERVICE /svc"]], rest_rows("SHOW REST GRANTS FOR \"reader\""))
+
 #@<> GRANT REST ROLE
 EXPECT_EQ("GRANT ROLE to `mike`@`MRS App` added successfully.", rest_info("GRANT REST ROLE \"reader\" TO \"mike\"@\"MRS App\" COMMENT \"Hello\""))
 EXPECT_EQ("GRANT ROLE to `boss`@`MRS App` added successfully.", rest_info("GRANT REST ROLE \"reader\" ON SERVICE /svc TO \"boss\"@\"MRS App\""))
@@ -527,7 +540,7 @@ EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_r
 script = rest_text("SHOW CREATE REST SERVICE /svc INCLUDING DATABASE ENDPOINTS")
 EXPECT_TRUE("CREATE OR REPLACE REST SERVICE /svc\n" in script, script)
 # The endpoints act on the service the script names once, with USE
-EXPECT_TRUE("\n\nUSE REST SERVICE /svc;\n\nCREATE REST ROLE `reader`;\n\nGRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader`;\n\nCREATE REST ROLE `writer` EXTENDS `reader`\n    COMMENT 'writes';\n\nGRANT REST READ ON SERVICE `*` SCHEMA `` OBJECT `` TO `writer`;\n\nGRANT REST READ,DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `writer`;" in script, script)
+EXPECT_TRUE("\n\nUSE REST SERVICE /svc;\n\nCREATE REST ROLE `reader`;\n\nGRANT REST DELETE ON CURRENT SERVICE SCHEMA /sakila OBJECT /actor TO `reader`;\n\nCREATE REST ROLE `writer` EXTENDS `reader`\n    COMMENT 'writes';\n\nGRANT REST READ ON SERVICE `*` SCHEMA `` OBJECT `` TO `writer`;\n\nGRANT REST READ,DELETE ON CURRENT SERVICE SCHEMA /sakila OBJECT /actor TO `writer`;" in script, script)
 EXPECT_FALSE("`optioned`" in script, script)
 EXPECT_FALSE("`otherRole`" in script, script)
 

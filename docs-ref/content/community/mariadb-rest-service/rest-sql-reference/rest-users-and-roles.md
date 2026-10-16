@@ -216,6 +216,13 @@ grantRestPrivilegeStatement:
                 OBJECT objectRequestPathWildcard
             )?
         )
+        | (
+            ON CURRENT SERVICE (
+                SCHEMA schemaRequestPathWildcard (
+                    OBJECT objectRequestPathWildcard
+                )?
+            )?
+        )
     )? TO roleName roleService?
 ;
 
@@ -246,6 +253,8 @@ privilegeName:
 
 The privileges apply at the level you give: a REST service, a REST schema, or a single REST object. A role with the READ privilege on a REST schema, for example, can read all REST objects of that schema. The request paths can contain the wildcards `*` and `?`.
 
+Without a service, the privileges apply to any REST service, as with ``ON SERVICE `*` ``. `ON CURRENT SERVICE` grants them on the current REST service of the session, the one [USE REST SERVICE](rest-metadata.md#use-rest) selects: the privilege is stored with the request path the service has when the statement runs. The script of [SHOW CREATE REST SERVICE](rest-services.md#show-create-rest-service) grants this way, so it can be loaded under another request path.
+
 ### Examples
 
 The following example grants the READ privilege on the REST object `/post` of the REST schema `/blog` to the role `reader`, and the CREATE and UPDATE privileges to the role `poster`.
@@ -254,6 +263,14 @@ The following example grants the READ privilege on the REST object `/post` of th
 GRANT REST READ ON SCHEMA /blog OBJECT /post TO "reader";
 
 GRANT REST CREATE, UPDATE ON SCHEMA /blog OBJECT /post TO "poster";
+```
+
+The following example grants the READ privilege on the REST schema `/blog` of the current REST service, `/myService`, to its role `reader`.
+
+```sql
+USE REST SERVICE /myService;
+
+GRANT REST READ ON CURRENT SERVICE SCHEMA /blog TO "reader";
 ```
 
 ## GRANT REST ROLE
@@ -294,6 +311,13 @@ revokeRestPrivilegeStatement:
                 OBJECT objectRequestPathWildcard
             )?
         )
+        | (
+            ON CURRENT SERVICE (
+                SCHEMA schemaRequestPathWildcard (
+                    OBJECT objectRequestPathWildcard
+                )?
+            )?
+        )
     )? FROM roleName roleService?
 ;
 ```
@@ -306,6 +330,8 @@ revokeRestPrivilegeStatement:
 
 ```sql
 REVOKE REST UPDATE ON SCHEMA /blog OBJECT /post FROM "poster";
+
+REVOKE REST READ ON CURRENT SERVICE SCHEMA /blog FROM "reader";
 ```
 
 ## REVOKE REST ROLE

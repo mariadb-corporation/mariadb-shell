@@ -782,7 +782,8 @@ std::string service_create_statement(Db_session *session,
   }
 
   if (include_database_endpoints) {
-    for (auto &statement : role_create_statements(session, service.id)) {
+    for (auto &statement :
+         role_create_statements(session, service.id, service.host_ctx)) {
       statements.push_back(std::move(statement));
     }
     for (const auto &schema : get_schemas(session, service.id)) {

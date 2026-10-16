@@ -664,11 +664,19 @@ void Ddl_executor::do_execute(const Rest_privilege_statement &s,
 
   const auto service_id = resolve_role_service(s.role_service);
 
-  const auto service_path = pattern_of(s.service_pattern);
+  // ON CURRENT SERVICE stores the current service's host name and request
+  // path, the form CLONE REST SERVICE and the service script compare
+  if (s.current_service && !m_state->current_service_id) {
+    throw std::runtime_error("No REST SERVICE specified.");
+  }
+  const auto service_path =
+      s.current_service
+          ? m_state->current_service_host + m_state->current_service
+          : pattern_of(s.service_pattern);
   const auto schema_path = pattern_of(s.schema_pattern);
   const auto object_path = pattern_of(s.object_pattern);
   if (!s.revoke) {
-    check_pattern(service_path, "service_path");
+    if (!s.current_service) check_pattern(service_path, "service_path");
     check_pattern(schema_path, "schema_path");
     check_pattern(object_path, "object_path");
   }

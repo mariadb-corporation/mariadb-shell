@@ -519,15 +519,21 @@ EXPECT_EQ([[2, 2, 1, 1]], sql_rows("SELECT (SELECT COUNT(*) FROM %smrs_role WHER
 rest("CREATE REST ROLE \"aChild\" EXTENDS \"base\" ON SERVICE /cloneSrc")
 rest("GRANT REST DELETE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT /city TO \"aChild\" ON SERVICE /cloneSrc")
 dump = rest("SHOW CREATE REST SERVICE /cloneSrc INCLUDING ALL ENDPOINTS").fetch_one()[0]
-EXPECT_IN("CREATE REST ROLE `base`;\n\nGRANT REST READ ON SERVICE /cloneSrc SCHEMA /sakila OBJECT `*` TO `base`;\n\n", dump)
-EXPECT_IN("CREATE REST ROLE `aChild` EXTENDS `base`;\n\nGRANT REST DELETE ON SERVICE /cloneSrc SCHEMA /sakila OBJECT /city TO `aChild`;\n\n", dump)
+# Privileges on the service's own path are ON CURRENT SERVICE, so the
+# script names the service only in CREATE REST SERVICE and USE REST SERVICE
+EXPECT_IN("CREATE REST ROLE `base`;\n\nGRANT REST READ ON CURRENT SERVICE SCHEMA /sakila OBJECT `*` TO `base`;\n\n", dump)
+EXPECT_IN("CREATE REST ROLE `aChild` EXTENDS `base`;\n\nGRANT REST DELETE ON CURRENT SERVICE SCHEMA /sakila OBJECT /city TO `aChild`;\n\n", dump)
 EXPECT_TRUE(dump.index("CREATE REST ROLE `base`") < dump.index("CREATE REST ROLE `aChild`"), dump)
+EXPECT_EQ(2, dump.count("/cloneSrc"), dump)
+# Loaded under another path by changing those two statements only
+reloaded = dump.replace("REST SERVICE /cloneSrc", "REST SERVICE /reloaded")
 dump_file = os.path.join(__tmp_dir, "cloneSrc.mrs.sql")
-testutil.create_file(dump_file, dump.replace("/cloneSrc", "/reloaded"))
+testutil.create_file(dump_file, reloaded)
 testutil.call_mysqlsh([__sandbox_uri1, "--sql", "-f", dump_file], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("REST SERVICE `/reloaded` created successfully.")
 WIPE_OUTPUT()
-EXPECT_EQ(dump.replace("/cloneSrc", "/reloaded"), rest("SHOW CREATE REST SERVICE /reloaded INCLUDING ALL ENDPOINTS").fetch_one()[0])
+EXPECT_EQ(reloaded, rest("SHOW CREATE REST SERVICE /reloaded INCLUDING ALL ENDPOINTS").fetch_one()[0])
+EXPECT_EQ([["GRANT REST READ ON SERVICE /reloaded SCHEMA /sakila OBJECT `*` TO `base` ON SERVICE /reloaded"]], rest_rows("SHOW REST GRANTS FOR \"base\" ON SERVICE /reloaded"))
 os.remove(dump_file)
 rest("DROP REST SERVICE /reloaded")
 rest("DROP REST SERVICE /cloneSrc")

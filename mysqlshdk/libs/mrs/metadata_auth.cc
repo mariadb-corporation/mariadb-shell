@@ -583,14 +583,16 @@ std::vector<Role> service_roles_parents_first(Db_session *session,
   return ordered;
 }
 
-std::vector<std::string> role_create_statements(Db_session *session,
-                                                const Id &service_id) {
+std::vector<std::string> role_create_statements(
+    Db_session *session, const Id &service_id,
+    const std::string &service_host_ctx) {
   // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
   std::vector<std::string> statements;
   for (const auto &role : service_roles_parents_first(session, service_id)) {
     statements.push_back(role_create_statement(session, role, true));
     for (const auto &privilege : get_role_privileges(session, role.id)) {
-      statements.push_back(privilege_grant_statement(privilege, role, true) + ";");
+      statements.push_back(
+          privilege_grant_statement(privilege, role, service_host_ctx) + ";");
     }
   }
   return statements;
@@ -826,23 +828,30 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
   return found;
 }
 
-std::string privilege_grant_statement(const Privilege &privilege,
-                                      const Role &role, bool on_current_service) {
-  // A service path may carry a host name in front of the request path
-  std::string host;
-  std::string request_path;
+std::string privilege_grant_statement(
+    const Privilege &privilege, const Role &role,
+    const std::optional<std::string> &current_service_host_ctx) {
+  const bool on_current_service = current_service_host_ctx.has_value();
   const auto &service = privilege.service_path;
-  if (service.empty() || service[0] == '/' || service == "*") {
-    request_path = service;
-  } else {
-    const auto slash = service.find('/');
-    host = service.substr(0, slash);
-    if (slash != std::string::npos) request_path = service.substr(slash);
-  }
 
-  std::string target = "SERVICE ";
-  if (!host.empty()) target += double_quote(host) + " ";
-  target += quote_request_path(request_path);
+  std::string target;
+  if (on_current_service && service == *current_service_host_ctx) {
+    target = "CURRENT SERVICE";
+  } else {
+    // A service path may carry a host name in front of the request path
+    std::string host;
+    std::string request_path;
+    if (service.empty() || service[0] == '/' || service == "*") {
+      request_path = service;
+    } else {
+      const auto slash = service.find('/');
+      host = service.substr(0, slash);
+      if (slash != std::string::npos) request_path = service.substr(slash);
+    }
+    target = "SERVICE ";
+    if (!host.empty()) target += double_quote(host) + " ";
+    target += quote_request_path(request_path);
+  }
   target += " SCHEMA " + quote_request_path(privilege.schema_path);
   target += " OBJECT " + quote_request_path(privilege.object_path);
 

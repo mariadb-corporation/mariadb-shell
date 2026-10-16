@@ -452,6 +452,10 @@ struct Rest_privilege_statement {
   // `ON [SERVICE] <pattern>` or `ON [SERVICE <pattern>] SCHEMA <pattern>
   // [OBJECT <pattern>]`; patterns may contain * and ? wildcards.
   std::optional<std::string> service_pattern;
+  // `ON CURRENT SERVICE [SCHEMA <pattern> [OBJECT <pattern>]]`: the service
+  // path is the current service's, so a script that names its service only
+  // in USE REST SERVICE can be loaded under another path.
+  bool current_service = false;
   std::optional<std::string> schema_pattern;
   std::optional<std::string> object_pattern;
   std::string role;
