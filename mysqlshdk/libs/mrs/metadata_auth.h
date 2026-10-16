@@ -186,6 +186,7 @@ struct Privilege {
   std::string service_path;  // patterns, * for all
   std::string schema_path;
   std::string object_path;
+  std::optional<std::string> options;
 };
 
 std::vector<Privilege> get_role_privileges(Db_session *session,

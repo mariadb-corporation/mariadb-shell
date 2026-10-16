@@ -227,7 +227,7 @@ std::vector<Role> query_roles(Db_session *session, const std::string &where,
 
 const char *k_privilege_select = R"(
 SELECT p.id, p.role_id, r.caption AS role_caption, p.crud_operations,
-    p.service_path, p.schema_path, p.object_path
+    p.service_path, p.schema_path, p.object_path, p.options
 FROM `{metadata_schema}`.`mrs_privilege` p
     JOIN `{metadata_schema}`.`mrs_role` r ON p.role_id = r.id
 )";
@@ -241,7 +241,44 @@ Privilege privilege_from_row(const Db_row &row) {
   p.service_path = row["service_path"].as_string();
   p.schema_path = row["schema_path"].as_string();
   p.object_path = row["object_path"].as_string();
+  p.options = row["options"].as_optional_string();
   return p;
+}
+
+// How GRANT stores privileges: one per role and paths, whose operations
+// are the union of all granted on those paths. GRANT, the clone and the dump
+// go through these, so they agree.
+
+bool on_paths(const Privilege &privilege, const std::string &service_path,
+              const std::string &schema_path, const std::string &object_path) {
+  return privilege.service_path == service_path &&
+         privilege.schema_path == schema_path &&
+         privilege.object_path == object_path;
+}
+
+std::vector<std::string> merged_operations(
+    std::vector<std::string> operations,
+    const std::vector<std::string> &more) {
+  for (const auto &operation : more) {
+    if (!contains(operations, operation)) operations.push_back(operation);
+  }
+  return canonical_operations(operations);
+}
+
+// Adds a privilege to a role's list: merged into one on the same paths,
+// which keeps its id and options
+void merge_privilege(std::vector<Privilege> *privileges, Privilege privilege) {
+  const auto same = std::find_if(
+      privileges->begin(), privileges->end(), [&](const Privilege &p) {
+        return on_paths(p, privilege.service_path, privilege.schema_path,
+                        privilege.object_path);
+      });
+  if (same == privileges->end()) {
+    privileges->push_back(std::move(privilege));
+  } else {
+    same->crud_operations =
+        merged_operations(same->crud_operations, privilege.crud_operations);
+  }
 }
 
 const char *k_auth_app_select = R"(
@@ -608,22 +645,7 @@ std::vector<std::string> role_create_statements(
       if (names_service(privilege.service_path, service_host_ctx)) {
         privilege.service_path = service_host_ctx;
       }
-      const auto same = std::find_if(
-          grants.begin(), grants.end(), [&](const Privilege &g) {
-            return g.service_path == privilege.service_path &&
-                   g.schema_path == privilege.schema_path &&
-                   g.object_path == privilege.object_path;
-          });
-      if (same == grants.end()) {
-        grants.push_back(std::move(privilege));
-        continue;
-      }
-      for (const auto &operation : privilege.crud_operations) {
-        if (!contains(same->crud_operations, operation)) {
-          same->crud_operations.push_back(operation);
-        }
-      }
-      same->crud_operations = canonical_operations(same->crud_operations);
+      merge_privilege(&grants, std::move(privilege));
     }
     for (const auto &grant : grants) {
       statements.push_back(
@@ -668,47 +690,15 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
   // others are copied as they are: `*` works on the copy as on the source,
   // and a path of another service works on neither. Privileges that end up
   // on the same paths (`/a` and `/a*`, or `/b` when cloning to /b) become one,
-  // as GRANT would have made them; the first one's options are kept.
-  struct Copied_privilege {
-    std::string service_path;
-    std::string schema_path;
-    std::string object_path;
-    std::vector<std::string> operations;
-    std::optional<std::string> options;
-  };
-  const auto privileges = sql::metadata_table("mrs_privilege");
+  // as GRANT would have made them (merge_privilege).
   const auto user_roles = sql::metadata_table("mrs_user_has_role");
   for (const auto &[role_id, new_role_id] : role_ids) {
-    std::vector<Copied_privilege> copies;
-    for (const auto &row :
-         session
-             ->query("SELECT crud_operations, service_path, schema_path,"
-                     " object_path, options FROM " + privileges +
-                         " WHERE role_id = ? ORDER BY id",
-                     {Value::id(role_id)})
-             .rows) {
-      auto path = row["service_path"].as_string();
-      if (names_service(path, service_path)) path = new_service_path;
-      const auto schema_path = row["schema_path"].as_string();
-      const auto object_path = row["object_path"].as_string();
-      const auto operations =
-          split(row["crud_operations"].as_string(), ',', true);
-
-      const auto same = std::find_if(
-          copies.begin(), copies.end(), [&](const Copied_privilege &c) {
-            return c.service_path == path && c.schema_path == schema_path &&
-                   c.object_path == object_path;
-          });
-      if (same == copies.end()) {
-        copies.push_back({path, schema_path, object_path, operations,
-                          row["options"].as_optional_string()});
-        continue;
+    std::vector<Privilege> copies;
+    for (auto privilege : get_role_privileges(session, role_id)) {
+      if (names_service(privilege.service_path, service_path)) {
+        privilege.service_path = new_service_path;
       }
-      for (const auto &operation : operations) {
-        if (!contains(same->operations, operation)) {
-          same->operations.push_back(operation);
-        }
-      }
+      merge_privilege(&copies, std::move(privilege));
     }
     for (const auto &copy : copies) {
       session->execute(
@@ -716,7 +706,7 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
               .set("id", Value::id(new_id(session)))
               .set("role_id", Value::id(new_role_id))
               .set("crud_operations",
-                   join(canonical_operations(copy.operations), ","))
+                   join(canonical_operations(copy.crud_operations), ","))
               .set("service_path", copy.service_path)
               .set("schema_path", copy.schema_path)
               .set("object_path", copy.object_path)
@@ -850,19 +840,13 @@ Id add_role_privilege(Db_session *session, const Id &role_id,
                       const std::string &object_path) {
   // Grants on the same paths extend the existing privilege
   for (const auto &privilege : get_role_privileges(session, role_id)) {
-    if (privilege.service_path != service_path ||
-        privilege.schema_path != schema_path ||
-        privilege.object_path != object_path) {
-      continue;
-    }
-    auto merged = privilege.crud_operations;
-    for (const auto &operation : operations) {
-      if (!contains(merged, operation)) merged.push_back(operation);
-    }
-    session->execute(sql::Update("mrs_privilege")
-                         .set("crud_operations",
-                              join(canonical_operations(merged), ","))
-                         .where("id", Value::id(privilege.id)));
+    if (!on_paths(privilege, service_path, schema_path, object_path)) continue;
+    session->execute(
+        sql::Update("mrs_privilege")
+            .set("crud_operations",
+                 join(merged_operations(privilege.crud_operations, operations),
+                      ","))
+            .where("id", Value::id(privilege.id)));
     return privilege.id;
   }
 
