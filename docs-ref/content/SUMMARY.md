@@ -62,6 +62,7 @@
       * [Connecting MCP Clients](community/mariadb-shell/mcp-server/connecting-mcp-clients.md)
       * [Multi-Tenant Mode](community/mariadb-shell/mcp-server/multi-tenant-mode.md)
       * [OAuth Authentication](community/mariadb-shell/mcp-server/oauth-authentication.md)
+      * [Running in a Container](community/mariadb-shell/mcp-server/running-in-a-container.md)
       * [Security and Session Handling](community/mariadb-shell/mcp-server/security-and-session-handling.md)
     * [Extending MariaDB Shell](community/mariadb-shell/extending-mariadb-shell/README.md)
       * [Reports](community/mariadb-shell/extending-mariadb-shell/reports.md)

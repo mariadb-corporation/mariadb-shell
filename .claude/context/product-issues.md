@@ -2,26 +2,9 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Context for the docs work is in [docs-ref.md](docs-ref.md).
 
-These were found by testing `build/bin/mariadb-shell` 26.9.5 (osx, arm64, built for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes in October 2026. The docs describe the current behavior, so **when one is fixed, update the page named in brackets and delete the entry here** (git history keeps the record). "Help" means the built-in `\?` text.
-
-### Found during the review fixes, not fixed
-
-- **uvicorn's access log in the MCP server** prints request paths with query strings, so `GET /authorize?client_id=…&state=…` shows the OAuth client ID. It is uvicorn's own logger (stdout), not `log_event`; `access_log=False` in `lib/server.py`'s `uvicorn.Config` would silence it. [mcp-server/starting-the-mcp-server.md would need a note]
-- **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
+These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) against MariaDB 12.3.2 sandboxes, unless an entry says otherwise. The docs describe the current behavior, so **when one is fixed, update the page named in brackets and delete the entry here** (git history keeps the record). "Help" means the built-in `\?` text.
 
 ## Product bugs (behavior)
-
-The original summary, carried over verbatim:
-
-- **Product bugs found while writing.** The docs describe the actual behavior:
-  - `mariadb+ssh://` works only via Python `shell.connect`. On the CLI and with `\connect` it fails with "Scheme extension [ssh] is not supported" (`hide_password_in_uri()`, shell_options.cc:1348).
-  - `ssl-mode=REQUIRED`/`PREFERRED` silently fall back to an unencrypted connection, with no warning.
-  - `\show threads` always fails ('where' parameter unsupported); `\show thread --vars/--raw-locks` also fail on MariaDB.
-  - `install.sh` without `MARIADB_SHELL_TAG` skips prereleases, and every release so far is a prerelease. (Reachable with `--pre-release`.)
-  - Load progress file: on MariaDB it is `load-progress.<server_id>.json`, but the help says `<server_uuid>.progress`.
-  - Every dump warns "Charset id '33' csname 'UTF8'…".
-
-The full list, by area:
 
 ### Connections and Authentication
 
@@ -47,7 +30,7 @@ The full list, by area:
   - `export_table`: `allowDataMasking`
   - copy: rejects `ocimds` as an invalid option, while dump refuses it with a reason; the two are inconsistent
 - **The dump manifest's `dumper` field** reads "mysqlsh Ver 26.9.5".
-- **macOS test hosts:** eight or more concurrent loads into one table can hang the MariaDB server. This is a server issue, not reproduced on Linux; it comes from the Confluence source. Removed from the Limitations page on review (the server doesn't support macOS); kept here as a test-host note only.
+- **macOS test hosts:** eight or more concurrent loads into one table can hang the MariaDB server. This is a server issue, not reproduced on Linux; it comes from the Confluence source. It isn't on the Limitations page (the server doesn't support macOS); this is a test-host note only.
 
 ### Shell, Output and Reports
 
@@ -65,8 +48,13 @@ The full list, by area:
 - **`db` is always `None`.** It is only set for X sessions; README.md says it holds the default schema. [getting-started/global-objects.md]
 - **`track_system_variable`** accepts only `sql_mode`, which MariaDB never reports through session tracking (MARIADB_PORT.md §13.2). It is left out of the docs.
 - **Syslog records a `/command` as the `\command` it ran as** (`/source f` is logged as `\source f`), while the history keeps what was typed. [logging-and-debugging.md]
+- **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
 - **Tab doesn't complete a command after leading whitespace**, for either prefix: `  \co` and `  /co` stay as typed. [using-mariadb-shell/autocompletion.md]
 - **Argument completion splits the line on spaces only**, so a quoted or tab-separated argument isn't completed. [using-mariadb-shell/autocompletion.md]
+
+### MCP Server
+
+- **uvicorn's access log in the MCP server** prints request paths with query strings, so `GET /authorize?client_id=…&state=…` shows the OAuth client ID. It is uvicorn's own logger (stdout), not `log_event`; `access_log=False` in `lib/server.py`'s `uvicorn.Config` would silence it. [mcp-server/starting-the-mcp-server.md would need a note]
 
 ### Sandboxes
 
@@ -76,18 +64,11 @@ The full list, by area:
 
 - **The default install skips prereleases.** `install.sh`/`install.ps1` without `MARIADB_SHELL_TAG` skip GitHub prereleases, and every release so far (v26.9.5 included) is one, so the default command fails today. [installation/*, hint]
 - **Release tarballs contain no LICENSE file.** [license.md links to the repo's LICENSE]
+- **The shell hard-codes `setlocale(LC_ALL, "en_US.UTF-8")`** (`src/mysqlsh/main.cc:444`) and prints "Cannot set LC_ALL to locale en_US.UTF-8" on every run where that locale isn't generated, as in slim container images; setting `LC_ALL=C.UTF-8` doesn't help. A fallback to `C.UTF-8` would fix it. [docker/linux-debian13-mcp-server.Dockerfile generates the locale as a workaround]
 
 ## Help Text and Man Page Out of Date
 
 These items still describe MySQL Shell, or disagree with the code. The docs follow the code.
-
-The original summary, carried over verbatim:
-
-- **Help text still describes MySQL Shell:**
-  - The dump/load help lists HeatWave/lakehouse options.
-  - The manifest field `dumper` says "mysqlsh".
-
-The full list:
 
 - **`mysqlx` scheme accepted at parse time** (to fix as one change across the shell and code_ext):
   - The invalid-scheme error lists `mysqlx`, and `shell.parse_uri("mysqlx://…")` succeeds; `shell.connect` and the command line prompt for the password and only then fail with `Unknown MariaDB URI type mysqlx`.
