@@ -554,6 +554,26 @@ A basic URI string has the following format:
 [scheme://][user[:password]@]<host[:port]|socket>[/schema][?option=value&option=value...]
 )*");
 
+#ifndef MARIADB_BUILD
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_CIPHER,
+              "@li ssl-cipher: The list of permissible encryption ciphers for "
+              "connections that use TLS protocols up through TLSv1.2.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_TLS_CIPHERSUITES,
+              "@li tls-ciphersuites: List of TLS v1.3 ciphers to use.");
+#else
+// MariaDB Connector/C has no option of its own for the TLS v1.3 cipher suites,
+// so tls-ciphersuites is accepted and dropped; its OpenSSL backend applies the
+// ssl-cipher list to both TLS v1.3 and older versions
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_CIPHER,
+              "@li ssl-cipher: The list of permissible encryption ciphers. "
+              "With OpenSSL, the list also selects the TLS v1.3 cipher "
+              "suites.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_TLS_CIPHERSUITES,
+              "@li tls-ciphersuites: Accepted, but has no effect: MariaDB "
+              "Connector/C has no setting of its own for the TLS v1.3 cipher "
+              "suites.");
+#endif
+
 // These lines group the connection options available for dictionary
 REGISTER_HELP_TOPIC(Connection Options, TOPIC, TOPIC_CONNECTION_OPTIONS,
                     Contents, ALL);
@@ -570,10 +590,9 @@ files in PEM format.
 @li ssl-key: The path to the SSL private key file in PEM format.
 @li ssl-crl: The path to file that contains certificate revocation lists.
 @li ssl-crlpath: The path of directory that contains certificate revocation list files.
-@li ssl-cipher: The list of permissible encryption ciphers for connections that
-use TLS protocols up through TLSv1.2.
+${TOPIC_CONNECTION_OPTION_SSL_CIPHER}
 @li tls-version: List of protocols permitted for secure connections.
-@li tls-ciphers: List of TLS v1.3 ciphers to use.
+${TOPIC_CONNECTION_OPTION_TLS_CIPHERSUITES}
 @li auth-method: Authentication method.
 @li get-server-public-key: Request public key from the server required for
 RSA key pair-based password exchange. Use when connecting to MySQL 8.0
@@ -657,8 +676,17 @@ attempt connecting using the X protocol, if the connection fails it will then
 try to connect using the MySQL protocol.
 )*");
 #else
-REGISTER_HELP(TOPIC_CONNECTION_SCHEMES,
-              R"*(@li mysql: for connections using the MySQL protocol.)*");
+// one line per item: !{} splits this text at every newline
+REGISTER_HELP(
+    TOPIC_CONNECTION_SCHEMES,
+    R"*(@li mariadb: for connections using the MariaDB client-server protocol, the default.
+@li mysql: the same as mariadb, so that URIs written for MySQL Shell keep working.)*");
+REGISTER_HELP_TOPIC_TEXT(
+    TOPIC_CONNECTION_AUTO_SCHEMES,
+    R"*(Either scheme takes the +ssh extension, as in mariadb+ssh://user@@host, to
+connect through an SSH tunnel to that host. The ssh-* options of the URI then
+configure the tunnel.
+)*");
 #endif
 
 REGISTER_HELP_TOPIC(Connection Types, TOPIC, TOPIC_CONNECTION_TYPES, Contents,
@@ -783,7 +811,7 @@ Connection compression is governed by following connection options:
 
 @li REQUIRED: connection will only be made when compression negotiation is
 succesful.
-@li PREFFERED: (default for X protocol connections) shell will attempt to
+@li PREFERRED: (default for X protocol connections) shell will attempt to
 establish connection with compression enabled, but if compression negotiation
 fails, connection will be established without compression.
 @li DISABLED: (defalut for classic protocol connections) connection will be
@@ -1332,6 +1360,13 @@ None Shell::status() {}
 void Shell::status() { _shell->cmd_status({}); }
 
 REGISTER_HELP_FUNCTION(listCredentialHelpers, shell);
+#ifndef MARIADB_BUILD
+// a limit of mysql_config_editor, which the MariaDB build does not use to write
+// the login file
+REGISTER_HELP(SHELL_LISTCREDENTIALHELPERS_LOGIN_PATH_LENGTH,
+              "@li The <b>login-path</b> helper cannot store secrets longer "
+              "than 78 characters.");
+#endif
 REGISTER_HELP_FUNCTION_TEXT(SHELL_LISTCREDENTIALHELPERS, R"*(
 Returns a list of strings, where each string is a name of a helper available on
 the current platform.
@@ -1344,7 +1379,7 @@ Only values on this list (plus "default" and "<disabled>") can be used to set
 the "credentialStore.helper" %Shell option.
 
 <b>Limitations:</b>
-@li The <b>login-path</b> helper cannot store secrets longer than 78 characters.
+${SHELL_LISTCREDENTIALHELPERS_LOGIN_PATH_LENGTH}
 @li The <b>login-path</b> helper cannot store the following characters: '\\0',
     '0x03', '0x04', '\\n', '\\r', '0x0F', '0x11', '0x12', '0x13', '0x15',
     '0x16', '0x17', '0x19', '0x1A', '0x1C', '0x7F'.
@@ -1827,10 +1862,16 @@ REGISTER_HELP(
     "folder located in the Shell configuration path (by default it "
     "is <b>~/.mariadb-shell/init.d</b> in Unix and "
     "<b>@%AppData@%\\MariaDB\\mariadb-shell\\init.d</b> in Windows).");
+#ifdef HAVE_JS
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL38,
               "Custom reports may be written in either JavaScript or Python. "
               "The standard file extension for each case should be used to get "
               "them properly loaded.");
+#else
+REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL38,
+              "Custom reports are written in Python, in files with the .py "
+              "extension.");
+#endif
 REGISTER_HELP(SHELL_REGISTERREPORT_DETAIL39,
               "All reports registered in those files using the "
               "<<<registerReport>>>() method will be available when Shell "
@@ -2008,19 +2049,23 @@ the member being added.
 This information will be integrated into the shell help to be available through
 the built in help system (\\?).
 
-When adding a function, the following attribute is also allowed on the member
-definition:
+When adding a function, the following attributes are also allowed on the
+member definition:
 
 @li parameters: a list of parameter definitions for each parameter that the
 function accepts.
+@li cli: a boolean value, false by default, indicating whether the function can
+also be called from the command line, as in mariadb-shell -- object function.
 
 A parameter definition is a dictionary with the following attributes:
 
 @li name: required, the name of the parameter, must be a valid identifier.
-@li type: required, the data type of the parameter, allowed values include:
-string, integer, bool, float, array, dictionary, object.
+@li type: the data type of the parameter, allowed values include: string,
+integer, bool, float, array, dictionary, object. If not given, the parameter
+accepts a value of any type.
 @li required: a boolean value indicating whether the parameter is mandatory or
 optional.
+@li default: the value the parameter takes when it is not given.
 @li brief: a string with a short description of the parameter.
 @li details: a string array with additional details about the parameter.
 
@@ -2459,14 +2504,30 @@ statement that produced the result.
 produced this result.
 @li <b>"autoIncrementValue"</b> - the last integer auto generated id (for insert operations).
 @li <b>"warnings"</b> - a list of warnings associated to the Result.
-@li <b>"data"</b> - a list of dictionaries representing a record in the Result.
+@li <b>"columns"</b> - a list with the columns of the Result, in order.
+@li <b>"data"</b> - a list of records in the Result. A record is either a
+dictionary, mapping column names to values, or, when "columns" is given, a list
+of values in the order of the columns. All the records must use the same form.
 
 Creating a Result using an empty Dictionary is the same as creating an OK result with no data.
 
+A column is defined either as a string with its name, or as a dictionary with
+the following elements:
+
+@li <b>"name"</b> - the name of the column, mandatory.
+@li <b>"type"</b> - one of: string, integer, float, double, json, date, time,
+datetime, bytes.
+@li <b>"flags"</b> - a string with a list of flags, separated by commas or
+spaces: blob, timestamp, unsigned, zerofill, binary, enum, set.
+@li <b>"length"</b> - the length of the column.
+
+The type, flags and length that are not given are deduced from the values of
+the first record.
+
 A warning is defined as a dictionary with the following elements:
 
-@li <b>"level"</b> - holds the warning type: error, warning, note.
-@li <b>"code"</b> - integer number identifying the warning code.
+@li <b>"level"</b> - holds the warning type: warning or note.
+@li <b>"code"</b> - integer number identifying the warning code, 0 if not given.
 @li <b>"message"</b> - describes the actual warning.
 
 When defining warnings, both level and message are mandatory.
@@ -2474,6 +2535,15 @@ When defining warnings, both level and message are mandatory.
 It is possible to create a multi-result Result object, to do so, instead of using
 a single data dictionary, provide a list of data dictionaries following the specification
 mentioned above.
+
+An item of that list can also define an error instead of a result, using the
+following elements:
+
+@li <b>"error"</b> - the error message, mandatory.
+@li <b>"code"</b> - integer number identifying the error code.
+@li <b>"sqlstate"</b> - the SQL state of the error.
+
+The error is raised when the multi-result Result reaches that item.
 )*");
 
 /**

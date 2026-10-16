@@ -124,12 +124,24 @@ Only the **shared** DevAPI base classes (`base_constants`, `base_resultset`,
 `dynamic_object`) are still compiled — the classic resultset/object model needs
 them.
 
+The `threads` report's `--where` condition is parsed by `Sql_condition`
+(`modules/reports/utils.cc`), which is built on the X expression parser. Builds
+without the X protocol have a small parser of their own behind the same
+interface: identifiers, literals, the comparison operators, `LIKE`, `AND`/`OR`/
+`NOT` and parentheses, checked by the same identifier and operator validators.
+It reads the tokens of the X tokenizer (`mysqlx/tokenizer.cc`, which has no X
+protocol dependency and is compiled in every build), so both parsers agree on
+names, keywords, numbers and strings, and report errors the same way. It writes
+`AND`/`OR`/`NOT` rather than `&&`/`||`, as `||` concatenates strings under
+`PIPES_AS_CONCAT` and the `ORACLE` mode. One difference: a `NOT` prefix applies
+to the whole comparison, as in SQL (`NOT tid = 1` is `NOT (tid = 1)`), where the
+X parser applies it to the operand that follows (`(NOT tid) = 1`).
+
 ### Features that throw "not supported" at runtime
 (Their backends are X- or MySQL-specific; they compile but are stubbed or refused.)
 
 - `util.importJson` — used the X document store
 - `--register-factor` — used the MySQL FIDO/WebAuthn auth plugin
-- report `--where` / `--having` filtering — used the X expression parser
 - cluster `--redirect-primary` / `--redirect-secondary` — used AdminAPI
 - the `ocimds` and `compatibility` dump options, when the source is MariaDB —
   they rewrite DDL and accounts for MySQL HeatWave Service
@@ -596,11 +608,14 @@ and more maintainable than a local overlay port. This applies to all triplets;
 arm64-windows is just the canary.
 
 Related trap: Visual Studio 2022's developer environment sets `VCPKG_ROOT` to its
-own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` honours
-`$ENV{VCPKG_ROOT}`, then tries to `git clone` into it and fails
-(`destination path already exists and is not an empty directory`). Pass
-`-DVCPKG_ROOT=<sibling path>` (matching the macOS default of `../vcpkg`) or clear
-the env var (`set VCPKG_ROOT=`) for the configure shell.
+own **bundled, non-git** vcpkg (`…/VC/vcpkg`). `bootstrap_vcpkg.cmake` used to
+honour `$ENV{VCPKG_ROOT}`, try to `git clone` into it (`destination path already
+exists and is not an empty directory`), and then, in its full-clone fallback,
+**delete that directory**; ports built with autotools also fail under its
+"Program Files" path. It now honours the environment variable only when it names
+a vcpkg git checkout (otherwise it says so and uses `../vcpkg`), and never
+replaces an existing directory that isn't a checkout (configure stops instead),
+so neither `set VCPKG_ROOT=` nor `-DVCPKG_ROOT` is needed any more.
 
 ### 11.10 Use the Ninja generator on Windows (single-config)
 
@@ -1265,7 +1280,7 @@ package owns is now namespaced to mariadb, so the declaration is gone and the tw
 packages can be installed side by side.
 
 Still deliberately **not** `Provides: mysql-shell`: this build drops AdminAPI,
-dump/load, X DevAPI and the Upgrade Checker, so it must not satisfy dependencies
+X DevAPI, JavaScript and the Upgrade Checker, so it must not satisfy dependencies
 on the upstream package.
 
 ### 14.7 Sandbox directory

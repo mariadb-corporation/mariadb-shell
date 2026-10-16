@@ -23,6 +23,7 @@ DESCRIPTION
         disable the credential store
       - credentialStore.savePasswords: controls automatic password storage,
         allowed values: "always", "prompt" or "never"
+?{__have_admin_api}
       - dba.connectTimeout: float, default connection timeout used for sessions
         created in AdminAPI operations, in seconds
       - dba.connectivityChecks: bool, checks SSL settings and network
@@ -35,12 +36,15 @@ DESCRIPTION
       - dba.versionCompatibilityChecks: bool, checks version compatibility for
         asynchronous replication when managing a ReplicaSet, ClusterSet, or a
         Cluster with Read-Replicas.
+?{}
       - defaultCompress: Enable compression in client/server protocol by
         default in global shell sessions.
       - defaultMode: shell mode to use when shell is started, allowed values:
         "js", "py" or "sql"
+?{__have_x_protocol}
       - devapi.dbObjectHandles: true to enable schema collection and table name
         aliases in the db object, for DevAPI operations
+?{}
       - history.autoSave: true to save command history when exiting the shell
       - history.maxSize: number of entries to keep in command history
       - history.sql.ignorePattern: colon separated list of glob patterns to
@@ -81,10 +85,15 @@ DESCRIPTION
       - resultFormat: controls the type of output produced for SQL results
       - sandboxDir: default path where the sandbox plugin deploys new sandbox
         instances
+?{__have_x_protocol}
       - showColumnTypeInfo: display column type information in SQL mode. Please
         be aware that output may depend on the protocol you are using to
         connect to the server, e.g. DbType field is approximated when using X
         protocol.
+?{}
+?{not __have_x_protocol}
+      - showColumnTypeInfo: display column type information in SQL mode.
+?{}
       - showWarnings: boolean value to indicate whether warnings shall be
         included when printing a SQL result
       - slashCommands: boolean value, default true, to indicate whether shell

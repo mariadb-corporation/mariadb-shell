@@ -1,16 +1,16 @@
-# MariaDB REST Daemon: changes for metadata schema 5.0.0
+# MariaDB REST Daemon: what it sees of metadata schema 5.0.0
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). Related: [mrs-module.md](mrs-module.md).
 
-The MariaDB REST Daemon (the MySQL Router fork with the MRS plugin; its code is not in this repository or in mariadb-shell-plugins) still expects the MySQL REST Service metadata schema 4.x. This file collects everything the daemon has to change to serve the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`). 5.0.0 is the first release of `mariadb_rest_service`, so the daemon needs no compatibility with 4.x names on a MariaDB server.
+The MariaDB REST Daemon (`mariadb-restd`, MySQL Router's MRS plugin ported to MariaDB) lives in its own repository, github.com/mariadb-corporation/rest-daemon. It serves the metadata schema 5.0.0 that MariaDB Shell deploys (`mysqlshdk/libs/mrs/db_schema/mariadb_rest_service.msm.project`, release `releases/deployment/mariadb_rest_service_deployment_5.0.0.sql`) and accepts only the same major.minor (`kCurrentMrsMetadataVersion` in the daemon's `src/mysql_rest_service/include/mrs/database/query_version.h`). It has no compatibility with the 4.x names.
 
-Keep it up to date when the schema changes in a way the daemon sees.
+This file lists the parts of the schema the daemon depends on, and how they differ from MySQL's 4.x. A schema change that touches any of them needs a matching daemon change, so keep the file up to date when the schema changes in a way the daemon sees.
 
 ## 1. Schema name, prefix and postfix
 
 - The schema is `mariadb_rest_service` (was `mysql_rest_service_metadata`).
 - A server can hold several metadata schemas, one per customer of a cloud provider: `<prefix>mariadb_rest_service<postfix>`, e.g. `acme_mariadb_rest_service_eu`. Prefix: empty, or a letter or `_` followed by `[A-Za-z0-9_]`; postfix: empty, or `_` followed by `[A-Za-z0-9_]`; the base name occurs exactly once; at most 64 characters.
-- **The daemon needs a configuration option for the metadata schema name**, default `mariadb_rest_service`, and must use it in every statement on the metadata (tables, the `rest_daemon_services` view, the `rest_daemon_status_*` procedures, `msm_schema_version`). One daemon instance serves one metadata schema.
+- **The daemon's `metadata_schema` option names the metadata schema**, default `mariadb_rest_service`; it must use it in every statement on the metadata (tables, the `rest_daemon_services` view, the `rest_daemon_status_*` procedures, `msm_schema_version`). One daemon instance serves one metadata schema.
 - Optional, for parity with MariaDB Shell: when no name is configured, MariaDB Shell picks `mariadb_rest_service` if visible, else the only visible schema whose name contains `mariadb_rest_service` once (valid parts) and that has an `msm_schema_version` view (`metadata::resolve_metadata_schema()` in `mysqlshdk/libs/mrs/metadata.cc`). An explicit setting is safer for a long-running service.
 - Inside the schema, routines, triggers, views and events use unqualified names; nothing in the schema names the schema itself. The daemon does not need to rewrite anything in the schema.
 
@@ -105,7 +105,7 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 
 - The JSON schema of `service.in_development` (CHECK constraint) has the id `https://mariadb.com/mrs/service/in_development` (was `https://dev.mysql.com/mrs/service/in_development`); only relevant if the daemon validates against it by id.
 - `rest_daemon.product_name` is documented as e.g. `'MariaDB REST Daemon'` (was `'MySQL Router'`); the daemon should report its own product name there.
-- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-logo-vertical.svg` (was `sakila.svg`); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
+- The default landing page (`config.data` → `defaultStaticContent`, served from the root URI) now holds `index.html`, `favicon.ico`, `favicon.svg`, `standalone-preact.js` and `mariadb-logo-vertical.svg` (was `sakila.svg`, then `mariadb-seal.svg` until 2026-10-13); its texts say MariaDB REST Service / MariaDB REST Daemon and link to the MariaDB REST Service docs.
 - `audit_log` and its triggers are unchanged in shape apart from the wider id (see 9).
 - MariaDB Shell's `SHOW REST DAEMONS` treats a daemon as active when `rest_daemon.last_check_in` is less than 10 seconds old.
 

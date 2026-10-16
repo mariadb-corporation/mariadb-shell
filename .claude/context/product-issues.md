@@ -22,7 +22,6 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 
 ### Utilities
 
-- **`dryRun` in a copy is inconsistent.** It prints "no locks will be acquired", then reports that it acquired the global read lock. [dump-and-load/copy-utilities.md]
 - **Every dump prints a stray warning:** `Charset id '33' csname 'UTF8' trying to replace existing csname 'utf8mb3'`.
 - **The load progress file name in the help is wrong.** The help gives `load-progress.<server_uuid>.progress` in one place and `.json` in another. On MariaDB the file is `load-progress.<server_id>.json` (observed: `load-progress.2.json`). [dump-and-load/load-dump-utility.md uses the real name]
 - **Minimum version not enforced.** "MariaDB 10.11 or newer" is stated in the help (`mod_util.cc`), but no code check enforces it. [dump-and-load/README.md repeats the help]
@@ -35,13 +34,12 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 
 ### Shell, Output and Reports
 
-- **`\show threads` always fails** with "The 'where' parameter is not supported in this build". `o.where` defaults to "TRUE" and then hits the `#ifndef HAVE_X_PROTOCOL` throw. [extending-mariadb-shell/reports.md, using-mariadb-shell/shell-commands.md]
+- **`\show threads`:**
+  - The `system.<variable>` columns read `performance_schema.variables_by_thread`, which MariaDB doesn't have.
+  - The default filter compares the session's connection user/host with `PROCESSLIST_USER`/`PROCESSLIST_HOST`, so a session to `127.0.0.1` that the server records as `localhost` lists nothing (MySQL too).
+  [extending-mariadb-shell/reports.md]
 - **`\show thread --vars`, `--raw-locks` and `--all` fail on MariaDB**, which has no `variables_by_thread` or `data_locks` tables. The `thread` report also needs `performance_schema=ON`. [extending-mariadb-shell/reports.md]
 - **A report function gets `argv`/`options` only if the report declares them**; without defaults, the call fails. [extending-mariadb-shell/reports.md]
-- **Command-line integration:**
-  - The dotted forms `shell.options` and `util.debug` fail with exit code 10; only the space form (`shell options set-persist`, `util debug …`) works.
-
-  [using-mariadb-shell/command-line-integration.md]
 - **`--json` prints an empty `{}` first.** [using-mariadb-shell/output-formats.md]
 - **`--pym` prints "Error in my_thread_global_end(): 1 threads didn't exit"** at exit, for example on `--pym pip`.
 - **`--pym pip install` from PyPI timed out** in the bundled Python, while curl reached pypi.org. Installing a local wheel with `--user` or `--target` works. On Windows, pip may be missing from the vcpkg Python (MARIADB_PORT.md §11.1). [customizing/python-module-search-paths.md]
@@ -72,42 +70,18 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 
 These items still describe MySQL Shell, or disagree with the code. The docs follow the code.
 
-- **General help:**
-  - `\?` still mentions the dba and mysqlx topics.
-  - `\help` shows a `\h cluster` example.
-  - `util` is described as "upgrade checker and JSON import".
-- **`\connect`** shows a `--mx` example.
-- **`\? cmdline`:**
-  - it says `mysqlsh` and mentions JavaScript
-  - it says `shell.options` works on the command line, but only the space form does (see above)
-- **`\source`** still lists `--js`. **`\? register_report`** mentions JavaScript init.d files.
-- **`\history`** says `history.autoSave` must be turned on, but it defaults to `true`.
-- **Connection help:**
-  - it lists only the `mysql` scheme, while the code also accepts `mariadb` and the `+ssh` forms
-  - it says `tls-ciphers`, while the code accepts only `tls-ciphersuites`, which has no effect
-  - it gives a 78-character login-path limit that the MariaDB build doesn't apply
-  - the invalid-scheme error still lists `mysqlx`
+- **`mysqlx` scheme accepted at parse time** (to fix as one change across the shell and code_ext):
+  - The invalid-scheme error lists `mysqlx`, and `shell.parse_uri("mysqlx://…")` succeeds; `shell.connect` and the command line prompt for the password and only then fail with `Unknown MariaDB URI type mysqlx`.
+  - Cause: the default allowed set `{"mariadb","mysql","mysqlx"}` of `IConnection` (`mysqlshdk/libs/utils/connection.h`); the connect-time rejection is `Connection_options::get_session_type`.
+  - Fix: build that set without `mysqlx` unless `HAVE_X_PROTOCOL`. Product code that builds a `mysqlx` scheme is already behind `HAVE_X_PROTOCOL`; three unguarded branches in `connection_options.cc` become unreachable.
+  - Tests that use `mysqlx` as a sample scheme without a guard: about 142 lines in `uri_parser_t.cc`, 17 in `shell_cmdline_options_t.cc`, 6 in `connection_options_t.cc`, one weak assertion in `interactive_shell_t.cc`, and the SSH scripted tests `shell_ssh_errors_norecord.py` / `shell_ssh_import_export_norecord.py`. Swap them to `mariadb` in the MariaDB build, or guard the X-specific ones.
+  - mariadb-shell-plugins: code_ext's `CONNECTION_SCHEMES` (`code_ext/src/connections/connectionUri.ts`) mirrors the shell's set and lets the connection editor save a `mysqlx://` connection; drop it there too, with its icon entry (`treeItems.ts`) and about 8 test assertions. mcp_plugin already treats an unparsable URI as "not a connection", and its tests pass either way.
 - **Exposed in help but MySQL-only or meaningless:**
   - `--get-server-public-key`
   - the X values of `auth-method`
   - the OCI, WebAuthn, OpenID Connect and Kerberos connection options
   - `set_query_attributes` and `set_option_tracker_feature_id`
-- **`\option -l`** lists `dba.*` (`connectTimeout`, `gtidWaitTimeout`, …), `devapi.dbObjectHandles` and `oci.*`.
 - **Dump and load help:**
   - it still lists `lakehouseTarget`, `dataMaskingPolicies`, `allowDataMasking`, `libraries`, `convertInnoDbVectorStore`, `heatwaveLoad`, `lakehouseSource`, `disableBulkLoad`, `analyzeTables: "histogram"` and the full HeatWave `compatibility` section
   - it refers to "Section 13.2.10.1"
   - `dump-schemas --help` lists `compatibility` and `allowDataMasking`
-- **`\? util.import_table`** says `SET unique_checks = 0`. On MariaDB the code keeps unique checks on unless `replaceDuplicates` is set.
-- **`export_table`:** `json` is not an allowed dialect. The code rejects it, and the page says so.
-- **`\? create_result`:**
-  - a warning `level` of "error" is rejected; only warning and note work
-  - the `columns` key, list-form rows and `error` entries in multi-results are undocumented
-- **`\? add_extension_object_member`:** it says `type` is required, but it is optional; the `default` and `cli` keys are undocumented.
-- **Plugin manager text** says "MySQL Shell" and "Oracle", and uses `mysql-shell-plugins-manifest.json`.
-- **`--help` typos:** "PREFFERED", "usingUniform", and `-V` says "Prints the version of MySQL Shell". `--auth-method` mentions the X protocol, and other options mention DevAPI.
-- **Man page (`man/`):**
-  - it says `mysqlsh` is an alias, but none is shipped
-  - it says `-S` isn't available on Windows, where it takes a named pipe
-  - it lists `MARIADB_SHELL_JS_MODULE_PATH`
-- **Repo docs:** MARIADB_PORT.md §14.6 says the build "drops dump/load", which is wrong.
-- **`.claude/skills/create-shell-plugin`** describes a `plugins_path` option that nothing sets.

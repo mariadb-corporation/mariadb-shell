@@ -8,14 +8,14 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 
 | Path | What it is |
 | --- | --- |
-| `docs-ref/content/` | GitBook source of the reference docs (`mariadb-shell/`, `mariadb-rest-service/`; page tree in `SUMMARY.md`) |
+| `docs-ref/content/` | GitBook source of the reference docs (`community/mariadb-shell/`, `community/mariadb-rest-service/`; page tree in `SUMMARY.md`) |
 | `mysqlshdk/libs/mrs/antlr_grammar/` | ANTLR reference grammar of REST SQL + scripts for its railroad diagrams and the reference's rule blocks (npm `docs-ref:mrs-diagrams`, `docs-ref:mrs-grammar-docs`) |
 | `docs-ref/` (rest) | Docusaurus offline preview, copied from ai-plugins; `npm run docs-ref` from the repo root |
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `bld/` | The local build (`bld/bin/mariadb-shell`), used to check help text and docs examples |
 | `.githooks/` | pre-commit copyright hook and its `copyright-exceptions` |
 | `docker/` | Build images for the release packages, and the MariaDB Shell MCP Server image `mariadb-shell-mcp-server` (`linux-debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh`, `README.md`) |
-| `.claude/commands/checkpoint.md` | The checkpoint command; its "In every case" rules say what belongs in these files |
+| `.claude/commands/checkpoint.md`, `read-checkpoint.md` | `/checkpoint` writes this context (its "In every case" rules say what belongs in these files), `/read-checkpoint` reads it back to resume |
 
 ## Context Files
 
@@ -25,10 +25,11 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Open product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
 | [context/mrs-module.md](context/mrs-module.md) | The MariaDB REST Service in the shell, replacing the Python mrs_plugin's REST SQL: core library `mysqlshdk/libs/mrs/` (bison grammar, executor, metadata schema project), integration `src/mysqlsh/mrs/` (SQL handler); layout, design decisions, gotchas, state, next steps |
-| [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md) | What the MariaDB REST Daemon (MySQL Router fork, not in these repos) must change to serve metadata schema 5.0.0: schema name/prefix/postfix, renamed `rest_daemon*` tables, roles, UUID ids, vendor names, async tasks, status counters, audit log ids not in commit order (Galera) |
+| [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md) | What the MariaDB REST Daemon (`mariadb-restd`, the rest-daemon repository) depends on in metadata schema 5.0.0, so a schema change it sees gets a daemon change: schema name/prefix/postfix, renamed `rest_daemon*` tables, roles, UUID ids, vendor names, async tasks, status counters, audit log ids not in commit order (Galera) |
 
 ## Open Items
 
+- **API Reference not in `main`:** the hidden `--export-help` option (`471e72e9d`), `docs-ref/scripts/api_reference.py` and its 30 pages (`e4d29055d`), the docs link and CI `--check` (`f6005e443`), MariaDB naming in the built-in help (`e525a8264`), and `plugins/external-plugins.txt` (`8ba556850`). They sit on top of the pre-squash docs commits, so rebase only these five onto `main`. Re-check `8ba556850`'s choice to stop bundling mrs now that the REST Service is built in, and `e525a8264` against the help text the REST Service added.
 - **Docs:** porting to mariadb-docs (`docs-ref/README.md` § Porting); the placement decision (Enterprise Tools?); whether to keep the object-storage warning. See [context/docs-ref.md](context/docs-ref.md).
 - **Product bugs and help-text leftovers:** [context/product-issues.md](context/product-issues.md).
 - **Unverified in the docs:**

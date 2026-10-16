@@ -27,12 +27,14 @@
 #include "modules/reports/threads.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <exception>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -486,33 +488,38 @@ class Threads_report : public Native_report {
 
     std::string having;
 
-#ifndef HAVE_X_PROTOCOL
-    // Sql_condition relies on the X protocol expression parser/protobuf, which
-    // is not available in the MariaDB build.
-    throw shcore::Exception::argument_error(
-        "The 'where' parameter is not supported in this build.");
-#else
     try {
       having = Sql_condition{[this](const std::string &ident) {
-                 return "th->>'$.\"" + add_column(ident) + "\"'";
+                 return json_text(add_column(ident));
                }}.parse(o.where);
     } catch (const std::exception &e) {
       throw shcore::Exception::argument_error(
           "Failed to parse 'where' parameter: " + std::string(e.what()));
     }
-#endif
 
     // ORDER BY part of the query
-    std::string order_by;
-
     if (o.order_by.empty()) {
       throw shcore::Exception::argument_error(
           "The 'order-by' parameter cannot be empty.");
     }
 
+    std::vector<std::string> sort_keys;
+
     for (const auto &column : shcore::str_split(o.order_by, ",")) {
       try {
-        order_by += "th->'$.\"" + add_column(column) + "\"',";
+        const auto name = add_column(column);
+        const auto type = "JSON_TYPE(" + json_value(name) + ")";
+        const auto text = json_text(name);
+        // MySQL orders the values of ->/JSON_EXTRACT() by their JSON type,
+        // MariaDB's JSON_EXTRACT() returns text, which would put 10 before 9;
+        // this orders as MySQL does on both: nulls first, numbers as numbers,
+        // anything else as binary text
+        sort_keys.emplace_back(type + " <> 'NULL'");
+        sort_keys.emplace_back(
+            "CASE WHEN " + type +
+            " IN ('INTEGER', 'UNSIGNED INTEGER', 'DOUBLE', 'DECIMAL') THEN "
+            "(" + text + ") + 0 END");
+        sort_keys.emplace_back("CAST(" + text + " AS BINARY)");
       } catch (const std::exception &ex) {
         throw shcore::Exception::argument_error(
             "Cannot use '" + column +
@@ -520,12 +527,12 @@ class Threads_report : public Native_report {
       }
     }
 
-    // remove extra comma
-    order_by.pop_back();
+    const auto direction = o.desc ? " DESC" : " ASC";
 
     m_conditions = shcore::str_format(
-        "WHERE %s HAVING %s ORDER BY %s %s", where.c_str(), having.c_str(),
-        order_by.c_str(), o.desc ? "DESC" : "ASC");
+        "WHERE %s HAVING %s ORDER BY %s%s", where.c_str(), having.c_str(),
+        shcore::str_join(sort_keys, direction + std::string{", "}).c_str(),
+        direction);
 
     if (o.limit) {
       m_conditions.append(shcore::sqlstring(" LIMIT ?", 0) << *o.limit);
@@ -552,6 +559,21 @@ class Threads_report : public Native_report {
                                           used_columns, columns);
   }
 
+  /**
+   * The value of a column in the JSON object of a thread.
+   */
+  static std::string json_value(const std::string &column) {
+    return "JSON_EXTRACT(th, '$.\"" + column + "\"')";
+  }
+
+  /**
+   * The same, as text: JSON_UNQUOTE(JSON_EXTRACT()) rather than ->>, which
+   * MariaDB does not have; both servers give the same text.
+   */
+  static std::string json_text(const std::string &column) {
+    return "JSON_UNQUOTE(" + json_value(column) + ")";
+  }
+
   std::string add_column(const std::string &name) {
     std::string new_name;
     Column_definition column;
@@ -574,9 +596,18 @@ class Threads_report : public Native_report {
     } else {
       const auto col = allowed_columns.find(name.substr(0, pos));
 
-      if (allowed_columns.end() != col && is_special_column(col->first)) {
-        const std::string variable = name.substr(pos + 1);
+      // the name of the variable ends up in a JSON path and in SQL text
+      const auto is_variable_name = [](std::string_view variable) {
+        return !variable.empty() &&
+               std::all_of(variable.begin(), variable.end(), [](char c) {
+                 return std::isalnum(static_cast<unsigned char>(c)) ||
+                        '_' == c || '.' == c || '$' == c;
+               });
+      };
+      const std::string variable = name.substr(pos + 1);
 
+      if (allowed_columns.end() != col && is_special_column(col->first) &&
+          is_variable_name(variable)) {
         column.id = add_to_cache(col->first + "." + variable);
         column.query =
             add_to_cache(shcore::sqlstring(col->second.query, 0) << variable);

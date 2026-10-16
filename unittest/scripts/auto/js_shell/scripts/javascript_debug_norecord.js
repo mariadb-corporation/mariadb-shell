@@ -43,7 +43,7 @@ WIPE_OUTPUT()
 testutil.createFile(script_path, `plugins.info()`)
 
 callMysqlshDebug([])
-EXPECT_OUTPUT_CONTAINS("MySQL Shell Plugin Manager Version");
+EXPECT_OUTPUT_CONTAINS("MariaDB Shell Plugin Manager Version");
 WIPE_OUTPUT()
 
 //@<> Verify access to global objects

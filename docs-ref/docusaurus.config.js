@@ -18,8 +18,8 @@
 //
 // The pages in content/ are GitBook source: Markdown plus GitBook blocks,
 // a SUMMARY.md for navigation, and `.gitbook/assets/` for images. They are
-// written to be copied into the Enterprise Tools space of mariadb-docs
-// (`tools/`) unchanged. This site only renders them, styled after
+// written to be copied into the Tools space of mariadb-docs (`tools/`, the
+// products in `tools/community/`) unchanged. This site only renders them, styled after
 // https://mariadb.com/docs/, because GitBook itself cannot build offline.
 
 import fs from 'node:fs';
@@ -32,7 +32,7 @@ const REPO = 'https://github.com/mariadb-corporation/mariadb-shell';
 const LIVE_DOCS = 'https://mariadb.com/docs';
 
 // The space tabs of mariadb.com/docs, in their published order. The
-// reference docs belong to Enterprise Tools, which is the one tab served
+// reference docs belong to Tools, which is the one tab served
 // locally; the others link out to the live site.
 const SPACE_TABS = [
   { label: 'Home', href: `${LIVE_DOCS}` },
@@ -42,7 +42,7 @@ const SPACE_TABS = [
   { label: 'Analytics', href: `${LIVE_DOCS}/analytics` },
   { label: 'Galera Cluster', href: `${LIVE_DOCS}/galera-cluster` },
   { label: 'Connectors', href: `${LIVE_DOCS}/connectors` },
-  { label: 'Enterprise Tools', to: '/tools/', active: true },
+  { label: 'Tools', to: '/tools/', active: true },
   { label: 'MariaDB Cloud', href: `${LIVE_DOCS}/mariadb-cloud` },
   { label: 'Release Notes', href: `${LIVE_DOCS}/release-notes` },
   { label: 'General Resources', href: `${LIVE_DOCS}/general-resources` },
@@ -80,7 +80,7 @@ const config = {
   tagline: 'MariaDB Shell and MariaDB REST Service reference (offline preview)',
   favicon: 'img/favicon.ico',
 
-  // Mirrors the published layout: https://mariadb.com/docs/tools/<product>/…
+  // Mirrors the published layout: https://mariadb.com/docs/tools/community/<product>/…
   // To host the preview under another path, build with e.g.
   // DOCS_BASE_URL=/mariadb-shell-docs/ npm run build.
   url: 'https://mariadb.com',
@@ -161,7 +161,7 @@ const config = {
       announcementBar: {
         id: 'offline-preview',
         content:
-          'Offline preview of the <b>MariaDB Shell</b> and <b>MariaDB REST Service</b> reference docs. The published version will live on <a href="https://mariadb.com/docs/tools">mariadb.com/docs</a>.',
+          'Offline preview of the <b>MariaDB Shell</b> and <b>MariaDB REST Service</b> reference docs. The published version will live on <a href="https://mariadb.com/docs/tools/community">mariadb.com/docs</a>.',
         isCloseable: true,
       },
       navbar: {

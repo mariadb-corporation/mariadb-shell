@@ -12,7 +12,7 @@ The ANTLR4 grammar syntax support VS Code extension
 ## Documentation Tools
 
 The REST SQL reference lives in
-`docs-ref/content/mariadb-rest-service/rest-sql-reference/` (GitBook source).
+`docs-ref/content/community/mariadb-rest-service/rest-sql-reference/` (GitBook source).
 Two scripts in `scripts/` keep it in step with the grammar. Both need only the
 Python standard library; run them from the repository root after every
 grammar change:

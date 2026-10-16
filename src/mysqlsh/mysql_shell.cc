@@ -90,12 +90,23 @@ REGISTER_HELP(HELP_AVAILABLE_TOPICS_ALL2,
 
 REGISTER_HELP(HELP_AVAILABLE_TOPICS_SCRIPTING,
               "${HELP_AVAILABLE_TOPICS_TITLE}");
-REGISTER_HELP(HELP_AVAILABLE_TOPICS_SCRIPTING1,
+// A help text is a chain of numbered entries that ends at the first missing
+// number, so the entries of features a build lacks are folded into one that
+// is empty there instead of being left out.
+#ifdef HAVE_ADMIN_API
+REGISTER_HELP(HELP_AVAILABLE_TOPICS_ADMIN_API,
               "@li The <b>dba</b> global object and the classes available at "
               "the AdminAPI.");
+#endif
+#ifdef HAVE_X_PROTOCOL
 REGISTER_HELP(
-    HELP_AVAILABLE_TOPICS_SCRIPTING2,
+    HELP_AVAILABLE_TOPICS_X_DEVAPI,
     "@li The <b>mysqlx</b> module and the classes available at the X DevAPI.");
+#endif
+REGISTER_HELP(HELP_AVAILABLE_TOPICS_SCRIPTING1,
+              "${HELP_AVAILABLE_TOPICS_ADMIN_API}");
+REGISTER_HELP(HELP_AVAILABLE_TOPICS_SCRIPTING2,
+              "${HELP_AVAILABLE_TOPICS_X_DEVAPI}");
 REGISTER_HELP(HELP_AVAILABLE_TOPICS_SCRIPTING3,
               "@li The <b>mysql</b> module and the global objects and classes "
               "available at the ShellAPI.");
@@ -423,25 +434,37 @@ REGISTER_HELP(
     "@li <b>--mc</b>, <b>--mysql</b>: create a classic MySQL protocol session "
     "(default port 3306)");
 #ifdef HAVE_X_PROTOCOL
-REGISTER_HELP(CMD_CONNECT_DETAIL2,
+REGISTER_HELP(CMD_CONNECT_DETAIL_X,
               "@li <b>--mx</b>, <b>--mysqlx</b>: create an X protocol session "
               "(default port 33060)");
 #endif
+REGISTER_HELP(CMD_CONNECT_DETAIL2, "${CMD_CONNECT_DETAIL_X}");
 REGISTER_HELP(CMD_CONNECT_DETAIL3,
               "@li <b>--ssh <SSHURI></b>: create an SSH tunnel to use as a "
               "gateway for db connection. This requires that db port is "
               "specified in advance.");
+#ifdef HAVE_X_PROTOCOL
 REGISTER_HELP(
     CMD_CONNECT_DETAIL4,
     "If TYPE is omitted, automatic protocol detection is done, unless the "
     "protocol is given in the URI.");
+#else
+REGISTER_HELP(CMD_CONNECT_DETAIL4,
+              "If TYPE is omitted, a classic session is created.");
+#endif
 REGISTER_HELP(CMD_CONNECT_DETAIL5,
               "URI format is: [user[:password]@]hostname[:port] and SSHURI "
               "format is: [user@]hostname[:port]");
+#ifdef HAVE_X_PROTOCOL
 REGISTER_HELP(CMD_CONNECT_EXAMPLE, "<b>\\connect --mx</b> root@localhost");
 REGISTER_HELP(
     CMD_CONNECT_EXAMPLE_DESC,
     "Creates a global session using the X protocol to the indicated URI.");
+#else
+REGISTER_HELP(CMD_CONNECT_EXAMPLE, "<b>\\connect</b> root@localhost");
+REGISTER_HELP(CMD_CONNECT_EXAMPLE_DESC,
+              "Creates a global session to the indicated URI.");
+#endif
 
 REGISTER_HELP(CMD_OPTION_BRIEF,
               "Allows working with the available shell options.");
@@ -473,17 +496,28 @@ REGISTER_HELP(CMD_OPTION_EXAMPLE, "\\option --persist defaultMode sql");
 REGISTER_HELP(CMD_OPTION_EXAMPLE1, "\\option --unset --persist defaultMode");
 
 REGISTER_HELP(CMD_SOURCE_BRIEF, "Loads and executes a script from a file.");
-REGISTER_HELP(CMD_SOURCE_SYNTAX, "<b>\\source</b> [--sql|--py|--js] <path>");
-REGISTER_HELP(CMD_SOURCE_SYNTAX1, "<b>\\.</b> [--sql|--py|--js] <path>");
 REGISTER_HELP(
     CMD_SOURCE_DETAIL,
     "Executes a script from a file, the following languages are supported:");
+#ifdef HAVE_JS
+REGISTER_HELP(CMD_SOURCE_SYNTAX, "<b>\\source</b> [--sql|--py|--js] <path>");
+REGISTER_HELP(CMD_SOURCE_SYNTAX1, "<b>\\.</b> [--sql|--py|--js] <path>");
 REGISTER_HELP(CMD_SOURCE_DETAIL1, "@li JavaScript");
 REGISTER_HELP(CMD_SOURCE_DETAIL2, "@li Python");
 REGISTER_HELP(CMD_SOURCE_DETAIL3, "@li SQL");
 REGISTER_HELP(CMD_SOURCE_DETAIL4,
               "The file will be loaded and executed using the active language, "
-              "unless overriden with one of the --sql, --py or --js options.");
+              "unless overridden with one of the --sql, --py or --js options.");
+#else
+// numbered without a gap: a help text ends at its first missing number
+REGISTER_HELP(CMD_SOURCE_SYNTAX, "<b>\\source</b> [--sql|--py] <path>");
+REGISTER_HELP(CMD_SOURCE_SYNTAX1, "<b>\\.</b> [--sql|--py] <path>");
+REGISTER_HELP(CMD_SOURCE_DETAIL1, "@li Python");
+REGISTER_HELP(CMD_SOURCE_DETAIL2, "@li SQL");
+REGISTER_HELP(CMD_SOURCE_DETAIL3,
+              "The file will be loaded and executed using the active language, "
+              "unless overridden with one of the --sql or --py options.");
+#endif
 #ifdef _WIN32
 REGISTER_HELP(CMD_SOURCE_EXAMPLE,
               "<b>\\source</b> C:\\Users\\MySQL\\sakila.sql");
@@ -528,20 +562,27 @@ REGISTER_HELP(CMD_HELP_SYNTAX2, "<b>\\?</b> [pattern]");
 REGISTER_HELP(CMD_HELP_DETAIL, "%{contents:detail,categories}");
 
 REGISTER_HELP(
-    CMD_HELP_DETAIL10,
+    CMD_HELP_DETAIL1,
     "If no pattern is specified a generic help is going to be displayed.");
 REGISTER_HELP(
-    CMD_HELP_DETAIL11,
-    "To display the available help categories use <b>\\help<b> contents");
+    CMD_HELP_DETAIL2,
+    "To display the available help categories use <b>\\help</b> contents");
 REGISTER_HELP(CMD_HELP_EXAMPLE, "<b>\\help</b>");
 REGISTER_HELP(CMD_HELP_EXAMPLE_DESC,
               "With no parameters this command prints the general shell help.");
 REGISTER_HELP(CMD_HELP_EXAMPLE1, "<b>\\?</b> contents");
 REGISTER_HELP(CMD_HELP_EXAMPLE1_DESC,
               "Describes information about the help organization.");
+#ifdef HAVE_ADMIN_API
 REGISTER_HELP(CMD_HELP_EXAMPLE2, "<b>\\h</b> cluster");
 REGISTER_HELP(CMD_HELP_EXAMPLE2_DESC,
               "Prints the information available for the <b>Cluster</b> class.");
+#else
+REGISTER_HELP(CMD_HELP_EXAMPLE2, "<b>\\h</b> util");
+REGISTER_HELP(CMD_HELP_EXAMPLE2_DESC,
+              "Prints the information available for the <b>util</b> global "
+              "object.");
+#endif
 REGISTER_HELP(CMD_HELP_EXAMPLE3, "<b>\\?</b> *sandbox*");
 REGISTER_HELP(CMD_HELP_EXAMPLE3_DESC,
               "List the available functions for sandbox operations.");
@@ -2095,6 +2136,11 @@ bool Mysql_shell::cmd_process_file(const std::vector<std::string> &params) {
     auto arg = shcore::str_strip(params[1]);
     if (arg == "--js" || arg == "--py" || arg == "--sql") {
       idx++;
+#ifndef HAVE_JS
+      // there is no JavaScript mode to switch to, the file would not run
+      if (arg == "--js")
+        throw shcore::Exception::runtime_error("JavaScript is not available.");
+#endif
       if (params.size() < 3)
         throw shcore::Exception::runtime_error("Filename not specified");
 
@@ -2117,9 +2163,15 @@ bool Mysql_shell::cmd_process_file(const std::vector<std::string> &params) {
     file = file.substr(1, file.size() - 2);
 
   if (file.empty()) {
+#ifdef HAVE_JS
     print_diag(
         "Usage: \\. [--sql|--js|--py] <filename> [<script-args>]"
         " | \\source [--sql|--js|--py] <filename> [<script-args>]\n");
+#else
+    print_diag(
+        "Usage: \\. [--sql|--py] <filename> [<script-args>]"
+        " | \\source [--sql|--py] <filename> [<script-args>]\n");
+#endif
     return true;
   }
 

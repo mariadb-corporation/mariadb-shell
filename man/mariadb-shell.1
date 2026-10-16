@@ -50,11 +50,9 @@ user\-definable reports, a password credential store, a plugin system including
 a local server sandbox manager, and API Command Line integration so that shell
 APIs can be invoked directly from the operating system shell\&.
 .PP
-The commands
-\fBmysqlsh\fR
-and
+The command
 \fBmsh\fR
-are aliases for
+is an alias for
 \fBmariadb\-shell\fR\&.
 .SH "OPTIONS"
 .PP
@@ -151,8 +149,8 @@ TCP/IP port to use\&.
 .PP
 \fB\-S\fR, \fB\-\-socket\fR[=\fIsock\fR]
 .RS 4
-Unix socket file to use; the default path is used when no value is given\&. Not
-available on Windows\&.
+Unix socket file to use; the default path is used when no value is given\&. On
+Windows, the name of the named pipe to use, which must be given\&.
 .RE
 .PP
 \fB\-u\fR, \fB\-\-user=\fR\fIname\fR
@@ -486,11 +484,6 @@ Path to a prompt theme file, overriding the built\-in themes\&.
 \fBMARIADB_SHELL_TERM_COLOR_MODE\fR
 .RS 4
 Force the terminal color mode\&. One of rgb, 256, 16 or nocolor\&.
-.RE
-.PP
-\fBMARIADB_SHELL_JS_MODULE_PATH\fR
-.RS 4
-Additional module search paths, separated by semicolons\&.
 .RE
 .PP
 \fBMARIADB_SHELL_CREDENTIAL_STORE_HELPER\fR, \fBMARIADB_SHELL_CREDENTIAL_STORE_SAVE_PASSWORDS\fR

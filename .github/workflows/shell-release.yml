@@ -250,16 +250,16 @@ jobs:
           brew install cmake ninja pkg-config bison ncurses
 
       # ========================================
-      # 3a. INSTALL BISON (WINDOWS ARM64)
+      # 3a. INSTALL BISON (WINDOWS)
       # ========================================
-      # cmake/bison.cmake searches c:\ProgramData\chocolatey\bin for win_bison.
-      # The x64 Windows runner ships winflexbison3 preinstalled, but
-      # windows-11-arm does not -> "Could NOT find BISON". It's only a Configure
-      # warning today, but the Build step fails once a grammar needs
-      # regenerating. choco's win_bison shim (x64, runs under emulation) lands in
-      # the exact directory cmake already looks in.
-      - name: Install Bison (Windows ARM64)
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+      # cmake/bison.cmake searches c:\ProgramData\chocolatey\bin for win_bison,
+      # and the REST SQL grammar (mysqlshdk/libs/mrs) needs it at Configure.
+      # Neither Windows runner ships it: windows-11-arm never did, and
+      # windows-2022 (x64) fails with "Could NOT find BISON" too, so install it
+      # on both. On arm64, choco's win_bison shim is x64 and runs under
+      # emulation. It lands in the exact directory cmake already looks in.
+      - name: Install Bison (Windows)
+        if: runner.os == 'Windows'
         run: choco install winflexbison3 -y
 
       # ========================================

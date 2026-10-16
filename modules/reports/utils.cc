@@ -33,9 +33,13 @@
 #include "mysqlshdk/include/shellcore/shell_resultset_dumper.h"
 #ifdef HAVE_X_PROTOCOL
 #include "mysqlshdk/libs/db/mysqlx/expr_parser.h"
+#else
+#include "mysqlshdk/libs/db/mysqlx/tokenizer.h"
 #endif
 #include "mysqlshdk/libs/utils/array_result.h"
 #include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_sqlstring.h"
+#include "mysqlshdk/libs/utils/utils_string.h"
 
 namespace mysqlsh {
 namespace reports {
@@ -213,7 +217,6 @@ shcore::Array_t create_report_from_json_object(
   return report;
 }
 
-#ifdef HAVE_X_PROTOCOL
 Sql_condition::Sql_condition(const Sql_condition::Validator &ident,
                              const Sql_condition::Validator &op)
     : m_identifier(ident), m_operator(op) {}
@@ -234,6 +237,7 @@ std::string Sql_condition::operator_validator(const std::string &ident) {
   return "==" == ident ? "=" : ident;
 }
 
+#ifdef HAVE_X_PROTOCOL
 std::string Sql_condition::parse(const std::string &condition) const {
   const auto expr = ::mysqlx::Expr_parser{condition}.expr();
 
@@ -296,6 +300,273 @@ std::string Sql_condition::validate_expression(
       throw std::invalid_argument("Unknown expression type: " +
                                   ::Mysqlx::Expr::Expr_Type_Name(expr.type()));
   }
+}
+#else  // !HAVE_X_PROTOCOL
+namespace {
+
+using ::mysqlx::Token;
+using Type = ::mysqlx::Token::Type;
+
+/**
+ * Parser of the conditions Sql_condition takes, for builds without the X
+ * protocol expression parser. It reads the tokens of the X protocol tokenizer,
+ * so both parsers agree on what is a name, a keyword, a number or a string.
+ *
+ * Grammar (keywords are case insensitive):
+ *
+ *   condition  ::= or_expr
+ *   or_expr    ::= and_expr ((OR | "||") and_expr)*
+ *   and_expr   ::= not_expr ((AND | "&&") not_expr)*
+ *   not_expr   ::= (NOT | "!") not_expr | comparison
+ *   comparison ::= operand [[NOT] LIKE operand | comparison_operator operand]
+ *   operand    ::= "(" or_expr ")" | literal | name ["." name]
+ *
+ * Operators are handed to the operator validator under the names of the X
+ * protocol parser ("==", "!=", "&&", "||", "not", "like"), so that one list
+ * decides what is allowed; the SQL written uses AND, OR and NOT, as || is
+ * string concatenation in some SQL modes.
+ *
+ * Unlike the X protocol parser, which applies a NOT prefix to the operand that
+ * follows it, NOT applies to the whole comparison, as in SQL: "NOT a = 1" is
+ * "NOT (a = 1)", not "(NOT a) = 1".
+ */
+class Condition_parser {
+ public:
+  Condition_parser(const std::string &input, const std::vector<Token> &tokens,
+                   const Sql_condition::Validator &identifier,
+                   const Sql_condition::Validator &op)
+      : m_input(input),
+        m_tokens(tokens),
+        m_identifier(identifier),
+        m_operator(op) {}
+
+  std::string parse() {
+    auto result = or_expr();
+
+    if (!at_end()) {
+      reject_operator();
+      error("Expected end of expression");
+    }
+
+    return result;
+  }
+
+ private:
+  bool at_end() const { return m_current >= m_tokens.size(); }
+
+  bool is(Type type, size_t ahead = 0) const {
+    return m_current + ahead < m_tokens.size() &&
+           type == m_tokens[m_current + ahead].get_type();
+  }
+
+  const Token &next() { return m_tokens[m_current++]; }
+
+  [[noreturn]] void error(const std::string &message) const {
+    // the messages of the X protocol parser
+    if (at_end()) throw ::mysqlx::Parser_error("Unexpected end of expression.");
+
+    throw ::mysqlx::Parser_error(message, m_tokens[m_current], m_input);
+  }
+
+  /**
+   * A name, or a keyword of the tokenizer which is not an operator or a
+   * literal, as the X protocol parser takes those as names too ("time").
+   */
+  static bool is_name(const Token &token) {
+    switch (token.get_type()) {
+      case Type::IDENT:
+        return true;
+
+      case Type::NOT:
+      case Type::AND:
+      case Type::OR:
+      case Type::XOR:
+      case Type::IS:
+      case Type::IN_:
+      case Type::LIKE:
+      case Type::REGEXP:
+      case Type::BETWEEN:
+      case Type::OVERLAPS:
+      case Type::ESCAPE:
+      case Type::INTERVAL:
+      case Type::DIV:
+      case Type::TRUE_:
+      case Type::FALSE_:
+      case Type::T_NULL:
+        return false;
+
+      default:
+        return ::mysqlx::Tokenizer::map.reserved_words.count(token.get_text());
+    }
+  }
+
+  /**
+   * An operator where none is allowed: hands it to the operator validator,
+   * which rejects it.
+   */
+  void reject_operator() const {
+    if (at_end()) return;
+
+    const auto &names = ::mysqlx::Tokenizer::map.operator_names;
+
+    if (const auto it = names.find(m_tokens[m_current].get_text());
+        names.end() != it) {
+      m_operator(it->second);
+    }
+  }
+
+  /**
+   * Consumes a logical operator, written as a keyword or as a doubled symbol.
+   */
+  bool accept(Type keyword, Type symbol) {
+    if (is(keyword)) {
+      ++m_current;
+      return true;
+    }
+
+    if (is(symbol) && is(symbol, 1)) {
+      m_current += 2;
+      return true;
+    }
+
+    return false;
+  }
+
+  std::string binary(std::string (Condition_parser::*next_level)(),
+                     Type keyword, Type symbol, const char *name,
+                     const char *sql) {
+    auto result = (this->*next_level)();
+
+    while (accept(keyword, symbol)) {
+      m_operator(name);
+      result = "(" + result + ") " + sql + " (" + (this->*next_level)() + ")";
+    }
+
+    return result;
+  }
+
+  std::string or_expr() {
+    return binary(&Condition_parser::and_expr, Type::OR, Type::BITOR, "||",
+                  "OR");
+  }
+
+  std::string and_expr() {
+    return binary(&Condition_parser::not_expr, Type::AND, Type::BITAND, "&&",
+                  "AND");
+  }
+
+  std::string not_expr() {
+    if (is(Type::NOT) || is(Type::BANG)) {
+      next();
+      m_operator("not");
+      return "NOT (" + not_expr() + ")";
+    }
+
+    return comparison();
+  }
+
+  std::string comparison() {
+    auto left = operand();
+
+    // NOT LIKE, which the X protocol parser takes as not(like)
+    if (is(Type::NOT) && is(Type::LIKE, 1)) {
+      next();
+      next();
+      m_operator("not");
+      m_operator("like");
+      return "NOT ((" + left + ") LIKE (" + operand() + "))";
+    }
+
+    // the names of the X protocol parser; the tokenizer reads "<>" as "!="
+    static constexpr std::pair<Type, const char *> comparisons[] = {
+        {Type::EQ, "=="}, {Type::NE, "!="}, {Type::LT, "<"}, {Type::LE, "<="},
+        {Type::GT, ">"},  {Type::GE, ">="}, {Type::LIKE, "like"}};
+
+    for (const auto &[type, name] : comparisons) {
+      if (!is(type)) continue;
+
+      next();
+      // "==" comes as two tokens
+      if (Type::EQ == type && is(Type::EQ)) next();
+
+      auto op = m_operator(name);
+      if ("like" == op) op = "LIKE";
+
+      return "(" + left + ") " + op + " (" + operand() + ")";
+    }
+
+    return left;
+  }
+
+  std::string operand() {
+    if (is(Type::LPAREN)) {
+      next();
+      auto result = or_expr();
+
+      if (!is(Type::RPAREN)) {
+        reject_operator();
+        error("Expected ')'");
+      }
+
+      next();
+      return result;
+    }
+
+    if (is(Type::MINUS) && (is(Type::LINTEGER, 1) || is(Type::LNUM, 1))) {
+      next();
+      return "-" + next().get_text();
+    }
+
+    if (is(Type::LINTEGER) || is(Type::LNUM)) return next().get_text();
+
+    if (is(Type::LSTRING)) return shcore::quote_sql_string(next().get_text());
+
+    if (is(Type::TRUE_) || is(Type::FALSE_) || is(Type::T_NULL)) {
+      return shcore::str_upper(next().get_text());
+    }
+
+    if (!at_end() && is_name(m_tokens[m_current])) {
+      auto name = next().get_text();
+
+      if (is(Type::DOT)) {
+        next();
+
+        if (at_end() || !is_name(m_tokens[m_current])) {
+          error("Expected an identifier");
+        }
+
+        name += "." + next().get_text();
+      }
+
+      return m_identifier(name);
+    }
+
+    reject_operator();
+    error("Expected an operand");
+  }
+
+  const std::string &m_input;
+  const std::vector<Token> &m_tokens;
+  const Sql_condition::Validator &m_identifier;
+  const Sql_condition::Validator &m_operator;
+  size_t m_current = 0;
+};
+
+}  // namespace
+
+std::string Sql_condition::parse(const std::string &condition) const {
+  ::mysqlx::Tokenizer tokenizer{condition};
+  tokenizer.get_tokens();
+  const std::vector<Token> tokens{tokenizer.begin(), tokenizer.end()};
+
+  // syntax first, names second, in the order of the X protocol parser: a
+  // malformed condition is reported as such, not as an unknown column
+  const Validator any_identifier = [](const std::string &ident) {
+    return ident;
+  };
+  Condition_parser{condition, tokens, any_identifier, m_operator}.parse();
+
+  return Condition_parser{condition, tokens, m_identifier, m_operator}.parse();
 }
 #endif  // HAVE_X_PROTOCOL
 

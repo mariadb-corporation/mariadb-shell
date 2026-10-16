@@ -29,6 +29,14 @@
 # plugin. The shell specific parts (the SQL handler, the shell session and
 # the schema deployers) live in src/mysqlsh/mrs/ and are compiled into shellfe.
 
+# cmake/bison.cmake only warns when bison is missing, and BISON_TARGET does
+# not exist then, so stop here with a message that names the fix.
+IF(NOT BISON_FOUND)
+  MESSAGE(FATAL_ERROR "Bison is required to build the REST SQL grammar. "
+    "Install it (winflexbison3 on Windows, see INSTALL.md), or point "
+    "BISON_EXECUTABLE at it.")
+ENDIF()
+
 set(MRS_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${MRS_GENERATED_DIR}")
 

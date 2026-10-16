@@ -36,13 +36,13 @@ All three need a plugin release later than 26.10.1.
 
 - Image: both arches build and run (`--version`); API-key mode: 401 without key, `initialize` + `tools/list` with key; restart skips re-configuration.
 - With rootless Podman + podman-compose behind an nginx TLS proxy, with Keycloak 26.8: builtin mode (login server with auto TLS, role `mcp_access`), Keycloak mode set up entirely by the container's first start, Claude Code sign-in via Keycloak (`--client-id mariadb-mcp`), Facebook identity provider linked to an existing MCP user with `mcp setup --addIdentity=oauth:<issuer>|<sub>`, `--trustedProxies` (log shows the client, a forged header is ignored), `KEYCLOAK_LOGIN_THEME` switching a realm from `keycloak.v2` to `mariadb-mcp`, `--passwordStdin` through `podman exec -i`.
-- Entrypoint logic (configuration order, realm stamp, uid check) with a stub `mariadb-shell` on macOS and Ubuntu; not in a real container run under another uid.
+- Entrypoint checks in real arm64 containers with rootless Podman and Keycloak 26.8: a missing variable or administrator password stops before any change and keeps the previous configuration; a failed realm step leaves the public URL unset; after a later step fails (an `--addUser` that fails through a `mariadb-shell` shim on `PATH`), the next start needs no password; a volume of uid 10001 refuses uid 10002, which can set up a new volume; in mode `none`, an authenticated request gets 421 without `MCP_ALLOWED_HOSTS` and 200 with it (without a key, 401 comes first). `setup-keycloak-realm` needs an existing realm.
 - Not verified: the Compose files exactly as written in `running-in-a-container.md` (Docker, `mariadb:11.8`, fixed subnet `172.30.0.0/24`, `extra_hosts: host-gateway`, `kcadm` via `docker compose exec`, the password prompt in `docker compose exec`), Docker's (rootful) source address for published ports, any push to a registry.
 
 ## Files
 
 - `docker/linux-debian13-mcp-server.Dockerfile`, `docker/entrypoint-mcp-server.sh`, `docker/README.md` (build, modes, env table, reverse proxy).
-- `docs-ref/content/mariadb-shell/mcp-server/running-in-a-container.md` — the user-facing page (see [docs-ref.md](docs-ref.md)).
+- `docs-ref/content/community/mariadb-shell/mcp-server/running-in-a-container.md` — the user-facing page (see [docs-ref.md](docs-ref.md)).
 
 ## Next steps
 

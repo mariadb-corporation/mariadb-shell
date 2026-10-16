@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +99,7 @@ def get_repositories_with_plugins(plugin_filter=Filter.NONE,
 
                 zip_manifest_path = r.get("manifestPath")
                 if not zip_manifest_path:
-                    zip_manifest_path = "mysql-shell-plugins-manifest.json"
+                    zip_manifest_path = "mariadb-shell-plugins-manifest.json"
 
                 manifest_path = manifest_dir
                 for path_item in zip_manifest_path.split('/'):
@@ -452,7 +453,7 @@ def get_plugin(repositories, name=None, interactive=True):
 
 
 def list_plugins(**kwargs):
-    """Lists plugins all available MySQL Shell plugins.
+    """Lists plugins all available MariaDB Shell plugins.
 
     This function will list all all available plugins in the registered
     plugin repositories. To add a new plugin repository use the
@@ -514,7 +515,7 @@ def list_plugins(**kwargs):
 
 
 def install_plugin(name=None, **kwargs):
-    """Installs a MySQL Shell plugin.
+    """Installs a MariaDB Shell plugin.
 
     This function download and install a plugin
 
@@ -640,7 +641,7 @@ def install_plugin(name=None, **kwargs):
 
 
 def uninstall_plugin(name=None, **kwargs):
-    """Uninstalls a MySQL Shell plugin.
+    """Uninstalls a MariaDB Shell plugin.
 
     This function uninstall a plugin
 
@@ -710,7 +711,7 @@ def uninstall_plugin(name=None, **kwargs):
 
 
 def update_plugin(name=None, **kwargs):
-    """Updates MySQL Shell plugins.
+    """Updates MariaDB Shell plugins.
 
     This function updates on or all plugins
 
@@ -814,7 +815,7 @@ def update_plugin(name=None, **kwargs):
 
 
 def plugin_details(name=None, **kwargs):
-    """Gives detailed information about a MySQL Shell plugin.
+    """Gives detailed information about a MariaDB Shell plugin.
 
     Args:
         name (str): The name of the plugin.

@@ -151,14 +151,40 @@ SET(VCPKG_GIT_TAG "${_vcpkg_baseline}"
 # Where vcpkg is cloned. Honour an existing VCPKG_ROOT (cache or environment)
 # so a shared checkout is reused; otherwise clone next to the shell source,
 # outside the build dir, so a clean rebuild does not re-clone/re-bootstrap.
+#
+# The environment's VCPKG_ROOT is honoured only when it is a vcpkg git
+# checkout. A Visual Studio developer environment (vcvarsall, and with it
+# ilammy/msvc-dev-cmd in CI) sets it to the vcpkg bundled with Visual Studio:
+# not a git checkout, so the baseline commit can't be checked out there, and
+# under "Program Files", where ports built with autotools (ICU, for one) fail
+# on the space. Without this check the clone below would also delete that
+# directory (its fallback removes the target before re-cloning).
 IF(VCPKG_ROOT)
   SET(_vcpkg_root "${VCPKG_ROOT}")
-ELSEIF(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
+ELSEIF(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL ""
+       AND EXISTS "$ENV{VCPKG_ROOT}/.git")
   SET(_vcpkg_root "$ENV{VCPKG_ROOT}")
 ELSE()
+  IF(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
+    MESSAGE(STATUS "Ignoring VCPKG_ROOT=$ENV{VCPKG_ROOT} (not a vcpkg git checkout)")
+  ENDIF()
   SET(_vcpkg_root "${CMAKE_CURRENT_SOURCE_DIR}/../vcpkg")
 ENDIF()
 GET_FILENAME_COMPONENT(_vcpkg_root "${_vcpkg_root}" ABSOLUTE)
+
+# Cloned only into a missing or empty directory. Anything else there (an
+# explicit -DVCPKG_ROOT that isn't a checkout, say) is not ours to replace:
+# the clone fallback below removes its target, which must only ever be what
+# the first clone attempt created.
+IF(NOT EXISTS "${_vcpkg_root}/.git" AND EXISTS "${_vcpkg_root}")
+  FILE(GLOB _vcpkg_root_entries "${_vcpkg_root}/*")
+  IF(_vcpkg_root_entries)
+    MESSAGE(FATAL_ERROR
+      "${_vcpkg_root} exists but is not a vcpkg git checkout. Pass "
+      "-DVCPKG_ROOT=<a vcpkg checkout, or a missing or empty directory to "
+      "clone vcpkg into>.")
+  ENDIF()
+ENDIF()
 
 # The bootstrap script and the executable it produces differ by host OS. WIN32
 # is not set this early (before project()), so key off CMAKE_HOST_WIN32.

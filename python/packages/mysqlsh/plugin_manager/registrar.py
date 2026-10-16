@@ -1,4 +1,5 @@
 # Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+# Copyright (c) 2026, MariaDB plc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -888,7 +889,7 @@ def wrapper{str(original_signature)}:
 
 
 def sql_handler(name, prefixes):
-    """Decorator to register a Custom SQL Handler in the MySQL Shell
+    """Decorator to register a Custom SQL Handler in the MariaDB Shell
 
     A Custom SQL Handler is a function with the following syntax:
 

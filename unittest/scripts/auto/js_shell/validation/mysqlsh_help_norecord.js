@@ -27,7 +27,7 @@ Usage: mariadb-shell [OPTIONS] [URI]
   -f, --file=<file>                Specify a file to process in batch mode. Any
                                    options specified after this are used as
                                    arguments of the processed file.
-  --ssh=<value>                    Make SSH tunnel connection usingUniform
+  --ssh=<value>                    Make SSH tunnel connection using Uniform
                                    Resource Identifier. Format:
                                    [user@]host[:port]
   --ssh-identity-file=<file>       File from which the private key for public
@@ -76,7 +76,7 @@ Usage: mariadb-shell [OPTIONS] [URI]
   --password3[=<pass>]             Password for third factor authentication
                                    plugin.
   -C, --compress[=<value>]         Use compression in client/server protocol.
-                                   Valid values: 'REQUIRED', 'PREFFERED',
+                                   Valid values: 'REQUIRED', 'PREFERRED',
                                    'DISABLED', 'True', 'False', '1', and '0'.
                                    Boolean values map to REQUIRED and DISABLED
                                    respectively. By default compression is set
@@ -225,7 +225,7 @@ Usage: mariadb-shell [OPTIONS] [URI]
   --nw, --no-wizard                Disables wizard mode.
   --no-password                    Sets empty password and disables prompt for
                                    password.
-  -V, --version                    Prints the version of MySQL Shell.
+  -V, --version                    Prints the version of MariaDB Shell.
   --ssl-key=<file_name>            The path to the SSL private key file in PEM
                                    format.
   --ssl-cert=<file_name>           The path to the SSL public key certificate
