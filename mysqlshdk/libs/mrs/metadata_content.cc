@@ -246,6 +246,7 @@ Id add_content_set(Db_session *session, const Content_set_definition &definition
   insert.set("comments", definition.comments.value_or(""));
   insert.set("options", definition.options);
   insert.set("content_type", definition.content_type);
+  insert.set_if("internal", definition.internal);
   session->execute(insert);
 
   return id;
@@ -475,7 +476,8 @@ std::vector<std::string> content_set_create_statements(Db_session *session,
 }
 
 Id clone_content_set(Db_session *session, const Content_set &content_set,
-                     const Id &new_service_id) {
+                     const Id &new_service_id,
+                     const std::map<Id, Id> &rest_object_ids) {
   Content_set_definition definition;
   definition.service_id = new_service_id;
   definition.request_path = content_set.request_path;
@@ -484,6 +486,7 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
   definition.comments = content_set.comments;
   definition.options = content_set.options;
   definition.content_type = content_set.content_type;
+  definition.internal = content_set.internal;
 
   const Id new_set_id = add_content_set(session, definition);
 
@@ -496,6 +499,35 @@ Id clone_content_set(Db_session *session, const Content_set &content_set,
           " SELECT ?, request_path, requires_auth, enabled, content, options FROM " +
           table + " WHERE content_set_id = ?",
       {Value::id(new_set_id), Value::id(content_set.id)});
+
+  // The links of scripts and triggers to their REST objects, moved to the
+  // copies of the objects. A link to an object of another service is not
+  // copied: the clone owns only what it created, and a Script link's AFTER
+  // DELETE trigger deletes the object, so dropping the clone would take the
+  // other service's object with it.
+  const auto links = sql::metadata_table("content_set_has_rest_object");
+  for (const auto &row :
+       session
+           ->query("SELECT rest_object_id, kind, priority, language, name, "
+                   "class_name, comments, options FROM " +
+                       links + " WHERE content_set_id = ?",
+                   {Value::id(content_set.id)})
+           .rows) {
+    const Id rest_object_id = row["rest_object_id"].as_string();
+    const auto it = rest_object_ids.find(rest_object_id);
+    if (it == rest_object_ids.end()) continue;
+    sql::Insert insert("content_set_has_rest_object");
+    insert.set("content_set_id", Value::id(new_set_id));
+    insert.set("rest_object_id", Value::id(it->second));
+    insert.set("kind", row["kind"].as_string());
+    insert.set("priority", row["priority"].as_int());
+    insert.set("language", row["language"].as_string());
+    insert.set("name", row["name"].as_string());
+    insert.set("class_name", row["class_name"].as_optional_string());
+    insert.set("comments", row["comments"].as_optional_string());
+    insert.set("options", row["options"].as_optional_string());
+    session->execute(insert);
+  }
   return new_set_id;
 }
 

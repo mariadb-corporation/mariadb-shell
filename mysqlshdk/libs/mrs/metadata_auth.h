@@ -29,6 +29,7 @@
 // Access to the authentication part of the metadata schema: auth vendors,
 // auth apps, users, roles and privileges.
 
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -85,6 +86,7 @@ struct Role {
   std::optional<std::string> derived_from_role_caption;
   std::optional<Id> specific_to_service_id;  // nullopt: a global role
   std::optional<std::string> specific_to_service;  // its url_context_root
+  std::vector<std::string> specific_to_service_developers;  // its in_development
   // host + url_context_root of the service; empty for a global role
   std::string specific_to_service_request_path;
   std::string caption;
@@ -124,6 +126,7 @@ struct Role_definition {
   std::string caption;
   std::optional<std::string> description;
   std::string options = "{}";  // JSON
+  std::optional<Id> id;  // a fixed id, for cloning
 };
 
 // Inserts a role. Throws a DUPLICATION ERROR for a caption that is already
@@ -140,11 +143,38 @@ void delete_role(Db_session *session, const Id &id);
 std::string role_create_statement(Db_session *session, const Role &role,
                                   bool on_current_service = false);
 
-// The CREATE REST ROLE statements of the roles specific to a service, for
-// SHOW CREATE REST SERVICE ... INCLUDING DATABASE ENDPOINTS (on the current
-// service).
-std::vector<std::string> role_create_statements(Db_session *session,
-                                                const Id &service_id);
+// The CREATE REST ROLE statements of the roles specific to a service, each
+// followed by its GRANT REST statements, parents before the roles extending
+// them, for SHOW CREATE REST SERVICE ... INCLUDING DATABASE ENDPOINTS (on the
+// current service). service_host_ctx is the service's host name and request
+// path: its privileges on that path are written ON CURRENT SERVICE.
+std::vector<std::string> role_create_statements(
+    Db_session *session, const Id &service_id,
+    const std::string &service_host_ctx);
+
+// Deletes the roles specific to a service, the ones that extend others
+// first. The service's BEFORE DELETE trigger deletes them in index order,
+// which fails on the foreign keys when a role goes before one extending it.
+void delete_service_roles(Db_session *session, const Id &service_id);
+
+// For CLONE REST SERVICE: copies the roles specific to a service to another
+// one, with their privileges and their grants to users. A privilege whose
+// service pattern matches service_path (the source's host_ctx), other than
+// `*`, is copied with new_service_path, so every privilege that works on the
+// source works on the copy; privileges that end up on the same paths are
+// merged into one. The global roles are left as they are. Returns the ids of
+// the copied roles, mapped from the originals.
+std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
+                                     const Id &new_service_id,
+                                     const std::string &service_path,
+                                     const std::string &new_service_path);
+
+// For CLONE REST SERVICE: copies the user groups and user hierarchy types
+// specific to a service to another one, with their members, hierarchies and
+// roles. role_ids maps the service's roles to their copies.
+void clone_service_groups(Db_session *session, const Id &service_id,
+                          const Id &new_service_id,
+                          const std::map<Id, Id> &role_ids);
 
 // -- Privileges -----------------------------------------------------------
 
@@ -156,6 +186,7 @@ struct Privilege {
   std::string service_path;  // patterns, * for all
   std::string schema_path;
   std::string object_path;
+  std::optional<std::string> options;
 };
 
 std::vector<Privilege> get_role_privileges(Db_session *session,
@@ -178,9 +209,15 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
                            const std::string &schema_path,
                            const std::string &object_path);
 
-// The GRANT REST ... ON ... TO role statement of a privilege.
-std::string privilege_grant_statement(const Privilege &privilege,
-                                      const Role &role);
+// The GRANT REST ... ON ... TO role statement of a privilege. With
+// current_service_host_ctx, the host name and request path of the current
+// service, the statement names no service for the role, and a privilege whose
+// service pattern matches that path (other than `*`) is written ON CURRENT
+// SERVICE, as in the script of SHOW CREATE REST SERVICE: loaded under another
+// path, it grants on the new one.
+std::string privilege_grant_statement(
+    const Privilege &privilege, const Role &role,
+    const std::optional<std::string> &current_service_host_ctx = std::nullopt);
 
 // -- Auth apps ------------------------------------------------------------
 

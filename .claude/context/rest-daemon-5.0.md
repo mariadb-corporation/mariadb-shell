@@ -70,6 +70,12 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 - `mysql_task_user` (MySQL's mysql_tasks placeholder role) no longer exists; nothing grants it.
 - MariaDB Shell grants the privileges on exposed database objects to the data provider role of the schema (`<prefix>mariadb_rest_service_data_provider<postfix>`), as before.
 
+## 2a. A REST role of a service applies to that service only
+
+- `mrs_role.specific_to_service_id` scopes the role's privileges: the daemon applies a privilege to a request only when the role is global (`NULL`) or belongs to the requested service, then matches `service_path` / `schema_path` / `object_path` as before (`AuthPrivilege::service_id`, `do_privilege_check()` in `rest_request_handler.cc`; suite test `role_service_scope`). MySQL Router's MRS matched every privilege of every role of the user by path alone.
+- The shell relies on it: `CLONE REST SERVICE` copies a service role's privileges as they are (a `*` or another service's path included), and `GRANT REST ... ON SERVICE /x TO r ON SERVICE /a` is stored as written. Without the scoping, a cloned role would reach the source and any service its grants name.
+- **Glob escapes differ** (REST-9): the daemon's `_match_glob()` (`rest_request_handler.cc`) treats `\` before any character as an escape and throws `std::logic_error` on a pattern ending with `\`, so a `GRANT REST ... ON SERVICE `/svc\`` makes every request of that role's users throw; the shell's `shcore::match_glob()` escapes only `\`, `*` and `?`. The shell's `names_service()` (clone, dump) can therefore disagree with the daemon for a pattern with a backslash. The fix proposed in REST-9 is the shell's rule in the daemon, and a matcher that never throws.
+
 ## 3. Schema version
 
 - `msm_schema_version` (view, columns `major`, `minor`, `patch`) reports `5.0.0`. The daemon must accept 5.0.x and refuse 4.x.

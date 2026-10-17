@@ -25,6 +25,7 @@
 
 #include "mysqlshdk/libs/mrs/metadata_auth.h"
 #include "mysqlshdk/libs/mrs/strings.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
 
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
@@ -33,6 +34,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <set>
 #include <stdexcept>
 
 namespace mrs {
@@ -41,6 +43,15 @@ namespace metadata {
 using sql::Value;
 
 namespace {
+
+// Whether a privilege's service pattern names the service with this host_ctx,
+// as the REST daemon matches it (case-sensitive glob, * and ?). The daemon
+// applies a service role's privileges to that service only, so for such a
+// role any matching pattern means the service itself. `*` is left out: it
+// names every service, so it is kept as written.
+bool names_service(const std::string &pattern, const std::string &host_ctx) {
+  return pattern != "*" && shcore::match_glob(pattern, host_ctx, true);
+}
 
 // -- Password hashing -----------------------------------------------------
 //
@@ -162,7 +173,8 @@ std::vector<std::string> canonical_operations(
 
 std::string role_service_clause(const Role &role) {
   if (!role.specific_to_service) return "ON ANY SERVICE";
-  return "ON SERVICE " + quote_request_path(*role.specific_to_service);
+  return "ON SERVICE " + format_developers(role.specific_to_service_developers) +
+         quote_request_path(*role.specific_to_service);
 }
 
 // -- Queries --------------------------------------------------------------
@@ -172,6 +184,7 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options
 FROM `{metadata_schema}`.`mrs_role` r
     LEFT JOIN `{metadata_schema}`.`mrs_role` pr
@@ -189,6 +202,8 @@ Role role_from_row(const Db_row &row) {
   r.derived_from_role_caption = row["derived_from_role_caption"].as_optional_string();
   r.specific_to_service_id = row["specific_to_service_id"].as_optional_string();
   r.specific_to_service = row["specific_to_service"].as_optional_string();
+  r.specific_to_service_developers =
+      developers_of(row["specific_to_service_in_development"].as_optional_string());
   r.specific_to_service_request_path =
       row["specific_to_service_request_path"].as_string();
   r.caption = row["caption"].as_string();
@@ -212,7 +227,7 @@ std::vector<Role> query_roles(Db_session *session, const std::string &where,
 
 const char *k_privilege_select = R"(
 SELECT p.id, p.role_id, r.caption AS role_caption, p.crud_operations,
-    p.service_path, p.schema_path, p.object_path
+    p.service_path, p.schema_path, p.object_path, p.options
 FROM `{metadata_schema}`.`mrs_privilege` p
     JOIN `{metadata_schema}`.`mrs_role` r ON p.role_id = r.id
 )";
@@ -226,7 +241,101 @@ Privilege privilege_from_row(const Db_row &row) {
   p.service_path = row["service_path"].as_string();
   p.schema_path = row["schema_path"].as_string();
   p.object_path = row["object_path"].as_string();
+  p.options = row["options"].as_optional_string();
   return p;
+}
+
+// How GRANT stores privileges: one per role and paths, whose operations
+// are the union of all granted on those paths. GRANT, the clone and the dump
+// go through these, so they agree.
+
+bool on_paths(const Privilege &privilege, const std::string &service_path,
+              const std::string &schema_path, const std::string &object_path) {
+  return privilege.service_path == service_path &&
+         privilege.schema_path == schema_path &&
+         privilege.object_path == object_path;
+}
+
+std::vector<std::string> merged_operations(
+    std::vector<std::string> operations,
+    const std::vector<std::string> &more) {
+  for (const auto &operation : more) {
+    if (!contains(operations, operation)) operations.push_back(operation);
+  }
+  return canonical_operations(operations);
+}
+
+// Adds a privilege to a role's list: merged into one on the same paths,
+// which keeps its id and options
+void merge_privilege(std::vector<Privilege> *privileges, Privilege privilege) {
+  const auto same = std::find_if(
+      privileges->begin(), privileges->end(), [&](const Privilege &p) {
+        return on_paths(p, privilege.service_path, privilege.schema_path,
+                        privilege.object_path);
+      });
+  if (same == privileges->end()) {
+    privileges->push_back(std::move(privilege));
+  } else {
+    same->crud_operations =
+        merged_operations(same->crud_operations, privilege.crud_operations);
+  }
+}
+
+// The privileges of every role of a service, by role
+std::map<Id, std::vector<Privilege>> get_service_role_privileges(
+    Db_session *session, const Id &service_id) {
+  const std::string query =
+      std::string(k_privilege_select) +
+      " WHERE r.specific_to_service_id = ?"
+      " ORDER BY p.service_path, p.schema_path, p.object_path";
+
+  std::map<Id, std::vector<Privilege>> privileges;
+  for (const auto &row : session->query(query, {Value::id(service_id)}).rows) {
+    auto privilege = privilege_from_row(row);
+    privileges[privilege.role_id].push_back(std::move(privilege));
+  }
+  return privileges;
+}
+
+// The privileges of a role of the service with host_ctx, for the service
+// under new_path: those that name the service (names_service) are moved to
+// the new path, the others are kept as they are (`*` works on the new path as
+// on the old one, a path of another service works on neither), and those
+// that end up on the same paths (`/a` and `/a*`, or `/b` when moving to /b)
+// become one, as GRANT would have made them (merge_privilege). The clone
+// and the dump both go through this, so they agree.
+std::vector<Privilege> privileges_under_path(std::vector<Privilege> privileges,
+                                             const std::string &host_ctx,
+                                             const std::string &new_path) {
+  std::vector<Privilege> result;
+  for (auto &privilege : privileges) {
+    if (names_service(privilege.service_path, host_ctx)) {
+      privilege.service_path = new_path;
+    }
+    merge_privilege(&result, std::move(privilege));
+  }
+  return result;
+}
+
+// Inserts a privilege row as GRANT writes it, the operations in canonical
+// order. GRANT and the clone both go through this.
+Id insert_privilege(Db_session *session, const Id &role_id,
+                    const std::vector<std::string> &operations,
+                    const std::string &service_path,
+                    const std::string &schema_path,
+                    const std::string &object_path,
+                    const std::optional<std::string> &options = std::nullopt) {
+  const Id id = new_id(session);
+  session->execute(sql::Insert("mrs_privilege")
+                       .set("id", Value::id(id))
+                       .set("role_id", Value::id(role_id))
+                       .set("crud_operations",
+                            join(canonical_operations(operations), ","))
+                       .set("service_path", service_path)
+                       .set("schema_path", schema_path)
+                       .set("object_path", object_path)
+                       .set("options", options));
+  return id;
 }
 
 const char *k_auth_app_select = R"(
@@ -425,6 +534,7 @@ SELECT r.id, r.derived_from_role_id, pr.caption AS derived_from_role_caption,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options)";
   if (include_users) {
     query +=
@@ -466,7 +576,7 @@ FROM `{metadata_schema}`.`mrs_role` r
   if (include_users) {
     query +=
         " GROUP BY r.id, r.derived_from_role_id, pr.caption,"
-        " r.specific_to_service_id, h.name, s.url_context_root,"
+        " r.specific_to_service_id, h.name, s.url_context_root, s.in_development,"
         " r.caption, r.description, r.options";
   }
   query += " ORDER BY r.caption, specific_to_service_request_path";
@@ -494,7 +604,7 @@ Id add_role(Db_session *session, const Role_definition &definition) {
     throw std::runtime_error(duplicate_message);
   }
 
-  const Id id = new_id(session);
+  const Id id = definition.id ? *definition.id : new_id(session);
   sql::Insert insert("mrs_role");
   insert.set("id", Value::id(id));
   insert.set("derived_from_role_id", Value::id(definition.derived_from_role_id));
@@ -550,13 +660,200 @@ std::string role_create_statement(Db_session *session, const Role &role,
   return output + ";";
 }
 
-std::vector<std::string> role_create_statements(Db_session *session,
-                                                const Id &service_id) {
+// The roles specific to the service, each after the role it extends when that
+// one is specific to the service too
+std::vector<Role> service_roles_parents_first(Db_session *session,
+                                              const Id &service_id) {
+  auto pending = get_roles(session, service_id, false);
+  std::set<Id> waiting;
+  for (const auto &role : pending) waiting.insert(role.id);
+
+  std::vector<Role> ordered;
+  while (!pending.empty()) {
+    const auto before = pending.size();
+    for (auto it = pending.begin(); it != pending.end();) {
+      if (it->derived_from_role_id && waiting.count(*it->derived_from_role_id)) {
+        ++it;
+        continue;
+      }
+      waiting.erase(it->id);
+      ordered.push_back(std::move(*it));
+      it = pending.erase(it);
+    }
+    if (pending.size() == before) {
+      throw std::runtime_error("The REST roles of the service extend each other in a cycle.");
+    }
+  }
+  return ordered;
+}
+
+std::vector<std::string> role_create_statements(
+    Db_session *session, const Id &service_id,
+    const std::string &service_host_ctx) {
+  // Parents first: CREATE REST ROLE ... EXTENDS needs the role it extends
   std::vector<std::string> statements;
-  for (const auto &role : get_roles(session, service_id, false)) {
+  auto privileges = get_service_role_privileges(session, service_id);
+  for (const auto &role : service_roles_parents_first(session, service_id)) {
     statements.push_back(role_create_statement(session, role, true));
+    // Privileges that name the service all become ON CURRENT SERVICE, so
+    // those on the same schema and object paths are written as one GRANT:
+    // loaded, they would be merged into one privilege anyway
+    for (const auto &grant :
+         privileges_under_path(std::move(privileges[role.id]),
+                               service_host_ctx, service_host_ctx)) {
+      statements.push_back(
+          privilege_grant_statement(grant, role, service_host_ctx) + ";");
+    }
   }
   return statements;
+}
+
+void delete_service_roles(Db_session *session, const Id &service_id) {
+  // Children first, for the foreign key
+  const auto roles = service_roles_parents_first(session, service_id);
+  for (auto it = roles.rbegin(); it != roles.rend(); ++it) {
+    delete_role(session, it->id);
+  }
+}
+
+std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
+                                     const Id &new_service_id,
+                                     const std::string &service_path,
+                                     const std::string &new_service_path) {
+  const auto roles = service_roles_parents_first(session, service_id);
+  std::map<Id, Id> role_ids;
+  for (const auto &role : roles) role_ids.emplace(role.id, new_id(session));
+
+  // A role that extends another role of the service extends that one's copy,
+  // inserted before it
+  for (const auto &role : roles) {
+    auto parent = role.derived_from_role_id;
+    if (parent && role_ids.count(*parent)) parent = role_ids.at(*parent);
+    Role_definition definition;
+    definition.id = role_ids.at(role.id);
+    definition.derived_from_role_id = parent;
+    definition.specific_to_service_id = new_service_id;
+    definition.caption = role.caption;
+    definition.description = role.description;
+    definition.options = role.options.value_or("{}");
+    add_role(session, definition);
+  }
+
+  // The privileges of the source under the copy's path
+  const auto user_roles = sql::metadata_table("mrs_user_has_role");
+  auto privileges = get_service_role_privileges(session, service_id);
+  for (const auto &[role_id, new_role_id] : role_ids) {
+    for (const auto &copy :
+         privileges_under_path(std::move(privileges[role_id]), service_path,
+                               new_service_path)) {
+      insert_privilege(session, new_role_id, copy.crud_operations,
+                       copy.service_path, copy.schema_path, copy.object_path,
+                       copy.options);
+    }
+    // The users of the auth apps are shared, so they keep their roles
+    session->execute("INSERT INTO " + user_roles +
+                         " (user_id, role_id, comments, options) SELECT user_id,"
+                         " ?, comments, options FROM " + user_roles +
+                         " WHERE role_id = ?",
+                     {Value::id(new_role_id), Value::id(role_id)});
+  }
+
+  // The privileges of the global roles are not copied: privilege paths ignore
+  // developers, so a copy on the path of another service would extend that
+  // service's privileges, and nothing would remove it with the copy
+  return role_ids;
+}
+
+void clone_service_groups(Db_session *session, const Id &service_id,
+                          const Id &new_service_id,
+                          const std::map<Id, Id> &role_ids) {
+  const auto mapped = [](const std::map<Id, Id> &ids, const Id &id) {
+    const auto it = ids.find(id);
+    return it == ids.end() ? id : it->second;
+  };
+
+  // User hierarchy types, with the hierarchies of the users along them
+  const auto types = sql::metadata_table("mrs_user_hierarchy_type");
+  const auto hierarchies = sql::metadata_table("mrs_user_hierarchy");
+  for (const auto &row :
+       session
+           ->query("SELECT id FROM " + types + " WHERE specific_to_service_id = ?",
+                   {Value::id(service_id)})
+           .rows) {
+    const Id type_id = row["id"].as_string();
+    const Id new_type_id = new_id(session);
+    session->execute("INSERT INTO " + types +
+                         " (id, caption, description, specific_to_service_id,"
+                         " options) SELECT ?, caption, description, ?, options"
+                         " FROM " + types + " WHERE id = ?",
+                     {Value::id(new_type_id), Value::id(new_service_id),
+                      Value::id(type_id)});
+    session->execute(
+        "INSERT INTO " + hierarchies +
+            " (user_id, reporting_to_user_id, user_hierarchy_type_id, options)"
+            " SELECT user_id, reporting_to_user_id, ?, options FROM " +
+            hierarchies + " WHERE user_hierarchy_type_id = ?",
+        {Value::id(new_type_id), Value::id(type_id)});
+  }
+
+  // User groups, with their members and roles, then the hierarchies between
+  // them once every group has its copy
+  const auto groups = sql::metadata_table("mrs_user_group");
+  const auto members = sql::metadata_table("mrs_user_has_group");
+  const auto group_roles = sql::metadata_table("mrs_user_group_has_role");
+  const auto group_hierarchies = sql::metadata_table("mrs_user_group_hierarchy");
+  std::map<Id, Id> group_ids;
+  for (const auto &row :
+       session
+           ->query("SELECT id FROM " + groups + " WHERE specific_to_service_id = ?",
+                   {Value::id(service_id)})
+           .rows) {
+    group_ids.emplace(row["id"].as_string(), new_id(session));
+  }
+  for (const auto &[group_id, new_group_id] : group_ids) {
+    session->execute("INSERT INTO " + groups +
+                         " (id, specific_to_service_id, caption, description,"
+                         " options) SELECT ?, ?, caption, description, options"
+                         " FROM " + groups + " WHERE id = ?",
+                     {Value::id(new_group_id), Value::id(new_service_id),
+                      Value::id(group_id)});
+    session->execute("INSERT INTO " + members +
+                         " (user_id, user_group_id, comments, options) SELECT"
+                         " user_id, ?, comments, options FROM " + members +
+                         " WHERE user_group_id = ?",
+                     {Value::id(new_group_id), Value::id(group_id)});
+    for (const auto &role :
+         session
+             ->query("SELECT role_id, options FROM " + group_roles +
+                         " WHERE user_group_id = ?",
+                     {Value::id(group_id)})
+             .rows) {
+      session->execute(
+          sql::Insert("mrs_user_group_has_role")
+              .set("user_group_id", Value::id(new_group_id))
+              .set("role_id", Value::id(mapped(role_ids, role["role_id"].as_string())))
+              .set("options", role["options"].as_optional_string()));
+    }
+  }
+  for (const auto &[group_id, new_group_id] : group_ids) {
+    for (const auto &row :
+         session
+             ->query("SELECT parent_group_id, group_hierarchy_type_id, level, "
+                     "options FROM " + group_hierarchies +
+                         " WHERE user_group_id = ?",
+                     {Value::id(group_id)})
+             .rows) {
+      session->execute(
+          sql::Insert("mrs_user_group_hierarchy")
+              .set("user_group_id", Value::id(new_group_id))
+              .set("parent_group_id",
+                   Value::id(mapped(group_ids, row["parent_group_id"].as_string())))
+              .set("group_hierarchy_type_id",
+                   Value::id(row["group_hierarchy_type_id"].as_string()))
+              .set("level", row["level"].as_int())
+              .set("options", row["options"].as_optional_string()));
+    }
+  }
 }
 
 // -- Privileges -----------------------------------------------------------
@@ -581,32 +878,18 @@ Id add_role_privilege(Db_session *session, const Id &role_id,
                       const std::string &object_path) {
   // Grants on the same paths extend the existing privilege
   for (const auto &privilege : get_role_privileges(session, role_id)) {
-    if (privilege.service_path != service_path ||
-        privilege.schema_path != schema_path ||
-        privilege.object_path != object_path) {
-      continue;
-    }
-    auto merged = privilege.crud_operations;
-    for (const auto &operation : operations) {
-      if (!contains(merged, operation)) merged.push_back(operation);
-    }
-    session->execute(sql::Update("mrs_privilege")
-                         .set("crud_operations",
-                              join(canonical_operations(merged), ","))
-                         .where("id", Value::id(privilege.id)));
+    if (!on_paths(privilege, service_path, schema_path, object_path)) continue;
+    session->execute(
+        sql::Update("mrs_privilege")
+            .set("crud_operations",
+                 join(merged_operations(privilege.crud_operations, operations),
+                      ","))
+            .where("id", Value::id(privilege.id)));
     return privilege.id;
   }
 
-  const Id id = new_id(session);
-  session->execute(sql::Insert("mrs_privilege")
-                       .set("id", Value::id(id))
-                       .set("role_id", Value::id(role_id))
-                       .set("crud_operations",
-                            join(canonical_operations(operations), ","))
-                       .set("service_path", service_path)
-                       .set("schema_path", schema_path)
-                       .set("object_path", object_path));
-  return id;
+  return insert_privilege(session, role_id, operations, service_path,
+                          schema_path, object_path);
 }
 
 bool delete_role_privilege(Db_session *session, const Id &role_id,
@@ -616,11 +899,7 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
                            const std::string &object_path) {
   bool found = false;
   for (const auto &privilege : get_role_privileges(session, role_id)) {
-    if (privilege.service_path != service_path ||
-        privilege.schema_path != schema_path ||
-        privilege.object_path != object_path) {
-      continue;
-    }
+    if (!on_paths(privilege, service_path, schema_path, object_path)) continue;
     found = true;
 
     std::vector<std::string> remaining;
@@ -641,29 +920,36 @@ bool delete_role_privilege(Db_session *session, const Id &role_id,
   return found;
 }
 
-std::string privilege_grant_statement(const Privilege &privilege,
-                                      const Role &role) {
-  // A service path may carry a host name in front of the request path
-  std::string host;
-  std::string request_path;
+std::string privilege_grant_statement(
+    const Privilege &privilege, const Role &role,
+    const std::optional<std::string> &current_service_host_ctx) {
+  const bool on_current_service = current_service_host_ctx.has_value();
   const auto &service = privilege.service_path;
-  if (service.empty() || service[0] == '/' || service == "*") {
-    request_path = service;
-  } else {
-    const auto slash = service.find('/');
-    host = service.substr(0, slash);
-    if (slash != std::string::npos) request_path = service.substr(slash);
-  }
 
-  std::string target = "SERVICE ";
-  if (!host.empty()) target += double_quote(host) + " ";
-  target += quote_request_path(request_path);
+  std::string target;
+  if (on_current_service && names_service(service, *current_service_host_ctx)) {
+    target = "CURRENT SERVICE";
+  } else {
+    // A service path may carry a host name in front of the request path
+    std::string host;
+    std::string request_path;
+    if (service.empty() || service[0] == '/' || service == "*") {
+      request_path = service;
+    } else {
+      const auto slash = service.find('/');
+      host = service.substr(0, slash);
+      if (slash != std::string::npos) request_path = service.substr(slash);
+    }
+    target = "SERVICE ";
+    if (!host.empty()) target += double_quote(host) + " ";
+    target += quote_request_path(request_path);
+  }
   target += " SCHEMA " + quote_request_path(privilege.schema_path);
   target += " OBJECT " + quote_request_path(privilege.object_path);
 
   return "GRANT REST " + join(privilege.crud_operations, ",") + " ON " + target +
-         " TO " + sql::quote_identifier(privilege.role_caption) + " " +
-         role_service_clause(role);
+         " TO " + sql::quote_identifier(privilege.role_caption) +
+         (on_current_service ? "" : " " + role_service_clause(role));
 }
 
 // -- Auth apps ------------------------------------------------------------
@@ -920,6 +1206,7 @@ SELECT ur.comments AS grant_comments, ur.options AS grant_options,
     r.specific_to_service_id,
     CONCAT(h.name, s.url_context_root) AS specific_to_service_request_path,
     s.url_context_root AS specific_to_service,
+    s.in_development AS specific_to_service_in_development,
     r.caption, r.description, r.options
 FROM `{metadata_schema}`.`mrs_user_has_role` ur
     JOIN `{metadata_schema}`.`mrs_role` r ON ur.role_id = r.id

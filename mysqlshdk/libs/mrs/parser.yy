@@ -199,7 +199,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
   ENDPOINTS_SYMBOL "ENDPOINTS" OBJECTS_SYMBOL "OBJECTS"
   STATIC_SYMBOL "STATIC"
   VENDORS_SYMBOL "VENDORS" TABLE_SYMBOL "TABLE" COLUMNS_SYMBOL "COLUMNS"
-  DAEMON_SYMBOL "DAEMON" DAEMONS_SYMBOL "DAEMONS"
+  DAEMON_SYMBOL "DAEMON" DAEMONS_SYMBOL "DAEMONS" CURRENT_SYMBOL "CURRENT"
 
 /* Data mapping annotations. */
 %token
@@ -1504,9 +1504,21 @@ grant_rest_privilege_statement:
 /*
  * (ON SERVICE? serviceRequestPathWildcard)
  * | (ON serviceSchemaSelectorWildcard (OBJECT objectRequestPathWildcard)?)
+ * | (ON CURRENT SERVICE (SCHEMA schemaRequestPathWildcard
+ *     (OBJECT objectRequestPathWildcard)?)?)
  */
 privilege_target:
     %empty { $$ = Rest_privilege_statement{}; }
+  | ON_SYMBOL CURRENT_SYMBOL SERVICE_SYMBOL
+    { $$ = Rest_privilege_statement{}; $$.current_service = true; }
+  | ON_SYMBOL CURRENT_SYMBOL SERVICE_SYMBOL
+    DATABASE_SYMBOL schema_request_path_wildcard opt_object_wildcard
+    {
+      $$ = Rest_privilege_statement{};
+      $$.current_service = true;
+      $$.schema_pattern = std::move($5);
+      $$.object_pattern = std::move($6);
+    }
   | ON_SYMBOL service_request_path_wildcard
     { $$ = Rest_privilege_statement{}; $$.service_pattern = std::move($2); }
   | ON_SYMBOL SERVICE_SYMBOL service_request_path_wildcard
@@ -2343,6 +2355,7 @@ identifier_keyword:
   | COLUMNS_SYMBOL { $$ = keyword_text(driver, @1); }
   | DAEMON_SYMBOL { $$ = keyword_text(driver, @1); }
   | DAEMONS_SYMBOL { $$ = keyword_text(driver, @1); }
+  | CURRENT_SYMBOL { $$ = keyword_text(driver, @1); }
   ;
 
 /* An identifier where the rule using it accepts a double quoted string in

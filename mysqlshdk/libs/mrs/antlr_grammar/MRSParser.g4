@@ -706,6 +706,13 @@ grantRestPrivilegeStatement:
                 OBJECT_SYMBOL objectRequestPathWildcard
             )?
         )
+        | (
+            ON_SYMBOL CURRENT_SYMBOL SERVICE_SYMBOL (
+                DATABASE_SYMBOL schemaRequestPathWildcard (
+                    OBJECT_SYMBOL objectRequestPathWildcard
+                )?
+            )?
+        )
     )? TO_SYMBOL roleName roleService?
 ;
 
@@ -734,6 +741,13 @@ revokeRestPrivilegeStatement:
         | (
             ON_SYMBOL serviceSchemaSelectorWildcard (
                 OBJECT_SYMBOL objectRequestPathWildcard
+            )?
+        )
+        | (
+            ON_SYMBOL CURRENT_SYMBOL SERVICE_SYMBOL (
+                DATABASE_SYMBOL schemaRequestPathWildcard (
+                    OBJECT_SYMBOL objectRequestPathWildcard
+                )?
             )?
         )
     )? FROM_SYMBOL roleName roleService?
@@ -1297,6 +1311,7 @@ identifierKeyword:
     | COLUMNS_SYMBOL
     | DAEMON_SYMBOL
     | DAEMONS_SYMBOL
+    | CURRENT_SYMBOL
 ;
 
 identifierList: // ident_string_list in sql_yacc.yy.

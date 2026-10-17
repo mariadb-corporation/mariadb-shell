@@ -184,7 +184,8 @@ struct Sql_mode {
   X(TABLE_SYMBOL, "TABLE")                           \
   X(COLUMNS_SYMBOL, "COLUMNS")                       \
   X(DAEMON_SYMBOL, "DAEMON")                         \
-  X(DAEMONS_SYMBOL, "DAEMONS")
+  X(DAEMONS_SYMBOL, "DAEMONS")                       \
+  X(CURRENT_SYMBOL, "CURRENT")
 
 // The @-annotations of data mapping definitions (`@INSERT`, `@KEY`, ...).
 #define MRS_ANNOTATION_LIST(X)      \

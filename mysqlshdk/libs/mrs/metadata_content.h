@@ -31,6 +31,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -73,6 +74,7 @@ struct Content_set_definition {
   std::optional<std::string> comments;
   std::optional<std::string> options;  // JSON
   std::string content_type = "STATIC";
+  std::optional<bool> internal;
   std::optional<Id> id;  // a fixed id, for cloning
 };
 
@@ -171,9 +173,13 @@ std::vector<std::string> content_set_create_statements(Db_session *session,
                                                        const Id &service_id,
                                                        bool include_dynamic);
 
-// Copies a content set with its files into another service.
+// Copies a content set with its files into another service. Its links to
+// REST objects (scripts and triggers) are copied for the objects in
+// rest_object_ids, which maps the ids of the cloned objects to their copies.
+// A link to an object that was not cloned is not copied.
 Id clone_content_set(Db_session *session, const Content_set &content_set,
-                     const Id &new_service_id);
+                     const Id &new_service_id,
+                     const std::map<Id, Id> &rest_object_ids = {});
 
 // -- Helpers --------------------------------------------------------------
 

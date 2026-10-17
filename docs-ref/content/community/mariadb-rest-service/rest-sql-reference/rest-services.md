@@ -347,7 +347,17 @@ metadata:
 
 ## CLONE REST SERVICE
 
-The `CLONE REST SERVICE` statement duplicates the contents of a REST service to a newly created one. All endpoints and roles of the given service are copied.
+The `CLONE REST SERVICE` statement duplicates the contents of a REST service to a newly created one. The copy gets:
+
+* the REST schemas and their REST objects, with their data mappings and row group security
+* the content sets and their files, with the links of their MRS scripts and triggers to the copied REST objects. A link to a REST object of another service is not copied
+* the links to the same REST auth apps, whose users are shared
+* the REST roles specific to the service, with their privileges and the users they are granted to. A privilege whose service path or pattern matches the source service, other than `*`, is copied with the new path, so every privilege that works on the source works on the copy, and privileges that end up on the same paths are merged into one; the copied roles grant access to the copy only
+* the user groups and user hierarchy types specific to the service
+
+The copy has no relation with the source: nothing it holds reaches the source service or any other, and dropping it leaves them as they are. The privileges of global REST roles are not copied. A copy for developers on the same path is covered by the privileges on that path already; for a copy on a new path, grant them again if they are needed. The copy is never published.
+
+To clone a REST service for development, give the new path a developer list. The copy can use the same path: a MariaDB REST Daemon bootstrapped for one of those developers serves the copy in place of the original. Dropping the copy leaves the source service as it is.
 
 ### Syntax
 
@@ -370,6 +380,12 @@ The following example copies the REST service `/myService` to a new REST service
 
 ```sql
 CLONE REST SERVICE /myService NEW REQUEST PATH /myServiceCopy;
+```
+
+The following example copies the REST service `/myService` for the developer `mike`, on the same path.
+
+```sql
+CLONE REST SERVICE /myService NEW REQUEST PATH mike@/myService;
 ```
 
 ## ALTER REST SERVICE
@@ -510,7 +526,7 @@ showCreateRestServiceStatement:
 
 Without `INCLUDING ... ENDPOINTS`, only the `CREATE REST SERVICE` statement is shown. The `INCLUDING` clause adds the statements of the endpoints of the service. `DATABASE` and `SCHEMA` are synonyms:
 
-* `DATABASE`: the REST schemas and their REST objects, like TABLE, VIEW, PROCEDURE, and FUNCTION.
+* `DATABASE`: the REST roles specific to the service with their `GRANT REST` statements, and the REST schemas and their REST objects, like TABLE, VIEW, PROCEDURE, and FUNCTION.
 * `DATABASE AND STATIC`: also the content sets that don't hold MRS scripts, with their files.
 * `DATABASE AND STATIC AND DYNAMIC`: also the content sets that hold MRS scripts, with their files and an `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` statement.
 * `ALL`: short for `DATABASE AND STATIC AND DYNAMIC`.
@@ -571,7 +587,7 @@ You choose which endpoints of the service to include:
 
 Each of these settings is a superset of the former.
 
-The script names the service only in its first two statements: `CREATE OR REPLACE REST SERVICE` and `USE REST SERVICE`. The statements of the endpoints that follow have no `ON SERVICE` clause and act on the current service. To load the service under another request path, change the path in these two statements. Running the script makes the service the current REST service of the session.
+The script names the service only in its first two statements, `CREATE OR REPLACE REST SERVICE` and `USE REST SERVICE`. The other statements act on the current service: the statements of the endpoints have no `ON SERVICE` clause, and the `GRANT REST` statements of the service's roles grant [`ON CURRENT SERVICE`](rest-users-and-roles.md#grant-rest) the privileges whose service path or pattern matches the service, other than `*`. Privileges on `*` or on another service keep their `ON SERVICE` clause, and privileges on the same paths are written as one `GRANT REST` statement. To load the service under another request path, change the path in the first two statements. `mrs.load.service()` does this when it is given `as_path`. Running the script makes the service the current REST service of the session.
 
 String literals in the script are written so that they read the same with and without the `NO_BACKSLASH_ESCAPES` SQL mode: single quotes are doubled, and file content that holds a backslash is written as `BINARY CONTENT`. Only a backslash in another string, such as a comment, is still written with a backslash escape.
 

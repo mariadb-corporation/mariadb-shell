@@ -200,6 +200,8 @@ void Ddl_executor::do_execute(const Clone_rest_service &s, Statement_result *r) 
   transaction.commit();
 
   r->affected_items_count = 1;
+  r->message = "REST SERVICE `" + full_path + "` cloned to `" +
+               full_service_path(s.new_path) + "` successfully.";
 }
 
 void Ddl_executor::do_execute(const Show_rest_services &s, Statement_result *r) {

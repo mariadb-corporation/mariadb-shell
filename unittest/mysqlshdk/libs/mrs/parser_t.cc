@@ -869,9 +869,40 @@ TEST(Mrs_parser, roles_grants_and_revokes) {
   {
     const auto &s = parse_as<Rest_privilege_statement>("GRANT REST UPDATE TO r");
     EXPECT_FALSE(s.service_pattern.has_value());
+    EXPECT_FALSE(s.current_service);
     EXPECT_FALSE(s.schema_pattern.has_value());
     EXPECT_FALSE(s.object_pattern.has_value());
   }
+  {
+    // ON CURRENT SERVICE, alone or with a schema and an object
+    const auto &s = parse_as<Rest_privilege_statement>(
+        "GRANT REST READ ON CURRENT SERVICE TO r");
+    EXPECT_TRUE(s.current_service);
+    EXPECT_FALSE(s.service_pattern.has_value());
+    EXPECT_FALSE(s.schema_pattern.has_value());
+  }
+  {
+    const auto &s = parse_as<Rest_privilege_statement>(
+        "GRANT REST READ ON CURRENT SERVICE SCHEMA /sakila OBJECT `*` TO r");
+    EXPECT_TRUE(s.current_service);
+    EXPECT_FALSE(s.service_pattern.has_value());
+    EXPECT_EQ("/sakila", *s.schema_pattern);
+    EXPECT_EQ("*", *s.object_pattern);
+  }
+  {
+    const auto &s = parse_as<Rest_privilege_statement>(
+        "REVOKE REST READ ON current service SCHEMA /sakila FROM r");
+    EXPECT_TRUE(s.revoke);
+    EXPECT_TRUE(s.current_service);
+    EXPECT_EQ("/sakila", *s.schema_pattern);
+    EXPECT_FALSE(s.object_pattern.has_value());
+  }
+  expect_parse_error("GRANT REST READ ON CURRENT SERVICE /svc TO r",
+                     "unexpected");
+  expect_parse_error("GRANT REST READ ON CURRENT TO r", "unexpected");
+  // CURRENT is also a name
+  EXPECT_EQ("current",
+            parse_as<Rest_privilege_statement>("GRANT REST READ TO current").role);
   {
     const auto &s = parse_as<Rest_privilege_statement>(
         "REVOKE REST CREATE ON SERVICE /myTestService SCHEMA /sakila FROM \"role1\" ON /svc");
