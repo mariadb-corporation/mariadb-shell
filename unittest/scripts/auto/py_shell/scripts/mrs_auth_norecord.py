@@ -471,6 +471,16 @@ EXPECT_EQ([
     ["GRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader` ON SERVICE /svc"]], rest_rows("SHOW REST GRANTS FOR \"reader\""))
 EXPECT_EQ("REVOKE from `reader` executed successfully.", rest_info("REVOKE REST UPDATE ON CURRENT SERVICE FROM \"reader\""))
 EXPECT_EQ([["GRANT REST DELETE ON SERVICE /svc SCHEMA /sakila OBJECT /actor TO `reader` ON SERVICE /svc"]], rest_rows("SHOW REST GRANTS FOR \"reader\""))
+# Under a developer's service the path is stored without the developers, as
+# privilege paths ignore them, and REVOKE finds it there
+rest("CREATE REST SERVICE dev@/svc")
+rest("USE REST SERVICE dev@/svc")
+rest("GRANT REST UPDATE ON CURRENT SERVICE TO \"reader\" ON ANY SERVICE")
+EXPECT_EQ([["GRANT REST UPDATE ON SERVICE /svc SCHEMA `*` OBJECT `*` TO `reader` ON ANY SERVICE"]], rest_rows("SHOW REST GRANTS FOR \"reader\" ON ANY SERVICE"))
+EXPECT_EQ("REVOKE from `reader` executed successfully.", rest_info("REVOKE REST UPDATE ON CURRENT SERVICE FROM \"reader\" ON ANY SERVICE"))
+EXPECT_EQ([], rest_rows("SHOW REST GRANTS FOR \"reader\" ON ANY SERVICE"))
+rest("USE REST SERVICE /svc")
+rest("DROP REST SERVICE dev@/svc")
 
 #@<> GRANT REST ROLE
 EXPECT_EQ("GRANT ROLE to `mike`@`MRS App` added successfully.", rest_info("GRANT REST ROLE \"reader\" TO \"mike\"@\"MRS App\" COMMENT \"Hello\""))
