@@ -317,6 +317,27 @@ std::vector<Privilege> privileges_under_path(std::vector<Privilege> privileges,
   return result;
 }
 
+// Inserts a privilege row as GRANT writes it, the operations in canonical
+// order. GRANT and the clone both go through this.
+Id insert_privilege(Db_session *session, const Id &role_id,
+                    const std::vector<std::string> &operations,
+                    const std::string &service_path,
+                    const std::string &schema_path,
+                    const std::string &object_path,
+                    const std::optional<std::string> &options = std::nullopt) {
+  const Id id = new_id(session);
+  session->execute(sql::Insert("mrs_privilege")
+                       .set("id", Value::id(id))
+                       .set("role_id", Value::id(role_id))
+                       .set("crud_operations",
+                            join(canonical_operations(operations), ","))
+                       .set("service_path", service_path)
+                       .set("schema_path", schema_path)
+                       .set("object_path", object_path)
+                       .set("options", options));
+  return id;
+}
+
 const char *k_auth_app_select = R"(
 SELECT a.id, a.auth_vendor_id, a.name, a.description, a.url,
     a.url_direct_auth, a.access_token, a.app_id, a.enabled,
@@ -725,15 +746,9 @@ std::map<Id, Id> clone_service_roles(Db_session *session, const Id &service_id,
     for (const auto &copy :
          privileges_under_path(std::move(privileges[role_id]), service_path,
                                new_service_path)) {
-      session->execute(
-          sql::Insert("mrs_privilege")
-              .set("id", Value::id(new_id(session)))
-              .set("role_id", Value::id(new_role_id))
-              .set("crud_operations", join(copy.crud_operations, ","))
-              .set("service_path", copy.service_path)
-              .set("schema_path", copy.schema_path)
-              .set("object_path", copy.object_path)
-              .set("options", copy.options));
+      insert_privilege(session, new_role_id, copy.crud_operations,
+                       copy.service_path, copy.schema_path, copy.object_path,
+                       copy.options);
     }
     // The users of the auth apps are shared, so they keep their roles
     session->execute("INSERT INTO " + user_roles +
@@ -873,16 +888,8 @@ Id add_role_privilege(Db_session *session, const Id &role_id,
     return privilege.id;
   }
 
-  const Id id = new_id(session);
-  session->execute(sql::Insert("mrs_privilege")
-                       .set("id", Value::id(id))
-                       .set("role_id", Value::id(role_id))
-                       .set("crud_operations",
-                            join(canonical_operations(operations), ","))
-                       .set("service_path", service_path)
-                       .set("schema_path", schema_path)
-                       .set("object_path", object_path));
-  return id;
+  return insert_privilege(session, role_id, operations, service_path,
+                          schema_path, object_path);
 }
 
 bool delete_role_privilege(Db_session *session, const Id &role_id,

@@ -74,6 +74,7 @@ The daemon reads these tables to load every REST endpoint, so every query on the
 
 - `mrs_role.specific_to_service_id` scopes the role's privileges: the daemon applies a privilege to a request only when the role is global (`NULL`) or belongs to the requested service, then matches `service_path` / `schema_path` / `object_path` as before (`AuthPrivilege::service_id`, `do_privilege_check()` in `rest_request_handler.cc`; suite test `role_service_scope`). MySQL Router's MRS matched every privilege of every role of the user by path alone.
 - The shell relies on it: `CLONE REST SERVICE` copies a service role's privileges as they are (a `*` or another service's path included), and `GRANT REST ... ON SERVICE /x TO r ON SERVICE /a` is stored as written. Without the scoping, a cloned role would reach the source and any service its grants name.
+- **Glob escapes differ** (REST-9): the daemon's `_match_glob()` (`rest_request_handler.cc`) treats `\` before any character as an escape and throws `std::logic_error` on a pattern ending with `\`, so a `GRANT REST ... ON SERVICE `/svc\`` makes every request of that role's users throw; the shell's `shcore::match_glob()` escapes only `\`, `*` and `?`. The shell's `names_service()` (clone, dump) can therefore disagree with the daemon for a pattern with a backslash. The fix proposed in REST-9 is the shell's rule in the daemon, and a matcher that never throws.
 
 ## 3. Schema version
 
