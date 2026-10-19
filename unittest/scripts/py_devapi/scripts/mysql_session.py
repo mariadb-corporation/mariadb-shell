@@ -98,6 +98,18 @@ classicSession.run_sql('select ?, ?', [1])
 #@<OUT> ClassicSession: run_sql placeholders
 classicSession.run_sql("select ?, ?", ['hello', 1234])
 
+#@<> ClassicSession: run_sql binds dates and times
+import datetime
+row = classicSession.run_sql("select cast(? as date), cast(? as time(6)), cast(? as datetime(6)), ? = '2024-02-29'", [datetime.date(2024, 2, 29), datetime.time(13, 45, 7, 120000), datetime.datetime(2024, 2, 29, 13, 45, 7, 120000), datetime.date(2024, 2, 29)]).fetch_one()
+EXPECT_EQ(datetime.date(2024, 2, 29), row[0])
+EXPECT_EQ(datetime.time(13, 45, 7, 120000), row[1])
+EXPECT_EQ(datetime.datetime(2024, 2, 29, 13, 45, 7, 120000), row[2])
+EXPECT_EQ(1, row[3])
+
+row = classicSession.run_sql("select cast(? as time), cast(? as time(6))", [datetime.timedelta(hours=-1, minutes=-30), datetime.timedelta(hours=100, seconds=7, microseconds=120000)]).fetch_one()
+EXPECT_EQ(datetime.timedelta(hours=-1, minutes=-30), row[0])
+EXPECT_EQ(datetime.timedelta(hours=100, seconds=7, microseconds=120000), row[1])
+
 #@<> ClassicSession: runSql with ! placeholders
 assert __user == classicSession.run_sql('select user from !.! where user=?', ['mysql', 'user', __user]).fetch_one()[0]
 
