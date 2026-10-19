@@ -226,20 +226,28 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
 
     return shcore::Value(Object_bridge_ref(new Date(hour, min, sec, usec)));
   }
+  // A TIME value outside one day comes to Python as a timedelta, and goes
+  // back as the TIME it was. A timedelta longer than any TIME (the server's
+  // range is -838:59:59.999999 to 838:59:59.999999) is wrapped like any other
+  // object; checking the days first keeps the microseconds from overflowing.
+  constexpr int64_t k_max_time_usec = 839 * 3600 * 1000000LL;
   if (PyObject_TypeCheck(py, get_context()->get_timedelta_type())) {
-    // A TIME value outside one day comes to Python as a timedelta, and goes
-    // back as the TIME it was.
-    int64_t usec = get_int64(py, "days") * 86400000000LL +
-                   get_int64(py, "seconds") * 1000000LL +
-                   get_int64(py, "microseconds");
-    const bool negative = usec < 0;
-    if (negative) usec = -usec;
-    const int64_t seconds = usec / 1000000;
+    if (const auto days = get_int64(py, "days"); days >= -35 && days <= 35) {
+      int64_t usec = days * 86400000000LL +
+                     get_int64(py, "seconds") * 1000000LL +
+                     get_int64(py, "microseconds");
+      const bool negative = usec < 0;
+      if (negative) usec = -usec;
 
-    return shcore::Value(Object_bridge_ref(new Date(
-        static_cast<int>(seconds / 3600), static_cast<int>(seconds / 60 % 60),
-        static_cast<int>(seconds % 60), static_cast<int>(usec % 1000000),
-        negative)));
+      if (usec < k_max_time_usec) {
+        const int64_t seconds = usec / 1000000;
+        return shcore::Value(Object_bridge_ref(new Date(
+            static_cast<int>(seconds / 3600),
+            static_cast<int>(seconds / 60 % 60),
+            static_cast<int>(seconds % 60), static_cast<int>(usec % 1000000),
+            negative)));
+      }
+    }
   }
 
   // Any other object gets simply wrapped
