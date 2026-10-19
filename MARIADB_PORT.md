@@ -1277,6 +1277,27 @@ at run time in `shcore::get_default_mysql_plugin_dir()`
 ([utils_file.cc](mysqlshdk/libs/utils/utils_file.cc)) — so the two packaging file
 lists are the only other places that spell the path out.
 
+What goes in it is the Connector/C's loadable auth plugins, the ones MariaDB's
+own `mariadb` client ships: `client_ed25519`, `parsec`, `dialog`,
+`mysql_clear_password`, `caching_sha2_password`, `sha256_password` and
+`auth_gssapi_client`. `mysql_native_password` is built into libmariadbclient.
+
+`auth_gssapi_client` is built only where the connector finds `krb5-config`
+(on Windows it uses SSPI and needs nothing). Linux builds need `krb5-devel` /
+`libkrb5-dev`. macOS has `/usr/bin/krb5-config`, but the connector searches
+with `ONLY_CMAKE_FIND_ROOT_PATH`, which there means inside the SDK, so the
+bootstrap passes `-DKRB5_CONFIG` itself. The plugin links the system Kerberos
+on purpose (Kerberos.framework on macOS, `libgssapi_krb5.so.2` on Linux): it
+must read the system's `krb5.conf` and the credential cache `kinit` writes.
+That makes it the one binary scripts/verify_package.sh lets depend on Linux
+libraries outside its baseline; the same script fails a package that lacks any
+of the plugins. The list is
+`MARIADB_AUTH_CLIENT_PLUGINS` in the top-level CMakeLists.txt, and
+cmake/bootstrap_mariadb.cmake builds the same targets. A `MARIADB_BUILD_DIR`
+built by hand without them configures with a warning, and the shell then can't
+log in to `ed25519` or `parsec` accounts (`Plugin client_ed25519 could not be
+loaded`).
+
 The user-facing names for it are unchanged: the `mysqlPluginDir` shell option,
 `--mysql-plugin-dir` and libmysqlclient's own `LIBMYSQL_PLUGIN_DIR` all still
 mean what they meant, only the default value moved.

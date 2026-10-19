@@ -17,7 +17,6 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 - **Option-file groups have no priority.** Options from `[client]`, `[mysqlsh]` and `[mariadb-shell]` apply in file order. [connecting/option-files-and-login-paths.md]
 - **`local-infile` is ON by default** on the client side. [connecting/connection-uris-and-options.md]
 - **Passwords read with `--passwords-from-stdin` are never saved** to the credential store. [connecting/credential-store.md]
-- **The shell can't log in to `ed25519` (or `parsec`, `auth_gssapi`) accounts.** For MariaDB it bundles only the `caching_sha2_password` client plugin (`AUTH_CLIENT_PLUGINS` in CMakeLists.txt, `_mdb_core_targets` in cmake/bootstrap_mariadb.cmake), so the login fails with `Plugin client_ed25519 could not be loaded`. Connector/C has the `client_ed25519` target; it isn't built or copied.
 - **The macOS tarball has no `plaintext` credential helper**, although README.md says it exists on all platforms. [connecting/credential-store.md]
 
 ### Utilities

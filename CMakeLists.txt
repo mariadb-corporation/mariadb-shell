@@ -1420,10 +1420,25 @@ IF(MYSQL_BUILD_DIR)
   ENDIF()
 ELSEIF(MARIADB_BUILD)
   SET(_plugin_subdirs "${MARIADB_BUILD_DIR}/libmariadb")
-  IF(WIN32)
+  # Only a multi-config generator (Visual Studio) puts the plugins in a
+  # per-config subdir. The Ninja build used on Windows does not, so appending
+  # the build type unconditionally found nothing and bundled no plugin at all.
+  IF(WIN32 AND IS_DIRECTORY "${_plugin_subdirs}/${CMAKE_BUILD_TYPE}")
     STRING(APPEND _plugin_subdirs "/${CMAKE_BUILD_TYPE}")
   ENDIF()
-  FILE(GLOB AUTH_CLIENT_PLUGINS "${_plugin_subdirs}/caching_sha2_password.${_plugin_ext}")
+  # The Connector/C's loadable auth plugins, as cmake/bootstrap_mariadb.cmake
+  # builds them: client_ed25519 and parsec for MariaDB's own authentication,
+  # dialog and mysql_clear_password for PAM, auth_gssapi_client for Kerberos
+  # (built only where the connector finds krb5-config, or on Windows), and the
+  # two sha2 plugins for MySQL accounts. mysql_native_password is built into
+  # libmariadbclient. scripts/verify_package.sh checks a package has them all.
+  SET(MARIADB_AUTH_CLIENT_PLUGINS caching_sha2_password client_ed25519 parsec
+      dialog mysql_clear_password sha256_password auth_gssapi_client)
+  FOREACH(_plugin ${MARIADB_AUTH_CLIENT_PLUGINS})
+    IF(EXISTS "${_plugin_subdirs}/${_plugin}.${_plugin_ext}")
+      LIST(APPEND AUTH_CLIENT_PLUGINS "${_plugin_subdirs}/${_plugin}.${_plugin_ext}")
+    ENDIF()
+  ENDFOREACH()
 ENDIF()
 
 IF(AUTH_CLIENT_PLUGINS)
@@ -1438,9 +1453,7 @@ IF(AUTH_CLIENT_PLUGINS)
       "mysql_native_password"
     )
   ELSEIF(MARIADB_BUILD)
-    SET(EXPECTED_AUTH_CLIENT_PLUGINS
-      "caching_sha2_password"
-    )
+    SET(EXPECTED_AUTH_CLIENT_PLUGINS ${MARIADB_AUTH_CLIENT_PLUGINS})
   ENDIF()
 
   IF(${OPENSSL_MAJOR_MINOR_FIX_VERSION} VERSION_GREATER_EQUAL "1.1.1")
@@ -1482,6 +1495,13 @@ IF(AUTH_CLIENT_PLUGINS)
 
   IF(EXPECTED_AUTH_CLIENT_PLUGINS AND MAINTAINER_MODE)
     MESSAGE(FATAL_ERROR "Didn't find expected client authentication plugins: ${EXPECTED_AUTH_CLIENT_PLUGINS}")
+  ELSEIF(EXPECTED_AUTH_CLIENT_PLUGINS AND MARIADB_BUILD)
+    # A MARIADB_BUILD_DIR built by hand with only the targets older shells
+    # needed; the shell then can't log in to accounts using these plugins.
+    STRING(REPLACE ";" " " _missing "${EXPECTED_AUTH_CLIENT_PLUGINS}")
+    MESSAGE(WARNING "Client authentication plugins missing from "
+      "${_plugin_subdirs}, so they won't be bundled: ${_missing}. Build them "
+      "in ${MARIADB_BUILD_DIR} with: cmake --build . --target ${_missing}")
   ENDIF()
 
   ADD_DEFINITIONS(-DDEFAULT_MYSQL_PLUGIN_DIR="${INSTALL_MYSQL_PLUGINS_DIR}")
