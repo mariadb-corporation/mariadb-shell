@@ -236,9 +236,17 @@ jobs:
       - name: Verify Package
         env:
           EXPECT_VERSION: ${{ needs.resolve.outputs.version }}
+        # The step passes only if the script reached its last line. Git Bash on
+        # the windows-11-arm runners (an x64 build, emulated) can die mid-run
+        # and still hand the runner exit code 0, which once passed a package
+        # whose dependency and rpath audits never ran.
         run: |
           chmod +x scripts/verify_package.sh
-          scripts/verify_package.sh "${{ steps.unpack.outputs.root }}"
+          scripts/verify_package.sh "${{ steps.unpack.outputs.root }}" 2>&1 | tee verify.log
+          if [ "$(tail -n 1 verify.log)" != "  package OK" ]; then
+            echo "::error::verify_package.sh did not finish (no 'package OK'); see the output above"
+            exit 1
+          fi
 
       # Keeps a failure diagnosable without re-running: the unpacked tree is what
       # the checks actually saw.

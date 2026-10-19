@@ -353,6 +353,8 @@ case "$(uname -s)" in
         | grep -E "$BIN_RE" | sed 's/:[[:space:]].*//'
     }
     list_deps() { otool -L "$1" 2>/dev/null | tail -n +2 | awk '{print $1}'; }
+    # The LC_RPATH entries, one per line ("path <value> (offset N)").
+    list_rpaths() { otool -l "$1" 2>/dev/null | awk '$1 == "path" { print $2 }'; }
     # /usr/lib and /System/Library are the dyld shared cache: part of macOS
     # itself, on every machine, neither installable nor removable.
     dep_allowed() {
@@ -383,6 +385,15 @@ case "$(uname -s)" in
         esac
       done
     }
+    # The DT_RPATH/DT_RUNPATH entries, one per line. readelf is binutils, which
+    # a machine that only unpacked a package may not have; without it the
+    # check below is skipped there, and fails in CI.
+    if command -v readelf >/dev/null 2>&1; then
+      list_rpaths() {
+        readelf -d "$1" 2>/dev/null | grep -E '\((RPATH|RUNPATH)\)' \
+          | sed -E 's/.*\[(.*)\]$/\1/' | tr ':' '\n'
+      }
+    fi
     # glibc and the compiler runtime, matched on the SONAME: ldd reports these
     # as resolved paths (/lib64/libc.so.6), so the basename is what carries the
     # identity. Everything else -- libffi, xz, bzip2, sqlite, OpenSSL, ncurses
@@ -510,6 +521,59 @@ else
   rm -f "$VIOLATIONS"
 fi
 rm -f "${PE_DEPS:-}" 2>/dev/null
+
+# A search path baked into a binary must be relative to the binary itself
+# (@loader_path/@executable_path, $ORIGIN). An absolute one names a directory on
+# the build machine: it is dead weight on a user's machine, it can hide a
+# library missing from the package on any machine that still has that directory
+# (the build host, a CI runner), and it lets whoever can create that path there
+# inject a library. 26.10.1 shipped 77 such binaries on macOS and libpython on
+# Linux. Windows has no equivalent.
+if [ -z "$BIN_RE" ] || ! declare -F list_rpaths >/dev/null; then
+  # Missing readelf is a skip only on a developer's machine. In CI it would
+  # turn this check into a silent no-op the day a runner image drops binutils,
+  # so there it fails.
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      skip "no absolute library search paths" "Windows has no rpaths" ;;
+    *)
+      if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        fail "no absolute library search paths" "no rpath lister for $(uname -s) (install binutils for readelf)"
+      else
+        skip "no absolute library search paths" "no rpath lister for $(uname -s) (readelf missing?)"
+      fi ;;
+  esac
+else
+  ABS_RPATHS="$(mktemp)"
+  while IFS= read -r bin; do
+    [ -n "$bin" ] || continue
+    while IFS= read -r rp; do
+      case "$rp" in
+        ''|@loader_path*|@executable_path*|'$ORIGIN'*|'${ORIGIN}'*) ;;
+        *) printf '%s\t%s\n' "$rp" "${bin#$ROOT/}" >> "$ABS_RPATHS" ;;
+      esac
+    done < <(list_rpaths "$bin")
+  done < <(list_binaries)
+
+  if [ ! -s "$ABS_RPATHS" ]; then
+    pass "no absolute library search paths (rpath/runpath)"
+  else
+    # Grouped by path, like the dependency audit: the fix is per build step,
+    # and one leaked directory is usually shared by many binaries.
+    while IFS='|' read -r rp count examples; do
+      fail "no binary searches '$rp'" "$count: $examples"
+    done < <(sort "$ABS_RPATHS" | awk -F'\t' '
+      { n[$1]++; if (n[$1] <= 3) ex[$1] = ex[$1] (ex[$1] == "" ? "" : ", ") $2 }
+      END {
+        for (d in n) {
+          more = (n[d] > 3) ? sprintf(", +%d more", n[d] - 3) : ""
+          label = (n[d] == 1) ? "1 binary" : sprintf("%d binaries", n[d])
+          printf "%s|%s|%s%s\n", d, label, ex[d], more
+        }
+      }' | sort)
+  fi
+  rm -f "$ABS_RPATHS"
+fi
 
 # ---------------------------------------------------------------------------
 printf '\n== Summary\n'
