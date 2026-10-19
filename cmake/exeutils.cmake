@@ -402,6 +402,24 @@ function(install_bundled_binaries)
           get_use_bundled_openssl_command(PATTERN "${COPIED_BINARY}" OUT_COMMAND COMMAND)
           list(APPEND COPY_COMMAND COMMAND ${COMMAND})
         endif()
+
+        # Drop every absolute LC_RPATH the binary was linked with (the vcpkg lib
+        # dir of whatever tree built it), which would otherwise ship pointing at
+        # the build machine. With WRITE_RPATH, point it at INSTALL_LIBDIR
+        # instead, as the Linux branch does with $ORIGIN, so its @rpath
+        # references (the bundled OpenSSL) resolve from the package itself.
+        set(_add_rpath "")
+        if(ARG_WRITE_RPATH)
+          file(RELATIVE_PATH _rel "/${ARG_DESTINATION}" "/${INSTALL_LIBDIR}")
+          if(_rel)
+            set(_add_rpath "@loader_path/${_rel}")
+          else()
+            set(_add_rpath "@loader_path")
+          endif()
+        endif()
+        get_fix_bundled_rpath_command(BINARIES "${COPIED_BINARY}" STRIP_PREFIX "/"
+          ADD_RPATH "${_add_rpath}" OUT_COMMAND COMMAND)
+        list(APPEND COPY_COMMAND COMMAND ${COMMAND})
       endif()
     endif()
 

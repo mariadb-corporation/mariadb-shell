@@ -393,20 +393,17 @@ IF(HAVE_PYTHON)
 
     # A dynamic vcpkg triplet gives its dylibs the id "@rpath/lib<x>.dylib", so
     # bootstrap_python.cmake links the interpreter/libpython/extension modules
-    # with -Wl,-rpath,<abs vcpkg build dir> to resolve them at build time. That
-    # absolute build-tree path must NOT ship in the package (it points at a dir
-    # absent on the target). install_name_tool -change only rewrites dependency
-    # references, never LC_RPATH entries, so scrub it explicitly from the bundled
-    # copies and add a relative @loader_path rpath instead. Derive the same vcpkg
-    # prefix bootstrap_python.cmake used (cached VCPKG_INSTALLED_PREFIX, or the
-    # conventional per-triplet dir when only the toolchain was given).
-    set(_PY_VCPKG_RPATH_STRIP "")
-    if(APPLE AND USING_VCPKG)
-      if(VCPKG_INSTALLED_PREFIX)
-        set(_PY_VCPKG_RPATH_STRIP "${VCPKG_INSTALLED_PREFIX}/lib")
-      elseif(VCPKG_TARGET_TRIPLET)
-        set(_PY_VCPKG_RPATH_STRIP "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/lib")
-      endif()
+    # with -Wl,-rpath,<abs vcpkg build dir> to resolve them at build time, and
+    # CPython adds its own <prefix>/lib. Neither absolute path may ship in the
+    # package: both point at directories absent on the target, and the vcpkg one
+    # is not even this build tree's when the Python was built by another one (a
+    # cached Python). install_name_tool -change only rewrites dependency
+    # references, never LC_RPATH entries, so scrub every absolute rpath ("/" as
+    # the prefix) from the bundled copies and add a relative @loader_path rpath
+    # instead.
+    set(_PY_RPATH_STRIP "")
+    if(APPLE)
+      set(_PY_RPATH_STRIP "/")
     endif()
 
     if(BUNDLED_SHARED_PYTHON)
@@ -445,20 +442,20 @@ IF(HAVE_PYTHON)
         # them by fix_libpython_reference() in add_shell_executable() -- see
         # cmake/exeutils.cmake. It used to be a hard-coded list here, which left
         # the mysql-secret-store helpers broken in the shipped package.
-        # Drop the absolute vcpkg build-tree rpath baked in at build time; the
-        # @executable_path/.. rpath above already reaches the bundled dylibs.
-        if(_PY_VCPKG_RPATH_STRIP)
+        # Drop the absolute build-time rpaths; the @executable_path/.. rpath above
+        # already reaches the bundled dylibs.
+        if(_PY_RPATH_STRIP)
           get_fix_bundled_rpath_command(
             BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/bin/python${PYTHONLIBS_MAJOR_MINOR}"
-            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            STRIP_PREFIX "${_PY_RPATH_STRIP}"
             OUT_COMMAND _FIX_RPATH_CMD)
           list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
 
           # libpython lands directly in INSTALL_LIBDIR next to the bundled vcpkg
-          # dylibs, so @loader_path resolves them once the build-tree rpath is gone.
+          # dylibs, so @loader_path resolves them once the build-time rpaths are gone.
           get_fix_bundled_rpath_command(
             BINARIES "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/${_PY_SHARED_LIB_NAME}"
-            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            STRIP_PREFIX "${_PY_RPATH_STRIP}"
             ADD_RPATH "@loader_path"
             OUT_COMMAND _FIX_RPATH_CMD)
           set(LIB_EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
@@ -473,12 +470,22 @@ IF(HAVE_PYTHON)
         endif()
       endif()
 
+      # On Linux, write libpython a relative rpath like every other bundled
+      # library: it was linked with an absolute RUNPATH (CPython's <prefix>/lib
+      # and the vcpkg lib dir of the tree that built it) and nothing else
+      # replaces it. macOS rewrites its copy above.
+      if(APPLE)
+        set(_PY_LIB_WRITE_RPATH FALSE)
+      else()
+        set(_PY_LIB_WRITE_RPATH TRUE)
+      endif()
+
       install_bundled_binaries(
           DESCRIPTION "Python shared library"
           BINARIES "${_PYTHON_SHARED_LIB}"
           DESTINATION "${INSTALL_LIBDIR}"
           TARGET mariadb-shell
-          WRITE_RPATH FALSE
+          WRITE_RPATH ${_PY_LIB_WRITE_RPATH}
           EXTRA_COPY_COMMANDS ${LIB_EXTRA_COPY_COMMANDS}
       )
     endif()
@@ -508,10 +515,10 @@ IF(HAVE_PYTHON)
       # from lib-dynload (INSTALL_LIBDIR/lib/pythonX.Y/lib-dynload) up to
       # INSTALL_LIBDIR, where the bundled dylibs live, so imports resolve on the
       # target regardless of which executable dlopen()s them.
-      if(_PY_VCPKG_RPATH_STRIP)
+      if(_PY_RPATH_STRIP)
         get_fix_bundled_rpath_command(
           PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/lib-dynload/*.so"
-          STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+          STRIP_PREFIX "${_PY_RPATH_STRIP}"
           ADD_RPATH "@loader_path/../../.."
           OUT_COMMAND _FIX_RPATH_CMD)
         list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})
@@ -564,10 +571,10 @@ IF(HAVE_PYTHON)
         # matching the glob above; a nested module still resolves via the host
         # executable's own @executable_path/.. rpath, so the strip is the part
         # that matters (it removes the build-tree leak).
-        if(_PY_VCPKG_RPATH_STRIP)
+        if(_PY_RPATH_STRIP)
           get_fix_bundled_rpath_command(
             PATTERN "${CMAKE_BINARY_DIR}/${INSTALL_LIBDIR}/lib/python${PYTHONLIBS_MAJOR_MINOR}/site-packages/*.so"
-            STRIP_PREFIX "${_PY_VCPKG_RPATH_STRIP}"
+            STRIP_PREFIX "${_PY_RPATH_STRIP}"
             ADD_RPATH "@loader_path/../../.."
             OUT_COMMAND _FIX_RPATH_CMD)
           list(APPEND EXTRA_COPY_COMMANDS COMMAND ${_FIX_RPATH_CMD})

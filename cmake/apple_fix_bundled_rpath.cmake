@@ -33,6 +33,7 @@
 #
 # Parameters (via -D):
 #   strip_prefix : delete every LC_RPATH whose path starts with this string
+#                  ("/" deletes every absolute one)
 #   add_rpath    : (optional) rpath to add if not already present
 #   binaries     : (optional) ';'- or space-separated list of Mach-O files
 #   pattern      : (optional) glob expanded with GLOB_RECURSE into a file list

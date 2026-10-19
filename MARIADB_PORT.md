@@ -944,9 +944,18 @@ applies. Reproduce/confirm the mechanism with
 `LD_LIBRARY_PATH=/lib/x86_64-linux-gnu lib/mariadb-shell/bin/python<ver> -c "import ssl"`
 (fails) versus the same command without it (silent).
 
-macOS already handled this (strip the build-tree `LC_RPATH`, add
+macOS already handled this (strip every absolute `LC_RPATH`, add
 `@loader_path/../../..`); the Linux side did not, and only worked as long as the
-build tree stayed intact *and* `LD_LIBRARY_PATH` was unset. Fix:
+build tree stayed intact *and* `LD_LIBRARY_PATH` was unset. On macOS "every
+absolute" matters: stripping only this tree's vcpkg dir left CPython's own
+`<prefix>/lib`, and a cached Python built by another tree carries that tree's
+vcpkg dir, which then still resolved on the build machine and hid a missing
+bundled library. `install_bundled_binaries()` strips them from every bundled
+copy too (the auth plugins kept the MariaDB build's vcpkg dir). On Linux the one
+leak was libpython, installed with `WRITE_RPATH FALSE` (meant for macOS), so it
+kept its link-time RUNPATH; it now gets `$ORIGIN` like the other bundled
+libraries. scripts/verify_package.sh fails any package whose binaries carry an
+absolute LC_RPATH or DT_RPATH/DT_RUNPATH entry. Fix:
 
 * `cmake/linux_fix_bundled_rpath.cmake` + `get_force_rpath_command()`
   (`cmake/exeutils.cmake`) run `patchelf --force-rpath --set-rpath
