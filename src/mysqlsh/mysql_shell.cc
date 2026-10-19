@@ -782,8 +782,8 @@ Mysql_shell::Mysql_shell(const std::shared_ptr<Shell_options> &cmdline_options,
   set_global_object("util", _global_util,
                     shcore::IShell_core::all_scripting_modes());
 
-  // The REST SQL statements of the MariaDB REST Service. The `mrs` global
-  // object comes from the mrs_plugin.
+  // The REST SQL statements of the MariaDB REST Service. The `rest` global
+  // object comes from the rest_plugin.
   m_rest_sql_handler =
       std::make_shared<mysqlsh::mrs::Rest_sql_handler>(_shell.get());
   m_rest_sql_handler->register_sql_handler();

@@ -10,10 +10,10 @@ description: >-
 A REST content set of the MariaDB REST Service (MRS) serves static content, such as a web app, from a REST service. Its files are stored in the REST metadata. A content set can also hold MRS scripts, which are registered as REST endpoints. See [Static Content and MRS Scripts](../developer-guide/static-content-and-mrs-scripts.md) for a guide.
 
 {% hint style="info" %}
-No REST SQL statement reads files from the client machine. To upload all files of a directory, use the `mrs.load.content_set()` function of the mrs plugin. It creates the content set, sends one [`CREATE REST CONTENT FILE`](#create-rest-content-file) statement per file, and registers the MRS scripts of the files with [`ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS`](#alter-rest-content-set).
+No REST SQL statement reads files from the client machine. To upload all files of a directory, use the `rest.load.content_set()` function of the rest plugin. It creates the content set, sends one [`CREATE REST CONTENT FILE`](#create-rest-content-file) statement per file, and registers the MRS scripts of the files with [`ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS`](#alter-rest-content-set).
 
 ```python
-mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app",
+rest.load.content_set(directory="~/myApp/dist", content_set_path="/app",
                      service_path="/myService")
 ```
 {% endhint %}
@@ -118,10 +118,10 @@ CREATE REST CONTENT FILE `/logo.png` ON SERVICE /myService CONTENT SET /web
 The `ALTER REST CONTENT SET` statement changes an existing REST content set, and registers the MRS scripts it holds.
 
 {% hint style="info" %}
-`mrs.load.content_set()` of the mrs plugin uploads an MRS scripts project directory and runs `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` for it in one call. See [Static Content and MRS Scripts](../developer-guide/static-content-and-mrs-scripts.md#mrs-scripts).
+`rest.load.content_set()` of the rest plugin uploads an MRS scripts project directory and runs `ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS` for it in one call. See [Static Content and MRS Scripts](../developer-guide/static-content-and-mrs-scripts.md#mrs-scripts).
 
 ```python
-mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
+rest.load.content_set(directory="~/myScripts", content_set_path="/scripts",
                      service_path="/myService")
 ```
 {% endhint %}

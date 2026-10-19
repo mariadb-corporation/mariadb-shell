@@ -2,7 +2,7 @@
 description: >-
   Serve the files of a web app and run MRS scripts, TypeScript functions
   executed by the MariaDB REST Daemon, from REST content sets uploaded with
-  mrs.load.content_set() or REST SQL.
+  rest.load.content_set() or REST SQL.
 ---
 
 # Static Content and MRS Scripts
@@ -11,17 +11,17 @@ Besides REST endpoints for database objects, a REST service of the MariaDB REST 
 
 ## Uploading a Directory
 
-To put the files of a directory into a content set, use the `mrs.load.content_set()` function of the mrs plugin in MariaDB Shell's Python mode. It creates the content set, uploads every file of the directory, and, if the files hold MRS scripts, registers the scripts as REST endpoints.
+To put the files of a directory into a content set, use the `rest.load.content_set()` function of the rest plugin in MariaDB Shell's Python mode. It creates the content set, uploads every file of the directory, and, if the files hold MRS scripts, registers the scripts as REST endpoints.
 
 ```python
-mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app",
+rest.load.content_set(directory="~/myApp/dist", content_set_path="/app",
                      service_path="/myService")
 ```
 
 From the command line:
 
 ```sh
-mariadb-shell dba@localhost --py -e 'mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app", service_path="/myService")'
+mariadb-shell dba@localhost --py -e 'rest.load.content_set(directory="~/myApp/dist", content_set_path="/app", service_path="/myService")'
 ```
 
 The function takes the following options:
@@ -42,7 +42,7 @@ The function returns the list of uploaded files.
 Upload a web app, for example a PWA built with a bundler, from its build output folder:
 
 ```python
-mrs.load.content_set(directory="~/myApp/dist", content_set_path="/app",
+rest.load.content_set(directory="~/myApp/dist", content_set_path="/app",
                      service_path="/myService", replace=True)
 ```
 
@@ -65,7 +65,7 @@ class Hello {
 Build the project first, so that its build output folder (`build`, `dist`, `out`, or `output`, at the top level of the project) holds the compiled modules that the MariaDB REST Daemon executes. Then upload the whole project directory:
 
 ```python
-mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
+rest.load.content_set(directory="~/myScripts", content_set_path="/scripts",
                      service_path="/myService")
 ```
 
@@ -84,7 +84,7 @@ To upload a new version of the scripts, build the project and upload it again wi
 
 ## Using REST SQL
 
-`mrs.load.content_set()` reads the files on the client machine and sends one REST SQL statement per step to MariaDB Shell. Clients other than MariaDB Shell can send the same statements:
+`rest.load.content_set()` reads the files on the client machine and sends one REST SQL statement per step to MariaDB Shell. Clients other than MariaDB Shell can send the same statements:
 
 ```sql
 CREATE REST CONTENT SET /scripts ON SERVICE /myService;

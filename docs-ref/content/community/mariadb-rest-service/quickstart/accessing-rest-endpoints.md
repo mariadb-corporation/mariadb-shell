@@ -248,5 +248,5 @@ In the `DATABASE CONNECTIONS` view, right-click the `/openApiUi` REST content se
 A web browser opens the URL `https://localhost:8443/myService/openApiUi/` and shows the OpenAPI Web UI for `/myService`, which gives you access to the HTTP methods of the `/myService/sakila/city` endpoint.
 
 {% hint style="info" %}
-To upload a directory of static files such as your own web app as a content set, use the `mrs.load.content_set()` function of MariaDB Shell. See [Static Content and MRS Scripts](../developer-guide/static-content-and-mrs-scripts.md).
+To upload a directory of static files such as your own web app as a content set, use the `rest.load.content_set()` function of MariaDB Shell. See [Static Content and MRS Scripts](../developer-guide/static-content-and-mrs-scripts.md).
 {% endhint %}
