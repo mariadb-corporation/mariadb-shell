@@ -16,6 +16,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | `.githooks/` | pre-commit copyright hook and its `copyright-exceptions` |
 | `docker/` | Build images for the release packages, and the MariaDB Shell MCP Server image `mariadb-shell-mcp-server` (`linux-debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh`, `README.md`) |
 | `.claude/commands/checkpoint.md`, `read-checkpoint.md` | `/checkpoint` writes this context (its "In every case" rules say what belongs in these files), `/read-checkpoint` reads it back to resume |
+| `.claude/commands/release.md`, `scripts/release.py` | `/release [--official] [--dry-run] [--help]`: the whole release across both repos (version bump, plugins version + sandbox index, release/candidate build + verify, publish); the script holds the checks and the run watching |
 
 ## Context Files
 
