@@ -98,6 +98,20 @@ else
   fail "bundled plugin directory" "none of lib/mariadb-shell/plugins, share/mariadb-shell/plugins, lib/mysqlsh/plugins exist"
 fi
 
+# The client auth plugins (MARIADB_AUTH_CLIENT_PLUGINS in the top-level
+# CMakeLists.txt). A build that can't find one only warns, and without it the
+# shell can't log in to the accounts that use it, so it is checked here. The
+# Windows packages once shipped none at all.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) AUTH_EXT=dll ;; *) AUTH_EXT=so ;; esac
+for plugin in caching_sha2_password client_ed25519 parsec dialog \
+              mysql_clear_password sha256_password auth_gssapi_client; do
+  if [ -f "$ROOT/lib/mariadb/plugins/$plugin.$AUTH_EXT" ]; then
+    pass "client auth plugin $plugin bundled"
+  else
+    fail "client auth plugin $plugin bundled" "no lib/mariadb/plugins/$plugin.$AUTH_EXT"
+  fi
+done
+
 # ---------------------------------------------------------------------------
 # Run the shell and capture stdout/stderr separately.
 #
@@ -327,6 +341,10 @@ section "Self-contained (no external dependencies)"
 # extended regex matched against the whole dependency string) only for
 # something a minimal install genuinely always has.
 EXTRA_ALLOW="${ALLOW_SYSTEM_LIBS:-}"
+
+# The one binary that may use the OS beyond the baseline, per platform. Its
+# dependencies still have to resolve on this machine.
+system_dep_allowed() { return 1; }
 AUDIT_BROKEN=""
 
 # A symlink is checked first and separately: one whose target is missing is, by
@@ -403,6 +421,17 @@ case "$(uname -s)" in
       case "$1" in *"[UNRESOLVED]") return 1 ;; esac
       printf '%s' "${1##*/}" | grep -Eq \
         '^(linux-vdso|ld-linux[^/]*|libc|libm|libdl|libpthread|librt|libresolv|libutil|libnsl|libgcc_s|libstdc\+\+)\.so(\.[0-9.]+)?$'
+    }
+    # The Kerberos client plugin links the system Kerberos (libgssapi_krb5 and
+    # what it pulls in) on purpose: it has to read the system's krb5.conf and the
+    # credential cache kinit writes, as MariaDB's own packages do. The shell
+    # loads it only for a gssapi login, so a machine without Kerberos loses
+    # those logins and nothing else.
+    system_dep_allowed() {
+      case "$1" in *"[UNRESOLVED]") return 1 ;; esac
+      case "${2#$ROOT/}" in lib/mariadb/plugins/auth_gssapi_client.so) ;; *) return 1 ;; esac
+      case "$1" in /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*) return 0 ;; esac
+      return 1
     }
     ;;
   MINGW*|MSYS*|CYGWIN*)
@@ -491,6 +520,7 @@ else
       # Resolved inside the package: fine however it got there.
       case "$dep" in "$ROOT"/*) continue ;; esac
       dep_allowed "$dep" && continue
+      system_dep_allowed "$dep" "$bin" && continue
       if [ -n "$EXTRA_ALLOW" ] && printf '%s' "$dep" | grep -Eq "$EXTRA_ALLOW"; then
         continue
       fi

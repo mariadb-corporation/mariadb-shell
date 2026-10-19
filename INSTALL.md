@@ -19,12 +19,12 @@ The following build tooling is required on each platform.
 
 **Debian**
 ```bash
-sudo apt install build-essential git cmake ninja-build curl bison zip unzip tar pkg-config libncurses-dev patchelf
+sudo apt install build-essential git cmake ninja-build curl bison zip unzip tar pkg-config libncurses-dev libkrb5-dev patchelf
 ```
 
 **Fedora**
 ```bash
-sudo dnf install gcc-c++ git cmake ninja-build perl-core bison zip unzip tar pkg-config ncurses-devel patchelf
+sudo dnf install gcc-c++ git cmake ninja-build perl-core bison zip unzip tar pkg-config ncurses-devel krb5-devel patchelf
 ```
 
 This is build tooling only. The libraries the shell and the bundled Python link
@@ -232,9 +232,15 @@ required dependencies and pass the source and build paths to the configure
 cmake call
 
 ```bash
-my-mariadb-src/bld $ cmake --build . --target mariadbclient mysys mysys_ssl caching_sha2_password GenError
+my-mariadb-src/bld $ cmake --build . --target mariadbclient mysys mysys_ssl GenError caching_sha2_password client_ed25519 parsec dialog mysql_clear_password sha256_password auth_gssapi_client
 my-shell-src/bld $ cmake .. -DMARIADB_SOURCE_DIR=my-mariadb-src -DMARIADB_BUILD_DIR=my-mariadb-src/bld ....
 ```
+
+The `auth_gssapi_client` target exists only if the MariaDB configure found
+`krb5-config`: install `libkrb5-dev` (Ubuntu) or `krb5-devel` (Fedora, Rocky)
+first. On macOS, `krb5-config` is in `/usr/bin` but the MariaDB configure
+doesn't look there, so configure the MariaDB tree with
+`-DKRB5_CONFIG=/usr/bin/krb5-config`.
 
 **Using a custom build of openssl, python, antlr4
 

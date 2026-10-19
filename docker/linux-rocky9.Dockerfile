@@ -19,9 +19,16 @@ RUN dnf install -y epel-release dnf-plugins-core && \
 # does not remove it from the image. CPython would otherwise build _curses
 # against /lib64/libncursesw.so.6; that module is disabled at the Python build
 # instead, which does not depend on what the image happens to contain.
+#
+# krb5-devel is the other exception, and a deliberate one: the Kerberos client
+# auth plugin (lib/mariadb/plugins/auth_gssapi_client.so) has to link the system
+# Kerberos, so it reads the system's krb5.conf and the credential cache kinit
+# writes. Only that plugin links it, and scripts/verify_package.sh allows it
+# for that file alone. Without krb5-devel the Connector/C finds no krb5-config
+# and the plugin isn't built.
 RUN dnf install -y \
     gcc-c++ git cmake ninja-build perl-core bison zip unzip tar pkgconfig \
-    ncurses-devel patchelf gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
+    ncurses-devel krb5-devel patchelf gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ \
     gcc-toolset-14-binutils gcc-toolset-14-annobin-annocheck \
     gcc-toolset-14-annobin-plugin-gcc \
     && dnf clean all

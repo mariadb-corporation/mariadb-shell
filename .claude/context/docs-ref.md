@@ -54,7 +54,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
 - **Pre-releases get no migration notes**; only the official version is the source of truth. Don't add notes for projects "created with an earlier version" until GA.
 - **Reports:** register them in `plugins/<name>/init.py` (verified: a report registered from a plugin's `init.py` loads); `init.d` is the documented alternative, as in the MySQL manual.
 - **Left out:** `MYSQL_TEST_LOGIN_FILE`; the macOS concurrent-load known issue (the server doesn't support macOS); `--login-path` outside Option Files and Login Paths; `MARIADB_SHELL_TOKEN`.
-- **Included:** a Differences row for the MySQL client auth plugins (Kerberos, LDAP SASL, OCI, OpenID Connect) that the MariaDB build doesn't bundle (only `caching_sha2_password` in `lib/mariadb/plugins`); sandbox requirements say "server binaries, an unpacked package is enough" (`mariadbdPath` accepts the top directory).
+- **Included:** a Differences row for the MySQL client auth plugins (Kerberos, LDAP SASL, OCI, OpenID Connect) that the MariaDB build doesn't bundle (it bundles the Connector/C plugins instead: `client_ed25519`, `parsec`, `dialog`, `mysql_clear_password`, the sha2 ones, and `auth_gssapi_client`); sandbox requirements say "server binaries, an unpacked package is enough" (`mariadbdPath` accepts the top directory).
 - **MCP log examples** show no IDs: connections by URI, users by `--name`, refused tokens without the user.
 
 ## How the pages were written
@@ -111,7 +111,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
    - `updateGtidSet` / `skipBinlog` privileges
    - Windows named pipes (`install.ps1` itself was verified on Windows 11 ARM64 under PowerShell 5.1 and 7)
    - `--pym pip install` from PyPI
-   - `change_password` on your own ed25519 account (the shell bundles no `client_ed25519` plugin, so it cannot log in as one)
+   - `change_password` on your own ed25519 account
 
 ## Gotchas / things not to repeat
 

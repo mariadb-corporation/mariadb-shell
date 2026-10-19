@@ -25,7 +25,8 @@
 #   headers : libmariadb/include, include, sql, <build>/include,
 #             <build>/libmariadb/include
 #   libs    : libmariadbclient, mysys, mysys_ssl, strings, dbug  (static)
-#   plugin  : caching_sha2_password (client auth plugin)
+#   plugins : the client auth plugins (caching_sha2_password, client_ed25519,
+#             parsec, ...), see _mdb_auth_plugins below
 #   cache   : <build>/CMakeCache.txt   (read to detect Debug/DBUG)
 #   version : <source>/VERSION
 #
@@ -202,6 +203,18 @@ IF(VCPKG_TARGET_TRIPLET AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
   ENDIF()
 ENDIF()
 
+# auth_gssapi_client: the Connector/C finds GSSAPI through krb5-config, but
+# searches for it with ONLY_CMAKE_FIND_ROOT_PATH, which on macOS means inside
+# the SDK, where there is none, so it never finds /usr/bin/krb5-config. Pass
+# the host's. On Linux it comes with the Kerberos headers (krb5-devel,
+# libkrb5-dev); Windows doesn't need it (the plugin uses SSPI).
+IF(NOT CMAKE_HOST_WIN32)
+  FIND_PROGRAM(MARIADB_KRB5_CONFIG krb5-config)
+  IF(MARIADB_KRB5_CONFIG)
+    LIST(APPEND _mdb_configure_args "-DKRB5_CONFIG=${MARIADB_KRB5_CONFIG}")
+  ENDIF()
+ENDIF()
+
 # Match the shell's generator so nested "cmake --build" uses the same toolchain.
 IF(CMAKE_GENERATOR)
   LIST(APPEND _mdb_configure_args "-G" "${CMAKE_GENERATOR}")
@@ -262,7 +275,7 @@ IF(CMAKE_HOST_WIN32 AND VCPKG_INSTALLED_PREFIX)
   ENDIF()
 ENDIF()
 
-SET(_mdb_core_targets mariadbclient mysys mysys_ssl caching_sha2_password GenError)
+SET(_mdb_core_targets mariadbclient mysys mysys_ssl GenError)
 FOREACH(_tgt ${_mdb_core_targets})
   MESSAGE(STATUS "Building MariaDB core lib: ${_tgt}")
   EXECUTE_PROCESS(
@@ -275,19 +288,41 @@ FOREACH(_tgt ${_mdb_core_targets})
   ENDIF()
 ENDFOREACH()
 
-# Client auth plugin -- best-effort: some connector layouts fold it into the
-# connector build, so a missing target here is a warning, not a hard failure.
-# MESSAGE(STATUS "Building MariaDB client auth plugin: caching_sha2_password")
-# EXECUTE_PROCESS(
-#   COMMAND "${CMAKE_COMMAND}" --build "${_mdb_bld}"
-#           --config "${_mdb_build_type}"
-#           --target caching_sha2_password ${_mdb_build_parallel}
-#   RESULT_VARIABLE _rc)
-# IF(NOT _rc EQUAL 0)
-#   MESSAGE(WARNING "Could not build 'caching_sha2_password' as a standalone "
-#     "target; if authentication plugins are missing later, build it manually "
-#     "in ${_mdb_bld}.")
-# ENDIF()
+# Client auth plugins, built as the loadable modules the shell bundles into
+# lib/mariadb/plugins (MARIADB_AUTH_CLIENT_PLUGINS in the root CMakeLists.txt
+# picks up whichever of them exist). These are the plugins the Connector/C
+# registers as DYNAMIC; libmariadbclient has mysql_native_password built in.
+# With CONC_WITH_SSL=OPENSSL each of them is always registered, so a failure is
+# a real build error. auth_gssapi_client is registered only where the
+# connector finds GSSAPI (always on Windows, where it uses SSPI; elsewhere
+# through krb5-config, see above), so it is best-effort: without it, only
+# Kerberos accounts can't log in.
+SET(_mdb_auth_plugins caching_sha2_password client_ed25519 parsec dialog
+    mysql_clear_password sha256_password)
+FOREACH(_tgt ${_mdb_auth_plugins})
+  MESSAGE(STATUS "Building MariaDB client auth plugin: ${_tgt}")
+  EXECUTE_PROCESS(
+    COMMAND ${_mdb_env_launcher} "${CMAKE_COMMAND}" --build "${_mdb_bld}"
+            --config "${_mdb_build_type}"
+            --target "${_tgt}" ${_mdb_build_parallel}
+    RESULT_VARIABLE _rc)
+  IF(NOT _rc EQUAL 0)
+    MESSAGE(FATAL_ERROR "Failed to build MariaDB client auth plugin '${_tgt}'")
+  ENDIF()
+ENDFOREACH()
+
+MESSAGE(STATUS "Building MariaDB client auth plugin: auth_gssapi_client")
+EXECUTE_PROCESS(
+  COMMAND ${_mdb_env_launcher} "${CMAKE_COMMAND}" --build "${_mdb_bld}"
+          --config "${_mdb_build_type}"
+          --target auth_gssapi_client ${_mdb_build_parallel}
+  RESULT_VARIABLE _rc)
+IF(NOT _rc EQUAL 0)
+  MESSAGE(WARNING "Could not build 'auth_gssapi_client': the Connector/C "
+    "registers it only when it finds krb5-config (install krb5-devel or "
+    "libkrb5-dev on Linux). The shell won't be able to log in to gssapi "
+    "(Kerberos) accounts.")
+ENDIF()
 
 ##############################################################################
 # 4. Export the resolved dirs for the rest of the build.
