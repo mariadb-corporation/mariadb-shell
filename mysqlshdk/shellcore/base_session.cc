@@ -414,9 +414,8 @@ std::string ShellBaseSession::sub_query_placeholders(
           // A date or time (a Python date, time, datetime or timedelta) is
           // bound as its text form, which the server reads as a DATE, TIME or
           // DATETIME literal; a negative TIME keeps its sign.
-          if (const auto date = value.as_object<shcore::Date>()) {
-            std::string text;
-            squery << date->append_descr(text);
+          if (value.as_object<shcore::Date>()) {
+            squery << value.descr();
             break;
           }
           [[fallthrough]];

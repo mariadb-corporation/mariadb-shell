@@ -1617,11 +1617,6 @@ void Python_context::get_datetime_constructor() {
     auto tmp = create_time_object(0, 0, 0, 0);
     _time_type = py::Store{reinterpret_cast<PyObject *>(Py_TYPE(tmp.get()))};
   }
-  {
-    auto tmp = create_timedelta_object(0);
-    _timedelta_type =
-        py::Store{reinterpret_cast<PyObject *>(Py_TYPE(tmp.get()))};
-  }
 }
 
 py::Release Python_context::create_datetime_object(int year, int month, int day,
