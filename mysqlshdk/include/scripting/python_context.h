@@ -140,7 +140,7 @@ class Python_context {
 
   py::Release create_timedelta_object(int64_t microseconds);
   PyTypeObject *get_timedelta_type() const {
-    return reinterpret_cast<PyTypeObject *>(_timedelta_type.get());
+    return reinterpret_cast<PyTypeObject *>(_timedelta.get());
   }
 
  private:
@@ -185,7 +185,6 @@ class Python_context {
   py::Store _time_type;
 
   py::Store _timedelta;
-  py::Store _timedelta_type;
 
   py::Store _mysqlsh_module;
   py::Store _mysqlsh_globals;

@@ -28,7 +28,7 @@
 
 #include <time.h>
 #include <cstdio>
-#include <cstring>
+#include <string_view>
 
 #include "scripting/object_factory.h"
 #include "utils/utils_json.h"
@@ -185,9 +185,11 @@ Date Date::unrepr(const std::string &s) {
   // A TIME: [-]H:MM:SS[.ffffff], the hours up to 838. The sign is read on
   // its own, so that -00:30:00 keeps it.
   const bool negative = !s.empty() && s[0] == '-';
-  const char *time = s.c_str() + (negative ? 1 : 0);
-  if (s.find(':') != std::string::npos && !strchr(time, '-')) {
-    int c = sscanf(time, "%d:%d:%d.%6s", &hour, &min, &sec, usec);
+  const std::string_view time = std::string_view{s}.substr(negative ? 1 : 0);
+  if (time.find(':') != std::string_view::npos &&
+      time.find('-') == std::string_view::npos) {
+    // time ends where s does, so it is NUL-terminated
+    int c = sscanf(time.data(), "%d:%d:%d.%6s", &hour, &min, &sec, usec);
     if (c >= 2) {
       return Date(hour, min, sec, decimal_to_usec(usec), negative);
     }
@@ -250,13 +252,12 @@ void Date::validate() {
       throw shcore::Exception::argument_error("Valid day range is 0-31");
   }
   if (_has_time) {
-    if (!_has_date) {
-      // A TIME value, which the server allows from -838:59:59 to 838:59:59.
-      if (_hour > 838 || _hour < 0)
-        throw shcore::Exception::argument_error("Valid hour range is 0-838");
-    } else if (_hour > 23 || _hour < 0) {
-      throw shcore::Exception::argument_error("Valid hour range is 0-23");
-    }
+    // A TIME value without a date is a duration, which the server allows
+    // from -838:59:59 to 838:59:59.
+    const int max_hour = _has_date ? 23 : 838;
+    if (_hour > max_hour || _hour < 0)
+      throw shcore::Exception::argument_error(
+          str_format("Valid hour range is 0-%d", max_hour));
     if (_min > 59 || _min < 0)
       throw shcore::Exception::argument_error("Valid minute range is 0-59");
     if (_sec > 59 || _sec < 0)
