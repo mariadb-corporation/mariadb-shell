@@ -63,21 +63,21 @@ Whenever you edit a REST object, the TypeScript SDK is updated, so you can proto
 
 To generate the SDK files on the command line, you need MariaDB Shell, installed as described in [Installation](../../mariadb-shell/installation/README.md).
 
-Call the `mrs.dump.sdk_service_files()` plugin function to generate the SDK, for example:
+Call the `rest.dump.sdk_service_files()` plugin function to generate the SDK, for example:
 
 ```sh
-mariadb-shell dba@localhost --py -e 'mrs.dump.sdk_service_files(directory="/path/to/project/sdk", options={"sdk_language": "TypeScript", "service_url": "https://example.com/myService"})'
+mariadb-shell dba@localhost --py -e 'rest.dump.sdk_service_files(directory="/path/to/project/sdk", options={"sdk_language": "TypeScript", "service_url": "https://example.com/myService"})'
 ```
 
 The function takes the following parameters:
 
 ```text
-\? mrs.dump.sdk_service_files
+\? rest.dump.sdk_service_files
 NAME
       sdk_service_files - Dumps the SDK service files for a REST Service
 
 SYNTAX
-      mrs.dump.sdk_service_files([kwargs])
+      rest.dump.sdk_service_files([kwargs])
 
 WHERE
       kwargs: Dictionary - Options to determine what should be generated.

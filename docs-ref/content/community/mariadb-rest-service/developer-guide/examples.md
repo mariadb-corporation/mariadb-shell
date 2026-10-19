@@ -1,19 +1,19 @@
 ---
 description: >-
-  Build and deploy the example projects of the mrs plugin: the MRS Notes
+  Build and deploy the example projects of the rest plugin: the MRS Notes
   progressive web app and the MRS Scripts project with server-side rendering.
 ---
 
 # Examples
 
-The mrs plugin of MariaDB Shell comes with example projects that show what you can build with the MariaDB REST Service (MRS). You find them in the [examples folder](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples) of the repository.
+The rest plugin of MariaDB Shell comes with example projects that show what you can build with the MariaDB REST Service (MRS). You find them in the [examples folder](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/rest_plugin/examples) of the repository.
 
 - **MRS Notes** implements a simple [progressive web app (PWA)](https://en.wikipedia.org/wiki/Progressive_web_app) that shows the features of MRS.
 - **MRS Scripts** is a set of MRS scripts, including two examples of server-side rendering of HTML pages.
 
 ## MRS Notes Example
 
-The [MRS Notes example](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples/mrs_notes) is a simple note-taking application, built as a progressive web app, in which users share notes with each other.
+The [MRS Notes example](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/rest_plugin/examples/mrs_notes) is a simple note-taking application, built as a progressive web app, in which users share notes with each other.
 
 ![The MRS Notes app running on a mobile phone](../../../.gitbook/assets/mariadb-rest-service/mrs-notes-ss-phone.png)
 
@@ -29,7 +29,7 @@ The example shows the following features:
 
 To set up, build, and deploy the MRS Notes example, follow these steps. The sections below describe the example in more detail.
 
-1. Save the [`mrs_notes`](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples/mrs_notes) project folder to disk and open it in VS Code.
+1. Save the [`mrs_notes`](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/rest_plugin/examples/mrs_notes) project folder to disk and open it in VS Code.
 2. [Configure MRS](configuring-mrs.md) on your MariaDB Server.
 3. Create a REST service, for example `/myService`. See [Adding REST Services](adding-rest-services.md).
 4. Deploy the `mrs_notes` database schema with the script `db_schema/mrs_notes.sql`. See [Deploying the Database Schema](#deploying-the-database-schema).
@@ -38,7 +38,7 @@ To set up, build, and deploy the MRS Notes example, follow these steps. The sect
 7. Build and deploy the app, as described in [Deploying the App](#deploying-the-app).
 
 {% hint style="info" %}
-`mrsNotes.mrs.json` is a REST schema dump in the JSON format of earlier MRS releases. Neither REST SQL nor the functions of the mrs plugin load this format. If your tools can't load it, create the REST schema and its objects for the `mrs_notes` schema with REST SQL, as described in [Adding REST Services and Database Objects](adding-rest-services.md).
+`mrsNotes.mrs.json` is a REST schema dump in the JSON format of earlier MRS releases. Neither REST SQL nor the functions of the rest plugin load this format. If your tools can't load it, create the REST schema and its objects for the `mrs_notes` schema with REST SQL, as described in [Adding REST Services and Database Objects](adding-rest-services.md).
 {% endhint %}
 
 ### Deploying the App
@@ -52,13 +52,13 @@ The MRS Notes project implements a TypeScript app in which users create, change,
 5. In the REST content set dialog, set the **Request Path** of the app, for example `/app`, and click **OK** to upload the files to the REST service.
 6. Open the full path of the app in a web browser, for example `https://localhost:8443/myService/app/index.html`.
 
-Instead of steps 4 and 5, you can upload the `dist` folder with `mrs.load.content_set()` in MariaDB Shell. See [Static Content and MRS Scripts](static-content-and-mrs-scripts.md#serving-a-web-app).
+Instead of steps 4 and 5, you can upload the `dist` folder with `rest.load.content_set()` in MariaDB Shell. See [Static Content and MRS Scripts](static-content-and-mrs-scripts.md#serving-a-web-app).
 
 ### Deploying the Database Schema
 
 The `mrs_notes` database schema is the center of the project. It defines the structure of the data, and its tables store all the information that the users enter in the app.
 
-To create the schema, run the SQL script `db_schema/mrs_notes.sql` with MariaDB Shell or with MariaDB Shell for VS Code. On the command line, run the following command in the `mrs_plugin` directory:
+To create the schema, run the SQL script `db_schema/mrs_notes.sql` with MariaDB Shell or with MariaDB Shell for VS Code. On the command line, run the following command in the `rest_plugin` directory:
 
 ```sh
 mariadb-shell dba@localhost --sql -f examples/mrs_notes/db_schema/mrs_notes.sql
@@ -86,13 +86,13 @@ To make notes shareable between users, the schema adds an abstraction layer. It 
 
 ## MRS Scripts Example
 
-The [MRS Scripts example](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples/mrs_scripts) implements a set of simple MRS scripts, including two examples of server-side rendering with MRS.
+The [MRS Scripts example](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/rest_plugin/examples/mrs_scripts) implements a set of simple MRS scripts, including two examples of server-side rendering with MRS.
 
 ### Quick Guide
 
 To set up, build, and deploy the MRS Scripts example, follow these steps:
 
-1. Save the [`mrs_scripts`](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/mrs_plugin/examples/mrs_scripts) project folder to disk and open it in VS Code.
+1. Save the [`mrs_scripts`](https://github.com/mariadb-corporation/mariadb-shell-plugins/tree/main/rest_plugin/examples/mrs_scripts) project folder to disk and open it in VS Code.
 2. [Configure MRS](configuring-mrs.md) on your MariaDB Server.
 3. Create a REST service, for example `/myService`. See [Adding REST Services](adding-rest-services.md).
 4. Make sure that a MariaDB REST Daemon instance is running. See [Running the MariaDB REST Daemon](configuring-mrs.md#running-the-mariadb-rest-daemon).
@@ -111,8 +111,8 @@ The MRS scripts are written in TypeScript, so you build them before you upload t
 
 ### Deploying the MRS Scripts with MariaDB Shell
 
-Instead of MariaDB Shell for VS Code, you can upload the built project with the `mrs.load.content_set()` function of MariaDB Shell. It uploads the project folder to a content set and registers the MRS scripts. See [Static Content and MRS Scripts](static-content-and-mrs-scripts.md#mrs-scripts).
+Instead of MariaDB Shell for VS Code, you can upload the built project with the `rest.load.content_set()` function of MariaDB Shell. It uploads the project folder to a content set and registers the MRS scripts. See [Static Content and MRS Scripts](static-content-and-mrs-scripts.md#mrs-scripts).
 
 ```sh
-mariadb-shell dba@localhost --py -e 'mrs.load.content_set(directory="~/path_to_project_folder/mrs_scripts", content_set_path="/mrsScriptsContent", service_path="/myService", replace=True)'
+mariadb-shell dba@localhost --py -e 'rest.load.content_set(directory="~/path_to_project_folder/mrs_scripts", content_set_path="/mrsScriptsContent", service_path="/myService", replace=True)'
 ```

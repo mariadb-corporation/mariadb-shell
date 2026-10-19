@@ -176,8 +176,8 @@ section "Bundled plugins load"
 # Enumerating the package rather than a hard-coded list means a newly bundled
 # plugin is covered the moment it ships, with no change here.
 #
-# What a plugin registers cannot be guessed from its directory name: mrs_plugin
-# registers the global 'mrs', debug/ registers 'util.debug' (a member of the
+# What a plugin registers cannot be guessed from its directory name: rest_plugin
+# registers the global 'rest', debug/ registers 'util.debug' (a member of the
 # built-in util object, not a global of its own), and util/ registers no object
 # at all -- it only adds functions to util. So read the name out of the plugin's
 # own init.py: the @plugin class together with its optional parent=, or, for a

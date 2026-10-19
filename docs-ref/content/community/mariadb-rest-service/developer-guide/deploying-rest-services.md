@@ -1,28 +1,28 @@
 ---
 description: >-
   Move a REST service from a development server to a test or production
-  server by dumping and loading it with the mrs plugin functions, or bundle it
+  server by dumping and loading it with the rest plugin functions, or bundle it
   with its database schemas in a REST project.
 ---
 
 # Deploying REST Services
 
-You move a REST service of the MariaDB REST Service (MRS) from a development server to another server, for example for testing or production, by dumping it on the first server and loading it on the second. The mrs plugin of MariaDB Shell provides functions for both steps.
+You move a REST service of the MariaDB REST Service (MRS) from a development server to another server, for example for testing or production, by dumping it on the first server and loading it on the second. The rest plugin of MariaDB Shell provides functions for both steps.
 
 ## Dumping and Loading a REST Service
 
-`mrs.dump.service()` writes a REST SQL script that recreates a REST service, and `mrs.load.service()` runs such a script:
+`rest.dump.service()` writes a REST SQL script that recreates a REST service, and `rest.load.service()` runs such a script:
 
 ```python
-mrs.dump.service(service_path="/myService", file_path="~/myService.mrs.sql",
+rest.dump.service(service_path="/myService", file_path="~/myService.mrs.sql",
                  endpoints="ALL")
 ```
 
 ```python
-mrs.load.service(file_path="~/myService.mrs.sql")
+rest.load.service(file_path="~/myService.mrs.sql")
 ```
 
-`mrs.dump.service()` takes the following options:
+`rest.dump.service()` takes the following options:
 
 | Option | Description |
 | --- | --- |
@@ -38,10 +38,10 @@ Each choice of `endpoints` includes the former:
 - `DATABASE AND STATIC AND DYNAMIC` or `ALL`: also the content sets with MRS scripts.
 - An empty string: only the REST service itself.
 
-`mrs.load.service()` takes the `file_path` of the script and, optionally, an `as_path` that creates the REST service under another request path:
+`rest.load.service()` takes the `file_path` of the script and, optionally, an `as_path` that creates the REST service under another request path:
 
 ```python
-mrs.load.service(file_path="~/myService.mrs.sql", as_path="/myServiceTest")
+rest.load.service(file_path="~/myService.mrs.sql", as_path="/myServiceTest")
 ```
 
 The script names the service only in its first two statements, `CREATE REST SERVICE` and `USE REST SERVICE`; all other statements act on the current service. `as_path` replaces the service path in these two statements, including the developer list of a service in development (`mike@/myService`), so a copy of a service in development is created without developers unless `as_path` names them.
@@ -50,10 +50,10 @@ The script doesn't include the database schemas that the REST service is based o
 
 ## REST Projects
 
-A REST project bundles one or more REST services with the database schemas they are based on. `mrs.dump.service_project()` writes a project to a directory or a ZIP file, and `mrs.load.service_project()` loads it from a directory, a ZIP file, a URL, or a GitHub repository:
+A REST project bundles one or more REST services with the database schemas they are based on. `rest.dump.service_project()` writes a project to a directory or a ZIP file, and `rest.load.service_project()` loads it from a directory, a ZIP file, a URL, or a GitHub repository:
 
 ```python
-mrs.dump.service_project(
+rest.dump.service_project(
     services=[{"name": "/myService",
                "include_database_endpoints": True,
                "include_static_endpoints": True,
@@ -65,14 +65,14 @@ mrs.dump.service_project(
 ```
 
 ```python
-mrs.load.service_project(source="~/myServiceProject.zip")
+rest.load.service_project(source="~/myServiceProject.zip")
 ```
 
 See [REST Projects](../rest-sql-reference/rest-services.md#rest-projects) in the REST SQL reference for all options.
 
 ## Using REST SQL
 
-The script that `mrs.dump.service()` writes is the result of the `SHOW CREATE REST SERVICE` statement with an `INCLUDING ... ENDPOINTS` clause, which any client can send to MariaDB Shell:
+The script that `rest.dump.service()` writes is the result of the `SHOW CREATE REST SERVICE` statement with an `INCLUDING ... ENDPOINTS` clause, which any client can send to MariaDB Shell:
 
 ```sql
 SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS;

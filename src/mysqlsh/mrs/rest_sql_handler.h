@@ -45,7 +45,7 @@ namespace mrs {
 
 // The REST SQL statements of the MariaDB REST Service: the shell's `MRS` SQL
 // handler parses them and runs them against the MRS metadata schema. The
-// `mrs` global object is not created here; the mrs_plugin defines it.
+// `rest` global object is not created here; the rest_plugin defines it.
 class SHCORE_PUBLIC Rest_sql_handler
     : public std::enable_shared_from_this<Rest_sql_handler> {
  public:

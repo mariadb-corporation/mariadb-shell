@@ -104,7 +104,7 @@ jobs:
       # ========================================
       # 0b. BUNDLE EXTERNAL SHELL PLUGINS
       # ========================================
-      # The extra shell plugins (mrs_plugin, msm_plugin and, once it exists,
+      # The extra shell plugins (rest_plugin, msm_plugin and, once it exists,
       # mcp_plugin) live in a separate repo. Dropping them into plugins/external/
       # BEFORE Configure is what gets them bundled: install_bundled_plugins()
       # globs plugins/external/* at configure time and installs each folder into
@@ -132,7 +132,7 @@ jobs:
 
           # Copy the wanted plugins. mcp_plugin is optional -- only bundle it if
           # it already exists in the plugins repo.
-          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+          for plugin in rest_plugin msm_plugin mcp_plugin; do
             if [ -d "$SRC/$plugin" ]; then
               echo "Bundling $plugin -> $DEST/"
               rm -rf "$DEST/$plugin"
@@ -148,7 +148,7 @@ jobs:
           #   - any '__pycache__' folder
           # -depth removes nested matches before their parents so rm never
           # trips over an already-deleted path.
-          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+          for plugin in rest_plugin msm_plugin mcp_plugin; do
             target="$DEST/$plugin"
             [ -d "$target" ] || continue
             find "$target" -depth -type d \

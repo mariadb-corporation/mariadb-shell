@@ -774,8 +774,8 @@ std::string service_create_statement(Db_session *session,
   // The endpoints act on the current service, so the script names the
   // service only here and in CREATE: the GRANTs of its roles on the
   // service's own path are written ON CURRENT SERVICE. Loading the script
-  // under another path changes these two statements (mrs.load.service() of
-  // the mrs plugin), and the grants follow.
+  // under another path changes these two statements (rest.load.service() of
+  // the rest plugin), and the grants follow.
   if (include_database_endpoints || include_static_endpoints ||
       include_dynamic_endpoints) {
     statements.push_back("USE REST SERVICE " + service.full_service_path + ";");

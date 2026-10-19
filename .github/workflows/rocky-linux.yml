@@ -92,7 +92,7 @@ jobs:
           SRC="_shell-plugins-src"
           DEST="plugins/external"
 
-          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+          for plugin in rest_plugin msm_plugin mcp_plugin; do
             if [ -d "$SRC/$plugin" ]; then
               echo "Bundling $plugin -> $DEST/"
               rm -rf "$DEST/$plugin"
@@ -105,7 +105,7 @@ jobs:
           # Strip what must not ship: 'internal' folders, dotfolders (.git,
           # .vscode) and __pycache__. -depth removes nested matches before their
           # parents so rm never trips over an already-deleted path.
-          for plugin in mrs_plugin msm_plugin mcp_plugin; do
+          for plugin in rest_plugin msm_plugin mcp_plugin; do
             target="$DEST/$plugin"
             [ -d "$target" ] || continue
             find "$target" -depth -type d \

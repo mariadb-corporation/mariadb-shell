@@ -551,24 +551,24 @@ SHOW CREATE REST SERVICE /myService INCLUDING ALL ENDPOINTS;
 
 A single REST service is dumped as a REST SQL script, which recreates the service when run. The dump doesn't include the database schemas the service is based on. To create a fully consistent dump that includes them, dump a [REST project](#rest-projects) instead.
 
-REST SQL doesn't read or write files on the client machine. The mrs plugin of MariaDB Shell provides Python functions for this. See [Deploying REST Services](../developer-guide/deploying-rest-services.md) for a guide.
+REST SQL doesn't read or write files on the client machine. The rest plugin of MariaDB Shell provides Python functions for this. See [Deploying REST Services](../developer-guide/deploying-rest-services.md) for a guide.
 
-* `mrs.dump.service()` writes the script of a service to a file.
-* `mrs.load.service()` runs such a script, optionally creating the service under another request path.
-* `mrs.load.content_set()` uploads the files of a directory to a content set, sending one [`CREATE REST CONTENT FILE`](rest-content.md#create-rest-content-file) statement per file, and registers the MRS scripts held by the files with [`ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS`](rest-content.md#alter-rest-content-set). By default, the scripts are registered if the directory holds any; `load_scripts` turns this on or off. Files matching the `ignore_list` patterns, by default `*node_modules/*, */.*`, are skipped.
+* `rest.dump.service()` writes the script of a service to a file.
+* `rest.load.service()` runs such a script, optionally creating the service under another request path.
+* `rest.load.content_set()` uploads the files of a directory to a content set, sending one [`CREATE REST CONTENT FILE`](rest-content.md#create-rest-content-file) statement per file, and registers the MRS scripts held by the files with [`ALTER REST CONTENT SET ... LOAD TYPESCRIPT SCRIPTS`](rest-content.md#alter-rest-content-set). By default, the scripts are registered if the directory holds any; `load_scripts` turns this on or off. Files matching the `ignore_list` patterns, by default `*node_modules/*, */.*`, are skipped.
 
 The following example dumps the REST service with the request path `/myService` and loads it again as `/myCopy`.
 
 ```python
-mrs.dump.service(service_path="/myService", file_path="~/myService.mrs.sql",
+rest.dump.service(service_path="/myService", file_path="~/myService.mrs.sql",
                  endpoints="ALL")
-mrs.load.service(file_path="~/myService.mrs.sql", as_path="/myCopy")
+rest.load.service(file_path="~/myService.mrs.sql", as_path="/myCopy")
 ```
 
 The following example uploads a directory to a new content set and registers its MRS scripts.
 
 ```python
-mrs.load.content_set(directory="~/myScripts", content_set_path="/scripts",
+rest.load.content_set(directory="~/myScripts", content_set_path="/scripts",
                      service_path="/myService")
 ```
 
@@ -587,7 +587,7 @@ You choose which endpoints of the service to include:
 
 Each of these settings is a superset of the former.
 
-The script names the service only in its first two statements, `CREATE OR REPLACE REST SERVICE` and `USE REST SERVICE`. The other statements act on the current service: the statements of the endpoints have no `ON SERVICE` clause, and the `GRANT REST` statements of the service's roles grant [`ON CURRENT SERVICE`](rest-users-and-roles.md#grant-rest) the privileges whose service path or pattern matches the service, other than `*`. Privileges on `*` or on another service keep their `ON SERVICE` clause, and privileges on the same paths are written as one `GRANT REST` statement. To load the service under another request path, change the path in the first two statements. `mrs.load.service()` does this when it is given `as_path`. Running the script makes the service the current REST service of the session.
+The script names the service only in its first two statements, `CREATE OR REPLACE REST SERVICE` and `USE REST SERVICE`. The other statements act on the current service: the statements of the endpoints have no `ON SERVICE` clause, and the `GRANT REST` statements of the service's roles grant [`ON CURRENT SERVICE`](rest-users-and-roles.md#grant-rest) the privileges whose service path or pattern matches the service, other than `*`. Privileges on `*` or on another service keep their `ON SERVICE` clause, and privileges on the same paths are written as one `GRANT REST` statement. To load the service under another request path, change the path in the first two statements. `rest.load.service()` does this when it is given `as_path`. Running the script makes the service the current REST service of the session.
 
 String literals in the script are written so that they read the same with and without the `NO_BACKSLASH_ESCAPES` SQL mode: single quotes are doubled, and file content that holds a backslash is written as `BINARY CONTENT`. Only a backslash in another string, such as a comment, is still written with a backslash escape.
 
@@ -612,7 +612,7 @@ CREATE OR REPLACE REST VIEW /city
 
 ## REST Projects
 
-A REST project bundles one or more REST services with the database schemas they are based on, so that you can deploy them together. REST SQL statements don't handle REST projects; you dump and load them with the `mrs.dump.service_project()` and `mrs.load.service_project()` functions of the mrs plugin.
+A REST project bundles one or more REST services with the database schemas they are based on, so that you can deploy them together. REST SQL statements don't handle REST projects; you dump and load them with the `rest.dump.service_project()` and `rest.load.service_project()` functions of the rest plugin.
 
 A dumped project is a directory containing the following:
 
@@ -624,7 +624,7 @@ A dumped project is a directory containing the following:
 
 The directory can also be written as a ZIP file.
 
-`mrs.dump.service_project()` takes the following options:
+`rest.dump.service_project()` takes the following options:
 
 * `services`: a list of the REST services to include. Each one gives its request path as `name` and selects the endpoints to include:
   * `include_database_endpoints`: REST objects, like VIEW, PROCEDURE, and FUNCTION.
@@ -641,7 +641,7 @@ Paths may start with `~`.
 The following example dumps the REST service with the request path `/myService` to a REST project, including the database schema `sakila` it is based on.
 
 ```python
-mrs.dump.service_project(
+rest.dump.service_project(
     services=[{"name": "/myService",
                "include_database_endpoints": True,
                "include_static_endpoints": True,
@@ -654,8 +654,8 @@ mrs.dump.service_project(
     zip=True)
 ```
 
-`mrs.load.service_project()` loads a project from a directory, a ZIP file, a URL, or a GitHub shortcut.
+`rest.load.service_project()` loads a project from a directory, a ZIP file, a URL, or a GitHub shortcut.
 
 ```python
-mrs.load.service_project(source="~/myServiceProject.zip")
+rest.load.service_project(source="~/myServiceProject.zip")
 ```
