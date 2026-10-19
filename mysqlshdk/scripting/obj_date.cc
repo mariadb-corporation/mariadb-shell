@@ -28,6 +28,7 @@
 
 #include <time.h>
 #include <cstdio>
+#include <cstring>
 
 #include "scripting/object_factory.h"
 #include "utils/utils_json.h"
@@ -45,7 +46,8 @@ Date::Date(const Date &date)
       _sec(date._sec),
       _usec(date._usec),
       _has_time(date._has_time),
-      _has_date(date._has_date) {}
+      _has_date(date._has_date),
+      _negative(date._negative) {}
 
 Date::Date(int year, int month, int day, int hour, int min, int sec, int usec)
     : _year(year),
@@ -73,7 +75,7 @@ Date::Date(int year, int month, int day)
   validate();
 }
 
-Date::Date(int hour, int min, int sec, int usec)
+Date::Date(int hour, int min, int sec, int usec, bool negative)
     : _year(0),
       _month(0),
       _day(0),
@@ -82,7 +84,8 @@ Date::Date(int hour, int min, int sec, int usec)
       _sec(sec),
       _usec(usec),
       _has_time(true),
-      _has_date(false) {
+      _has_date(false),
+      _negative(negative) {
   validate();
 }
 
@@ -96,7 +99,8 @@ bool Date::operator==(const Object_bridge &other) const {
 bool Date::operator==(const Date &other) const {
   if (_year == other._year && _month == other._month && _day == other._day &&
       _hour == other._hour && _min == other._min && _sec == other._sec &&
-      _usec == other._usec && _has_time == other._has_time)
+      _usec == other._usec && _has_time == other._has_time &&
+      _negative == other._negative)
     return true;
   return false;
 }
@@ -114,6 +118,7 @@ std::string &Date::append_descr(std::string &s_out, int /*indent*/,
         s_out.append(str_format("%04d-%02d-%02d %02d:%02d:%02d", _year,
                                 (_month + 1), _day, _hour, _min, _sec));
     } else {
+      if (_negative) s_out.push_back('-');
       if (_usec != 0)
         s_out.append(
             str_format("%02d:%02d:%02d.%06d", _hour, _min, _sec, _usec));
@@ -144,6 +149,7 @@ void Date::append_json(shcore::JSON_dumper &dumper) const {
     dumper.append_int("minute", _min);
     dumper.append_int("second", _sec);
     dumper.append_int("usecond", _usec);
+    if (_negative) dumper.append_bool("negative", true);
   }
   dumper.end_object();
 }
@@ -176,10 +182,14 @@ Date Date::unrepr(const std::string &s) {
   int sec = 0;
   char usec[7] = {0};
 
-  if (s.find(':') != std::string::npos && s.find('-') == std::string::npos) {
-    int c = sscanf(s.c_str(), "%d:%d:%d.%6s", &hour, &min, &sec, usec);
+  // A TIME: [-]H:MM:SS[.ffffff], the hours up to 838. The sign is read on
+  // its own, so that -00:30:00 keeps it.
+  const bool negative = !s.empty() && s[0] == '-';
+  const char *time = s.c_str() + (negative ? 1 : 0);
+  if (s.find(':') != std::string::npos && !strchr(time, '-')) {
+    int c = sscanf(time, "%d:%d:%d.%6s", &hour, &min, &sec, usec);
     if (c >= 2) {
-      return Date(hour, min, sec, decimal_to_usec(usec));
+      return Date(hour, min, sec, decimal_to_usec(usec), negative);
     }
   }
 
@@ -240,8 +250,13 @@ void Date::validate() {
       throw shcore::Exception::argument_error("Valid day range is 0-31");
   }
   if (_has_time) {
-    if (_hour > 23 || _hour < 0)
+    if (!_has_date) {
+      // A TIME value, which the server allows from -838:59:59 to 838:59:59.
+      if (_hour > 838 || _hour < 0)
+        throw shcore::Exception::argument_error("Valid hour range is 0-838");
+    } else if (_hour > 23 || _hour < 0) {
       throw shcore::Exception::argument_error("Valid hour range is 0-23");
+    }
     if (_min > 59 || _min < 0)
       throw shcore::Exception::argument_error("Valid minute range is 0-59");
     if (_sec > 59 || _sec < 0)

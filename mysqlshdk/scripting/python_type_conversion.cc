@@ -226,6 +226,21 @@ Value convert(PyObject *py, Python_context **context, bool is_binary) {
 
     return shcore::Value(Object_bridge_ref(new Date(hour, min, sec, usec)));
   }
+  if (PyObject_TypeCheck(py, get_context()->get_timedelta_type())) {
+    // A TIME value outside one day comes to Python as a timedelta, and goes
+    // back as the TIME it was.
+    int64_t usec = get_int64(py, "days") * 86400000000LL +
+                   get_int64(py, "seconds") * 1000000LL +
+                   get_int64(py, "microseconds");
+    const bool negative = usec < 0;
+    if (negative) usec = -usec;
+    const int64_t seconds = usec / 1000000;
+
+    return shcore::Value(Object_bridge_ref(new Date(
+        static_cast<int>(seconds / 3600), static_cast<int>(seconds / 60 % 60),
+        static_cast<int>(seconds % 60), static_cast<int>(usec % 1000000),
+        negative)));
+  }
 
   // Any other object gets simply wrapped
   return Value(std::make_shared<Python_object>(py));
@@ -285,7 +300,15 @@ py::Release convert(const Value &value, Python_context * /*context*/) {
       auto ctx = Python_context::get();
 
       py::Release r;
-      if (date->has_time()) {
+      if (date->is_out_of_day_range()) {
+        // A TIME value that is no time of day - negative, or 24 hours or
+        // more - which datetime.time cannot hold: it is a duration.
+        int64_t usec = ((date->get_hour() * 60LL + date->get_min()) * 60 +
+                        date->get_sec()) *
+                           1000000 +
+                       date->get_usec();
+        r = ctx->create_timedelta_object(date->is_negative() ? -usec : usec);
+      } else if (date->has_time()) {
         if (!date->has_date())
           r = ctx->create_time_object(date->get_hour(), date->get_min(),
                                       date->get_sec(), date->get_usec());
