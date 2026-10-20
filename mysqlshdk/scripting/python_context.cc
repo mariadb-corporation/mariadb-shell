@@ -1598,6 +1598,11 @@ void Python_context::get_datetime_constructor() {
   if (!_time) PyErr_Print();
   assert(_time);
 
+  _timedelta =
+      py::Store{PyDict_GetItemString(py_datetime_dict, "timedelta")};
+  if (!_timedelta) PyErr_Print();
+  assert(_timedelta);
+
   // Creates a temporary datetime object to cache the python type
   {
     auto tmp = create_datetime_object(2000, 1, 1, 1, 1, 1, 0);
@@ -1634,6 +1639,14 @@ py::Release Python_context::create_time_object(int hour, int minute, int second,
   py::Release args{Py_BuildValue("(iiii)", hour, minute, second, useconds)};
 
   return py::Release{PyObject_Call(_time.get(), args.get(), nullptr)};
+}
+
+py::Release Python_context::create_timedelta_object(int64_t microseconds) {
+  // timedelta(days, seconds, microseconds) normalizes the microseconds.
+  py::Release args{
+      Py_BuildValue("(iiL)", 0, 0, static_cast<long long>(microseconds))};
+
+  return py::Release{PyObject_Call(_timedelta.get(), args.get(), nullptr)};
 }
 
 namespace {

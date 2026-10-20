@@ -410,6 +410,15 @@ std::string ShellBaseSession::sub_query_placeholders(
         case shcore::Null:
           squery << nullptr;
           break;
+        case shcore::Object:
+          // A date or time (a Python date, time, datetime or timedelta) is
+          // bound as its text form, which the server reads as a DATE, TIME or
+          // DATETIME literal; a negative TIME keeps its sign.
+          if (value.as_object<shcore::Date>()) {
+            squery << value.descr();
+            break;
+          }
+          [[fallthrough]];
         default:
           throw Exception::argument_error(shcore::str_format(
               "Invalid type for placeholder value at index #%i", i));

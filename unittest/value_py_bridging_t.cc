@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -553,6 +554,52 @@ TEST_F(Python, time_to_py) {
 
   ASSERT_EQ(value.as_object()->class_name(), "Date");
   ASSERT_EQ(v2, value);
+}
+
+TEST_F(Python, time_outside_one_day_to_py) {
+  // datetime.time cannot hold these, so they are timedeltas - and come back
+  // as the TIME they were.
+  Value longest(std::make_shared<shcore::Date>(838, 59, 59, 0));
+  Value negative(std::make_shared<shcore::Date>(12, 0, 0, 250000, true));
+  Input_state cont = Input_state::Ok;
+  WillEnterPython lock;
+
+  ASSERT_EQ(py->convert(py->convert(longest).get()), longest);
+  ASSERT_EQ(py->convert(py->convert(negative).get()), negative);
+
+  py->set_global("glongest", longest);
+  py->set_global("gnegative", negative);
+  ASSERT_EQ(py->execute_interactive("str(type(glongest))", cont).repr(),
+            "\"<class \\'datetime.timedelta\\'>\"");
+  ASSERT_EQ(py->execute_interactive("glongest.total_seconds()", cont)
+                .as_double(),
+            838 * 3600 + 59 * 60 + 59);
+  ASSERT_EQ(py->execute_interactive("gnegative.total_seconds()", cont)
+                .as_double(),
+            -43200.25);
+
+  py->execute_interactive("import datetime", cont);
+  auto value = py->execute_interactive(
+      "datetime.timedelta(hours=-12, microseconds=-250000)", cont);
+  ASSERT_EQ(value.as_object()->class_name(), "Date");
+  ASSERT_EQ(negative, value);
+
+  // The longest TIME is still one.
+  value = py->execute_interactive(
+      "datetime.timedelta(hours=-838, minutes=-59, seconds=-59, "
+      "microseconds=-999999)",
+      cont);
+  ASSERT_EQ(Value(std::make_shared<shcore::Date>(838, 59, 59, 999999, true)),
+            value);
+
+  // A timedelta longer than any TIME is wrapped like any other object.
+  for (const auto py_value :
+       {"datetime.timedelta(hours=839)", "datetime.timedelta(days=-40)",
+        "datetime.timedelta.max", "datetime.timedelta.min"}) {
+    value = py->execute_interactive(py_value, cont);
+    ASSERT_EQ(shcore::Object, value.get_type()) << py_value;
+    ASSERT_FALSE(value.as_object<shcore::Date>()) << py_value;
+  }
 }
 
 TEST_F(Python, binary_to_py) {

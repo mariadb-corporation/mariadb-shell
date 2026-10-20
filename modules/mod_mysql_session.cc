@@ -246,6 +246,7 @@ std::vector<mysqlshdk::db::Query_attribute> ClassicSession::query_attributes()
               time.minute = date->get_min();
               time.second = date->get_sec();
               time.second_part = date->get_usec();
+              time.neg = date->is_negative();
 
               enum_field_types type = MYSQL_TYPE_TIMESTAMP;
               time.time_type = MYSQL_TIMESTAMP_DATETIME;
