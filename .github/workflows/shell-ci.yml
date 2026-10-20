@@ -278,6 +278,18 @@ jobs:
           rm -rf "$TMP"
           mkdir -p "$TMP"
           cp ${{ env.MARIADB_SHELL_BUILD_DIR }}/mariadb-shell*.tar.gz "$TMP/"
+
+          # The test-only plaintext secret-store helper, which the package
+          # leaves out: lsp-server's CI drops it into the unpacked package's
+          # bin/ for its live-connection tests (its RPATH,
+          # $ORIGIN/../lib/mariadb-shell, then finds the package's libraries).
+          # A build without the test suite has none; the shell does not need it.
+          HELPER=${{ env.MARIADB_SHELL_BUILD_DIR }}/bin/mariadb-secret-store-plaintext
+          if [ -f "$HELPER" ]; then
+            cp "$HELPER" "$TMP/"
+          else
+            echo "::warning::No $HELPER to cache: lsp-server CI will skip its live-connection tests."
+          fi
           rm -rf "$STAGING/${TREE:?}"
           mv "$TMP" "$STAGING/$TREE"
 
