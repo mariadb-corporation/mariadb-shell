@@ -5,14 +5,14 @@ description: >-
 icon: sliders
 ---
 
+# Customizing MariaDB Shell
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Customizing MariaDB Shell
 
 MariaDB Shell keeps its per-user settings in the user configuration directory, `~/.mariadb-shell` on Linux and macOS and `%AppData%\MariaDB\mariadb-shell` on Windows. You can point the shell to another directory with the `MARIADB_SHELL_USER_CONFIG_HOME` environment variable. For a complete list of the files the shell reads, see [Files and Environment Variables](../files-and-environment-variables.md).
 

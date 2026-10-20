@@ -5,14 +5,14 @@ description: >-
   signs users in with their MariaDB account.
 ---
 
+# OAuth Authentication
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# OAuth Authentication
 
 A [multi-tenant](multi-tenant-mode.md) MCP server authenticates every request. Besides API keys, it can accept OAuth2 access tokens, so that users sign in through their browser instead of handling a key, and so that their access ends when their sign-in ends. The server supports two OAuth2 modes:
 

@@ -5,14 +5,14 @@ description: >-
   options.json.
 ---
 
+# Configuration Options
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Configuration Options
 
 Configuration options control how MariaDB Shell behaves: the result format, the pager, history, logging, the credential store, timeouts, and more. You can change most of them while the shell runs, and store the ones you want to keep in a configuration file.
 

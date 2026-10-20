@@ -5,14 +5,14 @@ description: >-
   to a MariaDB source.
 ---
 
+# Dump Utilities
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Dump Utilities
 
 The three dump utilities write a logical, parallel dump of a running MariaDB Server to a local directory or to object storage. They share one engine and almost all of their options. They differ only in what they select:
 

@@ -5,14 +5,14 @@ description: >-
   packages with mariadb-shell --pym pip.
 ---
 
+# Python Module Search Paths
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Python Module Search Paths
 
 MariaDB Shell includes its own Python interpreter and standard library. Python mode, scripts run with `-f`, plugins, and startup scripts all use this interpreter, not a Python installation on your system. To import your own modules or third-party packages, they must be on the search path of the bundled interpreter, `sys.path`.
 

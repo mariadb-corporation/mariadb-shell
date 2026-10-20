@@ -4,14 +4,14 @@ description: >-
   without the installation scripts.
 ---
 
+# Manual Installation
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Manual Installation
 
 Install MariaDB Shell manually when you cannot pipe a script from the internet into a shell, when you deploy to systems without internet access, or when you want to choose the installation directory and the package yourself.
 

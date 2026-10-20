@@ -5,14 +5,14 @@ description: >-
   credentials and settings come from.
 ---
 
+# Object Storage
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Object Storage
 
 The dump, load, and table export and import utilities read and write files through a storage layer. By default that is the local file system, but a dump can also go to a cloud object store and be loaded directly from it. The object storage options are the same for every utility that writes or reads files: `util.dump_instance()`, `util.dump_schemas()`, `util.dump_tables()`, `util.load_dump()`, `util.export_table()`, and `util.import_table()`. The copy utilities need no storage, because they pass data in memory.
 

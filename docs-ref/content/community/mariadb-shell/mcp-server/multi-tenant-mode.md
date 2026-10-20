@@ -5,14 +5,14 @@ description: >-
   directories.
 ---
 
+# Multi-Tenant Mode
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Multi-Tenant Mode
 
 By default, the MCP server serves one person: everyone who can reach it uses the same connections and directories, and the server doesn't authenticate its clients. In multi-tenant mode, one server serves several users. Each user authenticates every request, and each user has their own connections, passwords, and allowed directories, which no other user can see or use.
 

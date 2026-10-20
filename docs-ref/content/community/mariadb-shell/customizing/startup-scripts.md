@@ -5,14 +5,14 @@ description: >-
   put in it.
 ---
 
+# Startup Scripts
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Startup Scripts
 
 A startup script is a Python file named `mariadb-shellrc.py` that MariaDB Shell runs when it initializes Python mode. Use it to import modules you always need, define helper functions for interactive work, and adjust settings for your Python sessions.
 

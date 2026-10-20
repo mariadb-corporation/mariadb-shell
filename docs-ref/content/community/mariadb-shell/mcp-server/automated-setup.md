@@ -5,14 +5,14 @@ description: >-
   CI jobs.
 ---
 
+# Automated Setup
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Automated Setup
 
 Every step of the interactive setup is also available as a command-line option of `mcp setup`. With options, you can configure the MCP server in one command, repeat the configuration exactly on other machines, and run it where no terminal is available, for example in a provisioning script or a CI job.
 

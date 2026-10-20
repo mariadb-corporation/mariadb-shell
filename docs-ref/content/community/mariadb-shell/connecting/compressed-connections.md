@@ -4,14 +4,14 @@ description: >-
   and the server over slow or metered links.
 ---
 
+# Compressed Connections
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Compressed Connections
 
 Protocol compression reduces the amount of data that travels between MariaDB Shell and the server, at the cost of CPU time on both ends. It pays off on slow or metered network links, and for large result sets or bulk transfers. On a fast local network, it usually slows things down.
 

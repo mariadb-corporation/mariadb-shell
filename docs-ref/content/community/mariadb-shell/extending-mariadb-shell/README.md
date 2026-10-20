@@ -5,14 +5,14 @@ description: >-
 icon: puzzle-piece
 ---
 
+# Extending MariaDB Shell
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Extending MariaDB Shell
 
 MariaDB Shell runs an embedded Python interpreter, and the same Python APIs that the built-in features use are open to you. With a few lines of Python you can add a report that `\show` and `\watch` display, a global object with documented functions, or a handler that answers an SQL statement the server doesn't know.
 

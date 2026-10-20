@@ -4,14 +4,14 @@ description: >-
   answer them with results built by shell.create_result().
 ---
 
+# SQL Handlers
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# SQL Handlers
 
 An SQL handler is a Python function that MariaDB Shell calls instead of sending a statement to the server. You register it with a list of statement prefixes. When a statement starts with one of them, the shell passes the statement to your function, which either returns a result for the shell to display or returns nothing to let the statement go to the server.
 

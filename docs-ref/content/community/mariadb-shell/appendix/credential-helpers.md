@@ -5,14 +5,14 @@ description: >-
   directly.
 ---
 
+# Credential Helpers
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Credential Helpers
 
 The [credential store](../connecting/credential-store.md) hands passwords and secrets to a credential helper. This page describes the helpers themselves. For choosing a helper and managing stored passwords, see [Credential Store](../connecting/credential-store.md).
 

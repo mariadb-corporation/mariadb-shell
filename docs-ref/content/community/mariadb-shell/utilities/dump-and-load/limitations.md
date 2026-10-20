@@ -4,14 +4,14 @@ description: >-
   must be prepared with, which behaviors are by design, and known issues.
 ---
 
+# Limitations
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Limitations
 
 This page lists what the dump and load utilities do not do on MariaDB, what you must prepare on a target server, and which behaviors are intended. Several of the limitations match the default behavior of `mariadb-dump`.
 

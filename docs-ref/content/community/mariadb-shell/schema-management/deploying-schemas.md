@@ -5,14 +5,14 @@ description: >-
   and the errors a deployment can report.
 ---
 
+# Deploying Schemas
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Deploying Schemas
 
 `msm.deploy_schema()` runs the deployment script of a release on a server. The same call creates the schema on a server that doesn't have it, and upgrades the schema on a server that has an earlier release.
 

@@ -5,14 +5,14 @@ description: >-
   and provisioning a replica.
 ---
 
+# Quick Start
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Quick Start
 
 This page lists what the source and target servers need, and then walks through four common tasks. Each example is a starting point: the [Dump Utilities](dump-utilities.md), [Load Dump Utility](load-dump-utility.md), and [Copy Utilities](copy-utilities.md) pages describe every option.
 

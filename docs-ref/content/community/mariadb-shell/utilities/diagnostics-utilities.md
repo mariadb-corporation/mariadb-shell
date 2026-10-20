@@ -5,14 +5,14 @@ description: >-
   for troubleshooting and support requests.
 ---
 
+# Diagnostics Utilities
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Diagnostics Utilities
 
 The `util.debug` object provides three collectors that gather diagnostic information into one ZIP file, for troubleshooting or for attaching to a support request. They work with MariaDB Server and with MySQL Server, and adapt what they collect to the server they're connected to.
 

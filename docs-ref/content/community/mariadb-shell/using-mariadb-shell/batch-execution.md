@@ -5,14 +5,14 @@ description: >-
   exit codes.
 ---
 
+# Batch Execution
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Batch Execution
 
 MariaDB Shell runs scripts without a prompt as well as interactively. Use batch execution in cron jobs, deployment scripts, and CI pipelines, or anywhere you would otherwise run the `mariadb` client with a file.
 

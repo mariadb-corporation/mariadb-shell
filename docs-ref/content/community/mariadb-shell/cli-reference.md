@@ -5,14 +5,14 @@ description: >-
 icon: terminal
 ---
 
+# CLI Reference
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# CLI Reference
 
 This page lists the command-line options of `mariadb-shell` 26.9.5. The short alias `msh` accepts the same options. For the options of your installed build, run `mariadb-shell --help`.
 

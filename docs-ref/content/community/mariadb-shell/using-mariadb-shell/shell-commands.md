@@ -5,14 +5,14 @@ description: >-
   and the slash prefix that also runs them.
 ---
 
+# Shell Commands
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Shell Commands
 
 Shell commands control MariaDB Shell itself rather than the server. Each one starts with a backslash, or with a slash in its place (see [The Slash Prefix](#the-slash-prefix)), works the same way in SQL and Python mode, and is processed by the shell before anything reaches the server or the Python interpreter.
 

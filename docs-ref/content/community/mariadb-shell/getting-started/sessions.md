@@ -4,14 +4,14 @@ description: >-
   Python, and use the methods of a ClassicSession object.
 ---
 
+# Sessions
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Sessions
 
 A session is a connection from MariaDB Shell to a server. All sessions use the classic MariaDB client/server protocol and are represented in Python by `ClassicSession` objects.
 

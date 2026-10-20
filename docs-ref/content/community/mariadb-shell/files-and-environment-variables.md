@@ -4,14 +4,14 @@ description: >-
   files, and the environment variables it reads.
 ---
 
+# Files and Environment Variables
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Files and Environment Variables
 
 ## User Configuration Directory
 

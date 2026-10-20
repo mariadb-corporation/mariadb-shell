@@ -5,14 +5,14 @@ description: >-
 icon: box-open
 ---
 
+# Sandbox Instances
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Sandbox Instances
 
 A sandbox is a complete, self-contained server instance on your own machine, created in a directory of its own and identified by its port. The `sandbox` global object deploys sandboxes and manages their life cycle, so you can get a disposable server for a test, a demo, or a dump-and-load trial in a few seconds and remove it without a trace afterward.
 

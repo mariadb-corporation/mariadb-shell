@@ -5,14 +5,14 @@ description: >-
   and GTIDs, and which vendors they accept.
 ---
 
+# MariaDB-Specific Features
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# MariaDB-Specific Features
 
 MariaDB features that have no MySQL counterpart are dumped and restored with their definitions and data intact. The utilities also use MariaDB's own server mechanisms: the `BACKUP STAGE` lock for consistent dumps, MariaDB GTIDs for replica provisioning, and session-level `CHECK` enforcement for loads.
 

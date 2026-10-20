@@ -4,14 +4,14 @@ description: >-
   write your own reports with shell.register_report().
 ---
 
+# Reports
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Reports
 
 A report is a named function that collects information from the server and hands it to the shell for display. You run a report once with `\show`, or repeatedly with `\watch`, which refreshes the screen until you press Ctrl+C. MariaDB Shell ships three reports, `query`, `thread`, and `threads`, and you can register your own in Python.
 

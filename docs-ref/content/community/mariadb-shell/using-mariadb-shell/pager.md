@@ -5,14 +5,14 @@ description: >-
   shell.enable_pager.
 ---
 
+# Pager
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Pager
 
 A pager is a program, such as `less` or `more`, that shows long output one screen at a time. MariaDB Shell can send output to a pager so that a wide or long result doesn't scroll past. The pager is off by default and works only in interactive sessions.
 

@@ -4,14 +4,14 @@ description: >-
   PowerShell script.
 ---
 
+# Windows
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Windows
 
 The `install.ps1` script installs MariaDB Shell for the current user from a GitHub release. It runs in Windows PowerShell 5.1 and in PowerShell 7, and does not require administrator privileges.
 

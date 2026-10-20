@@ -5,14 +5,14 @@ description: >-
 icon: play
 ---
 
+# Getting Started
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Getting Started
 
 After you [install MariaDB Shell](../installation/), the pages in this section show you how to start it, connect to MariaDB Server, and find your way around the objects that the shell provides. For a full description of connection options, see [Connecting to a Server](../connecting/).
 

@@ -4,14 +4,14 @@ description: >-
   named pipe on Windows, instead of TCP.
 ---
 
+# Sockets and Named Pipes
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Sockets and Named Pipes
 
 A server on the same machine can be reached without the network stack. On Linux and macOS, MariaDB Shell connects through the server's Unix socket file. On Windows, it can connect through a named pipe. Local transports avoid TCP overhead, and on Linux they make `unix_socket` authentication possible.
 

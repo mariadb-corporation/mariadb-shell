@@ -5,14 +5,14 @@ description: >-
   resumes its work.
 ---
 
+# How Dump and Load Work
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# How Dump and Load Work
 
 A dump takes a consistent snapshot of a running server and writes it as compressed data chunks plus metadata, on several threads at once. A load replays the dump on several threads and records each completed step, so that it can resume after an interruption. A copy connects a dump and a load directly, from one server to another.
 

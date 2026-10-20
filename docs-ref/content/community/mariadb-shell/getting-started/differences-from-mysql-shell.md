@@ -4,14 +4,14 @@ description: >-
   and paths changed.
 ---
 
+# Differences from MySQL Shell
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Differences from MySQL Shell
 
 MariaDB Shell is derived from MySQL Shell. The interactive console, the SQL and Python modes, the `shell`, `mysql`, and `util` APIs, and most command-line options work the same way. This page lists every area where MariaDB Shell differs, so that you can adapt existing MySQL Shell scripts and habits.
 

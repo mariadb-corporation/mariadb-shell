@@ -4,14 +4,14 @@ description: >-
   Claude Desktop, and other MCP clients, over stdio or streamable HTTP.
 ---
 
+# Connecting MCP Clients
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Connecting MCP Clients
 
 An MCP client uses the MariaDB MCP server in one of two ways:
 

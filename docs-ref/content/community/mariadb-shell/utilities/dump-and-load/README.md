@@ -5,14 +5,14 @@ description: >-
 icon: database
 ---
 
+# Dump and Load
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Dump and Load
 
 The dump and load utilities of MariaDB Shell take logical backups of a running MariaDB server, restore them, and copy databases from one server to another. A dump is a consistent snapshot of the whole server, of selected schemas, or of selected tables, written as compressed chunks in parallel to local disk or to cloud object storage. A load restores such a dump in parallel, completely or selectively, and resumes where it stopped if it is interrupted.
 

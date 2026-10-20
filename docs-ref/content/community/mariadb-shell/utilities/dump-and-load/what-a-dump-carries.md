@@ -5,14 +5,14 @@ description: >-
   server.
 ---
 
+# What a Dump Carries
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# What a Dump Carries
 
 A dump carries everything that makes up the schemas, data, and access control of a database, MariaDB-specific objects included. System schemas and server-level state are left out by design.
 

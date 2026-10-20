@@ -5,14 +5,14 @@ description: >-
   Connector/C.
 ---
 
+# Encrypted Connections
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Encrypted Connections
 
 MariaDB Shell encrypts connections with TLS through MariaDB Connector/C. By default, it uses TLS whenever the server supports it. To protect against a server impersonator, you also need to verify the server certificate with `ssl-mode=VERIFY_CA` or `VERIFY_IDENTITY`.
 

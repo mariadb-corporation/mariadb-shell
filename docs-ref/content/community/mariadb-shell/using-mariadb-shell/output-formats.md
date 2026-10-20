@@ -5,14 +5,14 @@ description: >-
   formatting from Python.
 ---
 
+# Output Formats
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Output Formats
 
 MariaDB Shell prints query results in one of several formats. Tables suit reading at the prompt, tab-separated output suits shell pipelines, and JSON suits programs that consume the results.
 

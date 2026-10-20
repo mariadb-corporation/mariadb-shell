@@ -4,14 +4,14 @@ description: >-
   that control them, and how MariaDB Shell uses the ~/.mylogin.cnf file.
 ---
 
+# Option Files and Login Paths
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Option Files and Login Paths
 
 Like the other MariaDB clients, MariaDB Shell reads default options from `my.cnf`-style option files when it starts. You can keep the connection settings that you use every day, such as the user, the socket, or the TLS files, in an option file instead of typing them each time.
 

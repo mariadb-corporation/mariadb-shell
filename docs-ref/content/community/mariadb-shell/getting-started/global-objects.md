@@ -4,14 +4,14 @@ description: >-
   session, db, mysql, util, sandbox, plugins, msm, and mcp.
 ---
 
+# Global Objects
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Global Objects
 
 When the shell starts in Python mode, or when you switch to it with `\py`, a set of global objects is ready for use without an import. To list them, run `\?`. For the members of an object, run `\? <object>` or call its `help()` method, for example `util.help()`.
 

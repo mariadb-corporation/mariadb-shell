@@ -5,14 +5,14 @@ description: >-
   filters.
 ---
 
+# Editing and History
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Editing and History
 
 The MariaDB Shell prompt has Emacs-style line editing, a searchable command history, and a shortcut that opens the current statement in your text editor. These features are available in interactive sessions.
 

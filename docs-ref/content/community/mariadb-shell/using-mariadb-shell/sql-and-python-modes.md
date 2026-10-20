@@ -5,14 +5,14 @@ description: >-
   objects.
 ---
 
+# SQL and Python Modes
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# SQL and Python Modes
 
 MariaDB Shell has two input modes. In SQL mode, everything you type goes to the server as SQL, much like the `mariadb` command-line client. In Python mode, you type Python code that runs in the shell's embedded Python interpreter, with global objects such as `session`, `util`, and `shell` ready to use. Shell commands such as `\use` or `\option` work in both.
 

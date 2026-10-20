@@ -4,14 +4,14 @@ description: >-
   MCP server may access with mcp setup.
 ---
 
+# Configuring Access
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Configuring Access
 
 A new MCP server has no access to any database or directory. You decide what it may use with `mcp setup`, which maintains two allow-lists:
 

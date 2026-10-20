@@ -4,14 +4,14 @@ description: >-
   derived from MySQL Shell and built on MariaDB Connector/C.
 ---
 
+# About MariaDB Shell
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# About MariaDB Shell
 
 MariaDB Shell is a command-line client and scripting environment for MariaDB Server. It combines an SQL console with a Python interpreter, and adds utilities for logical backups, data migration, local test servers, and diagnostics.
 

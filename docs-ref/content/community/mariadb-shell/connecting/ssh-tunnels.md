@@ -4,14 +4,14 @@ description: >-
   mariadb+ssh:// URI or with the --ssh options.
 ---
 
+# SSH Tunnels
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# SSH Tunnels
 
 Database servers are often not reachable from your workstation: they listen only on their loopback interface, or sit in a private network behind a bastion host. MariaDB Shell can open an SSH tunnel for such a connection itself, so you don't need to run `ssh -L` in another terminal.
 

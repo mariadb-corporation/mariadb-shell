@@ -5,14 +5,14 @@ description: >-
 icon: plug
 ---
 
+# Connecting to a Server
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Connecting to a Server
 
 MariaDB Shell connects to MariaDB Server, and to MySQL servers, over the classic client/server protocol through MariaDB Connector/C. You describe the target with a connection URI such as `mariadb://dba@db1.example.com:3306/shop`, with a dictionary of connection options in Python, or with command-line options such as `-h`, `-P`, and `-u`.
 

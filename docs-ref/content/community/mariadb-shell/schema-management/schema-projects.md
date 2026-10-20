@@ -4,14 +4,14 @@ description: >-
   license and copyright notices, and use the MSM working directory.
 ---
 
+# Schema Projects
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Schema Projects
 
 An MSM schema project is a folder that holds everything about one database schema: the development script, a snapshot of every released version, the update scripts between releases, and the generated deployment scripts. It consists of plain text files, so you can keep it in version control together with the application that uses the schema.
 

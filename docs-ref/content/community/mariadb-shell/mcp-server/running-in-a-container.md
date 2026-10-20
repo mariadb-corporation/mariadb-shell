@@ -5,14 +5,14 @@ description: >-
   authorization server, or Keycloak.
 ---
 
+# Running in a Container
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Running in a Container
 
 The MariaDB Shell container image runs a [multi-tenant](multi-tenant-mode.md) MCP server over streamable HTTP. Every request needs an API key or an OAuth2 access token, and each user has their own connections. This page shows how to run it with Docker Compose or Podman Compose, behind a reverse proxy that terminates TLS, in two setups:
 

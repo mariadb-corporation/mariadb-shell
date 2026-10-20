@@ -4,14 +4,14 @@ description: >-
   command line names, parameters, options, and return values.
 ---
 
+# Function Reference
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Function Reference
 
 The `msm` global object and its sub-objects `msm.get` and `msm.set` provide the functions below. In Python mode, call them with snake_case names and pass options as keyword arguments. On the command line, use the kebab-case names shown in the tables and pass options as `--name=value`, in camelCase or kebab-case. See [Command Line Integration](../using-mariadb-shell/command-line-integration.md).
 

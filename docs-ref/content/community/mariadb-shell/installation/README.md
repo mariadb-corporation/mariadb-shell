@@ -5,14 +5,14 @@ description: >-
 icon: download
 ---
 
+# Installation
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Installation
 
 MariaDB Shell is distributed as self-contained packages on the [GitHub releases page](https://github.com/mariadb-corporation/mariadb-shell/releases). Each package includes the Python runtime and the built-in plugins, so it has no other runtime dependencies. You don't need administrator privileges: by default, everything installs into your home directory.
 

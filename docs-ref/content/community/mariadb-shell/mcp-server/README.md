@@ -6,14 +6,14 @@ description: >-
 icon: robot
 ---
 
+# MCP Server
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# MCP Server
 
 MariaDB Shell includes a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server. MCP is an open protocol that lets AI agents, such as coding assistants, call tools that an external server provides. The MariaDB MCP server provides tools to connect to MariaDB servers, inspect schemas, run SQL, manage versioned schema projects, and deploy local sandbox instances.
 

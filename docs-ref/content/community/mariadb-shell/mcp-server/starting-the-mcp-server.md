@@ -5,14 +5,14 @@ description: >-
   its log output.
 ---
 
+# Starting the MCP Server
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Starting the MCP Server
 
 `mcp start-server` starts the MCP server. It runs in the foreground until it is stopped, and serves the tools to one MCP client over standard input and output, or to any number of clients over HTTP:
 

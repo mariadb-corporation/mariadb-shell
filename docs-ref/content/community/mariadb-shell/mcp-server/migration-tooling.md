@@ -4,14 +4,14 @@ description: >-
   tools of the MariaDB MCP server use.
 ---
 
+# Migration Tooling
+
 <!--
   SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
   and copied one way into mariadb-docs (tools/community/mariadb-shell/).
   Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
   GitBook editor is overwritten by the next sync.
 -->
-
-# Migration Tooling
 
 The `migrator` tools of the MCP server plan and run migrations from MySQL to MariaDB with the [MySQL to MariaDB migration tooling](https://github.com/mariadb-corporation/Mysql-to-MariaDB-Migration), which isn't part of MariaDB Shell. On Linux and macOS, `mcp setup` installs it for you. The tooling isn't available on Windows.
 
