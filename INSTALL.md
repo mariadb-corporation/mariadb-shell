@@ -250,8 +250,9 @@ package.
 
 To move the pin, run `npm run lsp-server:update`. It fetches lsp-server, shows
 the pinned commit and the latest on its `main`, and asks which commit to pin:
-Enter takes the latest, or type a commit, tag or branch. `npm run
-lsp-server:update -- <commit>` pins `<commit>` without asking. It warns when
+Enter takes the latest, or type a commit, tag or branch; when the pin is
+already the latest, it says so and stops. `npm run lsp-server:update --
+<commit>` pins `<commit>` without asking. It warns when
 the commit is not ahead of the current pin, or when its `vcpkg.json` would
 fail the configure check above, then checks the submodule out at the commit
 and stages the new pin for you to commit.

@@ -139,6 +139,12 @@ def main():
             print(f"    ... and {len(new) - 20} more")
     print()
 
+    if not args.commit and pinned == latest:
+        print(f"{SUBMODULE} already pins the latest on {BRANCH}"
+              f"{', staged: commit it' if staged else ''}. To pin another "
+              "commit: npm run lsp-server:update -- <commit>")
+        return 0
+
     if args.commit:
         target = resolve(args.commit)
     elif interactive:
