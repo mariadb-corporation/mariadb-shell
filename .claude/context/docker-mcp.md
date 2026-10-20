@@ -20,7 +20,7 @@ Goal: a MariaDB Shell container image (Docker Hub, later) that runs the MCP serv
   - `KEYCLOAK_ADMIN_PASSWORD(_FILE)` is unset before the server starts (tini and `docker exec` still see the container env). `*_FILE` secrets are checked for readability with a clear error. The API key of `MCP_INITIAL_USER` is never logged.
   - `MCP_TRUSTED_PROXIES` / `KEYCLOAK_LOGIN_THEME` are passed only when set, since releases up to 26.10.1 lack the options.
   - A volume of another uid stops the entrypoint with *belongs to uid …*.
-- **Docker Hub namespace undecided** (user is asking IT). Docs use `mariadb/mariadb-shell-mcp-server` as a placeholder; Podman needs the fully qualified `docker.io/…` name.
+- **Docker Hub repository `mariadb/mariadb-shell-mcp-server`** (https://hub.docker.com/r/mariadb/mariadb-shell-mcp-server), the name the docs use; the user has admin access. Podman needs the fully qualified `docker.io/…` name.
 - **Names: image `mariadb-shell-mcp-server`, file `docker/linux-debian13-mcp-server.Dockerfile`, entrypoint `docker/entrypoint-mcp-server.sh`.** The image is MCP-only, so a plain `mariadb-shell` name would mislead and stays free for a shell image. `-mcp-server`, not `-mcp`: `-mcp` images are usually stdio servers a client launches with `docker run -i`; this one is a long-running HTTP server. "shell" stays in the name to avoid confusion with the separate MariaDB MCP server project (`MariaDB/mcp`) and because tags follow the shell version. The files follow the existing pattern (base first, purpose last, as in `linux-rocky9-server.Dockerfile` / `entrypoint-sandbox-server.sh`), including the `linux-` prefix.
 - **Keycloak can't run side by side with builtin** in one server (`lib/auth.py` `build_auth` picks one mode; API keys work in all). Two modes = two servers with two host names; user chose Keycloak only.
 
@@ -37,7 +37,8 @@ All three need a plugin release later than 26.10.1.
 - Image: both arches build and run (`--version`); API-key mode: 401 without key, `initialize` + `tools/list` with key; restart skips re-configuration.
 - With rootless Podman + podman-compose behind an nginx TLS proxy, with Keycloak 26.8: builtin mode (login server with auto TLS, role `mcp_access`), Keycloak mode set up entirely by the container's first start, Claude Code sign-in via Keycloak (`--client-id mariadb-mcp`), Facebook identity provider linked to an existing MCP user with `mcp setup --addIdentity=oauth:<issuer>|<sub>`, `--trustedProxies` (log shows the client, a forged header is ignored), `KEYCLOAK_LOGIN_THEME` switching a realm from `keycloak.v2` to `mariadb-mcp`, `--passwordStdin` through `podman exec -i`.
 - Entrypoint checks in real arm64 containers with rootless Podman and Keycloak 26.8: a missing variable or administrator password stops before any change and keeps the previous configuration; a failed realm step leaves the public URL unset; after a later step fails (an `--addUser` that fails through a `mariadb-shell` shim on `PATH`), the next start needs no password; a volume of uid 10001 refuses uid 10002, which can set up a new volume; in mode `none`, an authenticated request gets 421 without `MCP_ALLOWED_HOSTS` and 200 with it (without a key, 401 comes first). `setup-keycloak-realm` needs an existing realm.
-- Not verified: the Compose files exactly as written in `running-in-a-container.md` (Docker, `mariadb:11.8`, fixed subnet `172.30.0.0/24`, `extra_hosts: host-gateway`, `kcadm` via `docker compose exec`, the password prompt in `docker compose exec`), Docker's (rootful) source address for published ports, any push to a registry.
+- The Compose files exactly as written in `running-in-a-container.md`, both setups, end to end (tested manually by the user).
+- Not verified: Docker's (rootful) source address for published ports, any push to a registry.
 
 ## Files
 
@@ -46,9 +47,8 @@ All three need a plugin release later than 26.10.1.
 
 ## Next steps
 
-1. CI workflow for the image: on release published / `workflow_dispatch`, QEMU + buildx, smoke test per arch, push to Docker Hub (needs namespace + token from IT), optionally GHCR. Tags `X.Y.Z`, `X.Y`, `latest` (user: `latest` may point at prereleases).
-2. Run the docs' Compose files end to end (both setups) under Docker before publishing.
-3. Optional: `MCP_TRUSTED_PROXIES` default for the image? (Kept explicit so far.)
+1. CI workflow for the image: on release published / `workflow_dispatch`, QEMU + buildx, smoke test per arch, push to Docker Hub (needs an access token as a repository secret), optionally GHCR. Tags `X.Y.Z`, `X.Y`, `latest` (user: `latest` may point at prereleases).
+2. Optional: `MCP_TRUSTED_PROXIES` default for the image? (Kept explicit so far.)
 
 ## Gotchas
 
