@@ -246,8 +246,15 @@ the commit it builds.
 The configure step warns when the submodule is not at the pinned commit, and
 fails when `src/lsp-server/vcpkg.json` does not have this tree's vcpkg
 baseline and OpenSSL and zlib versions, which `mariadb-lsp` links from the
-package. A pull request that moves the pin back fails the `lsp-server pin
-moves forward` check, unless its title has `[lsp-server-downgrade]`.
+package.
+
+To move the pin, run `npm run lsp-server:update`. It fetches lsp-server, shows
+the pinned commit and the latest on its `main`, and asks which commit to pin:
+Enter takes the latest, or type a commit, tag or branch. `npm run
+lsp-server:update -- <commit>` pins `<commit>` without asking. It warns when
+the commit is not ahead of the current pin, or when its `vcpkg.json` would
+fail the configure check above, then checks the submodule out at the commit
+and stages the new pin for you to commit.
 
 ### 5.3 Using Custom Builds for Dependencies
 
