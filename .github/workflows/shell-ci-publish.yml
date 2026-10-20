@@ -200,3 +200,18 @@ jobs:
           rm -f ~/.cache/ci/mariadb-shell*.tar.gz
           cp "$TARBALL" ~/.cache/ci/
           echo "Published $(basename "$TARBALL") (tree $TREE)."
+
+          # The plaintext secret-store helper built with it, for lsp-server's
+          # CI, which runs it against this package's libraries. Replaced
+          # together with the tarball, or removed, never left from an older
+          # shell. Not under a mariadb* name: server-build.yml deletes every
+          # mariadb* directory in ~/.cache/ci.
+          HELPERS=~/.cache/ci/shell-test-helpers
+          rm -rf "$HELPERS"
+          if [ -f "$CACHED/mariadb-secret-store-plaintext" ]; then
+            mkdir -p "$HELPERS"
+            cp "$CACHED/mariadb-secret-store-plaintext" "$HELPERS/"
+            echo "Published mariadb-secret-store-plaintext."
+          else
+            echo "::warning::No mariadb-secret-store-plaintext cached for tree $TREE: lsp-server CI will skip its live-connection tests."
+          fi
