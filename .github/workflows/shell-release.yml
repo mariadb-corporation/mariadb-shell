@@ -101,6 +101,28 @@ jobs:
       - name: Checkout Main Project
         uses: actions/checkout@v4
 
+      # src/lsp-server (mariadb-corporation/lsp-server, built into mariadb-lsp
+      # next to mariadb-shell) is a private repository for now, so
+      # actions/checkout's `submodules:` cannot fetch it with the default
+      # token. DEVTOOLS_TOKEN must also read that repository. Shell CI
+      # configures with WITH_LSP=AUTO, so a run the secret does not reach (a
+      # fork's pull request) builds without mariadb-lsp; release builds pass
+      # WITH_LSP=ON and fail instead. Once the repository is public, this step
+      # becomes `submodules: true` on the checkout above.
+      - name: Fetch the lsp-server submodule
+        shell: bash
+        env:
+          LSP_TOKEN: ${{ secrets.DEVTOOLS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LSP_TOKEN" ]; then
+            echo "No DEVTOOLS_TOKEN in this run: building without mariadb-lsp."
+            exit 0
+          fi
+          git -c "url.https://x-access-token:${LSP_TOKEN}@github.com/.insteadOf=https://github.com/" \
+            submodule update --init --depth 1 src/lsp-server
+          git -C src/lsp-server log -1 --format='src/lsp-server at %H (%cs)'
+
       # ========================================
       # 0b. BUNDLE EXTERNAL SHELL PLUGINS
       # ========================================
@@ -314,6 +336,7 @@ jobs:
           cmake -B ${{ env.MARIADB_SHELL_BUILD_DIR }} -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_TESTS=0 \
+            -DWITH_LSP=ON \
             -DWITH_VCPKG_TRIPLET=${{ matrix.vcpkg-triplet }} \
             $EXTRA_CMAKE_ARGS
         shell: bash

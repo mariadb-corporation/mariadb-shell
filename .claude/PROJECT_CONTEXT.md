@@ -13,6 +13,7 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | `docs-ref/` (rest) | Docusaurus offline preview, copied from ai-plugins; `npm run docs-ref` from the repo root |
 | `MARIADB_PORT.md`, `MARIADB_DUMP_LOAD.md` | Engineering records of the port and of dump/load; sources for the docs |
 | `bld/` | The local build (`bld/bin/mariadb-shell`), used to check help text and docs examples |
+| `src/lsp-server/`, `cmake/lsp_server.cmake` | The lsp-server submodule (`mariadb-lsp`, the SQL language server) and its build; see [context/lsp-server.md](context/lsp-server.md) |
 | `.githooks/` | pre-commit copyright hook and its `copyright-exceptions` |
 | `docker/` | Build images for the release packages, and the MariaDB Shell MCP Server image `mariadb-shell-mcp-server` (`linux-debian13-mcp-server.Dockerfile`, `entrypoint-mcp-server.sh`, `README.md`) |
 | `.claude/commands/checkpoint.md`, `read-checkpoint.md` | `/checkpoint` writes this context (its "In every case" rules say what belongs in these files), `/read-checkpoint` reads it back to resume |
@@ -26,12 +27,14 @@ MariaDB Shell (`mariadb-shell`, alias `msh`) is a fork of MySQL Shell. It is bui
 | [context/docs-ref.md](context/docs-ref.md) | The reference docs: setup, decisions, how the pages were written and verified, files, next steps, gotchas |
 | [context/product-issues.md](context/product-issues.md) | Open product bugs and out-of-date help/man text found while writing the docs, each with the page to update when it is fixed |
 | [context/mrs-module.md](context/mrs-module.md) | The MariaDB REST Service in the shell, replacing the Python mrs_plugin's REST SQL: core library `mysqlshdk/libs/mrs/` (bison grammar, executor, metadata schema project), integration `src/mysqlsh/mrs/` (SQL handler); layout, design decisions, gotchas, state, next steps |
+| [context/lsp-server.md](context/lsp-server.md) | `mariadb-lsp`, the SQL language server, built from the `src/lsp-server` submodule and installed next to `mariadb-shell`: how it is built and bundled, `WITH_LSP`, the guards, gotchas, next steps (what changes once lsp-server is public) |
 | [context/rest-daemon-5.0.md](context/rest-daemon-5.0.md) | What the MariaDB REST Daemon (`mariadb-restd`, the rest-daemon repository) depends on in metadata schema 5.0.0, so a schema change it sees gets a daemon change: schema name/prefix/postfix, renamed `rest_daemon*` tables, roles, UUID ids, vendor names, async tasks, status counters, audit log ids not in commit order (Galera) |
 
 ## Open Items
 
 - **API Reference not in `main`:** the hidden `--export-help` option (`471e72e9d`), `docs-ref/scripts/api_reference.py` and its 30 pages (`e4d29055d`), the docs link and CI `--check` (`f6005e443`), MariaDB naming in the built-in help (`e525a8264`), and `plugins/external-plugins.txt` (`8ba556850`). They sit on top of the pre-squash docs commits, so rebase only these five onto `main`. Re-check `8ba556850`'s choice to stop bundling mrs now that the REST Service is built in, and `e525a8264` against the help text the REST Service added.
 - **Docs:** porting to mariadb-docs (`docs-ref/README.md` § Porting); the placement decision (Enterprise Tools?); whether to keep the object-storage warning. See [context/docs-ref.md](context/docs-ref.md).
+- **mariadb-lsp once lsp-server is public:** fetch the submodule with `submodules: true`, and ship `mariadb-lsp` in the native `.deb`/`.rpm` packages (they build with `WITH_LSP=OFF` until then). See [context/lsp-server.md](context/lsp-server.md).
 - **Product bugs and help-text leftovers:** [context/product-issues.md](context/product-issues.md).
 - **Unverified in the docs:**
   - object storage (S3/OCI/Azure)

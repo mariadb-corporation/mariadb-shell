@@ -184,6 +184,7 @@ cmake .. \
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DUSE_LD_LLD=0 \
+    -DWITH_LSP=OFF \
 %if 0%{?commercial} || %{?cloud}
     -DEXTRA_NAME_SUFFIX="%{?product_suffix}" \
 %endif

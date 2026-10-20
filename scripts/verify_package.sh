@@ -85,6 +85,20 @@ if [ -z "$SHELL_BIN" ]; then
 fi
 pass "shell binary present ($(basename "$SHELL_BIN"))"
 
+# mariadb-lsp (src/lsp-server; release builds use WITH_LSP=ON) must start from
+# the package: its OpenSSL and zlib are the package's, found through its RPATH.
+LSP_BIN=""
+for cand in "$ROOT/bin/mariadb-lsp" "$ROOT/bin/mariadb-lsp.exe"; do
+  if [ -f "$cand" ]; then LSP_BIN="$cand"; break; fi
+done
+if [ -z "$LSP_BIN" ]; then
+  fail "mariadb-lsp present" "no bin/mariadb-lsp[.exe] under $ROOT"
+elif LSP_VERSION=$("$LSP_BIN" --version 2>&1) && [[ "$LSP_VERSION" == "mariadb-lsp "* ]]; then
+  pass "mariadb-lsp runs ($LSP_VERSION)"
+else
+  fail "mariadb-lsp runs" "$LSP_VERSION"
+fi
+
 PLUGIN_DIR=""
 for cand in \
   "$ROOT/lib/mariadb-shell/plugins" \
