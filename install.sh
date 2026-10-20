@@ -360,9 +360,22 @@ mkdir -p "$BINDIR"
 ln -sfn "$SHELL_BIN" "$BINDIR/mariadb-shell"
 ln -sfn "$MSH_BIN" "$BINDIR/msh"
 
+# mariadb-lsp, the SQL language server, is only in packages built with it. When
+# this one has none, a link an earlier install left would run that version's
+# server, or dangle once the prune below removes it.
+LSP_BIN="$PREFIX/$VERSION/bin/mariadb-lsp"
+if [ -x "$LSP_BIN" ]; then
+  ln -sfn "$LSP_BIN" "$BINDIR/mariadb-lsp"
+elif [ -L "$BINDIR/mariadb-lsp" ]; then
+  case "$(readlink "$BINDIR/mariadb-lsp")" in
+    "$PREFIX"/*) rm -f "$BINDIR/mariadb-lsp" ;;
+  esac
+fi
+
 info "Installed $("$SHELL_BIN" --version 2>/dev/null || echo "$VERSION")"
 info "Binary: $BINDIR/mariadb-shell -> $SHELL_BIN"
 info "        $BINDIR/msh -> $MSH_BIN"
+[ ! -x "$LSP_BIN" ] || info "        $BINDIR/mariadb-lsp -> $LSP_BIN"
 
 # ---------------------------------------------------------------------------
 # Prune. Only the version just installed and the highest of the rest survive:
