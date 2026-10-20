@@ -123,6 +123,9 @@ ENDIF()
 
 set(CPACK_PACKAGE_FILE_NAME           "${CPACK_PACKAGE_INSTALL_DIRECTORY}")
 set(CPACK_STRIP_FILES                 "bin/mariadb-shell")
+if(BUILD_LSP_SERVER)
+  list(APPEND CPACK_STRIP_FILES "bin/mariadb-lsp")
+endif()
 
 if(WIN32)
   set(CPACK_PACKAGE_INSTALL_DIRECTORY "MariaDB/MariaDB Shell ${MYSH_BASE_VERSION}")

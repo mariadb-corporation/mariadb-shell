@@ -73,8 +73,14 @@ This process is exactly the same in any platform, just make sure that in windows
 all the build steps are executed in a Developer Command Prompt.
 
 ```bash
-git clone --depth 1 https://github.com/mariadb-corporation/mariadb-shell.git
+git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/mariadb-corporation/mariadb-shell.git
 ```
+
+`--recurse-submodules` fetches `src/lsp-server`, the MariaDB SQL language
+server, built into `mariadb-lsp` next to `mariadb-shell` (see 5.2). Without
+it, the shell is built without `mariadb-lsp`. In an existing clone, run
+`git submodule update --init` after pulls that move it, or set
+`git config submodule.recurse true` once.
 
 
 ## 3. Building Portable Packages
@@ -221,7 +227,29 @@ following are some examples:
 By default, the MariaDB Shell builds the test suite, but that can be disabled by
 passing the `-DWITH_TESTS=0` to the cmake configure call.
 
-### 5.2 Using Custom Builds for Dependencies
+### 5.2 The SQL Language Server (mariadb-lsp)
+
+`mariadb-lsp`, the MariaDB SQL language server, is built from the
+`src/lsp-server` submodule (mariadb-corporation/lsp-server) as a separate
+CMake build, with the same compiler, vcpkg triplet and MariaDB server tree,
+and installed next to `mariadb-shell`, where the MCP server's `sql` tools find
+it. Its code and tests are maintained in its own repository; this tree pins
+the commit it builds.
+
+- `-DWITH_LSP=AUTO` (default) builds it when the submodule is checked out,
+  `ON` requires it (release builds), `OFF` leaves it out.
+- `-DLSP_SERVER_SOURCE_DIR=<dir>` builds another lsp-server checkout, to try
+  a change in both repositories together.
+- `-DLSP_SERVER_BUILD_JOBS=<n>` caps the parallel jobs of its build, which
+  runs beside the shell's (default: half the cores).
+
+The configure step warns when the submodule is not at the pinned commit, and
+fails when `src/lsp-server/vcpkg.json` does not have this tree's vcpkg
+baseline and OpenSSL and zlib versions, which `mariadb-lsp` links from the
+package. A pull request that moves the pin back fails the `lsp-server pin
+moves forward` check, unless its title has `[lsp-server-downgrade]`.
+
+### 5.3 Using Custom Builds for Dependencies
 
 It is possible to use custom builds of different dependencies as described below:
 

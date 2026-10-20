@@ -1981,6 +1981,9 @@ add_subdirectory(samples)
 add_subdirectory(mysql-secret-store)
 add_subdirectory(tests/bench)
 
+# mariadb-lsp, from the src/lsp-server submodule (needs the mariadb-shell target)
+INCLUDE(lsp_server)
+
 IF(UNIX)
   ADD_SUBDIRECTORY(man)
 ENDIF()
