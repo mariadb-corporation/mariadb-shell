@@ -4,6 +4,13 @@ description: >-
   files, and the environment variables it reads.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Files and Environment Variables
 
 ## User Configuration Directory
@@ -88,3 +95,5 @@ The shell also reads these variables:
 | `MARIADB_SANDBOX_BOILERPLATE_DIR`, `MARIADB_SANDBOX_NO_SYNC` | Settings for sandbox deployment. See [Sandbox Instances](sandbox-instances.md). |
 
 The installation scripts read their own `MARIADB_SHELL_TAG`, `MARIADB_SHELL_PREFIX`, `MARIADB_SHELL_BINDIR`, and related variables, which the shell itself ignores. See [Linux and macOS](installation/linux-and-macos.md#installation-options) and [Windows](installation/windows.md#installation-options).
+
+<sub>_This page is licensed: GPLv2_</sub>

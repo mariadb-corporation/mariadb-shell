@@ -5,6 +5,13 @@ description: >-
   directories.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Multi-Tenant Mode
 
 By default, the MCP server serves one person: everyone who can reach it uses the same connections and directories, and the server doesn't authenticate its clients. In multi-tenant mode, one server serves several users. Each user authenticates every request, and each user has their own connections, passwords, and allowed directories, which no other user can see or use.
@@ -409,3 +416,5 @@ The setup carries the options out in this order: the mode, user removals, user a
 | The client receives `429 Too Many Requests`. | Too many refused tokens from the address. | Correct the key and wait a minute. |
 | *The tool … needs the scope '…', which your access was not granted.* | The user's scopes don't include the tool's group. | Grant the scope with `--setScopes`. |
 | *Access to path '…' is not allowed. Ask the administrator to add it …* | The path isn't in the user's allowed directories. | Add it with `--user=… --addPaths`. |
+
+<sub>_This page is licensed: GPLv2_</sub>

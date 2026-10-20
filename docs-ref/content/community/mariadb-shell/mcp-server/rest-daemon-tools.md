@@ -4,6 +4,13 @@ description: >-
   server, for sandbox instances and other servers.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # REST Daemon Tools
 
 The `restd` tools of the MCP server set up a MariaDB REST Daemon, `mariadb-restd`, for a server, and start, stop, list, and delete such deployments. The daemon serves the REST services defined in the server's [REST metadata](../../mariadb-rest-service/README.md). Once started, it keeps running when the MCP server ends, as a sandbox's server does.
@@ -83,3 +90,5 @@ When the server is gone, or about to be, pass `drop_accounts` as `false` to dele
 ## Allowed Paths
 
 `sandbox_dir` and `restd_path` are checked against the [allowed directories](configuring-access.md#allowed-paths). A `directory` that `restd.get_restd_status` lists, a sandbox instance's deployment or one in `~/.mariadb-restd`, is accepted without the check, because the MCP server created it. Any other `directory` is checked too.
+
+<sub>_This page is licensed: GPLv2_</sub>

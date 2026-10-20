@@ -5,6 +5,13 @@ description: >-
   CI jobs.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Automated Setup
 
 Every step of the interactive setup is also available as a command-line option of `mcp setup`. With options, you can configure the MCP server in one command, repeat the configuration exactly on other machines, and run it where no terminal is available, for example in a provisioning script or a CI job.
@@ -169,3 +176,5 @@ The setup returns `0` on success and `1` on failure, and prints the reason to st
 | *--json only applies to --show.* | `--json` was used without `--show`. |
 | *'…' is not an existing directory.* | A directory given to `--addPaths` doesn't exist. |
 | *Could not connect to '…': …* | The verification of a connection failed. The message contains the error of the server or client. |
+
+<sub>_This page is licensed: GPLv2_</sub>

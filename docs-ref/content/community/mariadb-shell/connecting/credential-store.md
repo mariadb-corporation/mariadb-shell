@@ -4,6 +4,13 @@ description: >-
   stores them on each platform, and manage stored passwords and other secrets.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Credential Store
 
 MariaDB Shell can remember the password of each account you connect with, so that it doesn't prompt you again. It hands the passwords to a credential helper, a small program that keeps them in the platform's password storage, such as the macOS keychain. The same helpers also store arbitrary secrets for your scripts, such as API keys.
@@ -161,3 +168,5 @@ grep -i helper ~/.mariadb-shell/mariadb-shell.log | tail
 ```
 
 For more about the log, see [Logging and Debugging](../logging-and-debugging.md).
+
+<sub>_This page is licensed: GPLv2_</sub>

@@ -4,6 +4,13 @@ description: >-
   mode, get help, and exit.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Starting MariaDB Shell
 
 ## Start the Shell
@@ -129,3 +136,5 @@ The `mariadb-shell --help` command lists the command-line options. On Linux and 
 ## Exit the Shell
 
 To exit, use `\quit`, its shortcut `\q`, or `\exit`. On Linux and macOS, you can also press Ctrl+D on an empty line. The shell closes its sessions and prints `Bye!`.
+
+<sub>_This page is licensed: GPLv2_</sub>

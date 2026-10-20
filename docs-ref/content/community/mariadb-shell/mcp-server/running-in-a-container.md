@@ -5,6 +5,13 @@ description: >-
   authorization server, or Keycloak.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Running in a Container
 
 The MariaDB Shell container image runs a [multi-tenant](multi-tenant-mode.md) MCP server over streamable HTTP. Every request needs an API key or an OAuth2 access token, and each user has their own connections. This page shows how to run it with Docker Compose or Podman Compose, behind a reverse proxy that terminates TLS, in two setups:
@@ -384,3 +391,5 @@ The MCP server reads the realm's keys from `KEYCLOAK_URL`, so the container must
 | A client receives `421 Misdirected Request`. | The client uses a host name other than the public URL's, for example the published port directly. In `none` mode, which has no public URL, the proxy's host name isn't in `MCP_ALLOWED_HOSTS`. | Use the public URL, or add the name with `MCP_ALLOWED_HOSTS`. |
 | The container keeps restarting, and the log shows that the server refused to start. | The server has no user, and the mode doesn't create users at their first sign-in. | Set `MCP_INITIAL_USER`, or use `builtin` or `keycloak` mode. |
 | The server's log lines show the same address for every client. | `MCP_TRUSTED_PROXIES` doesn't contain the address that the proxy's requests arrive from. | Compare it with the address in the access log. See [Reverse Proxy](#reverse-proxy). |
+
+<sub>_This page is licensed: GPLv2_</sub>

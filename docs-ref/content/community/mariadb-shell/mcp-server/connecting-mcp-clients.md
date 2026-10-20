@@ -4,6 +4,13 @@ description: >-
   Claude Desktop, and other MCP clients, over stdio or streamable HTTP.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Connecting MCP Clients
 
 An MCP client uses the MariaDB MCP server in one of two ways:
@@ -220,3 +227,5 @@ To restrict the databases themselves, use accounts with different privileges, as
 | `db.connect` fails with *This client uses MCP without sessions (protocol revision 2026-07-28)…* | The client uses the current MCP revision, which has no sessions, over HTTP with a server that doesn't authenticate. | Register the server over `stdio`, or use [multi-tenant mode](multi-tenant-mode.md). See [Clients Without MCP Sessions](security-and-session-handling.md#clients-without-mcp-sessions). |
 | Tools that take a path fail with *Access to path '…' is not allowed*. | The directory isn't an allowed path, and the client doesn't support the confirmation question. | Add the directory with `mcp setup --addPaths`. |
 | The `stdio` server stops immediately after it starts. | The client closed the server's standard input, or the command has wrong arguments. | Run the command in a terminal to see its error output, and check the client's MCP log. |
+
+<sub>_This page is licensed: GPLv2_</sub>

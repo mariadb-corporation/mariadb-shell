@@ -6,6 +6,13 @@ description: >-
 icon: terminal
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Using MariaDB Shell
 
 MariaDB Shell is an interactive client and a scripting environment at the same time. You type SQL or Python at the prompt, control the shell itself with backslash commands such as `\use` or `\option`, and run the same work unattended from scripts, cron jobs, or CI pipelines.
@@ -107,3 +114,5 @@ How to call `util`, `shell`, and `sandbox` operations directly from the operatin
 How to page long results through `less`, `more`, or another program.
 {% endcolumn %}
 {% endcolumns %}
+
+<sub>_This page is licensed: GPLv2_</sub>

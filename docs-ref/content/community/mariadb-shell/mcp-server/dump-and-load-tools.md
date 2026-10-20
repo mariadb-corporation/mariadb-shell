@@ -4,6 +4,13 @@ description: >-
   with background tasks a client follows and can cancel.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Dump and Load Tools
 
 The `util` tools of the MCP server run the [dump](../utilities/dump-and-load/dump-utilities.md), [load](../utilities/dump-and-load/load-dump-utility.md), [copy](../utilities/dump-and-load/copy-utilities.md), [export and import](../utilities/table-export-and-import.md) utilities of MariaDB Shell on a connection opened with `db.connect`. These utilities run for minutes or hours, longer than an MCP client waits for a tool call to return, so each tool starts the work as a background **task** and returns its ID at once. The client then follows the task, and can cancel it.
@@ -69,3 +76,4 @@ Once `status` is `completed`, `failed`, or `cancelled`, the task doesn't change 
 * **Limits:** a client can run four tasks at the same time. A finished task is kept for one hour, and the server keeps 100 finished tasks at most.
 * **Paths** are checked against the [allowed directories](configuring-access.md#allowed-paths). A URL, and an object storage prefix given with `s3BucketName`, `osBucketName`, or `azureContainerName`, are passed to the utility unchecked.
 
+<sub>_This page is licensed: GPLv2_</sub>

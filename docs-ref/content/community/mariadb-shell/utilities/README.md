@@ -5,6 +5,13 @@ description: >-
 icon: toolbox
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Utilities
 
 The `util` global object groups the administrative utilities of MariaDB Shell. It is available in Python mode as soon as the shell starts. Most utilities work on the global session, so you connect to a server first and then call the utility.
@@ -70,3 +77,5 @@ Change the password of your own account or of another account with `util.change_
 The `util.debug` collectors that package server, shell, and host information into a ZIP file for troubleshooting and support requests.
 {% endcolumn %}
 {% endcolumns %}
+
+<sub>_This page is licensed: GPLv2_</sub>

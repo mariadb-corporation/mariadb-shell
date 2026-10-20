@@ -5,6 +5,13 @@ description: >-
   and GTIDs, and which vendors they accept.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # MariaDB-Specific Features
 
 MariaDB features that have no MySQL counterpart are dumped and restored with their definitions and data intact. The utilities also use MariaDB's own server mechanisms: the `BACKUP STAGE` lock for consistent dumps, MariaDB GTIDs for replica provisioning, and session-level `CHECK` enforcement for loads.
@@ -103,3 +110,5 @@ The load option `updateGtidSet` writes the dumped position to the target's `gtid
 Both values are refused while any replica connection is running on the target. Stop replication first. See [Provision a Replica](quick-start.md#provision-a-replica) for a complete example.
 
 On a Galera cluster, `gtid_slave_pos` is local to each node. A load with `updateGtidSet` sets the position only on the node it is connected to, while Galera replicates the data to every node. Start asynchronous replication on that same node.
+
+<sub>_This page is licensed: GPLv2_</sub>

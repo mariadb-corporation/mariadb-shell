@@ -4,6 +4,13 @@ description: >-
   command-line options, and learn which setting wins when they overlap.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Connection URIs and Options
 
 Every connection that MariaDB Shell opens is described by the same set of connection options: who connects, to which server, how the transport is secured, and so on. You can supply these options in three forms, and mix them:
@@ -283,3 +290,5 @@ When several sources describe the same setting, MariaDB Shell applies the follow
 | `credentialStore.helper` | string | `default` | The helper that stores passwords. |
 
 For all shell options, see [Configuration Options](../customizing/configuration-options.md).
+
+<sub>_This page is licensed: GPLv2_</sub>

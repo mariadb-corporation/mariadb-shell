@@ -5,6 +5,13 @@ description: >-
   util.import_table().
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Table Export and Import
 
 `util.export_table()` writes the rows of one table to a single text file, and `util.import_table()` loads one or more text files into a table. Together they cover data exchange with spreadsheets, other databases, and ETL tools, and they move one table between servers without a full dump.
@@ -273,3 +280,5 @@ Both utilities support [command line integration](../using-mariadb-shell/command
 mariadb-shell root@localhost -- util export-table shop.customers /exports/customers.csv --dialect=csv-unix --show-progress=false
 mariadb-shell root@localhost -- util import-table /exports/customers.csv --schema=shop --table=customers_copy --dialect=csv-unix --replace-duplicates=true
 ```
+
+<sub>_This page is licensed: GPLv2_</sub>

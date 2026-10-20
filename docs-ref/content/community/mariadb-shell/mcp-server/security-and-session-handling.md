@@ -5,6 +5,13 @@ description: >-
   sessions it opens for clients.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Security and Session Handling
 
 The MCP server gives an AI agent access to databases and files with your credentials. Several layers limit that access:
@@ -221,3 +228,5 @@ The server's log output contains neither passwords nor SQL statements, and it sh
 * Allow only the project directories the agent works in.
 * Provide only the function groups the agent needs.
 * Remove connections and directories that the agent no longer needs, and restart the server if the removal must take effect immediately.
+
+<sub>_This page is licensed: GPLv2_</sub>

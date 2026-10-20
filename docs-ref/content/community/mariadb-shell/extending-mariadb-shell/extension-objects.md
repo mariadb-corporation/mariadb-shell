@@ -5,6 +5,13 @@ description: >-
   text and parameter validation.
 ---
 
+<!--
+  SYNCED: this page is maintained in mariadb-corporation/mariadb-shell, under docs-ref/content/,
+  and copied one way into mariadb-docs (tools/community/mariadb-shell/).
+  Make every change in mariadb-corporation/mariadb-shell. A change made in mariadb-docs or in the
+  GitBook editor is overwritten by the next sync.
+-->
+
 # Extension Objects
 
 An extension object is a container for functions, properties, and nested objects that you define in Python and register as a global object. Once registered, it behaves like the built-in globals: it's available in Python mode without an import, `\?` documents it, the shell validates the arguments of its functions, and it can expose functions to [command line integration](../using-mariadb-shell/command-line-integration.md).
@@ -221,3 +228,5 @@ Because `tableCount` sets `"cli": True`, you can also call it from the operating
 ```sh
 mariadb-shell root@localhost -- dbtools table-count sakila
 ```
+
+<sub>_This page is licensed: GPLv2_</sub>
