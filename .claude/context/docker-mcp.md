@@ -2,7 +2,7 @@
 
 Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The reference docs for this work are tracked in [docs-ref.md](docs-ref.md).
 
-Goal: a MariaDB Shell container image (Docker Hub, later) that runs the MCP server, working by default with Docker and Podman.
+Goal: a MariaDB Shell container image, published on Docker Hub as `mariadb/mariadb-shell-mcp-server`, that runs the MCP server, working by default with Docker and Podman.
 
 ## Key decisions
 
@@ -47,8 +47,9 @@ All three need a plugin release later than 26.10.1.
 
 ## Next steps
 
-1. CI workflow for the image: on release published / `workflow_dispatch`, QEMU + buildx, smoke test per arch, push to Docker Hub (needs an access token as a repository secret), optionally GHCR. Tags `X.Y.Z`, `X.Y`, `latest` (user: `latest` may point at prereleases).
-2. Optional: `MCP_TRUSTED_PROXIES` default for the image? (Kept explicit so far.)
+1. First publish, by hand: build and push both arches of the newest release with the multi-arch `buildx` command in `docker/README.md` (`--push`, tags `X.Y.Z`, `X.Y`, `latest`), check with `docker buildx imagetools inspect` that both platforms are there, pull and run each arch, then set the Docker Hub repository to Public and write its Overview (from `docker/README.md`, linking `running-in-a-container.md`).
+2. CI workflow for the image: on release published / `workflow_dispatch`, QEMU + buildx, smoke test per arch, push to Docker Hub (needs an access token as a repository secret), optionally GHCR. Tags `X.Y.Z`, `X.Y`, `latest` (user: `latest` may point at prereleases).
+3. Optional: `MCP_TRUSTED_PROXIES` default for the image? (Kept explicit so far.)
 
 ## Gotchas
 
