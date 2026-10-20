@@ -345,6 +345,21 @@ $PreReleaseHint
         Set-Content -Path (Join-Path $BinDir $name) -Value $shim -NoNewline -Encoding ascii
     }
 
+    # mariadb-lsp, the SQL language server, is only in packages built with it.
+    # When this one has none, a shim an earlier install left would start that
+    # version's server, or nothing once the prune below removes it. Only a shim
+    # of ours is removed: one that forwards into a version directory.
+    $lspExe = Join-Path (Join-Path $target 'bin') 'mariadb-lsp.exe'
+    $lspShim = Join-Path $BinDir 'mariadb-lsp.cmd'
+    $hasLsp = Test-Path $lspExe
+    if ($hasLsp) {
+        $lspRelative = "..\$Version\bin\mariadb-lsp.exe"
+        Set-Content -Path $lspShim -Value "@echo off`r`n`"%~dp0$lspRelative`" %*`r`n" -NoNewline -Encoding ascii
+    } elseif ((Test-Path $lspShim) -and
+              ((Get-Content -Raw $lspShim) -match '"%~dp0\.\.\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"')) {
+        Remove-Item -Force $lspShim
+    }
+
     $reported = $Version
     try {
         $reported = (& $shellExe --version 2>$null | Select-Object -First 1)
@@ -357,6 +372,7 @@ $PreReleaseHint
     Info "Installed $reported"
     Info "Commands: $BinDir\mariadb-shell.cmd"
     Info "          $BinDir\msh.cmd"
+    if ($hasLsp) { Info "          $BinDir\mariadb-lsp.cmd" }
 
     # ----------------------------------------------------------------------
     # Prune. Only the version just installed and the highest of the rest
