@@ -325,9 +325,15 @@ jobs:
           ALLOW_DOWNGRADE: ${{ contains(github.event.pull_request.title, '[lsp-server-downgrade]') }}
         run: |
           set -euo pipefail
+          # On an error (a 404 where the ref has no submodule yet) gh api
+          # prints the response body to stdout, so keep the output only when
+          # the call succeeds.
           pin() {
-            gh api "repos/$REPO/contents/src/lsp-server?ref=$1" \
-              --jq 'select(.type == "submodule") | .sha' 2>/dev/null || true
+            local sha
+            if sha=$(gh api "repos/$REPO/contents/src/lsp-server?ref=$1" \
+                       --jq 'select(.type == "submodule") | .sha' 2>/dev/null); then
+              printf '%s' "$sha"
+            fi
           }
           old=$(pin "$BASE")
           new=$(pin "$MERGE")
