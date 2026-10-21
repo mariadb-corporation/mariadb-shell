@@ -136,10 +136,22 @@ if ($PreRelease) {
 # --------------------------------------------------------------------------
 # Platform
 # --------------------------------------------------------------------------
-# PROCESSOR_ARCHITECTURE reports the architecture of the *process*, so a 32-bit
-# PowerShell on 64-bit Windows would call itself x86; ARCHITEW6432 is the
-# machine's real answer in exactly that case.
-$rawArch = $env:PROCESSOR_ARCHITEW6432
+# PROCESSOR_ARCHITECTURE reports the architecture of the *process*. A 32-bit
+# PowerShell on 64-bit Windows would call itself x86, which ARCHITEW6432
+# corrects; but on ARM64 Windows, a PowerShell started by an x64 program runs
+# emulated and says AMD64, with no ARCHITEW6432 to correct it, and so did
+# RuntimeInformation. The system environment in the registry holds the
+# machine's own architecture in every case, so it is asked first. The value is
+# asked for by name inside try: under strict mode, a missing key or value would
+# otherwise throw on the property read instead of falling back.
+$rawArch = $null
+try {
+    $rawArch = (Get-ItemProperty -ErrorAction Stop -Name PROCESSOR_ARCHITECTURE `
+        -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE
+} catch {
+    # Unreadable or absent: the process's own view below is the fallback.
+}
+if (-not $rawArch) { $rawArch = $env:PROCESSOR_ARCHITEW6432 }
 if (-not $rawArch) { $rawArch = $env:PROCESSOR_ARCHITECTURE }
 
 switch ($rawArch) {
