@@ -114,6 +114,46 @@ $Prefix = Fallback $Prefix 'MARIADB_SHELL_PREFIX' {
 }
 $BinDir = Fallback $BinDir 'MARIADB_SHELL_BINDIR' { Join-Path $Prefix 'bin' }
 
+# Where the shims (written under "Shims" below) will point, worked out before
+# anything is downloaded, so a prefix they cannot name stops the install here
+# rather than after unpacking.
+#
+# Paths are resolved as PowerShell resolves them (against its current location,
+# not the process's), so a relative -Prefix or -BinDir compares correctly, and a
+# relative -BinDir is not written into PATH as it was typed.
+function Get-FullPath([string] $Path) {
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path).TrimEnd('\')
+}
+$BinDir = Get-FullPath $BinDir
+$prefixFull  = Get-FullPath $Prefix
+# Trimmed like $prefixFull, so a prefix at a drive root still compares equal.
+$binParent   = (Split-Path -Parent $BinDir).TrimEnd('\')
+$relativeDir = '%~dp0..'
+# A shim is plain ASCII: cmd reads a batch file in the console's current
+# code page, which need not be the OEM one (a console set to UTF-8, or one a
+# mariadb-shell killed mid-run left at 65001), so a non-ASCII byte reads
+# differently from console to console. A prefix under the user's own directories, where a non-ASCII
+# user name comes from, is written through the variable instead, which cmd
+# expands in Unicode. cmd also expands %...% inside quotes, so a literal %
+# in the rest of the path is doubled.
+$absoluteDir = $prefixFull.Replace('%', '%%')
+foreach ($var in @('LOCALAPPDATA', 'USERPROFILE')) {
+    $value = [Environment]::GetEnvironmentVariable($var)
+    if (-not $value) { continue }
+    $value = $value.TrimEnd('\')
+    if ($prefixFull -eq $value -or
+        $prefixFull.StartsWith("$value\", [StringComparison]::OrdinalIgnoreCase)) {
+        $absoluteDir = "%$var%" + $prefixFull.Substring($value.Length).Replace('%', '%%')
+        break
+    }
+}
+$versionRoot = if ($binParent -eq $prefixFull) { $relativeDir } else { $absoluteDir }
+if ($versionRoot -match '[^\x00-\x7F]') {
+    Die "$prefixFull has characters a command file cannot hold reliably.
+  Use a -BinDir inside the prefix, such as $prefixFull\bin, or a -Prefix whose
+  path is plain ASCII or lies under %LOCALAPPDATA% or %USERPROFILE%."
+}
+
 if (-not $PreRelease) { $PreRelease = [bool] (Fallback '' 'MARIADB_SHELL_PRERELEASE' $null) }
 if (-not $AddToPath)  { $AddToPath  = [bool] (Fallback '' 'MARIADB_SHELL_ADDTOPATH' $null) }
 
@@ -136,10 +176,22 @@ if ($PreRelease) {
 # --------------------------------------------------------------------------
 # Platform
 # --------------------------------------------------------------------------
-# PROCESSOR_ARCHITECTURE reports the architecture of the *process*, so a 32-bit
-# PowerShell on 64-bit Windows would call itself x86; ARCHITEW6432 is the
-# machine's real answer in exactly that case.
-$rawArch = $env:PROCESSOR_ARCHITEW6432
+# PROCESSOR_ARCHITECTURE reports the architecture of the *process*. A 32-bit
+# PowerShell on 64-bit Windows would call itself x86, which ARCHITEW6432
+# corrects; but on ARM64 Windows, a PowerShell started by an x64 program runs
+# emulated and says AMD64, with no ARCHITEW6432 to correct it, and so did
+# RuntimeInformation. The system environment in the registry holds the
+# machine's own architecture in every case, so it is asked first. The value is
+# asked for by name inside try: under strict mode, a missing key or value would
+# otherwise throw on the property read instead of falling back.
+$rawArch = $null
+try {
+    $rawArch = (Get-ItemProperty -ErrorAction Stop -Name PROCESSOR_ARCHITECTURE `
+        -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment').PROCESSOR_ARCHITECTURE
+} catch {
+    # Unreadable or absent: the process's own view below is the fallback.
+}
+if (-not $rawArch) { $rawArch = $env:PROCESSOR_ARCHITEW6432 }
 if (-not $rawArch) { $rawArch = $env:PROCESSOR_ARCHITECTURE }
 
 switch ($rawArch) {
@@ -332,37 +384,46 @@ $PreReleaseHint
     # ----------------------------------------------------------------------
     # Shims. A symlink on Windows needs privileges this script cannot assume, so
     # the stable names are .cmd forwarders instead -- the same device the build
-    # itself uses for msh. They are written relative to their own location
-    # (%~dp0), so moving the whole prefix does not break them.
+    # itself uses for msh. With the bin directory inside the prefix (the
+    # default), they are written relative to their own location (%~dp0), so
+    # moving the whole prefix does not break them. A bin directory elsewhere
+    # (-BinDir / MARIADB_SHELL_BINDIR) has no such relative path to the version
+    # directory, so there they name the exe by its absolute path.
     #
     # Both point at the exe rather than one chaining through the other: nesting
     # .cmd files needs `call` and re-quotes every argument on the way through.
     # ----------------------------------------------------------------------
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-    $relative = "..\$Version\bin\mariadb-shell.exe"
-    $shim = "@echo off`r`n`"%~dp0$relative`" %*`r`n"
-    foreach ($name in @('mariadb-shell.cmd', 'msh.cmd')) {
-        Set-Content -Path (Join-Path $BinDir $name) -Value $shim -NoNewline -Encoding ascii
+    function Write-Shim([string] $Name, [string] $Exe) {
+        Set-Content -Path (Join-Path $BinDir $Name) -NoNewline -Encoding ascii `
+            -Value "@echo off`r`n`"$versionRoot\$Version\bin\$Exe`" %*`r`n"
     }
+    Write-Shim 'mariadb-shell.cmd' 'mariadb-shell.exe'
+    Write-Shim 'msh.cmd' 'mariadb-shell.exe'
 
     # mariadb-lsp, the SQL language server, is only in packages built with it.
     # When this one has none, a shim an earlier install left would start that
     # version's server, or nothing once the prune below removes it. Only a shim
-    # of ours is removed: one that forwards into a version directory.
+    # of ours is removed: one that forwards into a version directory, relative
+    # or under this prefix.
     $lspExe = Join-Path (Join-Path $target 'bin') 'mariadb-lsp.exe'
     $lspShim = Join-Path $BinDir 'mariadb-lsp.cmd'
     $hasLsp = Test-Path $lspExe
     if ($hasLsp) {
-        $lspRelative = "..\$Version\bin\mariadb-lsp.exe"
-        Set-Content -Path $lspShim -Value "@echo off`r`n`"%~dp0$lspRelative`" %*`r`n" -NoNewline -Encoding ascii
+        Write-Shim 'mariadb-lsp.cmd' 'mariadb-lsp.exe'
     } elseif ((Test-Path $lspShim) -and
-              ((Get-Content -Raw $lspShim) -match '"%~dp0\.\.\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"')) {
+              ((Get-Content -Raw $lspShim) -match
+                ('"(' + [regex]::Escape($relativeDir) + '|' + [regex]::Escape($absoluteDir) +
+                 ')\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"'))) {
         Remove-Item -Force $lspShim
     }
 
     $reported = $Version
     try {
-        $reported = (& $shellExe --version 2>$null | Select-Object -First 1)
+        # All of it, then the first line: Select-Object -First 1 would stop the
+        # shell before its exit restores the console code page it switched to
+        # UTF-8, leaving the user's console at 65001.
+        $reported = @(& $shellExe --version 2>$null)[0]
         if (-not $reported) { $reported = $Version }
     } catch {
         # A package for another architecture, or a machine mid-upgrade: the
