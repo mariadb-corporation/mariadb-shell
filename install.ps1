@@ -359,14 +359,17 @@ $PreReleaseHint
     function Get-FullPath([string] $Path) {
         $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path).TrimEnd('\')
     }
-    $prefixFull = Get-FullPath $Prefix
-    $binParent  = Split-Path -Parent (Get-FullPath $BinDir)
-    $versionDir = if ($binParent -eq $prefixFull) { "%~dp0..\$Version" } else { "$prefixFull\$Version" }
+    $prefixFull  = Get-FullPath $Prefix
+    $binParent   = Split-Path -Parent (Get-FullPath $BinDir)
+    $relativeDir = '%~dp0..'
+    $versionRoot = if ($binParent -eq $prefixFull) { $relativeDir } else { $prefixFull }
 
-    $shim = "@echo off`r`n`"$versionDir\bin\mariadb-shell.exe`" %*`r`n"
-    foreach ($name in @('mariadb-shell.cmd', 'msh.cmd')) {
-        Set-Content -Path (Join-Path $BinDir $name) -Value $shim -NoNewline -Encoding ascii
+    function Write-Shim([string] $Name, [string] $Exe) {
+        Set-Content -Path (Join-Path $BinDir $Name) -NoNewline -Encoding ascii `
+            -Value "@echo off`r`n`"$versionRoot\$Version\bin\$Exe`" %*`r`n"
     }
+    Write-Shim 'mariadb-shell.cmd' 'mariadb-shell.exe'
+    Write-Shim 'msh.cmd' 'mariadb-shell.exe'
 
     # mariadb-lsp, the SQL language server, is only in packages built with it.
     # When this one has none, a shim an earlier install left would start that
@@ -377,10 +380,11 @@ $PreReleaseHint
     $lspShim = Join-Path $BinDir 'mariadb-lsp.cmd'
     $hasLsp = Test-Path $lspExe
     if ($hasLsp) {
-        Set-Content -Path $lspShim -Value "@echo off`r`n`"$versionDir\bin\mariadb-lsp.exe`" %*`r`n" -NoNewline -Encoding ascii
+        Write-Shim 'mariadb-lsp.cmd' 'mariadb-lsp.exe'
     } elseif ((Test-Path $lspShim) -and
               ((Get-Content -Raw $lspShim) -match
-                ('"(%~dp0\.\.|' + [regex]::Escape($prefixFull) + ')\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"'))) {
+                ('"(' + [regex]::Escape($relativeDir) + '|' + [regex]::Escape($prefixFull) +
+                 ')\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"'))) {
         Remove-Item -Force $lspShim
     }
 
