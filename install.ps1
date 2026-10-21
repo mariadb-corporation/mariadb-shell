@@ -332,15 +332,26 @@ $PreReleaseHint
     # ----------------------------------------------------------------------
     # Shims. A symlink on Windows needs privileges this script cannot assume, so
     # the stable names are .cmd forwarders instead -- the same device the build
-    # itself uses for msh. They are written relative to their own location
-    # (%~dp0), so moving the whole prefix does not break them.
+    # itself uses for msh. With the bin directory inside the prefix (the
+    # default), they are written relative to their own location (%~dp0), so
+    # moving the whole prefix does not break them. A bin directory elsewhere
+    # (-BinDir / MARIADB_SHELL_BINDIR) has no such relative path to the version
+    # directory, so there they name the exe by its absolute path.
     #
     # Both point at the exe rather than one chaining through the other: nesting
     # .cmd files needs `call` and re-quotes every argument on the way through.
     # ----------------------------------------------------------------------
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-    $relative = "..\$Version\bin\mariadb-shell.exe"
-    $shim = "@echo off`r`n`"%~dp0$relative`" %*`r`n"
+    # Resolved as PowerShell resolves paths (against its current location, not
+    # the process's), so a relative -Prefix or -BinDir compares correctly.
+    function Get-FullPath([string] $Path) {
+        $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path).TrimEnd('\')
+    }
+    $prefixFull = Get-FullPath $Prefix
+    $binParent  = Split-Path -Parent (Get-FullPath $BinDir)
+    $versionDir = if ($binParent -eq $prefixFull) { "%~dp0..\$Version" } else { "$prefixFull\$Version" }
+
+    $shim = "@echo off`r`n`"$versionDir\bin\mariadb-shell.exe`" %*`r`n"
     foreach ($name in @('mariadb-shell.cmd', 'msh.cmd')) {
         Set-Content -Path (Join-Path $BinDir $name) -Value $shim -NoNewline -Encoding ascii
     }
@@ -348,15 +359,16 @@ $PreReleaseHint
     # mariadb-lsp, the SQL language server, is only in packages built with it.
     # When this one has none, a shim an earlier install left would start that
     # version's server, or nothing once the prune below removes it. Only a shim
-    # of ours is removed: one that forwards into a version directory.
+    # of ours is removed: one that forwards into a version directory, relative
+    # or under this prefix.
     $lspExe = Join-Path (Join-Path $target 'bin') 'mariadb-lsp.exe'
     $lspShim = Join-Path $BinDir 'mariadb-lsp.cmd'
     $hasLsp = Test-Path $lspExe
     if ($hasLsp) {
-        $lspRelative = "..\$Version\bin\mariadb-lsp.exe"
-        Set-Content -Path $lspShim -Value "@echo off`r`n`"%~dp0$lspRelative`" %*`r`n" -NoNewline -Encoding ascii
+        Set-Content -Path $lspShim -Value "@echo off`r`n`"$versionDir\bin\mariadb-lsp.exe`" %*`r`n" -NoNewline -Encoding ascii
     } elseif ((Test-Path $lspShim) -and
-              ((Get-Content -Raw $lspShim) -match '"%~dp0\.\.\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"')) {
+              ((Get-Content -Raw $lspShim) -match
+                ('"(%~dp0\.\.|' + [regex]::Escape($prefixFull) + ')\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"'))) {
         Remove-Item -Force $lspShim
     }
 
