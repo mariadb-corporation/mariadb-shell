@@ -114,6 +114,46 @@ $Prefix = Fallback $Prefix 'MARIADB_SHELL_PREFIX' {
 }
 $BinDir = Fallback $BinDir 'MARIADB_SHELL_BINDIR' { Join-Path $Prefix 'bin' }
 
+# Where the shims (written under "Shims" below) will point, worked out before
+# anything is downloaded, so a prefix they cannot name stops the install here
+# rather than after unpacking.
+#
+# Paths are resolved as PowerShell resolves them (against its current location,
+# not the process's), so a relative -Prefix or -BinDir compares correctly, and a
+# relative -BinDir is not written into PATH as it was typed.
+function Get-FullPath([string] $Path) {
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path).TrimEnd('\')
+}
+$BinDir = Get-FullPath $BinDir
+$prefixFull  = Get-FullPath $Prefix
+# Trimmed like $prefixFull, so a prefix at a drive root still compares equal.
+$binParent   = (Split-Path -Parent $BinDir).TrimEnd('\')
+$relativeDir = '%~dp0..'
+# A shim is plain ASCII: cmd reads a batch file in the console's current
+# code page, which need not be the OEM one (a console set to UTF-8, or one a
+# mariadb-shell killed mid-run left at 65001), so a non-ASCII byte reads
+# differently from console to console. A prefix under the user's own directories, where a non-ASCII
+# user name comes from, is written through the variable instead, which cmd
+# expands in Unicode. cmd also expands %...% inside quotes, so a literal %
+# in the rest of the path is doubled.
+$absoluteDir = $prefixFull.Replace('%', '%%')
+foreach ($var in @('LOCALAPPDATA', 'USERPROFILE')) {
+    $value = [Environment]::GetEnvironmentVariable($var)
+    if (-not $value) { continue }
+    $value = $value.TrimEnd('\')
+    if ($prefixFull -eq $value -or
+        $prefixFull.StartsWith("$value\", [StringComparison]::OrdinalIgnoreCase)) {
+        $absoluteDir = "%$var%" + $prefixFull.Substring($value.Length).Replace('%', '%%')
+        break
+    }
+}
+$versionRoot = if ($binParent -eq $prefixFull) { $relativeDir } else { $absoluteDir }
+if ($versionRoot -match '[^\x00-\x7F]') {
+    Die "$prefixFull has characters a command file cannot hold reliably.
+  Use a -BinDir inside the prefix, such as $prefixFull\bin, or a -Prefix whose
+  path is plain ASCII or lies under %LOCALAPPDATA% or %USERPROFILE%."
+}
+
 if (-not $PreRelease) { $PreRelease = [bool] (Fallback '' 'MARIADB_SHELL_PRERELEASE' $null) }
 if (-not $AddToPath)  { $AddToPath  = [bool] (Fallback '' 'MARIADB_SHELL_ADDTOPATH' $null) }
 
@@ -354,16 +394,6 @@ $PreReleaseHint
     # .cmd files needs `call` and re-quotes every argument on the way through.
     # ----------------------------------------------------------------------
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-    # Resolved as PowerShell resolves paths (against its current location, not
-    # the process's), so a relative -Prefix or -BinDir compares correctly.
-    function Get-FullPath([string] $Path) {
-        $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path).TrimEnd('\')
-    }
-    $prefixFull  = Get-FullPath $Prefix
-    $binParent   = Split-Path -Parent (Get-FullPath $BinDir)
-    $relativeDir = '%~dp0..'
-    $versionRoot = if ($binParent -eq $prefixFull) { $relativeDir } else { $prefixFull }
-
     function Write-Shim([string] $Name, [string] $Exe) {
         Set-Content -Path (Join-Path $BinDir $Name) -NoNewline -Encoding ascii `
             -Value "@echo off`r`n`"$versionRoot\$Version\bin\$Exe`" %*`r`n"
@@ -383,14 +413,17 @@ $PreReleaseHint
         Write-Shim 'mariadb-lsp.cmd' 'mariadb-lsp.exe'
     } elseif ((Test-Path $lspShim) -and
               ((Get-Content -Raw $lspShim) -match
-                ('"(' + [regex]::Escape($relativeDir) + '|' + [regex]::Escape($prefixFull) +
+                ('"(' + [regex]::Escape($relativeDir) + '|' + [regex]::Escape($absoluteDir) +
                  ')\\[0-9][0-9.]*\\bin\\mariadb-lsp\.exe"'))) {
         Remove-Item -Force $lspShim
     }
 
     $reported = $Version
     try {
-        $reported = (& $shellExe --version 2>$null | Select-Object -First 1)
+        # All of it, then the first line: Select-Object -First 1 would stop the
+        # shell before its exit restores the console code page it switched to
+        # UTF-8, leaving the user's console at 65001.
+        $reported = @(& $shellExe --version 2>$null)[0]
         if (-not $reported) { $reported = $Version }
     } catch {
         # A package for another architecture, or a machine mid-upgrade: the
