@@ -412,6 +412,9 @@ the marker artifact.
      `prerelease`, `dry_run=false`, and each `server_NN_tag`, or "none";
    - the release it creates: tag `v<v>`, title `MariaDB Shell <v>`,
      pre-release or official, at the MariaDB-Shell-Release run's commit;
+   - the MCP server image it then pushes to Docker Hub,
+     `mariadb/mariadb-shell-mcp-server:<v>` (plus `X.Y` and `latest` when
+     `v<v>` is the newest release);
    - anything unusual seen along the way, each on its own line: a version
      note from step 1, an inconsistency and how it was resolved, a cancelled
      run, a release `v<v>` that already exists (it would be updated),
@@ -455,8 +458,13 @@ the marker artifact.
    it could not resolve is only a warning there.
 6. Report the result:
    - **Real publish:** `gh release view v<v> -R mariadb-corporation/mariadb-shell --json url,isPrerelease,assets`,
-     giving the URL, the pre-release flag and the asset count. The release is
-     complete.
+     giving the URL, the pre-release flag and the asset count. Then the
+     run's `mcp-server-image` job: the Docker Hub tags from its summary
+     (`X.Y.Z`, plus `X.Y` and `latest` when this is the newest release). The
+     image is built from the published release, so when only that job
+     failed, the release stands: report the failure, and after the fix
+     rebuild the image alone with
+     `gh workflow run mcp-server-image.yml -R mariadb-corporation/mariadb-shell -f version=<v>`.
    - **Dry run:** the `dry-run-assets-<BUILD>` artifact on the run. State
      plainly that nothing was published. Running `/release` again without
      `--dry-run` publishes the same build, because every earlier step is
@@ -485,5 +493,6 @@ read on its own. Use one row per item, and `—` when a step had nothing to do:
 | Publish | Publish Release run, link, the inputs given (prerelease, dry_run, server tags); for a real publish, the user's confirmation |
 | Server tags shipped | the set from 2.3 and why, or none |
 | Result | release URL, pre-release flag and asset count, or "dry run, nothing published" with the assets artifact |
+| MCP server image | the Docker Hub tags pushed, or the failure; "—" for a dry run |
 | Deadlines | the artifact-expiry date update-version reported, when relevant |
 | Runs cancelled | any, with the reason |

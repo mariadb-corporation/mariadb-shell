@@ -33,6 +33,10 @@ docker buildx build --builder msh --platform linux/amd64,linux/arm64 --push \
 
 The build context is `docker/`, not the repository root. `VERSION` must name a published release, tagged `v<VERSION>`. For a release with another tag, add `--build-arg RELEASE_TAG=<tag>`.
 
+To check an image, run `docker/smoke-test-mcp-server.sh <image> [<platform>]`. It starts the server in API-key mode with a throwaway volume, and checks that a request without a key gets `401` and that `initialize` and `tools/list` work with one.
+
+The published image `mariadb/mariadb-shell-mcp-server` on Docker Hub is built by the `MCP Server Image` workflow (`.github/workflows/mcp-server-image.yml`). The release workflow runs it after every release. It smoke-tests both platforms and pushes the tags `X.Y.Z`, `X.Y` and `latest`. `X.Y` and `latest` move only when the release is the newest of its line, or the newest of all. To rebuild the image of a release, for example after a change to the Dockerfile, run the workflow by hand with that version.
+
 On Colima, foreign-platform builds need QEMU emulation, which Colima sets up by default. To move an image to a machine without a registry, run `docker save mariadb-shell-mcp-server:26.10.1 | ssh <host> podman load`.
 
 Podman and other clients resolve short image names differently. Pull with the fully qualified name, for example `docker.io/<namespace>/mariadb-shell-mcp-server:26.10.1`.
