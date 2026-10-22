@@ -644,5 +644,4 @@ jobs:
       version: ${{ needs.publish.outputs.version }}
       release_tag: ${{ needs.publish.outputs.tag }}
     secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
