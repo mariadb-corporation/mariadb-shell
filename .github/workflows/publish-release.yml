@@ -65,6 +65,11 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # For the image job below.
+    outputs:
+      version: ${{ steps.assets.outputs.version }}
+      tag: ${{ steps.assets.outputs.tag }}
+
     permissions:
       contents: write   # create/update the release
       actions: read     # read artifacts from the build run
@@ -621,3 +626,23 @@ jobs:
             dist/SERVER_SHA256SUMS
           retention-days: 7
           if-no-files-found: error
+
+  # ======================================================================
+  # MCP SERVER IMAGE
+  #
+  # Builds the Docker Hub image from the release just published. Its own
+  # workflow, so that the image of any release can be rebuilt by hand without
+  # publishing again. A dry run publishes no release for it to download.
+  # ======================================================================
+  mcp-server-image:
+    needs: publish
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/mcp-server-image.yml
+    with:
+      version: ${{ needs.publish.outputs.version }}
+      release_tag: ${{ needs.publish.outputs.tag }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
