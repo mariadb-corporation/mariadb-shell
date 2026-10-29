@@ -30,6 +30,9 @@
 #   MARIADB_SHELL_PREFIX  where to unpack        (default $HOME/.local/share/mariadb-shell)
 #   MARIADB_SHELL_BINDIR  where to symlink       (default $HOME/.local/bin)
 #   MARIADB_SHELL_REPO    owner/repo to install from; it has to be public
+#   MARIADB_SHELL_SHA256SUMS
+#                         a local copy of the release's SHA256SUMS, read instead
+#                         of the one published with it; needs MARIADB_SHELL_TAG
 #
 # Options:
 #   --pre-release  install the newest release even if it is a prerelease
@@ -69,8 +72,10 @@ MariaDB Shell installer.
                  /releases/latest/ skips them.
 
 Environment: MARIADB_SHELL_TAG, MARIADB_SHELL_PREFIX, MARIADB_SHELL_BINDIR,
-MARIADB_SHELL_REPO. A pinned tag wins over --pre-release, since it
-already names the release to install.
+MARIADB_SHELL_REPO, MARIADB_SHELL_SHA256SUMS. A pinned tag wins over
+--pre-release, since it already names the release to install.
+MARIADB_SHELL_SHA256SUMS names a local copy of that release's SHA256SUMS,
+read instead of the published one.
 USAGE
       exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
@@ -108,6 +113,20 @@ elif [ "$ENABLE_PRERELEASE" = 1 ]; then
 else
   BASE="https://github.com/$REPO/releases/latest/download"
   RELEASE_DESC="latest"
+fi
+
+# A local SHA256SUMS lets whoever runs this decide which checksums the package
+# has to match, rather than trusting the file published next to it -- the
+# assets of a release can be replaced, a copy kept elsewhere cannot. It lists
+# the assets of one release, so the release has to be named too.
+SUMS_FILE="${MARIADB_SHELL_SHA256SUMS:-}"
+if [ -n "$SUMS_FILE" ]; then
+  [ -n "${MARIADB_SHELL_TAG:-}" ] || die "MARIADB_SHELL_SHA256SUMS needs MARIADB_SHELL_TAG.
+  A SHA256SUMS lists the packages of one release, so name that release:
+
+      export MARIADB_SHELL_TAG=<tag>"
+  [ -f "$SUMS_FILE" ] && [ -r "$SUMS_FILE" ] \
+    || die "MARIADB_SHELL_SHA256SUMS is not a readable file: $SUMS_FILE"
 fi
 
 need curl
@@ -232,10 +251,15 @@ fetch() {
 
 [ "$RESOLVE_PRERELEASE" = 0 ] || resolve_prerelease
 
-info "Fetching package list from the $RELEASE_DESC release"
+if [ -n "$SUMS_FILE" ]; then
+  info "Reading package list for the $RELEASE_DESC release from $SUMS_FILE"
+  cp "$SUMS_FILE" "$TMP/SHA256SUMS" || die "could not read $SUMS_FILE"
+else
+  info "Fetching package list from the $RELEASE_DESC release"
+fi
 # Silent, and its stderr kept aside, so that what curl said is printed above the
 # advice rather than mixed with its progress output.
-if ! fetch SHA256SUMS "$TMP/SHA256SUMS" -sS 2>"$TMP/fetch.err"; then
+if [ -z "$SUMS_FILE" ] && ! fetch SHA256SUMS "$TMP/SHA256SUMS" -sS 2>"$TMP/fetch.err"; then
   if [ -s "$TMP/fetch.err" ]; then
     sed 's/^/  /' "$TMP/fetch.err" >&2
     echo "" >&2

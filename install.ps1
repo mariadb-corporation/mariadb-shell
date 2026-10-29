@@ -46,6 +46,12 @@
   it already names the release to install.
   Environment: MARIADB_SHELL_TAG
 
+.PARAMETER Sha256Sums
+  A local copy of the release's SHA256SUMS, read instead of the one published
+  with the release, so the package has to match checksums the caller keeps.
+  Needs -Tag, since a SHA256SUMS lists the packages of one release.
+  Environment: MARIADB_SHELL_SHA256SUMS
+
 .PARAMETER Repo
   The owner/repo to install from. It has to be public.
   Environment: MARIADB_SHELL_REPO
@@ -60,6 +66,7 @@ param(
     [switch] $PreRelease,
     [switch] $AddToPath,
     [string] $Tag,
+    [string] $Sha256Sums,
     [string] $Repo,
     [string] $Prefix,
     [string] $BinDir
@@ -105,6 +112,7 @@ function Fallback([string] $Value, [string] $EnvName, [scriptblock] $Default) {
 
 $Repo   = Fallback $Repo   'MARIADB_SHELL_REPO'   { 'mariadb-corporation/mariadb-shell' }
 $Tag    = Fallback $Tag    'MARIADB_SHELL_TAG'    $null
+$Sha256Sums = Fallback $Sha256Sums 'MARIADB_SHELL_SHA256SUMS' $null
 $Prefix = Fallback $Prefix 'MARIADB_SHELL_PREFIX' {
     if (-not $env:LOCALAPPDATA) {
         Die "LOCALAPPDATA is not set, so there is no default install location.
@@ -171,6 +179,24 @@ if ($PreRelease) {
 
       $env:MARIADB_SHELL_TAG = '<tag>'
 '@
+}
+
+# A local SHA256SUMS lets whoever runs this decide which checksums the package
+# has to match, rather than trusting the file published next to it -- the
+# assets of a release can be replaced, a copy kept elsewhere cannot. It lists
+# the assets of one release, so the release has to be named too.
+if ($Sha256Sums) {
+    if (-not $Tag) {
+        Die "-Sha256Sums (MARIADB_SHELL_SHA256SUMS) needs -Tag (MARIADB_SHELL_TAG).
+  A SHA256SUMS lists the packages of one release, so name that release:
+
+      `$env:MARIADB_SHELL_TAG = '<tag>'"
+    }
+    if (-not (Test-Path -LiteralPath $Sha256Sums -PathType Leaf)) {
+        Die "-Sha256Sums (MARIADB_SHELL_SHA256SUMS) is not a file: $Sha256Sums"
+    }
+    # Resolved now, against PowerShell's location, before anything changes it.
+    $Sha256Sums = Get-FullPath $Sha256Sums
 }
 
 # --------------------------------------------------------------------------
@@ -281,10 +307,15 @@ try {
     # carries the checksums means there is no separate index to drift out of
     # sync with the real assets.
     # ----------------------------------------------------------------------
-    Info "Fetching package list from the $ReleaseDesc release"
     $sumsFile = Join-Path $Tmp 'SHA256SUMS'
+    if ($Sha256Sums) {
+        Info "Reading package list for the $ReleaseDesc release from $Sha256Sums"
+        Copy-Item -LiteralPath $Sha256Sums -Destination $sumsFile
+    } else {
+        Info "Fetching package list from the $ReleaseDesc release"
+    }
     try {
-        Get-Asset 'SHA256SUMS' $sumsFile
+        if (-not $Sha256Sums) { Get-Asset 'SHA256SUMS' $sumsFile }
     } catch {
         [Console]::Error.WriteLine("  $($_.Exception.Message)`n")
         # A release that was just found in the listing exists; one that was
