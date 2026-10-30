@@ -54,6 +54,9 @@ def test_a_task_reports_its_stages_progress_and_result():
 
     assert snapshot["task_type"] == "util"
     assert snapshot["kind"] == "copy_schemas"
+    # times end in Z, as the MCP plugin's other answers and JavaScript write them
+    assert snapshot["created_at"].endswith("Z") and snapshot["finished_at"].endswith("Z")
+    assert snapshot["messages"][0]["time"].endswith("Z")
     assert snapshot["connection_id"] == "c1"
     assert snapshot["status"] == tm.COMPLETED
     assert snapshot["result"] == {"rows": 200}
@@ -210,3 +213,61 @@ def test_a_summary_leaves_the_messages_out():
     summary = task.summary()
     assert "messages" not in summary and "messages_dropped" not in summary
     assert summary["next_since"] == 1
+
+
+def test_progress_carries_what_the_stage_measures():
+    task = tm.create("util", "dump_schemas", "Dump")
+    task.on_event({
+        "type": "progress", "stage": "Dumping data", "current": 50, "total": 200,
+        "throughput": 1000, "etaSeconds": 3, "items": "rows", "totalIsApproximate": True,
+    })
+    assert task.snapshot()["progress"] == {
+        "current": 50, "total": 200, "throughput": 1000, "eta_seconds": 3,
+        "items": "rows", "total_is_approximate": True, "percent": 25.0,
+    }
+
+
+def test_a_percentage_only_where_the_total_is_known():
+    assert tm._progress_of({"current": 5, "total": 10, "totalKnown": False})["percent"] is None
+    assert tm._progress_of({"current": 5, "total": 0})["percent"] is None
+    assert tm._progress_of({"current": 15, "total": 10})["percent"] == 100.0
+
+
+def test_messages_after_since_and_those_dropped(monkeypatch):
+    monkeypatch.setattr(tm, "MAX_MESSAGES", 3)
+    task = tm.create("util", "load_dump", "Load")
+    for index in range(5):
+        task.message(f"line {index}")
+
+    snapshot = task.snapshot(1)
+    assert [m["text"] for m in snapshot["messages"]] == ["line 2", "line 3", "line 4"]
+    # line 1 was dropped before the caller could read it
+    assert snapshot["messages_dropped"] == 1
+    assert task.snapshot(4)["messages"][0]["seq"] == 5
+    assert task.snapshot(5)["messages"] == []
+
+
+def test_a_waiting_caller_wakes_on_a_change():
+    task = tm.create("util", "load_dump", "Load")
+    threading.Timer(0.2, lambda: task.message("hello")).start()
+    began = time.monotonic()
+    task.wait_for_change(task.version, 5)
+    assert time.monotonic() - began < 2
+    assert task.snapshot()["messages"][0]["text"] == "hello"
+
+
+def test_a_cancelled_task_keeps_what_its_work_said_on_stopping():
+    stop = threading.Event()
+
+    def work(task):
+        task.set_canceller(stop.set)
+        stop.wait(5)
+        raise RuntimeError("Interrupted by user\n")
+
+    task = tm.create("util", "dump_instance", "Dump")
+    task.start(work)
+    task.cancel()
+    snapshot = _finished(task)
+    assert snapshot["status"] == tm.CANCELLED
+    assert snapshot["error"] == "Interrupted by user"
+

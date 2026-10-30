@@ -47,6 +47,7 @@ coming back late can still read how its task ended.
 
 import collections
 import datetime
+import itertools
 import threading
 import time
 import uuid
@@ -87,8 +88,17 @@ class TaskCancelled(Exception):
 
 
 def utc_timestamp() -> str:
-    """The current time as tasks report it: ISO 8601, UTC, seconds."""
-    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+    """The current time as tasks report it: ISO 8601, UTC, seconds, with a Z.
+
+    The Z, not +00:00, as JavaScript's toISOString and the MCP plugin's other
+    answers write it, so a client reads every time the same way.
+    """
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 class Task:
@@ -140,7 +150,6 @@ class Task:
                 (stage), "progress" (stage, current, total, and what else the
                 stage measures) or "stageFinished" (stage, seconds).
         """
-        event = dict(event)
         kind = event.get("type")
 
         with self.changed:
@@ -221,10 +230,10 @@ class Task:
         try:
             result = work(self)
         except Exception as error:  # noqa: BLE001 - reported to the caller
-            if self.cancel_requested:
-                self._finish(CANCELLED)
-            else:
-                self._finish(FAILED, error=str(error).strip() or error.__class__.__name__)
+            # a cancelled task keeps what its work said on stopping, e.g. a
+            # utility's "Interrupted by user"
+            message = str(error).strip() or error.__class__.__name__
+            self._finish(CANCELLED if self.cancel_requested else FAILED, error=message)
         else:
             self._finish(CANCELLED if self.cancel_requested else COMPLETED, result=result)
 
@@ -235,13 +244,15 @@ class Task:
             self.error = error
             self.finished_at = utc_timestamp()
             self.finished_monotonic = time.monotonic()
+            # nothing is left to stop; let go of what the canceller holds
+            self._canceller = None
             # a stage still running ends as the task did
             for stage in self.stages:
                 if stage["status"] == RUNNING:
                     stage["status"] = status
             if status == CANCELLED:
                 self._add_message("info", "The task was cancelled.")
-            elif status == FAILED and error:
+            elif status == FAILED:
                 self._add_message("error", error)
             self._touch()
 
@@ -290,13 +301,8 @@ class Task:
         For work that polls: a cancel ends the wait at once instead of after
         the poll interval.
         """
-        deadline = time.monotonic() + seconds
         with self.changed:
-            while not self.cancel_requested:
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    return
-                self.changed.wait(left)
+            self.changed.wait_for(lambda: self.cancel_requested, seconds)
         self.check_cancelled()
 
     # --- read by callers -------------------------------------------------
@@ -311,8 +317,9 @@ class Task:
             dict: The snapshot.
         """
         with self.changed:
-            messages = [m for m in self.messages if m["seq"] > since]
             first_kept = self.messages[0]["seq"] if self.messages else self.message_count + 1
+            # the kept messages have consecutive seqs: skip to the first one wanted
+            messages = list(itertools.islice(self.messages, max(0, since - first_kept + 1), None))
 
             return {
                 "task_id": self.id,
@@ -374,13 +381,10 @@ class Task:
             version (int): The version the caller has seen.
             timeout (float): The longest to wait, in seconds.
         """
-        deadline = time.monotonic() + timeout
         with self.changed:
-            while self.version == version and self.status not in FINISHED_STATES:
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    return
-                self.changed.wait(left)
+            self.changed.wait_for(
+                lambda: self.version != version or self.status in FINISHED_STATES, timeout
+            )
 
 
 def _progress_of(event: dict) -> dict:
@@ -519,3 +523,4 @@ def clear() -> None:
     """Forgets every task. For tests only: running ones keep running."""
     with _tasks_lock:
         _tasks.clear()
+
