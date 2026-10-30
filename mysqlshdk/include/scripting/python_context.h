@@ -99,6 +99,14 @@ class Python_context {
                                const std::string &exception,
                                const std::string &location);
 
+  /**
+   * Makes a KeyboardInterrupt of a Ctrl+C in the Python code the main thread
+   * runs, as Python's own SIGINT handler would: the shell has its own handler
+   * in its place, and calls this from it. Has to be called from the main
+   * thread, or a time.sleep() is not interrupted.
+   */
+  static void keyboard_interrupt() noexcept;
+
   static bool pystring_to_string(PyObject *strobject, std::string *result,
                                  bool convert = false);
   static bool pystring_to_string(const py::Release &strobject,

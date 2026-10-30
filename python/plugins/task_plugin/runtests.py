@@ -42,7 +42,11 @@ def main(argv):
 
     os.chdir(_PLUGIN_ROOT)
     forwarded = argv[1:]
-    has_path = any(not a.startswith("-") for a in forwarded)
+    # a test to run is a file or folder, with a "::name" after it or not; an
+    # option's value, as the "cancel" of "-k cancel", is neither
+    has_path = any(
+        os.path.exists(a.split("::", 1)[0]) for a in forwarded if not a.startswith("-")
+    )
     args = forwarded if has_path else ["test"] + forwarded
     return pytest.main(args)
 
