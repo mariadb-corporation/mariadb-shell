@@ -37,4 +37,8 @@ for _candidate in (
         import mysqlsh
 
         mysqlsh.__path__.insert(0, os.path.join(_candidate, "mysqlsh"))
+        # the shell's task plugin imported its own copy at startup, which
+        # "from mysqlsh import task_manager" would find on the package first
+        sys.modules.pop("mysqlsh.task_manager", None)
+        mysqlsh.__dict__.pop("task_manager", None)
         break
