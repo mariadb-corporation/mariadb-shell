@@ -1189,15 +1189,33 @@ std::vector<Table_column> get_table_columns_with_references(
 
 // -- Naming -------------------------------------------------------------------
 
-std::string snake_to_camel_case(std::string_view snake) {
+std::string name_to_camel_case(std::string_view name) {
+  // ASCII only, not std::tolower(): a byte >= 0x80 is part of a UTF-8 letter
+  const auto is_lower = [](char c) { return c >= 'a' && c <= 'z'; };
+  const auto lower = [](char c) {
+    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+  };
+  const auto upper = [&](char c) {
+    return is_lower(c) ? static_cast<char>(c - 'a' + 'A') : c;
+  };
+  const auto in_word = [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || static_cast<unsigned char>(c) >= 0x80;
+  };
+
   std::string result;
-  for (const auto &part : split(to_lower(snake), '_')) {
-    if (part.empty()) continue;
-    result += static_cast<char>(std::toupper(static_cast<unsigned char>(part[0])));
-    result += part.substr(1);
-  }
-  if (!result.empty()) {
-    result[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[0])));
+  for (auto it = std::find_if(name.begin(), name.end(), in_word);
+       it != name.end();) {
+    const auto end = std::find_if_not(it, name.end(), in_word);
+    const bool fold = std::none_of(it, end, is_lower);
+    const bool first = result.empty();
+
+    for (auto c = it; c != end; ++c) {
+      char ch = fold ? lower(*c) : *c;
+      if (c == it) ch = first ? lower(ch) : upper(ch);
+      result += ch;
+    }
+    it = std::find_if(end, name.end(), in_word);
   }
   return result;
 }
