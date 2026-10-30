@@ -34,6 +34,10 @@ def routine_privileges(routine, routine_type):
 def rest_object_column(request_path, column):
     return metadata_value("SELECT %s FROM mariadb_rest_service.rest_object WHERE request_path = '%s'" % (column, request_path))
 
+def field_names(request_path):
+    """The field names of a REST object's top-level data mapping, in column order."""
+    return metadata_value("SELECT GROUP_CONCAT(f.name ORDER BY f.position) FROM mariadb_rest_service.data_mapping_field f JOIN mariadb_rest_service.data_mapping m ON m.id = f.data_mapping_id JOIN mariadb_rest_service.rest_object o ON o.id = m.rest_object_id WHERE o.request_path = '%s' AND f.parent_reference_id IS NULL" % request_path)
+
 rest("CONFIGURE REST METADATA ENABLED")
 rest("CREATE REST SERVICE /svc")
 rest("CREATE REST SCHEMA /sakila ON SERVICE /svc FROM sakila")
@@ -74,9 +78,20 @@ EXPECT_THROWS(lambda: rest("CREATE REST VIEW /city AS sakila.city"), "Failed to 
 # lowered, the humps of a mixed-case word kept, `field` where nothing is left
 session.run_sql("CREATE TABLE sakila.naming (`First Name` VARCHAR(10) PRIMARY KEY, `last-name` VARCHAR(10), lastUpdate DATETIME, CURRENT_CONNECTIONS INT, city_ID INT, `$` INT)")
 rest("CREATE REST VIEW /naming AS sakila.naming")
-EXPECT_EQ("firstName,lastName,lastUpdate,currentConnections,cityId,field", metadata_value("SELECT GROUP_CONCAT(f.name ORDER BY f.position) FROM mariadb_rest_service.data_mapping_field f JOIN mariadb_rest_service.data_mapping m ON m.id = f.data_mapping_id JOIN mariadb_rest_service.rest_object o ON o.id = m.rest_object_id WHERE o.request_path = '/naming'"))
+EXPECT_EQ("firstName,lastName,lastUpdate,currentConnections,cityId,field", field_names("/naming"))
 rest("DROP REST VIEW /naming")
 session.run_sql("DROP TABLE sakila.naming")
+
+#@<> CREATE REST VIEW numbers a generated field name another field has
+# as the extension's uniqueName(): a_b, a-b and `A B` all give aB; the
+# statement's own names are kept, the generated ones give way to them
+session.run_sql("CREATE TABLE sakila.dup (a_b INT PRIMARY KEY, `a-b` INT, `A B` INT, c INT, d INT)")
+rest("CREATE REST VIEW /dup AS sakila.dup")
+EXPECT_EQ("aB,aB2,aB3,c,d", field_names("/dup"))
+rest("CREATE OR REPLACE REST VIEW /dup AS sakila.dup { aB: c, d: d }")
+EXPECT_EQ("aB2,aB3,aB4,aB,d", field_names("/dup"))
+rest("DROP REST VIEW /dup")
+session.run_sql("DROP TABLE sakila.dup")
 
 #@<> CREATE REST VIEW with nested references, annotations and all options
 rest("""CREATE OR REPLACE REST VIEW /city AS sakila.city CLASS MyCity @INSERT @UPDATE @DELETE @NOCHECK {
