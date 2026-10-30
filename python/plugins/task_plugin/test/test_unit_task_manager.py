@@ -271,3 +271,106 @@ def test_a_cancelled_task_keeps_what_its_work_said_on_stopping():
     assert snapshot["status"] == tm.CANCELLED
     assert snapshot["error"] == "Interrupted by user"
 
+
+# --- the end of the process ----------------------------------------------------
+
+
+@pytest.fixture
+def cli_call(monkeypatch):
+    """Runs a test as the shell does a command-line call of dba.deploy.vendor.object."""
+    monkeypatch.setattr(tm, "cli_function", "dba.deploy.vendor.object")
+
+
+def test_a_function_returns_the_task_id_unless_it_is_the_command_line_call(monkeypatch):
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    assert tm.answer(task, "dba.deploy.vendor.object") == {"task_id": task.id, "status": tm.PENDING}
+    # a function another one calls, as an MCP server's tools are from mcp start
+    monkeypatch.setattr(tm, "cli_function", "mcp.start")
+    assert tm.answer(task, "dba.deploy.vendor.object")["task_id"] == task.id
+
+
+def test_the_command_line_call_follows_its_task_to_the_result(cli_call, capsys):
+    def work(task):
+        task.message("is starting")
+        task.message("quota nearly used", "warning")
+        return {"name": "db1"}
+
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task.start(work)
+    # the shell's spelling of the name, from the command line
+    assert tm.answer(task, "dba.deploy.vendor.object") == {"name": "db1"}
+    assert capsys.readouterr().err == "is starting\nWARNING: quota nearly used\n"
+
+
+def test_the_command_line_call_raises_the_error_of_its_task(cli_call, capsys):
+    def work(task):
+        task.message("is starting")
+        raise RuntimeError("quota exceeded")
+
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task.start(work)
+    with pytest.raises(tm.TaskError, match="^quota exceeded$"):
+        tm.answer(task, "dba.deploy.vendor.object")
+    # the error is reported once, as the error
+    assert capsys.readouterr().err == "is starting\n"
+
+
+def test_ctrl_c_cancels_the_task_a_command_line_call_follows(monkeypatch):
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task.start(lambda t: t.sleep(60))
+    real_follow = tm._follow
+    calls = []
+
+    def interrupted_once(task, write, position):
+        calls.append(True)
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        return real_follow(task, write, position)
+
+    monkeypatch.setattr(tm, "_follow", interrupted_once)
+    written = []
+    with pytest.raises(tm.TaskError, match="cancelled"):
+        tm.follow(task, written.append)
+    assert task.status == tm.CANCELLED
+    # the cancel is reported once, as the error
+    assert written == ["Cancelling the task..."]
+
+
+def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
+    written = []
+    monkeypatch.setattr(tm, "_write_fd", written.append)
+    monkeypatch.setattr(tm, "_interactive", False)
+    release = threading.Event()
+
+    def work(task):
+        release.wait(5)
+        task.message("is running")
+
+    mine = tm.create("dba", "deploy_object", "Deploy db1")
+    mine.start(work)
+    # an MCP client's task is the server's business
+    tm.create("dba", "deploy_object", "Deploy db2", owner="client-a").start(lambda t: t.sleep(60))
+    threading.Timer(0.2, release.set).start()
+
+    tm._at_exit()
+    assert mine.status == tm.COMPLETED
+    assert written == [
+        "Waiting for 1 background task(s) to end: Deploy db1. Press Ctrl+C to stop waiting.",
+        "is running",
+    ]
+
+
+def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
+    written = []
+    monkeypatch.setattr(tm, "_write_fd", written.append)
+    monkeypatch.setattr(tm, "_interactive", True)
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task.start(lambda t: t.sleep(60))
+
+    tm._at_exit()
+    assert task.status == tm.RUNNING
+    assert written == [
+        "1 background task(s) still running stop with the shell: Deploy db1. "
+        "What a cloud vendor already started goes on there."
+    ]
+    task.cancel()

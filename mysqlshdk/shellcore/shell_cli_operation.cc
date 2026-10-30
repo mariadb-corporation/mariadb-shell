@@ -38,6 +38,15 @@
 namespace shcore {
 namespace cli {
 
+namespace {
+std::function<void(const std::string &)> g_call_observer;
+}  // namespace
+
+void Shell_cli_operation::set_call_observer(
+    std::function<void(const std::string &qualified_name)> observer) {
+  g_call_observer = std::move(observer);
+}
+
 const std::regex k_api_general_error(
     "^([a-z|A-Z|_][a-z|A-Z|0-9|_]*)\\.([a-z|A-Z|_][a-z|A-Z|0-9|_]*):\\s("
     "Argument #(\\d+):\\s)?(.+)$$");
@@ -474,6 +483,11 @@ Value Shell_cli_operation::execute() {
         api_call.push_back("\t\t: " + arg.json(false));
       }
       log_debug("%s", shcore::str_join(api_call, "\n").c_str());
+    }
+
+    if (g_call_observer) {
+      g_call_observer(str_join(m_cli_mapper.get_object_chain(), ".") + "." +
+                      m_method_name);
     }
 
     return object->call(m_method_name, m_argument_list);

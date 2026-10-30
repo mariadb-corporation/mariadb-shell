@@ -698,6 +698,31 @@ int main(int argc, char **argv) {
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
 
       if (shell_cli_operation) {
+#ifdef HAVE_PYTHON
+        // A function that starts a background task waits for it when it is
+        // the command-line call, as the process ends right after the call;
+        // see mysqlsh.task_manager.answer().
+        shcore::cli::Shell_cli_operation::set_call_observer(
+            [](const std::string &qualified_name) {
+              WillEnterPython lock;
+              shcore::py::Release task_manager{
+                  PyImport_ImportModule("mysqlsh.task_manager")};
+              shcore::py::Release name{
+                  PyUnicode_FromString(qualified_name.c_str())};
+              if (!task_manager || !name ||
+                  PyObject_SetAttrString(task_manager.get(), "cli_function",
+                                         name.get()) != 0) {
+                PyErr_Clear();
+              }
+            });
+        // Ctrl+C raises KeyboardInterrupt in a Python function the call runs,
+        // as it does in a script - a task the call waits for is cancelled
+        // that way - and goes on to the handler that ends the shell with it.
+        shcore::Interrupt_handler interrupt_python([]() {
+          PyErr_SetInterrupt();
+          return true;
+        });
+#endif
         try {
           shell->print_result(shell_cli_operation->execute());
         } catch (const std::invalid_argument &e) {
