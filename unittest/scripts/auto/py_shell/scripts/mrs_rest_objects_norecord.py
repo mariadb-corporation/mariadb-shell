@@ -76,9 +76,22 @@ EXPECT_THROWS(lambda: rest("CREATE REST VIEW /city AS sakila.city"), "Failed to 
 #@<> CREATE REST VIEW names the fields as the VS Code extension does
 # split at every character that is not a letter or digit, a word in capitals
 # lowered, the humps of a mixed-case word kept, `field` where nothing is left
-session.run_sql("CREATE TABLE sakila.naming (`First Name` VARCHAR(10) PRIMARY KEY, `last-name` VARCHAR(10), lastUpdate DATETIME, CURRENT_CONNECTIONS INT, city_ID INT, `$` INT)")
+session.run_sql("CREATE TABLE sakila.naming (`First Name` VARCHAR(10) PRIMARY KEY, `last-name` VARCHAR(10), lastUpdate DATETIME, CURRENT_CONNECTIONS INT, city_ID INT, `$` INT, `key` INT, user INT)")
 rest("CREATE REST VIEW /naming AS sakila.naming")
-EXPECT_EQ("firstName,lastName,lastUpdate,currentConnections,cityId,field", field_names("/naming"))
+EXPECT_EQ("firstName,lastName,lastUpdate,currentConnections,cityId,field,key,user", field_names("/naming"))
+
+#@<> SHOW CREATE REST VIEW quotes a column name REST SQL would not read back
+# a name that is no plain identifier, or a keyword the field pair does not
+# accept (key, as the field and as the column); most keywords (user), and
+# plain names ($ is an identifier character), stay as they are
+definition = show_create("SHOW CREATE REST VIEW /naming")
+EXPECT_IN("firstName: `First Name` @KEY,", definition)
+EXPECT_IN("lastName: `last-name`,", definition)
+EXPECT_IN("field: $,", definition)
+EXPECT_IN("`key`: `key`,", definition)
+EXPECT_IN("user: user\n", definition)
+rest(definition)
+EXPECT_EQ(definition, show_create("SHOW CREATE REST VIEW /naming"))
 rest("DROP REST VIEW /naming")
 session.run_sql("DROP TABLE sakila.naming")
 

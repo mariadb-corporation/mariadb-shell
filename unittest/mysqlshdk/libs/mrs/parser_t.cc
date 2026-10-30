@@ -35,6 +35,8 @@
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "mysqlshdk/libs/mrs/lexer.h"
+#include "mysqlshdk/libs/mrs/metadata_rest_objects.h"
 #include "mysqlshdk/libs/mrs/parser.h"
 
 extern "C" const char *g_test_home;
@@ -124,6 +126,38 @@ TEST(Mrs_parser, syntax_errors) {
   // the position is the start of the offending token
   expect_parse_error("CREATE REST SERVICE /a\n   ENABLED FOO", "unexpected",
                      2, 11);
+}
+
+// Keeps metadata::pair_name_text's list of the keywords a field pair does
+// not accept unquoted in step with the grammar: every keyword is accepted
+// as a field name and as a column exactly when pair_name_text leaves it as
+// it is, and a schema or table name identifier_text leaves as it is parses.
+TEST(Mrs_parser, field_pair_keywords) {
+  const auto parses = [](const std::string &sql) {
+    try {
+      parse_statement(sql);
+      return true;
+    } catch (const Parse_error &) {
+      return false;
+    }
+  };
+
+  static const char *const keywords[] = {
+#define MRS_KEYWORD_TEXT(name, text) text,
+      MRS_KEYWORD_LIST(MRS_KEYWORD_TEXT)
+#undef MRS_KEYWORD_TEXT
+  };
+  for (const std::string keyword : keywords) {
+    const bool plain = metadata::pair_name_text(keyword) == keyword;
+    EXPECT_EQ(plain, parses("CREATE REST VIEW /t AS t { " + keyword + ": " +
+                            keyword + " }"))
+        << keyword;
+    if (metadata::identifier_text(keyword) == keyword) {
+      EXPECT_TRUE(parses("CREATE REST VIEW /t AS t { f: db." + keyword +
+                         " { x: y } }"))
+          << keyword;
+    }
+  }
 }
 
 TEST(Mrs_parser, configure_rest_metadata) {
