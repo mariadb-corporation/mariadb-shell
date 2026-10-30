@@ -239,17 +239,41 @@ class Task:
         Args:
             work: A function taking the task and returning its result, or
                 raising to fail it.
+
+        Raises:
+            TaskError: No thread could be started; the task ended without
+                running, and is not left running.
         """
         thread = threading.Thread(
             target=self._run, args=(work,), name=f"task-{self.task_type}-{self.id}", daemon=True
         )
+        try:
+            thread.start()
+        except BaseException as error:
+            # Ctrl+C can land after the thread started: _run then finds the
+            # task ended, and returns without running the work
+            reason = str(error).strip() or error.__class__.__name__
+            with self.changed:
+                if self.status == PENDING:
+                    self._finish(
+                        CANCELLED if self.cancel_requested else FAILED,
+                        error=f"The task could not start: {reason}",
+                    )
+            if isinstance(error, Exception):
+                raise TaskError(f"The task could not start: {reason}") from error
+            raise
+        # the thread marks the task running; a caller reads it at once
         with self.changed:
+            self.changed.wait_for(lambda: self.status != PENDING)
+
+    def _run(self, work) -> None:
+        with self.changed:
+            if self.status != PENDING:
+                # start() gave up on this task: see there
+                return
             self.status = RUNNING
             self.started_at = utc_timestamp()
             self._touch()
-        thread.start()
-
-    def _run(self, work) -> None:
         try:
             result = work(self)
         except Exception as error:  # noqa: BLE001 - reported to the caller

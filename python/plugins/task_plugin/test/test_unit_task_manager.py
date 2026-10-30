@@ -272,6 +272,62 @@ def test_a_cancelled_task_keeps_what_its_work_said_on_stopping():
     assert snapshot["error"] == "Interrupted by user"
 
 
+def test_a_task_that_cannot_start_ends_failed(monkeypatch):
+    def no_thread(self):
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading.Thread, "start", no_thread)
+    task = tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
+    with pytest.raises(tm.TaskError, match="The task could not start: can't start new thread"):
+        task.start(lambda t: None)
+
+    snapshot = task.snapshot()
+    assert snapshot["status"] == tm.FAILED
+    assert snapshot["error"] == "The task could not start: can't start new thread"
+    assert snapshot["messages"][-1]["text"] == snapshot["error"]
+    # it never ran, and does not hold the one running slot
+    assert snapshot["started_at"] is None and snapshot["finished_at"] is not None
+    tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+
+
+def test_a_task_cancelled_while_it_could_not_start_ends_cancelled(monkeypatch):
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+
+    def cancel_then_fail(self):
+        task.cancel()
+        raise RuntimeError("can't start new thread")
+
+    monkeypatch.setattr(threading.Thread, "start", cancel_then_fail)
+    with pytest.raises(tm.TaskError):
+        task.start(lambda t: None)
+    assert task.status == tm.CANCELLED
+
+
+def test_an_interrupted_start_does_not_run_the_work_later(monkeypatch):
+    # Ctrl+C lands in Thread.start once the thread exists: the caller gets the
+    # KeyboardInterrupt, the task ends, and the work is never run
+    ran = []
+    real_start = threading.Thread.start
+    started = []
+
+    def start_then_interrupt(self):
+        with task.changed:
+            # the lock held keeps _run from marking the task running first
+            real_start(self)
+            started.append(self)
+            raise KeyboardInterrupt
+
+    task = tm.create("dba", "deploy_object", "Deploy db1")
+    monkeypatch.setattr(threading.Thread, "start", start_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        task.start(lambda t: ran.append(True))
+    started[0].join(5)
+
+    assert task.status == tm.FAILED
+    assert task.error == "The task could not start: KeyboardInterrupt"
+    assert ran == []
+
+
 # --- the end of the process ----------------------------------------------------
 
 
