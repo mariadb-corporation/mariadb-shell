@@ -65,7 +65,7 @@ def list_tasks(task_type=None):
     Returns:
         A list of tasks.
     """
-    return [t.summary() for t in _call(task_manager.list_tasks, None, task_type or None)]
+    return [t.summary() for t in task_manager.list_tasks(task_type=task_type or None)]
 
 
 @plugin_function("task.get")
