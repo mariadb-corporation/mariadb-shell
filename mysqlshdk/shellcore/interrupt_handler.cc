@@ -35,8 +35,12 @@
 #include <unistd.h>
 #endif  // !_WIN32
 
+#include <algorithm>
 #include <cassert>
+#include <cstdlib>
+#include <mutex>
 #include <stdexcept>
+#include <vector>
 
 #include "mysqlshdk/include/shellcore/scoped_contexts.h"
 #include "mysqlshdk/libs/utils/logger.h"
@@ -57,6 +61,19 @@ int pipe(int pipefd[2]) { return _pipe(pipefd, 256, _O_BINARY); }
 }  // namespace
 
 #endif  // !_WIN32
+
+namespace {
+
+// The Interrupts whose helper thread is running. A process can end through
+// exit() without unwinding the stack - a Python script's sys.exit() does, as
+// PyErr_Print() hands SystemExit to Py_Exit() - so neither ~Interrupts() nor
+// global_end() stops the thread, and my_end() in the atexit handler would wait
+// five seconds for it; see stop_background_thread(). These are constructed
+// before main(), so they outlive the atexit handler that reads them.
+std::mutex g_running_mutex;
+std::vector<shcore::Interrupts *> g_running;
+
+}  // namespace
 
 namespace shcore {
 
@@ -356,9 +373,31 @@ void Interrupts::init_thread() {
   }
 
   m_thread = mysqlsh::spawn_scoped_thread([this]() { background_thread(); });
+
+  // registered after global_init()'s mysys teardown, so it runs before it
+  static std::once_flag registered;
+  std::call_once(registered, []() {
+    std::atexit([]() {
+      std::vector<Interrupts *> running;
+      {
+        std::lock_guard lock(g_running_mutex);
+        running = g_running;
+      }
+      for (const auto intr : running) intr->stop_background_thread();
+    });
+  });
+
+  std::lock_guard lock(g_running_mutex);
+  g_running.push_back(this);
 }
 
 void Interrupts::terminate_thread() {
+  {
+    std::lock_guard lock(g_running_mutex);
+    g_running.erase(std::remove(g_running.begin(), g_running.end(), this),
+                    g_running.end());
+  }
+
   write_to_thread(-1);
   m_thread.join();
 
