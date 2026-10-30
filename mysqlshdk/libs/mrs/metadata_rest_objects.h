@@ -330,8 +330,14 @@ std::vector<Table_column> get_table_columns_with_references(
 
 // -- Naming -----------------------------------------------------------------
 
-// city_id -> cityId
-std::string snake_to_camel_case(std::string_view snake);
+// A REST field name from a column or parameter name, as the MariaDB VS Code
+// extension's REST object dialog makes it (vscode-extension,
+// src/mrs/dataMapping.ts camelCase(), without its folding of accents to
+// ASCII): split at every character that is not an ASCII letter or digit,
+// lower a word with no lower-case letter, then camelCase the words.
+// city_id -> cityId, First Name -> firstName, lastUpdate -> lastUpdate,
+// CURRENT_CONNECTIONS -> currentConnections
+std::string name_to_camel_case(std::string_view name);
 // /my_module/sub_path -> myModuleSubPath (alphanumeric characters only)
 std::string path_to_camel_case(std::string_view path);
 // /myService/sakila/city -> MyServiceSakilaCity

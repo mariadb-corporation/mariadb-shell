@@ -205,7 +205,7 @@ class Mapping_builder {
     for (const auto &parameter :
          metadata::get_routine_parameters(m_session, m_schema_name, m_name, type)) {
       Data_mapping_field field = new_field(object, std::nullopt);
-      field.name = metadata::snake_to_camel_case(parameter.name);
+      field.name = metadata::name_to_camel_case(parameter.name);
       field.position = parameter.position;
       field.enabled = !parameters;
 
@@ -348,7 +348,7 @@ class Mapping_builder {
     for (auto &column : metadata::get_table_columns_with_references(
              m_session, schema_name, table)) {
       Data_mapping_field field = new_field(*object, parent_reference_id);
-      field.name = metadata::snake_to_camel_case(column.name);
+      field.name = metadata::name_to_camel_case(column.name);
       field.position = column.position;
       field.enabled = enable_columns && !column.is_reference();
       field.db_column = std::move(column.db_column);
