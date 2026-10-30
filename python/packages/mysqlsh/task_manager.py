@@ -43,11 +43,27 @@ shell process is not seen by another, and a restart forgets them. Finished
 tasks are kept for :data:`FINISHED_TASK_LIFETIME` seconds and at most
 :data:`MAX_FINISHED_TASKS` of them, the oldest dropped first, so that a caller
 coming back late can still read how its task ended.
+
+The process must not end under the shell's own tasks, so:
+
+* **A command-line call** (``mariadb-shell -- dba deploy vendor object ...``)
+  follows the task it starts to its end: the function returns through
+  :func:`answer`, which the shell tells which function the call runs.
+* **A script** (``-f``, ``-e``) that ends with tasks still running waits for
+  them before the shell exits; Ctrl+C stops the waiting.
+* **An interactive session** that ends with tasks still running says which
+  stop with it, and does not wait.
+
+Tasks with an owner - an MCP server's - are the server's business, and are
+never waited for.
 """
 
+import atexit
 import collections
 import datetime
 import itertools
+import os
+import sys
 import threading
 import time
 import uuid
@@ -73,6 +89,13 @@ MAX_WAIT_MS = 30000
 
 _tasks = {}
 _tasks_lock = threading.Lock()
+
+# The function a command-line call runs, as "object.function", e.g.
+# "dba.deploy.vendor.object": set by the shell right before it calls it.
+cli_function = None
+# Whether the shell's own tasks were started in an interactive session, which
+# does not wait for them when it ends; None until one is started.
+_interactive = None
 
 
 class TaskError(Exception):
@@ -453,6 +476,8 @@ def create(
         TaskError: The owner already runs ``max_running`` tasks of the type.
     """
     task = Task(task_type, kind, title, owner, attributes)
+    if owner is None:
+        _note_session()
 
     with _tasks_lock:
         _prune()
@@ -524,3 +549,146 @@ def clear() -> None:
     with _tasks_lock:
         _tasks.clear()
 
+
+# --- The shell's own tasks, and the end of the process ------------------------
+
+
+def _note_session() -> None:
+    """Notes whether the shell runs an interactive session, while it still can tell."""
+    global _interactive
+    if _interactive is None:
+        try:
+            from mysqlsh.globals import shell
+
+            _interactive = bool(shell.options["interactive"])
+        except Exception:  # noqa: BLE001 - no shell around, as in the tests
+            _interactive = False
+
+
+def _normalized(name) -> str:
+    """A function name as both the command line and the API spell it."""
+    return str(name).replace("-", "").replace("_", "").lower()
+
+
+def _write_stderr(line: str) -> None:
+    sys.stderr.write(line + "\n")
+    sys.stderr.flush()
+
+
+def _write_fd(line: str) -> None:
+    """Writes to the standard error file itself: at the end of the process the
+    shell's console, which sys.stderr may lead to, can be gone already."""
+    os.write(2, (line + "\n").encode("utf-8", "replace"))
+
+
+def _follow(task, write, position=None) -> dict:
+    """Writes a task's messages as they come, until it ends; returns its last snapshot.
+
+    Args:
+        task (Task): The task.
+        write: Called with each line to write.
+        position (dict): Where the writing got to, as ``{"since": seq}``, kept
+            up to date, so that following again goes on from there.
+    """
+    position = {"since": 0} if position is None else position
+    while True:
+        snapshot = task.wait_for_news(position["since"], 1.0)
+        for message in snapshot["messages"]:
+            if snapshot["status"] in (FAILED, CANCELLED) and message["text"] == snapshot["error"]:
+                continue  # the error is reported as such
+            level = message["level"]
+            write(message["text"] if level in ("info", "status") else f"{level.upper()}: {message['text']}")
+        position["since"] = snapshot["next_since"]
+        if snapshot["status"] in FINISHED_STATES:
+            return snapshot
+
+
+def follow(task, write=None):
+    """Follows a task to its end and returns its result.
+
+    The task's messages are written as they come, to stderr unless ``write``
+    is given. Ctrl+C cancels the task and waits for it to stop.
+
+    Args:
+        task (Task): The task.
+        write: Called with each line to write.
+
+    Returns:
+        The task's result.
+
+    Raises:
+        TaskError: The task failed or was cancelled.
+    """
+    write = write or _write_stderr
+    position = {"since": 0}
+    try:
+        snapshot = _follow(task, write, position)
+    except KeyboardInterrupt:
+        write("Cancelling the task...")
+        task.cancel()
+        snapshot = _follow(task, write, position)
+
+    if snapshot["status"] == COMPLETED:
+        return snapshot["result"]
+    raise TaskError(snapshot["error"] or f"The task was {snapshot['status']}.")
+
+
+def answer(task, function: str):
+    """What a function that started a task returns to its caller.
+
+    The task's id and status, at once - unless the function is the one a
+    command-line call runs (``mariadb-shell -- dba deploy vendor object ...``),
+    whose process ends right after it returns. That call follows the task to
+    its end instead (see :func:`follow`): its messages go to stderr as they
+    come, and it returns the task's result, which the shell prints, or raises
+    its error, which makes the exit code. A function another one calls, as an
+    MCP server's tools are called from ``mcp start``, is no command-line call.
+
+    Args:
+        task (Task): The task the function started.
+        function (str): The function, as "object.function", e.g.
+            "dba.deploy.vendor.object".
+
+    Returns:
+        dict: ``task_id`` and ``status``; or, in a command-line call, the
+        task's result.
+
+    Raises:
+        TaskError: In a command-line call, the task failed or was cancelled.
+    """
+    if cli_function is None or _normalized(cli_function) != _normalized(function):
+        return {"task_id": task.id, "status": task.status}
+    return follow(task)
+
+
+def _at_exit() -> None:
+    """Keeps the process from ending under the shell's own running tasks.
+
+    A script waits for them, writing their messages; Ctrl+C stops the
+    waiting. An interactive session only says which tasks stop with it: who
+    quits the shell expects it to go.
+    """
+    running = [task for task in list_tasks() if task.status not in FINISHED_STATES]
+    if not running:
+        return
+
+    titles = "; ".join(task.title for task in running)
+    if _interactive:
+        _write_fd(
+            f"{len(running)} background task(s) still running stop with the shell: "
+            f"{titles}. What a cloud vendor already started goes on there."
+        )
+        return
+
+    _write_fd(
+        f"Waiting for {len(running)} background task(s) to end: {titles}. "
+        "Press Ctrl+C to stop waiting."
+    )
+    try:
+        for task in running:
+            _follow(task, _write_fd)
+    except KeyboardInterrupt:
+        _write_fd("Stopped waiting: the tasks still running stop with the shell.")
+
+
+atexit.register(_at_exit)
