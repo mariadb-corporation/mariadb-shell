@@ -69,6 +69,15 @@ EXPECT_EQ(6, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.data_mapp
 EXPECT_EQ(4, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.data_mapping_field WHERE enabled = 1"))
 EXPECT_THROWS(lambda: rest("CREATE REST VIEW /city AS sakila.city"), "Failed to create the REST VIEW `/svc/sakila/city`. The request_path is already used by another entity.")
 
+#@<> CREATE REST VIEW names the fields as the VS Code extension does
+# split at every character that is not a letter or digit, a word in capitals
+# lowered, the humps of a mixed-case word kept, `field` where nothing is left
+session.run_sql("CREATE TABLE sakila.naming (`First Name` VARCHAR(10) PRIMARY KEY, `last-name` VARCHAR(10), lastUpdate DATETIME, CURRENT_CONNECTIONS INT, city_ID INT, `$` INT)")
+rest("CREATE REST VIEW /naming AS sakila.naming")
+EXPECT_EQ("firstName,lastName,lastUpdate,currentConnections,cityId,field", metadata_value("SELECT GROUP_CONCAT(f.name ORDER BY f.position) FROM mariadb_rest_service.data_mapping_field f JOIN mariadb_rest_service.data_mapping m ON m.id = f.data_mapping_id JOIN mariadb_rest_service.rest_object o ON o.id = m.rest_object_id WHERE o.request_path = '/naming'"))
+rest("DROP REST VIEW /naming")
+session.run_sql("DROP TABLE sakila.naming")
+
 #@<> CREATE REST VIEW with nested references, annotations and all options
 rest("""CREATE OR REPLACE REST VIEW /city AS sakila.city CLASS MyCity @INSERT @UPDATE @DELETE @NOCHECK {
     cityId: city_id @KEY @SORTABLE @NOCHECK,

@@ -47,10 +47,15 @@ TEST(Mrs_naming, name_to_camel_case) {
   EXPECT_EQ("currentConnections", name_to_camel_case("CURRENT_CONNECTIONS"));
   EXPECT_EQ("col1", name_to_camel_case("COL1"));
   EXPECT_EQ("cityId", name_to_camel_case("city_ID"));
+  EXPECT_EQ("1stPlace", name_to_camel_case("1st_place"));
+  // nothing left: the caller names such a field
   EXPECT_EQ("", name_to_camel_case(""));
+  EXPECT_EQ("", name_to_camel_case("$"));
+  EXPECT_EQ("", name_to_camel_case("--"));
   // UTF-8 is kept; the extension folds accents to ASCII (grosse), the shell
-  // does not
+  // does not, and folds only the ASCII letters of a word in capitals
   EXPECT_EQ("größe", name_to_camel_case("größe"));
+  EXPECT_EQ("grÖsse", name_to_camel_case("GRÖSSE"));
 }
 
 }  // namespace metadata

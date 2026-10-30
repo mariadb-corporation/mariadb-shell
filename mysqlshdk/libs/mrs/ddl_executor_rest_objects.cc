@@ -174,6 +174,13 @@ std::string mapping_options(const Crud_annotations &crud) {
 // Builds the objects of a rest_object from the data mapping of a statement.
 // The columns, references and parameters come from the server; the mapping
 // enables, renames and annotates them.
+// A field's name from its column's or parameter's: `field` where nothing is
+// left of the name, as for a column named `$`, as the extension's fieldName()
+std::string field_name(std::string_view db_name) {
+  auto name = metadata::name_to_camel_case(db_name);
+  return name.empty() ? "field" : name;
+}
+
 class Mapping_builder {
  public:
   Mapping_builder(Db_session *session, std::string schema_name, std::string name)
@@ -205,7 +212,7 @@ class Mapping_builder {
     for (const auto &parameter :
          metadata::get_routine_parameters(m_session, m_schema_name, m_name, type)) {
       Data_mapping_field field = new_field(object, std::nullopt);
-      field.name = metadata::name_to_camel_case(parameter.name);
+      field.name = field_name(parameter.name);
       field.position = parameter.position;
       field.enabled = !parameters;
 
@@ -348,7 +355,7 @@ class Mapping_builder {
     for (auto &column : metadata::get_table_columns_with_references(
              m_session, schema_name, table)) {
       Data_mapping_field field = new_field(*object, parent_reference_id);
-      field.name = metadata::name_to_camel_case(column.name);
+      field.name = field_name(column.name);
       field.position = column.position;
       field.enabled = enable_columns && !column.is_reference();
       field.db_column = std::move(column.db_column);
