@@ -25,24 +25,26 @@
 
 #include "mysqlshdk/libs/mrs/strings.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <stdexcept>
 
 namespace mrs {
 
+// Not std::tolower()/toupper(): their result on a byte >= 0x80 - part of a
+// UTF-8 character - depends on the process locale, and the shell sets one.
 std::string to_lower(std::string_view text) {
   std::string result(text);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
+  for (auto &c : result) {
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+  }
   return result;
 }
 
 std::string to_upper(std::string_view text) {
   std::string result(text);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
+  for (auto &c : result) {
+    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+  }
   return result;
 }
 
