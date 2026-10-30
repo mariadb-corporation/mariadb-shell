@@ -28,8 +28,10 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <set>
 #include <stdexcept>
 
+#include "mysqlshdk/libs/mrs/lexer.h"
 #include "mysqlshdk/libs/mrs/strings.h"
 
 namespace mrs {
@@ -528,7 +530,8 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
 
     if (!field.reference) {
       if (!field.enabled || !field.db_column) continue;
-      result += indent + field.name + ": " + field.column_name();
+      result += indent + pair_name_text(field.name) + ": " +
+                pair_name_text(field.column_name());
       const auto attributes = field_attributes(field, datatype_check, schema,
                                                table, row_ownership_field_id);
       if (!attributes.empty()) result += " " + attributes;
@@ -539,8 +542,9 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
     const auto &reference = *field.reference;
     if (!reference.unnest && !field.enabled) continue;
 
-    result += indent + field.name + ": " + reference.referenced_schema() + "." +
-              reference.referenced_table();
+    result += indent + pair_name_text(field.name) + ": " +
+              identifier_text(reference.referenced_schema()) + "." +
+              identifier_text(reference.referenced_table());
     const auto attributes = reference_attributes(reference);
     if (!attributes.empty()) result += " " + attributes;
 
@@ -1188,6 +1192,38 @@ std::vector<Table_column> get_table_columns_with_references(
 }
 
 // -- Naming -------------------------------------------------------------------
+
+namespace {
+
+bool is_plain_identifier(std::string_view name) {
+  return !name.empty() && is_identifier_start(name[0]) &&
+         std::all_of(name.begin(), name.end(), is_identifier_char);
+}
+
+}  // namespace
+
+std::string pair_name_text(std::string_view name) {
+  // The keywords the grammar's graphql_pair_key and graphql_pair_value rules
+  // do not accept unquoted: every keyword but those of
+  // graphql_allowed_keyword and identifier_keyword. Mrs_parser's
+  // field_pair_keywords test keeps this in step with the grammar.
+  static const std::set<std::string, std::less<>> quoted_keywords = {
+      "ADD",      "ALL",       "AND",        "CHECK",    "DATATYPE",
+      "DYNAMIC",  "ENDPOINTS", "FORCE",      "INCLUDE",  "INCLUDING",
+      "INOUT",    "INSERT",    "KEY",        "MERGE",    "NOCHECK",
+      "NODELETE", "NOFILTERING", "NOINSERT", "NOSELECT", "NOUPDATE",
+      "OBJECTS",  "OUT",       "REMOVE",     "ROWOWNERSHIP", "SELECT",
+      "SORTABLE", "STATIC",    "UNNEST"};
+  if (is_plain_identifier(name) && !quoted_keywords.contains(to_upper(name))) {
+    return std::string(name);
+  }
+  return sql::quote_identifier(name);
+}
+
+std::string identifier_text(std::string_view name) {
+  if (is_plain_identifier(name) && !is_keyword(name)) return std::string(name);
+  return sql::quote_identifier(name);
+}
 
 std::string name_to_camel_case(std::string_view name) {
   // ASCII only, not std::tolower(): a byte >= 0x80 is part of a UTF-8 letter
