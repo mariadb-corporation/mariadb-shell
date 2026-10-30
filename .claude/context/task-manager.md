@@ -33,7 +33,6 @@ Part of [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Next steps
 
-- mariadb-shell-plugins: `test_a_task_belongs_to_its_client` and `test_running_tasks_are_limited_per_client` in `mcp_plugin/tests/unit/test_util.py` create tasks without starting them and expect them listed and counted; they need a `.start(...)`. The production code (`util_functions.py` creates and starts in one go) is unaffected.
 - The dba plugin (cloud deployments) is the next consumer, through `answer()` for its CLI calls.
 - Document the `task` global object and `mysqlsh.task_manager` for plugin authors; see [docs-ref.md](docs-ref.md).
 - `python/plugins/sandbox/runtests.py` takes an option's value (`-k name`) for a test path, the flaw fixed in `task_plugin/runtests.py`.
