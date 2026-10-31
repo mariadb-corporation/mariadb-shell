@@ -15,6 +15,7 @@
 
 """Tests for mysqlsh.task_manager, the background tasks every plugin shares."""
 
+import sys
 import threading
 import time
 
@@ -82,6 +83,19 @@ def test_a_failing_task_reports_its_error_and_ends_its_running_stage():
     assert snapshot["error"] == "quota exceeded"
     assert snapshot["stages"][0]["status"] == tm.FAILED
     assert snapshot["messages"][-1] == {**snapshot["messages"][-1], "level": "error", "text": "quota exceeded"}
+
+
+def test_a_task_whose_work_exits_ends_failed(monkeypatch):
+    # a SystemExit is no Exception: the task must not be left running forever.
+    # It goes on to end the thread, as it would have, which pytest would report
+    monkeypatch.setattr(threading, "excepthook", lambda args: None)
+    task = tm.create("dba", "create_object", "Create db1", max_running=1)
+    task.start(lambda t: sys.exit("leaving"))
+    snapshot = _finished(task)
+
+    assert snapshot["status"] == tm.FAILED
+    assert snapshot["error"] == "leaving"
+    tm.create("dba", "create_object", "Create db2", max_running=1)
 
 
 def test_a_cancel_wakes_a_sleeping_task():
@@ -402,6 +416,19 @@ def test_the_command_line_call_raises_the_error_of_its_task(cli_call, capsys):
     assert capsys.readouterr().err == "is starting\n"
 
 
+def test_the_command_line_call_keeps_a_message_that_reads_like_the_error(cli_call, capsys):
+    def work(task):
+        task.message("quota exceeded", "warning")
+        raise RuntimeError("quota exceeded")
+
+    task = tm.create("dba", "create_object", "Create db1")
+    task.start(work)
+    with pytest.raises(tm.TaskError, match="^quota exceeded$"):
+        tm.answer(task, "dba.create.vendor.object")
+    # only the error message itself is left to the error
+    assert capsys.readouterr().err == "WARNING: quota exceeded\n"
+
+
 def test_ctrl_c_cancels_the_task_a_command_line_call_follows(monkeypatch):
     task = tm.create("dba", "create_object", "Create db1")
     task.start(lambda t: t.sleep(60))
@@ -445,6 +472,26 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
         "Waiting for 1 background task(s) to end: Create db1. Press Ctrl+C to stop waiting.",
         "is running",
     ]
+
+
+def test_a_script_reports_at_exit_the_error_of_a_task_that_failed(monkeypatch):
+    written = []
+    monkeypatch.setattr(tm, "_write_fd", written.append)
+    monkeypatch.setattr(tm, "_interactive", False)
+    release = threading.Event()
+
+    def work(task):
+        release.wait(5)
+        raise RuntimeError("quota exceeded")
+
+    task = tm.create("dba", "create_object", "Create db1")
+    task.start(work)
+    threading.Timer(0.2, release.set).start()
+
+    tm.at_exit()
+    assert task.status == tm.FAILED
+    # nobody raises the error here, as follow() does for a command-line call
+    assert written[-1] == "ERROR: quota exceeded"
 
 
 def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
