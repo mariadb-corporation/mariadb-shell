@@ -561,7 +561,7 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
 }
 
 std::string class_header(const Data_mapping &object) {
-  std::string header = "CLASS " + object.name;
+  std::string header = "CLASS " + identifier_text(object.name);
   if (mapping_option(object.options, "dataMappingViewInsert")) header += " @INSERT";
   if (mapping_option(object.options, "dataMappingViewUpdate")) header += " @UPDATE";
   if (mapping_option(object.options, "dataMappingViewDelete")) header += " @DELETE";
@@ -966,7 +966,8 @@ std::string rest_object_create_statement(Db_session *session,
     }
   } else {
     for (const auto &object : objects) {
-      std::string line = "    " + object.kind + " " + object.name;
+      std::string line =
+          "    " + object.kind + " " + identifier_text(object.name);
       Datatype_check datatype_check;
       datatype_check.always = object.kind == "RESULT";
       const auto children = cut_last_comma(
@@ -1205,15 +1206,13 @@ bool is_plain_identifier(std::string_view name) {
 std::string pair_name_text(std::string_view name) {
   // The keywords the grammar's graphql_pair_key and graphql_pair_value rules
   // do not accept unquoted: every keyword but those of
-  // graphql_allowed_keyword and identifier_keyword. Mrs_parser's
-  // field_pair_keywords test keeps this in step with the grammar.
+  // graphql_allowed_keyword and identifier_keyword. The annotation words
+  // (KEY, SORTABLE, ...) are no keywords: without their @ they lex as
+  // identifiers. Mrs_parser's field_pair_keywords test keeps this in step
+  // with the grammar.
   static const std::set<std::string, std::less<>> quoted_keywords = {
-      "ADD",      "ALL",       "AND",        "CHECK",    "DATATYPE",
-      "DYNAMIC",  "ENDPOINTS", "FORCE",      "INCLUDE",  "INCLUDING",
-      "INOUT",    "INSERT",    "KEY",        "MERGE",    "NOCHECK",
-      "NODELETE", "NOFILTERING", "NOINSERT", "NOSELECT", "NOUPDATE",
-      "OBJECTS",  "OUT",       "REMOVE",     "ROWOWNERSHIP", "SELECT",
-      "SORTABLE", "STATIC",    "UNNEST"};
+      "ADD",     "ALL",       "AND",   "DYNAMIC", "ENDPOINTS", "FORCE",
+      "INCLUDE", "INCLUDING", "MERGE", "OBJECTS", "REMOVE",    "STATIC"};
   if (is_plain_identifier(name) && !quoted_keywords.contains(to_upper(name))) {
     return std::string(name);
   }

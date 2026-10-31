@@ -71,13 +71,16 @@ TEST(Mrs_naming, pair_name_text) {
   // a number is no identifier; digits followed by letters are
   EXPECT_EQ("`123`", pair_name_text("123"));
   EXPECT_EQ("`1st`", pair_name_text("1st"));
-  // most keywords are accepted as a field or column name, the annotation
-  // words and a few others are not
+  // most keywords are accepted as a field or column name, a few are not;
+  // the annotation words are identifiers without their @
   EXPECT_EQ("name", pair_name_text("name"));
   EXPECT_EQ("user", pair_name_text("user"));
-  EXPECT_EQ("`key`", pair_name_text("key"));
-  EXPECT_EQ("`INOUT`", pair_name_text("INOUT"));
-  EXPECT_EQ("`Select`", pair_name_text("Select"));
+  EXPECT_EQ("`force`", pair_name_text("force"));
+  EXPECT_EQ("`Merge`", pair_name_text("Merge"));
+  EXPECT_EQ("`ALL`", pair_name_text("ALL"));
+  EXPECT_EQ("key", pair_name_text("key"));
+  EXPECT_EQ("INOUT", pair_name_text("INOUT"));
+  EXPECT_EQ("Select", pair_name_text("Select"));
   EXPECT_EQ("in", pair_name_text("in"));
   EXPECT_EQ("update", pair_name_text("update"));
 }
