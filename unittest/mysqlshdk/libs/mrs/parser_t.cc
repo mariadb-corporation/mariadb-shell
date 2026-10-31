@@ -129,9 +129,10 @@ TEST(Mrs_parser, syntax_errors) {
 }
 
 // Keeps metadata::pair_name_text's list of the keywords a field pair does
-// not accept unquoted in step with the grammar: every keyword is accepted
-// as a field name and as a column exactly when pair_name_text leaves it as
-// it is, and a schema or table name identifier_text leaves as it is parses.
+// not accept unquoted in step with the grammar: every keyword, and every
+// annotation word without its @, is accepted as a field name and as a
+// column exactly when pair_name_text leaves it as it is; and what
+// pair_name_text and identifier_text write always parses.
 TEST(Mrs_parser, field_pair_keywords) {
   const auto parses = [](const std::string &sql) {
     try {
@@ -142,21 +143,24 @@ TEST(Mrs_parser, field_pair_keywords) {
     }
   };
 
-  static const char *const keywords[] = {
-#define MRS_KEYWORD_TEXT(name, text) text,
-      MRS_KEYWORD_LIST(MRS_KEYWORD_TEXT)
-#undef MRS_KEYWORD_TEXT
+  static const char *const words[] = {
+#define MRS_WORD_TEXT(name, text) text,
+      MRS_KEYWORD_LIST(MRS_WORD_TEXT) MRS_ANNOTATION_LIST(MRS_WORD_TEXT)
+#undef MRS_WORD_TEXT
   };
-  for (const std::string keyword : keywords) {
-    const bool plain = metadata::pair_name_text(keyword) == keyword;
-    EXPECT_EQ(plain, parses("CREATE REST VIEW /t AS t { " + keyword + ": " +
-                            keyword + " }"))
-        << keyword;
-    if (metadata::identifier_text(keyword) == keyword) {
-      EXPECT_TRUE(parses("CREATE REST VIEW /t AS t { f: db." + keyword +
-                         " { x: y } }"))
-          << keyword;
-    }
+  for (const std::string word : words) {
+    const auto pair = metadata::pair_name_text(word);
+    EXPECT_EQ(pair == word,
+              parses("CREATE REST VIEW /t AS t { " + word + ": " + word + " }"))
+        << word;
+    EXPECT_TRUE(
+        parses("CREATE REST VIEW /t AS t { " + pair + ": " + pair + " }"))
+        << word;
+    const auto identifier = metadata::identifier_text(word);
+    EXPECT_TRUE(parses("CREATE REST VIEW /t AS t CLASS " + identifier +
+                       " { f: " + identifier + "." + identifier +
+                       " { x: y } }"))
+        << word;
   }
 }
 

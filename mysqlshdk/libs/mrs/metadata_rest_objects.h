@@ -343,11 +343,12 @@ std::vector<Table_column> get_table_columns_with_references(
 std::string name_to_camel_case(std::string_view name);
 // A field name or a column name as SHOW CREATE writes it in `name: column`,
 // for REST SQL to read it back: as it is where it lexes as one identifier
-// the field pair accepts (keywords included, but for the annotation words
-// such as KEY or SORTABLE and a few others), else backtick quoted.
+// the field pair accepts (most keywords included, but for a few such as
+// FORCE or MERGE), else backtick quoted.
 std::string pair_name_text(std::string_view name);
-// A schema or table name as SHOW CREATE writes it: as it is where it lexes
-// as an identifier and is no keyword, else backtick quoted.
+// A schema, table or object (CLASS, PARAMETERS, RESULT) name as SHOW CREATE
+// writes it: as it is where it lexes as an identifier and is no keyword,
+// else backtick quoted.
 std::string identifier_text(std::string_view name);
 // /my_module/sub_path -> myModuleSubPath (alphanumeric characters only)
 std::string path_to_camel_case(std::string_view path);
