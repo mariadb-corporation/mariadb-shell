@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <set>
 #include <stdexcept>
 
@@ -197,6 +198,7 @@ class Mapping_builder {
     object.options = mapping_options(crud);
     add_table_fields(&object, std::nullopt, m_schema_name, m_name, !mapping);
     if (mapping) apply_mapping(&object, *mapping, std::nullopt, false);
+    make_names_unique(&object);
     return object;
   }
 
@@ -234,6 +236,7 @@ class Mapping_builder {
     }
 
     if (parameters) apply_mapping(&object, parameters->object, std::nullopt, force);
+    make_names_unique(&object);
     return object;
   }
 
@@ -440,9 +443,33 @@ class Mapping_builder {
     return object->fields.back();
   }
 
+  // The fields below one parent get distinct names, as the extension's
+  // uniqueName() gives them: a generated name the statement gave another
+  // field, or that an earlier column gives as well (a_b and a-b are both
+  // aB), is numbered - aB2, aB3, ... The statement's own names are kept.
+  void make_names_unique(Data_mapping *object) {
+    std::map<std::optional<Id>, std::set<std::string>> taken;
+    for (const auto &field : object->fields) {
+      if (m_statement_named.contains(field.id)) {
+        taken[field.parent_reference_id].insert(field.name);
+      }
+    }
+    for (auto &field : object->fields) {
+      if (m_statement_named.contains(field.id)) continue;
+      auto &names = taken[field.parent_reference_id];
+      std::string name = field.name;
+      for (int i = 2; names.contains(name); ++i) {
+        name = field.name + std::to_string(i);
+      }
+      names.insert(name);
+      field.name = std::move(name);
+    }
+  }
+
   void apply_annotations(Data_mapping *object, Data_mapping_field *field,
                          const Graphql_field &pair) {
     field->name = pair.name;
+    m_statement_named.insert(field->id);
     field->enabled = true;
     if (pair.no_check) field->no_check = true;
     if (pair.sortable) field->allow_sorting = true;
@@ -483,6 +510,7 @@ class Mapping_builder {
     const bool to_many = reference.kind() == "1:n";
 
     field->name = pair.name;
+    m_statement_named.insert(field->id);
     field->enabled = true;
     field->candidate_reference_mapping.reset();
     field->reference = std::move(reference);
@@ -539,6 +567,8 @@ class Mapping_builder {
   Db_session *m_session;
   std::string m_schema_name;
   std::string m_name;
+  // the fields the statement named; their names are kept as given
+  std::set<Id> m_statement_named;
 };
 
 // Names the objects the statement left unnamed after the full path of the

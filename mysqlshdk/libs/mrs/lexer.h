@@ -320,6 +320,8 @@ class Lexer {
 // Helpers shared by the lexer and the executor.
 bool is_identifier_start(char c);
 bool is_identifier_char(char c);
+// Whether the word, in any case, is a keyword of REST SQL.
+bool is_keyword(std::string_view word);
 
 }  // namespace mrs
 

@@ -35,6 +35,8 @@
 #include "mysqlshdk/libs/utils/utils_path.h"
 #include "mysqlshdk/libs/utils/utils_string.h"
 
+#include "mysqlshdk/libs/mrs/lexer.h"
+#include "mysqlshdk/libs/mrs/metadata_rest_objects.h"
 #include "mysqlshdk/libs/mrs/parser.h"
 
 extern "C" const char *g_test_home;
@@ -124,6 +126,42 @@ TEST(Mrs_parser, syntax_errors) {
   // the position is the start of the offending token
   expect_parse_error("CREATE REST SERVICE /a\n   ENABLED FOO", "unexpected",
                      2, 11);
+}
+
+// Keeps metadata::pair_name_text's list of the keywords a field pair does
+// not accept unquoted in step with the grammar: every keyword, and every
+// annotation word without its @, is accepted as a field name and as a
+// column exactly when pair_name_text leaves it as it is; and what
+// pair_name_text and identifier_text write always parses.
+TEST(Mrs_parser, field_pair_keywords) {
+  const auto parses = [](const std::string &sql) {
+    try {
+      parse_statement(sql);
+      return true;
+    } catch (const Parse_error &) {
+      return false;
+    }
+  };
+
+  static const char *const words[] = {
+#define MRS_WORD_TEXT(name, text) text,
+      MRS_KEYWORD_LIST(MRS_WORD_TEXT) MRS_ANNOTATION_LIST(MRS_WORD_TEXT)
+#undef MRS_WORD_TEXT
+  };
+  for (const std::string word : words) {
+    const auto pair = metadata::pair_name_text(word);
+    EXPECT_EQ(pair == word,
+              parses("CREATE REST VIEW /t AS t { " + word + ": " + word + " }"))
+        << word;
+    EXPECT_TRUE(
+        parses("CREATE REST VIEW /t AS t { " + pair + ": " + pair + " }"))
+        << word;
+    const auto identifier = metadata::identifier_text(word);
+    EXPECT_TRUE(parses("CREATE REST VIEW /t AS t CLASS " + identifier +
+                       " { f: " + identifier + "." + identifier +
+                       " { x: y } }"))
+        << word;
+  }
 }
 
 TEST(Mrs_parser, configure_rest_metadata) {

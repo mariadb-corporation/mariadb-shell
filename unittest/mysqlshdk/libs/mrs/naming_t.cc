@@ -58,5 +58,40 @@ TEST(Mrs_naming, name_to_camel_case) {
   EXPECT_EQ("grÖsse", name_to_camel_case("GRÖSSE"));
 }
 
+// the names SHOW CREATE writes in `name: column`, so that REST SQL reads
+// them back
+TEST(Mrs_naming, pair_name_text) {
+  EXPECT_EQ("city", pair_name_text("city"));
+  EXPECT_EQ("_x$1", pair_name_text("_x$1"));
+  EXPECT_EQ("größe", pair_name_text("größe"));
+  EXPECT_EQ("`First Name`", pair_name_text("First Name"));
+  EXPECT_EQ("`last-name`", pair_name_text("last-name"));
+  EXPECT_EQ("`a``b`", pair_name_text("a`b"));
+  EXPECT_EQ("``", pair_name_text(""));
+  // a number is no identifier; digits followed by letters are
+  EXPECT_EQ("`123`", pair_name_text("123"));
+  EXPECT_EQ("`1st`", pair_name_text("1st"));
+  // most keywords are accepted as a field or column name, a few are not;
+  // the annotation words are identifiers without their @
+  EXPECT_EQ("name", pair_name_text("name"));
+  EXPECT_EQ("user", pair_name_text("user"));
+  EXPECT_EQ("`force`", pair_name_text("force"));
+  EXPECT_EQ("`Merge`", pair_name_text("Merge"));
+  EXPECT_EQ("`ALL`", pair_name_text("ALL"));
+  EXPECT_EQ("key", pair_name_text("key"));
+  EXPECT_EQ("INOUT", pair_name_text("INOUT"));
+  EXPECT_EQ("Select", pair_name_text("Select"));
+  EXPECT_EQ("in", pair_name_text("in"));
+  EXPECT_EQ("update", pair_name_text("update"));
+}
+
+TEST(Mrs_naming, identifier_text) {
+  EXPECT_EQ("sakila", identifier_text("sakila"));
+  EXPECT_EQ("`my db`", identifier_text("my db"));
+  // a schema or table name that is a keyword is quoted, whichever it is
+  EXPECT_EQ("`user`", identifier_text("user"));
+  EXPECT_EQ("`files`", identifier_text("files"));
+}
+
 }  // namespace metadata
 }  // namespace mrs
