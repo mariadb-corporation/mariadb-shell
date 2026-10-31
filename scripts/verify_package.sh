@@ -210,11 +210,28 @@ section "Bundled plugins load"
 # at all -- it only adds functions to util. So read the name out of the plugin's
 # own init.py: the @plugin class together with its optional parent=, or, for a
 # plugin that only extends an existing object, the first name it registers with
-# @plugin_function. Either way the result is a name that exists only if the
-# plugin actually loaded, which is the point of the check.
+# @plugin_function. A dba vendor plugin (dba_plugin/vendor_<name>) registers
+# neither: its init.py calls dba_core's register_vendor_plugin(), which makes
+# the object dba.vendor.<name> with the name in camelCase. Either way the result
+# is a name that exists only if the plugin actually loaded, which is the point
+# of the check.
+#
+# A folder with neither init.py nor init.js is a plugin group, dba_plugin for
+# one: the shell loads each of its subfolders as a plugin, one level down, so
+# each of those is checked here instead.
 plugin_object() {
-  local init="$1/init.py"
+  local init="$1/init.py" dir
   [ -f "$init" ] || return 1
+  dir="$(basename "$1")"
+  case "$dir" in
+    vendor_*)
+      if grep -q 'register_vendor_plugin(' "$init"; then
+        printf 'dba.vendor.%s\n' "$(printf '%s' "${dir#vendor_}" |
+          awk -F_ '{ s = $1; for (i = 2; i <= NF; i++) s = s toupper(substr($i, 1, 1)) substr($i, 2); print s }')"
+        return 0
+      fi
+      ;;
+  esac
   awk -v q="\"'" '
     !pending && /^[[:space:]]*@plugin([[:space:]]|\(|$)/ {
       parent = ""
@@ -252,14 +269,34 @@ py_name() {
   printf '%s' "$1" | awk '{ gsub(/[A-Z]/, "_&"); print tolower($0) }'
 }
 
+is_plugin_group() {
+  [ ! -f "$1/init.py" ] && [ ! -f "$1/init.js" ] || return 1
+  local sub
+  for sub in "$1"/*/; do
+    [ -f "${sub}init.py" ] || [ -f "${sub}init.js" ] && return 0
+  done
+  return 1
+}
+
 PLUGIN_OBJECTS=()
 PLUGIN_COUNT=0
 if [ -n "$PLUGIN_DIR" ]; then
+  PLUGIN_DIRS=()
   for d in "$PLUGIN_DIR"/*/; do
     [ -d "$d" ] || continue
-    name="$(basename "$d")"
+    if is_plugin_group "${d%/}"; then
+      for sub in "$d"*/; do
+        [ -f "${sub}init.py" ] || [ -f "${sub}init.js" ] && PLUGIN_DIRS+=("${sub%/}")
+      done
+    else
+      PLUGIN_DIRS+=("${d%/}")
+    fi
+  done
+
+  for d in ${PLUGIN_DIRS[@]+"${PLUGIN_DIRS[@]}"}; do
+    name="${d#"$PLUGIN_DIR"/}"
     # A JS plugin, or one this cannot parse, still gets the old guess.
-    obj="$(plugin_object "${d%/}")" || obj="${name%_plugin}"
+    obj="$(plugin_object "$d")" || obj="$(basename "${d%_plugin}")"
     PLUGIN_COUNT=$((PLUGIN_COUNT + 1))
 
     # Only a plugin that registers a global object is a CLI entry point, so
@@ -313,7 +350,8 @@ else
     case "$obj" in ''|'#'*) continue ;; esac
     label="$obj $args"
 
-    # A plugin the package does not bundle is skipped: mcp_plugin is optional.
+    # A plugin the package does not bundle is skipped: the plugins repo may
+    # not have it yet.
     if ! has_object "$obj"; then
       skip "$label" "plugin not bundled in this package"
       continue
