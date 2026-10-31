@@ -110,6 +110,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
    - the cross-vendor refusal (needs a MySQL server)
    - `updateGtidSet` / `skipBinlog` privileges
    - Windows named pipes (`install.ps1` itself was verified on Windows 11 ARM64 under PowerShell 5.1 and 7)
+10. Document the `task` global object (`task.list`, `task.get`, `task.cancel`) and, for plugin authors, `mysqlsh.task_manager` (`create`/`start`/`answer`, how a command-line call follows a task, what a script does with running tasks at its end); see [task-manager.md](task-manager.md). A plugins page for the Python `@plugin`/`@plugin_function` decorators would go with it.
    - `--pym pip install` from PyPI
    - `change_password` on your own ed25519 account
 

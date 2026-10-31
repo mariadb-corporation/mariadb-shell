@@ -84,3 +84,4 @@ These items still describe MySQL Shell, or disagree with the code. The docs foll
   - it still lists `lakehouseTarget`, `dataMaskingPolicies`, `allowDataMasking`, `libraries`, `convertInnoDbVectorStore`, `heatwaveLoad`, `lakehouseSource`, `disableBulkLoad`, `analyzeTables: "histogram"` and the full HeatWave `compatibility` section
   - it refers to "Section 13.2.10.1"
   - `dump-schemas --help` lists `compatibility` and `allowDataMasking`
+- **Unverified: a plugin function's integer parameter with a default is refused on the command line.** A user plugin with `@plugin_function("tt.run", cli=True)` on `def run(steps=3)` and `steps (int)` documented in `Args:` loads and `-- tt run` works, but `-- tt run --steps=6` says "The following option is invalid: --steps". Not investigated (the form `--steps 6`, or a quirk of the throwaway plugin, may be the cause); check against `plugin_decorator_norecord.py`'s CLI tests before filing.

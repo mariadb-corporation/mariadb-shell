@@ -340,6 +340,40 @@ static void init_shell(std::shared_ptr<mysqlsh::Command_line_shell> shell) {
   }
 }
 
+#ifdef HAVE_PYTHON
+// The signal-safe interrupt handler that makes Ctrl+C a KeyboardInterrupt in
+// the Python code the main thread runs, as Shell_python does for a script, and
+// goes on to the handler that ends the shell with it.
+static bool python_keyboard_interrupt() {
+  shcore::Python_context::keyboard_interrupt();
+  return true;
+}
+
+// Keeps the process from ending under the shell's own background tasks. Once
+// the script or the session ended, mysqlsh.task_manager.at_exit() waits for
+// them - in an interactive session, it only says which stop with the shell -
+// while the shell is still whole: their work uses its sessions and its
+// globals, and the client library, all of which the cleanup in main() tears
+// down right after. Ctrl+C stops the waiting, as the handler above is pushed
+// for it. A script's sys.exit() skips this, as it skips the cleanup: the task
+// manager's own atexit handler waits then, with the shell still up.
+static void wait_for_background_tasks() {
+  if (!Py_IsInitialized()) return;
+
+  shcore::Interrupt_handler interrupt_python(python_keyboard_interrupt);
+
+  WillEnterPython lock;
+  shcore::py::Release task_manager{
+      PyImport_ImportModule("mysqlsh.task_manager")};
+  shcore::py::Release done{
+      task_manager
+          ? PyObject_CallMethod(task_manager.get(), "at_exit", nullptr)
+          : nullptr};
+  // the shell's own code failing is worth a traceback, not silence
+  if (!done) PyErr_Print();
+}
+#endif  // HAVE_PYTHON
+
 static void finalize_shell(mysqlsh::Command_line_shell *shell) {
 #ifdef ENABLE_SESSION_RECORDING
   finalize_debug_shell(shell);
@@ -698,6 +732,28 @@ int main(int argc, char **argv) {
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
 
       if (shell_cli_operation) {
+#ifdef HAVE_PYTHON
+        // A function that starts a background task waits for it when it is
+        // the command-line call, as the process ends right after the call;
+        // see mysqlsh.task_manager.answer().
+        shcore::cli::Shell_cli_operation::set_call_observer(
+            [](const std::string &qualified_name) {
+              WillEnterPython lock;
+              shcore::py::Release task_manager{
+                  PyImport_ImportModule("mysqlsh.task_manager")};
+              shcore::py::Release name{
+                  PyUnicode_FromString(qualified_name.c_str())};
+              if (!task_manager || !name ||
+                  PyObject_SetAttrString(task_manager.get(), "cli_function",
+                                         name.get()) != 0) {
+                PyErr_Clear();
+              }
+            });
+        // Ctrl+C raises KeyboardInterrupt in a Python function the call runs,
+        // as it does in a script - a task the call waits for is cancelled
+        // that way - and goes on to the handler that ends the shell with it.
+        shcore::Interrupt_handler interrupt_python(python_keyboard_interrupt);
+#endif
         try {
           shell->print_result(shell_cli_operation->execute());
         } catch (const std::invalid_argument &e) {
@@ -731,6 +787,11 @@ int main(int argc, char **argv) {
       } else {
         ret_val = shell->process_stream(std::cin, "STDIN", {});
       }
+
+#ifdef HAVE_PYTHON
+      // a script Ctrl+C ended is not made to wait for its tasks on top
+      if (!interrupted.test()) wait_for_background_tasks();
+#endif
     }
     if (interrupted.test()) {
 #ifdef _WIN32

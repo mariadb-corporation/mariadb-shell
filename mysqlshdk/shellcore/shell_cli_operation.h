@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -55,6 +56,15 @@ class Shell_cli_operation {
   void prepare();
 
   Value execute();
+
+  /**
+   * Sets what is told the qualified name of the function a command-line call
+   * runs, e.g. "dba.create.vendor.object", right before it is called - so
+   * that a function starting a background task can wait for it, the process
+   * ending right after the call.
+   */
+  static void set_call_observer(
+      std::function<void(const std::string &qualified_name)> observer);
 
  protected:
   void print_help();

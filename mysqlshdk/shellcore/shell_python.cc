@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,15 +33,6 @@
 #include "shellcore/interrupt_handler.h"
 
 #include "pythread.h"
-
-#if defined(_WIN32)
-#include <windows.h>
-
-#if PY_VERSION_HEX >= 0x030D0000
-// in Python 3.13 this function was moved to an internal header
-extern "C" PyAPI_FUNC(void *) _PyOS_SigintEvent(void);
-#endif
-#endif  // !_WIN32
 
 using namespace shcore;
 
@@ -120,42 +112,7 @@ void Shell_python::set_argv(const std::vector<std::string> &argv) {
 // to be possible to interrupt a Python code that is sleeping via time.sleep()
 void Shell_python::interrupt() noexcept {
   m_aborted.test_and_set();
-  // On Windows, signal is always delivered asynchronously, from another thread.
-  // If the main python thread is executing a long-lasting call which is also
-  // interrupted by CTRL-C (i.e. time.sleep()), it will generate a python
-  // exception, unwind the stack, and move the instruction pointer to the
-  // beginning of the "catch" block. If we use PyThreadState_SetAsyncExc() to
-  // inject the KeyboardInterrupt exception, it will be raised from that "catch"
-  // block interfering with the program flow.
-  //
-  // Python code is relying on PyErr_CheckSignals() to detect keyboard
-  // interrupts and to act accordingly (i.e. changing the reported exception to
-  // KeyboardInterrupt), so we're using PyErr_SetInterrupt() to trigger the
-  // signal which is going to be picked up by PyErr_CheckSignals().
-  //
-  // On non-Windows platforms, in Python's 3.9+ code, the eval_breaker variable
-  // used to interrupt the script's evaluation and check for signals is set only
-  // if _PyEval_SignalReceived() invoked by the PyErr_SetInterrupt() is called
-  // from the main thread, instead of when the interpreter passed as an argument
-  // is running in that thread. If we ever are going to deliver signals
-  // asynchronously, we need a workaround for this. One possible workaround is
-  // to call PyThreadState_SetAsyncExc() with NULL once after initializing the
-  // Python. This clears the asynchronous exception and toggles a flag which in
-  // turn will toggle the eval_breaker variable when Python calls the code which
-  // decides if eval_breaker should be set. Since the flag which corresponds to
-  // the asynchronous exception is cleared only when the pending exception is
-  // not NULL, the flag will remain set for the whole lifetime of our process,
-  // ensuring that eval_breaker is enabled whenever we call
-  // PyErr_SetInterrupt(). With Python 3.12+, another potential workaround could
-  // be calling _PyEval_AddPendingCall(), which allows to schedule a call from
-  // non-main thread.
-  PyErr_SetInterrupt();
-
-#if defined(_WIN32)
-  // Python's signal handler is not installed, we need to manually trigger the
-  // event to make sure that time.sleep() is interrupted
-  SetEvent(_PyOS_SigintEvent());
-#endif  // !_WIN32
+  Python_context::keyboard_interrupt();
 }
 
 void Shell_python::interruption_notification() {
