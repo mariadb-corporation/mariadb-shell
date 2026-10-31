@@ -210,11 +210,25 @@ section "Bundled plugins load"
 # at all -- it only adds functions to util. So read the name out of the plugin's
 # own init.py: the @plugin class together with its optional parent=, or, for a
 # plugin that only extends an existing object, the first name it registers with
-# @plugin_function. Either way the result is a name that exists only if the
-# plugin actually loaded, which is the point of the check.
+# @plugin_function. A dba vendor plugin (dba_vendor_<name>_plugin) registers
+# neither: its init.py calls dba_plugin's register_vendor_plugin(), which makes
+# the object dba.vendor.<name> with the name in camelCase. Either way the result
+# is a name that exists only if the plugin actually loaded, which is the point
+# of the check.
 plugin_object() {
-  local init="$1/init.py"
+  local init="$1/init.py" dir
   [ -f "$init" ] || return 1
+  dir="$(basename "$1")"
+  case "$dir" in
+    dba_vendor_*_plugin)
+      if grep -q 'register_vendor_plugin(' "$init"; then
+        dir="${dir#dba_vendor_}"
+        printf 'dba.vendor.%s\n' "$(printf '%s' "${dir%_plugin}" |
+          awk -F_ '{ s = $1; for (i = 2; i <= NF; i++) s = s toupper(substr($i, 1, 1)) substr($i, 2); print s }')"
+        return 0
+      fi
+      ;;
+  esac
   awk -v q="\"'" '
     !pending && /^[[:space:]]*@plugin([[:space:]]|\(|$)/ {
       parent = ""
@@ -313,7 +327,8 @@ else
     case "$obj" in ''|'#'*) continue ;; esac
     label="$obj $args"
 
-    # A plugin the package does not bundle is skipped: mcp_plugin is optional.
+    # A plugin the package does not bundle is skipped: the plugins repo may
+    # not have it yet.
     if ! has_object "$obj"; then
       skip "$label" "plugin not bundled in this package"
       continue
