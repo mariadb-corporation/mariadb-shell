@@ -46,7 +46,7 @@ coming back late can still read how its task ended.
 
 The process must not end under the shell's own tasks, so:
 
-* **A command-line call** (``mariadb-shell -- dba deploy vendor object ...``)
+* **A command-line call** (``mariadb-shell -- dba create vendor object ...``)
   follows the task it starts to its end: the function returns through
   :func:`answer`, which the shell tells which function the call runs.
 * **A script** (``-f``, ``-e``) that ends with tasks still running waits for
@@ -91,7 +91,7 @@ _tasks = {}
 _tasks_lock = threading.Lock()
 
 # The function a command-line call runs, as "object.function", e.g.
-# "dba.deploy.vendor.object": set by the shell right before it calls it.
+# "dba.create.vendor.object": set by the shell right before it calls it.
 cli_function = None
 # Whether the shell's own tasks were started in an interactive session, which
 # does not wait for them when it ends; None until one is started.
@@ -700,7 +700,7 @@ def answer(task, function: str):
     """What a function that started a task returns to its caller.
 
     The task's id and status, at once - unless the function is the one a
-    command-line call runs (``mariadb-shell -- dba deploy vendor object ...``),
+    command-line call runs (``mariadb-shell -- dba create vendor object ...``),
     whose process ends right after it returns. That call follows the task to
     its end instead (see :func:`follow`): its messages go to stderr as they
     come, and it returns the task's result, which the shell prints, or raises
@@ -710,7 +710,7 @@ def answer(task, function: str):
     Args:
         task (Task): The task the function started.
         function (str): The function, as "object.function", e.g.
-            "dba.deploy.vendor.object".
+            "dba.create.vendor.object".
 
     Returns:
         dict: ``task_id`` and ``status``; or, in a command-line call, the

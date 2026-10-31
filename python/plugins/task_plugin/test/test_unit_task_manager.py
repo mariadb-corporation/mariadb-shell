@@ -74,7 +74,7 @@ def test_a_failing_task_reports_its_error_and_ends_its_running_stage():
         task.stage_started("deploy")
         raise RuntimeError("quota exceeded")
 
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     snapshot = _finished(task)
 
@@ -92,7 +92,7 @@ def test_a_cancel_wakes_a_sleeping_task():
         task.sleep(60)
         return "never"
 
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     started.wait(5)
     began = time.monotonic()
@@ -156,15 +156,15 @@ def test_waiting_for_news_answers_on_a_message_or_after_the_timeout():
 
 def test_tasks_are_kept_apart_by_owner_and_listed_by_type():
     release = threading.Event()
-    mine = tm.create("dba", "deploy_object", "Deploy db1", owner="client-a")
+    mine = tm.create("dba", "create_object", "Create db1", owner="client-a")
     dump = tm.create("util", "dump_schemas", "Dump", owner="client-a")
-    theirs = tm.create("dba", "deploy_object", "Deploy db2", owner="client-b")
-    shells = tm.create("dba", "deploy_object", "Deploy db3")
+    theirs = tm.create("dba", "create_object", "Create db2", owner="client-b")
+    shells = tm.create("dba", "create_object", "Create db3")
     for task in (mine, dump, theirs, shells):
         task.start(lambda t: release.wait(5))
 
-    assert [t.title for t in tm.list_tasks("client-a")] == ["Deploy db1", "Dump"]
-    assert [t.title for t in tm.list_tasks("client-a", "dba")] == ["Deploy db1"]
+    assert [t.title for t in tm.list_tasks("client-a")] == ["Create db1", "Dump"]
+    assert [t.title for t in tm.list_tasks("client-a", "dba")] == ["Create db1"]
     assert tm.list_tasks() == [shells]
     assert tm.get(mine.id, "client-a") is mine
 
@@ -178,10 +178,10 @@ def test_tasks_are_kept_apart_by_owner_and_listed_by_type():
 
 def test_a_task_never_started_is_not_listed_and_holds_no_slot():
     # its plugin failed between creating and starting it
-    tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
+    tm.create("dba", "create_object", "Create db1", max_running=1)
     assert tm.list_tasks() == []
 
-    task = tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+    task = tm.create("dba", "create_object", "Create db2", max_running=1)
     task.start(lambda t: None)
     assert tm.list_tasks() == [task]
     _finished(task)
@@ -189,8 +189,8 @@ def test_a_task_never_started_is_not_listed_and_holds_no_slot():
 
 def test_starting_one_too_many_is_refused():
     release = threading.Event()
-    first = tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
-    second = tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+    first = tm.create("dba", "create_object", "Create db1", max_running=1)
+    second = tm.create("dba", "create_object", "Create db2", max_running=1)
     first.start(lambda t: release.wait(5))
 
     with pytest.raises(tm.TaskError, match="Already 1 dba tasks are running"):
@@ -204,20 +204,20 @@ def test_an_owner_may_run_only_so_many_tasks_of_a_type():
     release = threading.Event()
     running = []
     for number in range(2):
-        task = tm.create("dba", "deploy_object", f"Deploy db{number}", max_running=2)
+        task = tm.create("dba", "create_object", f"Create db{number}", max_running=2)
         task.start(lambda t: release.wait(5))
         running.append(task)
 
     with pytest.raises(tm.TaskError, match="Already 2 dba tasks are running"):
-        tm.create("dba", "deploy_object", "Deploy db3", max_running=2)
+        tm.create("dba", "create_object", "Create db3", max_running=2)
     # other types, and other owners, are counted on their own
     tm.create("util", "dump_schemas", "Dump", max_running=2)
-    tm.create("dba", "deploy_object", "Deploy db3", owner="client-b", max_running=2)
+    tm.create("dba", "create_object", "Create db3", owner="client-b", max_running=2)
 
     release.set()
     for task in running:
         _finished(task)
-    tm.create("dba", "deploy_object", "Deploy db3", max_running=2)
+    tm.create("dba", "create_object", "Create db3", max_running=2)
 
 
 def test_finished_tasks_expire_and_are_capped(monkeypatch):
@@ -237,7 +237,7 @@ def test_finished_tasks_expire_and_are_capped(monkeypatch):
 
 
 def test_a_summary_leaves_the_messages_out():
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.message("one")
     summary = task.summary()
     assert "messages" not in summary and "messages_dropped" not in summary
@@ -308,7 +308,7 @@ def test_a_task_that_cannot_start_ends_failed(monkeypatch):
         raise RuntimeError("can't start new thread")
 
     monkeypatch.setattr(threading.Thread, "start", no_thread)
-    task = tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
+    task = tm.create("dba", "create_object", "Create db1", max_running=1)
     with pytest.raises(tm.TaskError, match="The task could not start: can't start new thread"):
         task.start(lambda t: None)
 
@@ -318,11 +318,11 @@ def test_a_task_that_cannot_start_ends_failed(monkeypatch):
     assert snapshot["messages"][-1]["text"] == snapshot["error"]
     # it never ran, and does not hold the one running slot
     assert snapshot["started_at"] is None and snapshot["finished_at"] is not None
-    tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+    tm.create("dba", "create_object", "Create db2", max_running=1)
 
 
 def test_a_task_cancelled_while_it_could_not_start_ends_cancelled(monkeypatch):
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
 
     def cancel_then_fail(self):
         task.cancel()
@@ -348,7 +348,7 @@ def test_an_interrupted_start_does_not_run_the_work_later(monkeypatch):
             started.append(self)
             raise KeyboardInterrupt
 
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     monkeypatch.setattr(threading.Thread, "start", start_then_interrupt)
     with pytest.raises(KeyboardInterrupt):
         task.start(lambda t: ran.append(True))
@@ -364,16 +364,16 @@ def test_an_interrupted_start_does_not_run_the_work_later(monkeypatch):
 
 @pytest.fixture
 def cli_call(monkeypatch):
-    """Runs a test as the shell does a command-line call of dba.deploy.vendor.object."""
-    monkeypatch.setattr(tm, "cli_function", "dba.deploy.vendor.object")
+    """Runs a test as the shell does a command-line call of dba.create.vendor.object."""
+    monkeypatch.setattr(tm, "cli_function", "dba.create.vendor.object")
 
 
 def test_a_function_returns_the_task_id_unless_it_is_the_command_line_call(monkeypatch):
-    task = tm.create("dba", "deploy_object", "Deploy db1")
-    assert tm.answer(task, "dba.deploy.vendor.object") == {"task_id": task.id, "status": tm.PENDING}
+    task = tm.create("dba", "create_object", "Create db1")
+    assert tm.answer(task, "dba.create.vendor.object") == {"task_id": task.id, "status": tm.PENDING}
     # a function another one calls, as an MCP server's tools are from mcp start
     monkeypatch.setattr(tm, "cli_function", "mcp.start")
-    assert tm.answer(task, "dba.deploy.vendor.object")["task_id"] == task.id
+    assert tm.answer(task, "dba.create.vendor.object")["task_id"] == task.id
 
 
 def test_the_command_line_call_follows_its_task_to_the_result(cli_call, capsys):
@@ -382,10 +382,10 @@ def test_the_command_line_call_follows_its_task_to_the_result(cli_call, capsys):
         task.message("quota nearly used", "warning")
         return {"name": "db1"}
 
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     # the shell's spelling of the name, from the command line
-    assert tm.answer(task, "dba.deploy.vendor.object") == {"name": "db1"}
+    assert tm.answer(task, "dba.create.vendor.object") == {"name": "db1"}
     assert capsys.readouterr().err == "is starting\nWARNING: quota nearly used\n"
 
 
@@ -394,16 +394,16 @@ def test_the_command_line_call_raises_the_error_of_its_task(cli_call, capsys):
         task.message("is starting")
         raise RuntimeError("quota exceeded")
 
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     with pytest.raises(tm.TaskError, match="^quota exceeded$"):
-        tm.answer(task, "dba.deploy.vendor.object")
+        tm.answer(task, "dba.create.vendor.object")
     # the error is reported once, as the error
     assert capsys.readouterr().err == "is starting\n"
 
 
 def test_ctrl_c_cancels_the_task_a_command_line_call_follows(monkeypatch):
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(lambda t: t.sleep(60))
     real_follow = tm._follow
     calls = []
@@ -433,16 +433,16 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
         release.wait(5)
         task.message("is running")
 
-    mine = tm.create("dba", "deploy_object", "Deploy db1")
+    mine = tm.create("dba", "create_object", "Create db1")
     mine.start(work)
     # an MCP client's task is the server's business
-    tm.create("dba", "deploy_object", "Deploy db2", owner="client-a").start(lambda t: t.sleep(60))
+    tm.create("dba", "create_object", "Create db2", owner="client-a").start(lambda t: t.sleep(60))
     threading.Timer(0.2, release.set).start()
 
     tm.at_exit()
     assert mine.status == tm.COMPLETED
     assert written == [
-        "Waiting for 1 background task(s) to end: Deploy db1. Press Ctrl+C to stop waiting.",
+        "Waiting for 1 background task(s) to end: Create db1. Press Ctrl+C to stop waiting.",
         "is running",
     ]
 
@@ -451,7 +451,7 @@ def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
     written = []
     monkeypatch.setattr(tm, "_write_fd", written.append)
     monkeypatch.setattr(tm, "_interactive", True)
-    task = tm.create("dba", "deploy_object", "Deploy db1")
+    task = tm.create("dba", "create_object", "Create db1")
     task.start(lambda t: t.sleep(60))
 
     tm.at_exit()
@@ -459,7 +459,7 @@ def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
     tm.at_exit()
     assert task.status == tm.RUNNING
     assert written == [
-        "1 background task(s) still running stop with the shell: Deploy db1. "
+        "1 background task(s) still running stop with the shell: Create db1. "
         "What a cloud vendor already started goes on there."
     ]
     task.cancel()

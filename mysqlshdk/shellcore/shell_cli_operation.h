@@ -59,7 +59,7 @@ class Shell_cli_operation {
 
   /**
    * Sets what is told the qualified name of the function a command-line call
-   * runs, e.g. "dba.deploy.vendor.object", right before it is called - so
+   * runs, e.g. "dba.create.vendor.object", right before it is called - so
    * that a function starting a background task can wait for it, the process
    * ending right after the call.
    */
