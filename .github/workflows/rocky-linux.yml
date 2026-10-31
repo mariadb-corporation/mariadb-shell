@@ -90,8 +90,11 @@ jobs:
           set -euo pipefail
           SRC="_shell-plugins-src"
           DEST="plugins/external"
+          # dba_plugin is a plugin group: dba_core and the vendor plugins are its
+          # subfolders, so copying the folder ships all of them.
+          PLUGINS="rest_plugin msm_plugin mcp_plugin dba_plugin"
 
-          for plugin in rest_plugin msm_plugin mcp_plugin; do
+          for plugin in $PLUGINS; do
             if [ -d "$SRC/$plugin" ]; then
               echo "Bundling $plugin -> $DEST/"
               rm -rf "$DEST/$plugin"
@@ -104,7 +107,7 @@ jobs:
           # Strip what must not ship: 'internal' folders, dotfolders (.git,
           # .vscode) and __pycache__. -depth removes nested matches before their
           # parents so rm never trips over an already-deleted path.
-          for plugin in rest_plugin msm_plugin mcp_plugin; do
+          for plugin in $PLUGINS; do
             target="$DEST/$plugin"
             [ -d "$target" ] || continue
             find "$target" -depth -type d \
