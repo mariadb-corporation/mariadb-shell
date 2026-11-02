@@ -492,6 +492,30 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
     ]
 
 
+def test_a_script_writes_at_exit_the_messages_of_all_its_tasks_as_they_come(monkeypatch):
+    written = []
+    # the first task ends only once the second one's message was written,
+    # and the second one only once the first ended: both run at exit
+    dump_written = threading.Event()
+    deploy_done = threading.Event()
+
+    def write(line):
+        written.append(line)
+        if line == "dump done":
+            dump_written.set()
+
+    monkeypatch.setattr(tm, "_write_stderr", write)
+    first = tm.create("sandbox", "deploy", "Deploy 3311")
+    first.start(lambda t: (dump_written.wait(5), t.message("deploy done"), deploy_done.set()))
+    tm.create("util", "dump_schemas", "Dump sakila").start(
+        lambda t: (t.message("dump done"), deploy_done.wait(5))
+    )
+
+    tm.at_exit(False)
+    assert dump_written.is_set() and first.status == tm.COMPLETED
+    assert written[1:] == ["dump done", "deploy done"]
+
+
 def test_a_script_reports_at_exit_the_error_of_a_task_that_failed(monkeypatch):
     written = []
     monkeypatch.setattr(tm, "_write_stderr", written.append)

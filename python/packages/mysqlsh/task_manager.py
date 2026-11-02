@@ -629,6 +629,30 @@ def _write_stderr(line: str) -> None:
     sys.stderr.flush()
 
 
+def _write_news(snapshot: dict, write, error_follows=True) -> None:
+    """Writes the messages of a snapshot.
+
+    Args:
+        snapshot (dict): The snapshot, as :meth:`Task.wait_for_news` returns it.
+        write: Called with each line to write.
+        error_follows (bool): Whether the caller reports the task's error
+            itself, as :func:`follow` raises it: the message :meth:`Task._finish`
+            added for it last is then left out, not to say it twice.
+    """
+    for message in snapshot["messages"]:
+        # the last message of a failed or cancelled task is the one _finish
+        # added for its end, whatever it reads; an earlier one reading the
+        # same is the work's own
+        if (
+            error_follows
+            and snapshot["status"] in (FAILED, CANCELLED)
+            and message["seq"] == snapshot["next_since"]
+        ):
+            continue
+        level = message["level"]
+        write(message["text"] if level in ("info", "status") else f"{level.upper()}: {message['text']}")
+
+
 def _follow(task, write, position=None, error_follows=True) -> dict:
     """Writes a task's messages as they come, until it ends; returns its last snapshot.
 
@@ -637,25 +661,12 @@ def _follow(task, write, position=None, error_follows=True) -> dict:
         write: Called with each line to write.
         position (dict): Where the writing got to, as ``{"since": seq}``, kept
             up to date, so that following again goes on from there.
-        error_follows (bool): Whether the caller reports the task's error
-            itself, as :func:`follow` raises it: the message :meth:`Task._finish`
-            added for it last is then left out, not to say it twice.
+        error_follows (bool): As :func:`_write_news` takes it.
     """
     position = {"since": 0} if position is None else position
     while True:
         snapshot = task.wait_for_news(position["since"], 1.0)
-        for message in snapshot["messages"]:
-            # the last message of a failed or cancelled task is the one _finish
-            # added for its end, whatever it reads; an earlier one reading the
-            # same is the work's own
-            if (
-                error_follows
-                and snapshot["status"] in (FAILED, CANCELLED)
-                and message["seq"] == snapshot["next_since"]
-            ):
-                continue
-            level = message["level"]
-            write(message["text"] if level in ("info", "status") else f"{level.upper()}: {message['text']}")
+        _write_news(snapshot, write, error_follows)
         position["since"] = snapshot["next_since"]
         if snapshot["status"] in FINISHED_STATES:
             return snapshot
@@ -758,8 +769,17 @@ def at_exit(interactive: bool) -> None:
             f"Waiting for {len(running)} background task(s) to end: {titles}. "
             "Press Ctrl+C to stop waiting."
         )
-        for task in running:
-            # nobody raises a task's error here, as follow() does: it is written
-            _follow(task, _write_stderr, error_follows=False)
+        # the tasks' messages are written as they come, from all of them:
+        # each is asked for news in turn, briefly, as no one wait covers
+        # them all
+        since = {task.id: 0 for task in running}
+        while running:
+            for task in list(running):
+                snapshot = task.wait_for_news(since[task.id], 0.1)
+                # nobody raises a task's error here, as follow() does: it is written
+                _write_news(snapshot, _write_stderr, error_follows=False)
+                since[task.id] = snapshot["next_since"]
+                if snapshot["status"] in FINISHED_STATES:
+                    running.remove(task)
     except KeyboardInterrupt:
         _write_stderr("Stopped waiting: the tasks still running stop with the shell.")
