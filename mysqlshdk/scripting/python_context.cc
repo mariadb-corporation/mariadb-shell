@@ -387,7 +387,6 @@ py::Release py_run_string_interactive(const std::string &str, PyObject *globals,
 
 }  // namespace
 
-
 Python_init_singleton::~Python_init_singleton() {
   if (m_local_initialization) Py_Finalize();
 }

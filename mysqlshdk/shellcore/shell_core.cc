@@ -151,6 +151,9 @@ int Shell_core::process_stream(std::istream &stream,
   Input_state state = Input_state::Ok;
   m_global_return_code = 0;
 
+  // a sys.exit() in an earlier input (i.e. a startup script) ends this one too
+  if (m_exit_code) return m_global_return_code;
+
   _input_source = source;
   if (_mode == Shell_core::Mode::SQL) {
     if (!_langs[_mode]->handle_input_stream(&stream)) m_global_return_code = 1;

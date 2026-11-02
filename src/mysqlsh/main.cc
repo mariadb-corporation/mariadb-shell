@@ -570,6 +570,10 @@ int main(int argc, char **argv) {
       shell->restore_print();
       shell->print_cmd_line_helper();
       ret_val = options.exit_code;
+    } else if (const auto startup_exit = shell->shell_context()->exit_code()) {
+      // a startup script's sys.exit(): the shell ends with its code, without
+      // connecting or running what the command line asked for
+      ret_val = *startup_exit;
     } else {
       // The banner is printed only when in a real interactive session.
       if (options.interactive) {
@@ -697,10 +701,7 @@ int main(int argc, char **argv) {
 
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
 
-      if (shell->shell_context()->exit_code()) {
-        // a startup script's sys.exit(): the shell ends without running
-        // what the command line asked for, as it did in the script
-      } else if (shell_cli_operation) {
+      if (shell_cli_operation) {
         try {
           shell->print_result(shell_cli_operation->execute());
         } catch (const std::invalid_argument &e) {

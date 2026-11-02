@@ -1206,6 +1206,8 @@ void Command_line_shell::command_loop() {
             cmd + "\n", mysqlsh::Output_stream::STDOUT, false);
     }
     process_line(cmd);
+    // a sys.exit() ends the shell without reconnecting a lost session
+    if (_shell->exit_code()) break;
     reconnect_if_needed();
     detect_session_change();
   }
