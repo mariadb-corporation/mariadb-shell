@@ -902,6 +902,21 @@ TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "Waiting for 1 background task(s) to end: Create db2.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
+
+  // -i only changes how a script's lines are processed: it is still a
+  // script, and is waited for
+  rc = execute(
+      {_mysqlsh, "--py", "-i", "-e",
+       "from mysqlsh import task_manager as tm; "
+       "tm.create('dba', 'create_object', 'Create db3').start(lambda t: "
+       "(t.sleep(0.2), t.message('step three')))",
+       NULL});
+
+  EXPECT_EQ(0, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "Waiting for 1 background task(s) to end: Create db3.");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("step three");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("still running stop with the shell");
 }
 
 }  // namespace tests

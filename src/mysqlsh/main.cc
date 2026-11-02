@@ -735,8 +735,9 @@ int main(int argc, char **argv) {
 
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
 #ifdef HAVE_PYTHON
-      // taken now: \quit turns the option off
-      const bool interactive = options.interactive;
+      // whether the command loop ran: -i with a script or a stream still runs
+      // the script, and the option is off again once \quit ended the loop
+      bool interactive_session = false;
 #endif
 
       if (shell_cli_operation) {
@@ -783,6 +784,9 @@ int main(int argc, char **argv) {
       } else if (!options.run_module.empty()) {
         ret_val = shell->run_module(options.run_module, options.script_argv);
       } else if (options.interactive) {
+#ifdef HAVE_PYTHON
+        interactive_session = true;
+#endif
         shell->load_state();
 
         shell->pre_command_loop();
@@ -804,7 +808,7 @@ int main(int argc, char **argv) {
 
 #ifdef HAVE_PYTHON
       // a script Ctrl+C ended is not made to wait for its tasks on top
-      if (!interrupted.test()) wait_for_background_tasks(interactive);
+      if (!interrupted.test()) wait_for_background_tasks(interactive_session);
 #endif
     }
     // a script that caught the Ctrl+C and called sys.exit() ends with its
