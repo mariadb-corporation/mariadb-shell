@@ -30,6 +30,7 @@
 #include <atomic>
 #include <iostream>
 #include <list>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -252,7 +253,7 @@ class SHCORE_PUBLIC Shell_core : public shcore::IShell_core {
   void cancel_input();
   const std::string &get_input_source() override { return _input_source; }
   void request_exit(int code) override { m_exit_code = code; }
-  std::optional<int> exit_code() const override { return m_exit_code; }
+  std::optional<int> exit_code() const { return m_exit_code; }
   std::string get_main_delimiter() const;
 
   void init_py();

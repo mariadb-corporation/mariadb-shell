@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -66,6 +67,8 @@ class Shell_python : public Shell_language {
 
  private:
   void interrupt() noexcept;
+  // hands the code of a sys.exit() in the code just run to the shell
+  void forward_exit();
 
   void interruption_notification();
 

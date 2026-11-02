@@ -97,9 +97,7 @@ void Shell_python::handle_input(std::string &code, bool flush) {
       // and the correct return_value of undefined is set
     }
   }
-  if (const auto exit_code = _py->take_exit_code()) {
-    _owner->request_exit(*exit_code);
-  }
+  forward_exit();
   if (!code.empty()) {
     _last_handled = code;
   }
@@ -162,6 +160,12 @@ void Shell_python::interrupt() noexcept {
 #endif  // !_WIN32
 }
 
+void Shell_python::forward_exit() {
+  if (const auto exit_code = _py->take_exit_code()) {
+    _owner->request_exit(*exit_code);
+  }
+}
+
 void Shell_python::interruption_notification() {
   log_info("User aborted Python execution (^C)");
 }
@@ -180,9 +184,7 @@ void Shell_python::execute_module(const std::string &module_name,
     WillEnterPython lock;
 
     ret_val = _py->execute_module(module_name, args);
-    if (const auto exit_code = _py->take_exit_code()) {
-      _owner->request_exit(*exit_code);
-    }
+    forward_exit();
 
     _result_processor(ret_val, ret_val.get_type() == shcore::Undefined);
   } catch (const std::exception &exc) {

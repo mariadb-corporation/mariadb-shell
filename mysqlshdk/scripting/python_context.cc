@@ -387,7 +387,6 @@ py::Release py_run_string_interactive(const std::string &str, PyObject *globals,
 
 }  // namespace
 
-bool Python_context::module_processing = false;
 
 Python_init_singleton::~Python_init_singleton() {
   if (m_local_initialization) Py_Finalize();
@@ -607,11 +606,9 @@ void Python_context::print_error() {
   py::Release code{PyObject_GetAttrString(exc_value.get(), "code")};
   int exit_code = 0;
 
-  if (!code || code.get() == Py_None) {
-    exit_code = 0;
-  } else if (PyLong_Check(code.get())) {
+  if (code && PyLong_Check(code.get())) {
     exit_code = static_cast<int>(PyLong_AsLong(code.get()));
-  } else {
+  } else if (code && code.get() != Py_None) {
     if (const auto stderr_file = PySys_GetObject("stderr");
         stderr_file && stderr_file != Py_None) {
       PyFile_WriteObject(code.get(), stderr_file, Py_PRINT_RAW);
@@ -1831,15 +1828,13 @@ Value Python_context::execute_module(const std::string &module_name,
         "Could not create arguments for runpy._run_module_as_main");
   }
 
-  module_processing = true;
   const py::Release py_result{
       PyObject_Call(runmodule.get(), runargs.get(), NULL)};
-  module_processing = false;
-
-  if (!py_result) print_error();
 
   if (py_result) {
     ret_val = convert(py_result.get());
+  } else {
+    print_error();
   }
 
   return ret_val;

@@ -697,7 +697,10 @@ int main(int argc, char **argv) {
 
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
 
-      if (shell_cli_operation) {
+      if (shell->shell_context()->exit_code()) {
+        // a startup script's sys.exit(): the shell ends without running
+        // what the command line asked for, as it did in the script
+      } else if (shell_cli_operation) {
         try {
           shell->print_result(shell_cli_operation->execute());
         } catch (const std::invalid_argument &e) {

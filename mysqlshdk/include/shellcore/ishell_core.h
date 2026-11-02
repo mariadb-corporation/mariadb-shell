@@ -30,7 +30,6 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -89,7 +88,6 @@ class SHCORE_PUBLIC IShell_core {
   // A script's sys.exit(): the shell stops reading input and ends with the
   // code, after its own cleanup.
   virtual void request_exit(int code) = 0;
-  virtual std::optional<int> exit_code() const = 0;
 
   virtual Help_manager *get_helper() = 0;
   virtual std::vector<std::string> get_global_objects(Mode mode) = 0;

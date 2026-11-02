@@ -170,7 +170,6 @@ class Python_context {
   std::pair<shcore::Prompt_result, std::string> read_line(
       const std::string &prompt);
 
-  static bool module_processing;
   static PyMethodDef ShellStdErrMethods[];
   static PyMethodDef ShellStdOutMethods[];
   static PyMethodDef ShellStdInMethods[];
