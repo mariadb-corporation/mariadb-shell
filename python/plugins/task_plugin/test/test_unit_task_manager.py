@@ -98,6 +98,15 @@ def test_a_task_whose_work_exits_ends_failed(monkeypatch):
     tm.create("sandbox", "deploy", "Deploy 3312", max_running=1)
 
 
+def test_an_attribute_does_not_replace_a_field_of_the_task():
+    task = tm.create(
+        "util", "dump_schemas", "Dump sakila", attributes={"title": "other", "connection_id": "c1"}
+    )
+    summary = task.summary()
+    assert summary["title"] == "Dump sakila" and summary["connection_id"] == "c1"
+    assert task.snapshot()["title"] == "Dump sakila"
+
+
 def test_a_cancel_wakes_a_sleeping_task():
     started = threading.Event()
 

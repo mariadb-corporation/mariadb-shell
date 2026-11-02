@@ -40,18 +40,23 @@ def main(argv):
             "    python3 -m pip install pytest\n")
         return 2
 
-    # a test to run is a file or folder, with a "::name" after it or not; an
-    # option's value, as the "cancel" of "-k cancel", is neither. It is named
-    # from where the runner was called, and made absolute before the change
-    # of directory below, or pytest would look for it in the plugin folder
-    def test_target(arg):
+    # a test to run is a file or folder, with a "::name" after it or not. It
+    # is named from where the runner was called, and made absolute before
+    # the change of directory below, or pytest would look for it in the
+    # plugin folder. An option's value is not one, even where a file or
+    # folder happens to be named like it, as "test" is: what follows an
+    # option is taken for its value, unless it is unmistakably a test file
+    def test_target(arg, previous):
         path, sep, name = arg.partition("::")
         if arg.startswith("-") or not os.path.exists(path):
             return None
+        if previous.startswith("-") and not (sep or path.endswith(".py")):
+            return None
         return os.path.abspath(path) + sep + name
 
-    targets = [test_target(a) for a in argv[1:]]
-    forwarded = [target or arg for target, arg in zip(targets, argv[1:])]
+    args = argv[1:]
+    targets = [test_target(arg, previous) for previous, arg in zip([""] + args, args)]
+    forwarded = [target or arg for target, arg in zip(targets, args)]
     os.chdir(_PLUGIN_ROOT)
     args = forwarded if any(targets) else ["test"] + forwarded
     return pytest.main(args)

@@ -54,6 +54,7 @@ The following global objects are available in Python mode:
 | `util` | The dump, load and copy utilities, `importTable` / `exportTable`, `changePassword`, and the `util.debug` diagnostics collectors |
 | `sandbox` | Deploy and manage local server sandboxes (see below) |
 | `plugins` | Install, list, update and remove shell plugins |
+| `task` | Follow and cancel the background tasks that long-running plugin functions start: `task.list`, `task.get`, `task.cancel` |
 
 Every API is also reachable from the operating system shell through **API
 Command Line integration**, so no scripting is needed for one-off calls:

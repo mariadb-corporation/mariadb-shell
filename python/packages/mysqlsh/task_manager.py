@@ -130,7 +130,8 @@ class Task:
         title (str): A line describing it, for a list of tasks.
         owner: Who started it, compared with ``==``; None for the shell's own.
         attributes (dict): More to report with the task, e.g. the connection
-            it works on.
+            it works on, each under its own name; one named as a field of
+            the task's own, such as ``title``, is not reported.
         max_running (int): How many tasks of the type the owner may have
             running at once, this one included.
     """
@@ -394,11 +395,12 @@ class Task:
     def _state(self, since=None) -> dict:
         """The task's state; with ``since``, the messages after it as well."""
         state = {
+            # first, so that the task's own fields win over a same-named one
+            **self.attributes,
             "task_id": self.id,
             "task_type": self.task_type,
             "kind": self.kind,
             "title": self.title,
-            **self.attributes,
             "status": self.status,
             "cancel_requested": self.cancel_requested,
             "created_at": self.created_at,
@@ -545,7 +547,8 @@ def create(
         owner: Who starts it; None for the shell's own.
         max_running (int): How many tasks of this type the owner may have
             running at once, this one included.
-        attributes (dict): More to report with the task.
+        attributes (dict): More to report with the task, each under its own
+            name; one named as a field of the task's own is not reported.
 
     Returns:
         Task: The task, not started yet. It is listed, and holds one of the
