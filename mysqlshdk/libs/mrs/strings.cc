@@ -32,19 +32,23 @@ namespace mrs {
 
 // Not std::tolower()/toupper(): their result on a byte >= 0x80 - part of a
 // UTF-8 character - depends on the process locale, and the shell sets one.
+char to_lower(char c) {
+  return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+}
+
+char to_upper(char c) {
+  return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+}
+
 std::string to_lower(std::string_view text) {
   std::string result(text);
-  for (auto &c : result) {
-    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-  }
+  for (auto &c : result) c = to_lower(c);
   return result;
 }
 
 std::string to_upper(std::string_view text) {
   std::string result(text);
-  for (auto &c : result) {
-    if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
-  }
+  for (auto &c : result) c = to_upper(c);
   return result;
 }
 

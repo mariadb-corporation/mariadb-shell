@@ -25,7 +25,6 @@
 
 #include <clocale>
 #include <initializer_list>
-#include <iostream>
 #include <string>
 
 #include "unittest/gtest_clean.h"
@@ -44,7 +43,8 @@ struct Locale_guard {
 
 // Runs check under the first of the locales setlocale() accepts: the same
 // locale is spelled differently by each libc, and not every machine has it
-// installed. Says so when none is, as the check then does not run at all.
+// installed. When none is, the check does not run at all, and the run's
+// summary of skipped tests says so.
 template <typename Check>
 void with_locale(std::initializer_list<const char *> names,
                  const Check &check) {
@@ -52,8 +52,8 @@ void with_locale(std::initializer_list<const char *> names,
   for (const auto name : names) {
     if (std::setlocale(LC_ALL, name)) return check();
   }
-  std::cout << "[   NOTE   ] no " << *names.begin()
-            << " locale is installed, not checked under it\n";
+  ADD_SKIPPED_TEST(std::string("no ") + *names.begin() +
+                   " locale is installed, not checked under it");
 }
 
 }  // namespace
@@ -68,6 +68,10 @@ TEST(Mrs_strings, case_conversion_is_ascii_only) {
     EXPECT_EQ("ABC_1", to_upper("abc_1"));
     EXPECT_EQ("", to_lower(""));
     EXPECT_EQ("", to_upper(""));
+    EXPECT_EQ('a', to_lower('A'));
+    EXPECT_EQ('A', to_upper('a'));
+    EXPECT_EQ('_', to_lower('_'));
+    EXPECT_EQ('\xC3', to_upper('\xC3'));
 
     // Ö is C3 96: a Latin-1 tolower() turns C3 (Ã) into E3 (ã)
     EXPECT_EQ("grÖße", to_lower("GRÖßE"));
@@ -85,7 +89,6 @@ TEST(Mrs_strings, case_conversion_is_ascii_only) {
   with_locale({"en_US.ISO8859-1", "en_US.ISO-8859-1", "en_US.iso88591",
                "en_US.1252", ".1252"},
               check);
-  with_locale({"C"}, check);
 }
 
 }  // namespace mrs

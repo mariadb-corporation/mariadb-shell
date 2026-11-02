@@ -39,6 +39,8 @@ namespace mrs {
 
 // ASCII case conversion: a byte >= 0x80, part of a UTF-8 character, is left
 // as it is, whatever the locale.
+char to_lower(char c);
+char to_upper(char c);
 std::string to_lower(std::string_view text);
 std::string to_upper(std::string_view text);
 

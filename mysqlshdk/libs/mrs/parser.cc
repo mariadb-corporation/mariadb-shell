@@ -25,9 +25,8 @@
 
 #include "mysqlshdk/libs/mrs/parser.h"
 
-#include <cctype>
-
 #include "mysqlshdk/libs/mrs/parser_driver.h"
+#include "mysqlshdk/libs/mrs/strings.h"
 #include "parser_gen.h"
 
 namespace mrs {
@@ -119,7 +118,7 @@ Parser::symbol_type yylex(Driver &driver) {
 namespace {
 
 std::string capitalize(std::string s) {
-  if (!s.empty()) s[0] = static_cast<char>(std::toupper(s[0]));
+  if (!s.empty()) s[0] = to_upper(s[0]);
   return s;
 }
 
