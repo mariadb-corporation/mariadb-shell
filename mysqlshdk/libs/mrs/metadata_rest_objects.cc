@@ -28,8 +28,10 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <set>
 #include <stdexcept>
 
+#include "mysqlshdk/libs/mrs/lexer.h"
 #include "mysqlshdk/libs/mrs/strings.h"
 
 namespace mrs {
@@ -509,12 +511,9 @@ std::string reference_attributes(const Data_mapping_reference &reference) {
 }
 
 // The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
-// references with their own block. Every line ends in ",\n"; the caller
-// cuts the last comma.
-// The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
-// references with their own block. Every line ends in ",\n"; the caller
-// cuts the last comma. schema and table are those the fields' columns are
-// in.
+// references with their own block, the names quoted where REST SQL would
+// not read them back. Every line ends in ",\n"; the caller cuts the last
+// comma. schema and table are those the fields' columns are in.
 std::string walk(const std::vector<Data_mapping_field> &fields,
                  const std::optional<Id> &parent_reference_id, int level,
                  Datatype_check *datatype_check, const std::string &schema,
@@ -528,7 +527,8 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
 
     if (!field.reference) {
       if (!field.enabled || !field.db_column) continue;
-      result += indent + field.name + ": " + field.column_name();
+      result += indent + pair_name_text(field.name) + ": " +
+                pair_name_text(field.column_name());
       const auto attributes = field_attributes(field, datatype_check, schema,
                                                table, row_ownership_field_id);
       if (!attributes.empty()) result += " " + attributes;
@@ -539,8 +539,9 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
     const auto &reference = *field.reference;
     if (!reference.unnest && !field.enabled) continue;
 
-    result += indent + field.name + ": " + reference.referenced_schema() + "." +
-              reference.referenced_table();
+    result += indent + pair_name_text(field.name) + ": " +
+              identifier_text(reference.referenced_schema()) + "." +
+              identifier_text(reference.referenced_table());
     const auto attributes = reference_attributes(reference);
     if (!attributes.empty()) result += " " + attributes;
 
@@ -557,7 +558,7 @@ std::string walk(const std::vector<Data_mapping_field> &fields,
 }
 
 std::string class_header(const Data_mapping &object) {
-  std::string header = "CLASS " + object.name;
+  std::string header = "CLASS " + identifier_text(object.name);
   if (mapping_option(object.options, "dataMappingViewInsert")) header += " @INSERT";
   if (mapping_option(object.options, "dataMappingViewUpdate")) header += " @UPDATE";
   if (mapping_option(object.options, "dataMappingViewDelete")) header += " @DELETE";
@@ -962,7 +963,8 @@ std::string rest_object_create_statement(Db_session *session,
     }
   } else {
     for (const auto &object : objects) {
-      std::string line = "    " + object.kind + " " + object.name;
+      std::string line =
+          "    " + object.kind + " " + identifier_text(object.name);
       Datatype_check datatype_check;
       datatype_check.always = object.kind == "RESULT";
       const auto children = cut_last_comma(
@@ -1188,6 +1190,36 @@ std::vector<Table_column> get_table_columns_with_references(
 }
 
 // -- Naming -------------------------------------------------------------------
+
+namespace {
+
+bool is_plain_identifier(std::string_view name) {
+  return !name.empty() && is_identifier_start(name[0]) &&
+         std::all_of(name.begin(), name.end(), is_identifier_char);
+}
+
+}  // namespace
+
+std::string pair_name_text(std::string_view name) {
+  // The keywords the grammar's graphql_pair_key and graphql_pair_value rules
+  // do not accept unquoted: every keyword but those of
+  // graphql_allowed_keyword and identifier_keyword. The annotation words
+  // (KEY, SORTABLE, ...) are no keywords: without their @ they lex as
+  // identifiers. Mrs_parser's field_pair_keywords test keeps this in step
+  // with the grammar.
+  static const std::set<std::string, std::less<>> quoted_keywords = {
+      "ADD",     "ALL",       "AND",   "DYNAMIC", "ENDPOINTS", "FORCE",
+      "INCLUDE", "INCLUDING", "MERGE", "OBJECTS", "REMOVE",    "STATIC"};
+  if (is_plain_identifier(name) && !quoted_keywords.contains(to_upper(name))) {
+    return std::string(name);
+  }
+  return sql::quote_identifier(name);
+}
+
+std::string identifier_text(std::string_view name) {
+  if (is_plain_identifier(name) && !is_keyword(name)) return std::string(name);
+  return sql::quote_identifier(name);
+}
 
 std::string name_to_camel_case(std::string_view name) {
   // ASCII only, not std::tolower(): a byte >= 0x80 is part of a UTF-8 letter

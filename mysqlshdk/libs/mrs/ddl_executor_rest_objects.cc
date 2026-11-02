@@ -197,6 +197,7 @@ class Mapping_builder {
     object.options = mapping_options(crud);
     add_table_fields(&object, std::nullopt, m_schema_name, m_name, !mapping);
     if (mapping) apply_mapping(&object, *mapping, std::nullopt, false);
+    make_names_unique(&object, mapping.has_value());
     return object;
   }
 
@@ -234,6 +235,7 @@ class Mapping_builder {
     }
 
     if (parameters) apply_mapping(&object, parameters->object, std::nullopt, force);
+    make_names_unique(&object, parameters.has_value());
     return object;
   }
 
@@ -438,6 +440,30 @@ class Mapping_builder {
     field.db_column = std::move(column);
     object->fields.push_back(std::move(field));
     return object->fields.back();
+  }
+
+  // The fields below one parent get distinct names, as the extension's
+  // uniqueName() gives them: a generated name the statement gave another
+  // field, or that an earlier column gives as well (a_b and a-b are both
+  // aB), is numbered - aB2, aB3, ... The statement's own names are kept:
+  // with a mapping, the fields it enabled are the ones it named.
+  void make_names_unique(Data_mapping *object, bool mapped) {
+    const auto named = [mapped](const Data_mapping_field &field) {
+      return mapped && field.enabled;
+    };
+    std::set<std::pair<std::optional<Id>, std::string>> taken;
+    for (const auto &field : object->fields) {
+      if (named(field)) taken.emplace(field.parent_reference_id, field.name);
+    }
+    for (auto &field : object->fields) {
+      if (named(field)) continue;
+      std::string name = field.name;
+      for (int i = 2; taken.contains({field.parent_reference_id, name}); ++i) {
+        name = field.name + std::to_string(i);
+      }
+      taken.emplace(field.parent_reference_id, name);
+      field.name = std::move(name);
+    }
   }
 
   void apply_annotations(Data_mapping *object, Data_mapping_field *field,

@@ -70,6 +70,10 @@ bool is_identifier_start(char c) {
 
 bool is_identifier_char(char c) { return is_identifier_start(c) || is_digit(c); }
 
+bool is_keyword(std::string_view word) {
+  return keyword_map().contains(to_upper(word));
+}
+
 Sql_mode Sql_mode::from_string(std::string_view sql_mode) {
   Sql_mode mode;
   size_t start = 0;
