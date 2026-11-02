@@ -129,10 +129,11 @@ TEST(Mrs_parser, syntax_errors) {
 }
 
 // Keeps metadata::pair_name_text's list of the keywords a field pair does
-// not accept unquoted in step with the grammar: every keyword, and every
-// annotation word without its @, is accepted as a field name and as a
-// column exactly when pair_name_text leaves it as it is; and what
-// pair_name_text and identifier_text write always parses.
+// not accept unquoted in step with the grammar: every keyword (the lexer's
+// SCHEMA(S) aliases included), and every annotation word without its @, is
+// accepted as a field name and as a column exactly when pair_name_text
+// leaves it as it is; and what pair_name_text and identifier_text write
+// always parses.
 TEST(Mrs_parser, field_pair_keywords) {
   const auto parses = [](const std::string &sql) {
     try {
@@ -147,6 +148,7 @@ TEST(Mrs_parser, field_pair_keywords) {
 #define MRS_WORD_TEXT(name, text) text,
       MRS_KEYWORD_LIST(MRS_WORD_TEXT) MRS_ANNOTATION_LIST(MRS_WORD_TEXT)
 #undef MRS_WORD_TEXT
+      "SCHEMA", "SCHEMAS",
   };
   for (const std::string word : words) {
     const auto pair = metadata::pair_name_text(word);

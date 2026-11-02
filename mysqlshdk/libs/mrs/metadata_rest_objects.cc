@@ -511,12 +511,9 @@ std::string reference_attributes(const Data_mapping_reference &reference) {
 }
 
 // The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
-// references with their own block. Every line ends in ",\n"; the caller
-// cuts the last comma.
-// The fields below one parent as `name: column @ATTRIBUTES,` lines, nested
-// references with their own block. Every line ends in ",\n"; the caller
-// cuts the last comma. schema and table are those the fields' columns are
-// in.
+// references with their own block, the names quoted where REST SQL would
+// not read them back. Every line ends in ",\n"; the caller cuts the last
+// comma. schema and table are those the fields' columns are in.
 std::string walk(const std::vector<Data_mapping_field> &fields,
                  const std::optional<Id> &parent_reference_id, int level,
                  Datatype_check *datatype_check, const std::string &schema,
