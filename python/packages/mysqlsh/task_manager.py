@@ -15,16 +15,16 @@
 
 """Background tasks: work that outlives the call that started it.
 
-A dump, a load or a cloud deployment can run for minutes or hours, far longer
-than a caller - a shell user, the VS Code extension, an MCP client - wants to
-wait for one call to return. Such work runs as a task instead: starting it
+A dump or a load can run for minutes or hours, far longer than a caller - a
+shell user, or a program driving the shell - wants to wait for one call to
+return. Such work runs as a task instead: starting it
 returns the task's id at once, and the caller follows it by that id, reading
 its state, the progress of its current stage and the messages it reported
 since the last read, and can cancel it.
 
 Every plugin that runs such work uses this one task manager, so that one
-``task.list`` shows all of them, each with its ``task_type`` - ``util`` for a
-dump or load, ``dba`` for a cloud deployment.
+``task.list`` shows all of them, each with its ``task_type``, e.g. ``util`` for
+a dump or a load.
 
 * **The work** runs on a thread of its own: a function taking the task. It
   reports through the task - :meth:`Task.message`, :meth:`Task.stage_started`,
@@ -34,9 +34,9 @@ dump or load, ``dba`` for a cloud deployment.
   :meth:`Task.sleep`, which wakes on a cancel), and calls what the work set
   with :meth:`Task.set_canceller` - interrupting a process it runs, say.
   Work that ends after a cancel was asked for is reported cancelled.
-* **An owner** keeps the tasks of different callers apart: an MCP server
-  passes the client that started a task, and another client is told it does
-  not exist. The shell's own tasks have no owner.
+* **An owner** keeps the tasks of different callers apart: a plugin serving
+  several clients passes the one that started a task, and another client is
+  told it does not exist. The shell's own tasks have no owner.
 
 Tasks live in the process that started them, in memory: a task started in one
 shell process is not seen by another, and a restart forgets them. Finished
@@ -46,7 +46,7 @@ coming back late can still read how its task ended.
 
 The process must not end under the shell's own tasks, so:
 
-* **A command-line call** (``mariadb-shell -- dba create vendor object ...``)
+* **A command-line call** (``mariadb-shell -- object function ...``)
   follows the task it starts to its end: the function returns through
   :func:`answer`, which the shell tells which function the call runs.
 * **A script** (``-f``, ``-e``) that ends with tasks still running waits for
@@ -54,8 +54,7 @@ The process must not end under the shell's own tasks, so:
 * **An interactive session** that ends with tasks still running says which
   stop with it, and does not wait.
 
-Tasks with an owner - an MCP server's - are the server's business, and are
-never waited for.
+Tasks with an owner are that owner's business, and are never waited for.
 """
 
 import collections
@@ -88,16 +87,16 @@ MAX_WAIT_MS = 30000
 _tasks = {}
 _tasks_lock = threading.Lock()
 
-# The function a command-line call runs, as "object.function", e.g.
-# "dba.create.vendor.object": set by the shell right before it calls it.
+# The function a command-line call runs, as "object.function": set by the
+# shell right before it calls it.
 cli_function = None
 
 
 class TaskError(Exception):
     """A task that does not exist, or one too many to start.
 
-    Plugins turn it into their own kind of error: ``mysqlsh.Error`` in the
-    shell, a tool error in an MCP server.
+    Each front end turns it into its own kind of error: the task global
+    object into ``mysqlsh.Error``.
     """
 
 
@@ -108,8 +107,8 @@ class TaskCancelled(Exception):
 def utc_timestamp() -> str:
     """The current time as tasks report it: ISO 8601, UTC, seconds, with a Z.
 
-    The Z, not +00:00, as JavaScript's toISOString and the MCP plugin's other
-    answers write it, so a client reads every time the same way.
+    The Z, not +00:00, as JavaScript's toISOString writes it, so a client
+    reads every time the same way.
     """
     return (
         datetime.datetime.now(datetime.timezone.utc)
@@ -123,7 +122,7 @@ class Task:
     """One background task and everything a caller can learn about it.
 
     Args:
-        task_type (str): The kind of plugin work, e.g. "util" or "dba".
+        task_type (str): The kind of plugin work, e.g. "util".
         kind (str): What the task does, e.g. "dump_schemas".
         title (str): A line describing it, for a list of tasks.
         owner: Who started it, compared with ``==``; None for the shell's own.
@@ -537,7 +536,7 @@ def create(
     """Makes a new task, refusing one too many.
 
     Args:
-        task_type (str): The kind of plugin work, e.g. "util" or "dba".
+        task_type (str): The kind of plugin work, e.g. "util".
         kind (str): What the task does, e.g. "dump_schemas".
         title (str): A line describing it, for a list of tasks.
         owner: Who starts it; None for the shell's own.
@@ -693,17 +692,17 @@ def answer(task, function: str):
     """What a function that started a task returns to its caller.
 
     The task's id and status, at once - unless the function is the one a
-    command-line call runs (``mariadb-shell -- dba create vendor object ...``),
+    command-line call runs (``mariadb-shell -- object function ...``),
     whose process ends right after it returns. That call follows the task to
     its end instead (see :func:`follow`): its messages go to stderr as they
     come, and it returns the task's result, which the shell prints, or raises
-    its error, which makes the exit code. A function another one calls, as an
-    MCP server's tools are called from ``mcp start``, is no command-line call.
+    its error, which makes the exit code. A function another one calls, as a
+    server's handlers are called from the function that starts the server, is
+    no command-line call.
 
     Args:
         task (Task): The task the function started.
-        function (str): The function, as "object.function", e.g.
-            "dba.create.vendor.object".
+        function (str): The function, as "object.function".
 
     Returns:
         dict: ``task_id`` and ``status``; or, in a command-line call, the
@@ -742,7 +741,7 @@ def at_exit(interactive: bool) -> None:
         if interactive:
             _write_stderr(
                 f"{len(running)} background task(s) still running stop with the shell: "
-                f"{titles}. What a cloud vendor already started goes on there."
+                f"{titles}. What they already started outside the shell goes on there."
             )
             return
 

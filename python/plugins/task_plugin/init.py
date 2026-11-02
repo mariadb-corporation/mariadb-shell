@@ -30,13 +30,13 @@ from mysqlsh.plugin_manager import plugin, plugin_function
 class task:
     """Follow and cancel background tasks.
 
-    Long-running plugin functions, such as deploying a database to a cloud
-    vendor, start a background task and return its id at once instead of
-    blocking until the work is done. This global object follows those tasks.
+    Long-running plugin functions start a background task and return its id
+    at once instead of blocking until the work is done. This global object
+    follows those tasks.
     It lists them, reads the state, progress and messages of one, and
     cancels one.
 
-    Each task has a type naming the plugin work it does, such as dba, so the
+    Each task has a type naming the plugin work it does, such as util, so the
     list can be narrowed to one type. Tasks live in the shell process that
     started them and are forgotten when it ends; a finished task is kept for
     an hour.
@@ -59,7 +59,7 @@ def list_tasks(task_type=None):
     and progress, and, once it ended, its result or error.
 
     Args:
-        task_type (str): Only the tasks of this type, such as dba. By
+        task_type (str): Only the tasks of this type, such as util. By
             default, every type.
 
     Returns:
@@ -97,9 +97,9 @@ def get_task(task_id, since=0, wait_ms=0):
 def cancel_task(task_id):
     """Asks a background task to stop.
 
-    The task stops as soon as its work can: what a cloud vendor already
-    started on its side, such as building a server, goes on there and has to
-    be deleted on its own. Cancelling a task that already ended does nothing.
+    The task stops as soon as its work can: what it already started outside
+    the shell goes on there. Cancelling a task that already ended does
+    nothing.
 
     Args:
         task_id (str): The id the function that started the task returned.

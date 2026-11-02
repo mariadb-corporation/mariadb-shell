@@ -55,7 +55,7 @@ def test_a_task_reports_its_stages_progress_and_result():
 
     assert snapshot["task_type"] == "util"
     assert snapshot["kind"] == "copy_schemas"
-    # times end in Z, as the MCP plugin's other answers and JavaScript write them
+    # times end in Z, as JavaScript writes them
     assert snapshot["created_at"].endswith("Z") and snapshot["finished_at"].endswith("Z")
     assert snapshot["messages"][0]["time"].endswith("Z")
     assert snapshot["connection_id"] == "c1"
@@ -377,16 +377,16 @@ def test_an_interrupted_start_does_not_run_the_work_later(monkeypatch):
 
 @pytest.fixture
 def cli_call(monkeypatch):
-    """Runs a test as the shell does a command-line call of dba.create.vendor.object."""
-    monkeypatch.setattr(tm, "cli_function", "dba.create.vendor.object")
+    """Runs a test as the shell does a command-line call of tool.deploy."""
+    monkeypatch.setattr(tm, "cli_function", "tool.deploy")
 
 
 def test_a_function_returns_the_task_id_unless_it_is_the_command_line_call(monkeypatch):
     task = tm.create("dba", "create_object", "Create db1")
-    assert tm.answer(task, "dba.create.vendor.object") == {"task_id": task.id, "status": tm.PENDING}
-    # a function another one calls, as an MCP server's tools are from mcp start
-    monkeypatch.setattr(tm, "cli_function", "mcp.start")
-    assert tm.answer(task, "dba.create.vendor.object")["task_id"] == task.id
+    assert tm.answer(task, "tool.deploy") == {"task_id": task.id, "status": tm.PENDING}
+    # a function another one calls, as a server's handlers are from the call that starts it
+    monkeypatch.setattr(tm, "cli_function", "server.start")
+    assert tm.answer(task, "tool.deploy")["task_id"] == task.id
 
 
 def test_the_command_line_call_follows_its_task_to_the_result(cli_call, capsys):
@@ -398,7 +398,7 @@ def test_the_command_line_call_follows_its_task_to_the_result(cli_call, capsys):
     task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     # the shell's spelling of the name, from the command line
-    assert tm.answer(task, "dba.create.vendor.object") == {"name": "db1"}
+    assert tm.answer(task, "tool.deploy") == {"name": "db1"}
     assert capsys.readouterr().err == "is starting\nWARNING: quota nearly used\n"
 
 
@@ -410,7 +410,7 @@ def test_the_command_line_call_raises_the_error_of_its_task(cli_call, capsys):
     task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     with pytest.raises(tm.TaskError, match="^quota exceeded$"):
-        tm.answer(task, "dba.create.vendor.object")
+        tm.answer(task, "tool.deploy")
     # the error is reported once, as the error
     assert capsys.readouterr().err == "is starting\n"
 
@@ -423,7 +423,7 @@ def test_the_command_line_call_keeps_a_message_that_reads_like_the_error(cli_cal
     task = tm.create("dba", "create_object", "Create db1")
     task.start(work)
     with pytest.raises(tm.TaskError, match="^quota exceeded$"):
-        tm.answer(task, "dba.create.vendor.object")
+        tm.answer(task, "tool.deploy")
     # only the error message itself is left to the error
     assert capsys.readouterr().err == "WARNING: quota exceeded\n"
 
@@ -460,7 +460,7 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
 
     mine = tm.create("dba", "create_object", "Create db1")
     mine.start(work)
-    # an MCP client's task is the server's business
+    # a task with an owner is that owner's business
     tm.create("dba", "create_object", "Create db2", owner="client-a").start(lambda t: t.sleep(60))
     threading.Timer(0.2, release.set).start()
 
@@ -501,6 +501,6 @@ def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
     assert task.status == tm.RUNNING
     assert written == [
         "1 background task(s) still running stop with the shell: Create db1. "
-        "What a cloud vendor already started goes on there."
+        "What they already started outside the shell goes on there."
     ]
     task.cancel()
