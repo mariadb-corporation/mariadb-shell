@@ -55,6 +55,14 @@ def unknown_column_in_where(column):
         return f"Unknown column '{column}' in 'WHERE'"
     return f"Unknown column '{column}' in 'where clause'"
 
+# The start of SHOW CREATE DATABASE IF NOT EXISTS: MariaDB 13.1.2 no longer
+# wraps IF NOT EXISTS in a version comment (MDEV-30295, merged into the 13.1
+# branch).
+def create_database_if_not_exists(schema):
+    if __server_is_maria_db and __version_num >= 130102:
+        return f"CREATE DATABASE IF NOT EXISTS `{schema}`"
+    return f"CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{schema}`"
+
 def md5_table(session, schema, table, where = "", partitions = []):
     columns = []
     has_pri = 0 != session.run_sql("SELECT COUNT(*) FROM information_schema.statistics WHERE index_name = 'PRIMARY' AND table_schema = ? AND table_name = ?", [schema, table]).fetch_one()[0]

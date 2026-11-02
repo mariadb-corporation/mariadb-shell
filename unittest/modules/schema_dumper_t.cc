@@ -71,6 +71,31 @@ std::string by_vendor(const char *mysql, const char *mariadb) {
   return tests::Shell_test_env::target_server_is_maria_db() ? mariadb : mysql;
 }
 
+// The default utf8mb4 collation a server of this vendor ships with. A server
+// configured with another one (collation_server) prints that one instead.
+std::string default_collation() {
+  return by_vendor("utf8mb4_0900_ai_ci", "utf8mb4_uca1400_ai_ci");
+}
+
+// SHOW CREATE DATABASE IF NOT EXISTS of a database with the default character
+// set: MariaDB 13.1.2 no longer wraps IF NOT EXISTS and the character set in
+// version comments (MDEV-30295, merged into the 13.1 branch).
+std::string create_database_ddl(const std::string &database) {
+  if (tests::Shell_test_env::target_server_is_maria_db() &&
+      tests::Shell_test_env::get_target_server_version() >=
+          mysqlshdk::utils::Version(13, 1, 2)) {
+    return "CREATE DATABASE IF NOT EXISTS " +
+           shcore::quote_identifier(database) +
+           " DEFAULT CHARACTER SET utf8mb4 COLLATE " + default_collation();
+  }
+
+  return "CREATE DATABASE /*!32312 IF NOT EXISTS*/ " +
+         shcore::quote_identifier(database) +
+         " /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE " +
+         default_collation() + " */" +
+         by_vendor(" /*!80016 DEFAULT ENCRYPTION='N' */", "");
+}
+
 // The collation_connection stored with a trigger, view, event or routine is the
 // one of the session which created it. A MariaDB server maps the utf8mb4
 // collation the client asks for in the handshake to its own default
@@ -316,7 +341,7 @@ TEST_F(Schema_dumper_test, dump_table_with_trigger) {
 
 #define TRG_INT by_vendor("int", "int(11)")
 #define TRG_BIGINT by_vendor("bigint", "bigint(20)")
-#define TRG_COLLATE by_vendor("utf8mb4_0900_ai_ci", "utf8mb4_uca1400_ai_ci")
+#define TRG_COLLATE default_collation()
 #define CONN_COLLATE conn_collation()
 #define TRG_SQL_MODE_1                                                       \
   by_vendor(                                                                 \
@@ -343,7 +368,6 @@ TEST_F(Schema_dumper_test, dump_table_with_trigger) {
 #define TRG4_HEAD                                                      \
   by_vendor("TRIGGER `trg4` BEFORE INSERT ON `t2` FOR EACH ROW begin", \
             "trigger trg4 before insert on t2 for each row\nbegin")
-#define DB_ENCRYPTION by_vendor(" /*!80016 DEFAULT ENCRYPTION='N' */", "")
 #define RET_COLLATE by_vendor("", " COLLATE utf8mb4_uca1400_ai_ci")
 #define VW_OPEN by_vendor("(", "")
 #define VW_CLOSE by_vendor(")", "")
@@ -531,8 +555,7 @@ TEST_F(Schema_dumper_test, dump_schema) {
 --
 
 -- begin database `mysqldump_test_db`
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE )" +
-      TRG_COLLATE + R"( */)" + DB_ENCRYPTION + R"(;
+)" + create_database_ddl("mysqldump_test_db") + R"(;
 -- end database `mysqldump_test_db`
 
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

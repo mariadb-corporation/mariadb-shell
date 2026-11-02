@@ -1153,7 +1153,7 @@ TEST_BOOL_OPTION("skipConsistencyChecks")
 TEST_BOOL_OPTION("events")
 
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "events": False, "ddlOnly": True, "showProgress": False })
-EXPECT_FILE_CONTAINS("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{0}`".format(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
+EXPECT_FILE_CONTAINS(create_database_if_not_exists(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
 
 if instance_supports_libraries:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Events))))
@@ -1182,7 +1182,7 @@ else:
 TEST_BOOL_OPTION("routines")
 
 EXPECT_SUCCESS([test_schema], test_output_absolute, { "routines": False, "ddlOnly": True, "showProgress": False })
-EXPECT_FILE_CONTAINS("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{0}`".format(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
+EXPECT_FILE_CONTAINS(create_database_if_not_exists(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
 
 if instance_supports_libraries:
     EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines))))
@@ -1220,7 +1220,7 @@ EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` FUNCTION `{test_sche
 EXPECT_STDOUT_CONTAINS(routine_references_excluded_library("Procedure", test_schema, test_schema_library_procedure, test_schema, test_schema_library).note())
 EXPECT_FILE_CONTAINS(f"CREATE DEFINER=`{__user}`@`{__host}` PROCEDURE `{test_schema_library_procedure}`", os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Routines)))
 
-EXPECT_FILE_CONTAINS("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `{0}`".format(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
+EXPECT_FILE_CONTAINS(create_database_if_not_exists(test_schema), os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Schema)))
 
 EXPECT_FALSE(os.path.isfile(os.path.join(test_output_absolute, schema_ddl_file(test_schema, Schema_ddl.Libraries))))
 
