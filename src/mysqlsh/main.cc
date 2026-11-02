@@ -742,7 +742,9 @@ int main(int argc, char **argv) {
         ret_val = *exit_code;
       }
     }
-    if (interrupted.test()) {
+    // a script that caught the Ctrl+C and called sys.exit() ends with its
+    // own code, as it did when the process ended in the sys.exit()
+    if (interrupted.test() && !(shell && shell->shell_context()->exit_code())) {
 #ifdef _WIN32
       ret_val = 130;
 #else
