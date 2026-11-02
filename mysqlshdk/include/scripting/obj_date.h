@@ -43,7 +43,9 @@ class SHCORE_PUBLIC Date : public Cpp_object_bridge {
  public:
   Date(const Date &date);
   Date(int year, int month, int day, int hour, int min, int sec, int usec);
-  Date(int hour, int min, int sec, int usec);
+  // A TIME value: it is a duration rather than a time of day, so it can be
+  // negative and its hours go up to 838, as the server's TIME type does.
+  Date(int hour, int min, int sec, int usec, bool negative = false);
   Date(int year, int month, int day);
 
   virtual std::string class_name() const { return "Date"; }
@@ -71,6 +73,13 @@ class SHCORE_PUBLIC Date : public Cpp_object_bridge {
 
   bool has_time() const { return _has_time; }
   bool has_date() const { return _has_date; }
+  bool is_negative() const { return _negative; }
+
+  // Whether this is a TIME value that is no time of day: negative, or 24
+  // hours or more.
+  bool is_out_of_day_range() const {
+    return !_has_date && (_negative || _hour > 23);
+  }
 
  public:
   static Date unrepr(const std::string &s);
@@ -90,6 +99,7 @@ class SHCORE_PUBLIC Date : public Cpp_object_bridge {
   int _usec;
   bool _has_time;
   bool _has_date;
+  bool _negative = false;
 };
 }  // namespace shcore
 

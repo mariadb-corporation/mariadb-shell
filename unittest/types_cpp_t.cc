@@ -1,4 +1,5 @@
 /* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+   Copyright (c) 2026, MariaDB plc.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -483,6 +484,43 @@ TEST_F(Types_cpp, time_usec_parsing) {
   EXPECT_EQ(Date::unrepr("00:00:00.100000").get_usec(), 100000);
   EXPECT_EQ(Date::unrepr("00:00:00.000100").get_usec(), 100);
   EXPECT_EQ(Date::unrepr("00:00:00.000001").get_usec(), 1);
+}
+
+TEST_F(Types_cpp, time_outside_one_day) {
+  const auto text = [](const Date &date) {
+    std::string out;
+    return date.append_descr(out);
+  };
+
+  // A TIME is a duration: the server sends -838:59:59 to 838:59:59.
+  const auto longest = Date::unrepr("838:59:59");
+  EXPECT_EQ(longest.get_hour(), 838);
+  EXPECT_FALSE(longest.is_negative());
+  EXPECT_TRUE(longest.is_out_of_day_range());
+  EXPECT_EQ(text(longest), "838:59:59");
+
+  const auto negative = Date::unrepr("-12:00:00.25");
+  EXPECT_EQ(negative.get_hour(), 12);
+  EXPECT_EQ(negative.get_usec(), 250000);
+  EXPECT_TRUE(negative.is_negative());
+  EXPECT_TRUE(negative.is_out_of_day_range());
+  EXPECT_EQ(text(negative), "-12:00:00.250000");
+
+  // The sign survives hours of 0.
+  const auto half_hour_back = Date::unrepr("-00:30:00");
+  EXPECT_TRUE(half_hour_back.is_negative());
+  EXPECT_EQ(text(half_hour_back), "-00:30:00");
+  EXPECT_FALSE(half_hour_back == Date::unrepr("00:30:00"));
+
+  // A time of day is what it was.
+  const auto noon = Date::unrepr("12:00:00");
+  EXPECT_FALSE(noon.is_negative());
+  EXPECT_FALSE(noon.is_out_of_day_range());
+
+  // A date still parses as a date, and its hours still stop at 23.
+  EXPECT_TRUE(Date::unrepr("2026-10-19").has_date());
+  EXPECT_THROW(Date(2026, 10, 19, 24, 0, 0, 0), shcore::Exception);
+  EXPECT_THROW(Date(839, 0, 0, 0), shcore::Exception);
 }
 
 }  // namespace shcore
