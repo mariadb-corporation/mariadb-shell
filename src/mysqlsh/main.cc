@@ -355,11 +355,17 @@ static bool python_keyboard_interrupt() {
 // it only says which stop with the shell - while the shell is still whole:
 // their work uses its sessions and its globals, and the client library, all
 // of which the cleanup in main() tears down right after. Ctrl+C stops the
-// waiting, as the handler above is pushed for it.
+// waiting, and only that: the script or session already ended as it did,
+// and the process ends with its code, as the wait promises - so the
+// handler consumes the Ctrl+C instead of going on to the one that marks
+// the run interrupted.
 static void wait_for_background_tasks(bool interactive) {
   if (!Py_IsInitialized()) return;
 
-  shcore::Interrupt_handler interrupt_python(python_keyboard_interrupt);
+  shcore::Interrupt_handler interrupt_python([]() {
+    shcore::Python_context::keyboard_interrupt();
+    return false;
+  });
 
   WillEnterPython lock;
   shcore::py::Release task_manager{
