@@ -36,3 +36,4 @@ Part of [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - The dba plugin (cloud deployments) is the next consumer, through `answer()` for its CLI calls.
 - Document the `task` global object and `mysqlsh.task_manager` for plugin authors; see [docs-ref.md](docs-ref.md).
 - `python/plugins/sandbox/runtests.py` takes an option's value (`-k name`) for a test path, the flaw fixed in `task_plugin/runtests.py`.
+- `utc_timestamp()` is duplicated in the MCP plugin (`mcp_plugin/lib/general.py`), which already imports `mysqlsh.task_manager`; `task_functions.py` caps the wait with `MAX_WAIT_MS` a second time.

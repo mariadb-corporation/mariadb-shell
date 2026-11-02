@@ -273,10 +273,7 @@ class Task:
             reason = str(error).strip() or error.__class__.__name__
             with self.changed:
                 if self.status == PENDING:
-                    self._finish(
-                        CANCELLED if self.cancel_requested else FAILED,
-                        error=f"The task could not start: {reason}",
-                    )
+                    self._finish(FAILED, error=f"The task could not start: {reason}")
             if isinstance(error, Exception):
                 raise TaskError(f"The task could not start: {reason}") from error
             raise
@@ -298,16 +295,19 @@ class Task:
             # a cancelled task keeps what its work said on stopping, e.g. a
             # utility's "Interrupted by user"
             message = str(error).strip() or error.__class__.__name__
-            self._finish(CANCELLED if self.cancel_requested else FAILED, error=message)
+            self._finish(FAILED, error=message)
             # a SystemExit or the like still ends the thread as it would have,
             # but not with the task left running forever
             if not isinstance(error, Exception):
                 raise
         else:
-            self._finish(CANCELLED if self.cancel_requested else COMPLETED, result=result)
+            self._finish(COMPLETED, result=result)
 
     def _finish(self, status: str, result=None, error=None) -> None:
+        """Ends the task as ``status``, or as cancelled where a cancel came in."""
         with self.changed:
+            if self.cancel_requested:
+                status = CANCELLED
             self.status = status
             self.result = result
             self.error = error
@@ -316,9 +316,7 @@ class Task:
             # nothing is left to stop; let go of what the canceller holds
             self._canceller = None
             # a stage still running ends as the task did
-            for stage in self.stages:
-                if stage["status"] == RUNNING:
-                    stage["status"] = status
+            self._end_running_stages(status)
             if status == CANCELLED:
                 self._add_message("info", "The task was cancelled.")
             elif status == FAILED:
@@ -328,10 +326,13 @@ class Task:
     def fail_running_stages(self) -> None:
         """Ends the stages still running as failed: their process crashed."""
         with self.changed:
-            for stage in self.stages:
-                if stage["status"] == RUNNING:
-                    stage["status"] = FAILED
+            self._end_running_stages(FAILED)
             self._touch()
+
+    def _end_running_stages(self, status: str) -> None:
+        for stage in self.stages:
+            if stage["status"] == RUNNING:
+                stage["status"] = status
 
     # --- cancelling ------------------------------------------------------
 
@@ -385,40 +386,43 @@ class Task:
         Returns:
             dict: The snapshot.
         """
-        since = max(0, since)
         with self.changed:
-            first_kept = self.messages[0]["seq"] if self.messages else self.message_count + 1
-            # the kept messages have consecutive seqs: skip to the first one wanted
-            messages = list(itertools.islice(self.messages, max(0, since - first_kept + 1), None))
-
-            return {
-                "task_id": self.id,
-                "task_type": self.task_type,
-                "kind": self.kind,
-                "title": self.title,
-                **self.attributes,
-                "status": self.status,
-                "cancel_requested": self.cancel_requested,
-                "created_at": self.created_at,
-                "started_at": self.started_at,
-                "finished_at": self.finished_at,
-                "stage": self.stage,
-                "progress": dict(self.progress_info) if self.progress_info else None,
-                "stages": [dict(stage) for stage in self.stages],
-                "messages": messages,
-                # messages that were dropped before the caller could read them
-                "messages_dropped": max(0, first_kept - since - 1),
-                "next_since": self.message_count,
-                "result": self.result,
-                "error": self.error,
-            }
+            return self._state(max(0, since))
 
     def summary(self) -> dict:
         """The task's state without its messages, for a list of tasks."""
-        snapshot = self.snapshot(self.message_count)
-        snapshot.pop("messages")
-        snapshot.pop("messages_dropped")
-        return snapshot
+        with self.changed:
+            return self._state()
+
+    def _state(self, since=None) -> dict:
+        """The task's state; with ``since``, the messages after it as well."""
+        state = {
+            "task_id": self.id,
+            "task_type": self.task_type,
+            "kind": self.kind,
+            "title": self.title,
+            **self.attributes,
+            "status": self.status,
+            "cancel_requested": self.cancel_requested,
+            "created_at": self.created_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "stage": self.stage,
+            "progress": dict(self.progress_info) if self.progress_info else None,
+            "stages": [dict(stage) for stage in self.stages],
+        }
+        if since is not None:
+            first_kept = self.messages[0]["seq"] if self.messages else self.message_count + 1
+            # the kept messages have consecutive seqs, the wanted ones last:
+            # take them from the end, without walking the ones before
+            wanted = max(0, min(self.message_count - since, len(self.messages)))
+            state["messages"] = list(itertools.islice(reversed(self.messages), wanted))[::-1]
+            # messages that were dropped before the caller could read them
+            state["messages_dropped"] = max(0, first_kept - since - 1)
+        state["next_since"] = self.message_count
+        state["result"] = self.result
+        state["error"] = self.error
+        return state
 
     def wait_for_news(self, since: int, timeout: float) -> dict:
         """The task's state, once there is news for a caller at ``since``.
