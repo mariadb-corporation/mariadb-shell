@@ -58,11 +58,9 @@ Tasks with an owner - an MCP server's - are the server's business, and are
 never waited for.
 """
 
-import atexit
 import collections
 import datetime
 import itertools
-import os
 import sys
 import threading
 import time
@@ -93,9 +91,6 @@ _tasks_lock = threading.Lock()
 # The function a command-line call runs, as "object.function", e.g.
 # "dba.create.vendor.object": set by the shell right before it calls it.
 cli_function = None
-# Whether the shell's own tasks were started in an interactive session, which
-# does not wait for them when it ends; None until one is started.
-_interactive = None
 
 
 class TaskError(Exception):
@@ -559,8 +554,6 @@ def create(
         TaskError: The owner already runs ``max_running`` tasks of the type.
     """
     task = Task(task_type, kind, title, owner, attributes, max_running)
-    if owner is None:
-        _note_session()
 
     with _tasks_lock:
         _prune()
@@ -624,18 +617,6 @@ def clear() -> None:
 # --- The shell's own tasks, and the end of the process ------------------------
 
 
-def _note_session() -> None:
-    """Notes whether the shell runs an interactive session, while it still can tell."""
-    global _interactive
-    if _interactive is None:
-        try:
-            from mysqlsh.globals import shell
-
-            _interactive = bool(shell.options["interactive"])
-        except Exception:  # noqa: BLE001 - no shell around, as in the tests
-            _interactive = False
-
-
 def _normalized(name) -> str:
     """A function name as both the command line and the API spell it."""
     return str(name).replace("-", "").replace("_", "").lower()
@@ -644,12 +625,6 @@ def _normalized(name) -> str:
 def _write_stderr(line: str) -> None:
     sys.stderr.write(line + "\n")
     sys.stderr.flush()
-
-
-def _write_fd(line: str) -> None:
-    """Writes to the standard error file itself: at the end of the process the
-    shell's console, which sys.stderr may lead to, can be gone already."""
-    os.write(2, (line + "\n").encode("utf-8", "replace"))
 
 
 def _follow(task, write, position=None, error_follows=True) -> dict:
@@ -742,53 +717,41 @@ def answer(task, function: str):
     return follow(task)
 
 
-# Whether at_exit() ran: the shell calls it once its script or session ended,
-# and Python's atexit once more, for a process ending without the shell's say.
-_exited = False
-
-
-def at_exit() -> None:
+def at_exit(interactive: bool) -> None:
     """Keeps the process from ending under the shell's own running tasks.
 
     A script waits for them, writing their messages; Ctrl+C stops the
     waiting. An interactive session only says which tasks stop with it: who
     quits the shell expects it to go.
 
-    The shell calls this once its script or session ended, while it is still
-    whole: the tasks' work uses the shell - its sessions, its globals - and
-    the client library, which the shell tears down right after, and the Ctrl+C
-    handler that makes a KeyboardInterrupt of the key is the shell's. It is
-    registered with atexit as well, for a process that ends without the
-    shell's say - a script's sys.exit() skips the shell's end - and does
-    nothing the second time it is called.
-    """
-    global _exited
-    if _exited:
-        return
-    _exited = True
+    The shell calls this once its script or session ended - a sys.exit()
+    included - while it is still whole: the tasks' work uses the shell - its
+    sessions, its globals - and the client library, which the shell tears
+    down right after, and the Ctrl+C handler that makes a KeyboardInterrupt of
+    the key is the shell's.
 
+    Args:
+        interactive (bool): Whether the shell ran an interactive session.
+    """
     try:
         running = [task for task in list_tasks() if task.status not in FINISHED_STATES]
         if not running:
             return
 
         titles = "; ".join(task.title for task in running)
-        if _interactive:
-            _write_fd(
+        if interactive:
+            _write_stderr(
                 f"{len(running)} background task(s) still running stop with the shell: "
                 f"{titles}. What a cloud vendor already started goes on there."
             )
             return
 
-        _write_fd(
+        _write_stderr(
             f"Waiting for {len(running)} background task(s) to end: {titles}. "
             "Press Ctrl+C to stop waiting."
         )
         for task in running:
             # nobody raises a task's error here, as follow() does: it is written
-            _follow(task, _write_fd, error_follows=False)
+            _follow(task, _write_stderr, error_follows=False)
     except KeyboardInterrupt:
-        _write_fd("Stopped waiting: the tasks still running stop with the shell.")
-
-
-atexit.register(at_exit)
+        _write_stderr("Stopped waiting: the tasks still running stop with the shell.")

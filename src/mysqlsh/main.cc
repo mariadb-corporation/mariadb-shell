@@ -350,14 +350,13 @@ static bool python_keyboard_interrupt() {
 }
 
 // Keeps the process from ending under the shell's own background tasks. Once
-// the script or the session ended, mysqlsh.task_manager.at_exit() waits for
-// them - in an interactive session, it only says which stop with the shell -
-// while the shell is still whole: their work uses its sessions and its
-// globals, and the client library, all of which the cleanup in main() tears
-// down right after. Ctrl+C stops the waiting, as the handler above is pushed
-// for it. A script's sys.exit() skips this, as it skips the cleanup: the task
-// manager's own atexit handler waits then, with the shell still up.
-static void wait_for_background_tasks() {
+// the script or the session ended - a sys.exit() included -
+// mysqlsh.task_manager.at_exit() waits for them - in an interactive session,
+// it only says which stop with the shell - while the shell is still whole:
+// their work uses its sessions and its globals, and the client library, all
+// of which the cleanup in main() tears down right after. Ctrl+C stops the
+// waiting, as the handler above is pushed for it.
+static void wait_for_background_tasks(bool interactive) {
   if (!Py_IsInitialized()) return;
 
   shcore::Interrupt_handler interrupt_python(python_keyboard_interrupt);
@@ -367,7 +366,8 @@ static void wait_for_background_tasks() {
       PyImport_ImportModule("mysqlsh.task_manager")};
   shcore::py::Release done{
       task_manager
-          ? PyObject_CallMethod(task_manager.get(), "at_exit", nullptr)
+          ? PyObject_CallMethod(task_manager.get(), "at_exit", "O",
+                                interactive ? Py_True : Py_False)
           : nullptr};
   // the shell's own code failing is worth a traceback, not silence
   if (!done) PyErr_Print();
@@ -734,6 +734,10 @@ int main(int argc, char **argv) {
       if (valid_color_capability) shell->load_prompt_theme(pick_prompt_theme());
 
       const auto shell_cli_operation = shell_options->get_shell_cli_operation();
+#ifdef HAVE_PYTHON
+      // taken now: \quit turns the option off
+      const bool interactive = options.interactive;
+#endif
 
       if (shell_cli_operation) {
 #ifdef HAVE_PYTHON
@@ -800,7 +804,7 @@ int main(int argc, char **argv) {
 
 #ifdef HAVE_PYTHON
       // a script Ctrl+C ended is not made to wait for its tasks on top
-      if (!interrupted.test()) wait_for_background_tasks();
+      if (!interrupted.test()) wait_for_background_tasks(interactive);
 #endif
     }
     // a script that caught the Ctrl+C and called sys.exit() ends with its

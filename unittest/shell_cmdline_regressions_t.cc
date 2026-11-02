@@ -889,6 +889,19 @@ TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
       "Waiting for 1 background task(s) to end: Create db1.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step one");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
+
+  // a sys.exit() ends the script the same way, and the shell with its code
+  rc = execute(
+      {_mysqlsh, "--py", "-e",
+       "import sys; from mysqlsh import task_manager as tm; "
+       "tm.create('dba', 'create_object', 'Create db2').start(lambda t: "
+       "(t.sleep(0.2), t.message('step two'))); sys.exit(3)",
+       NULL});
+
+  EXPECT_EQ(3, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "Waiting for 1 background task(s) to end: Create db2.");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
 }
 
 }  // namespace tests

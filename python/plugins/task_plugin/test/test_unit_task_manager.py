@@ -27,7 +27,6 @@ from mysqlsh import task_manager as tm
 @pytest.fixture(autouse=True)
 def no_tasks():
     tm.clear()
-    tm._exited = False
     yield
     tm.clear()
 
@@ -452,8 +451,7 @@ def test_ctrl_c_cancels_the_task_a_command_line_call_follows(monkeypatch):
 
 def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
     written = []
-    monkeypatch.setattr(tm, "_write_fd", written.append)
-    monkeypatch.setattr(tm, "_interactive", False)
+    monkeypatch.setattr(tm, "_write_stderr", written.append)
     release = threading.Event()
 
     def work(task):
@@ -466,7 +464,7 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
     tm.create("dba", "create_object", "Create db2", owner="client-a").start(lambda t: t.sleep(60))
     threading.Timer(0.2, release.set).start()
 
-    tm.at_exit()
+    tm.at_exit(False)
     assert mine.status == tm.COMPLETED
     assert written == [
         "Waiting for 1 background task(s) to end: Create db1. Press Ctrl+C to stop waiting.",
@@ -476,8 +474,7 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
 
 def test_a_script_reports_at_exit_the_error_of_a_task_that_failed(monkeypatch):
     written = []
-    monkeypatch.setattr(tm, "_write_fd", written.append)
-    monkeypatch.setattr(tm, "_interactive", False)
+    monkeypatch.setattr(tm, "_write_stderr", written.append)
     release = threading.Event()
 
     def work(task):
@@ -488,7 +485,7 @@ def test_a_script_reports_at_exit_the_error_of_a_task_that_failed(monkeypatch):
     task.start(work)
     threading.Timer(0.2, release.set).start()
 
-    tm.at_exit()
+    tm.at_exit(False)
     assert task.status == tm.FAILED
     # nobody raises the error here, as follow() does for a command-line call
     assert written[-1] == "ERROR: quota exceeded"
@@ -496,14 +493,11 @@ def test_a_script_reports_at_exit_the_error_of_a_task_that_failed(monkeypatch):
 
 def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
     written = []
-    monkeypatch.setattr(tm, "_write_fd", written.append)
-    monkeypatch.setattr(tm, "_interactive", True)
+    monkeypatch.setattr(tm, "_write_stderr", written.append)
     task = tm.create("dba", "create_object", "Create db1")
     task.start(lambda t: t.sleep(60))
 
-    tm.at_exit()
-    # the shell calls it, and Python's atexit once more: the second does nothing
-    tm.at_exit()
+    tm.at_exit(True)
     assert task.status == tm.RUNNING
     assert written == [
         "1 background task(s) still running stop with the shell: Create db1. "
