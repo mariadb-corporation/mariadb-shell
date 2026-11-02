@@ -874,4 +874,21 @@ TEST_F(Command_line_test, sys_exit_ends_the_shell_with_its_code) {
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("not run");
 }
 
+TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
+  // a script ends with one of the shell's own background tasks still running:
+  // the shell waits for it, writing its messages, and ends once it did
+  int rc = execute(
+      {_mysqlsh, "--py", "-e",
+       "from mysqlsh import task_manager as tm; "
+       "tm.create('dba', 'deploy_object', 'Deploy db1').start(lambda t: "
+       "(t.message('step one'), t.sleep(0.2), t.message('step two')))",
+       NULL});
+
+  EXPECT_EQ(0, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "Waiting for 1 background task(s) to end: Deploy db1.");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("step one");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
+}
+
 }  // namespace tests

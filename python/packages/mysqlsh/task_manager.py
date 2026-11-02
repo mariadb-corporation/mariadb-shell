@@ -134,15 +134,26 @@ class Task:
         owner: Who started it, compared with ``==``; None for the shell's own.
         attributes (dict): More to report with the task, e.g. the connection
             it works on.
+        max_running (int): How many tasks of the type the owner may have
+            running at once, this one included.
     """
 
-    def __init__(self, task_type: str, kind: str, title: str, owner=None, attributes=None):
+    def __init__(
+        self,
+        task_type: str,
+        kind: str,
+        title: str,
+        owner=None,
+        attributes=None,
+        max_running: int = MAX_RUNNING_TASKS,
+    ):
         self.id = str(uuid.uuid4())
         self.task_type = task_type
         self.kind = kind
         self.title = title
         self.owner = owner
         self.attributes = dict(attributes or {})
+        self.max_running = max_running
         self.status = PENDING
         self.created_at = utc_timestamp()
         self.started_at = None
@@ -236,14 +247,21 @@ class Task:
     def start(self, work) -> None:
         """Runs the work on a thread of its own.
 
+        From here on the task is listed, and holds one of its owner's
+        ``max_running`` slots until it ends. A task created and never started
+        is forgotten with its object instead, and holds nothing.
+
         Args:
             work: A function taking the task and returning its result, or
                 raising to fail it.
 
         Raises:
-            TaskError: No thread could be started; the task ended without
-                running, and is not left running.
+            TaskError: The owner already runs ``max_running`` tasks of the
+                type, and the task was not started; or no thread could be
+                started, and the task ended without running. Either way it is
+                not left running.
         """
+        _register(self)
         thread = threading.Thread(
             target=self._run, args=(work,), name=f"task-{self.task_type}-{self.id}", daemon=True
         )
@@ -363,6 +381,7 @@ class Task:
         Returns:
             dict: The snapshot.
         """
+        since = max(0, since)
         with self.changed:
             first_kept = self.messages[0]["seq"] if self.messages else self.message_count + 1
             # the kept messages have consecutive seqs: skip to the first one wanted
@@ -474,6 +493,36 @@ def _prune() -> None:
             _tasks.pop(task.id, None)
 
 
+def _refuse_one_too_many(task: Task) -> None:
+    """Raises :class:`TaskError` where the task's owner already runs
+    ``max_running`` tasks of its type. Called with :data:`_tasks_lock` held."""
+    running = sum(
+        1
+        for other in _tasks.values()
+        if other.owner == task.owner
+        and other.task_type == task.task_type
+        and other.status not in FINISHED_STATES
+    )
+    if running >= task.max_running:
+        raise TaskError(
+            f"Already {running} {task.task_type} tasks are running; wait for one to "
+            "finish or cancel one with task.cancel before starting another."
+        )
+
+
+def _register(task: Task) -> None:
+    """Lists the task, as :meth:`Task.start` does, refusing one too many.
+
+    A task is listed only once it runs: one created and never started -
+    its plugin failing in between - would otherwise hold a running slot and
+    show as pending for as long as the process lives.
+    """
+    with _tasks_lock:
+        _prune()
+        _refuse_one_too_many(task)
+        _tasks[task.id] = task
+
+
 def create(
     task_type: str,
     kind: str,
@@ -482,7 +531,7 @@ def create(
     max_running: int = MAX_RUNNING_TASKS,
     attributes=None,
 ) -> Task:
-    """Registers a new task, refusing one too many.
+    """Makes a new task, refusing one too many.
 
     Args:
         task_type (str): The kind of plugin work, e.g. "util" or "dba".
@@ -494,30 +543,20 @@ def create(
         attributes (dict): More to report with the task.
 
     Returns:
-        Task: The task, not started yet.
+        Task: The task, not started yet. It is listed, and holds one of the
+        owner's ``max_running`` slots, from :meth:`Task.start` on; one never
+        started is forgotten with its object.
 
     Raises:
         TaskError: The owner already runs ``max_running`` tasks of the type.
     """
-    task = Task(task_type, kind, title, owner, attributes)
+    task = Task(task_type, kind, title, owner, attributes, max_running)
     if owner is None:
         _note_session()
 
     with _tasks_lock:
         _prune()
-        running = sum(
-            1
-            for other in _tasks.values()
-            if other.owner == owner
-            and other.task_type == task_type
-            and other.status not in FINISHED_STATES
-        )
-        if running >= max_running:
-            raise TaskError(
-                f"Already {running} {task_type} tasks are running; wait for one to "
-                "finish or cancel one with task.cancel before starting another."
-            )
-        _tasks[task.id] = task
+        _refuse_one_too_many(task)
 
     return task
 
@@ -685,34 +724,52 @@ def answer(task, function: str):
     return follow(task)
 
 
-def _at_exit() -> None:
+# Whether at_exit() ran: the shell calls it once its script or session ended,
+# and Python's atexit once more, for a process ending without the shell's say.
+_exited = False
+
+
+def at_exit() -> None:
     """Keeps the process from ending under the shell's own running tasks.
 
     A script waits for them, writing their messages; Ctrl+C stops the
     waiting. An interactive session only says which tasks stop with it: who
     quits the shell expects it to go.
+
+    The shell calls this once its script or session ended, while it is still
+    whole: the tasks' work uses the shell - its sessions, its globals - and
+    the client library, which the shell tears down right after, and the Ctrl+C
+    handler that makes a KeyboardInterrupt of the key is the shell's. It is
+    registered with atexit as well, for a process that ends without the
+    shell's say - a script's sys.exit() skips the shell's end - and does
+    nothing the second time it is called.
     """
-    running = [task for task in list_tasks() if task.status not in FINISHED_STATES]
-    if not running:
+    global _exited
+    if _exited:
         return
+    _exited = True
 
-    titles = "; ".join(task.title for task in running)
-    if _interactive:
-        _write_fd(
-            f"{len(running)} background task(s) still running stop with the shell: "
-            f"{titles}. What a cloud vendor already started goes on there."
-        )
-        return
-
-    _write_fd(
-        f"Waiting for {len(running)} background task(s) to end: {titles}. "
-        "Press Ctrl+C to stop waiting."
-    )
     try:
+        running = [task for task in list_tasks() if task.status not in FINISHED_STATES]
+        if not running:
+            return
+
+        titles = "; ".join(task.title for task in running)
+        if _interactive:
+            _write_fd(
+                f"{len(running)} background task(s) still running stop with the shell: "
+                f"{titles}. What a cloud vendor already started goes on there."
+            )
+            return
+
+        _write_fd(
+            f"Waiting for {len(running)} background task(s) to end: {titles}. "
+            "Press Ctrl+C to stop waiting."
+        )
         for task in running:
             _follow(task, _write_fd)
     except KeyboardInterrupt:
         _write_fd("Stopped waiting: the tasks still running stop with the shell.")
 
 
-atexit.register(_at_exit)
+atexit.register(at_exit)

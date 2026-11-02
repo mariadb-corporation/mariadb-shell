@@ -26,6 +26,7 @@ from mysqlsh import task_manager as tm
 @pytest.fixture(autouse=True)
 def no_tasks():
     tm.clear()
+    tm._exited = False
     yield
     tm.clear()
 
@@ -154,10 +155,13 @@ def test_waiting_for_news_answers_on_a_message_or_after_the_timeout():
 
 
 def test_tasks_are_kept_apart_by_owner_and_listed_by_type():
+    release = threading.Event()
     mine = tm.create("dba", "deploy_object", "Deploy db1", owner="client-a")
-    tm.create("util", "dump_schemas", "Dump", owner="client-a")
-    tm.create("dba", "deploy_object", "Deploy db2", owner="client-b")
+    dump = tm.create("util", "dump_schemas", "Dump", owner="client-a")
+    theirs = tm.create("dba", "deploy_object", "Deploy db2", owner="client-b")
     shells = tm.create("dba", "deploy_object", "Deploy db3")
+    for task in (mine, dump, theirs, shells):
+        task.start(lambda t: release.wait(5))
 
     assert [t.title for t in tm.list_tasks("client-a")] == ["Deploy db1", "Dump"]
     assert [t.title for t in tm.list_tasks("client-a", "dba")] == ["Deploy db1"]
@@ -169,6 +173,31 @@ def test_tasks_are_kept_apart_by_owner_and_listed_by_type():
         tm.get(mine.id, "client-b")
     with pytest.raises(tm.TaskError):
         tm.get(mine.id)
+    release.set()
+
+
+def test_a_task_never_started_is_not_listed_and_holds_no_slot():
+    # its plugin failed between creating and starting it
+    tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
+    assert tm.list_tasks() == []
+
+    task = tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+    task.start(lambda t: None)
+    assert tm.list_tasks() == [task]
+    _finished(task)
+
+
+def test_starting_one_too_many_is_refused():
+    release = threading.Event()
+    first = tm.create("dba", "deploy_object", "Deploy db1", max_running=1)
+    second = tm.create("dba", "deploy_object", "Deploy db2", max_running=1)
+    first.start(lambda t: release.wait(5))
+
+    with pytest.raises(tm.TaskError, match="Already 1 dba tasks are running"):
+        second.start(lambda t: None)
+    assert second.status == tm.PENDING
+    assert tm.list_tasks() == [first]
+    release.set()
 
 
 def test_an_owner_may_run_only_so_many_tasks_of_a_type():
@@ -245,6 +274,8 @@ def test_messages_after_since_and_those_dropped(monkeypatch):
     assert snapshot["messages_dropped"] == 1
     assert task.snapshot(4)["messages"][0]["seq"] == 5
     assert task.snapshot(5)["messages"] == []
+    # a since before the first message is the start, not more dropped
+    assert task.snapshot(-3) == task.snapshot(0)
 
 
 def test_a_waiting_caller_wakes_on_a_change():
@@ -408,7 +439,7 @@ def test_a_script_waits_at_exit_for_the_shells_own_tasks(monkeypatch):
     tm.create("dba", "deploy_object", "Deploy db2", owner="client-a").start(lambda t: t.sleep(60))
     threading.Timer(0.2, release.set).start()
 
-    tm._at_exit()
+    tm.at_exit()
     assert mine.status == tm.COMPLETED
     assert written == [
         "Waiting for 1 background task(s) to end: Deploy db1. Press Ctrl+C to stop waiting.",
@@ -423,7 +454,9 @@ def test_an_interactive_session_does_not_wait_at_exit(monkeypatch):
     task = tm.create("dba", "deploy_object", "Deploy db1")
     task.start(lambda t: t.sleep(60))
 
-    tm._at_exit()
+    tm.at_exit()
+    # the shell calls it, and Python's atexit once more: the second does nothing
+    tm.at_exit()
     assert task.status == tm.RUNNING
     assert written == [
         "1 background task(s) still running stop with the shell: Deploy db1. "
