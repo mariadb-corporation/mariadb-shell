@@ -1147,7 +1147,8 @@ void Command_line_shell::command_loop() {
 
   m_current_session_uri = get_current_session_uri();
 
-  while (options().interactive) {
+  // \quit ends the session, and so does a sys.exit()
+  while (options().interactive && !_shell->exit_code()) {
     std::string cmd;
     {
       shcore::Interrupt_handler handler([this]() {

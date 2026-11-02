@@ -387,7 +387,6 @@ py::Release py_run_string_interactive(const std::string &str, PyObject *globals,
 
 }  // namespace
 
-bool Python_context::exit_error = false;
 bool Python_context::module_processing = false;
 
 Python_init_singleton::~Python_init_singleton() {
@@ -582,6 +581,50 @@ bool Python_context::raw_execute_helper(const std::string &statement,
   return ret_val;
 }
 
+// Prints the error of the code the shell ran. A SystemExit - a sys.exit() -
+// is not printed: PyErr_Print() would end the process on it with exit(), past
+// main()'s cleanup (the session closed, the state saved, the shell's
+// background tasks waited for). Its exit code is kept for the shell to end
+// with instead, as Python's own would be: None is 0, an int the code, and
+// anything else is written to stderr and is 1.
+void Python_context::print_error() {
+  if (!PyErr_ExceptionMatches(PyExc_SystemExit)) {
+    PyErr_Print();
+    return;
+  }
+
+#if PY_VERSION_HEX >= 0x030c0000
+  py::Release exc_value{PyErr_GetRaisedException()};
+#else
+  PyObject *type, *value, *tb;
+
+  PyErr_Fetch(&type, &value, &tb);
+  PyErr_NormalizeException(&type, &value, &tb);
+
+  py::Release exc_type{type}, exc_value{value}, exc_tb{tb};
+#endif
+
+  py::Release code{PyObject_GetAttrString(exc_value.get(), "code")};
+  int exit_code = 0;
+
+  if (!code || code.get() == Py_None) {
+    exit_code = 0;
+  } else if (PyLong_Check(code.get())) {
+    exit_code = static_cast<int>(PyLong_AsLong(code.get()));
+  } else {
+    if (const auto stderr_file = PySys_GetObject("stderr");
+        stderr_file && stderr_file != Py_None) {
+      PyFile_WriteObject(code.get(), stderr_file, Py_PRINT_RAW);
+      PyFile_WriteString("\n", stderr_file);
+    }
+    exit_code = 1;
+  }
+
+  // an attribute or a conversion that failed is no error of the script's
+  PyErr_Clear();
+  m_exit_code = exit_code;
+}
+
 bool Python_context::raw_execute(const std::string &statement,
                                  std::string *error) {
   WillEnterPython lock;
@@ -770,7 +813,7 @@ Value Python_context::execute(const std::string &code,
   Py_DECREF(m);
 
   if (!py_result) {
-    PyErr_Print();
+    print_error();
     return Value();
   }
 
@@ -916,7 +959,7 @@ Value Python_context::execute_interactive(const std::string &code,
     if (r_state != Input_state::Ok)
       PyErr_Clear();
     else
-      PyErr_Print();
+      print_error();
     return Value();
     // If no error was found butthe line has the implicit line continuation
     // we need to indicate so
@@ -1793,11 +1836,7 @@ Value Python_context::execute_module(const std::string &module_name,
       PyObject_Call(runmodule.get(), runargs.get(), NULL)};
   module_processing = false;
 
-  if (!py_result) {
-    if (PyErr_ExceptionMatches(PyExc_SystemExit)) exit_error = true;
-
-    PyErr_Print();
-  }
+  if (!py_result) print_error();
 
   if (py_result) {
     ret_val = convert(py_result.get());

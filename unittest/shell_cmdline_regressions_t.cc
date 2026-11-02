@@ -837,4 +837,24 @@ TEST_F(Command_line_test, bug35751281_tcp_override_socket_uri) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("127.0.0.1 via TCP/IP");
 }
 
+TEST_F(Command_line_test, sys_exit_ends_the_shell_with_its_code) {
+  // the shell ends through its own cleanup, not inside the printing of a
+  // Python error, which left the interrupt thread to my_end()
+  int rc = execute(
+      {_mysqlsh, "--py", "-e", "import sys; print('before'); sys.exit(3)",
+       NULL});
+  EXPECT_EQ(3, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("before");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("threads didn't exit");
+
+  // anything but an int is written, and is 1
+  rc = execute(
+      {_mysqlsh, "--py", "-e", "import sys; sys.exit('bye now')", NULL});
+  EXPECT_EQ(1, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("bye now");
+
+  rc = execute({_mysqlsh, "--py", "-e", "exit()", NULL});
+  EXPECT_EQ(0, rc);
+}
+
 }  // namespace tests

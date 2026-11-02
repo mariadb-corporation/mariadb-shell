@@ -731,6 +731,12 @@ int main(int argc, char **argv) {
       } else {
         ret_val = shell->process_stream(std::cin, "STDIN", {});
       }
+
+      // a script's sys.exit() ended the input it was in; the shell ends with
+      // its code
+      if (const auto exit_code = shell->shell_context()->exit_code()) {
+        ret_val = *exit_code;
+      }
     }
     if (interrupted.test()) {
 #ifdef _WIN32

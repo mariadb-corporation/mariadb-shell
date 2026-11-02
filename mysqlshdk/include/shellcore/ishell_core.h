@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +30,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -83,6 +85,11 @@ class SHCORE_PUBLIC IShell_core {
   virtual std::shared_ptr<mysqlsh::ShellBaseSession> get_dev_session() = 0;
 
   virtual const std::string &get_input_source() = 0;
+
+  // A script's sys.exit(): the shell stops reading input and ends with the
+  // code, after its own cleanup.
+  virtual void request_exit(int code) = 0;
+  virtual std::optional<int> exit_code() const = 0;
 
   virtual Help_manager *get_helper() = 0;
   virtual std::vector<std::string> get_global_objects(Mode mode) = 0;
