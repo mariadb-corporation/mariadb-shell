@@ -48,7 +48,8 @@ def _call(function, *args):
     try:
         return function(*args)
     except task_manager.TaskError as e:
-        raise Error(str(e)) from e
+        # (None, message): the form the shell reads the message out of
+        raise Error(None, str(e)) from e
 
 
 @plugin_function("task.list")

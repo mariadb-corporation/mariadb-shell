@@ -65,6 +65,8 @@ import threading
 import time
 import uuid
 
+from mysqlsh import Error as ShellError
+
 PENDING = "pending"
 RUNNING = "running"
 COMPLETED = "completed"
@@ -96,7 +98,8 @@ class TaskError(Exception):
     """A task that does not exist, or one too many to start.
 
     Each front end turns it into its own kind of error: the task global
-    object into ``mysqlsh.Error``.
+    object, and a command-line call through :func:`answer`, into
+    ``mysqlsh.Error``.
     """
 
 
@@ -709,11 +712,17 @@ def answer(task, function: str):
         task's result.
 
     Raises:
-        TaskError: In a command-line call, the task failed or was cancelled.
+        mysqlsh.Error: In a command-line call, the task failed or was
+            cancelled. The shell prints its message bare, where any other
+            exception is printed with its type.
     """
     if cli_function is None or _normalized(cli_function) != _normalized(function):
         return {"task_id": task.id, "status": task.status}
-    return follow(task)
+    try:
+        return follow(task)
+    except TaskError as error:
+        # (None, message): the form the shell reads the message out of
+        raise ShellError(None, str(error)) from error
 
 
 def at_exit(interactive: bool) -> None:

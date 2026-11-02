@@ -50,6 +50,7 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 - **`shell.create_result()` cannot declare `Decimal` or `Float` columns** (`custom_result.cc` `db_type()` maps "float" to Double and knows no "decimal"), although `\? create_result` doesn't say so.
 - **Tab doesn't complete a command after leading whitespace**, for either prefix: `  \co` and `  /co` stay as typed. [using-mariadb-shell/autocompletion.md]
 - **Argument completion splits the line on spaces only**, so a quoted or tab-separated argument isn't completed. [using-mariadb-shell/autocompletion.md]
+- **A plugin's `mysqlsh.Error("message")` prints as `Error: Shell Error: message`** (`ERROR: Error: Shell Error: …` on the command line, `RuntimeError: Error: Shell Error: …` in Python mode) instead of the shell's `RuntimeError: message`. The one-argument form stores `args` as `("message", None)`, and `get_code_and_msg` in `mysqlshdk/scripting/python_context.cc` reads a `mysqlsh.Error` only from `(None, msg)` or `(int, msg)`. The util plugin raises it this way at eight sites (`python/plugins/util/init.py`). Fix: `Error.__init__` in `python/packages/mysqlsh/__init__.py` stores `(None, msg)` when no code is given. Found while verifying the task manager's error translation (2026-11-02).
 
 ### MCP Server
 

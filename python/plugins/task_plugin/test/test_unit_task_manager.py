@@ -21,6 +21,7 @@ import time
 
 import pytest
 
+import mysqlsh
 from mysqlsh import task_manager as tm
 
 
@@ -409,8 +410,10 @@ def test_the_command_line_call_raises_the_error_of_its_task(cli_call, capsys):
 
     task = tm.create("sandbox", "deploy", "Deploy 3311")
     task.start(work)
-    with pytest.raises(tm.TaskError, match="^quota exceeded$"):
+    # as the shell's own error, which it prints bare
+    with pytest.raises(mysqlsh.Error) as raised:
         tm.answer(task, "tool.deploy")
+    assert raised.value.msg == "quota exceeded"
     # the error is reported once, as the error
     assert capsys.readouterr().err == "is starting\n"
 
@@ -422,8 +425,9 @@ def test_the_command_line_call_keeps_a_message_that_reads_like_the_error(cli_cal
 
     task = tm.create("sandbox", "deploy", "Deploy 3311")
     task.start(work)
-    with pytest.raises(tm.TaskError, match="^quota exceeded$"):
+    with pytest.raises(mysqlsh.Error) as raised:
         tm.answer(task, "tool.deploy")
+    assert raised.value.msg == "quota exceeded"
     # only the error message itself is left to the error
     assert capsys.readouterr().err == "WARNING: quota exceeded\n"
 
