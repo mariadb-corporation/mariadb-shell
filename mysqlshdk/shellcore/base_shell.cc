@@ -686,7 +686,8 @@ int Base_shell::process_stream(std::istream &stream, const std::string &source,
         _shell->interactive_mode() == shcore::IShell_core::Mode::JavaScript;
 
     std::string line;
-    while (!stream.eof()) {
+    // a sys.exit() ends the stream
+    while (!stream.eof() && !_shell->exit_code()) {
       line.clear();
 
       shcore::getline(stream, line);

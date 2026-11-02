@@ -24,6 +24,9 @@
 
 #include <string>
 #include "mysqlshdk/libs/db/mysql/session.h"
+#include "mysqlshdk/libs/utils/utils_file.h"
+#include "mysqlshdk/libs/utils/utils_general.h"
+#include "mysqlshdk/libs/utils/utils_path.h"
 #include "unittest/test_utils/command_line_test.h"
 
 #ifndef MAX_PATH
@@ -835,6 +838,40 @@ TEST_F(Command_line_test, bug35751281_tcp_override_socket_uri) {
            "--interactive", password, "-e", "\\s", nullptr});
   MY_EXPECT_CMD_OUTPUT_CONTAINS("Classic ");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("127.0.0.1 via TCP/IP");
+}
+
+TEST_F(Command_line_test, sys_exit_ends_the_shell_with_its_code) {
+  // the shell ends through its own cleanup, not inside the printing of a
+  // Python error, which left the interrupt thread to my_end()
+  int rc = execute(
+      {_mysqlsh, "--py", "-e", "import sys; print('before'); sys.exit(3)",
+       NULL});
+  EXPECT_EQ(3, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("before");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("threads didn't exit");
+
+  // anything but an int is written, and is 1
+  rc = execute(
+      {_mysqlsh, "--py", "-e", "import sys; sys.exit('bye now')", NULL});
+  EXPECT_EQ(1, rc);
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("bye now");
+
+  rc = execute({_mysqlsh, "--py", "-e", "exit()", NULL});
+  EXPECT_EQ(0, rc);
+
+  const auto dir =
+      shcore::path::join_path(shcore::get_user_config_path(), "sys_exit");
+  shcore::create_directory(dir);
+  shcore::Scoped_callback cleanup([&dir]() { shcore::remove_directory(dir); });
+
+  // a startup script's sys.exit() ends the shell before what the command
+  // line asks for
+  shcore::create_file(shcore::path::join_path(dir, "mariadb-shellrc.py"),
+                      "import sys\nsys.exit(8)\n");
+  rc = execute({_mysqlsh, "--py", "-e", "print('not run')", NULL}, nullptr,
+               nullptr, {"MARIADB_SHELL_USER_CONFIG_HOME=" + dir});
+  EXPECT_EQ(8, rc);
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("not run");
 }
 
 }  // namespace tests

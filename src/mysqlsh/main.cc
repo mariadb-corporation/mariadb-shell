@@ -570,6 +570,10 @@ int main(int argc, char **argv) {
       shell->restore_print();
       shell->print_cmd_line_helper();
       ret_val = options.exit_code;
+    } else if (const auto startup_exit = shell->shell_context()->exit_code()) {
+      // a startup script's sys.exit(): the shell ends with its code, without
+      // connecting or running what the command line asked for
+      ret_val = *startup_exit;
     } else {
       // The banner is printed only when in a real interactive session.
       if (options.interactive) {
@@ -731,8 +735,16 @@ int main(int argc, char **argv) {
       } else {
         ret_val = shell->process_stream(std::cin, "STDIN", {});
       }
+
+      // a script's sys.exit() ended the input it was in; the shell ends with
+      // its code
+      if (const auto exit_code = shell->shell_context()->exit_code()) {
+        ret_val = *exit_code;
+      }
     }
-    if (interrupted.test()) {
+    // a script that caught the Ctrl+C and called sys.exit() ends with its
+    // own code, as it did when the process ended in the sys.exit()
+    if (interrupted.test() && !(shell && shell->shell_context()->exit_code())) {
 #ifdef _WIN32
       ret_val = 130;
 #else

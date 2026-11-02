@@ -37,6 +37,7 @@
 #include <cassert>
 #include <list>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -98,6 +99,12 @@ class Python_context {
   static void set_python_error(const std::string &module,
                                const std::string &exception,
                                const std::string &location);
+
+  /**
+   * The exit code a sys.exit() in the code run last asked for, once: the
+   * shell ends with it, after its own cleanup.
+   */
+  std::optional<int> take_exit_code() { return std::exchange(m_exit_code, {}); }
 
   static bool pystring_to_string(PyObject *strobject, std::string *result,
                                  bool convert = false);
@@ -163,8 +170,6 @@ class Python_context {
   std::pair<shcore::Prompt_result, std::string> read_line(
       const std::string &prompt);
 
-  static bool exit_error;
-  static bool module_processing;
   static PyMethodDef ShellStdErrMethods[];
   static PyMethodDef ShellStdOutMethods[];
   static PyMethodDef ShellStdInMethods[];
@@ -205,6 +210,8 @@ class Python_context {
 
   bool raw_execute_helper(const std::string &statement, std::string *error);
 
+  void print_error();
+
   void register_shell_stderr_module();
   void register_shell_stdout_module();
   void register_shell_stdin_module();
@@ -216,6 +223,8 @@ class Python_context {
   void init_shell_function_type();
 
   py::Store m_captured_eval_result;
+
+  std::optional<int> m_exit_code;
 
  protected:
   py::Store _shell_list_class;

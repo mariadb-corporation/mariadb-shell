@@ -146,10 +146,13 @@ int Shell_core::process_stream(std::istream &stream,
                                const std::string &source) {
   // NOTE: global return code is unused at the moment
   //       return code should be determined at application level on
-  //       process_result this global return code may be used again once the
-  //       exit() function is in place
+  //       process_result; a script's sys.exit() sets its code apart, see
+  //       request_exit()
   Input_state state = Input_state::Ok;
   m_global_return_code = 0;
+
+  // a sys.exit() in an earlier input (i.e. a startup script) ends this one too
+  if (m_exit_code) return m_global_return_code;
 
   _input_source = source;
   if (_mode == Shell_core::Mode::SQL) {

@@ -912,6 +912,10 @@ void Mysql_shell::finish_init() {
 
   Base_shell::finish_init();
 
+  // a startup script's sys.exit() ends the shell: the rest of the startup
+  // files and the plugins are not loaded
+  if (shell_context()->exit_code()) return;
+
   // if Python is disabled it means we're creating another instance of shell in
   // a thread. because of that we don't want to initialize everything again for
   // the scripting languages.
