@@ -145,6 +145,38 @@ def test_a_cancel_reaches_the_canceller_set_before_or_after_it():
     assert stopped == [True]
 
 
+def test_a_canceller_that_fails_is_reported_and_the_cancel_stands():
+    def work(task):
+        task.set_canceller(lambda: (_ for _ in ()).throw(OSError("No such process")))
+        while not task.cancel_requested:
+            time.sleep(0.01)
+        return "stopped"
+
+    task = tm.create("util", "dump_schemas", "Dump")
+    task.start(work)
+    task.cancel()  # raises nothing: the canceller's failure is the task's news
+    snapshot = _finished(task)
+
+    assert snapshot["status"] == tm.CANCELLED
+    warning = snapshot["messages"][-2]
+    assert warning["level"] == "warning"
+    assert warning["text"] == "The cancel could not reach the work: No such process"
+    assert snapshot["messages"][-1]["text"] == "The task was cancelled."
+
+
+def test_a_cancel_asked_before_a_failing_canceller_is_set_is_reported_too():
+    task = tm.create("util", "dump_schemas", "Dump")
+    task.cancel()
+    task.start(lambda t: t.set_canceller(lambda: (_ for _ in ()).throw(RuntimeError())))
+    snapshot = _finished(task)
+
+    assert snapshot["status"] == tm.CANCELLED
+    assert [m["text"] for m in snapshot["messages"]] == [
+        "The cancel could not reach the work: RuntimeError",
+        "The task was cancelled.",
+    ]
+
+
 def test_cancelling_a_finished_task_changes_nothing():
     task = tm.create("sandbox", "delete", "Delete 3311")
     task.start(lambda t: "done")

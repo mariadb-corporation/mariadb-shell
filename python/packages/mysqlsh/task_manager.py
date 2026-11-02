@@ -344,7 +344,7 @@ class Task:
             cancelled = self.cancel_requested
 
         if canceller is not None and cancelled:
-            canceller()
+            self._stop_work(canceller)
 
     def cancel(self) -> None:
         """Asks the running work to stop."""
@@ -356,7 +356,20 @@ class Task:
             self._touch()
 
         if canceller is not None:
+            self._stop_work(canceller)
+
+    def _stop_work(self, canceller) -> None:
+        """Calls the canceller; one that fails is reported, not raised.
+
+        The cancel is asked for already, so the work still stops at its next
+        check; what the canceller could not reach (a process, a session) is
+        the warning's business.
+        """
+        try:
             canceller()
+        except Exception as error:  # noqa: BLE001 - the canceller is plugin code
+            reason = str(error).strip() or error.__class__.__name__
+            self.message(f"The cancel could not reach the work: {reason}", "warning")
 
     def check_cancelled(self) -> None:
         """Raises :class:`TaskCancelled` once a cancel was asked for."""
