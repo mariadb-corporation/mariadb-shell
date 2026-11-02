@@ -90,13 +90,13 @@ using Privilege_list = std::vector<Privilege>;
 }
 
 %code {
-#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <limits>
 #include <system_error>
 
 #include "mysqlshdk/libs/mrs/parser_driver.h"
+#include "mysqlshdk/libs/mrs/strings.h"
 
 namespace mrs {
 namespace parser {
@@ -2402,9 +2402,7 @@ std::string keyword_text(const Driver &driver,
 
 Output_format output_format(const std::string &name,
                             const Parser::location_type &loc) {
-  std::string upper = name;
-  std::transform(upper.begin(), upper.end(), upper.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
+  const auto upper = to_upper(name);
   if (upper == "JSON") return Output_format::json;
   if (upper == "TRADITIONAL") return Output_format::traditional;
   throw Parser::syntax_error(loc, "Unknown REST format name: '" + name + "'");
@@ -2429,10 +2427,7 @@ std::string daemon_id(const std::string &text, const Parser::location_type &loc)
                 : std::isxdigit(static_cast<unsigned char>(text[i])) != 0;
   }
   if (!valid) throw Parser::syntax_error(loc, "Invalid REST daemon id");
-  std::string id = text;
-  std::transform(id.begin(), id.end(), id.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-  return id;
+  return to_lower(text);
 }
 
 void require_ansi_quotes(const Driver &driver, bool ansi_quotes,

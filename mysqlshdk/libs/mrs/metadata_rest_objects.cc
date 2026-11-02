@@ -26,7 +26,6 @@
 #include "mysqlshdk/libs/mrs/metadata_rest_objects.h"
 
 #include <algorithm>
-#include <cctype>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -1198,6 +1197,13 @@ bool is_plain_identifier(std::string_view name) {
          std::all_of(name.begin(), name.end(), is_identifier_char);
 }
 
+// ASCII only, not <cctype>: a byte >= 0x80 is part of a UTF-8 letter, and
+// what the locale makes of it must not decide a name
+bool is_ascii_lower(char c) { return c >= 'a' && c <= 'z'; }
+bool is_ascii_alnum(char c) {
+  return is_ascii_lower(c) || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
+}
+
 }  // namespace
 
 std::string pair_name_text(std::string_view name) {
@@ -1222,29 +1228,20 @@ std::string identifier_text(std::string_view name) {
 }
 
 std::string name_to_camel_case(std::string_view name) {
-  // ASCII only, not std::tolower(): a byte >= 0x80 is part of a UTF-8 letter
-  const auto is_lower = [](char c) { return c >= 'a' && c <= 'z'; };
-  const auto lower = [](char c) {
-    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-  };
-  const auto upper = [&](char c) {
-    return is_lower(c) ? static_cast<char>(c - 'a' + 'A') : c;
-  };
   const auto in_word = [](char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-           (c >= '0' && c <= '9') || static_cast<unsigned char>(c) >= 0x80;
+    return is_ascii_alnum(c) || static_cast<unsigned char>(c) >= 0x80;
   };
 
   std::string result;
   for (auto it = std::find_if(name.begin(), name.end(), in_word);
        it != name.end();) {
     const auto end = std::find_if_not(it, name.end(), in_word);
-    const bool fold = std::none_of(it, end, is_lower);
+    const bool fold = std::none_of(it, end, is_ascii_lower);
     const bool first = result.empty();
 
     for (auto c = it; c != end; ++c) {
-      char ch = fold ? lower(*c) : *c;
-      if (c == it) ch = first ? lower(ch) : upper(ch);
+      char ch = fold ? to_lower(*c) : *c;
+      if (c == it) ch = first ? to_lower(ch) : to_upper(ch);
       result += ch;
     }
     it = std::find_if(end, name.end(), in_word);
@@ -1265,23 +1262,21 @@ std::string path_to_camel_case(std::string_view path) {
       camel += part;
       first = false;
     } else if (!part.empty()) {
-      camel += static_cast<char>(std::toupper(static_cast<unsigned char>(part[0])));
+      camel += to_upper(part[0]);
       camel += part.substr(1);
     }
   }
 
   std::string result;
   for (const char c : camel) {
-    if (std::isalnum(static_cast<unsigned char>(c))) result += c;
+    if (is_ascii_alnum(c)) result += c;
   }
   return result;
 }
 
 std::string path_to_pascal_case(std::string_view path) {
   auto result = path_to_camel_case(path);
-  if (!result.empty()) {
-    result[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(result[0])));
-  }
+  if (!result.empty()) result[0] = to_upper(result[0]);
   return result;
 }
 
