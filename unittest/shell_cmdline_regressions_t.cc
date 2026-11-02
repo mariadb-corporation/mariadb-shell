@@ -880,13 +880,13 @@ TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
   int rc = execute(
       {_mysqlsh, "--py", "-e",
        "from mysqlsh import task_manager as tm; "
-       "tm.create('dba', 'create_object', 'Create db1').start(lambda t: "
+       "tm.create('sandbox', 'deploy', 'Deploy 3311').start(lambda t: "
        "(t.message('step one'), t.sleep(0.2), t.message('step two')))",
        NULL});
 
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "Waiting for 1 background task(s) to end: Create db1.");
+      "Waiting for 1 background task(s) to end: Deploy 3311.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step one");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
 
@@ -894,13 +894,13 @@ TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
   rc = execute(
       {_mysqlsh, "--py", "-e",
        "import sys; from mysqlsh import task_manager as tm; "
-       "tm.create('dba', 'create_object', 'Create db2').start(lambda t: "
+       "tm.create('sandbox', 'deploy', 'Deploy 3312').start(lambda t: "
        "(t.sleep(0.2), t.message('step two'))); sys.exit(3)",
        NULL});
 
   EXPECT_EQ(3, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "Waiting for 1 background task(s) to end: Create db2.");
+      "Waiting for 1 background task(s) to end: Deploy 3312.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step two");
 
   // -i only changes how a script's lines are processed: it is still a
@@ -908,13 +908,13 @@ TEST_F(Command_line_test, background_tasks_are_waited_for_at_exit) {
   rc = execute(
       {_mysqlsh, "--py", "-i", "-e",
        "from mysqlsh import task_manager as tm; "
-       "tm.create('dba', 'create_object', 'Create db3').start(lambda t: "
+       "tm.create('sandbox', 'deploy', 'Deploy 3313').start(lambda t: "
        "(t.sleep(0.2), t.message('step three')))",
        NULL});
 
   EXPECT_EQ(0, rc);
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "Waiting for 1 background task(s) to end: Create db3.");
+      "Waiting for 1 background task(s) to end: Deploy 3313.");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("step three");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("still running stop with the shell");
 }

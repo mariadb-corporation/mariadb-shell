@@ -642,13 +642,13 @@ def _follow(task, write, position=None, error_follows=True) -> dict:
     while True:
         snapshot = task.wait_for_news(position["since"], 1.0)
         for message in snapshot["messages"]:
-            # only the last message is the error's; an earlier one reading the
+            # the last message of a failed or cancelled task is the one _finish
+            # added for its end, whatever it reads; an earlier one reading the
             # same is the work's own
             if (
                 error_follows
                 and snapshot["status"] in (FAILED, CANCELLED)
                 and message["seq"] == snapshot["next_since"]
-                and message["text"] == snapshot["error"]
             ):
                 continue
             level = message["level"]

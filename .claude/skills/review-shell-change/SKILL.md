@@ -247,9 +247,10 @@ commit message or the PR, not the code.
 A new or changed comment, docstring, help text or user-facing string that
 names one of these is a finding. Hunt for it in messages especially: a
 comment is read by a maintainer, a message by every user of the shell, who
-may not have the component it names. Test data (a task type or a title used
-as a fixture) is not, unless the test's own comments or docstrings explain it
-by the external component.
+may not have the component it names. Test data is held to the same rule: a
+fixture's task type, kind, title or function name comes from this repository
+(`util`, `sandbox`, a dump) or is abstract (`object.function`), never from an
+external plugin.
 
 ## 8. Discipline
 
