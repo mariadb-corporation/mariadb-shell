@@ -1,0 +1,4 @@
+# Code owners: the ruleset on main requires one of them to approve every pull
+# request before it can merge. GitHub never counts the author's own approval,
+# so the team must keep at least two members.
+*   @mariadb-corporation/devtools
