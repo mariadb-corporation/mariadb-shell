@@ -942,6 +942,125 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   delete_user_plugin("dependent");
 }
 
+TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
+  // The registry plugins.repositories.add() writes, holding the expansion of
+  // 'github/acme-corp', so the steps for that repository skip adding it.
+  const auto registry =
+      join_path(shcore::get_user_config_path(), "plugin-repositories.json");
+  shcore::create_file(registry, R"({"repositories": [{"name": "acme",
+    "url": "https://raw.githubusercontent.com/acme-corp/mariadb-shell-plugins/master/mariadb-shell-plugins-manifest.json"}]})");
+
+  // Both objects come from the same plugin, in a repository not registered.
+  write_user_plugin("needs_remote", R"(print('loaded needs_remote')
+)",
+                    ".py");
+  write_user_plugin_manifest("needs_remote", R"({
+    "requires": ["acme.storage", "acme.backup"],
+    "providedBy": {
+      "acme.storage": {"plugin": "acme", "repository": "github/acme-corp/acme-shell-plugins"},
+      "acme.backup": {"plugin": "acme", "repository": "github/acme-corp/acme-shell-plugins"}
+    }})");
+
+  // No repository: only the plugin to install is named.
+  write_user_plugin("needs_local", R"(print('loaded needs_local')
+)",
+                    ".py");
+  write_user_plugin_manifest("needs_local", R"({
+    "requires": ["acme.local"],
+    "providedBy": {"acme.local": {"plugin": "acme_local"}}})");
+
+  // The repository is already registered.
+  write_user_plugin("needs_registered", R"(print('loaded needs_registered')
+)",
+                    ".py");
+  write_user_plugin_manifest("needs_registered", R"({
+    "requires": ["acme.reg"],
+    "providedBy": {"acme.reg": {"plugin": "acme_reg", "repository": "github/acme-corp"}}})");
+
+  // Only one of the missing objects has a hint.
+  write_user_plugin("needs_partial", R"(print('loaded needs_partial')
+)",
+                    ".py");
+  write_user_plugin_manifest("needs_partial", R"({
+    "requires": ["acme.known", "nothing.here"],
+    "providedBy": {"acme.known": {"plugin": "acme_known"}}})");
+
+  // A malformed hint is ignored: the plugin still loads, or still gets the
+  // plain error.
+  write_user_plugin("bad_hint", R"(print('loaded bad_hint')
+)",
+                    ".py");
+  write_user_plugin_manifest("bad_hint", R"({"providedBy": "acme"})");
+
+  write_user_plugin("bad_entry", R"(print('loaded bad_entry')
+)",
+                    ".py");
+  write_user_plugin_manifest("bad_entry", R"({
+    "requires": ["acme.x"],
+    "providedBy": {"acme.x": {"repository": "github/acme-corp"}}})");
+
+  add_py_test("\\py");
+  add_py_test("print('done')", "done");
+
+  run();
+
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("loaded bad_hint");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded needs_");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_entry");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'needs_remote' was not loaded: it requires the objects "
+      "'acme.storage', 'acme.backup', which no loaded plugin provides.\n"
+      "  The objects 'acme.storage', 'acme.backup' are provided by the plugin "
+      "'acme' from the repository 'github/acme-corp/acme-shell-plugins'. To "
+      "install it, run:\n"
+      "    plugins.repositories.add(\"github/acme-corp/acme-shell-plugins\")\n"
+      "    plugins.install(\"acme\")\n"
+      "  then restart the shell.\n");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'needs_local' was not loaded: it requires the object "
+      "'acme.local', which no loaded plugin provides.\n"
+      "  It is provided by the plugin 'acme_local'. To install it, run:\n"
+      "    plugins.install(\"acme_local\")\n"
+      "  then restart the shell.\n");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'needs_registered' was not loaded: it requires the "
+      "object 'acme.reg', which no loaded plugin provides.\n"
+      "  It is provided by the plugin 'acme_reg' from the repository "
+      "'github/acme-corp'. To install it, run:\n"
+      "    plugins.install(\"acme_reg\")\n"
+      "  then restart the shell.\n");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'needs_partial' was not loaded: it requires the objects "
+      "'acme.known', 'nothing.here', which no loaded plugin provides.\n"
+      "  The object 'acme.known' is provided by the plugin 'acme_known'. To "
+      "install it, run:\n"
+      "    plugins.install(\"acme_known\")\n"
+      "  then restart the shell.\n");
+  // The plain error, with no steps after it.
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'bad_entry' was not loaded: it requires the object "
+      "'acme.x', which no loaded plugin provides.\nERROR: ");
+
+  add_expected_log(
+      "Plugin 'bad_hint': 'providedBy' must be an object in the plugin.json "
+      "manifest, ignoring the hint");
+  add_expected_log(
+      "Plugin 'bad_entry': 'providedBy' entry 'acme.x' must name the "
+      "providing plugin in 'plugin' in the plugin.json manifest, ignoring the "
+      "hint");
+  validate_log();
+
+  wipe_out();
+  shcore::delete_file(registry);
+  delete_user_plugin("needs_remote");
+  delete_user_plugin("needs_local");
+  delete_user_plugin("needs_registered");
+  delete_user_plugin("needs_partial");
+  delete_user_plugin("bad_hint");
+  delete_user_plugin("bad_entry");
+}
+
 TEST_F(Mysqlsh_plugin_test, WL13051_multiple_init_files) {
   // create first JS plugin file
   write_user_plugin("error-one", R"(function report(s) {

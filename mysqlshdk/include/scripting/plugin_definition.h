@@ -27,22 +27,33 @@
 #ifndef MYSQLSHDK_INCLUDE_SCRIPTING_PLUGIN_DEFINITION_H_
 #define MYSQLSHDK_INCLUDE_SCRIPTING_PLUGIN_DEFINITION_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
 namespace shcore {
 
+// Where a required object comes from, as the plugin.json manifest hints in
+// its "providedBy" key: the plugin to install, and optionally the repository
+// to install it from, in the form plugins.repositories.add() accepts.
+struct Object_provider {
+  std::string plugin;
+  std::string repository;
+};
+
 // A plugin file contains the path, and bool indicating whether it is
 // A 1st level plugin (true) or a child plugin (false). The name is the plugin
 // folder, and required_objects holds the fully qualified names of the shell
 // objects (e.g. "util.debug") that must exist before the plugin loads, as
-// declared in its plugin.json manifest.
+// declared in its plugin.json manifest. provided_by maps a required object to
+// the hint about where it comes from, for the objects that have one.
 struct Plugin_definition {
   Plugin_definition(const std::string f, bool m) : file(f), main(m) {}
   std::string file;
   bool main;
   std::string name;
   std::vector<std::string> required_objects;
+  std::map<std::string, Object_provider> provided_by;
 };
 
 }  // namespace shcore

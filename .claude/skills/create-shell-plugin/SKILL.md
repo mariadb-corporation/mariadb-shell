@@ -34,6 +34,10 @@ The loader is `Mysql_shell::get_plugins` in [src/mysqlsh/mysql_shell.cc](src/mys
   the plugin itself creates. The loader runs the plugin only once every required
   object exists, and reports it with an error when one never appears. Built-in
   objects such as `util` need no entry, but may be listed for documentation.
+  When the required object comes from a plugin shipped elsewhere, an optional
+  `providedBy` key (`{"<object>": {"plugin": "<name>", "repository": "github/<user>/<repo>"}}`)
+  makes that error print the `plugins.repositories.add()` / `plugins.install()`
+  calls to run. It is advisory: a bad hint is logged and ignored.
 - The plugin folder name is importable as a Python package, so helper modules go
   beside `init.py` and are imported as `from <folder_name>.<module> import ...`
   (see [python/plugins/debug/](python/plugins/debug/) for the pattern).

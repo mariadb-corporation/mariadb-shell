@@ -34,6 +34,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1014,6 +1015,56 @@ namespace {
 constexpr auto k_plugin_manifest = "plugin.json";
 
 /**
+ * Reads the optional "providedBy" key of a manifest: an object mapping a
+ * required object name to {"plugin": name, "repository": url}. The hint only
+ * improves the error for an unmet requirement, so a malformed one is logged
+ * and ignored, never a reason not to load the plugin.
+ */
+void read_provided_by_hints(const shcore::Value::Map_type &manifest,
+                            shcore::Plugin_definition *plugin) {
+  if (!manifest.has_key("providedBy")) return;
+
+  const auto warn = [plugin](const std::string &what) {
+    log_warning("Plugin '%s': %s in the %s manifest, ignoring the hint (%s)",
+                plugin->name.c_str(), what.c_str(), k_plugin_manifest,
+                plugin->file.c_str());
+  };
+
+  if (manifest.get_type("providedBy") != shcore::Value_type::Map) {
+    warn("'providedBy' must be an object");
+    return;
+  }
+
+  for (const auto &[object, hint] : *manifest.get_map("providedBy")) {
+    if (hint.get_type() != shcore::Value_type::Map) {
+      warn("'providedBy' entry '" + object + "' must be an object");
+      continue;
+    }
+
+    const auto map = hint.as_map();
+    const auto plugin_type = map->get_type("plugin");
+    const auto repository_type = map->get_type("repository");
+
+    if (plugin_type != shcore::Value_type::String ||
+        map->get_string("plugin").empty()) {
+      warn("'providedBy' entry '" + object +
+           "' must name the providing plugin in 'plugin'");
+      continue;
+    }
+
+    if (repository_type != shcore::Value_type::Undefined &&
+        repository_type != shcore::Value_type::String) {
+      warn("'repository' of 'providedBy' entry '" + object +
+           "' must be a string");
+      continue;
+    }
+
+    plugin->provided_by[object] = {map->get_string("plugin"),
+                                   map->get_string("repository")};
+  }
+}
+
+/**
  * Reads the plugin.json manifest of the plugin at the given folder, if there
  * is one, into the plugin definition.
  *
@@ -1051,6 +1102,8 @@ std::string read_plugin_manifest(const std::string &plugin_dir,
 
   const auto map = manifest.as_map();
 
+  read_provided_by_hints(*map, plugin);
+
   if (!map->has_key("requires")) return {};
 
   const auto &required = map->at("requires");
@@ -1081,6 +1134,147 @@ std::string read_plugin_manifest(const std::string &plugin_dir,
   }
 
   return {};
+}
+
+/**
+ * Expands a repository given the way plugins.repositories.add() takes it into
+ * the manifest URL the registry stores: the "github/<user>[/<repo>]"
+ * shorthand, a domain or path, or the URL itself. Mirrors
+ * add_plugin_repository() in mysqlsh.plugin_manager.repositories.
+ */
+std::string plugin_repository_url(const std::string &repository) {
+  constexpr auto k_manifest = "mariadb-shell-plugins-manifest.json";
+
+  if (shcore::str_ibeginswith(repository, "github/")) {
+    const auto parts = shcore::str_split(repository, "/");
+    const auto &user = parts[1];
+    const auto repo = parts.size() > 2 ? parts[2] : "mariadb-shell-plugins";
+
+    return "https://raw.githubusercontent.com/" + user + "/" + repo +
+           "/master/" + k_manifest;
+  }
+
+  auto url = repository;
+
+  if (!shcore::str_beginswith(url, "https://") &&
+      !shcore::str_beginswith(url, "http://")) {
+    url = "https://" + url;
+  }
+
+  if (!shcore::str_endswith(url, ".json")) {
+    if (!shcore::str_endswith(url, "/")) url += "/";
+    url += k_manifest;
+  }
+
+  return url;
+}
+
+/**
+ * The manifest URLs of the registered plugin repositories, lower-cased, read
+ * from the registry plugins.repositories.add() writes. A registry that cannot
+ * be read counts as empty.
+ */
+std::set<std::string> registered_repository_urls() {
+  std::set<std::string> urls;
+  const auto path = shcore::path::join_path(shcore::get_user_config_path(),
+                                            "plugin-repositories.json");
+
+  if (!shcore::is_file(path)) return urls;
+
+  try {
+    const auto registry = shcore::Value::parse(shcore::get_text_file(path));
+
+    if (registry.get_type() != shcore::Value_type::Map) return urls;
+
+    if (const auto repositories =
+            registry.as_map()->get_array("repositories")) {
+      for (const auto &repository : *repositories) {
+        if (repository.get_type() != shcore::Value_type::Map) continue;
+
+        const auto url = repository.as_map()->get_string("url");
+
+        if (!url.empty()) urls.insert(shcore::str_lower(url));
+      }
+    }
+  } catch (const std::exception &e) {
+    log_debug("Could not read the plugin repositories at '%s': %s",
+              path.c_str(), e.what());
+  }
+
+  return urls;
+}
+
+/**
+ * The lines, for the error about a plugin with unmet requirements, that say
+ * where the missing objects with a "providedBy" hint come from and how to
+ * install the plugins providing them. Objects from the same plugin share one
+ * paragraph. Empty when no missing object has a hint.
+ */
+std::string install_steps(const shcore::Plugin_definition &plugin,
+                          const std::vector<std::string> &missing,
+                          const std::set<std::string> &registered_urls) {
+  // Providers in the order their first object is missing.
+  std::vector<std::pair<shcore::Object_provider, std::vector<std::string>>>
+      providers;
+
+  for (const auto &object : missing) {
+    const auto hint = plugin.provided_by.find(object);
+
+    if (hint == plugin.provided_by.end()) continue;
+
+    const auto provider = std::find_if(
+        providers.begin(), providers.end(), [&hint](const auto &entry) {
+          return entry.first.plugin == hint->second.plugin &&
+                 entry.first.repository == hint->second.repository;
+        });
+
+    if (provider == providers.end()) {
+      providers.emplace_back(hint->second, std::vector<std::string>{object});
+    } else {
+      provider->second.push_back(object);
+    }
+  }
+
+  std::string steps;
+
+  for (const auto &[provider, objects] : providers) {
+    std::string subject;
+
+    if (missing.size() == 1) {
+      subject = "It is";
+    } else {
+      std::vector<std::string> quoted;
+      for (const auto &object : objects) quoted.push_back("'" + object + "'");
+      subject = shcore::str_format("The object%s %s %s",
+                                   objects.size() > 1 ? "s" : "",
+                                   shcore::str_join(quoted, ", ").c_str(),
+                                   objects.size() > 1 ? "are" : "is");
+    }
+
+    steps +=
+        "\n  " + subject + " provided by the plugin '" + provider.plugin + "'";
+
+    const auto add_repository =
+        !provider.repository.empty() &&
+        registered_urls.count(
+            shcore::str_lower(plugin_repository_url(provider.repository))) == 0;
+
+    if (!provider.repository.empty()) {
+      steps += " from the repository '" + provider.repository + "'";
+    }
+
+    steps += ". To install it, run:";
+
+    if (add_repository) {
+      steps +=
+          "\n    plugins.repositories.add(\"" + provider.repository + "\")";
+    }
+
+    steps += "\n    plugins.install(\"" + provider.plugin + "\")";
+    steps += "\n  then restart the shell.";
+  }
+
+  return steps;
 }
 
 void warn_load_errors(const char *context) {
@@ -1139,9 +1333,9 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
   // in different groups or directories may share a name.
   const auto report_not_loaded = [&load_failed](const Plugin_file &entry,
                                                 const std::string &reason) {
-    const auto msg = shcore::str_format("Plugin '%s' was not loaded: %s",
-                                        entry.plugin.name.c_str(),
-                                        reason.c_str());
+    const auto msg =
+        shcore::str_format("Plugin '%s' was not loaded: %s",
+                           entry.plugin.name.c_str(), reason.c_str());
     log_error("%s (%s)", msg.c_str(), entry.plugin.file.c_str());
     current_console()->print_error(msg);
     load_failed = true;
@@ -1197,19 +1391,32 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
     pending = std::move(deferred);
   }
 
+  // Read once, and only when a hint may need it.
+  std::optional<std::set<std::string>> registered_urls;
+
   for (const auto entry : pending) {
     std::vector<std::string> missing;
+    std::vector<std::string> quoted;
 
     for (const auto &name : entry->plugin.required_objects) {
-      if (!has_global_object(name)) missing.push_back("'" + name + "'");
+      if (!has_global_object(name)) {
+        missing.push_back(name);
+        quoted.push_back("'" + name + "'");
+      }
     }
 
     auto reason = shcore::str_format(
         "it requires the object%s %s, which no loaded plugin provides.",
-        missing.size() > 1 ? "s" : "", shcore::str_join(missing, ", ").c_str());
+        missing.size() > 1 ? "s" : "", shcore::str_join(quoted, ", ").c_str());
 
     if (plugin_failed) {
       reason += " A plugin that failed to load may provide it.";
+    }
+
+    if (!entry->plugin.provided_by.empty()) {
+      if (!registered_urls) registered_urls = registered_repository_urls();
+
+      reason += install_steps(entry->plugin, missing, *registered_urls);
     }
 
     report_not_loaded(*entry, reason);
@@ -1335,7 +1542,7 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
                      init_py);
 #else
           log_warning("Ignoring plugin at '%s', Python is not available.",
-                        plugin_dir.c_str());
+                      plugin_dir.c_str());
 #endif
         } else {
           bool found_plugins = false;

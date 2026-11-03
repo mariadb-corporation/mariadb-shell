@@ -81,7 +81,39 @@ The shell reads every manifest before running any plugin, then loads plugins in 
 ERROR: Plugin 'capacity' was not loaded: it requires the object 'audit', which no loaded plugin provides.
 ```
 
-A manifest that can't be read, isn't valid JSON, isn't an object, or whose `requires` isn't an array of object names also keeps its plugin from loading, with an error saying why. Keys other than `requires` are ignored. A plugin without a manifest has no requirements.
+A manifest that can't be read, isn't valid JSON, isn't an object, or whose `requires` isn't an array of object names also keeps its plugin from loading, with an error saying why. `requires` is always an array of object names; other information goes in other keys, and keys the shell doesn't know are ignored, so a manifest written for a newer shell still loads. A plugin without a manifest has no requirements.
+
+#### Saying Where a Required Object Comes From
+
+The error above tells the user what is missing, not what to install. A plugin that depends on an object from a plugin it isn't shipped with, such as one from another repository, can say where that object comes from in the optional `providedBy` key:
+
+```json
+{
+  "requires": ["acme.storage"],
+  "providedBy": {
+    "acme.storage": {
+      "plugin": "acme",
+      "repository": "github/acme-corp/acme-shell-plugins"
+    }
+  }
+}
+```
+
+`plugin` is the name of the plugin in its repository manifest, as `plugins.install()` takes it. `repository` is optional and is whatever `plugins.repositories.add()` accepts: the `github/<user>[/<repo>]` shorthand or the URL of the manifest. A plugin bundled with the shell, or shipped in the same group, needs no `repository`.
+
+When the object is missing, the error turns the hint into the steps to run:
+
+```text
+ERROR: Plugin 'acme_backup' was not loaded: it requires the object 'acme.storage', which no loaded plugin provides.
+  It is provided by the plugin 'acme' from the repository 'github/acme-corp/acme-shell-plugins'. To install it, run:
+    plugins.repositories.add("github/acme-corp/acme-shell-plugins")
+    plugins.install("acme")
+  then restart the shell.
+```
+
+The `plugins.repositories.add()` line is left out when that repository is already registered, and without `repository` the steps only name the plugin to install.
+
+The hint is advisory. Loading uses only `requires`: a missing or malformed `providedBy` is noted in the log and never keeps a plugin from loading. The shell never adds a repository on its own from a hint; it only prints the calls, and running `plugins.repositories.add()` shows the usual warning and asks for confirmation, so a manifest can't quietly bring in code from elsewhere.
 
 ## Built-in Plugins
 
