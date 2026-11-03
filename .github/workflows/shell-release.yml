@@ -16,6 +16,7 @@ jobs:
   # ==========================================================================
   check-versions:
     runs-on: ubuntu-latest
+    environment: release-build
     steps:
       - name: Checkout Shell Version
         uses: actions/checkout@v4
