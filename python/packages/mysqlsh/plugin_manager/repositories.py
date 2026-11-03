@@ -227,6 +227,18 @@ def add_plugin_repository(url=None, **kwargs):
             else:
                 url = f"{url}/mariadb-shell-plugins-manifest.json"
 
+    # A repository already registered needs no download or confirmation
+    print("Fetching current user repositories...")
+
+    user_repos = get_user_repositories(raise_exceptions=raise_exceptions)
+    if user_repos is None:
+        return
+
+    for r in user_repos:
+        if r.get("url").lower() == url.lower():
+            print(f"The repository '{r.get('name')}' has already been added.\n")
+            return
+
     try:
         manifest = general.download_file(url)
         if not manifest:
@@ -280,18 +292,6 @@ def add_plugin_repository(url=None, **kwargs):
         if prompt != 'yes':
             print("Operation cancelled.")
             return
-
-        print("Fetching current user repositories...")
-
-        user_repos = get_user_repositories(raise_exceptions=raise_exceptions)
-        if user_repos is None:
-            return
-
-        # Check if the given repository is already in the list
-        for r in user_repos:
-            if r.get("url").lower() == url.lower():
-                print(f"The repository '{name}' has already been added.\n")
-                return
 
         print(f"Adding repository '{name}'...")
 

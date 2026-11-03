@@ -54,6 +54,8 @@
 #include "modules/mod_shell.h"
 #include "modules/mod_utils.h"
 #include "modules/util/mod_util.h"
+#include "mysqlshdk/include/scripting/naming_style.h"
+#include "mysqlshdk/include/scripting/types/cpp.h"
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/db/uri_parser.h"
@@ -924,11 +926,11 @@ void Mysql_shell::finish_init() {
   if (mysqlshdk::utils::in_main_thread()) {
     File_list startup_files;
     get_startup_scripts(&startup_files);
-    load_files(startup_files, "startup files");
+    load_startup_files(startup_files);
 
     File_list plugins;
     get_plugins(&plugins);
-    load_files(plugins, "plugins");
+    load_plugins(plugins);
 
     auto shell_cli_operation = m_shell_options.get()->get_shell_cli_operation();
     if (shell_cli_operation) {
@@ -1009,31 +1011,361 @@ void Mysql_shell::finish_init() {
   }
 }
 
-void Mysql_shell::load_files(const File_list &file_list,
-                             const std::string &context) {
-  // if plugins are found, switch to the appropriate mode and load all files
-  bool load_failed = false;
-  log_info("Loading %s...", context.c_str());
-  for (const auto &files : file_list) {
-    const auto &mode = files.first;
-    const auto &files_to_load = files.second;
+namespace {
 
-    if (!files_to_load.empty()) {
-      for (const auto &plugin : files_to_load) {
-        log_debug2("- %s", plugin.file.c_str());
-        if (!_shell->load_plugin(mode, plugin)) {
-          load_failed = true;
-        }
+constexpr auto k_plugin_manifest = "plugin.json";
+
+/**
+ * Whether a "providedBy" value can be printed as is inside the quoted argument
+ * of an install step: printable ASCII with no whitespace, quotes or
+ * backslashes.
+ */
+bool is_printable_argument(const std::string &value) {
+  return std::all_of(value.begin(), value.end(), [](unsigned char c) {
+    return c > ' ' && c < 127 && c != '"' && c != '\'' && c != '\\';
+  });
+}
+
+/**
+ * Reads the optional "providedBy" key of a manifest: an object mapping a
+ * required object name to {"plugin": name, "repository": url}. The hint only
+ * improves the error for an unmet requirement, so a malformed one is logged
+ * and ignored, never a reason not to load the plugin.
+ */
+void read_provided_by_hints(const shcore::Value::Map_type &manifest,
+                            shcore::Plugin_definition *plugin) {
+  if (!manifest.has_key("providedBy")) return;
+
+  const auto warn = [plugin](const std::string &what) {
+    log_warning(
+        "Plugin '%s': %s in the plugin.json manifest, ignoring the hint (%s)",
+        plugin->name.c_str(), what.c_str(), plugin->file.c_str());
+  };
+
+  if (manifest.get_type("providedBy") != shcore::Value_type::Map) {
+    warn("'providedBy' must be an object");
+    return;
+  }
+
+  for (const auto &[object, hint] : *manifest.get_map("providedBy")) {
+    if (hint.get_type() != shcore::Value_type::Map) {
+      warn("'providedBy' entry '" + object + "' must be an object");
+      continue;
+    }
+
+    const auto map = hint.as_map();
+
+    if (map->get_type("plugin") != shcore::Value_type::String ||
+        map->get_string("plugin").empty()) {
+      warn("'providedBy' entry '" + object +
+           "' must name the providing plugin in 'plugin'");
+      continue;
+    }
+
+    if (map->has_key("repository") &&
+        map->get_type("repository") != shcore::Value_type::String) {
+      warn("'repository' of 'providedBy' entry '" + object +
+           "' must be a string");
+      continue;
+    }
+
+    // The values are printed verbatim into the install steps.
+    if (!is_printable_argument(map->get_string("plugin")) ||
+        !is_printable_argument(map->get_string("repository"))) {
+      warn("'plugin' and 'repository' of 'providedBy' entry '" + object +
+           "' must not contain spaces, quotes or control characters");
+      continue;
+    }
+
+    plugin->provided_by[object] = {map->get_string("plugin"),
+                                   map->get_string("repository")};
+  }
+}
+
+/**
+ * Reads the plugin.json manifest of the plugin at the given folder, if there
+ * is one, into the plugin definition.
+ *
+ * @returns An error message when the manifest is invalid, an empty string when
+ * it is valid or there is none.
+ */
+std::string read_plugin_manifest(const std::string &plugin_dir,
+                                 shcore::Plugin_definition *plugin) {
+  const auto path = shcore::path::join_path(plugin_dir, k_plugin_manifest);
+
+  if (!shcore::is_file(path)) return {};
+
+  std::string contents;
+
+  try {
+    contents = shcore::get_text_file(path);
+  } catch (const std::exception &e) {
+    return std::string("the plugin.json manifest could not be read: ") +
+           e.what();
+  }
+
+  shcore::Value manifest;
+
+  try {
+    manifest = shcore::Value::parse(contents);
+  } catch (const std::exception &e) {
+    return std::string("the plugin.json manifest is not valid JSON: ") +
+           e.what();
+  }
+
+  if (manifest.get_type() != shcore::Value_type::Map) {
+    return "the plugin.json manifest must be a JSON object";
+  }
+
+  const auto map = manifest.as_map();
+
+  if (map->has_key("requires")) {
+    const auto &required = map->at("requires");
+    constexpr auto invalid_requires =
+        "'requires' in the plugin.json manifest must be an array of object "
+        "names";
+
+    if (required.get_type() != shcore::Value_type::Array) {
+      return invalid_requires;
+    }
+
+    for (const auto &item : *required.as_array()) {
+      if (item.get_type() != shcore::Value_type::String) {
+        return invalid_requires;
+      }
+
+      const auto &name = item.get_string();
+      const auto segments = shcore::str_split(name, ".");
+      const auto valid =
+          !segments.empty() &&
+          std::all_of(segments.begin(), segments.end(),
+                      [](const auto &segment) {
+                        return shcore::is_valid_identifier(segment);
+                      });
+
+      if (!valid) {
+        return "'" + name +
+               "' in 'requires' of the plugin.json manifest is not a valid "
+               "object name";
+      }
+
+      // A name listed more than once counts once
+      auto &objects = plugin->required_objects;
+
+      if (std::find(objects.begin(), objects.end(), name) == objects.end()) {
+        objects.push_back(name);
       }
     }
   }
 
-  if (load_failed) {
-    auto msg = shcore::str_format(
-        "Found errors loading %s, for more details look at the log at: %s",
-        context.c_str(), shcore::current_logger()->logfile_name().c_str());
-    current_console()->print_warning(msg);
+  // Last, so that an invalid manifest is rejected without logging about its
+  // hints.
+  read_provided_by_hints(*map, plugin);
+
+  return {};
+}
+
+/**
+ * The names, each in single quotes, separated by commas.
+ */
+std::string quoted_list(const std::vector<std::string> &names) {
+  return shcore::str_join(names, ", ",
+                          [](const auto &name) { return "'" + name + "'"; });
+}
+
+/**
+ * The lines, for the error about a plugin with unmet requirements, that say
+ * where the missing objects with a "providedBy" hint come from and how to
+ * install the plugins providing them. Objects from the same plugin share one
+ * paragraph. Empty when no missing object has a hint.
+ */
+std::string install_steps(const shcore::Plugin_definition &plugin,
+                          const std::vector<std::string> &missing) {
+  std::map<shcore::Object_provider, std::vector<std::string>> providers;
+
+  for (const auto &object : missing) {
+    if (const auto hint = plugin.provided_by.find(object);
+        hint != plugin.provided_by.end()) {
+      providers[hint->second].push_back(object);
+    }
   }
+
+  std::string steps;
+
+  for (const auto &[provider, objects] : providers) {
+    steps += shcore::str_format(
+        "\n  The object%s %s %s provided by the plugin '%s'",
+        objects.size() > 1 ? "s" : "", quoted_list(objects).c_str(),
+        objects.size() > 1 ? "are" : "is", provider.plugin.c_str());
+
+    if (!provider.repository.empty()) {
+      steps += " from the repository '" + provider.repository + "'";
+    }
+
+    steps += ". To install it, run:";
+
+    if (!provider.repository.empty()) {
+      steps +=
+          "\n    plugins.repositories.add(\"" + provider.repository + "\")";
+    }
+
+    steps += "\n    plugins.install(\"" + provider.plugin + "\")";
+    steps += "\n  then restart the shell.";
+  }
+
+  return steps;
+}
+
+void warn_load_errors(const char *context) {
+  current_console()->print_warning(shcore::str_format(
+      "Found errors loading %s, for more details look at the log at: %s",
+      context, shcore::current_logger()->logfile_name().c_str()));
+}
+
+}  // namespace
+
+void Mysql_shell::load_startup_files(const File_list &file_list) {
+  bool load_failed = false;
+  log_info("Loading startup files...");
+  for (const auto &file : file_list) {
+    log_debug2("- %s", file.plugin.file.c_str());
+    if (!_shell->load_plugin(file.mode, file.plugin)) {
+      load_failed = true;
+    }
+  }
+
+  if (load_failed) warn_load_errors("startup files");
+}
+
+bool Mysql_shell::has_global_object(const std::string &name) const {
+  const auto segments = shcore::str_split(name, ".");
+  auto value = _shell->get_global(segments.front());
+
+  try {
+    for (size_t i = 1; i < segments.size(); ++i) {
+      if (value.get_type() != shcore::Value_type::Object) return false;
+
+      const auto object = value.as_object<shcore::Cpp_object_bridge>();
+      const auto &segment = segments[i];
+
+      if (!object) return false;
+
+      if (object->has_member(segment)) {
+        value = object->get_member(segment);
+      } else {
+        // A member registered in camelCase is seen in snake_case from
+        // Python, and a manifest may name it either way.
+        const shcore::Scoped_naming_style lower(shcore::LowerCaseUnderscores);
+
+        if (!object->has_member_advanced(segment)) return false;
+
+        value = object->get_member_advanced(segment);
+      }
+    }
+  } catch (const std::exception &e) {
+    // An object that refuses to hand out the member does not provide it
+    log_debug("Could not look up object '%s': %s", name.c_str(), e.what());
+    return false;
+  }
+
+  return value.get_type() == shcore::Value_type::Object;
+}
+
+void Mysql_shell::load_plugins(const File_list &plugins) {
+  log_info("Loading plugins...");
+
+  // Set when a plugin fails to load, or its manifest is invalid. Used to hint
+  // that a plugin left with unmet requirements may depend on such a plugin.
+  bool plugin_failed = false;
+
+  // The console names the plugin; the log also says where it is, as plugins
+  // in different groups or directories may share a name.
+  const auto report_not_loaded = [](const Plugin_file &entry,
+                                    const std::string &reason) {
+    const auto msg =
+        shcore::str_format("Plugin '%s' was not loaded: %s",
+                           entry.plugin.name.c_str(), reason.c_str());
+    log_error("%s (%s)", msg.c_str(), entry.plugin.file.c_str());
+    current_console()->print_error(msg);
+  };
+
+  // The required objects of a plugin that do not exist yet.
+  const auto missing_objects = [this](const shcore::Plugin_definition &plugin) {
+    std::vector<std::string> missing;
+    std::copy_if(plugin.required_objects.begin(), plugin.required_objects.end(),
+                 std::back_inserter(missing),
+                 [this](const auto &name) { return !has_global_object(name); });
+    return missing;
+  };
+
+  // Plugins whose manifest could not be read are reported, not loaded.
+  std::vector<const Plugin_file *> pending;
+
+  for (const auto &entry : plugins) {
+    if (entry.error.empty()) {
+      pending.push_back(&entry);
+    } else {
+      report_not_loaded(entry, entry.error);
+      plugin_failed = true;
+    }
+  }
+
+  // Plugins load in passes. Each pass walks the pending plugins in discovery
+  // order and loads every one whose required objects exist by the time its
+  // turn comes, so a plugin extending an object another plugin creates loads
+  // after that plugin. The passes end when one attempts nothing: the plugins
+  // left have requirements nothing provides.
+  for (int pass = 1; !pending.empty(); ++pass) {
+    std::vector<const Plugin_file *> deferred;
+    std::vector<std::string> loaded;
+    bool attempted = false;
+
+    for (const auto entry : pending) {
+      const auto &plugin = entry->plugin;
+
+      if (!missing_objects(plugin).empty()) {
+        deferred.push_back(entry);
+        continue;
+      }
+
+      log_debug2("- %s", plugin.file.c_str());
+      attempted = true;
+
+      if (_shell->load_plugin(entry->mode, plugin)) {
+        loaded.push_back(plugin.name);
+      } else {
+        plugin_failed = true;
+      }
+    }
+
+    if (!attempted) break;
+
+    if (!loaded.empty()) {
+      log_info("Plugins loaded in pass %d: %s", pass,
+               shcore::str_join(loaded, ", ").c_str());
+    }
+
+    pending = std::move(deferred);
+  }
+
+  for (const auto entry : pending) {
+    const auto missing = missing_objects(entry->plugin);
+    auto reason = shcore::str_format(
+        "it requires the object%s %s, which no loaded plugin provides.",
+        missing.size() > 1 ? "s" : "", quoted_list(missing).c_str());
+
+    if (plugin_failed) {
+      reason += " A plugin that failed to load may provide it.";
+    }
+
+    if (!entry->plugin.provided_by.empty()) {
+      reason += install_steps(entry->plugin, missing);
+    }
+
+    report_not_loaded(*entry, reason);
+  }
+
+  if (plugin_failed || !pending.empty()) warn_load_errors("plugins");
 }
 
 void Mysql_shell::get_startup_scripts(File_list *file_list) {
@@ -1052,16 +1384,16 @@ void Mysql_shell::get_startup_scripts(File_list *file_list) {
       if (shcore::is_file(full_path)) {
         if (shcore::str_iendswith(name, ".js")) {
 #ifdef HAVE_JS
-          (*file_list)[shcore::IShell_core::Mode::JavaScript].emplace_back(
-              full_path, true);
+          file_list->push_back(
+              {shcore::IShell_core::Mode::JavaScript, {full_path, true}, {}});
 #else
         log_warning("Ignoring startup script at '%s', JavaScript is not "
                     "available.", full_path.c_str());
 #endif  // HAVE_JS
         } else if (shcore::str_iendswith(name, ".py")) {
 #ifdef HAVE_PYTHON
-          (*file_list)[shcore::IShell_core::Mode::Python].emplace_back(
-              full_path, true);
+          file_list->push_back(
+              {shcore::IShell_core::Mode::Python, {full_path, true}, {}});
 #else
           log_warning("Ignoring startup script at '%s', Python is not"
                       " available.", full_path.c_str());
@@ -1098,8 +1430,13 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
   bool ret_val = false;
   if (shcore::is_folder(dir)) {
     log_debug("Searching for plugins at '%s'", dir.c_str());
-    shcore::iterdir(dir, [this, &dir, file_list, allow_recursive,
-                          &ret_val](const std::string &name) {
+
+    // The directory is read in name order, so that plugins are discovered,
+    // and hence loaded, in the same order on every filesystem.
+    auto names = shcore::listdir(dir);
+    std::sort(names.begin(), names.end());
+
+    for (const auto &name : names) {
       const auto plugin_dir = shcore::path::join_path(dir, name);
 
       if (shcore::is_folder(plugin_dir) && name[0] != '.') {
@@ -1109,17 +1446,27 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
         bool is_js = shcore::is_file(init_js);
         bool is_py = shcore::is_file(init_py);
 
+        const auto add_plugin = [&](shcore::IShell_core::Mode mode,
+                                    const std::string &init_file) {
+          Plugin_file entry{mode, {init_file, allow_recursive}, {}};
+          entry.plugin.name = name;
+          entry.error = read_plugin_manifest(plugin_dir, &entry.plugin);
+          file_list->push_back(std::move(entry));
+        };
+
         if (is_js && is_py) {
-          auto msg = shcore::str_format(
-              "Found multiple plugin initialization files for plugin "
-              "'%s' at %s, ignoring plugin.",
-              name.c_str(), plugin_dir.c_str());
-          print_warning(msg);
+          // Reported by the loader, so that a plugin requiring one of its
+          // objects is told a plugin failed.
+          ret_val = true;
+          Plugin_file entry{shcore::IShell_core::Mode::None,
+                            {plugin_dir, allow_recursive},
+                            "it has both an init.js and an init.py file"};
+          entry.plugin.name = name;
+          file_list->push_back(std::move(entry));
         } else if (is_js) {
           ret_val = true;
 #ifdef HAVE_JS
-          (*file_list)[shcore::IShell_core::Mode::JavaScript].emplace_back(
-              init_js, allow_recursive);
+          add_plugin(shcore::IShell_core::Mode::JavaScript, init_js);
 #else
           log_warning("Ignoring plugin at '%s', JavaScript is not available.",
                       plugin_dir.c_str());
@@ -1127,11 +1474,10 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
         } else if (is_py) {
           ret_val = true;
 #ifdef HAVE_PYTHON
-          (*file_list)[shcore::IShell_core::Mode::Python].emplace_back(
-              init_py, allow_recursive);
+          add_plugin(shcore::IShell_core::Mode::Python, init_py);
 #else
           log_warning("Ignoring plugin at '%s', Python is not available.",
-                        plugin_dir.c_str());
+                      plugin_dir.c_str());
 #endif
         } else {
           bool found_plugins = false;
@@ -1151,9 +1497,7 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
           }
         }
       }
-
-      return true;
-    });
+    }
   }
   return ret_val;
 }

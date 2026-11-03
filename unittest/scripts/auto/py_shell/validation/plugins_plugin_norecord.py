@@ -1,5 +1,6 @@
 #@<OUT> Install the test repository
 [[*]]plugins.repositories.add('http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json')
+Fetching current user repositories...
 
 WARNING:
 You are about to add an external MariaDB Shell plugin repository.
@@ -21,9 +22,13 @@ The repository contains the following plugins:
 
   - Repo Testing Plugin
 
-Fetching current user repositories...
 Adding repository 'Testing MariaDB Shell Plugin Repository'...
 Repository 'Testing MariaDB Shell Plugin Repository' successfully added.
+
+#@<OUT> Add the test repository again
+[[*]]plugins.repositories.add('http://127.0.0.1:<<<PORT>>>/mariadb-shell-plugins-manifest.json')
+Fetching current user repositories...
+The repository 'Testing MariaDB Shell Plugin Repository' has already been added.
 
 #@<OUT> Help on built-in plugins plugin
 [[*]]\? plugins
@@ -93,6 +98,16 @@ extension:
 On startup, the shell traverses the folders inside of the *plugins* folder
 searching for the plugin init file. The init file will be loaded on the
 corresponding context (JavaScript or Python).
+
+Plugins load in name order. A plugin that extends an object another plugin
+creates lists that object in an optional plugin.json file next to its init
+file, as in {"requires": ["audit"]}. The shell then loads it after the
+plugin that creates the object, and reports an error when no plugin does.
+An optional providedBy key maps a required object to the plugin providing
+it and, if it is not bundled, the repository to add, as in {"providedBy":
+{"audit": {"plugin": "audit", "repository": "github/acme-corp"}}}. The
+error for a missing object then shows the plugins.repositories.add() and
+plugins.install() calls that install it.
 
 Use Cases
 
