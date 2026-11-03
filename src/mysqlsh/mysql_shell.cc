@@ -1313,11 +1313,12 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
   // Plugins load in passes. Each pass walks the pending plugins in discovery
   // order and loads every one whose required objects exist by the time its
   // turn comes, so a plugin extending an object another plugin creates loads
-  // after that plugin. The passes end when one loads nothing: the plugins
+  // after that plugin. The passes end when one attempts nothing: the plugins
   // left have requirements nothing provides.
   for (int pass = 1; !pending.empty(); ++pass) {
     std::vector<const Plugin_file *> deferred;
     std::vector<std::string> loaded;
+    bool attempted = false;
 
     for (const auto entry : pending) {
       const auto &plugin = entry->plugin;
@@ -1328,16 +1329,21 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
       }
 
       log_debug2("- %s", plugin.file.c_str());
+      attempted = true;
 
-      if (!_shell->load_plugin(entry->mode, plugin)) plugin_failed = true;
-
-      loaded.push_back(plugin.name);
+      if (_shell->load_plugin(entry->mode, plugin)) {
+        loaded.push_back(plugin.name);
+      } else {
+        plugin_failed = true;
+      }
     }
 
-    if (loaded.empty()) break;
+    if (!attempted) break;
 
-    log_info("Plugins loaded in pass %d: %s", pass,
-             shcore::str_join(loaded, ", ").c_str());
+    if (!loaded.empty()) {
+      log_info("Plugins loaded in pass %d: %s", pass,
+               shcore::str_join(loaded, ", ").c_str());
+    }
 
     pending = std::move(deferred);
   }
