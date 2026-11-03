@@ -27,6 +27,7 @@
 #ifndef MYSQLSHDK_INCLUDE_SCRIPTING_PLUGIN_DEFINITION_H_
 #define MYSQLSHDK_INCLUDE_SCRIPTING_PLUGIN_DEFINITION_H_
 
+#include <compare>
 #include <map>
 #include <string>
 #include <vector>
@@ -39,6 +40,8 @@ namespace shcore {
 struct Object_provider {
   std::string plugin;
   std::string repository;
+
+  auto operator<=>(const Object_provider &) const = default;
 };
 
 // A plugin file contains the path, and bool indicating whether it is

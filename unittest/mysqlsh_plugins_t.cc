@@ -585,12 +585,31 @@ class Mysqlsh_plugin_test : public Mysqlsh_extension_test {
     }
   }
 
-  // Writes the plugin.json manifest of a user plugin created with
-  // write_user_plugin().
-  void write_user_plugin_manifest(const std::string &name,
-                                  const std::string &contents) {
-    shcore::create_file(
-        join_path(get_user_plugin_folder(), name, "plugin.json"), contents);
+  // Writes a Python user plugin that prints 'loaded <name>' and then runs
+  // body, with the given plugin.json manifest when there is one, and records
+  // it for delete_py_plugins().
+  void write_py_plugin(const std::string &name, const std::string &manifest,
+                       const std::string &body = "") {
+    write_user_plugin(name, "print('loaded " + name + "')\n" + body, ".py");
+
+    if (!manifest.empty()) {
+      shcore::create_file(
+          join_path(get_user_plugin_folder(), name, "plugin.json"), manifest);
+    }
+
+    m_py_plugins.push_back(name);
+  }
+
+  // Deletes the plugins written with write_py_plugin().
+  void delete_py_plugins() {
+    for (const auto &name : m_py_plugins) delete_user_plugin(name);
+    m_py_plugins.clear();
+  }
+
+  // The error the shell prints for a plugin it did not load.
+  static std::string not_loaded(const std::string &name,
+                                const std::string &reason) {
+    return "ERROR: Plugin '" + name + "' was not loaded: " + reason;
   }
 
   // Position of the first occurrence of text in the shell output, failing the
@@ -613,6 +632,8 @@ class Mysqlsh_plugin_test : public Mysqlsh_extension_test {
 
  protected:
   std::string get_plugin_folder_name() const override { return "plugins"; }
+
+  std::vector<std::string> m_py_plugins;
 };
 
 TEST_F(Mysqlsh_plugin_test, WL13051_OK_shell_plugins) {
@@ -747,36 +768,25 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_load_order) {
   // dependents here would load before the plugins creating the objects they
   // extend: c_first creates 'first', b_second adds 'first.second' to it, and
   // a_third adds a function to 'first.second'.
-  write_user_plugin("c_first", R"(print('loaded c_first')
-first = shell.create_extension_object()
+  write_py_plugin("c_first", "", R"(first = shell.create_extension_object()
 shell.register_global('first', first, {'brief': 'first'})
-)",
-                    ".py");
+)");
 
-  write_user_plugin("b_second", R"(print('loaded b_second')
-import mysqlsh
+  write_py_plugin("b_second", R"({"requires": ["first"]})", R"(import mysqlsh
 second = shell.create_extension_object()
 shell.add_extension_object_member(mysqlsh.globals.first, 'second', second, {'brief': 'second'})
-)",
-                    ".py");
-  write_user_plugin_manifest("b_second", R"({"requires": ["first"]})");
+)");
 
-  write_user_plugin("a_third", R"(print('loaded a_third')
-import mysqlsh
+  write_py_plugin("a_third", R"({"requires": ["first.second"]})",
+                  R"(import mysqlsh
 def describe():
   print('third attached to first.second')
 shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', describe)
-)",
-                    ".py");
-  write_user_plugin_manifest("a_third", R"({"requires": ["first.second"]})");
+)");
 
   // A requirement on a built-in object is met from the start, and unknown
   // manifest keys are ignored.
-  write_user_plugin("d_builtin", R"(print('loaded d_builtin')
-)",
-                    ".py");
-  write_user_plugin_manifest("d_builtin",
-                             R"({"requires": ["util"], "version": "1.0"})");
+  write_py_plugin("d_builtin", R"({"requires": ["util"], "version": "1.0"})");
 
   add_py_test("\\py");
   add_py_test("first.second.describe()", "third attached to first.second");
@@ -799,39 +809,27 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
   validate_log();
 
   wipe_out();
-  delete_user_plugin("c_first");
-  delete_user_plugin("b_second");
-  delete_user_plugin("a_third");
-  delete_user_plugin("d_builtin");
+  delete_py_plugins();
 }
 
 TEST_F(Mysqlsh_plugin_test, plugin_requires_unmet) {
   // Nothing provides the objects, so the plugin is reported and not loaded.
-  write_user_plugin("orphan", R"(print('loaded orphan')
-)",
-                    ".py");
-  write_user_plugin_manifest(
-      "orphan", R"({"requires": ["nothing.here", "util.missing"]})");
+  write_py_plugin("orphan",
+                  R"({"requires": ["nothing.here", "util.missing"]})");
 
   // Two plugins requiring each other's objects: neither can load.
-  write_user_plugin("x_one", R"(print('loaded x_one')
-one = shell.create_extension_object()
+  write_py_plugin("x_one", R"({"requires": ["two"]})",
+                  R"(one = shell.create_extension_object()
 shell.register_global('one', one, {'brief': 'one'})
-)",
-                    ".py");
-  write_user_plugin_manifest("x_one", R"({"requires": ["two"]})");
+)");
 
-  write_user_plugin("y_two", R"(print('loaded y_two')
-two = shell.create_extension_object()
+  write_py_plugin("y_two", R"({"requires": ["one"]})",
+                  R"(two = shell.create_extension_object()
 shell.register_global('two', two, {'brief': 'two'})
-)",
-                    ".py");
-  write_user_plugin_manifest("y_two", R"({"requires": ["one"]})");
+)");
 
   // A plugin without a manifest in the same run is unaffected.
-  write_user_plugin("plain", R"(print('loaded plain')
-)",
-                    ".py");
+  write_py_plugin("plain", "");
 
   add_py_test("\\py");
   add_py_test("print('done')", "done");
@@ -844,61 +842,36 @@ shell.register_global('two', two, {'brief': 'two'})
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded x_one");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded y_two");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'orphan' was not loaded: it requires the objects "
-      "'nothing.here', 'util.missing', which no loaded plugin provides.");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'x_one' was not loaded: it requires the object 'two', "
-      "which no loaded plugin provides.");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'y_two' was not loaded: it requires the object 'one', "
-      "which no loaded plugin provides.");
+      not_loaded("orphan",
+                 "it requires the objects 'nothing.here', 'util.missing', "
+                 "which no loaded plugin provides."));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "x_one",
+      "it requires the object 'two', which no loaded plugin provides."));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "y_two",
+      "it requires the object 'one', which no loaded plugin provides."));
   // No plugin failed, so there is no hint about one.
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("A plugin that failed to load may provide");
   MY_EXPECT_CMD_OUTPUT_CONTAINS("WARNING: Found errors loading plugins");
 
   wipe_out();
-  delete_user_plugin("orphan");
-  delete_user_plugin("x_one");
-  delete_user_plugin("y_two");
-  delete_user_plugin("plain");
+  delete_py_plugins();
 }
 
 TEST_F(Mysqlsh_plugin_test, plugin_requires_invalid_manifest) {
   // An invalid manifest skips the plugin, with an error naming the problem.
-  write_user_plugin("bad_json", R"(print('loaded bad_json')
-broken = shell.create_extension_object()
+  write_py_plugin("bad_json", "{", R"(broken = shell.create_extension_object()
 shell.register_global('broken', broken, {'brief': 'broken'})
-)",
-                    ".py");
-  write_user_plugin_manifest("bad_json", "{");
-
-  write_user_plugin("not_object", R"(print('loaded not_object')
-)",
-                    ".py");
-  write_user_plugin_manifest("not_object", R"(["util"])");
-
-  write_user_plugin("not_array", R"(print('loaded not_array')
-)",
-                    ".py");
-  write_user_plugin_manifest("not_array", R"({"requires": "util"})");
-
-  write_user_plugin("bad_name", R"(print('loaded bad_name')
-)",
-                    ".py");
-  write_user_plugin_manifest("bad_name",
-                             R"({"requires": ["util", "bad name"]})");
-
-  write_user_plugin("empty_name", R"(print('loaded empty_name')
-)",
-                    ".py");
-  write_user_plugin_manifest("empty_name", R"({"requires": [""]})");
+)");
+  write_py_plugin("not_object", R"(["util"])");
+  write_py_plugin("not_array", R"({"requires": "util"})");
+  write_py_plugin("bad_name", R"({"requires": ["util", "bad name"]})");
+  write_py_plugin("empty_name", R"({"requires": [""]})");
 
   // The object this plugin requires would come from bad_json, which was
   // skipped, so the error hints at that.
-  write_user_plugin("dependent", R"(print('loaded dependent')
-)",
-                    ".py");
-  write_user_plugin_manifest("dependent", R"({"requires": ["broken"]})");
+  write_py_plugin("dependent", R"({"requires": ["broken"]})");
 
   add_py_test("\\py");
   add_py_test("print('done')", "done");
@@ -913,33 +886,29 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded empty_name");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded dependent");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'bad_json' was not loaded: the plugin.json manifest is "
-      "not valid JSON: ");
+      not_loaded("bad_json", "the plugin.json manifest is not valid JSON: "));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "not_object", "the plugin.json manifest must be a JSON object"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'not_object' was not loaded: the plugin.json manifest "
-      "must be a JSON object");
+      not_loaded("not_array",
+                 "'requires' in the plugin.json manifest must be an array of "
+                 "object names"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'not_array' was not loaded: 'requires' in the "
-      "plugin.json manifest must be an array of object names");
+      not_loaded("bad_name",
+                 "'bad name' in 'requires' of the plugin.json manifest is not "
+                 "a valid object name"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'bad_name' was not loaded: 'bad name' in 'requires' of "
-      "the plugin.json manifest is not a valid object name");
+      not_loaded("empty_name",
+                 "'' in 'requires' of the plugin.json manifest is not a valid "
+                 "object name"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'empty_name' was not loaded: '' in 'requires' of the "
-      "plugin.json manifest is not a valid object name");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'dependent' was not loaded: it requires the object "
-      "'broken', which no loaded plugin provides. A plugin that failed to "
-      "load may provide it.");
+      not_loaded("dependent",
+                 "it requires the object 'broken', which no loaded plugin "
+                 "provides. A plugin that failed to load may provide it."));
   MY_EXPECT_CMD_OUTPUT_CONTAINS("WARNING: Found errors loading plugins");
 
   wipe_out();
-  delete_user_plugin("bad_json");
-  delete_user_plugin("not_object");
-  delete_user_plugin("not_array");
-  delete_user_plugin("bad_name");
-  delete_user_plugin("empty_name");
-  delete_user_plugin("dependent");
+  delete_py_plugins();
 }
 
 TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
@@ -951,10 +920,7 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
     "url": "https://raw.githubusercontent.com/acme-corp/mariadb-shell-plugins/master/mariadb-shell-plugins-manifest.json"}]})");
 
   // Both objects come from the same plugin, in a repository not registered.
-  write_user_plugin("needs_remote", R"(print('loaded needs_remote')
-)",
-                    ".py");
-  write_user_plugin_manifest("needs_remote", R"({
+  write_py_plugin("needs_remote", R"({
     "requires": ["acme.storage", "acme.backup"],
     "providedBy": {
       "acme.storage": {"plugin": "acme", "repository": "github/acme-corp/acme-shell-plugins"},
@@ -962,40 +928,24 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
     }})");
 
   // No repository: only the plugin to install is named.
-  write_user_plugin("needs_local", R"(print('loaded needs_local')
-)",
-                    ".py");
-  write_user_plugin_manifest("needs_local", R"({
+  write_py_plugin("needs_local", R"({
     "requires": ["acme.local"],
     "providedBy": {"acme.local": {"plugin": "acme_local"}}})");
 
   // The repository is already registered.
-  write_user_plugin("needs_registered", R"(print('loaded needs_registered')
-)",
-                    ".py");
-  write_user_plugin_manifest("needs_registered", R"({
+  write_py_plugin("needs_registered", R"({
     "requires": ["acme.reg"],
     "providedBy": {"acme.reg": {"plugin": "acme_reg", "repository": "github/acme-corp"}}})");
 
   // Only one of the missing objects has a hint.
-  write_user_plugin("needs_partial", R"(print('loaded needs_partial')
-)",
-                    ".py");
-  write_user_plugin_manifest("needs_partial", R"({
+  write_py_plugin("needs_partial", R"({
     "requires": ["acme.known", "nothing.here"],
     "providedBy": {"acme.known": {"plugin": "acme_known"}}})");
 
   // A malformed hint is ignored: the plugin still loads, or still gets the
   // plain error.
-  write_user_plugin("bad_hint", R"(print('loaded bad_hint')
-)",
-                    ".py");
-  write_user_plugin_manifest("bad_hint", R"({"providedBy": "acme"})");
-
-  write_user_plugin("bad_entry", R"(print('loaded bad_entry')
-)",
-                    ".py");
-  write_user_plugin_manifest("bad_entry", R"({
+  write_py_plugin("bad_hint", R"({"providedBy": "acme"})");
+  write_py_plugin("bad_entry", R"({
     "requires": ["acme.x"],
     "providedBy": {"acme.x": {"repository": "github/acme-corp"}}})");
 
@@ -1008,39 +958,44 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("loaded bad_hint");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded needs_");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_entry");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'needs_remote' was not loaded: it requires the objects "
-      "'acme.storage', 'acme.backup', which no loaded plugin provides.\n"
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "needs_remote",
+      "it requires the objects 'acme.storage', 'acme.backup', which no loaded "
+      "plugin provides.\n"
       "  The objects 'acme.storage', 'acme.backup' are provided by the plugin "
       "'acme' from the repository 'github/acme-corp/acme-shell-plugins'. To "
       "install it, run:\n"
       "    plugins.repositories.add(\"github/acme-corp/acme-shell-plugins\")\n"
       "    plugins.install(\"acme\")\n"
-      "  then restart the shell.\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'needs_local' was not loaded: it requires the object "
-      "'acme.local', which no loaded plugin provides.\n"
-      "  It is provided by the plugin 'acme_local'. To install it, run:\n"
+      "  then restart the shell.\n"));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "needs_local",
+      "it requires the object 'acme.local', which no loaded plugin "
+      "provides.\n"
+      "  The object 'acme.local' is provided by the plugin 'acme_local'. To "
+      "install it, run:\n"
       "    plugins.install(\"acme_local\")\n"
-      "  then restart the shell.\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'needs_registered' was not loaded: it requires the "
-      "object 'acme.reg', which no loaded plugin provides.\n"
-      "  It is provided by the plugin 'acme_reg' from the repository "
-      "'github/acme-corp'. To install it, run:\n"
+      "  then restart the shell.\n"));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "needs_registered",
+      "it requires the object 'acme.reg', which no loaded plugin provides.\n"
+      "  The object 'acme.reg' is provided by the plugin 'acme_reg' from the "
+      "repository 'github/acme-corp'. To install it, run:\n"
       "    plugins.install(\"acme_reg\")\n"
-      "  then restart the shell.\n");
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'needs_partial' was not loaded: it requires the objects "
-      "'acme.known', 'nothing.here', which no loaded plugin provides.\n"
+      "  then restart the shell.\n"));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "needs_partial",
+      "it requires the objects 'acme.known', 'nothing.here', which no loaded "
+      "plugin provides.\n"
       "  The object 'acme.known' is provided by the plugin 'acme_known'. To "
       "install it, run:\n"
       "    plugins.install(\"acme_known\")\n"
-      "  then restart the shell.\n");
+      "  then restart the shell.\n"));
   // The plain error, with no steps after it.
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "ERROR: Plugin 'bad_entry' was not loaded: it requires the object "
-      "'acme.x', which no loaded plugin provides.\nERROR: ");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "bad_entry",
+      "it requires the object 'acme.x', which no loaded plugin provides.\n"
+      "ERROR: "));
 
   add_expected_log(
       "Plugin 'bad_hint': 'providedBy' must be an object in the plugin.json "
@@ -1053,12 +1008,7 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
 
   wipe_out();
   shcore::delete_file(registry);
-  delete_user_plugin("needs_remote");
-  delete_user_plugin("needs_local");
-  delete_user_plugin("needs_registered");
-  delete_user_plugin("needs_partial");
-  delete_user_plugin("bad_hint");
-  delete_user_plugin("bad_entry");
+  delete_py_plugins();
 }
 
 TEST_F(Mysqlsh_plugin_test, WL13051_multiple_init_files) {

@@ -105,7 +105,7 @@ When the object is missing, the error turns the hint into the steps to run:
 
 ```text
 ERROR: Plugin 'acme_backup' was not loaded: it requires the object 'acme.storage', which no loaded plugin provides.
-  It is provided by the plugin 'acme' from the repository 'github/acme-corp/acme-shell-plugins'. To install it, run:
+  The object 'acme.storage' is provided by the plugin 'acme' from the repository 'github/acme-corp/acme-shell-plugins'. To install it, run:
     plugins.repositories.add("github/acme-corp/acme-shell-plugins")
     plugins.install("acme")
   then restart the shell.

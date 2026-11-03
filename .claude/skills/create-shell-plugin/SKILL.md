@@ -29,15 +29,10 @@ The loader is `Mysql_shell::get_plugins` in [src/mysqlsh/mysql_shell.cc](src/mys
 - Plugins are discovered in name order and loaded in passes. A plugin that attaches
   to an object **another plugin** creates (`@plugin(parent="dba.vendor")`, or
   `add_extension_object_member` on a foreign object) declares it in an optional
-  `plugin.json` next to `init.py`: `{"requires": ["dba.vendor"]}`. The names are
-  fully qualified, camelCase as the decorators write them, and never name an object
-  the plugin itself creates. The loader runs the plugin only once every required
-  object exists, and reports it with an error when one never appears. Built-in
-  objects such as `util` need no entry, but may be listed for documentation.
-  When the required object comes from a plugin shipped elsewhere, an optional
-  `providedBy` key (`{"<object>": {"plugin": "<name>", "repository": "github/<user>/<repo>"}}`)
-  makes that error print the `plugins.repositories.add()` / `plugins.install()`
-  calls to run. It is advisory: a bad hint is logged and ignored.
+  `plugin.json` next to `init.py`: `{"requires": ["dba.vendor"]}`, plus an optional
+  `providedBy` hint naming the plugin and repository that provide it. The naming
+  rules, the loading passes and the hint's shape are in "Load Order and Dependencies"
+  of [plugins.md](docs-ref/content/community/mariadb-shell/extending-mariadb-shell/plugins.md).
 - The plugin folder name is importable as a Python package, so helper modules go
   beside `init.py` and are imported as `from <folder_name>.<module> import ...`
   (see [python/plugins/debug/](python/plugins/debug/) for the pattern).
