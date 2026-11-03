@@ -75,9 +75,8 @@ that cannot fast-forward, and a build that main has moved past.
 It changes: PRs on both repos (version bump, plugins version/index), both
 release/candidate branches (fast-forward only, never forced), workflow runs
 (including the environment approval of the build), and the release itself.
-Its own two PRs are merged with --admin once their checks pass, so a
-release needs no second reviewer. It never force-pushes, never merges past
-a failing check, and leaves a failed run as it is for you to inspect.
+It never force-pushes, never merges past a failing check, and leaves a
+failed run as it is for you to inspect.
 
 Details: .claude/commands/release.md · helper: scripts/release.py --help
 ```
@@ -126,20 +125,10 @@ Details: .claude/commands/release.md · helper: scripts/release.py --help
   failed step, the error excerpt and the run link, and what to fix. Do not
   cancel the failed run, and do not retry on your own. Tell the user that
   `/release` resumes once it is fixed.
-- **Never force anything.** No force-push, no merging past a failing check,
-  no `git push --force` to release/candidate. When a precondition fails in a
-  way these steps don't cover (a diverged release/candidate, an open PR that
-  doesn't match), stop and ask.
-- **The release's own PRs merge with `--admin`, after their checks pass.**
-  The rulesets on main require a code owner's review on every PR, and the
-  release must not need a second person. The users running releases are
-  bypass actors of those rulesets (pull requests only), and `gh pr merge
-  --admin` is how `gh` merges without waiting for the review. It is used
-  only on the two PRs this command opens, the shell version bump and the
-  plugins version/index, and never before their required checks have passed:
-  `--admin` skips the review, not the checks this command waits for. Any
-  other PR is merged the normal way, if at all. If the merge is refused, the
-  runner is not a bypass actor: stop, report who is, and ask for the review.
+- **Never force anything.** No force-push, no `--admin` merges, no merging
+  past a failing check, no `git push --force` to release/candidate. When a
+  precondition fails in a way these steps don't cover (a diverged
+  release/candidate, an open PR that doesn't match), stop and ask.
 - Temporary clones go in a fresh directory under the session scratchpad, never
   in the user's checkouts.
 - Commits created here carry no `Co-Authored-By` or other attribution
@@ -196,9 +185,7 @@ The report must show, on lines of their own:
      reports quickly:
      `gh pr checks <N> -R mariadb-corporation/mariadb-shell --required --watch --fail-fast --interval 60`.
   2. Merge it with
-     `gh pr merge <N> -R mariadb-corporation/mariadb-shell --admin --squash --delete-branch`
-     (`--admin`: see the rules; the review it skips is of a one-line version
-     change whose checks have just passed).
+     `gh pr merge <N> -R mariadb-corporation/mariadb-shell --squash --delete-branch`.
   3. Get the merge commit from
      `gh pr view <N> -R mariadb-corporation/mariadb-shell --json mergeCommit --jq .mergeCommit.oid`.
      The push to main starts MariaDB-Shell-CI-Publish. Find that run with
@@ -320,9 +307,8 @@ differ, stop and report both.
      the required ones, so the `wip/**` push run counts too.
      `gh pr checks <N> -R mariadb-corporation/mariadb-shell-plugins --watch --fail-fast --interval 60`.
      Do not merge until all of them pass.
-  2. Merge with `--admin --squash --delete-branch` (`--admin`: see the
-     rules). Shell Plugins CI does not run on main, so the merge itself
-     starts nothing to wait for.
+  2. Merge with `--squash --delete-branch`. Shell Plugins CI does not run on
+     main, so the merge itself starts nothing to wait for.
   3. Re-run `preflight`.
 
 The server tags to publish with are **`INDEX_TAGS`**: exactly the `new`,
