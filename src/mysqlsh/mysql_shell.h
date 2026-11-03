@@ -92,9 +92,29 @@ class Mysql_shell : public mysqlsh::Base_shell {
     return shell_context()->command_handler();
   }
 
-  using File_list = std::map<shcore::IShell_core::Mode,
-                             std::vector<shcore::Plugin_definition>>;
+  // A plugin or startup script, with the language of its file. A non-empty
+  // error is a problem found reading the plugin's manifest; such a plugin is
+  // reported instead of loaded.
+  struct Plugin_file {
+    shcore::IShell_core::Mode mode;
+    shcore::Plugin_definition plugin;
+    std::string error;
+  };
+  using File_list = std::vector<Plugin_file>;
   void load_files(const File_list &file_list, const std::string &context);
+
+  /**
+   * Loads the plugins in passes, so that a plugin extending an object that
+   * another plugin creates loads after that plugin. Plugins whose required
+   * objects never appear are reported as errors.
+   */
+  void load_plugins(const File_list &plugins);
+
+  /**
+   * Checks whether the object with the given fully qualified name (e.g.
+   * "dba.vendor") exists in the global object tree.
+   */
+  bool has_global_object(const std::string &name) const;
 
   /**
    * Gets all the startup files for the supported scripting languages at:

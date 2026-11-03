@@ -26,6 +26,14 @@ The loader is `Mysql_shell::get_plugins` in [src/mysqlsh/mysql_shell.cc](src/mys
     `--disable-plugins`.
 - Loading is recursive: a folder without an init file may contain sub-folders that
   are themselves plugins.
+- Plugins are discovered in name order and loaded in passes. A plugin that attaches
+  to an object **another plugin** creates (`@plugin(parent="dba.vendor")`, or
+  `add_extension_object_member` on a foreign object) declares it in an optional
+  `plugin.json` next to `init.py`: `{"requires": ["dba.vendor"]}`. The names are
+  fully qualified, camelCase as the decorators write them, and never name an object
+  the plugin itself creates. The loader runs the plugin only once every required
+  object exists, and reports it with an error when one never appears. Built-in
+  objects such as `util` need no entry, but may be listed for documentation.
 - The plugin folder name is importable as a Python package, so helper modules go
   beside `init.py` and are imported as `from <folder_name>.<module> import ...`
   (see [python/plugins/debug/](python/plugins/debug/) for the pattern).
@@ -146,6 +154,8 @@ from mysqlsh import Error, DBError, mysql
 4. **Split helpers** into sibling modules (`<name>/<helper>.py`) imported as
    `from <name>.<helper> import ...` when the logic is non-trivial; keep `init.py`
    focused on registration.
+   If the plugin extends an object created by another plugin, also write
+   `<name>/plugin.json` with `{"requires": ["<that.object>"]}` so it loads after it.
 5. **Mirror the project license header** at the top of every file — copy the GPLv2
    header used by existing plugins in [python/plugins/debug/init.py](python/plugins/debug/init.py).
 6. **Tell the user how to try it**: it loads on the next `mariadb-shell` start; verify with

@@ -63,6 +63,26 @@ A directory without `init.py` can hold several plugins, one level deep. This is 
 
 For plugins in a group, the plugins directory itself is on `sys.path` during loading, so modules are imported with the group name as prefix, for example `from acme.audit.checks import run_checks`.
 
+### Load Order and Dependencies
+
+The shell discovers plugins in name order: the built-in directory first, then the user directories, and within each directory the plugin directories sorted by name. A plugin that extends an object another plugin creates, for example by registering functions under it with `@plugin(parent=...)`, must load after that plugin. It declares this in an optional `plugin.json` file next to its `init.py`:
+
+```json
+{
+  "requires": ["dba.vendor"]
+}
+```
+
+`requires` lists the fully qualified names of the objects the plugin needs: a global object name, optionally followed by member names, written the way the `@plugin_function` decorator names them (`util.debug`, not `util.Debug`). Only objects defined outside the plugin belong there; built-in objects such as `util` count too.
+
+The shell reads every manifest before running any plugin, then loads plugins in passes: first those whose requirements are already met, then those whose required objects now exist, until nothing more can load. A plugin whose requirements are never met isn't loaded, and the shell prints an error naming the missing objects:
+
+```text
+ERROR: Plugin 'dba_vendor_hetzner' was not loaded: it requires the object 'dba.vendor', which no loaded plugin provides.
+```
+
+A manifest that isn't valid JSON, isn't an object, or whose `requires` isn't an array of object names also keeps its plugin from loading, with an error saying why. Keys other than `requires` are ignored. A plugin without a manifest has no requirements.
+
 ## Built-in Plugins
 
 | Plugin | What it provides |

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,15 +28,21 @@
 #define MYSQLSHDK_INCLUDE_SCRIPTING_PLUGIN_DEFINITION_H_
 
 #include <string>
+#include <vector>
 
 namespace shcore {
 
 // A plugin file contains the path, and bool indicating whether it is
-// A 1st level plugin (true) or a child plugin (false)
+// A 1st level plugin (true) or a child plugin (false). The name is the plugin
+// folder, and required_objects holds the fully qualified names of the shell
+// objects (e.g. "dba.vendor") that must exist before the plugin loads, as
+// declared in its plugin.json manifest.
 struct Plugin_definition {
   Plugin_definition(const std::string f, bool m) : file(f), main(m) {}
   std::string file;
   bool main;
+  std::string name;
+  std::vector<std::string> required_objects;
 };
 
 }  // namespace shcore
