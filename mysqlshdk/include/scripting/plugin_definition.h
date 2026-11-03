@@ -35,7 +35,7 @@ namespace shcore {
 // A plugin file contains the path, and bool indicating whether it is
 // A 1st level plugin (true) or a child plugin (false). The name is the plugin
 // folder, and required_objects holds the fully qualified names of the shell
-// objects (e.g. "dba.vendor") that must exist before the plugin loads, as
+// objects (e.g. "util.debug") that must exist before the plugin loads, as
 // declared in its plugin.json manifest.
 struct Plugin_definition {
   Plugin_definition(const std::string f, bool m) : file(f), main(m) {}

@@ -101,7 +101,11 @@ class Mysql_shell : public mysqlsh::Base_shell {
     std::string error;
   };
   using File_list = std::vector<Plugin_file>;
-  void load_files(const File_list &file_list, const std::string &context);
+
+  /**
+   * Loads the startup scripts, in the order given.
+   */
+  void load_startup_files(const File_list &file_list);
 
   /**
    * Loads the plugins in passes, so that a plugin extending an object that
@@ -112,7 +116,7 @@ class Mysql_shell : public mysqlsh::Base_shell {
 
   /**
    * Checks whether the object with the given fully qualified name (e.g.
-   * "dba.vendor") exists in the global object tree.
+   * "util.debug") exists in the global object tree.
    */
   bool has_global_object(const std::string &name) const;
 

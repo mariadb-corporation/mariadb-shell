@@ -105,7 +105,7 @@ corresponding context (JavaScript or Python).
 
 Plugins load in name order. A plugin that extends an object another plugin
 creates lists that object in an optional plugin.json file next to its init
-file, as in {"requires": ["dba.vendor"]}. The shell then loads it after the
+file, as in {"requires": ["audit"]}. The shell then loads it after the
 plugin that creates the object, and reports an error when no plugin does.
 
 Use Cases

@@ -924,7 +924,7 @@ void Mysql_shell::finish_init() {
   if (mysqlshdk::utils::in_main_thread()) {
     File_list startup_files;
     get_startup_scripts(&startup_files);
-    load_files(startup_files, "startup files");
+    load_startup_files(startup_files);
 
     File_list plugins;
     get_plugins(&plugins);
@@ -1026,10 +1026,19 @@ std::string read_plugin_manifest(const std::string &plugin_dir,
 
   if (!shcore::is_file(path)) return {};
 
+  std::string contents;
+
+  try {
+    contents = shcore::get_text_file(path);
+  } catch (const std::exception &e) {
+    return shcore::str_format("the %s manifest could not be read: %s",
+                              k_plugin_manifest, e.what());
+  }
+
   shcore::Value manifest;
 
   try {
-    manifest = shcore::Value::parse(shcore::get_text_file(path));
+    manifest = shcore::Value::parse(contents);
   } catch (const std::exception &e) {
     return shcore::str_format("the %s manifest is not valid JSON: %s",
                               k_plugin_manifest, e.what());
@@ -1055,13 +1064,17 @@ std::string read_plugin_manifest(const std::string &plugin_dir,
     if (item.get_type() != shcore::Value_type::String) return invalid_requires;
 
     const auto name = item.as_string();
+    const auto segments = shcore::str_split(name, ".");
+    const auto valid =
+        !segments.empty() &&
+        std::all_of(segments.begin(), segments.end(), [](const auto &segment) {
+          return shcore::is_valid_identifier(segment);
+        });
 
-    for (const auto &segment : shcore::str_split(name, ".")) {
-      if (!shcore::is_valid_identifier(segment)) {
-        return shcore::str_format(
-            "'%s' in 'requires' of the %s manifest is not a valid object name",
-            name.c_str(), k_plugin_manifest);
-      }
+    if (!valid) {
+      return shcore::str_format(
+          "'%s' in 'requires' of the %s manifest is not a valid object name",
+          name.c_str(), k_plugin_manifest);
     }
 
     plugin->required_objects.push_back(name);
@@ -1070,13 +1083,17 @@ std::string read_plugin_manifest(const std::string &plugin_dir,
   return {};
 }
 
+void warn_load_errors(const char *context) {
+  current_console()->print_warning(shcore::str_format(
+      "Found errors loading %s, for more details look at the log at: %s",
+      context, shcore::current_logger()->logfile_name().c_str()));
+}
+
 }  // namespace
 
-void Mysql_shell::load_files(const File_list &file_list,
-                             const std::string &context) {
-  // if plugins are found, switch to the appropriate mode and load all files
+void Mysql_shell::load_startup_files(const File_list &file_list) {
   bool load_failed = false;
-  log_info("Loading %s...", context.c_str());
+  log_info("Loading startup files...");
   for (const auto &file : file_list) {
     log_debug2("- %s", file.plugin.file.c_str());
     if (!_shell->load_plugin(file.mode, file.plugin)) {
@@ -1084,12 +1101,7 @@ void Mysql_shell::load_files(const File_list &file_list,
     }
   }
 
-  if (load_failed) {
-    auto msg = shcore::str_format(
-        "Found errors loading %s, for more details look at the log at: %s",
-        context.c_str(), shcore::current_logger()->logfile_name().c_str());
-    current_console()->print_warning(msg);
-  }
+  if (load_failed) warn_load_errors("startup files");
 }
 
 bool Mysql_shell::has_global_object(const std::string &name) const {
@@ -1123,6 +1135,18 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
   bool plugin_failed = false;
   bool load_failed = false;
 
+  // The console names the plugin; the log also says where it is, as plugins
+  // in different groups or directories may share a name.
+  const auto report_not_loaded = [&load_failed](const Plugin_file &entry,
+                                                const std::string &reason) {
+    const auto msg = shcore::str_format("Plugin '%s' was not loaded: %s",
+                                        entry.plugin.name.c_str(),
+                                        reason.c_str());
+    log_error("%s (%s)", msg.c_str(), entry.plugin.file.c_str());
+    current_console()->print_error(msg);
+    load_failed = true;
+  };
+
   // Plugins whose manifest could not be read are reported, not loaded.
   std::vector<const Plugin_file *> pending;
 
@@ -1130,13 +1154,8 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
     if (entry.error.empty()) {
       pending.push_back(&entry);
     } else {
-      const auto msg =
-          shcore::str_format("Plugin '%s' was not loaded: %s",
-                             entry.plugin.name.c_str(), entry.error.c_str());
-      log_error("%s", msg.c_str());
-      current_console()->print_error(msg);
+      report_not_loaded(entry, entry.error);
       plugin_failed = true;
-      load_failed = true;
     }
   }
 
@@ -1185,27 +1204,18 @@ void Mysql_shell::load_plugins(const File_list &plugins) {
       if (!has_global_object(name)) missing.push_back("'" + name + "'");
     }
 
-    auto msg = shcore::str_format(
-        "Plugin '%s' was not loaded: it requires the object%s %s, which no "
-        "loaded plugin provides.",
-        entry->plugin.name.c_str(), missing.size() > 1 ? "s" : "",
-        shcore::str_join(missing, ", ").c_str());
+    auto reason = shcore::str_format(
+        "it requires the object%s %s, which no loaded plugin provides.",
+        missing.size() > 1 ? "s" : "", shcore::str_join(missing, ", ").c_str());
 
     if (plugin_failed) {
-      msg += " A plugin that failed to load may provide it.";
+      reason += " A plugin that failed to load may provide it.";
     }
 
-    log_error("%s", msg.c_str());
-    current_console()->print_error(msg);
-    load_failed = true;
+    report_not_loaded(*entry, reason);
   }
 
-  if (load_failed) {
-    auto msg = shcore::str_format(
-        "Found errors loading plugins, for more details look at the log at: %s",
-        shcore::current_logger()->logfile_name().c_str());
-    current_console()->print_warning(msg);
-  }
+  if (load_failed) warn_load_errors("plugins");
 }
 
 void Mysql_shell::get_startup_scripts(File_list *file_list) {

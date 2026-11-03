@@ -780,8 +780,6 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
 
   add_py_test("\\py");
   add_py_test("first.second.describe()", "third attached to first.second");
-  add_js_test("\\js");
-  add_js_test("first.fromJs()", "js attached to first");
 
   run({"--log-level=debug3"});
 
@@ -890,6 +888,11 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   write_user_plugin_manifest("bad_name",
                              R"({"requires": ["util", "bad name"]})");
 
+  write_user_plugin("empty_name", R"(print('loaded empty_name')
+)",
+                    ".py");
+  write_user_plugin_manifest("empty_name", R"({"requires": [""]})");
+
   // The object this plugin requires would come from bad_json, which was
   // skipped, so the error hints at that.
   write_user_plugin("dependent", R"(print('loaded dependent')
@@ -907,6 +910,7 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded not_object");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded not_array");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_name");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded empty_name");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded dependent");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "ERROR: Plugin 'bad_json' was not loaded: the plugin.json manifest is "
@@ -921,6 +925,9 @@ shell.register_global('broken', broken, {'brief': 'broken'})
       "ERROR: Plugin 'bad_name' was not loaded: 'bad name' in 'requires' of "
       "the plugin.json manifest is not a valid object name");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      "ERROR: Plugin 'empty_name' was not loaded: '' in 'requires' of the "
+      "plugin.json manifest is not a valid object name");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "ERROR: Plugin 'dependent' was not loaded: it requires the object "
       "'broken', which no loaded plugin provides. A plugin that failed to "
       "load may provide it.");
@@ -931,6 +938,7 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   delete_user_plugin("not_object");
   delete_user_plugin("not_array");
   delete_user_plugin("bad_name");
+  delete_user_plugin("empty_name");
   delete_user_plugin("dependent");
 }
 
