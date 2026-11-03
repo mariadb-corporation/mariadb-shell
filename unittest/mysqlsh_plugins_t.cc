@@ -769,6 +769,8 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_load_order) {
   // extend: c_first creates 'first', b_second adds 'first.second' to it, and
   // a_third adds a function to 'first.second'.
   write_py_plugin("c_first", "", R"(first = shell.create_extension_object()
+store = shell.create_extension_object()
+shell.add_extension_object_member(first, 'myStore', store, {'brief': 'store'})
 shell.register_global('first', first, {'brief': 'first'})
 )");
 
@@ -788,6 +790,11 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
   // manifest keys are ignored.
   write_py_plugin("d_builtin", R"({"requires": ["util"], "version": "1.0"})");
 
+  // A member registered in camelCase can be required by that name or by the
+  // snake_case name Python exposes.
+  write_py_plugin("e_styles",
+                  R"({"requires": ["first.myStore", "first.my_store"]})");
+
   add_py_test("\\py");
   add_py_test("first.second.describe()", "third attached to first.second");
 
@@ -802,8 +809,12 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
             output_position("loaded a_third"));
   EXPECT_LT(output_position("loaded d_builtin"),
             output_position("loaded b_second"));
+  EXPECT_LT(output_position("loaded c_first"),
+            output_position("loaded e_styles"));
 
-  add_expected_log("Plugins loaded in pass 1: ");
+  // c_first and e_styles are both in the first pass: e_styles follows it in
+  // discovery order, so its requirement is met by the time its turn comes.
+  add_expected_log("c_first, d_builtin, e_styles");
   add_expected_log("Plugins loaded in pass 2: b_second");
   add_expected_log("Plugins loaded in pass 3: a_third");
   validate_log();
@@ -814,8 +825,10 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
 
 TEST_F(Mysqlsh_plugin_test, plugin_requires_unmet) {
   // Nothing provides the objects, so the plugin is reported and not loaded.
-  write_py_plugin("orphan",
-                  R"({"requires": ["nothing.here", "util.missing"]})");
+  // A name listed twice is reported once.
+  write_py_plugin(
+      "orphan",
+      R"({"requires": ["nothing.here", "util.missing", "nothing.here"]})");
 
   // Two plugins requiring each other's objects: neither can load.
   write_py_plugin("x_one", R"({"requires": ["two"]})",
@@ -869,6 +882,9 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   write_py_plugin("bad_name", R"({"requires": ["util", "bad name"]})");
   write_py_plugin("empty_name", R"({"requires": [""]})");
 
+  write_user_plugin("both_inits", "print('loaded both_inits')\n", ".py");
+  write_user_plugin("both_inits", "println('loaded both_inits')\n", ".js");
+
   // The object this plugin requires would come from bad_json, which was
   // skipped, so the error hints at that.
   write_py_plugin("dependent", R"({"requires": ["broken"]})");
@@ -885,6 +901,7 @@ shell.register_global('broken', broken, {'brief': 'broken'})
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_name");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded empty_name");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded dependent");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded both_inits");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       not_loaded("bad_json", "the plugin.json manifest is not valid JSON: "));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
@@ -902,6 +919,8 @@ shell.register_global('broken', broken, {'brief': 'broken'})
                  "'' in 'requires' of the plugin.json manifest is not a valid "
                  "object name"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
+      not_loaded("both_inits", "it has both an init.js and an init.py file"));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(
       not_loaded("dependent",
                  "it requires the object 'broken', which no loaded plugin "
                  "provides. A plugin that failed to load may provide it."));
@@ -909,17 +928,11 @@ shell.register_global('broken', broken, {'brief': 'broken'})
 
   wipe_out();
   delete_py_plugins();
+  delete_user_plugin("both_inits");
 }
 
 TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
-  // The registry plugins.repositories.add() writes, holding the expansion of
-  // 'github/acme-corp', so the steps for that repository skip adding it.
-  const auto registry =
-      join_path(shcore::get_user_config_path(), "plugin-repositories.json");
-  shcore::create_file(registry, R"({"repositories": [{"name": "acme",
-    "url": "https://raw.githubusercontent.com/acme-corp/mariadb-shell-plugins/master/mariadb-shell-plugins-manifest.json"}]})");
-
-  // Both objects come from the same plugin, in a repository not registered.
+  // Both objects come from the same plugin, in a repository.
   write_py_plugin("needs_remote", R"({
     "requires": ["acme.storage", "acme.backup"],
     "providedBy": {
@@ -931,11 +944,6 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
   write_py_plugin("needs_local", R"({
     "requires": ["acme.local"],
     "providedBy": {"acme.local": {"plugin": "acme_local"}}})");
-
-  // The repository is already registered.
-  write_py_plugin("needs_registered", R"({
-    "requires": ["acme.reg"],
-    "providedBy": {"acme.reg": {"plugin": "acme_reg", "repository": "github/acme-corp"}}})");
 
   // Only one of the missing objects has a hint.
   write_py_plugin("needs_partial", R"({
@@ -949,6 +957,12 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
     "requires": ["acme.x"],
     "providedBy": {"acme.x": {"repository": "github/acme-corp"}}})");
 
+  // A hint that would print as something other than a plugin name or a
+  // repository is ignored too.
+  write_py_plugin("bad_quote", R"({
+    "requires": ["acme.q"],
+    "providedBy": {"acme.q": {"plugin": "acme\"); import os", "repository": "github/acme-corp"}}})");
+
   add_py_test("\\py");
   add_py_test("print('done')", "done");
 
@@ -958,6 +972,7 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
   MY_EXPECT_CMD_OUTPUT_CONTAINS("loaded bad_hint");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded needs_");
   MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_entry");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("loaded bad_quote");
   MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
       "needs_remote",
       "it requires the objects 'acme.storage', 'acme.backup', which no loaded "
@@ -977,13 +992,6 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
       "    plugins.install(\"acme_local\")\n"
       "  then restart the shell.\n"));
   MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
-      "needs_registered",
-      "it requires the object 'acme.reg', which no loaded plugin provides.\n"
-      "  The object 'acme.reg' is provided by the plugin 'acme_reg' from the "
-      "repository 'github/acme-corp'. To install it, run:\n"
-      "    plugins.install(\"acme_reg\")\n"
-      "  then restart the shell.\n"));
-  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
       "needs_partial",
       "it requires the objects 'acme.known', 'nothing.here', which no loaded "
       "plugin provides.\n"
@@ -996,6 +1004,11 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
       "bad_entry",
       "it requires the object 'acme.x', which no loaded plugin provides.\n"
       "ERROR: "));
+  MY_EXPECT_CMD_OUTPUT_CONTAINS(not_loaded(
+      "bad_quote",
+      "it requires the object 'acme.q', which no loaded plugin provides.\n"
+      "ERROR: "));
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("import os");
 
   add_expected_log(
       "Plugin 'bad_hint': 'providedBy' must be an object in the plugin.json "
@@ -1004,10 +1017,13 @@ TEST_F(Mysqlsh_plugin_test, plugin_requires_provided_by) {
       "Plugin 'bad_entry': 'providedBy' entry 'acme.x' must name the "
       "providing plugin in 'plugin' in the plugin.json manifest, ignoring the "
       "hint");
+  add_expected_log(
+      "Plugin 'bad_quote': 'plugin' and 'repository' of 'providedBy' entry "
+      "'acme.q' must not contain spaces, quotes or control characters in the "
+      "plugin.json manifest, ignoring the hint");
   validate_log();
 
   wipe_out();
-  shcore::delete_file(registry);
   delete_py_plugins();
 }
 
@@ -1036,16 +1052,17 @@ shell.registerReport('first_js', 'print', report);
   add_js_test("\\show first_js", "Unknown report: first_js");
 
   add_expected_js_log(
-      "Warning: Found multiple plugin initialization files for plugin "
-      "'error-one'");
+      "Error: Plugin 'error-one' was not loaded: it has both an init.js and "
+      "an init.py file");
 
   // run the test
   run();
   // check the output
   MY_EXPECT_CMD_OUTPUT_CONTAINS(expected_output());
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
-      "WARNING: Found multiple plugin initialization files for plugin "
-      "'error-one'");
+      "ERROR: Plugin 'error-one' was not loaded: it has both an init.js and "
+      "an init.py file");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("WARNING: Found errors loading plugins");
   wipe_out();
 
   validate_log();

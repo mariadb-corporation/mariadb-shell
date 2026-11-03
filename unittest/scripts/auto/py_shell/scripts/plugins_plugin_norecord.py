@@ -271,6 +271,10 @@ TEST_REPOSITORY="http://127.0.0.1:" + str(PORT) + '/mariadb-shell-plugins-manife
 # - Are you sure you want to add the repository 'Testing MariaDB Shell Plugin Repository' [yes/NO]:
 execute("plugins.repositories.add('" + TEST_REPOSITORY + "')", "yes")
 
+#@<> Add the test repository again
+# Already registered: no download, no prompt
+execute("plugins.repositories.add('" + TEST_REPOSITORY + "')")
+
 #@<> Help on built-in plugins plugin
 execute("\\? plugins")
 

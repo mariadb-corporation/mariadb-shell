@@ -73,7 +73,7 @@ The shell discovers plugins in name order: the built-in directory first, then th
 }
 ```
 
-`requires` lists the fully qualified names of the objects the plugin needs: a global object name, optionally followed by member names, written the way the `@plugin_function` decorator names them (`util.debug`, not `util.Debug`). Only objects defined outside the plugin belong there; built-in objects such as `util` count too.
+`requires` lists the fully qualified names of the objects the plugin needs: a global object name, optionally followed by member names. A member can be named as it was registered (`acme.myStorage`) or as Python exposes it (`acme.my_storage`); the shell accepts both. Only objects defined outside the plugin belong there; built-in objects such as `util` count too.
 
 The shell reads every manifest before running any plugin, then loads plugins in passes: first those whose requirements are already met, then those whose required objects now exist, until nothing more can load. A plugin whose requirements are never met isn't loaded, and the shell prints an error naming the missing objects:
 
@@ -111,9 +111,9 @@ ERROR: Plugin 'acme_backup' was not loaded: it requires the object 'acme.storage
   then restart the shell.
 ```
 
-The `plugins.repositories.add()` line is left out when that repository is already registered, and without `repository` the steps only name the plugin to install.
+Without `repository` the steps only name the plugin to install. Running `plugins.repositories.add()` for a repository that is already registered just says so.
 
-The hint is advisory. Loading uses only `requires`: a missing or malformed `providedBy` is noted in the log and never keeps a plugin from loading. The shell never adds a repository on its own from a hint; it only prints the calls, and running `plugins.repositories.add()` shows the usual warning and asks for confirmation, so a manifest can't quietly bring in code from elsewhere.
+The hint is advisory. Loading uses only `requires`: a missing or malformed `providedBy` is noted in the log and never keeps a plugin from loading. A `plugin` or `repository` value with spaces, quotes or control characters counts as malformed, since the error prints both as they are. The shell never adds a repository on its own from a hint; it only prints the calls, and running `plugins.repositories.add()` shows the usual warning and asks for confirmation, so a manifest can't quietly bring in code from elsewhere.
 
 ## Built-in Plugins
 

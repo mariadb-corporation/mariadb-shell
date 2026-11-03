@@ -34,7 +34,6 @@
 #include <vector>
 
 #include "modules/adminapi/mod_dba.h"
-#include "src/mysqlsh/mrs/rest_sql_handler.h"
 #include "modules/adminapi/mod_dba_cluster_set.h"
 #include "modules/mod_sys.h"
 #include "mysqlshdk/include/scripting/plugin_definition.h"
@@ -43,6 +42,7 @@
 #include "shellcore/base_shell.h"
 #include "shellcore/shell_core.h"
 #include "shellcore/shell_options.h"
+#include "src/mysqlsh/mrs/rest_sql_handler.h"
 
 namespace mysqlsh {
 class Shell;  // from modules
@@ -93,8 +93,8 @@ class Mysql_shell : public mysqlsh::Base_shell {
   }
 
   // A plugin or startup script, with the language of its file. A non-empty
-  // error is a problem found reading the plugin's manifest; such a plugin is
-  // reported instead of loaded.
+  // error is a problem found discovering the plugin, such as an invalid
+  // manifest; such a plugin is reported instead of loaded.
   struct Plugin_file {
     shcore::IShell_core::Mode mode;
     shcore::Plugin_definition plugin;
