@@ -115,6 +115,30 @@ jobs:
               -exec rm -rf {} +
           done
 
+          # Strip the development files at the root of each plugin, and at the
+          # root of each sub-plugin of a plugin group such as dba_plugin: the
+          # tests, what runs them (pytest and coverage configuration, and a
+          # requirements.txt that lists pytest), and editor and npm metadata.
+          # Only at a plugin's root: deeper folders keep theirs, because
+          # rest_plugin reads sdk/typescript/package.json at runtime.
+          for plugin in $PLUGINS; do
+            target="$DEST/$plugin"
+            [ -d "$target" ] || continue
+            roots="$target"
+            if [ ! -f "$target/init.py" ] && [ ! -f "$target/init.js" ]; then
+              roots="$(find "$target" -mindepth 2 -maxdepth 2 \
+                \( -name init.py -o -name init.js \) -exec dirname {} \;)"
+            fi
+            for root in $roots; do
+              rm -rf "$root/tests"
+              for f in run_tests.py pytest.ini pytest-coverage.ini .coveragerc \
+                       python.env cspell.json package.json requirements.txt \
+                       .gitignore .markdownlint.json; do
+                rm -f "$root/$f"
+              done
+            done
+          done
+
           echo "External plugins staged for packaging:"
           ls -la "$DEST"
 
