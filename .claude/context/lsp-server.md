@@ -11,7 +11,7 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 - **Bundled with `install_bundled_binaries`** into `INSTALL_BINDIR`: the RPATH of the other bundled binaries (`$ORIGIN/../lib/mariadb-shell`, `@loader_path/../lib/mariadb-shell`), so it loads the package's OpenSSL and zlib; on Windows the DLLs are next to it in `bin`. `CPACK_STRIP_FILES` and `scripts/verify_package.sh` name it.
 - **`WITH_LSP=AUTO|ON|OFF`**: `AUTO` (default) builds it when the submodule is checked out, so a fork's pull request or a clone without submodules builds without it; release builds (`shell-release.yml`, the Rocky container through `docker/entrypoint.sh`) pass `ON`, so a missing submodule fails them. `LSP_SERVER_SOURCE_DIR` builds another lsp-server checkout. The native `.deb` and `.rpm` builds pass `OFF`: their file lists (`packaging/debian/CMakeLists.txt`'s `.install`, the spec's `%files`) name every installed file, and their build against system libraries is not prepared for it (see Next steps).
 - **Guards:** configure warns when the submodule is not at the pinned commit; it fails when `src/lsp-server/vcpkg.json` differs from `vcpkg.json` in `builtin-baseline` or the `openssl` and `zlib` overrides, since `mariadb-lsp` links the ones the package bundles.
-- **Fetching the submodule in CI:** the workflows that build (`shell-ci.yml`, `shell-release.yml`, `rocky-linux.yml`) fetch it in a step of their own with `DEVTOOLS_TOKEN`, which must be able to read lsp-server; `rocky-linux.yml` does it on the host, before the container mounts the tree.
+- **Fetching the submodule in CI:** lsp-server is public, so the workflows that build (`shell-ci.yml`, `shell-release.yml`, `rocky-linux.yml`) check it out with `submodules: true` on their `actions/checkout` step; `rocky-linux.yml` does so on the host, before the container mounts the tree.
 
 ## Gotchas
 
@@ -22,7 +22,5 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Next steps
 
-1. **When lsp-server becomes public:**
-   - Replace the "Fetch the lsp-server submodule" steps with `submodules: true` on the `actions/checkout` steps.
-   - Ship `mariadb-lsp` in the native `.deb` and `.rpm` packages: pass `-DWITH_LSP=ON` in `packaging/debian/rules.in` and `packaging/rpm/mariadb-shell.spec.in`; add `usr/bin/mariadb-lsp` to the `.install` file written by `packaging/debian/CMakeLists.txt` and `%{_bindir}/mariadb-lsp` to `%files`; add build dependencies for RapidJSON headers and bison 3.7.4 or newer; decide whether those builds get a MariaDB server tree for its client library or build it without live connections (`WITH_MARIADB_CLIENT=OFF`, the fallback without a tree); build and test on Ubuntu, Fedora and Rocky.
+1. Ship `mariadb-lsp` in the native `.deb` and `.rpm` packages: pass `-DWITH_LSP=ON` in `packaging/debian/rules.in` and `packaging/rpm/mariadb-shell.spec.in`; add `usr/bin/mariadb-lsp` to the `.install` file written by `packaging/debian/CMakeLists.txt` and `%{_bindir}/mariadb-lsp` to `%files`; add build dependencies for RapidJSON headers and bison 3.7.4 or newer; decide whether those builds get a MariaDB server tree for its client library or build it without live connections (`WITH_MARIADB_CLIENT=OFF`, the fallback without a tree); build and test on Ubuntu, Fedora and Rocky.
 2. Not yet built on Windows; the release workflows have not run with the submodule.
