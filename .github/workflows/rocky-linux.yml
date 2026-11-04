@@ -66,28 +66,10 @@ jobs:
       # 1. Checkout repository code onto the runner
       - name: Checkout Source Code
         uses: actions/checkout@v4
-
-      # src/lsp-server (mariadb-corporation/lsp-server, built into mariadb-lsp
-      # next to mariadb-shell) is a private repository for now, so
-      # actions/checkout's `submodules:` cannot fetch it with the default
-      # token. DEVTOOLS_TOKEN must also read that repository. Shell CI
-      # configures with WITH_LSP=AUTO, so a run the secret does not reach (a
-      # fork's pull request) builds without mariadb-lsp; release builds pass
-      # WITH_LSP=ON and fail instead. Once the repository is public, this step
-      # becomes `submodules: true` on the checkout above.
-      - name: Fetch the lsp-server submodule
-        shell: bash
-        env:
-          LSP_TOKEN: ${{ secrets.DEVTOOLS_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "$LSP_TOKEN" ]; then
-            echo "No DEVTOOLS_TOKEN in this run: building without mariadb-lsp."
-            exit 0
-          fi
-          git -c "url.https://x-access-token:${LSP_TOKEN}@github.com/.insteadOf=https://github.com/" \
-            submodule update --init --depth 1 src/lsp-server
-          git -C src/lsp-server log -1 --format='src/lsp-server at %H (%cs)'
+        # src/lsp-server (mariadb-corporation/lsp-server, public) is built into
+        # mariadb-lsp next to mariadb-shell.
+        with:
+          submodules: true
 
       # 1a. Stage the external shell plugins into plugins/external/ BEFORE the
       #     container configures, exactly as shell-release.yml does. These
@@ -96,17 +78,12 @@ jobs:
       #     install() rules, so copying them in later would not work. The source
       #     tree is bind-mounted into the container, so staging on the host here
       #     is what the build sees.
-      #
-      #     mariadb-shell-plugins is a separate private repo, so this needs
-      #     DEVTOOLS_TOKEN -- reachable here because the caller passes
-      #     `secrets: inherit`.
       - name: Checkout Shell Plugins (release/candidate)
         uses: actions/checkout@v4
         with:
           repository: mariadb-corporation/mariadb-shell-plugins
           ref: release/candidate
           path: _shell-plugins-src
-          token: ${{ secrets.DEVTOOLS_TOKEN }}
 
       - name: Bundle External Shell Plugins
         run: |

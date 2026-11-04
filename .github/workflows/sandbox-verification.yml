@@ -78,7 +78,7 @@ jobs:
 
     # A permissions block REPLACES the default set rather than adding to it, so
     # contents: read has to be listed explicitly -- without it actions/checkout
-    # fails with a misleading "Repository not found" on this private repo.
+    # fails with a misleading "Repository not found".
     permissions:
       contents: read   # checkout
       actions: read    # gh run list / gh run view
