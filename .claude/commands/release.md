@@ -12,11 +12,12 @@ two repos:
 
 | Repo | Role |
 |---|---|
-| `mariadb-corporation/mariadb-shell` (`SHELL`) | `MYSQL_VERSION`; the workflows `shell-release.yml` (build), `verify-packages.yml` (verification), `publish-release.yml` (publish), `sandbox-server.yml` (server packages), `shell-ci-publish.yml` (runs on every push to main) |
+| `mariadb-corporation/mariadb-shell` (`SHELL`) | `MYSQL_VERSION`; the workflows `shell-release.yml` (build; its first job runs in the `release-build` environment, whose required reviewers hold every build until one of them approves it), `verify-packages.yml` (verification), `publish-release.yml` (publish), `sandbox-server.yml` (server packages), `shell-ci-publish.yml` (runs on every push to main) |
 | `mariadb-corporation/mariadb-shell-plugins` (`PLUGINS`) | `VERSION`, the sandbox server index, `npm run update-version` (in `tools/`), and `trigger-shell-release.yml`, which starts a shell build on every push to its release/candidate |
 
 `scripts/release.py` does the checks and the waiting:
-`preflight`, `shell-bump-pr`, `push-rc`, `find-run` and `watch`. Run it as
+`preflight`, `shell-bump-pr`, `push-rc`, `find-run`, `approve-build` and
+`watch`. Run it as
 `python3 scripts/release.py <subcommand>`. Run `--help` on a
 subcommand for its flags.
 
@@ -61,7 +62,8 @@ running /release again resumes where the last run stopped.
                 never rebuilt); run update-version; open and merge a plugins
                 PR if anything changed, after Shell Plugins CI passes
   3 Build &     fast-forward release/candidate (plugins, then shell), or
-    verify      reuse an existing build; wait for MariaDB-Shell-Release and
+    verify      reuse an existing build; approve the build's release-build
+                environment review; wait for MariaDB-Shell-Release and
                 Verify Packages
   4 Publish     show a pre-publish summary and ask before a real publish;
                 run publish-release and report the release
@@ -71,9 +73,10 @@ release (rebuild or stop), a version that skips ahead, a release/candidate
 that cannot fast-forward, and a build that main has moved past.
 
 It changes: PRs on both repos (version bump, plugins version/index), both
-release/candidate branches (fast-forward only, never forced), workflow runs,
-and the release itself. It never force-pushes, never merges past a failing
-check, and leaves a failed run as it is for you to inspect.
+release/candidate branches (fast-forward only, never forced), workflow runs
+(including the environment approval of the build), and the release itself.
+It never force-pushes, never merges past a failing check, and leaves a
+failed run as it is for you to inspect.
 
 Details: .claude/commands/release.md · helper: scripts/release.py --help
 ```
@@ -334,7 +337,8 @@ From a fresh `preflight`:
    whose date is from
    `gh api repos/mariadb-corporation/mariadb-shell-plugins/commits/<plugins rc sha> --jq .commit.committer.date`.
    - If it succeeded, use it as `BUILD` and go to 6.
-   - If it is still running, watch it.
+   - If it is still running, or waiting for its environment review, approve
+     it as in 5 and watch it.
    - If there is none, or only failed ones, trigger a build without moving a
      branch: `gh api repos/mariadb-corporation/mariadb-shell/dispatches -f
      event_type=updated-shell-plugins-rc`. Then find the
@@ -369,6 +373,21 @@ From a fresh `preflight`:
      then find the `repository_dispatch` run and check that its `headSha` is
      `shell.main_sha`.
 
+   **Approve the build.** The build's first job runs in the `release-build`
+   environment, whose required reviewers hold the run in `waiting` until one
+   of them approves it. Approve it before watching:
+
+   ```
+   python3 scripts/release.py approve-build <BUILD>
+   ```
+
+   It waits for the review to appear, approves it, and prints that it did.
+   If the user running `/release` is not a reviewer, it exits 1 and names who
+   is: report that, give the run link, and wait for the approval (`watch`
+   keeps polling meanwhile; a run left unapproved for 30 days fails). If it
+   reports no review pending, the run is already past the gate: say so and
+   go on.
+
    Watch `BUILD`.
 6. **Verification.** Verify Packages starts by itself when the build
    finishes. Find its run with
@@ -383,8 +402,9 @@ From a fresh `preflight`:
    ```
 
 The report must show each release/candidate as `<old sha> → <new sha>` (or
-`unchanged`), the build and verification runs with their workflow names, and
-the marker artifact.
+`unchanged`), the build and verification runs with their workflow names, who
+approved the build's environment review (`/release`, or a reviewer by hand),
+and the marker artifact.
 
 ## Step 4: Publish
 
@@ -488,7 +508,7 @@ read on its own. Use one row per item, and `—` when a step had nothing to do:
 | Plugins PR | the PR (number, link) and its Shell Plugins CI result, or "no changes" |
 | Trigger MariaDB Shell Release | state before, what was done, state after |
 | release/candidate | shell and plugins: old → new SHA, or unchanged |
-| Build | MariaDB-Shell-Release run, link, and whether it was reused or new |
+| Build | MariaDB-Shell-Release run, link, whether it was reused or new, and its environment approval (`/release`, by hand, or not needed) |
 | Verification | Verify Packages run, link, marker artifact |
 | Publish | Publish Release run, link, the inputs given (prerelease, dry_run, server tags); for a real publish, the user's confirmation |
 | Server tags shipped | the set from 2.3 and why, or none |

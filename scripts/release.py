@@ -17,6 +17,9 @@
 #                        the push.
 #   find-run             Waits for a workflow run matching some filters to
 #                        appear, and prints its id.
+#   approve-build RUN_ID Approves the release-build environment review that
+#                        holds a MariaDB-Shell-Release run, once the run is
+#                        waiting for it.
 #   watch RUN_ID         Polls a run until it finishes, reporting every job as
 #                        it starts and ends, and stops at the first failed job.
 #
@@ -54,6 +57,9 @@ SANDBOX_WORKFLOW_NAME = "MariaDB-Sandbox-Server"
 
 PLUGINS_TRIGGER_WORKFLOW = "trigger-shell-release.yml"
 PLUGINS_TRIGGER_WORKFLOW_NAME = "Trigger MariaDB Shell Release"
+# The environment shell-release.yml's first job runs in. Its required
+# reviewers hold every build until one of them approves it.
+BUILD_ENVIRONMENT = "release-build"
 
 SHELL_VERSION_PATTERN = re.compile(r"^(\d{2})\.(\d{1,2})\.(\d+)$")
 
@@ -581,6 +587,50 @@ def cmd_find_run(args):
 
 
 # ---------------------------------------------------------------------------
+# approve-build
+# ---------------------------------------------------------------------------
+
+
+def cmd_approve_build(args):
+    """The build's first job runs in the release-build environment, whose
+    required reviewers hold the run in `waiting` until one of them approves.
+    Run by a reviewer, this approves it; run by anyone else, it says who can.
+    The run only shows the pending review once GitHub has queued the job, so
+    wait for it rather than fail on the first look."""
+    deadline = time.monotonic() + args.timeout
+    while True:
+        info = gh_json("run", "view", str(args.run_id), "-R", args.repo,
+                       "--json", "status,conclusion,url,workflowName")
+        name = f"{info['workflowName']} run {args.run_id}"
+        pending = gh_json("api", f"repos/{args.repo}/actions/runs/{args.run_id}/pending_deployments")
+        ours = [d for d in pending if d["environment"]["name"] == BUILD_ENVIRONMENT]
+        if ours:
+            review = ours[0]
+            if not review["current_user_can_approve"]:
+                reviewers = ", ".join(
+                    r["reviewer"].get("slug") or r["reviewer"].get("login") for r in review["reviewers"])
+                print(f"{name} is waiting for the {BUILD_ENVIRONMENT} review, which you cannot approve.\n"
+                      f"Ask one of: {reviewers}\n{info['url']}", file=sys.stderr)
+                return 1
+            run(["gh", "api", "-X", "POST", f"repos/{args.repo}/actions/runs/{args.run_id}/pending_deployments",
+                 "--input", "-"],
+                stdin=json.dumps({"environment_ids": [review["environment"]["id"]],
+                                  "state": "approved", "comment": "/release"}))
+            print(f"[{stamp()}] approved the {BUILD_ENVIRONMENT} review of {name}", flush=True)
+            return 0
+        if info["status"] not in ("queued", "waiting", "pending"):
+            # Past the gate already (approved by hand, or an older workflow
+            # without the environment), or finished: nothing to approve.
+            print(f"{name} is {info['status']}/{info['conclusion'] or '-'}: no {BUILD_ENVIRONMENT} review pending.",
+                  flush=True)
+            return 0
+        if time.monotonic() >= deadline:
+            print(f"{name} showed no {BUILD_ENVIRONMENT} review within {args.timeout}s.", file=sys.stderr)
+            return 1
+        time.sleep(args.interval)
+
+
+# ---------------------------------------------------------------------------
 # watch
 # ---------------------------------------------------------------------------
 
@@ -678,6 +728,13 @@ def main():
     p.add_argument("--timeout", type=int, default=900, help="Seconds to wait (default 900).")
     p.add_argument("--interval", type=int, default=20)
     p.set_defaults(func=cmd_find_run)
+
+    p = sub.add_parser("approve-build", help="Approve the release-build environment review holding a build run.")
+    p.add_argument("run_id", type=int)
+    p.add_argument("--repo", default=SHELL_REPO)
+    p.add_argument("--timeout", type=int, default=300, help="Seconds to wait for the review to appear (default 300).")
+    p.add_argument("--interval", type=int, default=15)
+    p.set_defaults(func=cmd_approve_build)
 
     p = sub.add_parser("watch", help="Poll a run until it finishes or a job fails.")
     p.add_argument("run_id", type=int)
