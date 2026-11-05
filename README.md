@@ -144,8 +144,10 @@ See [docs/CREDENTIAL_STORE.md](docs/CREDENTIAL_STORE.md) for details, and
 ### Plugins
 
 Shell functionality can be extended with plugins written in Python, loaded from
-the `plugins` directory of the configuration path. The `plugins` global manages
-them. See `\? plugins` for the layout an `init.py` must follow.
+the `plugins` directory of the configuration path, or from the directories
+listed in `MARIADB_SHELL_PLUGINS_PATH` when it is set. `MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS=1`
+skips the built-in plugins, like `--disable-builtin-plugins`. The `plugins`
+global manages them. See `\? plugins` for the layout an `init.py` must follow.
 
 ### Diagnostics
 

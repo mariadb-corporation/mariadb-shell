@@ -18,12 +18,14 @@ The loader is `Mysql_shell::get_plugins` in [src/mysqlsh/mysql_shell.cc](src/mys
 - Each plugin lives in **its own folder** under a `plugins/` search path.
 - The folder must contain **exactly one** entry point: `init.py` (Python) **or**
   `init.js` (JavaScript). Having both makes the loader skip the plugin with a warning.
-- Search paths (see `Mysql_shell::get_plugins` at [src/mysqlsh/mysql_shell.cc:1116](src/mysqlsh/mysql_shell.cc#L1116)):
+- Search paths, in order (see `Mysql_shell::get_plugins(File_list *)` in
+  [src/mysqlsh/mysql_shell.cc](src/mysqlsh/mysql_shell.cc)):
   - `<library_folder>/plugins` — built-in/bundled plugins (skipped if
-    `--disable-builtin-plugins`).
+    `--disable-builtin-plugins` or `MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS=1`).
   - `${MARIADB_SHELL_USER_CONFIG_HOME}/plugins` — per-user (default `~/.mariadb-shell/plugins`
     on Linux/macOS, `%AppData%\MariaDB\mariadb-shell\plugins` on Windows). Skipped if
-    `--disable-plugins`.
+    `--disable-plugins`. When `MARIADB_SHELL_PLUGINS_PATH` is set (`:`-separated,
+    `;` on Windows), its directories are searched instead of this one.
 - Loading is recursive: a folder without an init file may contain sub-folders that
   are themselves plugins.
 - Plugins are discovered in name order and loaded in passes. A plugin that attaches

@@ -1528,8 +1528,19 @@ void Mysql_shell::get_plugins(File_list *file_list) {
 
   // A plugin is contained in a folder inside of the pre-defined "plugin"
   // directories, and it contains strictly one of the initialization files.
-  // This loop identifies the valid plugins to be loaded.
+  // This loop identifies the valid plugins to be loaded. A directory listed
+  // twice is searched once, or its plugins would be loaded twice.
+  std::vector<std::string> searched;
   for (const auto &dir : plugin_directories) {
+    auto normalized = shcore::path::normalize(dir);
+#ifdef _WIN32
+    normalized = shcore::str_lower(normalized);
+#endif
+    if (std::find(searched.begin(), searched.end(), normalized) !=
+        searched.end()) {
+      continue;
+    }
+    searched.push_back(std::move(normalized));
     get_plugins(file_list, dir, true);
   }
 
