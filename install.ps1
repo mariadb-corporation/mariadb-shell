@@ -300,6 +300,10 @@ if ($ResolvePreRelease) {
 
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ("mariadb-shell-install-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Tmp -Force | Out-Null
+# Read by the finally below, which strict mode does not let read them unset.
+$unpackDir = $null
+$installMutex = $null
+$haveMutex = $false
 
 try {
     # ----------------------------------------------------------------------
@@ -385,6 +389,11 @@ $PreReleaseHint
     # mariadb-shell-<ver>-windows-<arch> directory, renamed to just the version:
     # the platform is a property of the machine that unpacked it, not something
     # worth repeating in every path a user types.
+    #
+    # Each run unpacks into a private folder of its own: two runs unpacking the
+    # same tarball into one place trip over each other's files and both fail.
+    # The folder is inside the prefix so the move into place stays on one
+    # volume, and carries the PID so a later run can tell when it is stale.
     # ----------------------------------------------------------------------
     Info "Unpacking into $Prefix"
     New-Item -ItemType Directory -Path $Prefix -Force | Out-Null
@@ -392,24 +401,115 @@ $PreReleaseHint
     $topDir = (& tar -tzf $pkg | Select-Object -First 1) -split '/' | Select-Object -First 1
     if (-not $topDir) { Die "unexpected tarball layout in $($best.Name)" }
 
-    & tar -xzf $pkg -C $Prefix
+    $unpackDir = Join-Path $Prefix (".unpack-$PID-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $unpackDir | Out-Null
+    & tar -xzf $pkg -C $unpackDir
     if ($LASTEXITCODE -ne 0) { Die "tar failed to unpack $($best.Name)" }
 
-    $unpacked = Join-Path $Prefix $topDir
-    if (-not (Test-Path $unpacked)) { Die "expected $unpacked after unpacking" }
+    $unpacked = Join-Path $unpackDir $topDir
+    if (-not (Test-Path $unpacked)) { Die "expected $topDir in the tarball after unpacking" }
 
     # Falls back to the directory the tarball actually carried, so an
     # unrecognised name costs the tidy layout rather than the install.
     $Version = $topDir
     if ($topDir -match '^mariadb-shell-([0-9][0-9.]*)-') { $Version = $Matches[1] }
 
-    $target = Join-Path $Prefix $Version
-    if ($topDir -ne $Version) {
-        if (Test-Path $target) { Remove-Item -Recurse -Force $target }
-        Move-Item -Path $unpacked -Destination $target
+    # ----------------------------------------------------------------------
+    # The install lock. Several installers can run into one prefix at once (an
+    # editor extension and an agent session each install what they need), so
+    # every step that changes what they share -- the version folders, the
+    # shims, the prune -- runs under a named mutex. Everything before it runs
+    # in parallel. Windows releases the mutex of a process that dies, and the
+    # next waiter gets it as abandoned, so a killed install blocks nothing.
+    #
+    # The name is a hash of the prefix, so installs into different prefixes do
+    # not wait on each other. Global\ so that sessions of one user (desktop,
+    # SSH) see each other; Local\ when a prefix shared between users already
+    # has a mutex this user may not open.
+    # ----------------------------------------------------------------------
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $prefixHash = -join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($prefixFull.ToLowerInvariant())) |
+        Select-Object -First 8 | ForEach-Object { $_.ToString('x2') })
+    $sha.Dispose()
+    try {
+        $installMutex = [System.Threading.Mutex]::new($false, "Global\mariadb-shell-install-$prefixHash")
+    } catch [UnauthorizedAccessException] {
+        $installMutex = [System.Threading.Mutex]::new($false, "Local\mariadb-shell-install-$prefixHash")
+    }
+    $lockTimeout = [TimeSpan]::FromSeconds(300)
+    try {
+        $haveMutex = $installMutex.WaitOne(0)
+        if (-not $haveMutex) {
+            [Console]::Error.WriteLine("install.ps1: waiting for another install into $Prefix to finish")
+            $haveMutex = $installMutex.WaitOne($lockTimeout)
+        }
+    } catch [Threading.AbandonedMutexException] {
+        # Its holder died without releasing it; the mutex is now ours.
+        $haveMutex = $true
+    }
+    if (-not $haveMutex) {
+        Die "gave up after $([int]$lockTimeout.TotalSeconds)s waiting for another install into $Prefix.
+  Close any other running install and try again."
     }
 
+    # Deletes a version folder unless a program runs from it. Windows lets a
+    # folder be renamed, and every file not mapped into a process be deleted,
+    # while a program runs from it -- which would leave that program without
+    # its Python library and plugins -- so a folder in use is left whole. The
+    # folder is moved aside first, so a deletion that stops part way leaves a
+    # .remove-* folder for a later run to clear rather than a broken version.
+    # Returns whether it is gone (or at least out of the way).
+    function Test-DirInUse([string] $Dir) {
+        $root = $Dir.TrimEnd('\') + '\'
+        [bool] (Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1)
+    }
+    function Remove-VersionDir([string] $Dir) {
+        if (Test-DirInUse $Dir) { return $false }
+        $aside = Join-Path $Prefix (".remove-" + [Guid]::NewGuid().ToString('N'))
+        try {
+            Move-Item -LiteralPath $Dir -Destination $aside -ErrorAction Stop
+        } catch {
+            return $false
+        }
+        Remove-Item -LiteralPath $aside -Recurse -Force -ErrorAction SilentlyContinue
+        return $true
+    }
+
+    # Folders of runs that were killed, which no finally removed: unpack
+    # folders whose process is gone, and folders set aside for removal.
+    Get-ChildItem -LiteralPath $Prefix -Directory -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $unpackDir } | ForEach-Object {
+            if ($_.Name -match '^\.unpack-(\d+)-') {
+                if (Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue) { return }
+            } elseif ($_.Name -notmatch '^\.remove-') {
+                return
+            }
+            if (Test-DirInUse $_.FullName) { return }
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+    # A version folder whose mariadb-shell.exe is byte for byte the one just
+    # unpacked holds the same build -- typically because another installer
+    # finished it a moment ago -- and is kept, with only the shims rewritten:
+    # Windows cannot replace a program that is running, and an MCP server or a
+    # shell may be running from it. Any other folder of that name is replaced.
+    $target = Join-Path $Prefix $Version
     $shellExe = Join-Path (Join-Path $target 'bin') 'mariadb-shell.exe'
+    $newExe = Join-Path (Join-Path $unpacked 'bin') 'mariadb-shell.exe'
+    if ((Test-Path -LiteralPath $shellExe) -and (Test-Path -LiteralPath $newExe) -and
+        ((Get-FileHash -LiteralPath $shellExe -Algorithm SHA256).Hash -eq
+         (Get-FileHash -LiteralPath $newExe -Algorithm SHA256).Hash)) {
+        Info "Keeping $target, already installed from this build"
+    } else {
+        if ((Test-Path -LiteralPath $target) -and -not (Remove-VersionDir $target)) {
+            Die "could not replace ${target}: a program is running from it.
+  Close every MariaDB Shell started from it, then run the install again."
+        }
+        Move-Item -LiteralPath $unpacked -Destination $target
+    }
+
     if (-not (Test-Path $shellExe)) { Die "no mariadb-shell.exe at $shellExe after unpacking" }
 
     # ----------------------------------------------------------------------
@@ -472,6 +572,9 @@ $PreReleaseHint
     # narrow about what it will delete -- a name has to be purely digits and
     # dots to be considered ours, so anything else under the prefix, including
     # directories left by an older layout, is left alone rather than guessed at.
+    # That includes this script's own .unpack-* and .remove-* folders. A version
+    # still in use cannot be removed on Windows; that costs a warning, not the
+    # install, and a later install removes it.
     # ----------------------------------------------------------------------
     function ConvertTo-SortableVersion([string] $Name) {
         try { return [version] $Name } catch { return $null }
@@ -488,9 +591,14 @@ $PreReleaseHint
     foreach ($d in $versionDirs) {
         if ($keepOther -and $d.Name -eq $keepOther.Name) { continue }
         Info "Removing superseded version $($d.Name)"
-        Remove-Item -Recurse -Force $d.FullName
+        if (-not (Remove-VersionDir $d.FullName)) {
+            [Console]::Error.WriteLine("install.ps1: warning: could not remove $($d.FullName), a program is running from it; a later install removes it")
+        }
     }
     if ($keepOther) { Info "Kept previous version $($keepOther.Name)" }
+
+    $installMutex.ReleaseMutex()
+    $haveMutex = $false
 
     # ----------------------------------------------------------------------
     # PATH. Edited only when asked: rewriting a user's environment from a piped
@@ -518,5 +626,8 @@ $PreReleaseHint
         Write-Host ""
     }
 } finally {
+    if ($unpackDir) { Remove-Item -LiteralPath $unpackDir -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($haveMutex) { $installMutex.ReleaseMutex() }
+    if ($installMutex) { $installMutex.Dispose() }
     Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 }
