@@ -50,7 +50,10 @@
 #ifdef MARIADB_BUILD
 // MariaDB's my_sys.h/m_string.h need my_bool (mysql.h) and the my_global.h
 // typedefs (uchar, longlong, DBUG_ASSERT) first; m_ctype.h is at the include
-// root rather than under mysql/strings/. m_ctype.h's CHARSET_INFO uses an
+// root rather than under mysql/strings/. my_global.h must come before mysql.h:
+// the server's mysql.h pulls in psi_base.h, which decides on HAVE_PSI_1 from
+// my_global.h's HAVE_PSI_INTERFACE, and with the performance schema built in,
+// my_sys.h then fails on an incomplete PSI_v1. m_ctype.h's CHARSET_INFO uses an
 // anonymous struct inside an anonymous union, which both compilers reject under
 // -Werror -Wpedantic. Clang names the diagnostics individually (GCC would error
 // on those names under -Werror=pragmas); GCC only has -Wpedantic itself.
@@ -62,9 +65,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 #endif
-#include <mysql.h>
-
 #include <my_global.h>
+
+#include <mysql.h>
 
 #include <m_ctype.h>
 #if defined(__clang__)
