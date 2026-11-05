@@ -199,8 +199,107 @@ info "Detected: $OS $LOCAL_VER, $ARCH"
 # carries the checksums means there is no separate index to drift out of sync.
 # ---------------------------------------------------------------------------
 TMP=$(mktemp -d)
-cleanup() { rm -rf "$TMP"; }
-trap cleanup EXIT INT TERM
+UNPACK=""     # this run's private unpack folder inside $PREFIX, once made
+HAVE_LOCK=0   # 1 while this run holds $LOCK
+cleanup() {
+  [ -z "$UNPACK" ] || rm -rf "$UNPACK"
+  release_lock
+  rm -rf "$TMP"
+}
+# EXIT alone runs the cleanup. A signal ends the run through exit, which then
+# runs it too: a signal trap that only cleaned up would let the script carry on
+# afterwards, without its lock.
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# ---------------------------------------------------------------------------
+# The install lock. Several installers can run into one prefix at once (an
+# editor extension and an agent session each install what they need), so every
+# step that changes what they share -- the version folders, the links in
+# $BINDIR, the prune -- runs under a lock. Everything before it (download,
+# checksum, unpack into a private folder) runs in parallel.
+#
+# mkdir is the lock because it is atomic everywhere and needs nothing macOS
+# lacks (there is no flock(1) there). The holder's PID goes into it, so a lock
+# whose holder was killed can be cleared rather than waited out. Clearing is
+# itself serialised by a second, short-lived mkdir lock: two waiters that both
+# find the holder gone must not both remove the lock, or the second would
+# remove the one the first has just taken.
+# ---------------------------------------------------------------------------
+LOCK="$PREFIX/.install.lock"
+LOCK_TIMEOUT=300   # seconds to wait for another installer before giving up
+
+pid_alive() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$1" 2>/dev/null
+}
+
+lock_pid() { cat "$LOCK/pid" 2>/dev/null || true; }
+
+# Removes $LOCK if its holder, PID $1 (empty: none was recorded), is still the
+# holder and still gone.
+clear_stale_lock() {
+  mkdir "$LOCK.break" 2>/dev/null || return 0
+  if [ -d "$LOCK" ] && [ "$(lock_pid)" = "$1" ] && ! pid_alive "$1"; then
+    printf 'install.sh: clearing the lock of an install that is gone: %s\n' "$LOCK" >&2
+    rm -rf "$LOCK"
+  fi
+  rmdir "$LOCK.break" 2>/dev/null || true
+}
+
+acquire_lock() {
+  _waited=0
+  _said=0
+  _nopid=0
+  while ! mkdir "$LOCK" 2>/dev/null; do
+    [ -d "$LOCK" ] || die "could not create the lock $LOCK"
+    _holder=$(lock_pid)
+    if [ -n "$_holder" ]; then
+      _nopid=0
+      if ! pid_alive "$_holder"; then
+        clear_stale_lock "$_holder"
+        continue
+      fi
+    else
+      # The holder writes its PID right after its mkdir, so a lock without one
+      # for several seconds belongs to an installer killed in between.
+      _nopid=$((_nopid + 1))
+      if [ "$_nopid" -ge 5 ]; then
+        clear_stale_lock ""
+        _nopid=0
+        continue
+      fi
+    fi
+    # A breaker holds $LOCK.break for an instant; one still there this long was
+    # killed while holding it.
+    if [ -d "$LOCK.break" ] && [ "$_waited" -ge 10 ]; then
+      rmdir "$LOCK.break" 2>/dev/null || true
+    fi
+    if [ "$_said" = 0 ]; then
+      printf 'install.sh: waiting for another install into %s to finish (pid %s)\n' \
+        "$PREFIX" "${_holder:-unknown}" >&2
+      _said=1
+    fi
+    [ "$_waited" -lt "$LOCK_TIMEOUT" ] || die "gave up after ${LOCK_TIMEOUT}s waiting for another install into $PREFIX.
+  If no other install is running, remove the lock and try again:
+
+      rm -rf '$LOCK'"
+    sleep 1
+    _waited=$((_waited + 1))
+  done
+  HAVE_LOCK=1
+  echo "$$" > "$LOCK/pid"
+}
+
+release_lock() {
+  [ "$HAVE_LOCK" = 1 ] || return 0
+  HAVE_LOCK=0
+  [ "$(lock_pid)" != "$$" ] || rm -rf "$LOCK"
+}
 
 # Reduces the release listing, newest first, to the tag of the newest release
 # that is not a draft.
@@ -348,23 +447,48 @@ fi
 # the machine that unpacked it, not something worth repeating in every path a
 # user types. Versions sit side by side, so an install can be undone by
 # re-pointing the links below -- but only two are kept, see the prune at the end.
+#
+# Each run unpacks into a private folder of its own: two runs unpacking the
+# same tarball into one place trip over each other's files and both fail. The
+# folder is inside $PREFIX so the move into place is a rename on one
+# filesystem, and carries the PID so a later run can tell when it is stale.
 # ---------------------------------------------------------------------------
 info "Unpacking into $PREFIX"
 mkdir -p "$PREFIX"
-tar -xzf "$TMP/$BEST_FILE" -C "$PREFIX"
+UNPACK=$(mktemp -d "$PREFIX/.unpack.$$.XXXXXX")
+tar -xzf "$TMP/$BEST_FILE" -C "$UNPACK"
 
 TOPDIR=$(tar -tzf "$TMP/$BEST_FILE" | awk -F/ 'NF>1 {print $1; exit}')
 [ -n "${TOPDIR:-}" ] || die "unexpected tarball layout in $BEST_FILE"
-[ -d "$PREFIX/$TOPDIR" ] || die "expected $PREFIX/$TOPDIR after unpacking"
+[ -d "$UNPACK/$TOPDIR" ] || die "expected $TOPDIR in the tarball after unpacking"
 
 # Falls back to the directory the tarball actually carried, so an unrecognised
 # name costs the tidy layout rather than the install.
 VERSION=$(echo "$TOPDIR" | sed -n 's/^mariadb-shell-\([0-9][0-9.]*\)-.*/\1/p')
 [ -n "${VERSION:-}" ] || VERSION="$TOPDIR"
 
-if [ "$TOPDIR" != "$VERSION" ]; then
+# From here on, everything changes what other installers share.
+acquire_lock
+
+# Unpack folders of runs that were killed, which no trap removed.
+for d in "$PREFIX"/.unpack.*; do
+  [ -d "$d" ] || continue
+  _pid=${d##*/.unpack.}
+  _pid=${_pid%%.*}
+  [ "$d" = "$UNPACK" ] || pid_alive "$_pid" || rm -rf "$d"
+done
+
+# A version folder whose mariadb-shell is byte for byte the one just unpacked
+# holds the same build -- typically because another installer finished it a
+# moment ago -- and is kept: replacing it would pull files from under any shell
+# already running from it, for no change at all. Any other folder of that name
+# is replaced as before.
+if [ -x "$PREFIX/$VERSION/bin/mariadb-shell" ] \
+   && cmp -s "$PREFIX/$VERSION/bin/mariadb-shell" "$UNPACK/$TOPDIR/bin/mariadb-shell"; then
+  info "Keeping $PREFIX/$VERSION, already installed from this build"
+else
   rm -rf "$PREFIX/$VERSION"
-  mv "$PREFIX/$TOPDIR" "$PREFIX/$VERSION"
+  mv "$UNPACK/$TOPDIR" "$PREFIX/$VERSION"
 fi
 
 # Left behind by installers that kept a 'current' symlink: it would now dangle,
@@ -406,7 +530,9 @@ info "        $BINDIR/msh -> $MSH_BIN"
 # one way back is worth keeping, a museum is not. Deliberately narrow about what
 # it will delete -- a name has to be purely digits and dots to be considered
 # ours, so anything else under PREFIX, including directories left by an older
-# layout, is left alone rather than guessed at.
+# layout, is left alone rather than guessed at. That covers this script's own
+# dot folders too: the glob below skips them, and is_version_dir would refuse
+# them anyway.
 # ---------------------------------------------------------------------------
 is_version_dir() {
   [ -d "$1" ] || return 1
@@ -441,6 +567,8 @@ for d in "$PREFIX"/*; do
 done
 
 [ -z "$KEEP_OTHER" ] || info "Kept previous version $KEEP_OTHER"
+
+release_lock
 
 # Only a hint, never an edit: rewriting a user's shell rc from a piped installer
 # is not this script's call to make.
