@@ -31,8 +31,16 @@ The shell searches two locations:
 
 | Location | Contents | Disable with |
 | --- | --- | --- |
-| `lib/mariadb-shell/plugins/` in the installation directory | The built-in plugins. | `--disable-builtin-plugins` |
+| `lib/mariadb-shell/plugins/` in the installation directory | The built-in plugins. | `--disable-builtin-plugins` or `MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS=1` |
 | `plugins/` in the user configuration directory: `~/.mariadb-shell/plugins/` on Linux and macOS, `%AppData%\MariaDB\mariadb-shell\plugins\` on Windows | Your plugins, and plugins installed with `plugins.install()`. | `--disable-plugins` |
+
+To load user plugins from other directories, list them in the `MARIADB_SHELL_PLUGINS_PATH` environment variable, separated by `:` (`;` on Windows). When the variable is set, the shell searches those directories, in the order given, **instead of** the `plugins` directory of the user configuration directory. To keep loading the plugins there as well, include it in the list:
+
+```bash
+MARIADB_SHELL_PLUGINS_PATH=$HOME/.mariadb-shell/plugins:/opt/acme/shell-plugins mariadb-shell
+```
+
+A directory listed more than once is searched once. `plugins.install()` always installs into the user configuration directory, so a plugin installed while the variable leaves that directory out does not load.
 
 The rules for a plugin directory:
 

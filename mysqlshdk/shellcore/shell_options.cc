@@ -62,6 +62,10 @@
 #include "utils/utils_string.h"
 
 namespace {
+constexpr auto k_plugins_path_env = "MARIADB_SHELL_PLUGINS_PATH";
+constexpr auto k_disable_builtin_plugins_env =
+    "MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS";
+
 // We do not want to expose password. Override argv's uri with uri string
 // without password.
 void obfuscate_uri_password(const std::string &nopassword_uri, char *argv) {
@@ -412,8 +416,8 @@ Shell_options::Shell_options(
   if (const char *config_home =
           shcore::getenv_shell("MARIADB_SHELL_USER_CONFIG_HOME");
       config_home && *config_home) {
-    home = shcore::path::join_path(config_home,
-                                   shcore::k_shell_sandbox_dir_name);
+    home =
+        shcore::path::join_path(config_home, shcore::k_shell_sandbox_dir_name);
   } else {
     home = shcore::get_home_dir();
 #ifdef WIN32
@@ -1116,9 +1120,39 @@ Shell_options::Shell_options(
     assign_value(&storage.js_options.wait_attached, true))
 #endif
     (cmdline("--disable-plugins"), "Disable loading user plugins.",
-    assign_value(&storage.disable_user_plugins, true))
-    (cmdline("--disable-builtin-plugins"), "Disable loading built-in plugins.",
-    assign_value(&storage.disable_builtin_plugins, true));
+    assign_value(&storage.disable_user_plugins, true));
+  // clang-format on
+
+  if (!flags.is_set(Option_flags::CONNECTION_ONLY)) {
+    // The command line flag only turns this on. The environment variable takes
+    // a boolean, and an empty value leaves the built-in plugins enabled.
+    add_option(new shcore::opts::Proxy_option(
+        k_disable_builtin_plugins_env, cmdline("--disable-builtin-plugins"),
+        "Disable loading built-in plugins.",
+        [this](const std::string &, const char *value) {
+          if (value == nullptr) {
+            storage.disable_builtin_plugins = true;
+          } else if (*value) {
+            try {
+              storage.disable_builtin_plugins = shcore::opts::Bool_type()(
+                  value, Source::Environment_variable);
+            } catch (const std::exception &e) {
+              throw std::invalid_argument(shcore::str_format(
+                  "%s: %s", k_disable_builtin_plugins_env, e.what()));
+            }
+          }
+        }));
+
+    // User plugin directories, searched instead of the default user plugins
+    // directory. Environment only: no command line name, so not in --help.
+    add_option(new shcore::opts::Proxy_option(
+        k_plugins_path_env, {}, "",
+        [this](const std::string &, const char *value) {
+          storage.plugins_path = value ? value : "";
+        }));
+  }
+
+  // clang-format off
 
   add_startup_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
 #ifndef NDEBUG

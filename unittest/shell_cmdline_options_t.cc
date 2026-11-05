@@ -2104,4 +2104,144 @@ TEST_F(Shell_cmdline_options, password_prompt_default) {
   }
 }
 
+namespace {
+constexpr const char *k_plugin_env_vars[] = {
+    "MARIADB_SHELL_PLUGINS_PATH", "MYSQLSH_PLUGINS_PATH",
+    "MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", "MYSQLSH_DISABLE_BUILTIN_PLUGINS"};
+
+// Clears the plugin variables on entry and on exit, so a test sees only what
+// it sets and leaves nothing behind for the next one.
+struct Plugin_env_guard {
+  Plugin_env_guard() { clear(); }
+  ~Plugin_env_guard() { clear(); }
+  static void clear() {
+    for (const auto name : k_plugin_env_vars) shcore::unsetenv(name);
+  }
+};
+
+struct Parsed_options {
+  std::string errors;
+  int exit_code;
+  std::optional<std::string> plugins_path;
+  bool disable_builtin_plugins;
+};
+
+Parsed_options parse(std::vector<std::string> args,
+                     Shell_options::Option_flags_set flags = {}) {
+  std::vector<char *> argv{const_cast<char *>("ut")};
+  for (auto &arg : args) argv.push_back(arg.data());
+  argv.push_back(nullptr);
+
+  Parsed_options result;
+  Shell_options so(
+      static_cast<int>(argv.size() - 1), argv.data(), "", flags,
+      [&result](const std::string &e) { result.errors += e; },
+      [](const std::string &) {});
+  result.exit_code = so.get().exit_code;
+  result.plugins_path = so.get().plugins_path;
+  result.disable_builtin_plugins = so.get().disable_builtin_plugins;
+  return result;
+}
+}  // namespace
+
+TEST_F(Shell_cmdline_options, plugins_path_env) {
+  Plugin_env_guard guard;
+
+  // not set: the default user plugins directory is used
+  EXPECT_FALSE(parse({}).plugins_path.has_value());
+
+  shcore::setenv("MARIADB_SHELL_PLUGINS_PATH", "/a/plugins:/b/plugins");
+  auto opts = parse({});
+  EXPECT_EQ(0, opts.exit_code);
+  ASSERT_TRUE(opts.plugins_path.has_value());
+  EXPECT_EQ("/a/plugins:/b/plugins", *opts.plugins_path);
+
+  // the MariaDB name takes precedence over the legacy one
+  shcore::setenv("MYSQLSH_PLUGINS_PATH", "/legacy");
+  EXPECT_EQ("/a/plugins:/b/plugins", parse({}).plugins_path.value_or(""));
+
+  // the legacy name is honoured on its own
+  shcore::unsetenv("MARIADB_SHELL_PLUGINS_PATH");
+  EXPECT_EQ("/legacy", parse({}).plugins_path.value_or(""));
+
+#ifndef _WIN32
+  // set but empty: no user plugin directories at all; POSIX only, as
+  // shcore::setenv() unsets a variable given an empty value, and Windows has
+  // no empty variables
+  shcore::unsetenv("MYSQLSH_PLUGINS_PATH");
+  ::setenv("MARIADB_SHELL_PLUGINS_PATH", "", 1);
+  opts = parse({});
+  ASSERT_TRUE(opts.plugins_path.has_value());
+  EXPECT_EQ("", *opts.plugins_path);
+#endif
+}
+
+TEST_F(Shell_cmdline_options, disable_builtin_plugins_env) {
+  Plugin_env_guard guard;
+
+  EXPECT_FALSE(parse({}).disable_builtin_plugins);
+  EXPECT_TRUE(parse({"--disable-builtin-plugins"}).disable_builtin_plugins);
+
+  for (const auto value : {"1", "true", "on", "ON"}) {
+    SCOPED_TRACE(value);
+    shcore::setenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", value);
+    auto opts = parse({});
+    EXPECT_EQ(0, opts.exit_code);
+    EXPECT_TRUE(opts.disable_builtin_plugins);
+  }
+
+  for (const auto value : {"0", "false", "off"}) {
+    SCOPED_TRACE(value);
+    shcore::setenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", value);
+    auto opts = parse({});
+    EXPECT_EQ(0, opts.exit_code);
+    EXPECT_FALSE(opts.disable_builtin_plugins);
+    // the command line flag still disables them
+    EXPECT_TRUE(parse({"--disable-builtin-plugins"}).disable_builtin_plugins);
+  }
+
+#ifndef _WIN32
+  // an empty value leaves them enabled; shcore::setenv() unsets a variable
+  // given an empty value, and Windows has no empty variables at all
+  ::setenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", "", 1);
+  {
+    auto opts = parse({});
+    EXPECT_EQ(0, opts.exit_code);
+    EXPECT_FALSE(opts.disable_builtin_plugins);
+  }
+#endif
+
+  shcore::setenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", "maybe");
+  {
+    auto opts = parse({});
+    EXPECT_EQ(1, opts.exit_code);
+    EXPECT_THAT(opts.errors,
+                ::testing::HasSubstr("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS:"));
+  }
+
+  // the legacy name is honoured
+  shcore::unsetenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS");
+  shcore::setenv("MYSQLSH_DISABLE_BUILTIN_PLUGINS", "1");
+  EXPECT_TRUE(parse({}).disable_builtin_plugins);
+}
+
+TEST_F(Shell_cmdline_options, plugin_options_not_in_connection_only_mode) {
+  Plugin_env_guard guard;
+  const Shell_options::Option_flags_set connection_only(
+      Shell_options::Option_flags::CONNECTION_ONLY);
+
+  // \connect does not take the plugin options...
+  auto opts = parse({"--disable-builtin-plugins"}, connection_only);
+  EXPECT_EQ(1, opts.exit_code);
+  EXPECT_FALSE(opts.disable_builtin_plugins);
+
+  // ... and is not affected by the plugin variables, even invalid ones
+  shcore::setenv("MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS", "maybe");
+  shcore::setenv("MARIADB_SHELL_PLUGINS_PATH", "/a/plugins");
+  opts = parse({}, connection_only);
+  EXPECT_EQ(0, opts.exit_code) << opts.errors;
+  EXPECT_FALSE(opts.disable_builtin_plugins);
+  EXPECT_FALSE(opts.plugins_path.has_value());
+}
+
 }  // namespace shcore

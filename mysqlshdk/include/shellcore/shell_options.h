@@ -189,7 +189,9 @@ class Shell_options final : public shcore::Options {
     bool default_compress = false;
     std::string dbug_options;
 
-    // override default plugin search path ; separated in windows, : elsewhere
+    // MARIADB_SHELL_PLUGINS_PATH: user plugin directories, searched instead of
+    // the default user plugins directory; ';' separated on Windows, ':'
+    // elsewhere
     std::optional<std::string> plugins_path;
     std::string mysql_plugin_dir;
 
