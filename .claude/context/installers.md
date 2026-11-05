@@ -5,7 +5,7 @@ Part of [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 ## What they are
 
 - `install.sh` (POSIX sh, macOS and Linux, also run as `curl … | bash`) and `install.ps1` (Windows PowerShell 5.1 and PowerShell 7, also run as `irm … | iex`) install a release from GitHub: pick the package from the release's `SHA256SUMS`, verify it, unpack it into `<prefix>/<version>`, link (`install.sh`) or write `.cmd` shims (`install.ps1`) into the bin directory, and prune to two versions.
-- Their callers rely on the interface: the MariaDB VS Code extension parses the `==>` lines on stdout to show progress, and the dev@mariadb plugin's MCP launcher (ai-plugins, `scripts/mariadb-mcp-launcher.sh`) runs `install.sh` from `main` once per agent session. Keep the parameters, environment variables, `==>` lines and exit codes stable.
+- Their callers rely on the interface: the MariaDB VS Code extension shows every `==>` line on stdout as progress (no list of expected lines, no step count), logs stderr, and decides success by the exit code alone, and the dev@mariadb plugin's MCP launcher (ai-plugins, `scripts/mariadb-mcp-launcher.sh`) runs `install.sh` from `main` once per agent session. Keep the parameters, environment variables, `==>` lines and exit codes stable.
 - User docs: `docs-ref/content/community/mariadb-shell/installation/` (`linux-and-macos.md`, `windows.md`). `publish-release.yml` attaches both scripts to each release as an archival copy; users run the ones on `main`.
 
 ## Concurrent installs into one prefix
@@ -34,7 +34,9 @@ Several installers can run at once into the same prefix (the editor extension an
   - Work goes into a new temporary folder, removed at the end; never the default prefix.
   - Both cover: 1, 2 and 3 installs started together (all exit 0, no dot folders left, the link/shim runs the version), 3 upgrades together over two fake older versions (`0.0.2` kept, `0.0.1` pruned), a rerun that keeps the folder, a run after a kill mid-unpack. sh also: a stale lock with a dead PID and one with no PID. ps1 also: installs while that version's and while an older version's `mariadb-shell.exe` runs, and a mutex holder (started via `-EncodedCommand`) killed while the installer waits.
 - The mirror is needed because PowerShell 7's `Invoke-WebRequest` does **not** support `file://` ("The 'file' scheme is not supported"; 5.1 does), so the ps1 test copy uses `Copy-Item` in `Get-Asset`; the sh copy uses a `file://` URL, which curl reads.
-- Running the old installer three at once reproduces the race (bsdtar/`tar.exe` "Error exit delayed from previous errors", the folder never renamed).
+- Running the old installer three at once reproduces the race: bsdtar and `tar.exe` "Error exit delayed from previous errors", GNU tar "Unexpected inconsistency when making directory"; the folder is never renamed.
+- The sh test runs the installer with `sh` (dash on Debian). The documented `curl … | bash` path is worth one extra check: several `bash < install.sh` at once into one prefix.
+- `mktemp -d` work folders land in `/tmp`, a small tmpfs on some Linux systems; pass a `<work-dir>` on a real disk.
 - Each unpacked shell is a few hundred MB, so the ps1 test deletes each scenario's folders as soon as it is checked, and the `%TEMP%\mariadb-shell-install-*` folder (with the package) of the installer it kills with `taskkill /F`, whose `finally` never runs. A full disk made a small Windows test VM stop answering SSH.
 - Bounded waits only: a test that waits for an `.unpack-*` folder that never comes (an installer failing early, e.g. on a download) hangs forever otherwise.
 
@@ -43,9 +45,10 @@ Several installers can run at once into the same prefix (the editor extension an
 - PowerShell parses `"$target: text"` as a drive-qualified variable (parse error for the whole script); write `${target}:`.
 - PowerShell 5.1: a `Start-Process -PassThru` process reports an empty `ExitCode` unless `.Handle` was read while it ran.
 - Over SSH the Windows default shell is `cmd`: chain with `&`, not `;`, and `%` must be `%%`. Inline `-Command` quoting through cmd is fragile; copy a `.ps1` over and run it with `-File`.
+- `mariadb-shell --version` loads the plugins, and prints a plugin's registration errors on stdout before the version line (for example the same plugin in two user plugin directories, which both load). The installers' `==> Installed` line shows the first line of that output. See the plugin bullet in [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
+- The Windows launch scripts for the MCP server and mariadb-lsp in ai-plugins call `install.ps1` and share its pitfalls: installer output must not reach the stdio protocol stream, `irm … | iex` lets the installer's `exit` end the launcher, and a launcher must allow for the up to 300 s wait for another install.
 
 ## Next steps
 
-- Confirm the VS Code extension's `==>` parser ignores the new `==> Keeping …` line.
 - Possibly run `scripts/test_install_concurrent.*` in CI after a release is published (the release's own assets as the mirror), on a Linux, a macOS and a Windows runner.
 - The installation docs describe the prune; add that `install.ps1` leaves a version in use in place with a warning, and that concurrent installs wait for each other.
