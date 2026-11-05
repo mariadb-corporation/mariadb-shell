@@ -34,6 +34,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1505,32 +1506,87 @@ bool Mysql_shell::get_plugins(File_list *file_list, const std::string &dir,
 void Mysql_shell::get_plugins(File_list *file_list) {
   const auto initial_mode = _shell->interactive_mode();
 
-  // Embedded plugins are loaded all the time
-  std::vector<std::string> plugin_directories;
-
+  std::string builtin_directory;
   if (!options().disable_builtin_plugins) {
-    plugin_directories.push_back(
-        shcore::path::join_path(shcore::get_library_folder(), "plugins"));
+    builtin_directory =
+        shcore::path::join_path(shcore::get_library_folder(), "plugins");
   }
 
+  std::vector<std::string> user_directories;
   if (!options().disable_user_plugins) {
     if (options().plugins_path.has_value()) {
-      auto additional_plugin_paths = shcore::split_string(
+      user_directories = shcore::split_string(
           *options().plugins_path, shcore::path::pathlist_separator_s);
-      plugin_directories.insert(plugin_directories.end(),
-                                additional_plugin_paths.begin(),
-                                additional_plugin_paths.end());
     } else {
-      plugin_directories.push_back(
+      user_directories.push_back(
           shcore::path::join_path(shcore::get_user_config_path(), "plugins"));
     }
   }
 
   // A plugin is contained in a folder inside of the pre-defined "plugin"
   // directories, and it contains strictly one of the initialization files.
-  // This loop identifies the valid plugins to be loaded.
-  for (const auto &dir : plugin_directories) {
-    get_plugins(file_list, dir, true);
+  // These identify the valid plugins to be loaded.
+  File_list builtin_plugins;
+  if (!builtin_directory.empty()) {
+    get_plugins(&builtin_plugins, builtin_directory, true);
+  }
+
+  // The folder directly under a plugin directory that holds a plugin: its own
+  // folder, or the folder of the plugin group it belongs to. That is also the
+  // name its Python package is imported by.
+  const auto top_folder = [](const std::string &dir,
+                             const Plugin_file &entry) {
+    auto relative = entry.plugin.file.substr(dir.size());
+    relative.erase(0, relative.find_first_not_of("/\\"));
+    return relative.substr(0, relative.find_first_of("/\\"));
+  };
+
+  File_list overriding_plugins;
+  File_list user_plugins;
+  std::set<std::string> overridden;
+  {
+    std::set<std::string> builtin_folders;
+    for (const auto &entry : builtin_plugins) {
+      builtin_folders.insert(top_folder(builtin_directory, entry));
+    }
+
+    for (const auto &dir : user_directories) {
+      File_list found;
+      get_plugins(&found, dir, true);
+
+      for (auto &entry : found) {
+        const auto folder = top_folder(dir, entry);
+        if (builtin_folders.count(folder)) {
+          if (overridden.insert(folder).second) {
+            log_info("The plugin folder '%s' in %s replaces the built-in one.",
+                     folder.c_str(), dir.c_str());
+          }
+          overriding_plugins.push_back(std::move(entry));
+        } else {
+          user_plugins.push_back(std::move(entry));
+        }
+      }
+    }
+  }
+
+  // A user plugin with the name of a built-in one replaces it rather than
+  // loading beside it: both would register the same objects and functions,
+  // and Python would keep running whichever copy of the package it imported
+  // first. It loads before the built-in plugins, so that a built-in plugin
+  // importing its package gets the user's copy too. Explicit requirements
+  // (plugin.json) still decide the order across the loading passes.
+  for (auto &entry : overriding_plugins) {
+    file_list->push_back(std::move(entry));
+  }
+
+  for (auto &entry : builtin_plugins) {
+    if (!overridden.count(top_folder(builtin_directory, entry))) {
+      file_list->push_back(std::move(entry));
+    }
+  }
+
+  for (auto &entry : user_plugins) {
+    file_list->push_back(std::move(entry));
   }
 
   // switch back to the initial mode

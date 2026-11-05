@@ -34,6 +34,8 @@ The shell searches two locations:
 | `lib/mariadb-shell/plugins/` in the installation directory | The built-in plugins. | `--disable-builtin-plugins` |
 | `plugins/` in the user configuration directory: `~/.mariadb-shell/plugins/` on Linux and macOS, `%AppData%\MariaDB\mariadb-shell\plugins\` on Windows | Your plugins, and plugins installed with `plugins.install()`. | `--disable-plugins` |
 
+A plugin directory in your plugins folder that has the same name as a built-in one replaces it: the shell loads your copy instead, and loads it before the built-in plugins, so that a built-in plugin importing that package also gets your copy. For a plugin group, the group's directory name decides, and your group replaces the whole built-in group. This lets you run a development copy of a plugin that ships with the shell, for example as a symbolic link to your working tree. The shell log records each directory it replaces.
+
 The rules for a plugin directory:
 
 * The directory name must be a valid Python package name, because the shell imports it as a package. Use letters, digits, and underscores.

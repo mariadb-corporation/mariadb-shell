@@ -823,6 +823,69 @@ shell.add_extension_object_member(mysqlsh.globals.first.second, 'describe', desc
   delete_py_plugins();
 }
 
+TEST_F(Mysqlsh_plugin_test, user_plugin_replaces_builtin) {
+  if (g_test_parallel_execution) {
+    SKIP_TEST("Skipping tests for parallel execution.");
+  }
+
+  // A plugin whose package has a module, in both the built-in and the user
+  // plugin folder: only the user's copy may load, and its module is the one
+  // Python imports.
+  const auto write_override = [](const std::string &plugins,
+                                 const std::string &origin) {
+    const auto dir = join_path(plugins, "zz_override");
+    shcore::create_directory(dir);
+    shcore::create_file(join_path(dir, "__init__.py"), "");
+    shcore::create_file(join_path(dir, "lib.py"),
+                        "ORIGIN = '" + origin + "'\n");
+    shcore::create_file(join_path(dir, "init.py"),
+                        "from zz_override import lib\n"
+                        "print('zz_override init from " + origin +
+                            ", lib from ' + lib.ORIGIN)\n");
+  };
+  write_override(get_plugin_folder(), "builtin");
+  write_override(get_user_plugin_folder(), "user");
+
+  // A built-in plugin that imports the overridden package, discovered before
+  // it, gets the user's copy too.
+  write_plugin("aa_importer",
+               "from zz_override import lib\n"
+               "print('aa_importer sees lib from ' + lib.ORIGIN)\n",
+               ".py");
+
+  // A plugin group is replaced as a whole, by its folder name.
+  const auto write_group = [](const std::string &plugins,
+                              const std::string &origin) {
+    const auto dir = join_path(plugins, "zz_group", "member");
+    shcore::create_directory(dir, true);
+    shcore::create_file(join_path(dir, "init.py"),
+                        "print('zz_group member from " + origin + "')\n");
+  };
+  write_group(get_plugin_folder(), "builtin");
+  write_group(get_user_plugin_folder(), "user");
+
+  run({"--log-level=debug3"});
+
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("zz_override init from user, lib from user");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("aa_importer sees lib from user");
+  MY_EXPECT_CMD_OUTPUT_CONTAINS("zz_group member from user");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("from builtin");
+  MY_EXPECT_CMD_OUTPUT_NOT_CONTAINS("Found errors loading plugins");
+
+  add_expected_log("The plugin folder 'zz_override' in " +
+                   get_user_plugin_folder() + " replaces the built-in one.");
+  add_expected_log("The plugin folder 'zz_group' in " +
+                   get_user_plugin_folder() + " replaces the built-in one.");
+  validate_log();
+  wipe_out();
+
+  delete_plugin("zz_override");
+  delete_plugin("zz_group");
+  delete_plugin("aa_importer");
+  delete_user_plugin("zz_override");
+  delete_user_plugin("zz_group");
+}
+
 TEST_F(Mysqlsh_plugin_test, plugin_requires_unmet) {
   // Nothing provides the objects, so the plugin is reported and not loaded.
   // A name listed twice is reported once.
