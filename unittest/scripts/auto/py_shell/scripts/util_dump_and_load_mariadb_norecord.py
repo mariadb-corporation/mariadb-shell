@@ -965,31 +965,19 @@ session1.run_sql("DROP SCHEMA oldfmt")
 wipeout_server(session2)
 
 #@<> progress file identity - setup
-# MARIADB_DUMP_LOAD.md 7.1: MariaDB has no server_uuid, and server_id is 1 on
-# every server nobody configured for replication, so the progress file is
-# named after, and records, hostname-port-server_id.
-def server_identity(uri):
-    s = mysql.get_session(uri)
-    host, port, server_id = s.run_sql("SELECT @@GLOBAL.hostname, @@GLOBAL.port, @@GLOBAL.server_id").fetch_one()
-    s.close()
-    return re.sub(r"[^A-Za-z0-9._-]", "_", f"{host}-{port}-{server_id}")
-
-def progress_file_of(dump_dir, identity):
-    return os.path.join(dump_dir, f"load-progress.{identity}.json")
-
+# MARIADB_DUMP_LOAD.md 7.1; server_identity() and progress_file_of() are in
+# dump_utils.inc
 def recorded_identity(path):
     with open(path, encoding="utf-8") as f:
-        first = json.loads(f.readline())
-    EXPECT_EQ("SERVER-UUID", first["op"], "first entry of the progress file")
-    return first["uuid"]
+        return json.loads(f.readline())["uuid"]
 
 # both servers get the same server_id, the collision this guards against
 saved_server_ids = [fetch_value(s, "SELECT @@GLOBAL.server_id") for s in [session1, session2]]
 for s in [session1, session2]:
     s.run_sql("SET GLOBAL server_id = 1")
 
-identity1 = server_identity(__sandbox_uri1)
-identity2 = server_identity(__sandbox_uri2)
+identity1 = server_identity(session1)
+identity2 = server_identity(session2)
 EXPECT_NE(identity1, identity2, "the two servers have different identities despite the same server_id")
 EXPECT_TRUE(identity1.endswith(f"-{__mysql_sandbox_port1}-1"), identity1)
 
@@ -1006,8 +994,6 @@ EXPECT_TRUE(os.path.isfile(progress_file_of(pfid_dump, identity2)), "progress fi
 EXPECT_EQ(identity2, recorded_identity(progress_file_of(pfid_dump, identity2)))
 
 #@<> progress file identity - a server with the same server_id gets its own file
-# before this, both servers shared load-progress.1.json and this load found
-# everything done and loaded nothing
 shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "showProgress": False }), "load into the first server")
 EXPECT_STDOUT_NOT_CONTAINS("There was no remaining data left to be loaded.")

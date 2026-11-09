@@ -4366,9 +4366,10 @@ void Dump_loader::setup_progress_file(bool *out_is_resuming) {
       !m_options.progress_file()->empty()) {
     auto progress_file = m_dump->create_progress_file_handle();
 
-    // A MariaDB load an earlier release left unfinished has its progress in a
-    // file named after @@server_id alone; resume from that one rather than
-    // start a second file next to it and fail on the objects it created.
+    // COMPAT 26.11 progress file: a MariaDB load a release up to 26.11.0 left
+    // unfinished has its progress in a file named after @@server_id alone;
+    // resume from that one rather than start a second file next to it and
+    // fail on the objects it created.
     if (auto legacy = m_options.legacy_progress_file_handle();
         legacy && !progress_file->exists() && legacy->exists()) {
       console->print_note(shcore::str_format(

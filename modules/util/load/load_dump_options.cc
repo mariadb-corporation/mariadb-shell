@@ -58,6 +58,24 @@ namespace {
 
 using Version = mysqlshdk::utils::Version;
 
+// MariaDB has no @@server_uuid, and @@server_id alone does not tell servers
+// apart (it is 1 on every server never configured for replication), so a
+// MariaDB server is identified by its own hostname, port and server_id. The
+// identity is also the progress file's name, hence only characters safe in
+// one; hostnames are case-insensitive and Load_progress_log compares
+// identities that way. See MARIADB_DUMP_LOAD.md section 7.1.
+std::string mariadb_server_identity(std::string hostname, uint64_t port,
+                                    const std::string &server_id) {
+  hostname += '-' + std::to_string(port) + '-' + server_id;
+  std::replace_if(
+      hostname.begin(), hostname.end(),
+      [](unsigned char c) {
+        return !std::isalnum(c) && c != '.' && c != '-' && c != '_';
+      },
+      '_');
+  return hostname;
+}
+
 constexpr auto k_minimum_max_bytes_per_transaction = 4096;
 
 std::string bulk_load_s3_prefix(
@@ -229,41 +247,23 @@ void Load_dump_options::on_set_session(
     }
   }
 
-  // @@server_uuid is MySQL-only. This value names the default progress file
-  // and is recorded in the progress log so a resume can tell it is pointed at
-  // a different server, so any stable per-instance identifier does. Detected
-  // at run time rather than per build, because a MariaDB-linked shell can be
-  // pointed at MySQL and vice versa (see MARIADB_DUMP_LOAD.md section 2.1).
+  // Names the default progress file and is recorded in it, so a resume can
+  // tell it is pointed at another server; any stable per-instance identifier
+  // does. Detected at run time rather than per build, because a MariaDB-linked
+  // shell can be pointed at MySQL and vice versa (MARIADB_DUMP_LOAD.md 2.1).
   if (target_is_maria_db()) {
-    // MariaDB has no instance UUID. @@server_id alone is not an identity: it
-    // is 1 on every server that was never configured for replication, so two
-    // such servers loading one dump from one location would share a progress
-    // file and the second load would silently skip what the first one did.
-    // The server's own hostname and port tell such servers apart, and unlike
-    // the client's connection settings they do not change with the route a
-    // resume takes to the same server (localhost vs IP, socket vs TCP, a
-    // tunnel). See MARIADB_DUMP_LOAD.md section 7.1.
-    // The row belongs to the result, which has to outlive its use.
     const auto result = session->query(
         "SELECT @@GLOBAL.hostname, @@GLOBAL.port, @@GLOBAL.server_id");
     const auto row = result->fetch_one_or_throw();
-    // @@server_id is an integer, unlike MySQL's @@server_uuid string. Kept
-    // on its own: it is what earlier releases recorded, and a resume of a
-    // load they started has to recognise it.
-    m_legacy_server_uuid = std::to_string(row->get_uint(2));
+    const auto server_id = std::to_string(row->get_uint(2));
 
-    // Also the file name, so only characters safe in one; a hostname is
-    // case-insensitive and the progress log compares it that way.
-    std::string identity = row->get_string(0) + "-" +
-                           std::to_string(row->get_uint(1)) + "-" +
-                           m_legacy_server_uuid;
-    for (auto &c : identity) {
-      if (!isalnum(static_cast<unsigned char>(c)) && c != '.' && c != '-' &&
-          c != '_') {
-        c = '_';
-      }
-    }
-    m_server_uuid = std::move(identity);
+    m_server_uuid = mariadb_server_identity(row->get_string(0),
+                                            row->get_uint(1), server_id);
+
+    // COMPAT 26.11 progress file: releases up to 26.11.0 recorded server_id
+    // alone. Remove with the other COMPAT 26.11 sites once resuming a load
+    // they started no longer matters.
+    m_legacy_server_uuid = server_id;
   } else {
     m_server_uuid = session->query("SELECT @@server_uuid")
                         ->fetch_one_or_throw()
@@ -393,14 +393,6 @@ void Load_dump_options::on_set_url(
 void Load_dump_options::on_configure() {
   if (!m_progress_file.has_value()) {
     m_default_progress_file = "load-progress." + m_server_uuid + ".json";
-
-    // Earlier releases named the MariaDB file after @@server_id alone; a load
-    // they left unfinished resumes from that file (see
-    // legacy_progress_file_handle()).
-    if (!m_legacy_server_uuid.empty()) {
-      m_legacy_progress_file =
-          "load-progress." + m_legacy_server_uuid + ".json";
-    }
   }
 
   configure_bulk_load();
@@ -553,11 +545,11 @@ Load_dump_options::create_progress_file_handle() const {
 
 std::unique_ptr<mysqlshdk::storage::IFile>
 Load_dump_options::legacy_progress_file_handle() const {
-  if (m_legacy_progress_file.empty() || m_progress_file.has_value()) {
-    return {};
-  }
+  // COMPAT 26.11 progress file: the name releases up to 26.11.0 used.
+  if (m_legacy_server_uuid.empty() || m_progress_file.has_value()) return {};
 
-  return create_dump_handle()->file(m_legacy_progress_file);
+  return create_dump_handle()->file("load-progress." + m_legacy_server_uuid +
+                                    ".json");
 }
 
 void Load_dump_options::set_progress_file(const std::string &file) {

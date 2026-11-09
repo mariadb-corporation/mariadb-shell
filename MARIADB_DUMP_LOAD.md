@@ -712,11 +712,14 @@ identity is therefore `<hostname>-<port>-<server_id>`, read from the server's
 own `@@GLOBAL.hostname`, `@@GLOBAL.port` and `@@GLOBAL.server_id` (so it does not
 change with the route a resume takes: localhost vs IP, socket vs TCP, a tunnel),
 with anything unsafe in a file name replaced by `_`. It is both the default file
-name and the recorded `uuid`. `Load_dump_options` computes it; the mismatch
-message is vendor-neutral ("identified as") for both vendors.
+name and the recorded `uuid`. `mariadb_server_identity()` in
+`load_dump_options.cc` builds it; the mismatch message is vendor-neutral
+("identified as").
 
-Earlier releases named the file `load-progress.<server_id>.json` and recorded
-the bare `server_id`. `Dump_loader::setup_progress_file()` falls back to that
+Releases up to 26.11.0 named the file `load-progress.<server_id>.json` and
+recorded the bare `server_id`. Compatibility with those files is temporary: every
+site is marked `COMPAT 26.11 progress file`, and the whole set goes once resuming
+a load they started no longer matters. `Dump_loader::setup_progress_file()` falls back to that
 file, with a note, when the default name is used, no file exists under the new
 name and one does under the old one, and `Load_progress_log::set_server_uuid()`
 accepts the bare `server_id` as the recorded identity. Known limits: a resume is

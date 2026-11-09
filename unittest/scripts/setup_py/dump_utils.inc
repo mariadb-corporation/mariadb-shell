@@ -1038,3 +1038,15 @@ dynamic_data_masking_capability = {
     "description": "Dynamic data masking - dump contains dynamic data masking DDL.",
     "versionRequired": "9.7.0",
 }
+
+def server_identity(session):
+    """The identity the loader names the progress file after and records in it:
+    @@server_uuid on MySQL; on MariaDB hostname-port-server_id with anything
+    unsafe in a file name replaced by '_' (MARIADB_DUMP_LOAD.md 7.1)."""
+    if not __server_is_maria_db:
+        return session.run_sql("SELECT @@server_uuid").fetch_one()[0]
+    host, port, server_id = session.run_sql("SELECT @@GLOBAL.hostname, @@GLOBAL.port, @@GLOBAL.server_id").fetch_one()
+    return re.sub(r"[^A-Za-z0-9._-]", "_", f"{host}-{port}-{server_id}")
+
+def progress_file_of(dump_dir, identity):
+    return os.path.join(dump_dir, f"load-progress.{identity}.json")
