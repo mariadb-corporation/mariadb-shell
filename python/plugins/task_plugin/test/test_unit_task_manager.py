@@ -70,6 +70,63 @@ def test_a_task_reports_its_stages_progress_and_result():
     assert task.snapshot(1)["messages"] == []
 
 
+def test_a_stage_the_work_did_not_run_ends_skipped_in_its_place():
+    def work(task):
+        task.stage_started("INSTANT")
+        task.stage_finished("INSTANT", None, status=tm.SKIPPED)
+        task.stage_started("INPLACE")
+        task.stage_finished("INPLACE", seconds=2.0)
+        task.stage_started("COPY")
+        task.stage_finished("COPY", status=tm.SKIPPED)
+        return None
+
+    task = tm.create("msm", "online_alter_table", "Alter t1")
+    task.start(work)
+    snapshot = _finished(task)
+
+    assert snapshot["status"] == tm.COMPLETED
+    assert snapshot["stages"] == [
+        {"name": "INSTANT", "status": tm.SKIPPED, "seconds": None},
+        {"name": "INPLACE", "status": tm.COMPLETED, "seconds": 2.0},
+        {"name": "COPY", "status": tm.SKIPPED, "seconds": None},
+    ]
+
+
+def test_a_stage_finished_event_completes_its_stage_unless_it_says_skipped():
+    task = tm.create("util", "load_dump", "Load")
+    for name in ("a", "b", "c"):
+        task.on_event({"type": "stageStarted", "stage": name})
+    task.on_event({"type": "stageFinished", "stage": "a", "seconds": 1})
+    task.on_event({"type": "stageFinished", "stage": "b", "status": "skipped"})
+    # a status a stage cannot end in is read as the default
+    task.on_event({"type": "stageFinished", "stage": "c", "status": "failed"})
+
+    assert [s["status"] for s in task.snapshot()["stages"]] == [tm.COMPLETED, tm.SKIPPED, tm.COMPLETED]
+
+
+def test_a_stage_ends_only_completed_or_skipped():
+    task = tm.create("util", "load_dump", "Load")
+    task.stage_started("a")
+    with pytest.raises(ValueError):
+        task.stage_finished("a", status=tm.FAILED)
+    assert task.snapshot()["stages"][0]["status"] == tm.RUNNING
+
+
+def test_a_skipped_stage_stays_skipped_when_the_task_fails():
+    def work(task):
+        task.stage_started("NOCOPY")
+        task.stage_finished("NOCOPY", status=tm.SKIPPED)
+        task.stage_started("COPY")
+        raise RuntimeError("Lock wait timeout")
+
+    task = tm.create("msm", "online_alter_table", "Alter t1")
+    task.start(work)
+    snapshot = _finished(task)
+
+    assert snapshot["status"] == tm.FAILED
+    assert [s["status"] for s in snapshot["stages"]] == [tm.SKIPPED, tm.FAILED]
+
+
 def test_a_failing_task_reports_its_error_and_ends_its_running_stage():
     def work(task):
         task.stage_started("deploy")
