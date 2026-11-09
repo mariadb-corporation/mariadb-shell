@@ -76,6 +76,8 @@ CANCELLED = "cancelled"
 # found it refused or not needed); it counts as ended, as COMPLETED does
 SKIPPED = "skipped"
 FINISHED_STATES = (COMPLETED, FAILED, CANCELLED)
+# what the work may end a stage as
+STAGE_END_STATES = (COMPLETED, SKIPPED)
 
 # How long a finished task is kept, and how many are, at most.
 FINISHED_TASK_LIFETIME = 3600
@@ -202,7 +204,7 @@ class Task:
                 for stage in reversed(self.stages):
                     if stage["name"] == event.get("stage") and stage["status"] == RUNNING:
                         status = event.get("status")
-                        stage["status"] = SKIPPED if status == SKIPPED else COMPLETED
+                        stage["status"] = status if status in STAGE_END_STATES else COMPLETED
                         stage["seconds"] = event.get("seconds")
                         break
 
@@ -238,11 +240,10 @@ class Task:
             stage (str): The stage.
             seconds: How long it took.
             status (str): COMPLETED, or SKIPPED for a stage the work did not
-                run after all; a stage skipped before it ran is reported by
-                stage_started() and then this, so it keeps its place in the
-                order of the stages.
+                run; report stage_started() first even then, as only a running
+                stage can end, so it keeps its place among the stages.
         """
-        if status not in (COMPLETED, SKIPPED):
+        if status not in STAGE_END_STATES:
             raise ValueError(f"A stage ends {COMPLETED} or {SKIPPED}, not {status}.")
         self.on_event({"type": "stageFinished", "stage": stage, "seconds": seconds, "status": status})
 

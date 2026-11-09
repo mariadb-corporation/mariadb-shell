@@ -73,12 +73,11 @@ def test_a_task_reports_its_stages_progress_and_result():
 def test_a_stage_the_work_did_not_run_ends_skipped_in_its_place():
     def work(task):
         task.stage_started("INSTANT")
-        task.stage_finished("INSTANT", None, status=tm.SKIPPED)
+        task.stage_finished("INSTANT", status=tm.SKIPPED)
         task.stage_started("INPLACE")
         task.stage_finished("INPLACE", seconds=2.0)
         task.stage_started("COPY")
         task.stage_finished("COPY", status=tm.SKIPPED)
-        return None
 
     task = tm.create("msm", "online_alter_table", "Alter t1")
     task.start(work)
