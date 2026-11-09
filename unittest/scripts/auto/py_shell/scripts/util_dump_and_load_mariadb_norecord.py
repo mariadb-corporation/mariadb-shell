@@ -964,6 +964,78 @@ EXPECT_STDOUT_CONTAINS("NOTE: Dump format has version 1.0.0 and was created by a
 session1.run_sql("DROP SCHEMA oldfmt")
 wipeout_server(session2)
 
+#@<> progress file identity - setup
+# MARIADB_DUMP_LOAD.md 7.1; server_identity() and progress_file_of() are in
+# dump_utils.inc
+def recorded_identity(path):
+    with open(path, encoding="utf-8") as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    return [e for e in entries if e["op"] == "SERVER-UUID"][-1]["uuid"]
+
+# both servers get the same server_id, the collision this guards against
+saved_server_ids = [fetch_value(s, "SELECT @@GLOBAL.server_id") for s in [session1, session2]]
+for s in [session1, session2]:
+    s.run_sql("SET GLOBAL server_id = 1")
+
+identity1 = server_identity(session1)
+identity2 = server_identity(session2)
+EXPECT_NE(identity1, identity2, "the two servers have different identities despite the same server_id")
+EXPECT_TRUE(identity1.endswith(f"-{__mysql_sandbox_port1}-1"), identity1)
+
+session1.run_sql("CREATE SCHEMA pfid")
+session1.run_sql("CREATE TABLE pfid.t (id INT PRIMARY KEY, v VARCHAR(10))")
+session1.run_sql("INSERT INTO pfid.t VALUES (1, 'one'), (2, 'two')")
+pfid_dump = dump_dir_for("pfid")
+dump_schema("pfid", pfid_dump)
+
+#@<> progress file identity - the file is named after and records the identity
+shell.connect(__sandbox_uri2)
+EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "showProgress": False }), "load into the second server")
+EXPECT_TRUE(os.path.isfile(progress_file_of(pfid_dump, identity2)), "progress file named after the identity")
+EXPECT_EQ(identity2, recorded_identity(progress_file_of(pfid_dump, identity2)))
+
+#@<> progress file identity - a server with the same server_id gets its own file
+shell.connect(__sandbox_uri1)
+EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "showProgress": False }), "load into the first server")
+EXPECT_STDOUT_NOT_CONTAINS("There was no remaining data left to be loaded.")
+EXPECT_EQ(2, fetch_value(session1, "SELECT COUNT(*) FROM pfid_copy.t"))
+EXPECT_TRUE(os.path.isfile(progress_file_of(pfid_dump, identity1)), "second progress file")
+EXPECT_EQ(identity1, recorded_identity(progress_file_of(pfid_dump, identity1)))
+
+#@<> progress file identity - the other server's file is refused
+EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": progress_file_of(pfid_dump, identity2), "showProgress": False }), f"Progress file was created for a server identified as {identity2}, while the target server is identified as: {identity1}")
+
+#@<> progress file identity - a file named by an earlier release is not picked up by default
+# releases up to 26.11.0 named it after server_id alone and recorded only
+# that, which is also what another server with the same server_id leaves behind
+legacy_file = progress_file_of(pfid_dump, "1")
+os.rename(progress_file_of(pfid_dump, identity1), legacy_file)
+with open(legacy_file, encoding="utf-8") as f:
+    lines = f.readlines()
+lines[0] = json.dumps({"op": "SERVER-UUID", "done": True, "uuid": "1"}) + "\n"
+with open(legacy_file, "w", encoding="utf-8") as f:
+    f.writelines(lines)
+
+EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "showProgress": False }), "Duplicate objects found in destination database")
+EXPECT_STDOUT_NOT_CONTAINS("Load progress file detected")
+
+#@<> progress file identity - a file named by an earlier release resumes through progressFile
+EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": legacy_file, "showProgress": False }), "resume from the legacy file")
+EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed from where it was left, assuming no external updates were made.")
+EXPECT_STDOUT_CONTAINS("There was no remaining data left to be loaded.")
+# the resumed file now carries the full identity, so another server is refused from here on
+EXPECT_EQ(identity1, recorded_identity(legacy_file))
+shell.connect(__sandbox_uri2)
+EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": legacy_file, "showProgress": False }), f"Progress file was created for a server identified as {identity1}, while the target server is identified as: {identity2}")
+shell.connect(__sandbox_uri1)
+
+#@<> progress file identity - cleanup
+for s, server_id in zip([session1, session2], saved_server_ids):
+    s.run_sql("SET GLOBAL server_id = ?", [server_id])
+session1.run_sql("DROP SCHEMA pfid")
+session1.run_sql("DROP SCHEMA pfid_copy")
+wipeout_server(session2)
+
 #@<> Cleanup
 testutil.destroy_sandbox(__mysql_sandbox_port1)
 testutil.destroy_sandbox(__mysql_sandbox_port2)

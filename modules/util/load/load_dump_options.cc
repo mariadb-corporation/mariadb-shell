@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <iterator>
 #include <regex>
 #include <utility>
@@ -56,6 +57,24 @@ namespace mysqlsh {
 namespace {
 
 using Version = mysqlshdk::utils::Version;
+
+// MariaDB has no @@server_uuid, and @@server_id alone does not tell servers
+// apart (it is 1 on every server never configured for replication), so a
+// MariaDB server is identified by its own hostname, port and server_id. The
+// identity is also the progress file's name, hence only characters safe in
+// one; hostnames are case-insensitive and Load_progress_log compares
+// identities that way. See MARIADB_DUMP_LOAD.md section 7.1.
+std::string mariadb_server_identity(std::string hostname, uint64_t port,
+                                    const std::string &server_id) {
+  hostname += '-' + std::to_string(port) + '-' + server_id;
+  std::replace_if(
+      hostname.begin(), hostname.end(),
+      [](unsigned char c) {
+        return !std::isalnum(c) && c != '.' && c != '-' && c != '_';
+      },
+      '_');
+  return hostname;
+}
 
 constexpr auto k_minimum_max_bytes_per_transaction = 4096;
 
@@ -228,17 +247,25 @@ void Load_dump_options::on_set_session(
     }
   }
 
-  // @@server_uuid is MySQL-only; MariaDB identifies an instance by @@server_id.
-  // This value only names the default progress file and is recorded in the
-  // progress log so a resume can tell it is pointed at a different server, so
-  // any stable per-instance identifier does. Detected at run time rather than
-  // per build, because a MariaDB-linked shell can be pointed at MySQL and vice
-  // versa (see MARIADB_DUMP_LOAD.md section 2.1).
+  // Names the default progress file and is recorded in it, so a resume can
+  // tell it is pointed at another server; any stable per-instance identifier
+  // does. Detected at run time rather than per build, because a MariaDB-linked
+  // shell can be pointed at MySQL and vice versa (MARIADB_DUMP_LOAD.md 2.1).
   if (target_is_maria_db()) {
-    // @@server_id is an integer, unlike MySQL's @@server_uuid string.
-    m_server_uuid = std::to_string(session->query("SELECT @@server_id")
-                                       ->fetch_one_or_throw()
-                                       ->get_uint(0));
+    const auto result = session->query(
+        "SELECT @@GLOBAL.hostname, @@GLOBAL.port, @@GLOBAL.server_id");
+    const auto row = result->fetch_one_or_throw();
+    const auto server_id = std::to_string(row->get_uint(2));
+
+    m_server_uuid = mariadb_server_identity(row->get_string(0),
+                                            row->get_uint(1), server_id);
+
+    // COMPAT 26.11 progress file: releases up to 26.11.0 recorded server_id
+    // alone, and a progress file they wrote is resumed only when given as
+    // progressFile: picked up by name it could be another server's, since
+    // every unconfigured server has server_id 1. Remove with the other COMPAT
+    // 26.11 sites once resuming a load they started no longer matters.
+    m_legacy_server_uuid = server_id;
   } else {
     m_server_uuid = session->query("SELECT @@server_uuid")
                         ->fetch_one_or_throw()

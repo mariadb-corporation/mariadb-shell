@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -732,10 +733,18 @@ class Load_progress_log final {
                : it->second.details->get_string(std::string{Uuid::key});
   }
 
-  void set_server_uuid(const std::string &uuid) {
+  /**
+   * Records which server this log belongs to, or checks it when the log
+   * already has one. COMPAT 26.11 progress file: a log written by a release
+   * up to 26.11.0 may carry legacy_uuid instead; it is accepted once, and
+   * uuid is recorded so that later resumes are checked against it.
+   */
+  void set_server_uuid(const std::string &uuid,
+                       const std::string &legacy_uuid) {
     const auto saved_uuid = server_uuid();
 
-    if (saved_uuid.empty()) {
+    if (saved_uuid.empty() || (!shcore::str_caseeq(uuid, saved_uuid) &&
+                               shcore::str_caseeq(legacy_uuid, saved_uuid))) {
       write_log(true, Set_server_uuid{{}, uuid});
     } else if (!shcore::str_caseeq(uuid, saved_uuid)) {
       THROW_ERROR(SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH, saved_uuid.c_str(),

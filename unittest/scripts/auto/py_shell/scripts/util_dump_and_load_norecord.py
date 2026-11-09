@@ -1297,16 +1297,14 @@ session.run_sql(f"DROP USER IF EXISTS '{loader_user}'@'{host_with_netmask}'")
 # reuse dump dir from one of the tests above
 dump_dir = os.path.join(outdir, "host_with_netmask")
 
-server_id_var = "server_id" if __server_is_maria_db else "server_uuid"
-
 shell.connect(__sandbox_uri2)
-saved_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
+saved_uuid = server_identity(session)
 
 shell.connect(__sandbox_uri1)
-new_uuid = session.run_sql(f"SELECT @@{server_id_var}").fetch_one()[0]
+new_uuid = server_identity(session)
 
 #@<> BUG#32561035: test (4)
-EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": os.path.join(dump_dir, f"load-progress.{saved_uuid}.json"),"showProgress": False }), f"Progress file was created for a server with UUID {saved_uuid}, while the target server has UUID: {new_uuid}")
+EXPECT_THROWS(lambda: util.load_dump(dump_dir, { "progressFile": progress_file_of(dump_dir, saved_uuid), "showProgress": False }), f"Progress file was created for a server identified as {saved_uuid}, while the target server is identified as: {new_uuid}")
 EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed from where it was left, assuming no external updates were made.")
 
 #@<> WL14244 - help entries (4)

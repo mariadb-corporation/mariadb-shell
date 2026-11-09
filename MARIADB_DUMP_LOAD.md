@@ -700,8 +700,36 @@ On a MariaDB target the loader's sessions set `check_constraint_checks = 0`
 (§5.2), and none of the MySQL-only variables: `sql_generate_invisible_primary_key`,
 `restrict_fk_on_non_standard_key`, `innodb_parallel_read_threads`, and the
 `PS_CURRENT_THREAD_ID()` probe. `check_tables_without_primary_key()` tolerates the
-missing `sql_require_primary_key` row. The progress file is named after
-`@@server_id`, since MariaDB has no `server_uuid`.
+missing `sql_require_primary_key` row.
+
+**Progress file identity.** MySQL names the progress file after `@@server_uuid`
+and records it in the file's first entry (`SERVER-UUID`), so a resume pointed at
+another server's file is refused. MariaDB has no instance UUID, and `@@server_id`
+is `1` on every server never configured for replication, so two such servers
+loading one dump from one location would share `load-progress.1.json` and the
+second load would silently skip everything the first one did. The MariaDB
+identity is therefore `<hostname>-<port>-<server_id>`, read from the server's
+own `@@GLOBAL.hostname`, `@@GLOBAL.port` and `@@GLOBAL.server_id` (so it does not
+change with the route a resume takes: localhost vs IP, socket vs TCP, a tunnel),
+with anything unsafe in a file name replaced by `_`. It is both the default file
+name and the recorded `uuid`. `mariadb_server_identity()` in
+`load_dump_options.cc` builds it; the mismatch message is vendor-neutral
+("identified as").
+
+Releases up to 26.11.0 named the file `load-progress.<server_id>.json` and
+recorded the bare `server_id`. Such a file is never picked up by name: every
+unconfigured server has `server_id` 1, so a completed file another server left
+in the dump directory is indistinguishable from this server's own, and resuming
+it would silently load nothing (the collision this identity exists to prevent).
+It is resumed only when given as `progressFile`; `Load_progress_log::
+set_server_uuid()` then accepts the bare `server_id` once and records the full
+identity, so later resumes are checked against it. This compatibility is
+temporary: its sites are marked `COMPAT 26.11 progress file` and go together
+once resuming a load those releases started no longer matters. Known limits: a
+resume is not possible after the server changed hostname or port (a recreated
+container), and a `skip-networking` server reports port 0, so two such servers
+on one host with the same `server_id` still collide. An explicit `progressFile`
+covers both.
 
 `createInvisiblePKs` works on MariaDB 10.3+ (`supports_invisible_pks()`): the
 loader adds the column itself, through `INVISIBLE` columns, and needs no

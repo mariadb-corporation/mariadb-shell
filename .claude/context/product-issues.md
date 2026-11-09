@@ -22,7 +22,7 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 ### Utilities
 
 - **Every dump prints a stray warning:** `Charset id '33' csname 'UTF8' trying to replace existing csname 'utf8mb3'`.
-- **The load progress file name in the help is wrong.** The help gives `load-progress.<server_uuid>.progress` in one place and `.json` in another. On MariaDB the file is `load-progress.<server_id>.json` (observed: `load-progress.2.json`). [dump-and-load/load-dump-utility.md uses the real name]
+- **The load progress file name in the help is wrong.** The help gives `load-progress.<server_uuid>.progress` in one place and `.json` in another. On MariaDB the file is `load-progress.<hostname>-<port>-<server_id>.json`. [dump-and-load/load-dump-utility.md uses the real name]
 - **Minimum version not enforced.** "MariaDB 10.11 or newer" is stated in the help (`mod_util.cc`), but no code check enforces it. [dump-and-load/README.md repeats the help]
 - **MySQL-only options accepted silently for a MariaDB source:**
   - dump: `libraries`/`includeLibraries`/`excludeLibraries`, `dataMaskingPolicies`, `allowDataMasking`, `lakehouseTarget`

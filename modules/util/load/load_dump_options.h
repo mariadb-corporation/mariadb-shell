@@ -251,7 +251,19 @@ class Load_dump_options : public common::Common_options {
     return m_max_bytes_per_transaction;
   }
 
+  /**
+   * Identifies the target server in the progress file: @@server_uuid on
+   * MySQL, hostname-port-server_id on MariaDB.
+   */
   const std::string &server_uuid() const { return m_server_uuid; }
+
+  /**
+   * COMPAT 26.11 progress file: the identity releases up to 26.11.0 recorded
+   * for a MariaDB target (the bare @@server_id); empty on MySQL.
+   */
+  const std::string &legacy_server_uuid() const {
+    return m_legacy_server_uuid;
+  }
 
   const std::vector<std::string> &session_init_sql() const {
     return m_session_init_sql;
@@ -403,6 +415,7 @@ class Load_dump_options : public common::Common_options {
   std::optional<uint64_t> m_max_bytes_per_transaction;
 
   std::string m_server_uuid;
+  std::string m_legacy_server_uuid;
 
   std::vector<std::string> m_session_init_sql;
 

@@ -2440,7 +2440,8 @@ Dump_loader::filter_schema_objects(const std::string &schema) const {
 }
 
 void Dump_loader::on_dump_begin() {
-  m_load_log->set_server_uuid(m_options.server_uuid());
+  m_load_log->set_server_uuid(m_options.server_uuid(),
+                              m_options.legacy_server_uuid());
 
   const auto stage =
       m_progress_thread.start_stage("Executing common preamble SQL");

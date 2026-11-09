@@ -135,9 +135,9 @@
   "Error loading load progress file '%s': %s"
 
 #define SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH 53027
-#define SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH_MSG                         \
-  "Progress file was created for a server with UUID %s, while the target " \
-  "server has UUID: %s"
+#define SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH_MSG                           \
+  "Progress file was created for a server identified as %s, while the target " \
+  "server is identified as: %s"
 
 #define SHERR_LOAD_CORRUPTED_DUMP_MISSING_METADATA 53029
 #define SHERR_LOAD_CORRUPTED_DUMP_MISSING_METADATA_MSG \
