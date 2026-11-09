@@ -147,7 +147,8 @@ shell.connect(__sandbox_uri1)
 EXPECT_NO_THROWS(lambda: util.dump_tables("seqtest", ["t1"], seqtable_dump, { "showProgress": False }), "dump")
 EXPECT_STDOUT_CONTAINS("WARNING: Table `seqtest`.`t1` has a column DEFAULT which references sequence `s1`. The sequence is not included in this dump")
 EXPECT_THROWS(lambda: load(seqtable_dump), "Error loading dump")
-EXPECT_STDOUT_CONTAINS("Table 'seqtest.s1' doesn't exist")
+# MariaDB 13.2 reports a missing sequence as such (error 4091), older servers as a missing table
+EXPECT_STDOUT_MATCHES(re.compile(r"Table 'seqtest\.s1' doesn't exist|Unknown SEQUENCE: 's1'"))
 
 #@<> sequences - a cycling sequence keeps its cycle_count
 # the round - how many times a CYCLE sequence wrapped - is SETVAL's fourth
