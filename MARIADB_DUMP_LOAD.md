@@ -717,15 +717,19 @@ name and the recorded `uuid`. `mariadb_server_identity()` in
 ("identified as").
 
 Releases up to 26.11.0 named the file `load-progress.<server_id>.json` and
-recorded the bare `server_id`. Compatibility with those files is temporary: every
-site is marked `COMPAT 26.11 progress file`, and the whole set goes once resuming
-a load they started no longer matters. `Dump_loader::setup_progress_file()` falls back to that
-file, with a note, when the default name is used, no file exists under the new
-name and one does under the old one, and `Load_progress_log::set_server_uuid()`
-accepts the bare `server_id` as the recorded identity. Known limits: a resume is
-not possible after the server changed hostname or port (a recreated container),
-and a `skip-networking` server reports port 0, so two such servers on one host
-with the same `server_id` still collide. An explicit `progressFile` covers both.
+recorded the bare `server_id`. Such a file is never picked up by name: every
+unconfigured server has `server_id` 1, so a completed file another server left
+in the dump directory is indistinguishable from this server's own, and resuming
+it would silently load nothing (the collision this identity exists to prevent).
+It is resumed only when given as `progressFile`; `Load_progress_log::
+set_server_uuid()` then accepts the bare `server_id` once and records the full
+identity, so later resumes are checked against it. This compatibility is
+temporary: its sites are marked `COMPAT 26.11 progress file` and go together
+once resuming a load those releases started no longer matters. Known limits: a
+resume is not possible after the server changed hostname or port (a recreated
+container), and a `skip-networking` server reports port 0, so two such servers
+on one host with the same `server_id` still collide. An explicit `progressFile`
+covers both.
 
 `createInvisiblePKs` works on MariaDB 10.3+ (`supports_invisible_pks()`): the
 loader adds the column itself, through `INVISIBLE` columns, and needs no

@@ -124,14 +124,6 @@ class Load_dump_options : public common::Common_options {
   std::unique_ptr<mysqlshdk::storage::IFile> create_progress_file_handle()
       const;
 
-  /**
-   * COMPAT 26.11 progress file: the file a release up to 26.11.0 would have
-   * used for this MariaDB target (named after @@server_id alone), when the
-   * default progress file is in use; nullptr otherwise.
-   */
-  std::unique_ptr<mysqlshdk::storage::IFile> legacy_progress_file_handle()
-      const;
-
   const std::optional<std::string> &progress_file() const {
     return m_progress_file;
   }

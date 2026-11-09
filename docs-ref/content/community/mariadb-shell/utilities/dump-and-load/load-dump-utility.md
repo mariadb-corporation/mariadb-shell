@@ -151,7 +151,7 @@ NOTE: One or more objects in the dump already exist in the destination database 
 
 On MariaDB the default progress file is named after the target server's own `hostname`, `port` and `server_id` (as the server reports them, not as you connect to it), because MariaDB has no `server_uuid` and `server_id` alone does not tell servers apart. Characters that are not safe in a file name are replaced by `_`. The built-in help shows the MySQL name. The same identity is recorded in the file, and a load that finds a progress file written for another server stops with `Progress file was created for a server identified as ..., while the target server is identified as: ...`.
 
-Earlier versions of MariaDB Shell named the file `load-progress.<server_id>.json`. A load that finds no file under the new name but one under the old one resumes from the old one and says so.
+Earlier versions of MariaDB Shell named the file `load-progress.<server_id>.json`. Such a file is not picked up on its own, because another server with the same `server_id` may have written it. To resume a load an earlier version left unfinished, pass that file as `progressFile`; from then on it carries the full identity.
 
 {% hint style="info" %}
 Because the identity includes the server's hostname and port, a load cannot be resumed after the server was moved to another host or port, or a container was recreated with a new hostname. Give the load an explicit `progressFile` in such setups.

@@ -261,8 +261,10 @@ void Load_dump_options::on_set_session(
                                             row->get_uint(1), server_id);
 
     // COMPAT 26.11 progress file: releases up to 26.11.0 recorded server_id
-    // alone. Remove with the other COMPAT 26.11 sites once resuming a load
-    // they started no longer matters.
+    // alone, and a progress file they wrote is resumed only when given as
+    // progressFile: picked up by name it could be another server's, since
+    // every unconfigured server has server_id 1. Remove with the other COMPAT
+    // 26.11 sites once resuming a load they started no longer matters.
     m_legacy_server_uuid = server_id;
   } else {
     m_server_uuid = session->query("SELECT @@server_uuid")
@@ -541,15 +543,6 @@ Load_dump_options::create_progress_file_handle() const {
     return create_dump_handle()->file(m_default_progress_file);
   else
     return make_file(*m_progress_file);
-}
-
-std::unique_ptr<mysqlshdk::storage::IFile>
-Load_dump_options::legacy_progress_file_handle() const {
-  // COMPAT 26.11 progress file: the name releases up to 26.11.0 used.
-  if (m_legacy_server_uuid.empty() || m_progress_file.has_value()) return {};
-
-  return create_dump_handle()->file("load-progress." + m_legacy_server_uuid +
-                                    ".json");
 }
 
 void Load_dump_options::set_progress_file(const std::string &file) {

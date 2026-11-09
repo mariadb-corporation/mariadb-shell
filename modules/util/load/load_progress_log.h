@@ -736,16 +736,17 @@ class Load_progress_log final {
   /**
    * Records which server this log belongs to, or checks it when the log
    * already has one. COMPAT 26.11 progress file: a log written by a release
-   * up to 26.11.0 may carry legacy_uuid instead; it is accepted as it is.
+   * up to 26.11.0 may carry legacy_uuid instead; it is accepted once, and
+   * uuid is recorded so that later resumes are checked against it.
    */
   void set_server_uuid(const std::string &uuid,
                        const std::string &legacy_uuid) {
     const auto saved_uuid = server_uuid();
 
-    if (saved_uuid.empty()) {
+    if (saved_uuid.empty() || (!shcore::str_caseeq(uuid, saved_uuid) &&
+                               shcore::str_caseeq(legacy_uuid, saved_uuid))) {
       write_log(true, Set_server_uuid{{}, uuid});
-    } else if (!shcore::str_caseeq(uuid, saved_uuid) &&
-               !shcore::str_caseeq(legacy_uuid, saved_uuid)) {
+    } else if (!shcore::str_caseeq(uuid, saved_uuid)) {
       THROW_ERROR(SHERR_LOAD_PROGRESS_FILE_UUID_MISMATCH, saved_uuid.c_str(),
                   uuid.c_str());
     }

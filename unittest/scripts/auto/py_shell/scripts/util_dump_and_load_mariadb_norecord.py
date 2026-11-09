@@ -969,7 +969,8 @@ wipeout_server(session2)
 # dump_utils.inc
 def recorded_identity(path):
     with open(path, encoding="utf-8") as f:
-        return json.loads(f.readline())["uuid"]
+        entries = [json.loads(line) for line in f if line.strip()]
+    return [e for e in entries if e["op"] == "SERVER-UUID"][-1]["uuid"]
 
 # both servers get the same server_id, the collision this guards against
 saved_server_ids = [fetch_value(s, "SELECT @@GLOBAL.server_id") for s in [session1, session2]]
@@ -1004,8 +1005,9 @@ EXPECT_EQ(identity1, recorded_identity(progress_file_of(pfid_dump, identity1)))
 #@<> progress file identity - the other server's file is refused
 EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": progress_file_of(pfid_dump, identity2), "showProgress": False }), f"Progress file was created for a server identified as {identity2}, while the target server is identified as: {identity1}")
 
-#@<> progress file identity - a file named by an earlier release is resumed
-# earlier releases named it after server_id alone and recorded only that
+#@<> progress file identity - a file named by an earlier release is not picked up by default
+# releases up to 26.11.0 named it after server_id alone and recorded only
+# that, which is also what another server with the same server_id leaves behind
 legacy_file = progress_file_of(pfid_dump, "1")
 os.rename(progress_file_of(pfid_dump, identity1), legacy_file)
 with open(legacy_file, encoding="utf-8") as f:
@@ -1014,11 +1016,18 @@ lines[0] = json.dumps({"op": "SERVER-UUID", "done": True, "uuid": "1"}) + "\n"
 with open(legacy_file, "w", encoding="utf-8") as f:
     f.writelines(lines)
 
-EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "showProgress": False }), "resume from the legacy file")
-EXPECT_STDOUT_CONTAINS(f"NOTE: Load progress file '{legacy_file}' was written by an earlier version of MariaDB Shell, which named it after the server ID alone. It is used in place of '{progress_file_of(pfid_dump, identity1)}'.")
+EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "showProgress": False }), "Duplicate objects found in destination database")
+EXPECT_STDOUT_NOT_CONTAINS("Load progress file detected")
+
+#@<> progress file identity - a file named by an earlier release resumes through progressFile
+EXPECT_NO_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": legacy_file, "showProgress": False }), "resume from the legacy file")
 EXPECT_STDOUT_CONTAINS("NOTE: Load progress file detected. Load will be resumed from where it was left, assuming no external updates were made.")
 EXPECT_STDOUT_CONTAINS("There was no remaining data left to be loaded.")
-EXPECT_FALSE(os.path.isfile(progress_file_of(pfid_dump, identity1)), "no second file was started")
+# the resumed file now carries the full identity, so another server is refused from here on
+EXPECT_EQ(identity1, recorded_identity(legacy_file))
+shell.connect(__sandbox_uri2)
+EXPECT_THROWS(lambda: util.load_dump(pfid_dump, { "schema": "pfid_copy", "progressFile": legacy_file, "showProgress": False }), f"Progress file was created for a server identified as {identity1}, while the target server is identified as: {identity2}")
+shell.connect(__sandbox_uri1)
 
 #@<> progress file identity - cleanup
 for s, server_id in zip([session1, session2], saved_server_ids):
