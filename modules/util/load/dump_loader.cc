@@ -2440,7 +2440,8 @@ Dump_loader::filter_schema_objects(const std::string &schema) const {
 }
 
 void Dump_loader::on_dump_begin() {
-  m_load_log->set_server_uuid(m_options.server_uuid());
+  m_load_log->set_server_uuid(m_options.server_uuid(),
+                              m_options.legacy_server_uuid());
 
   const auto stage =
       m_progress_thread.start_stage("Executing common preamble SQL");
@@ -4364,6 +4365,21 @@ void Dump_loader::setup_progress_file(bool *out_is_resuming) {
   if (!m_options.progress_file().has_value() ||
       !m_options.progress_file()->empty()) {
     auto progress_file = m_dump->create_progress_file_handle();
+
+    // A MariaDB load an earlier release left unfinished has its progress in a
+    // file named after @@server_id alone; resume from that one rather than
+    // start a second file next to it and fail on the objects it created.
+    if (auto legacy = m_options.legacy_progress_file_handle();
+        legacy && !progress_file->exists() && legacy->exists()) {
+      console->print_note(shcore::str_format(
+          "Load progress file '%s' was written by an earlier version of "
+          "MariaDB Shell, which named it after the server ID alone. It is "
+          "used in place of '%s'.",
+          legacy->full_path().masked().c_str(),
+          progress_file->full_path().masked().c_str()));
+      progress_file = std::move(legacy);
+    }
+
     const auto path = progress_file->full_path().masked();
     bool rewrite_on_flush = !progress_file->is_local();
 

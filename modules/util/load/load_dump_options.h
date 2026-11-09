@@ -124,6 +124,14 @@ class Load_dump_options : public common::Common_options {
   std::unique_ptr<mysqlshdk::storage::IFile> create_progress_file_handle()
       const;
 
+  /**
+   * The progress file an earlier release would have used for this MariaDB
+   * target (named after @@server_id alone), when the default progress file
+   * is in use; nullptr otherwise.
+   */
+  std::unique_ptr<mysqlshdk::storage::IFile> legacy_progress_file_handle()
+      const;
+
   const std::optional<std::string> &progress_file() const {
     return m_progress_file;
   }
@@ -251,7 +259,19 @@ class Load_dump_options : public common::Common_options {
     return m_max_bytes_per_transaction;
   }
 
+  /**
+   * Identifies the target server in the progress file: @@server_uuid on
+   * MySQL, hostname-port-server_id on MariaDB.
+   */
   const std::string &server_uuid() const { return m_server_uuid; }
+
+  /**
+   * The identity earlier releases recorded for a MariaDB target (the bare
+   * @@server_id); empty on MySQL.
+   */
+  const std::string &legacy_server_uuid() const {
+    return m_legacy_server_uuid;
+  }
 
   const std::vector<std::string> &session_init_sql() const {
     return m_session_init_sql;
@@ -371,6 +391,7 @@ class Load_dump_options : public common::Common_options {
   bool m_reset_progress = false;
   std::optional<std::string> m_progress_file;
   std::string m_default_progress_file;
+  std::string m_legacy_progress_file;
   std::string m_character_set;
   bool m_load_data = true;
   bool m_load_ddl = true;
@@ -403,6 +424,7 @@ class Load_dump_options : public common::Common_options {
   std::optional<uint64_t> m_max_bytes_per_transaction;
 
   std::string m_server_uuid;
+  std::string m_legacy_server_uuid;
 
   std::vector<std::string> m_session_init_sql;
 

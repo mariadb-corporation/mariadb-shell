@@ -700,8 +700,29 @@ On a MariaDB target the loader's sessions set `check_constraint_checks = 0`
 (§5.2), and none of the MySQL-only variables: `sql_generate_invisible_primary_key`,
 `restrict_fk_on_non_standard_key`, `innodb_parallel_read_threads`, and the
 `PS_CURRENT_THREAD_ID()` probe. `check_tables_without_primary_key()` tolerates the
-missing `sql_require_primary_key` row. The progress file is named after
-`@@server_id`, since MariaDB has no `server_uuid`.
+missing `sql_require_primary_key` row.
+
+**Progress file identity.** MySQL names the progress file after `@@server_uuid`
+and records it in the file's first entry (`SERVER-UUID`), so a resume pointed at
+another server's file is refused. MariaDB has no instance UUID, and `@@server_id`
+is `1` on every server never configured for replication, so two such servers
+loading one dump from one location would share `load-progress.1.json` and the
+second load would silently skip everything the first one did. The MariaDB
+identity is therefore `<hostname>-<port>-<server_id>`, read from the server's
+own `@@GLOBAL.hostname`, `@@GLOBAL.port` and `@@GLOBAL.server_id` (so it does not
+change with the route a resume takes: localhost vs IP, socket vs TCP, a tunnel),
+with anything unsafe in a file name replaced by `_`. It is both the default file
+name and the recorded `uuid`. `Load_dump_options` computes it; the mismatch
+message is vendor-neutral ("identified as") for both vendors.
+
+Earlier releases named the file `load-progress.<server_id>.json` and recorded
+the bare `server_id`. `Dump_loader::setup_progress_file()` falls back to that
+file, with a note, when the default name is used, no file exists under the new
+name and one does under the old one, and `Load_progress_log::set_server_uuid()`
+accepts the bare `server_id` as the recorded identity. Known limits: a resume is
+not possible after the server changed hostname or port (a recreated container),
+and a `skip-networking` server reports port 0, so two such servers on one host
+with the same `server_id` still collide. An explicit `progressFile` covers both.
 
 `createInvisiblePKs` works on MariaDB 10.3+ (`supports_invisible_pks()`): the
 loader adds the column itself, through `INVISIBLE` columns, and needs no

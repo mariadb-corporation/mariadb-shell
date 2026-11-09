@@ -68,7 +68,7 @@ Back to the index: [../PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md). The product b
   - every data file has a `.idx` next to it
   - partitions are `schema@table@partition@@0`
   - other files are `@.json`, `@.done.json`, `@.users.sql`, `@.checksums.json` and `<view>.pre.sql`
-  - the load progress file is `load-progress.<server_id>.json`
+  - the load progress file is `load-progress.<hostname>-<port>-<server_id>.json` on MariaDB (`load-progress.<server_uuid>.json` on MySQL); the identity and the `COMPAT 26.11` handling of the older `load-progress.<server_id>.json` are in `MARIADB_DUMP_LOAD.md` § Progress file identity
 - **Verified behaviors** on 12.3:
   - Recipes 2–4 of Quick Start work, including replica provisioning with `updateGtidSet: "replace"` followed by `START REPLICA`.
   - `createInvisiblePKs` works on load.
