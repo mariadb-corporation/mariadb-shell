@@ -150,7 +150,7 @@ ALTER REST SCHEMA /sakila ON SERVICE /myService
 
 ## DROP REST SCHEMA
 
-The `DROP REST SCHEMA` statement drops an existing REST schema. With `IF EXISTS`, it does nothing when the REST schema or the REST service it names doesn't exist.
+The `DROP REST SCHEMA` statement drops an existing REST schema. With `IF EXISTS`, it does nothing when the REST schema or the REST service it names doesn't exist, or when the server has no REST metadata at all.
 
 With `FOR SCHEMA` (or `FOR DATABASE`), the statement drops the REST schema only while it serves the given database schema. The names are compared the way the server compares schema names. With `IF EXISTS`, a REST schema on another database schema is left alone, as a missing one is. This lets a deployment script drop a REST schema that moved to another database schema on every deployment: servers still on the old database schema drop it, and servers already moved, or new installs, keep theirs.
 

@@ -37,6 +37,24 @@ EXPECT_EQ([], rest_rows("SHOW REST METADATA SCHEMAS"))
 EXPECT_EQ([["[]"]], rest_rows("SHOW REST METADATA SCHEMAS FORMAT=JSON"))
 EXPECT_EQ(["REST METADATA SCHEMAS"], rest("SHOW REST METADATA SCHEMAS FORMAT=JSON").get_column_names())
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES"), "The MRS metadata schema `mariadb_rest_service` is not installed. Run CONFIGURE REST METADATA first.")
+# The IF EXISTS removals have nothing to do: a deployment script runs them on
+# a fresh install too. Without IF EXISTS, and anything else, they still fail.
+nothing = "The REST metadata is not configured, so there is nothing to remove."
+for statement in ["DROP REST SERVICE IF EXISTS /svc",
+                  "DROP REST SCHEMA IF EXISTS /s FROM SERVICE /svc",
+                  "DROP REST SCHEMA IF EXISTS /s FROM SERVICE /svc FOR DATABASE db",
+                  "DROP REST VIEW IF EXISTS /v FROM SERVICE /svc SCHEMA /s",
+                  "DROP REST PROCEDURE IF EXISTS /p FROM SERVICE /svc SCHEMA /s",
+                  "DROP REST FUNCTION IF EXISTS /f FROM SERVICE /svc SCHEMA /s",
+                  "ALTER REST SERVICE /svc REMOVE AUTH APP 'app' IF EXISTS"]:
+    res = rest(statement)
+    EXPECT_EQ(nothing, res.get_info(), statement)
+    EXPECT_EQ(0, res.get_affected_items_count(), statement)
+for statement in ["DROP REST SERVICE /svc",
+                  "DROP REST SCHEMA /s FROM SERVICE /svc",
+                  "ALTER REST SERVICE /svc REMOVE AUTH APP 'app'",
+                  "ALTER REST SERVICE /svc COMMENT 'x' REMOVE AUTH APP 'app' IF EXISTS"]:
+    EXPECT_THROWS(lambda: rest(statement), "The MRS metadata schema `mariadb_rest_service` is not installed.")
 
 #@<> CONFIGURE REST METADATA deploys the default schema and roles
 EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA"))
@@ -108,6 +126,9 @@ session.run_sql("DROP SCHEMA mariadb_rest_service")
 other = shell.open_session(__sandbox_uri1)
 EXPECT_THROWS(lambda: rest("SHOW REST SERVICES", other), "There are several REST metadata schemas: `acme_mariadb_rest_service_eu`, `beta_mariadb_rest_service`. Choose one with USE REST METADATA SCHEMA <name>.")
 EXPECT_THROWS(lambda: rest("SHOW REST METADATA STATUS", other), "There are several REST metadata schemas")
+# Metadata the session has not chosen still counts: an IF EXISTS removal
+# fails as the other statements do, rather than leave endpoints behind
+EXPECT_THROWS(lambda: rest("DROP REST SERVICE IF EXISTS /svc", other), "There are several REST metadata schemas")
 EXPECT_EQ([["acme_mariadb_rest_service_eu", "5.0.0", "NO"], ["beta_mariadb_rest_service", "5.0.0", "NO"]], rest_rows("SHOW REST METADATA SCHEMAS", other))
 rest("USE REST METADATA SCHEMA beta_mariadb_rest_service", other)
 EXPECT_EQ([], rest_rows("SHOW REST SERVICES", other))

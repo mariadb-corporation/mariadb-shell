@@ -56,6 +56,17 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
   m_failure_context.clear();
 
   try {
+    // IF EXISTS removals have nothing to do on a server without any REST
+    // metadata: a deployment script runs them on a fresh install too
+    if (is_removal_if_exists(statement) && !rest_metadata_exists()) {
+      result.message =
+          "The REST metadata is not configured, so there is nothing to remove.";
+      result.execution_time = std::chrono::duration<double>(
+                                  std::chrono::steady_clock::now() - start)
+                                  .count();
+      return result;
+    }
+
     // The statements on the metadata schema itself work without one, and
     // find it themselves
     if (!statement.is<Configure_rest_metadata>() &&
@@ -86,6 +97,27 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
 }
 
 // -- Shared helpers -------------------------------------------------------
+
+bool Ddl_executor::is_removal_if_exists(const Statement &statement) {
+  if (const auto s = statement.as<Drop_rest_service>()) return s->if_exists;
+  if (const auto s = statement.as<Drop_rest_schema>()) return s->if_exists;
+  if (const auto s = statement.as<Drop_rest_object>()) return s->if_exists;
+  if (const auto s = statement.as<Alter_rest_service>()) {
+    return !s->new_path && s->options.only_removes_if_exists();
+  }
+  return false;
+}
+
+bool Ddl_executor::rest_metadata_exists() {
+  if (m_metadata_checked) return true;
+  // Any metadata schema on the server counts, chosen or not: the statement
+  // then runs as usual, and fails as usual where it has to (several
+  // schemas, a chosen one that does not exist)
+  if (!metadata::find_metadata_schemas(m_session).empty()) return true;
+  m_session->set_metadata_schema(m_state->assumed_metadata_schema());
+  return metadata::schema_exists(m_session);
+}
+
 
 void Ddl_executor::check_metadata() {
   if (m_metadata_checked) return;

@@ -283,6 +283,14 @@ class Ddl_executor {
     return find();
   }
 
+  // DROP REST SERVICE/SCHEMA/VIEW/PROCEDURE/FUNCTION IF EXISTS, and ALTER
+  // REST SERVICE that only removes auth apps IF EXISTS: the statements that
+  // are a no-op on a server without any REST metadata.
+  static bool is_removal_if_exists(const ast::Statement &statement);
+  // Whether the server has any REST metadata schema, or the one the session
+  // would use.
+  bool rest_metadata_exists();
+
   // Checks once per run that the metadata schema can be used and that the
   // current service / schema still exist. A fingerprint equal to the one
   // of the previous run skips the checks it covers.
