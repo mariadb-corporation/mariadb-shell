@@ -61,23 +61,19 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
     if (is_removal_if_exists(statement) && !rest_metadata_exists()) {
       result.message =
           "The REST metadata is not configured, so there is nothing to remove.";
-      result.execution_time = std::chrono::duration<double>(
-                                  std::chrono::steady_clock::now() - start)
-                                  .count();
-      return result;
-    }
+    } else {
+      // The statements on the metadata schema itself work without one, and
+      // find it themselves
+      if (!statement.is<Configure_rest_metadata>() &&
+          !statement.is<Show_rest_metadata_status>() &&
+          !statement.is<Use_rest_metadata_schema>() &&
+          !statement.is<Show_rest_metadata_schemas>()) {
+        check_metadata();
+      }
 
-    // The statements on the metadata schema itself work without one, and
-    // find it themselves
-    if (!statement.is<Configure_rest_metadata>() &&
-        !statement.is<Show_rest_metadata_status>() &&
-        !statement.is<Use_rest_metadata_schema>() &&
-        !statement.is<Show_rest_metadata_schemas>()) {
-      check_metadata();
+      std::visit([this, &result](const auto &s) { do_execute(s, &result); },
+                 statement.value);
     }
-
-    std::visit([this, &result](const auto &s) { do_execute(s, &result); },
-               statement.value);
   } catch (const std::exception &e) {
     if (const auto db_error = dynamic_cast<const Db_error *>(&e)) {
       result.error_code = db_error->code();
@@ -103,21 +99,21 @@ bool Ddl_executor::is_removal_if_exists(const Statement &statement) {
   if (const auto s = statement.as<Drop_rest_schema>()) return s->if_exists;
   if (const auto s = statement.as<Drop_rest_object>()) return s->if_exists;
   if (const auto s = statement.as<Alter_rest_service>()) {
-    return !s->new_path && s->options.only_removes_if_exists();
+    return s->only_removes_if_exists();
   }
   return false;
 }
 
 bool Ddl_executor::rest_metadata_exists() {
-  if (m_metadata_checked) return true;
+  // A valid fingerprint was read from the metadata schema in use
+  if (m_metadata_checked || (m_fingerprint && m_fingerprint->valid)) return true;
   // Any metadata schema on the server counts, chosen or not: the statement
   // then runs as usual, and fails as usual where it has to (several
-  // schemas, a chosen one that does not exist)
+  // schemas, a chosen one that does not exist). The session is on the
+  // schema it would use (the constructor, USE REST METADATA SCHEMA).
   if (!metadata::find_metadata_schemas(m_session).empty()) return true;
-  m_session->set_metadata_schema(m_state->assumed_metadata_schema());
   return metadata::schema_exists(m_session);
 }
-
 
 void Ddl_executor::check_metadata() {
   if (m_metadata_checked) return;

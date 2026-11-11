@@ -352,6 +352,12 @@ struct Alter_rest_service {
   Service_path path;
   std::optional<Service_path> new_path;
   Service_options options;
+
+  // Whether the statement does nothing but REMOVE AUTH APP ... IF EXISTS,
+  // which a missing service, or missing REST metadata, makes a no-op.
+  bool only_removes_if_exists() const {
+    return !new_path && options.only_removes_if_exists();
+  }
 };
 
 struct Alter_rest_schema {

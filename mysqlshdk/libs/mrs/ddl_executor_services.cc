@@ -145,7 +145,7 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   // do on a missing service: a deployment script can run it before the
   // service is created, or after an earlier deployment dropped it
   const auto found = require_service(
-      s.path, !s.new_path && s.options.only_removes_if_exists());
+      s.path, s.only_removes_if_exists());
   if (!found) return;
   const auto &service_id = *found;
 
