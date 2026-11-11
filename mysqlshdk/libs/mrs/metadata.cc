@@ -383,10 +383,11 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
   return fingerprint;
 }
 
-bool row_exists(Db_session *session, std::string_view table, const Id &id) {
+bool row_exists(Db_session *session, std::string_view table, const Id &id,
+                std::string_view column) {
   return !session
-              ->query("SELECT 1 FROM " + sql::metadata_table(table) +
-                          " WHERE id = ?",
+              ->query("SELECT 1 FROM " + sql::metadata_table(table) + " WHERE " +
+                          std::string(column) + " = ? LIMIT 1",
                       {Value::id(id)})
               .empty();
 }
@@ -961,13 +962,7 @@ namespace {
 void check_database_change(Db_session *session, const Schema &schema,
                            const std::string &name) {
   if (same_database_schema(session, schema.name, name)) return;
-  const bool has_objects =
-      !session
-           ->query("SELECT 1 FROM " + sql::metadata_table("rest_object") +
-                       " WHERE rest_schema_id = ? LIMIT 1",
-                   {Value::id(schema.id)})
-           .empty();
-  if (has_objects) {
+  if (row_exists(session, "rest_object", schema.id, "rest_schema_id")) {
     throw std::runtime_error(
         "Its database schema cannot change from `" + schema.name + "` to `" +
         name + "` while it has REST objects. Drop them, or the REST SCHEMA, first.");

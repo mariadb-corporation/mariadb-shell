@@ -237,9 +237,9 @@ class Ddl_executor {
   // Same, but returns nullopt when no service is given nor current.
   std::optional<Id> resolve_service(
       const std::optional<ast::Service_path> &given);
-  // The service of a role statement: `ON ANY SERVICE` yields nullopt.
   // The id of the named service, or nullopt when it does not exist.
   std::optional<Id> find_named_service(const ast::Service_path &given);
+  // The service of a role statement: `ON ANY SERVICE` yields nullopt.
   std::optional<Id> resolve_role_service(
       const std::optional<ast::Role_service> &given);
 

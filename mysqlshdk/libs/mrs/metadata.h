@@ -146,8 +146,9 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
 // batches and kept in the session's id pool.
 Id new_id(Db_session *session);
 
-// Whether a metadata table has a row with the id.
-bool row_exists(Db_session *session, std::string_view table, const Id &id);
+// Whether a metadata table has a row with the id in the given id column.
+bool row_exists(Db_session *session, std::string_view table, const Id &id,
+                std::string_view column = "id");
 
 // The ids and names used as "enabled" captions in SHOW output.
 std::string enabled_caption(int enabled);

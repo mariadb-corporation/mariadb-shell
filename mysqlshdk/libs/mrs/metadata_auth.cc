@@ -635,8 +635,11 @@ Id add_role(Db_session *session, const Role_definition &definition) {
 
 void replace_role(Db_session *session, const Id &id,
                   const Role_definition &definition) {
-  // A role cannot extend itself, directly or through the roles it extends
-  for (auto parent = definition.derived_from_role_id; parent;) {
+  // A role cannot extend itself, directly or through the roles it extends;
+  // a cycle among other roles (metadata edited by hand) ends the walk too
+  std::set<Id> seen;
+  for (auto parent = definition.derived_from_role_id;
+       parent && seen.insert(*parent).second;) {
     if (*parent == id) {
       throw std::runtime_error("The REST role `" + definition.caption +
                                "` cannot extend itself.");
@@ -1046,11 +1049,7 @@ void replace_auth_app(Db_session *session, const Auth_app &auth_app,
   // The users of an app are those of its vendor: an MRS user has a password
   // hash, the users of the others a vendor_user_id
   if (definition.auth_vendor_id != auth_app.auth_vendor_id &&
-      !session
-           ->query("SELECT 1 FROM " + sql::metadata_table("mrs_user") +
-                       " WHERE auth_app_id = ? LIMIT 1",
-                   {Value::id(auth_app.id)})
-           .empty()) {
+      row_exists(session, "mrs_user", auth_app.id, "auth_app_id")) {
     throw std::runtime_error(
         "The vendor of the REST AUTH APP `" + auth_app.name +
         "` cannot be changed as it has users. Drop the REST AUTH APP first.");
