@@ -62,12 +62,13 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
 
   const auto service_id = require_service(s.service);
 
+  // OR REPLACE writes an existing content set anew in place: it keeps its
+  // id, its files and the MRS scripts registered from them
+  std::optional<Id> replaced_id;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_content_set(m_session, service_id, s.path); },
-          [&](const auto &existing) {
-            metadata::delete_content_set(m_session, existing.id);
-          })) {
+          [&](const auto &existing) { replaced_id = existing.id; })) {
     r->message = "REST content set `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -81,7 +82,11 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   definition.comments = s.options.comments;
   definition.options = content_set_options(s.options);
 
-  const Id id = metadata::add_content_set(m_session, definition);
+  if (replaced_id) {
+    metadata::replace_content_set(m_session, *replaced_id, definition);
+  } else {
+    metadata::add_content_set(m_session, definition);
+  }
 
   transaction.commit();
 
@@ -238,9 +243,10 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
   if (!s.flags.or_replace && !s.flags.if_not_exists && find_file()) {
     throw std::runtime_error("The request_path is already used by another entity.");
   }
-  if (keep_existing(s.flags, find_file, [&](const auto &existing) {
-        metadata::delete_content_file(m_session, existing.id);
-      })) {
+  // OR REPLACE writes an existing file anew in place, keeping its id
+  std::optional<Id> replaced_id;
+  if (keep_existing(s.flags, find_file,
+                    [&](const auto &existing) { replaced_id = existing.id; })) {
     r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -259,7 +265,11 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
     definition.content = s.content.value_or("");
   }
 
-  const Id id = metadata::add_content_file(m_session, definition);
+  if (replaced_id) {
+    metadata::replace_content_file(m_session, *replaced_id, definition);
+  } else {
+    metadata::add_content_file(m_session, definition);
+  }
 
   transaction.commit();
 

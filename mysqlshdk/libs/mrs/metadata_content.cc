@@ -229,27 +229,57 @@ std::vector<Content_set> get_content_sets(Db_session *session,
                             {Value::id(service_id)});
 }
 
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST CONTENT SET sets, for a new content
+// set and for the one it replaces in place alike.
+template <typename Statement>
+void set_content_set_columns(Statement *statement,
+                             const Content_set_definition &definition) {
+  statement->set("requires_auth", definition.requires_auth.value_or(false));
+  statement->set("enabled", definition.enabled.value_or(1));
+  statement->set("comments", definition.comments.value_or(""));
+  statement->set("options", definition.options);
+}
+
+// The same for a CREATE [OR REPLACE] REST CONTENT FILE.
+template <typename Statement>
+void set_content_file_columns(Statement *statement,
+                              const Content_file_definition &definition) {
+  statement->set("requires_auth", definition.requires_auth.value_or(false));
+  statement->set("enabled", definition.enabled.value_or(1));
+  statement->set("content", blob_value(definition.content));
+  statement->set("options", definition.options);
+}
+
+}  // namespace
+
 Id add_content_set(Db_session *session, const Content_set_definition &definition) {
   if (definition.request_path.empty() || definition.request_path[0] != '/') {
     throw std::runtime_error("The request_path has to start with '/'.");
   }
-
-  const bool requires_auth = definition.requires_auth.value_or(false);
 
   const Id id = definition.id ? *definition.id : new_id(session);
   sql::Insert insert("content_set");
   insert.set("id", Value::id(id));
   insert.set("service_id", Value::id(definition.service_id));
   insert.set("request_path", definition.request_path);
-  insert.set("requires_auth", requires_auth);
-  insert.set("enabled", definition.enabled.value_or(1));
-  insert.set("comments", definition.comments.value_or(""));
-  insert.set("options", definition.options);
+  set_content_set_columns(&insert, definition);
   insert.set("content_type", definition.content_type);
   insert.set_if("internal", definition.internal);
   session->execute(insert);
 
   return id;
+}
+
+void replace_content_set(Db_session *session, const Id &id,
+                         const Content_set_definition &definition) {
+  // The service and the request path found the content set; they stay, as
+  // do its type, its files and the MRS scripts registered from them
+  sql::Update update("content_set");
+  set_content_set_columns(&update, definition);
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void update_content_set(Db_session *session, const Id &id,
@@ -375,12 +405,17 @@ Id add_content_file(Db_session *session,
   insert.set("id", Value::id(id));
   insert.set("content_set_id", Value::id(definition.content_set_id));
   insert.set("request_path", definition.request_path);
-  insert.set("requires_auth", definition.requires_auth.value_or(false));
-  insert.set("enabled", definition.enabled.value_or(1));
-  insert.set("content", blob_value(definition.content));
-  insert.set("options", definition.options);
+  set_content_file_columns(&insert, definition);
   session->execute(insert);
   return id;
+}
+
+void replace_content_file(Db_session *session, const Id &id,
+                          const Content_file_definition &definition) {
+  sql::Update update("content_file");
+  set_content_file_columns(&update, definition);
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_content_file(Db_session *session, const Id &id) {

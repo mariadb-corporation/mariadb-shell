@@ -175,6 +175,12 @@ class Insert {
     if (value) set(column, *value);
     return *this;
   }
+  // The same for an INSERT: an absent value leaves the column its DEFAULT
+  // (see Update::set_or_default(), which writes the same row anew).
+  template <typename T>
+  Insert &set_or_default(std::string_view column, const std::optional<T> &value) {
+    return set_if(column, value);
+  }
   // Starts the next row of a multi-row insert; the set() calls that follow
   // fill it. A column a row leaves out gets DEFAULT in that row.
   Insert &next_row() {
@@ -210,6 +216,12 @@ class Update {
   }
   // An assignment of its own, e.g.
   // "options = JSON_MERGE_PATCH(options, ?)", with its values.
+  // Sets the column to the value, or back to its DEFAULT when the optional
+  // is empty: the column values of a row that is written anew in place.
+  template <typename T>
+  Update &set_or_default(std::string_view column, const std::optional<T> &value) {
+    return set(column, value ? Value(*value) : Value::raw("DEFAULT"));
+  }
   Update &set_raw(std::string assignment, std::vector<Value> params = {}) {
     m_raw_sets.emplace_back(std::move(assignment), std::move(params));
     return *this;

@@ -622,6 +622,29 @@ Id add_role(Db_session *session, const Role_definition &definition) {
   return id;
 }
 
+void replace_role(Db_session *session, const Id &id,
+                  const Role_definition &definition) {
+  // A role cannot extend itself, directly or through the roles it extends
+  for (auto parent = definition.derived_from_role_id; parent;) {
+    if (*parent == id) {
+      throw std::runtime_error("The REST role `" + definition.caption +
+                               "` cannot extend itself.");
+    }
+    const auto role = get_role(session, *parent);
+    parent = role ? role->derived_from_role_id : std::nullopt;
+  }
+
+  // The caption and the service found the role; its privileges and its
+  // grants to users and groups stay
+  session->execute(
+      sql::Update("mrs_role")
+          .set("derived_from_role_id", Value::id(definition.derived_from_role_id))
+          .set("caption", definition.caption)
+          .set("description", definition.description)
+          .set("options", definition.options)
+          .where("id", Value::id(id)));
+}
+
 void delete_role(Db_session *session, const Id &id) {
   try {
     session->execute(sql::Delete("mrs_role").where("id", Value::id(id)));
@@ -995,6 +1018,32 @@ Id add_auth_app(Db_session *session, const Auth_app_definition &definition) {
   return id;
 }
 
+void replace_auth_app(Db_session *session, const Auth_app &auth_app,
+                      const Auth_app_definition &definition) {
+  // The users of an app are those of its vendor: an MRS user has a password
+  // hash, the users of the others a vendor_user_id
+  if (definition.auth_vendor_id != auth_app.auth_vendor_id &&
+      !get_users(session, auth_app.id).empty()) {
+    throw std::runtime_error(
+        "The vendor of the REST AUTH APP `" + auth_app.name +
+        "` cannot be changed as it has users. Drop the REST AUTH APP first.");
+  }
+
+  sql::Update update("auth_app");
+  update.set("auth_vendor_id", Value::id(definition.auth_vendor_id));
+  update.set("name", definition.name);
+  update.set("description", definition.description);
+  update.set("url", definition.url);
+  update.set("app_id", definition.app_id);
+  update.set("enabled", definition.enabled);
+  update.set("limit_to_registered_users", definition.limit_to_registered_users);
+  update.set("default_role_id", Value::id(definition.default_role_id));
+  // A secret is not written into scripts: an absent one keeps the stored one
+  update.set_if("access_token", definition.access_token);
+  update.where("id", Value::id(auth_app.id));
+  session->execute(update);
+}
+
 void update_auth_app(Db_session *session, const Id &id,
                      const Auth_app_changes &changes) {
   sql::Update update("auth_app");
@@ -1163,6 +1212,34 @@ Id add_user(Db_session *session, const User_definition &definition) {
           .set("auth_string", auth_string));
   if (affected == 0) throw std::runtime_error("Failed to insert the new user.");
   return id;
+}
+
+void replace_user(Db_session *session, const User &user,
+                  const User_definition &definition) {
+  sql::Update update("mrs_user");
+  update.set("name", definition.name);
+  update.set("email", definition.email);
+  update.set("vendor_user_id", definition.vendor_user_id);
+  update.set("login_permitted", definition.login_permitted);
+  update.set("mapped_user_id", definition.mapped_user_id);
+  update.set("options", definition.options);
+  update.set("app_options", definition.app_options);
+  // An absent password keeps the stored one: a deployment must not reset
+  // the passwords users have changed since
+  if (definition.password) {
+    if (!stores_passwords(session, user.auth_app_id)) {
+      throw std::runtime_error(
+          "Password changing not supported for this authentication method");
+    }
+    if (definition.password->empty()) {
+      throw std::runtime_error(
+          "The authentication string is required for this app.");
+    }
+    check_password(*definition.password);
+    update.set("auth_string", hash_password(*definition.password));
+  }
+  update.where("id", Value::id(user.id));
+  session->execute(update);
 }
 
 void update_user(Db_session *session, const User &user,

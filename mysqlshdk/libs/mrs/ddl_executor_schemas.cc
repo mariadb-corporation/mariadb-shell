@@ -44,14 +44,13 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   const auto service_id = require_service(s.service);
 
-  bool replaces_current = false;
+  // OR REPLACE writes an existing schema anew in place: it keeps its id and
+  // its REST objects
+  std::optional<Id> replaced_id;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_schema(m_session, service_id, request_path); },
-          [&](const auto &existing) {
-            metadata::delete_schema(m_session, existing.id);
-            replaces_current = m_state->current_schema_id == existing.id;
-          })) {
+          [&](const auto &existing) { replaced_id = existing.id; })) {
     r->message = "REST SCHEMA `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -68,14 +67,19 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   if (s.options.options) definition.options = s.options.options->value;
   definition.metadata = s.options.metadata;
 
+  if (replaced_id) {
+    metadata::replace_schema(m_session, *replaced_id, definition);
+    transaction.commit();
+    r->message = "REST SCHEMA `" + full_path + "` created successfully.";
+    return;
+  }
+
   const Id id = metadata::add_schema(m_session, definition);
 
-  // The first schema of the current service becomes the current schema, and
-  // a replaced current schema is followed to its replacement
+  // The first schema of the current service becomes the current schema
   const bool becomes_current =
-      replaces_current ||
-      (m_state->current_service_id == service_id &&
-       metadata::get_schemas(m_session, service_id).size() == 1);
+      m_state->current_service_id == service_id &&
+      metadata::get_schemas(m_session, service_id).size() == 1;
 
   transaction.commit();
 

@@ -13,6 +13,12 @@ A REST service is the top-level object of the MariaDB REST Service (MRS). It has
 
 The `CREATE REST SERVICE` statement creates a new REST service or replaces an existing one.
 
+`CREATE OR REPLACE` updates an existing REST service in place. The service keeps its ID, its REST schemas, content sets and roles, and the REST authentication apps linked to it. Its options become those of the statement: an option the statement leaves out gets the value a new REST service would get. `ADD AUTH APP` links an app that isn't linked yet and skips one that is. Links the statement doesn't name stay. `REMOVE AUTH APP ... IF EXISTS` unlinks an app, and does nothing when the app isn't linked. `CREATE REST SERVICE IF NOT EXISTS` leaves an existing REST service unchanged.
+
+{% hint style="info" %}
+Because `CREATE OR REPLACE` keeps what hangs on a REST service, a deployment script can run the same statements on every deployment. It never removes anything, though. To remove a REST schema, REST object, content set or file that an earlier version created, the script needs the matching `DROP ... IF EXISTS` statement.
+{% endhint %}
+
 The MariaDB REST Service supports many individual REST services. Create a separate REST service for each REST application. Each REST service can have its own options and authentication apps, and supports a different set of authentication users.
 
 A new REST service isn't published by default. Only MariaDB REST Daemon instances that run in developer mode serve it. To publish a REST service after all its REST schemas and REST objects have been created, set the `PUBLISHED` option with the [`ALTER REST SERVICE`](#alter-rest-service) statement.
@@ -416,7 +422,7 @@ removeAuthApp:
 
 ![Railroad diagram of removeAuthApp](../../../.gitbook/assets/mariadb-rest-service/sql/removeAuthApp.svg)
 
-`REMOVE AUTH APP` unlinks a REST authentication app from the REST service, the counterpart of [`ADD AUTH APP`](#assigning-a-rest-authentication-app-to-a-rest-service).
+`REMOVE AUTH APP` unlinks a REST authentication app from the REST service, the counterpart of [`ADD AUTH APP`](#assigning-a-rest-authentication-app-to-a-rest-service). With `IF EXISTS`, it does nothing when the app doesn't exist or isn't linked to the REST service.
 
 ### Examples
 

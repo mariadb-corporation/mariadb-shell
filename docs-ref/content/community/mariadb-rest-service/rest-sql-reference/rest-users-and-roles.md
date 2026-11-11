@@ -13,6 +13,8 @@ The REST users of the MariaDB REST Service (MRS) belong to a [REST authenticatio
 
 The `CREATE REST USER` statement adds a REST user to a REST authentication app.
 
+`CREATE OR REPLACE` updates an existing REST user in place. The user keeps its ID, its REST roles and groups, and its password unless the statement gives one with `IDENTIFIED BY`. Its other options become those of the statement: an option the statement leaves out gets the value a new REST user would get. `CREATE REST USER IF NOT EXISTS` leaves an existing user unchanged.
+
 ### Syntax
 
 ```antlr
@@ -87,6 +89,8 @@ CREATE REST USER "ulf"@"TestAuthApp" IDENTIFIED BY "********";
 ## CREATE REST ROLE
 
 The `CREATE REST ROLE` statement creates a REST role in the specified or the current REST service. Such a role grants access to that REST service only, whatever paths its privileges name. With `EXTENDS`, the role has the privileges of the parent role in addition to its own. With `ON ANY SERVICE`, the role can be used from any REST service, and its privileges apply wherever their paths match.
+
+`CREATE OR REPLACE` updates an existing REST role in place. The role keeps its ID, its privileges, its grants to REST users and groups, and the roles that extend it. The role it extends, its comment and its options become those of the statement. A role can't extend itself, directly or through the roles it extends. `CREATE REST ROLE IF NOT EXISTS` leaves an existing role unchanged.
 
 ### Syntax
 

@@ -264,16 +264,17 @@ class Ddl_executor {
 
   // CREATE IF NOT EXISTS and CREATE OR REPLACE: looks up the existing
   // object with find() (which returns an optional). Returns true when the
-  // statement keeps it (IF NOT EXISTS); with OR REPLACE it is removed with
-  // remove(existing). Without either flag nothing is looked up.
-  template <typename Find, typename Remove>
+  // statement keeps it (IF NOT EXISTS); with OR REPLACE it is handed to
+  // replace(existing), and the statement then writes it anew in place,
+  // keeping its id. Without either flag nothing is looked up.
+  template <typename Find, typename Replace>
   static bool keep_existing(const ast::Create_flags &flags, Find find,
-                            Remove remove) {
+                            Replace replace) {
     if (!flags.or_replace && !flags.if_not_exists) return false;
     const auto existing = find();
     if (!existing) return false;
     if (flags.if_not_exists) return true;
-    remove(*existing);
+    replace(*existing);
     return false;
   }
 
@@ -294,10 +295,13 @@ class Ddl_executor {
   // Drops the current service / schema if they no longer exist.
   void validate_state();
 
-  // ADD AUTH APP / REMOVE AUTH APP of the service statements.
+  // ADD AUTH APP / REMOVE AUTH APP of the service statements. With
+  // keep_linked (CREATE OR REPLACE on an existing service) ADD skips the
+  // auth apps linked already instead of failing on them.
   void link_auth_apps(const Id &service_id,
                       const std::vector<ast::Auth_app_reference> &add,
-                      const std::vector<ast::Auth_app_reference> &remove);
+                      const std::vector<ast::Auth_app_reference> &remove,
+                      bool keep_linked = false);
 
   // Makes the current service the given one.
   void set_current_service(const metadata::Service &service);

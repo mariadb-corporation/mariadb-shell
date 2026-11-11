@@ -263,6 +263,24 @@ EXPECT_EQ(city_privileges, table_privileges("city"))
 EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE request_path = '/city'"))
 rest("DROP REST VIEW /takenName")
 
+#@<> CREATE OR REPLACE REST VIEW updates in place
+city_id = rest_object_column("/city", "id")
+old_mapping = metadata_value("SELECT id FROM mariadb_rest_service.data_mapping WHERE rest_object_id = '%s'" % city_id)
+# Its id stays, and with it what refers to it; the data mapping is new
+EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info("CREATE OR REPLACE REST VIEW /city AS sakila.address COMMENT 'moved' ITEMS PER PAGE 5"))
+EXPECT_EQ(city_id, rest_object_column("/city", "id"))
+EXPECT_EQ(["address", "moved", 5, "FEED", 1], [rest_object_column("/city", c) for c in ["name", "comments", "items_per_page", "format", "requires_auth"]])
+EXPECT_NE(old_mapping, metadata_value("SELECT id FROM mariadb_rest_service.data_mapping WHERE rest_object_id = '%s'" % city_id))
+EXPECT_EQ(1, metadata_value("SELECT COUNT(*) FROM mariadb_rest_service.data_mapping WHERE rest_object_id = '%s'" % city_id))
+EXPECT_IN("CLASS SvcSakilaCity {", show_create("SHOW CREATE REST VIEW /city"))
+# The privileges follow the database object
+EXPECT_IN("Select", table_privileges("address"))
+# Back to the full definition: the dump of the view reads the same again
+EXPECT_EQ("REST VIEW `/svc/sakila/city` created successfully.", rest_info(full_city))
+EXPECT_EQ(city_id, rest_object_column("/city", "id"))
+EXPECT_EQ(full_city, show_create("SHOW CREATE REST VIEW /city"))
+EXPECT_EQ(city_privileges, table_privileges("city"))
+
 #@<> CREATE REST VIEW: @UNNEST of a 1:n reference reduces to a single column
 rest("""CREATE REST VIEW /country AS sakila.country {
     countryId: country_id @ROWOWNERSHIP,
@@ -471,6 +489,12 @@ EXPECT_IN("int", metadata_value("SELECT JSON_VALUE(db_column, '$.datatype') FROM
 EXPECT_EQ([["PARAMETERS", 0], ["RESULT", 1], ["RESULT", 2]], [list(r) for r in session.run_sql("SELECT kind, position FROM mariadb_rest_service.data_mapping WHERE rest_object_id = (SELECT id FROM mariadb_rest_service.rest_object WHERE request_path = '/filmInStock') ORDER BY position").fetch_all()])
 EXPECT_EQ([["/filmInStock", "ENABLED"]], rest_rows("SHOW REST PROCEDURES"))
 EXPECT_EQ([], rest_rows("SHOW REST FUNCTIONS"))
+# OR REPLACE writes it anew in place: the same id, the same generated names
+procedure_id = rest_object_column("/filmInStock", "id")
+EXPECT_EQ("REST PROCEDURE `/svc/sakila/filmInStock` created successfully.", rest_info(film_in_stock))
+EXPECT_EQ(procedure_id, rest_object_column("/filmInStock", "id"))
+EXPECT_EQ(film_in_stock, show_create("SHOW CREATE REST PROCEDURE /filmInStock"))
+EXPECT_EQ("Execute", routine_privileges("film_in_stock", "PROCEDURE"))
 
 #@<> SHOW CREATE REST PROCEDURE FORMAT=JSON
 doc = json.loads(show_create("SHOW CREATE REST PROCEDURE /filmInStock FORMAT=JSON"))

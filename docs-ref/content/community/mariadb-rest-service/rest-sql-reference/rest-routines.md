@@ -13,6 +13,8 @@ REST procedures and REST functions of the MariaDB REST Service (MRS) add REST en
 
 The `CREATE REST PROCEDURE` statement adds REST endpoints for database schema stored procedures. It uses the [extended GraphQL syntax](rest-views.md#defining-the-graphql-definition-for-a-rest-view) of REST data mapping views to describe the parameters and result sets of the REST procedure.
 
+`CREATE OR REPLACE` updates an existing REST procedure in place, as it does a [REST view](rest-views.md#create-rest-view): it keeps its ID, and its routine, parameters, results and options become those of the statement. The same holds for `CREATE OR REPLACE REST FUNCTION`.
+
 ### Syntax
 
 ```antlr

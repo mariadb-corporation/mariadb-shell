@@ -56,7 +56,15 @@ std::optional<std::optional<std::string>> change_of(
 
 void Ddl_executor::link_auth_apps(const Id &service_id,
                                   const std::vector<Auth_app_reference> &add,
-                                  const std::vector<Auth_app_reference> &remove) {
+                                  const std::vector<Auth_app_reference> &remove,
+                                  bool keep_linked) {
+  std::vector<Id> linked;
+  for (const auto &auth_app : metadata::get_auth_apps(m_session, service_id)) {
+    linked.push_back(auth_app.id);
+  }
+  const auto is_linked = [&](const Id &auth_app_id) {
+    return std::find(linked.begin(), linked.end(), auth_app_id) != linked.end();
+  };
   const auto apply = [&](const std::vector<Auth_app_reference> &entries,
                           auto action) {
     for (const auto &entry : entries) {
@@ -65,11 +73,23 @@ void Ddl_executor::link_auth_apps(const Id &service_id,
         throw std::runtime_error("The given REST authentication app `" +
                                  entry.name + "` was not found.");
       }
-      if (auth_app) action(m_session, auth_app->id, service_id);
+      if (auth_app) action(entry, auth_app->id);
     }
   };
-  apply(add, metadata::link_auth_app);
-  apply(remove, metadata::unlink_auth_app);
+  // ADD of a linked auth app fails (link_auth_app()), unless keep_linked
+  apply(add, [&](const Auth_app_reference &, const Id &auth_app_id) {
+    if (keep_linked && is_linked(auth_app_id)) return;
+    metadata::link_auth_app(m_session, auth_app_id, service_id);
+    linked.push_back(auth_app_id);
+  });
+  // REMOVE ... IF EXISTS also skips an auth app that is not linked, so that
+  // a deployment script can run it again
+  apply(remove, [&](const Auth_app_reference &entry, const Id &auth_app_id) {
+    if (entry.if_exists && !is_linked(auth_app_id)) return;
+    metadata::unlink_auth_app(m_session, auth_app_id, service_id);
+    linked.erase(std::remove(linked.begin(), linked.end(), auth_app_id),
+                 linked.end());
+  });
 }
 
 void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r) {
@@ -79,14 +99,13 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
 
   Db_transaction transaction(m_session);
 
-  bool replaces_current = false;
+  // OR REPLACE writes an existing service anew in place: it keeps its id,
+  // and with it its schemas, content sets, roles and auth app links
+  std::optional<Id> replaced_id;
   if (keep_existing(
           s.flags,
           [&] { return metadata::find_service(m_session, path, s.path.developers); },
-          [&](const auto &existing) {
-            metadata::delete_service(m_session, existing.id);
-            replaces_current = m_state->current_service_id == existing.id;
-          })) {
+          [&](const auto &existing) { replaced_id = existing.id; })) {
     r->message = "REST SERVICE `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -106,20 +125,19 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
   definition.auth_completed_url_validation = text_of(s.options.auth_validation);
   definition.auth_completed_page_content = text_of(s.options.auth_page_content);
 
-  const Id id = metadata::add_service(m_session, definition);
-
-  // Removing auth apps from a service being created makes no sense
-  link_auth_apps(id, s.options.add_auth_apps, {});
+  if (replaced_id) {
+    metadata::replace_service(m_session, *replaced_id, definition);
+    // ADD links what is not linked yet, REMOVE unlinks; the links the
+    // statement does not name stay, a script cannot know them all
+    link_auth_apps(*replaced_id, s.options.add_auth_apps,
+                   s.options.remove_auth_apps, true);
+  } else {
+    const Id id = metadata::add_service(m_session, definition);
+    // Removing auth apps from a service being created makes no sense
+    link_auth_apps(id, s.options.add_auth_apps, {});
+  }
 
   transaction.commit();
-
-  // A replaced current service is followed to its replacement, which has
-  // the same path; its schemas went with it. Only after the commit: a
-  // failing statement leaves the session's state as it was.
-  if (replaces_current) {
-    m_state->current_service_id = id;
-    m_state->clear_schema();
-  }
 
   r->message = "REST SERVICE `" + full_path + "` created successfully.";
 }

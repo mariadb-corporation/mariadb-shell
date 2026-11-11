@@ -721,10 +721,10 @@ class Grant_restorer {
 
 // Adds the rest_object of a CREATE [OR REPLACE] REST VIEW / PROCEDURE /
 // FUNCTION, whose data mapping is built already. The object it replaces is
-// changed like an ALTER would: the privileges first, then the metadata in a
-// transaction nothing commits implicitly. A new definition that fails, e.g.
-// on a name in use, leaves the replaced object and its privileges as they
-// were.
+// changed in place like an ALTER would, keeping its id: the privileges
+// first, then the metadata in a transaction nothing commits implicitly. A new
+// definition that fails, e.g. on a name in use, leaves the replaced object
+// and its privileges as they were.
 void add_new_rest_object(Db_session *session,
                          const std::optional<metadata::Rest_object> &replaced,
                          const std::string &full_path, bool is_routine,
@@ -751,12 +751,16 @@ void add_new_rest_object(Db_session *session,
   Db_transaction transaction(session);
   if (replaced) {
     // The old objects go first, so their names are free for the new ones
-    metadata::delete_rest_object(session, replaced->id, false);
+    metadata::set_objects(session, replaced->id, {});
   }
   assign_object_names(session, definition.rest_schema_id, full_path, is_routine,
                       &objects);
-  const Id id = metadata::add_rest_object(session, definition, objects);
-  if (!replaced) run_grants_of_new_object(session, id, new_grants, force, r);
+  if (replaced) {
+    metadata::replace_rest_object(session, replaced->id, definition, objects);
+  } else {
+    const Id id = metadata::add_rest_object(session, definition, objects);
+    run_grants_of_new_object(session, id, new_grants, force, r);
+  }
   transaction.commit();
   if (restorer) restorer->keep();
 }

@@ -20,6 +20,8 @@ Each REST schema belongs to a REST service, which has to be created first. One R
 
 Each REST schema can have its own options.
 
+`CREATE OR REPLACE` updates an existing REST schema in place. The schema keeps its ID and its REST objects. Its database schema and options become those of the statement: an option the statement leaves out gets the value a new REST schema would get. `CREATE REST SCHEMA IF NOT EXISTS` leaves an existing REST schema unchanged.
+
 ### Syntax
 
 ```antlr

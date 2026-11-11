@@ -268,6 +268,13 @@ struct Service_definition {
 // Returns its id. Throws for the reserved path /mrs.
 Id add_service(Db_session *session, const Service_definition &definition);
 
+// CREATE OR REPLACE REST SERVICE on an existing service: writes all its
+// settings anew from the definition (an absent one takes its default, as
+// for a new service), in place. Its id, path, developers, schemas, content
+// sets, roles and auth app links stay.
+void replace_service(Db_session *session, const Id &id,
+                     const Service_definition &definition);
+
 // The changes ALTER REST SERVICE makes. An unset field is left alone; a
 // field set to nullopt inside the outer optional is set to NULL.
 struct Service_changes {
@@ -349,6 +356,13 @@ struct Schema_definition {
 // Inserts a schema. For a DATABASE_SCHEMA the database schema has to
 // exist; its name is taken as the server reports it.
 Id add_schema(Db_session *session, const Schema_definition &definition);
+
+// CREATE OR REPLACE REST SCHEMA on an existing schema: writes its database
+// schema and settings anew from the definition (an absent setting takes its
+// default, as for a new schema), in place. Its id, service, request path and
+// REST objects stay.
+void replace_schema(Db_session *session, const Id &id,
+                    const Schema_definition &definition);
 
 struct Schema_changes {
   std::optional<Id> service_id;

@@ -236,6 +236,16 @@ struct Rest_object_definition {
 Id add_rest_object(Db_session *session, const Rest_object_definition &definition,
                  const std::vector<Data_mapping> &objects);
 
+// CREATE OR REPLACE REST VIEW / PROCEDURE / FUNCTION on an existing
+// rest_object: writes its database object, settings and data mapping anew
+// (an absent setting takes its default, as for a new one), in place. Its id
+// stays, and with it what refers to it (row group security, content set
+// links); the objects of the data mapping get new ids. The GRANTs are not
+// run, see grant_statements().
+void replace_rest_object(Db_session *session, const Id &id,
+                         const Rest_object_definition &definition,
+                         const std::vector<Data_mapping> &objects);
+
 struct Rest_object_changes {
   std::optional<std::string> request_path;
   std::optional<int> enabled;

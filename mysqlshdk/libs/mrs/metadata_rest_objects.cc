@@ -602,8 +602,14 @@ std::vector<Rest_object> get_rest_objects(Db_session *session, const Id &schema_
   return query_rest_objects(session, where, std::move(params));
 }
 
-Id add_rest_object(Db_session *session, const Rest_object_definition &definition,
-                 const std::vector<Data_mapping> &objects) {
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST VIEW / PROCEDURE / FUNCTION sets,
+// for a new rest_object and for the one it replaces in place alike.
+template <typename Statement>
+void set_rest_object_columns(Statement *statement,
+                             const Rest_object_definition &definition,
+                             const std::vector<Data_mapping> &objects) {
   static const std::vector<std::string> k_types{"TABLE", "VIEW", "PROCEDURE",
                                                 "FUNCTION", "SCRIPT"};
   if (std::find(k_types.begin(), k_types.end(), definition.object_type) ==
@@ -613,27 +619,34 @@ Id add_rest_object(Db_session *session, const Rest_object_definition &definition
         "FUNCTION and SCRIPT.");
   }
 
+  statement->set("name", definition.name);
+  statement->set("object_type", definition.object_type);
+  statement->set("enabled", definition.enabled.value_or(1));
+  statement->set("items_per_page", definition.items_per_page);
+  statement->set("requires_auth", definition.requires_auth.value_or(true));
+  statement->set("crud_operations",
+                 join(calculate_crud_operations(definition.object_type, objects),
+                      ","));
+  statement->set("format", definition.format.value_or("FEED"));
+  statement->set("comments", definition.comments.value_or(""));
+  statement->set("media_type", definition.media_type);
+  statement->set("metadata", definition.metadata);
+  statement->set("auto_detect_media_type", definition.auto_detect_media_type);
+  statement->set("auth_stored_procedure", definition.auth_stored_procedure);
+  statement->set("options", definition.options);
+}
+
+}  // namespace
+
+Id add_rest_object(Db_session *session, const Rest_object_definition &definition,
+                 const std::vector<Data_mapping> &objects) {
   const Id id = definition.id ? *definition.id : new_id(session);
-  const auto crud_operations =
-      calculate_crud_operations(definition.object_type, objects);
 
   sql::Insert insert("rest_object");
   insert.set("id", sql::Value::id(id));
   insert.set("rest_schema_id", sql::Value::id(definition.rest_schema_id));
-  insert.set("name", definition.name);
   insert.set("request_path", definition.request_path);
-  insert.set("object_type", definition.object_type);
-  insert.set("enabled", definition.enabled.value_or(1));
-  insert.set("items_per_page", definition.items_per_page);
-  insert.set("requires_auth", definition.requires_auth.value_or(true));
-  insert.set("crud_operations", join(crud_operations, ","));
-  insert.set("format", definition.format.value_or("FEED"));
-  insert.set("comments", definition.comments.value_or(""));
-  insert.set("media_type", definition.media_type);
-  insert.set("metadata", definition.metadata);
-  insert.set("auto_detect_media_type", definition.auto_detect_media_type);
-  insert.set("auth_stored_procedure", definition.auth_stored_procedure);
-  insert.set("options", definition.options);
+  set_rest_object_columns(&insert, definition, objects);
   insert.set("internal", definition.internal);
   session->execute(insert);
 
@@ -641,6 +654,18 @@ Id add_rest_object(Db_session *session, const Rest_object_definition &definition
   check_object_names(session, definition.rest_schema_id, objects);
   insert_objects(session, id, objects);
   return id;
+}
+
+void replace_rest_object(Db_session *session, const Id &id,
+                         const Rest_object_definition &definition,
+                         const std::vector<Data_mapping> &objects) {
+  // The schema and the request path found the rest_object; they stay
+  sql::Update update("rest_object");
+  set_rest_object_columns(&update, definition, objects);
+  update.where("id", Value::id(id));
+  session->execute(update);
+
+  set_objects(session, id, objects);
 }
 
 void update_rest_object(Db_session *session, const Id &id,
