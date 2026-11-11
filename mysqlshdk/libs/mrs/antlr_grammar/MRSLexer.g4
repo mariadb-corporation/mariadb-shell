@@ -163,28 +163,40 @@ STATIC_SYMBOL:      S T A T I C;
 
 //----------------- GraphQL --------------------------------------------------------------------------------------------
 
-AT_INOUT_SYMBOL:        AT_SIGN_SYMBOL I N O U T;
-AT_IN_SYMBOL:           AT_SIGN_SYMBOL I N;
-AT_OUT_SYMBOL:          AT_SIGN_SYMBOL O U T;
-AT_CHECK_SYMBOL:        AT_SIGN_SYMBOL C H E C K;
-AT_NOCHECK_SYMBOL:      AT_SIGN_SYMBOL N O C H E C K;
-AT_NOUPDATE_SYMBOL:     AT_SIGN_SYMBOL N O U P D A T E;
-AT_SORTABLE_SYMBOL:     AT_SIGN_SYMBOL S O R T A B L E;
-AT_NOFILTERING_SYMBOL:  AT_SIGN_SYMBOL N O F I L T E R I N G;
-AT_ROWOWNERSHIP_SYMBOL: AT_SIGN_SYMBOL R O W O W N E R S H I P;
-AT_UNNEST_SYMBOL:       AT_SIGN_SYMBOL U N N E S T;
-AT_DATATYPE_SYMBOL:     AT_SIGN_SYMBOL D A T A T Y P E;
-AT_SELECT_SYMBOL:       AT_SIGN_SYMBOL S E L E C T;
-AT_NOSELECT_SYMBOL:     AT_SIGN_SYMBOL N O S E L E C T;
-AT_INSERT_SYMBOL:       AT_SIGN_SYMBOL I N S E R T;
-AT_NOINSERT_SYMBOL:     AT_SIGN_SYMBOL N O I N S E R T;
-AT_UPDATE_SYMBOL:       AT_SIGN_SYMBOL U P D A T E;
-AT_DELETE_SYMBOL:       AT_SIGN_SYMBOL D E L E T E;
-AT_NODELETE_SYMBOL:     AT_SIGN_SYMBOL N O D E L E T E;
-AT_KEY_SYMBOL:          AT_SIGN_SYMBOL K E Y;
+// An annotation is a whole word after '@': `@in` is AT_IN_SYMBOL, but `user@internal` is
+// AT_SIGN_SYMBOL followed by the identifier `internal`. isAnnotationEnd() is true when the next
+// character cannot continue an identifier ([a-zA-Z0-9_$] or >= U+0080).
 
+AT_INOUT_SYMBOL:        AT_SIGN_SYMBOL I N O U T {this.isAnnotationEnd()}?;
+AT_IN_SYMBOL:           AT_SIGN_SYMBOL I N {this.isAnnotationEnd()}?;
+AT_OUT_SYMBOL:          AT_SIGN_SYMBOL O U T {this.isAnnotationEnd()}?;
+AT_CHECK_SYMBOL:        AT_SIGN_SYMBOL C H E C K {this.isAnnotationEnd()}?;
+AT_NOCHECK_SYMBOL:      AT_SIGN_SYMBOL N O C H E C K {this.isAnnotationEnd()}?;
+AT_NOUPDATE_SYMBOL:     AT_SIGN_SYMBOL N O U P D A T E {this.isAnnotationEnd()}?;
+AT_SORTABLE_SYMBOL:     AT_SIGN_SYMBOL S O R T A B L E {this.isAnnotationEnd()}?;
+AT_NOFILTERING_SYMBOL:  AT_SIGN_SYMBOL N O F I L T E R I N G {this.isAnnotationEnd()}?;
+AT_ROWOWNERSHIP_SYMBOL: AT_SIGN_SYMBOL R O W O W N E R S H I P {this.isAnnotationEnd()}?;
+AT_UNNEST_SYMBOL:       AT_SIGN_SYMBOL U N N E S T {this.isAnnotationEnd()}?;
+AT_DATATYPE_SYMBOL:     AT_SIGN_SYMBOL D A T A T Y P E {this.isAnnotationEnd()}?;
+AT_SELECT_SYMBOL:       AT_SIGN_SYMBOL S E L E C T {this.isAnnotationEnd()}?;
+AT_NOSELECT_SYMBOL:     AT_SIGN_SYMBOL N O S E L E C T {this.isAnnotationEnd()}?;
+AT_INSERT_SYMBOL:       AT_SIGN_SYMBOL I N S E R T {this.isAnnotationEnd()}?;
+AT_NOINSERT_SYMBOL:     AT_SIGN_SYMBOL N O I N S E R T {this.isAnnotationEnd()}?;
+AT_UPDATE_SYMBOL:       AT_SIGN_SYMBOL U P D A T E {this.isAnnotationEnd()}?;
+AT_DELETE_SYMBOL:       AT_SIGN_SYMBOL D E L E T E {this.isAnnotationEnd()}?;
+AT_NODELETE_SYMBOL:     AT_SIGN_SYMBOL N O D E L E T E {this.isAnnotationEnd()}?;
+AT_KEY_SYMBOL:          AT_SIGN_SYMBOL K E Y {this.isAnnotationEnd()}?;
+
+// A segment is an identifier, or digits with an exponent followed by more name characters
+// (/1e3a), which outside a path would be a float and an identifier. Digits only (/123) and a
+// bare float (/1e5) are no segment.
 REST_REQUEST_PATH:
-    (DIV_OPERATOR IDENTIFIER)+;
+    (DIV_OPERATOR REQUEST_PATH_SEGMENT)+;
+
+fragment REQUEST_PATH_SEGMENT:
+    IDENTIFIER
+    | DIGITS [eE] DIGITS LETTER_WHEN_UNQUOTED_NO_DIGIT LETTER_WHEN_UNQUOTED*
+;
 
 /* END OF MERGE PART */
 
@@ -278,9 +290,11 @@ fragment DIGIT:    [0-9];
 fragment DIGITS:   DIGIT+;
 fragment HEXDIGIT: [0-9a-fA-F];
 
-// Only lower case 'x' and 'b' count for hex + bin numbers. Otherwise it's an identifier.
-HEX_NUMBER: ('0x' HEXDIGIT+) | ('x\'' HEXDIGIT+ '\'');
-BIN_NUMBER: ('0b' [01]+) | ('b\'' [01]+ '\'');
+// 0x1F, 0X1F, 0b01 and 0B01 are hex and bin numbers, whatever the case of the x / b (the server
+// takes only lower case ones; then 0X1F would be an identifier). Followed by more identifier
+// characters they are an identifier (0x1Fg), as the longer IDENTIFIER match wins.
+HEX_NUMBER: ('0' [xX] HEXDIGIT+) | ('x\'' HEXDIGIT+ '\'');
+BIN_NUMBER: ('0' [bB] [01]+) | ('b\'' [01]+ '\'');
 
 INT_NUMBER: DIGITS;
 
@@ -327,16 +341,21 @@ fragment DOUBLE_QUOTE: '"';
 BACK_TICK_QUOTED_ID: (BACK_TICK .*? BACK_TICK)+;
 
 // Under ANSI_QUOTES a double quoted string is an identifier, so a backslash is no escape there.
+// Where a backslash escapes, it always takes the next character, so `'a\'` is unterminated.
 DOUBLE_QUOTED_TEXT: (
         DOUBLE_QUOTE (
-            (
-                {!this.isSqlModeActive(SqlMode.NoBackslashEscapes) && !this.isSqlModeActive(SqlMode.AnsiQuotes)}? '\\'
-            )? .
-        )*? DOUBLE_QUOTE
+            {!this.isSqlModeActive(SqlMode.NoBackslashEscapes) && !this.isSqlModeActive(SqlMode.AnsiQuotes)}? '\\' .
+            | {this.isSqlModeActive(SqlMode.NoBackslashEscapes) || this.isSqlModeActive(SqlMode.AnsiQuotes)}? '\\'
+            | ~["\\]
+        )* DOUBLE_QUOTE
     )+;
 
 SINGLE_QUOTED_TEXT: (
-        SINGLE_QUOTE (({!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\')? .)*? SINGLE_QUOTE
+        SINGLE_QUOTE (
+            {!this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\' .
+            | {this.isSqlModeActive(SqlMode.NoBackslashEscapes)}? '\\'
+            | ~['\\]
+        )* SINGLE_QUOTE
     )+;
 
 BLOCK_COMMENT: ('/**/' | '/*' ~[!] .*? '*/') -> channel(HIDDEN);
