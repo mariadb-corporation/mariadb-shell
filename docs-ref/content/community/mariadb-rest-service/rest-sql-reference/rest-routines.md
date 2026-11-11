@@ -165,7 +165,7 @@ For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest
 
 ## DROP REST PROCEDURE
 
-The `DROP REST PROCEDURE` statement drops an existing REST procedure.
+The `DROP REST PROCEDURE` statement drops an existing REST procedure. With `IF EXISTS`, it does nothing when the procedure, or the REST service or REST schema it names, doesn't exist.
 
 ### Syntax
 
@@ -190,7 +190,7 @@ FROM SERVICE /myService SCHEMA /sakila;
 
 ## DROP REST FUNCTION
 
-The `DROP REST FUNCTION` statement drops an existing REST function.
+The `DROP REST FUNCTION` statement drops an existing REST function. With `IF EXISTS`, it does nothing when the function, or the REST service or REST schema it names, doesn't exist.
 
 ### Syntax
 

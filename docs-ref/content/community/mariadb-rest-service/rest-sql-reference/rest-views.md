@@ -455,7 +455,7 @@ CLASS MyServiceSakilaCity {
 
 ## DROP REST VIEW
 
-The `DROP REST DATA MAPPING VIEW` statement drops an existing REST data mapping view.
+The `DROP REST DATA MAPPING VIEW` statement drops an existing REST data mapping view. With `IF EXISTS`, it does nothing when the view, or the REST service or REST schema it names, doesn't exist.
 
 ### Syntax
 

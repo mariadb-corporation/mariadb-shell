@@ -132,8 +132,12 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto service_id = require_service(s.service);
-  const auto schema = metadata::find_schema(m_session, service_id, s.schema_path);
+  // IF EXISTS: a missing service is nothing to do, as a missing schema
+  std::optional<metadata::Schema> schema;
+  if (const auto service_id = s.if_exists ? find_service_if_exists(s.service)
+                                          : require_service(s.service)) {
+    schema = metadata::find_schema(m_session, *service_id, s.schema_path);
+  }
   if (!schema && !s.if_exists) {
     throw std::runtime_error("The given REST SCHEMA `" + full_path +
                              "` could not be found.");

@@ -959,8 +959,13 @@ void Ddl_executor::do_execute(const Drop_rest_object &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto schema = rest_object_schema(s.from);
-  auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  // IF EXISTS: a missing service or schema is nothing to do, as a missing
+  // REST object
+  const auto schema = s.if_exists && s.from
+                          ? find_schema_if_exists(*s.from)
+                          : std::optional<metadata::Schema>(rest_object_schema(s.from));
+  std::optional<metadata::Rest_object> rest_object;
+  if (schema) rest_object = metadata::find_rest_object(m_session, schema->id, s.path);
   if (rest_object && !is_of_kind(*rest_object, s.kind)) rest_object.reset();
   if (!rest_object && !s.if_exists) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +

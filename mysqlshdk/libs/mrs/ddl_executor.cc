@@ -168,6 +168,22 @@ Id Ddl_executor::require_service(const std::optional<Schema_selector> &given) {
   return require_service(given ? given->service : std::nullopt);
 }
 
+std::optional<Id> Ddl_executor::find_service_if_exists(
+    const std::optional<Service_path> &given) {
+  if (!given) return require_service(given);
+  const auto service =
+      metadata::find_service(m_session, given->path, given->developers);
+  if (!service) return std::nullopt;
+  return service->id;
+}
+
+std::optional<metadata::Schema> Ddl_executor::find_schema_if_exists(
+    const Schema_selector &given) {
+  const auto service_id = find_service_if_exists(given.service);
+  if (!service_id) return std::nullopt;
+  return metadata::find_schema(m_session, *service_id, given.schema_path);
+}
+
 std::optional<Id> Ddl_executor::resolve_role_service(
     const std::optional<Role_service> &given) {
   if (given && given->any_service) return std::nullopt;

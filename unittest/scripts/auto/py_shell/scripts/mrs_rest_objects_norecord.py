@@ -429,6 +429,11 @@ EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OP
 EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option([1])), "Invalid column name in the columnList of the grants option.")
 EXPECT_THROWS(lambda: rest("CREATE REST VIEW /grantColumns AS sakila.language OPTIONS " + grants_option([""])), "Invalid column name in the columnList of the grants option.")
 rest("DROP REST VIEW IF EXISTS /grantColumns")
+# IF EXISTS: a missing service or schema is nothing to do either
+EXPECT_EQ("REST VIEW `/nope/sakila/x` dropped successfully.", rest_info("DROP REST VIEW IF EXISTS /x FROM SERVICE /nope SCHEMA /sakila"))
+EXPECT_EQ("REST PROCEDURE `/svc/nope/x` dropped successfully.", rest_info("DROP REST PROCEDURE IF EXISTS /x FROM SERVICE /svc SCHEMA /nope"))
+EXPECT_THROWS(lambda: rest("DROP REST VIEW /x FROM SERVICE /nope SCHEMA /sakila"), "Could not find the REST SERVICE /nope.")
+EXPECT_THROWS(lambda: rest("DROP REST FUNCTION /x FROM SERVICE /svc SCHEMA /nope"), "The REST schema `/svc/nope` was not found.")
 session.run_sql("REVOKE SELECT (title, release_year) ON sakila.film FROM mariadb_rest_service_data_provider")
 EXPECT_EQ([], column_privileges("film"))
 

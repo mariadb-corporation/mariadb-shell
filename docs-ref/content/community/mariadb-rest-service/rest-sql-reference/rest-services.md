@@ -422,7 +422,7 @@ removeAuthApp:
 
 ![Railroad diagram of removeAuthApp](../../../.gitbook/assets/mariadb-rest-service/sql/removeAuthApp.svg)
 
-`REMOVE AUTH APP` unlinks a REST authentication app from the REST service, the counterpart of [`ADD AUTH APP`](#assigning-a-rest-authentication-app-to-a-rest-service). With `IF EXISTS`, it does nothing when the app doesn't exist or isn't linked to the REST service.
+`REMOVE AUTH APP` unlinks a REST authentication app from the REST service, the counterpart of [`ADD AUTH APP`](#assigning-a-rest-authentication-app-to-a-rest-service). With `IF EXISTS`, it does nothing when the app doesn't exist or isn't linked to the REST service. An `ALTER REST SERVICE` statement that does nothing but `REMOVE AUTH APP ... IF EXISTS` also does nothing when the REST service doesn't exist.
 
 ### Examples
 

@@ -253,6 +253,16 @@ class Ddl_executor {
   // The service part of a schema selector, or the current service.
   Id require_service(const std::optional<ast::Schema_selector> &given);
 
+  // For IF EXISTS statements, which treat a missing service or schema as
+  // nothing to do: the service named in the statement (nullopt when it does
+  // not exist), or the current one (throws when there is none).
+  std::optional<Id> find_service_if_exists(
+      const std::optional<ast::Service_path> &given);
+  // The same for a schema selector: nullopt when the named service or
+  // schema does not exist.
+  std::optional<metadata::Schema> find_schema_if_exists(
+      const ast::Schema_selector &given);
+
   // Paths for messages: the service's full path (developers@host/path)
   // and the schema's path below it, with an optional request path appended.
   std::string full_service_path(const std::optional<ast::Service_path> &given,

@@ -150,7 +150,7 @@ ALTER REST SCHEMA /sakila ON SERVICE /myService
 
 ## DROP REST SCHEMA
 
-The `DROP REST SCHEMA` statement drops an existing REST schema.
+The `DROP REST SCHEMA` statement drops an existing REST schema. With `IF EXISTS`, it does nothing when the REST schema or the REST service it names doesn't exist.
 
 ### Syntax
 

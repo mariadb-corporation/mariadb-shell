@@ -407,6 +407,11 @@ for _ in range(2):
     EXPECT_EQ(["inPlaceKept"], linked_apps())
 EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /inPlace REMOVE AUTH APP \"inPlaceAdded\""), "The REST auth app cannot be removed as it is not assigned to the REST service.")
 rest("ALTER REST SERVICE /inPlace REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS")
+# On a missing service, a statement that only removes auth apps, each IF
+# EXISTS, is nothing to do; one that also changes the service needs it
+EXPECT_EQ(0, rest("ALTER REST SERVICE /nope REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS").get_affected_items_count())
+EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /nope REMOVE AUTH APP \"inPlaceAdded\""), "Could not find the REST SERVICE /nope.")
+EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /nope COMMENT 'x' REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS"), "Could not find the REST SERVICE /nope.")
 
 # The schema: its settings anew, its id and its objects kept
 EXPECT_EQ("REST SCHEMA `/inPlace/s` created successfully.", rest_info("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM sakila COMMENT 'new'"))
@@ -479,6 +484,9 @@ rest("ALTER REST SCHEMA /sakila2 ON SERVICE /myService NEW REQUEST PATH /sakila"
 #@<> DROP REST SCHEMA
 EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /nope"), "Failed to drop the REST SCHEMA `/myService/nope`. The given REST SCHEMA `/myService/nope` could not be found.")
 EXPECT_EQ("REST SCHEMA `/myService/nope` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /nope"))
+# IF EXISTS: a missing service is nothing to do either
+EXPECT_EQ("REST SCHEMA `/nope/x` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /x FROM SERVICE /nope"))
+EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /x FROM SERVICE /nope"), "Could not find the REST SERVICE /nope.")
 EXPECT_EQ("REST SCHEMA `/full/sakila` dropped successfully.", rest_info("DROP REST SCHEMA /sakila FROM SERVICE /full"))
 EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS FROM /full"))
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS"))
