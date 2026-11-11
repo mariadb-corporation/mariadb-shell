@@ -58,13 +58,6 @@ void Ddl_executor::link_auth_apps(const Id &service_id,
                                   const std::vector<Auth_app_reference> &add,
                                   const std::vector<Auth_app_reference> &remove,
                                   bool keep_linked) {
-  std::vector<Id> linked;
-  for (const auto &auth_app : metadata::get_auth_apps(m_session, service_id)) {
-    linked.push_back(auth_app.id);
-  }
-  const auto is_linked = [&](const Id &auth_app_id) {
-    return std::find(linked.begin(), linked.end(), auth_app_id) != linked.end();
-  };
   const auto apply = [&](const std::vector<Auth_app_reference> &entries,
                           auto action) {
     for (const auto &entry : entries) {
@@ -76,19 +69,22 @@ void Ddl_executor::link_auth_apps(const Id &service_id,
       if (auth_app) action(entry, auth_app->id);
     }
   };
-  // ADD of a linked auth app fails (link_auth_app()), unless keep_linked
   apply(add, [&](const Auth_app_reference &, const Id &auth_app_id) {
-    if (keep_linked && is_linked(auth_app_id)) return;
-    metadata::link_auth_app(m_session, auth_app_id, service_id);
-    linked.push_back(auth_app_id);
+    if (!metadata::link_auth_app(m_session, auth_app_id, service_id) &&
+        !keep_linked) {
+      throw std::runtime_error(
+          "The REST auth app has already been added to the REST service.");
+    }
   });
   // REMOVE ... IF EXISTS also skips an auth app that is not linked, so that
   // a deployment script can run it again
   apply(remove, [&](const Auth_app_reference &entry, const Id &auth_app_id) {
-    if (entry.if_exists && !is_linked(auth_app_id)) return;
-    metadata::unlink_auth_app(m_session, auth_app_id, service_id);
-    linked.erase(std::remove(linked.begin(), linked.end(), auth_app_id),
-                 linked.end());
+    if (!metadata::unlink_auth_app(m_session, auth_app_id, service_id) &&
+        !entry.if_exists) {
+      throw std::runtime_error(
+          "The REST auth app cannot be removed as it is not assigned to the "
+          "REST service.");
+    }
   });
 }
 
@@ -101,11 +97,10 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
 
   // OR REPLACE writes an existing service anew in place: it keeps its id,
   // and with it its schemas, content sets, roles and auth app links
-  std::optional<Id> replaced_id;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_service(m_session, path, s.path.developers); },
-          [&](const auto &existing) { replaced_id = existing.id; })) {
+  const auto existing = find_existing(s.flags, [&] {
+    return metadata::find_service(m_session, path, s.path.developers);
+  });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST SERVICE `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -125,11 +120,11 @@ void Ddl_executor::do_execute(const Create_rest_service &s, Statement_result *r)
   definition.auth_completed_url_validation = text_of(s.options.auth_validation);
   definition.auth_completed_page_content = text_of(s.options.auth_page_content);
 
-  if (replaced_id) {
-    metadata::replace_service(m_session, *replaced_id, definition);
+  if (existing) {
+    metadata::replace_service(m_session, existing->id, definition);
     // ADD links what is not linked yet, REMOVE unlinks; the links the
     // statement does not name stay, a script cannot know them all
-    link_auth_apps(*replaced_id, s.options.add_auth_apps,
+    link_auth_apps(existing->id, s.options.add_auth_apps,
                    s.options.remove_auth_apps, true);
   } else {
     const Id id = metadata::add_service(m_session, definition);

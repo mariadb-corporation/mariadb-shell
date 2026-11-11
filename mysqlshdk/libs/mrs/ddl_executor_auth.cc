@@ -138,10 +138,9 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
 
   // OR REPLACE writes an existing auth app anew in place: it keeps its id,
   // its users and its service links
-  std::optional<metadata::Auth_app> replaced;
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_auth_app(m_session, s.name); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto existing = find_existing(
+      s.flags, [&] { return metadata::find_auth_app(m_session, s.name); });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST AUTH APP `" + s.name + "` created successfully.";
     transaction.commit();
     return;
@@ -169,7 +168,7 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
           "` requires the APP/CLIENT ID option to be specified.");
     }
     // A replaced app keeps its stored secret when the statement has none
-    if (!s.options.app_secret && !(replaced && replaced->access_token)) {
+    if (!s.options.app_secret && !(existing && existing->access_token)) {
       throw std::runtime_error(
           "The OAuth2 vendor `" + s.vendor +
           "` requires the APP/CLIENT SECRET option to be specified.");
@@ -187,8 +186,8 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
   definition.limit_to_registered_users = !s.options.allow_new_users.value_or(false);
   definition.default_role_id = default_role_id;
 
-  if (replaced) {
-    metadata::replace_auth_app(m_session, *replaced, definition);
+  if (existing) {
+    metadata::replace_auth_app(m_session, *existing, definition);
   } else {
     metadata::add_auth_app(m_session, definition);
   }
@@ -374,10 +373,10 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
 
   // OR REPLACE writes an existing user anew in place: it keeps its id, its
   // roles and groups, and its password unless the statement gives one
-  std::optional<metadata::User> replaced;
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_user(m_session, auth_app->id, s.name); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto existing = find_existing(s.flags, [&] {
+    return metadata::find_user(m_session, auth_app->id, s.name);
+  });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST USER `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -398,8 +397,8 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
   definition.app_options = s.options.app_options;
   definition.password = s.password;
 
-  if (replaced) {
-    metadata::replace_user(m_session, *replaced, definition);
+  if (existing) {
+    metadata::replace_user(m_session, *existing, definition);
   } else {
     metadata::add_user(m_session, definition);
   }
@@ -519,10 +518,9 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
 
   // OR REPLACE writes an existing role anew in place: it keeps its id, its
   // privileges and its grants to users and groups
-  std::optional<Id> replaced_id;
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_role(m_session, s.name, service_id); },
-          [&](const auto &existing) { replaced_id = existing.id; })) {
+  const auto existing = find_existing(
+      s.flags, [&] { return metadata::find_role(m_session, s.name, service_id); });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST ROLE `" + s.name + "` created successfully.";
     transaction.commit();
     return;
@@ -535,8 +533,8 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
   definition.description = s.options.comments;
   if (s.options.options) definition.options = s.options.options->value;
 
-  if (replaced_id) {
-    metadata::replace_role(m_session, *replaced_id, definition);
+  if (existing) {
+    metadata::replace_role(m_session, existing->id, definition);
   } else {
     metadata::add_role(m_session, definition);
   }

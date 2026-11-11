@@ -591,6 +591,20 @@ FROM `{metadata_schema}`.`mrs_role` r
   return roles;
 }
 
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST ROLE sets, for a new role and for
+// the one it replaces in place alike.
+template <typename Statement>
+void set_role_columns(Statement *statement, const Role_definition &definition) {
+  statement->set("derived_from_role_id", Value::id(definition.derived_from_role_id));
+  statement->set("caption", definition.caption);
+  statement->set("description", definition.description);
+  statement->set("options", definition.options);
+}
+
+}  // namespace
+
 Id add_role(Db_session *session, const Role_definition &definition) {
   const std::string duplicate_message =
       "DUPLICATION ERROR: The REST role `" + definition.caption +
@@ -607,12 +621,9 @@ Id add_role(Db_session *session, const Role_definition &definition) {
   const Id id = definition.id ? *definition.id : new_id(session);
   sql::Insert insert("mrs_role");
   insert.set("id", Value::id(id));
-  insert.set("derived_from_role_id", Value::id(definition.derived_from_role_id));
   insert.set("specific_to_service_id",
              Value::id(definition.specific_to_service_id));
-  insert.set("caption", definition.caption);
-  insert.set("description", definition.description);
-  insert.set("options", definition.options);
+  set_role_columns(&insert, definition);
   try {
     session->execute(insert);
   } catch (const Db_error &e) {
@@ -636,13 +647,10 @@ void replace_role(Db_session *session, const Id &id,
 
   // The caption and the service found the role; its privileges and its
   // grants to users and groups stay
-  session->execute(
-      sql::Update("mrs_role")
-          .set("derived_from_role_id", Value::id(definition.derived_from_role_id))
-          .set("caption", definition.caption)
-          .set("description", definition.description)
-          .set("options", definition.options)
-          .where("id", Value::id(id)));
+  sql::Update update("mrs_role");
+  set_role_columns(&update, definition);
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void delete_role(Db_session *session, const Id &id) {
@@ -999,22 +1007,37 @@ std::vector<Auth_app> get_auth_apps(Db_session *session,
                          {Value::id(*service_id)});
 }
 
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST AUTH APP sets, for a new app and
+// for the one it replaces in place alike. The secret is not among them: a
+// statement without one keeps the stored secret. Nor are url_direct_auth
+// and options, which no statement sets.
+template <typename Statement>
+void set_auth_app_columns(Statement *statement,
+                          const Auth_app_definition &definition) {
+  statement->set("auth_vendor_id", Value::id(definition.auth_vendor_id));
+  statement->set("name", definition.name);
+  statement->set("description", definition.description);
+  statement->set("url", definition.url);
+  statement->set("app_id", definition.app_id);
+  statement->set("enabled", definition.enabled);
+  statement->set("limit_to_registered_users",
+                 definition.limit_to_registered_users);
+  statement->set("default_role_id", Value::id(definition.default_role_id));
+}
+
+}  // namespace
+
 Id add_auth_app(Db_session *session, const Auth_app_definition &definition) {
   const Id id = new_id(session);
-  session->execute(
-      sql::Insert("auth_app")
-          .set("id", Value::id(id))
-          .set("auth_vendor_id", Value::id(definition.auth_vendor_id))
-          .set("name", definition.name)
-          .set("description", definition.description)
-          .set("url", definition.url)
-          .set("url_direct_auth", definition.url_direct_auth)
-          .set("access_token", definition.access_token)
-          .set("app_id", definition.app_id)
-          .set("enabled", definition.enabled)
-          .set("limit_to_registered_users", definition.limit_to_registered_users)
-          .set("default_role_id", Value::id(definition.default_role_id))
-          .set("options", definition.options));
+  sql::Insert insert("auth_app");
+  insert.set("id", Value::id(id));
+  set_auth_app_columns(&insert, definition);
+  insert.set("url_direct_auth", definition.url_direct_auth);
+  insert.set("access_token", definition.access_token);
+  insert.set("options", definition.options);
+  session->execute(insert);
   return id;
 }
 
@@ -1023,22 +1046,18 @@ void replace_auth_app(Db_session *session, const Auth_app &auth_app,
   // The users of an app are those of its vendor: an MRS user has a password
   // hash, the users of the others a vendor_user_id
   if (definition.auth_vendor_id != auth_app.auth_vendor_id &&
-      !get_users(session, auth_app.id).empty()) {
+      !session
+           ->query("SELECT 1 FROM " + sql::metadata_table("mrs_user") +
+                       " WHERE auth_app_id = ? LIMIT 1",
+                   {Value::id(auth_app.id)})
+           .empty()) {
     throw std::runtime_error(
         "The vendor of the REST AUTH APP `" + auth_app.name +
         "` cannot be changed as it has users. Drop the REST AUTH APP first.");
   }
 
   sql::Update update("auth_app");
-  update.set("auth_vendor_id", Value::id(definition.auth_vendor_id));
-  update.set("name", definition.name);
-  update.set("description", definition.description);
-  update.set("url", definition.url);
-  update.set("app_id", definition.app_id);
-  update.set("enabled", definition.enabled);
-  update.set("limit_to_registered_users", definition.limit_to_registered_users);
-  update.set("default_role_id", Value::id(definition.default_role_id));
-  // A secret is not written into scripts: an absent one keeps the stored one
+  set_auth_app_columns(&update, definition);
   update.set_if("access_token", definition.access_token);
   update.where("id", Value::id(auth_app.id));
   session->execute(update);
@@ -1072,32 +1091,24 @@ void delete_auth_app(Db_session *session, const Id &id) {
   session->execute(sql::Delete("auth_app").where("id", Value::id(id)));
 }
 
-void link_auth_app(Db_session *session, const Id &auth_app_id,
+bool link_auth_app(Db_session *session, const Id &auth_app_id,
                    const Id &service_id) {
   try {
     session->execute(sql::Insert("service_has_auth_app")
                          .set("service_id", Value::id(service_id))
                          .set("auth_app_id", Value::id(auth_app_id)));
   } catch (const Db_error &e) {
-    if (e.code() == 1062) {
-      throw std::runtime_error(
-          "The REST auth app has already been added to the REST service.");
-    }
+    if (e.code() == 1062) return false;
     throw;
   }
+  return true;
 }
 
-void unlink_auth_app(Db_session *session, const Id &auth_app_id,
+bool unlink_auth_app(Db_session *session, const Id &auth_app_id,
                      const Id &service_id) {
-  const auto affected =
-      session->execute(sql::Delete("service_has_auth_app")
-                           .where("service_id", Value::id(service_id))
-                           .where("auth_app_id", Value::id(auth_app_id)));
-  if (affected == 0) {
-    throw std::runtime_error(
-        "The REST auth app cannot be removed as it is not assigned to the "
-        "REST service.");
-  }
+  return session->execute(sql::Delete("service_has_auth_app")
+                              .where("service_id", Value::id(service_id))
+                              .where("auth_app_id", Value::id(auth_app_id))) > 0;
 }
 
 std::string auth_app_create_statement(Db_session *session,
@@ -1183,60 +1194,69 @@ std::string hash_password(std::string_view password) {
   return "$A$005$" + base64_encode(salt) + "$" + base64_encode(stored_key);
 }
 
-Id add_user(Db_session *session, const User_definition &definition) {
-  std::optional<std::string> auth_string;
-  if (stores_passwords(session, definition.auth_app_id)) {
-    if (!definition.password || definition.password->empty()) {
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST USER sets, for a new user and for
+// the one it replaces in place alike; the password is apart.
+template <typename Statement>
+void set_user_columns(Statement *statement, const User_definition &definition) {
+  statement->set("name", definition.name);
+  statement->set("email", definition.email);
+  statement->set("vendor_user_id", definition.vendor_user_id);
+  statement->set("login_permitted", definition.login_permitted);
+  statement->set("mapped_user_id", definition.mapped_user_id);
+  statement->set("options", definition.options);
+  statement->set("app_options", definition.app_options);
+}
+
+// The auth_string stored for the password of a user of the auth app. An
+// app that stores passwords (MRS) requires one, which is checked for
+// strength and hashed; the other apps reject one.
+std::optional<std::string> auth_string_of(
+    Db_session *session, const Id &auth_app_id,
+    const std::optional<std::string> &password) {
+  if (stores_passwords(session, auth_app_id)) {
+    if (!password || password->empty()) {
       throw std::runtime_error(
           "The authentication string is required for this app.");
     }
-    check_password(*definition.password);
-    auth_string = hash_password(*definition.password);
-  } else if (definition.password) {
+    check_password(*password);
+    return hash_password(*password);
+  }
+  if (password) {
     throw std::runtime_error(
         "Password changing not supported for this authentication method");
   }
+  return std::nullopt;
+}
+
+}  // namespace
+
+Id add_user(Db_session *session, const User_definition &definition) {
+  const auto auth_string =
+      auth_string_of(session, definition.auth_app_id, definition.password);
 
   const Id id = new_id(session);
-  const auto affected = session->execute(
-      sql::Insert("mrs_user")
-          .set("id", Value::id(id))
-          .set("auth_app_id", Value::id(definition.auth_app_id))
-          .set("name", definition.name)
-          .set("email", definition.email)
-          .set("vendor_user_id", definition.vendor_user_id)
-          .set("login_permitted", definition.login_permitted)
-          .set("mapped_user_id", definition.mapped_user_id)
-          .set("options", definition.options)
-          .set("app_options", definition.app_options)
-          .set("auth_string", auth_string));
-  if (affected == 0) throw std::runtime_error("Failed to insert the new user.");
+  sql::Insert insert("mrs_user");
+  insert.set("id", Value::id(id));
+  insert.set("auth_app_id", Value::id(definition.auth_app_id));
+  set_user_columns(&insert, definition);
+  insert.set("auth_string", auth_string);
+  if (session->execute(insert) == 0) {
+    throw std::runtime_error("Failed to insert the new user.");
+  }
   return id;
 }
 
 void replace_user(Db_session *session, const User &user,
                   const User_definition &definition) {
   sql::Update update("mrs_user");
-  update.set("name", definition.name);
-  update.set("email", definition.email);
-  update.set("vendor_user_id", definition.vendor_user_id);
-  update.set("login_permitted", definition.login_permitted);
-  update.set("mapped_user_id", definition.mapped_user_id);
-  update.set("options", definition.options);
-  update.set("app_options", definition.app_options);
+  set_user_columns(&update, definition);
   // An absent password keeps the stored one: a deployment must not reset
   // the passwords users have changed since
   if (definition.password) {
-    if (!stores_passwords(session, user.auth_app_id)) {
-      throw std::runtime_error(
-          "Password changing not supported for this authentication method");
-    }
-    if (definition.password->empty()) {
-      throw std::runtime_error(
-          "The authentication string is required for this app.");
-    }
-    check_password(*definition.password);
-    update.set("auth_string", hash_password(*definition.password));
+    update.set("auth_string",
+               auth_string_of(session, user.auth_app_id, definition.password));
   }
   update.where("id", Value::id(user.id));
   session->execute(update);

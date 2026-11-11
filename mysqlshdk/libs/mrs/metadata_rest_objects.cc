@@ -665,7 +665,9 @@ void replace_rest_object(Db_session *session, const Id &id,
   update.where("id", Value::id(id));
   session->execute(update);
 
-  set_objects(session, id, objects);
+  // The old objects were deleted by the caller (delete_objects())
+  check_object_names(session, definition.rest_schema_id, objects);
+  insert_objects(session, id, objects);
 }
 
 void update_rest_object(Db_session *session, const Id &id,
@@ -790,11 +792,15 @@ std::vector<Data_mapping> get_objects(Db_session *session,
   return objects;
 }
 
-void set_objects(Db_session *session, const Id &rest_object_id,
-                 const std::vector<Data_mapping> &objects) {
+void delete_objects(Db_session *session, const Id &rest_object_id) {
   // The fields and references of the objects go with them (triggers)
   session->execute(
       sql::Delete("data_mapping").where("rest_object_id", Value::id(rest_object_id)));
+}
+
+void set_objects(Db_session *session, const Id &rest_object_id,
+                 const std::vector<Data_mapping> &objects) {
+  delete_objects(session, rest_object_id);
 
   check_object_names(session, schema_id_of_rest_object(session, rest_object_id),
                      objects);

@@ -751,7 +751,7 @@ void add_new_rest_object(Db_session *session,
   Db_transaction transaction(session);
   if (replaced) {
     // The old objects go first, so their names are free for the new ones
-    metadata::set_objects(session, replaced->id, {});
+    metadata::delete_objects(session, replaced->id);
   }
   assign_object_names(session, definition.rest_schema_id, full_path, is_routine,
                       &objects);
@@ -789,11 +789,10 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
                              "` does not exist.");
   }
 
-  std::optional<metadata::Rest_object> replaced;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto replaced = find_existing(s.flags, [&] {
+    return metadata::find_rest_object(m_session, schema.id, s.path);
+  });
+  if (replaced && s.flags.if_not_exists) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
     return;
   }
@@ -816,11 +815,10 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
-  std::optional<metadata::Rest_object> replaced;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto replaced = find_existing(s.flags, [&] {
+    return metadata::find_rest_object(m_session, schema.id, s.path);
+  });
+  if (replaced && s.flags.if_not_exists) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
     return;
   }

@@ -294,10 +294,11 @@ void replace_auth_app(Db_session *session, const Auth_app &auth_app,
 // Deletes an auth app with its service links; its users go with it.
 void delete_auth_app(Db_session *session, const Id &id);
 
-// Links an auth app to a service / removes the link.
-void link_auth_app(Db_session *session, const Id &auth_app_id,
+// Links an auth app to a service / removes the link. Returns false when
+// there was nothing to do: the app was linked already / was not linked.
+bool link_auth_app(Db_session *session, const Id &auth_app_id,
                    const Id &service_id);
-void unlink_auth_app(Db_session *session, const Id &auth_app_id,
+bool unlink_auth_app(Db_session *session, const Id &auth_app_id,
                      const Id &service_id);
 
 // The CREATE OR REPLACE REST AUTH APP statement, optionally followed by

@@ -377,13 +377,11 @@ rest("CREATE REST CONTENT SET /cs ON SERVICE /inPlace")
 rest("CREATE REST AUTH APP \"inPlaceKept\" VENDOR MRS")
 rest("CREATE REST AUTH APP \"inPlaceAdded\" VENDOR MRS")
 rest("ALTER REST SERVICE /inPlace ADD AUTH APP \"inPlaceKept\"")
-ids = [md_one("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/inPlace'"),
-       md_one("SELECT id FROM mariadb_rest_service.rest_schema WHERE request_path = '/s'"),
-       md_one("SELECT o.id FROM mariadb_rest_service.rest_object o JOIN mariadb_rest_service.rest_schema s ON o.rest_schema_id = s.id WHERE s.request_path = '/s'")]
 def current_ids():
     return [md_one("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/inPlace'"),
             md_one("SELECT id FROM mariadb_rest_service.rest_schema WHERE request_path = '/s'"),
             md_one("SELECT o.id FROM mariadb_rest_service.rest_object o JOIN mariadb_rest_service.rest_schema s ON o.rest_schema_id = s.id WHERE s.request_path = '/s'")]
+ids = current_ids()
 def linked_apps():
     return [r[0] for r in rest_rows("SHOW REST AUTH APPS FROM SERVICE /inPlace")]
 

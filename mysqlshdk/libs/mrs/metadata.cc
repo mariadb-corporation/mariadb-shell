@@ -642,17 +642,18 @@ void set_service_columns(Statement *statement,
                  definition.options
                      ? *definition.options
                      : json::parse(k_default_service_options).dump());
-  statement->set_or_default("enabled", definition.enabled);
-  statement->set_or_default("published", definition.published);
-  statement->set_or_default("url_protocol", definition.url_protocol);
-  statement->set_or_default("comments", definition.comments);
-  statement->set_or_default("metadata", definition.metadata);
-  statement->set_or_default("auth_path", definition.auth_path);
-  statement->set_or_default("auth_completed_url", definition.auth_completed_url);
-  statement->set_or_default("auth_completed_url_validation",
-                            definition.auth_completed_url_validation);
-  statement->set_or_default("auth_completed_page_content",
-                            definition.auth_completed_page_content);
+  statement->set("enabled", Value::or_default(definition.enabled));
+  statement->set("published", Value::or_default(definition.published));
+  statement->set("url_protocol", Value::or_default(definition.url_protocol));
+  statement->set("comments", Value::or_default(definition.comments));
+  statement->set("metadata", Value::or_default(definition.metadata));
+  statement->set("auth_path", Value::or_default(definition.auth_path));
+  statement->set("auth_completed_url",
+                 Value::or_default(definition.auth_completed_url));
+  statement->set("auth_completed_url_validation",
+                 Value::or_default(definition.auth_completed_url_validation));
+  statement->set("auth_completed_page_content",
+                 Value::or_default(definition.auth_completed_page_content));
 }
 
 }  // namespace

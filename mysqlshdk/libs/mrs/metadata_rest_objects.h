@@ -189,6 +189,9 @@ std::vector<Data_mapping> get_objects(Db_session *session,
 // Whether a rest_object has any object (a result definition).
 bool has_objects(Db_session *session, const Id &rest_object_id);
 
+// Deletes the objects of a rest_object, with their fields and references.
+void delete_objects(Db_session *session, const Id &rest_object_id);
+
 // Replaces the objects of a rest_object. The object names have to be unique
 // within the REST schema (case-insensitively).
 void set_objects(Db_session *session, const Id &rest_object_id,
@@ -240,8 +243,9 @@ Id add_rest_object(Db_session *session, const Rest_object_definition &definition
 // rest_object: writes its database object, settings and data mapping anew
 // (an absent setting takes its default, as for a new one), in place. Its id
 // stays, and with it what refers to it (row group security, content set
-// links); the objects of the data mapping get new ids. The GRANTs are not
-// run, see grant_statements().
+// links). The caller deletes the old data mapping first (delete_objects()),
+// so that the new objects can be named before; they get new ids. The
+// GRANTs are not run, see grant_statements().
 void replace_rest_object(Db_session *session, const Id &id,
                          const Rest_object_definition &definition,
                          const std::vector<Data_mapping> &objects);

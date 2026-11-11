@@ -262,20 +262,15 @@ class Ddl_executor {
   std::string current_service_path() const;
 
 
-  // CREATE IF NOT EXISTS and CREATE OR REPLACE: looks up the existing
-  // object with find() (which returns an optional). Returns true when the
-  // statement keeps it (IF NOT EXISTS); with OR REPLACE it is handed to
-  // replace(existing), and the statement then writes it anew in place,
-  // keeping its id. Without either flag nothing is looked up.
-  template <typename Find, typename Replace>
-  static bool keep_existing(const ast::Create_flags &flags, Find find,
-                            Replace replace) {
-    if (!flags.or_replace && !flags.if_not_exists) return false;
-    const auto existing = find();
-    if (!existing) return false;
-    if (flags.if_not_exists) return true;
-    replace(*existing);
-    return false;
+  // CREATE IF NOT EXISTS and CREATE OR REPLACE: the existing object that
+  // find() (which returns an optional) looks up. IF NOT EXISTS keeps it
+  // unchanged; OR REPLACE writes it anew in place, keeping its id. Without
+  // either flag nothing is looked up and the result is empty.
+  template <typename Find>
+  static auto find_existing(const ast::Create_flags &flags, Find find)
+      -> decltype(find()) {
+    if (!flags.or_replace && !flags.if_not_exists) return std::nullopt;
+    return find();
   }
 
   // Checks once per run that the metadata schema can be used and that the
