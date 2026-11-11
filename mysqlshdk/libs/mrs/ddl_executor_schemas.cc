@@ -138,6 +138,13 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
                                           : require_service(s.service)) {
     schema = metadata::find_schema(m_session, *service_id, s.schema_path);
   }
+  // FOR DATABASE: only a REST schema still on that database schema, so that
+  // a deployment script can drop a schema that moved to another database
+  // on every deployment, without dropping it again once it has moved
+  if (schema && s.for_database &&
+      !metadata::same_database_schema(m_session, schema->name, *s.for_database)) {
+    schema.reset();
+  }
   if (!schema && !s.if_exists) {
     throw std::runtime_error("The given REST SCHEMA `" + full_path +
                              "` could not be found.");

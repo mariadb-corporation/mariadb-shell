@@ -640,6 +640,8 @@ dropRestSchemaStatement:
         IF_SYMBOL EXISTS_SYMBOL
     )? schemaRequestPath (
         FROM_SYMBOL SERVICE_SYMBOL? serviceRequestPath
+    )? (
+        FOR_SYMBOL DATABASE_SYMBOL schemaName
     )?
 ;
 

@@ -570,6 +570,7 @@ DROP REST FUNCTION /actorFunc;
 
 DROP REST SCHEMA /sakila FROM /myTestService;
 DROP REST SCHEMA IF EXISTS /sakila FROM /myTestService;
+DROP REST SCHEMA IF EXISTS /sakila FROM /myTestService FOR DATABASE sakila;
 
 DROP REST SERVICE /myTestService;
 DROP REST SERVICE IF EXISTS /myTestService;

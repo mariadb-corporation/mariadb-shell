@@ -152,6 +152,8 @@ ALTER REST SCHEMA /sakila ON SERVICE /myService
 
 The `DROP REST SCHEMA` statement drops an existing REST schema. With `IF EXISTS`, it does nothing when the REST schema or the REST service it names doesn't exist.
 
+With `FOR SCHEMA` (or `FOR DATABASE`), the statement drops the REST schema only while it serves the given database schema. The names are compared the way the server compares schema names. With `IF EXISTS`, a REST schema on another database schema is left alone, as a missing one is. This lets a deployment script drop a REST schema that moved to another database schema on every deployment: servers still on the old database schema drop it, and servers already moved, or new installs, keep theirs.
+
 ### Syntax
 
 ```antlr
@@ -160,6 +162,8 @@ dropRestSchemaStatement:
         IF EXISTS
     )? schemaRequestPath (
         FROM SERVICE? serviceRequestPath
+    )? (
+        FOR SCHEMA schemaName
     )?
 ;
 ```
@@ -174,6 +178,12 @@ The following example drops the REST schema `/sakila` of the REST service `/mySe
 
 ```sql
 DROP REST SCHEMA /sakila FROM SERVICE /myService;
+```
+
+The following example drops the REST schema `/app` of the REST service `/notes` only if it still serves the database schema `a`.
+
+```sql
+DROP REST SCHEMA IF EXISTS /app FROM SERVICE /notes FOR SCHEMA a;
 ```
 
 ## SHOW REST SCHEMAS

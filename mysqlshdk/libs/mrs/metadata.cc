@@ -1094,5 +1094,14 @@ std::optional<std::string> database_schema_name(Db_session *session,
   return result.first()["SCHEMA_NAME"].as_string();
 }
 
+bool same_database_schema(Db_session *session, std::string_view a,
+                          std::string_view b) {
+  if (a == b) return true;
+  return session->query("SELECT @@lower_case_table_names AS lctn")
+                 .first()["lctn"]
+                 .as_int() != 0 &&
+         to_lower(a) == to_lower(b);
+}
+
 }  // namespace metadata
 }  // namespace mrs

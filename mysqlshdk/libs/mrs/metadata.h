@@ -405,6 +405,12 @@ Id clone_schema(Db_session *session, const Schema &schema,
 std::optional<std::string> database_schema_name(Db_session *session,
                                                 std::string_view name);
 
+// Whether two database schema names name the same schema, compared as the
+// server compares them: exactly with lower_case_table_names = 0, else
+// case-insensitively.
+bool same_database_schema(Db_session *session, std::string_view a,
+                          std::string_view b);
+
 }  // namespace metadata
 }  // namespace mrs
 

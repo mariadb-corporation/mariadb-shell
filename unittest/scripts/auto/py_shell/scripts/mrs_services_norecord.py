@@ -498,6 +498,17 @@ EXPECT_EQ("REST SCHEMA `/myService/nope` dropped successfully.", rest_info("DROP
 # IF EXISTS: a missing service is nothing to do either
 EXPECT_EQ("REST SCHEMA `/nope/x` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /x FROM SERVICE /nope"))
 EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /x FROM SERVICE /nope"), "Could not find the REST SERVICE /nope.")
+# FOR DATABASE: only a REST schema on that database schema is dropped, so a
+# deployment script can drop one that moved to another database every time
+rest("CREATE REST SCHEMA /moved ON SERVICE /full FROM sakila")
+rest("CREATE REST VIEW /city ON SERVICE /full SCHEMA /moved AS sakila.city")
+EXPECT_EQ(0, rest("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /full FOR DATABASE mysql").get_affected_items_count())
+EXPECT_EQ([["/moved", "ENABLED"]], [r for r in rest_rows("SHOW REST SCHEMAS FROM SERVICE /full") if r[0] == "/moved"])
+EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /moved FROM SERVICE /full FOR DATABASE mysql"), "The given REST SCHEMA `/full/moved` could not be found.")
+EXPECT_EQ("REST SCHEMA `/nope/moved` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /nope FOR DATABASE sakila"))
+EXPECT_EQ("REST SCHEMA `/full/moved` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /full FOR DATABASE sakila"))
+EXPECT_EQ([], [r for r in rest_rows("SHOW REST SCHEMAS FROM SERVICE /full") if r[0] == "/moved"])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE request_path = '/city' AND rest_schema_id NOT IN (SELECT id FROM mariadb_rest_service.rest_schema)").fetch_one()[0])
 EXPECT_EQ("REST SCHEMA `/full/sakila` dropped successfully.", rest_info("DROP REST SCHEMA /sakila FROM SERVICE /full"))
 EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS FROM /full"))
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS"))

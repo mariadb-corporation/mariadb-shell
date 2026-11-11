@@ -401,6 +401,8 @@ struct Drop_rest_schema {
   bool if_exists = false;
   std::string schema_path;
   std::optional<Service_path> service;
+  // FOR DATABASE <db>: only a REST schema on that database schema is dropped
+  std::optional<std::string> for_database;
 };
 
 // FORMAT=TRADITIONAL (the default) or FORMAT=JSON, as EXPLAIN takes it
