@@ -238,6 +238,8 @@ class Ddl_executor {
   std::optional<Id> resolve_service(
       const std::optional<ast::Service_path> &given);
   // The service of a role statement: `ON ANY SERVICE` yields nullopt.
+  // The id of the named service, or nullopt when it does not exist.
+  std::optional<Id> find_named_service(const ast::Service_path &given);
   std::optional<Id> resolve_role_service(
       const std::optional<ast::Role_service> &given);
 
@@ -254,14 +256,12 @@ class Ddl_executor {
   Id require_service(const std::optional<ast::Schema_selector> &given);
 
   // For IF EXISTS statements, which treat a missing service or schema as
-  // nothing to do: the service named in the statement (nullopt when it does
-  // not exist), or the current one (throws when there is none).
-  std::optional<Id> find_service_if_exists(
-      const std::optional<ast::Service_path> &given);
-  // The same for a schema selector: nullopt when the named service or
-  // schema does not exist.
-  std::optional<metadata::Schema> find_schema_if_exists(
-      const ast::Schema_selector &given);
+  // nothing to do: with if_exists, nullopt when the named service or schema
+  // does not exist. A missing current one still throws.
+  std::optional<Id> require_service(const std::optional<ast::Service_path> &given,
+                                    bool if_exists);
+  std::optional<metadata::Schema> rest_object_schema(
+      const std::optional<ast::Schema_selector> &given, bool if_exists);
 
   // Paths for messages: the service's full path (developers@host/path)
   // and the schema's path below it, with an optional request path appended.

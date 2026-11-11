@@ -143,19 +143,23 @@ void Ddl_executor::validate_state() {
   }
 }
 
+std::optional<Id> Ddl_executor::find_named_service(const Service_path &given) {
+  const auto service =
+      metadata::find_service(m_session, given.path, given.developers);
+  if (!service) return std::nullopt;
+  return service->id;
+}
+
 std::optional<Id> Ddl_executor::resolve_service(
     const std::optional<Service_path> &given) {
-  if (given) {
-    const auto service = metadata::find_service(m_session, given->path,
-                                                given->developers);
-    if (!service) {
-      throw std::runtime_error("Could not find the REST SERVICE " +
-                               metadata::format_developers(given->developers) +
-                               given->path + ".");
-    }
-    return service->id;
+  if (!given) return m_state->current_service_id;
+  const auto service_id = find_named_service(*given);
+  if (!service_id) {
+    throw std::runtime_error("Could not find the REST SERVICE " +
+                             metadata::format_developers(given->developers) +
+                             given->path + ".");
   }
-  return m_state->current_service_id;
+  return service_id;
 }
 
 Id Ddl_executor::require_service(const std::optional<Service_path> &given) {
@@ -168,20 +172,10 @@ Id Ddl_executor::require_service(const std::optional<Schema_selector> &given) {
   return require_service(given ? given->service : std::nullopt);
 }
 
-std::optional<Id> Ddl_executor::find_service_if_exists(
-    const std::optional<Service_path> &given) {
-  if (!given) return require_service(given);
-  const auto service =
-      metadata::find_service(m_session, given->path, given->developers);
-  if (!service) return std::nullopt;
-  return service->id;
-}
-
-std::optional<metadata::Schema> Ddl_executor::find_schema_if_exists(
-    const Schema_selector &given) {
-  const auto service_id = find_service_if_exists(given.service);
-  if (!service_id) return std::nullopt;
-  return metadata::find_schema(m_session, *service_id, given.schema_path);
+std::optional<Id> Ddl_executor::require_service(
+    const std::optional<Service_path> &given, bool if_exists) {
+  if (if_exists && given) return find_named_service(*given);
+  return require_service(given);
 }
 
 std::optional<Id> Ddl_executor::resolve_role_service(

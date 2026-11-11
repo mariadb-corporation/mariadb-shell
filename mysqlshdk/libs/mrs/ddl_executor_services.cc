@@ -144,20 +144,10 @@ void Ddl_executor::do_execute(const Alter_rest_service &s, Statement_result *r) 
   // A statement that only removes auth apps, each IF EXISTS, has nothing to
   // do on a missing service: a deployment script can run it before the
   // service is created, or after an earlier deployment dropped it
-  const auto &o = s.options;
-  const bool only_removes_if_exists =
-      !s.new_path && !o.enabled && !o.published && !o.protocol &&
-      !o.auth_path && !o.auth_redirection && !o.auth_validation &&
-      !o.auth_page_content && !o.options && !o.comments && !o.metadata &&
-      o.add_auth_apps.empty() && !o.remove_auth_apps.empty() &&
-      std::all_of(o.remove_auth_apps.begin(), o.remove_auth_apps.end(),
-                  [](const Auth_app_reference &entry) { return entry.if_exists; });
-  if (only_removes_if_exists &&
-      !metadata::find_service(m_session, s.path.path, s.path.developers)) {
-    return;
-  }
-
-  const auto service_id = require_service(s.path);
+  const auto found = require_service(
+      s.path, !s.new_path && s.options.only_removes_if_exists());
+  if (!found) return;
+  const auto &service_id = *found;
 
   metadata::Service_changes changes;
   if (s.new_path) {

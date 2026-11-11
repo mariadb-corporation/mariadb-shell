@@ -958,47 +958,46 @@ namespace {
 // REST schema's. Changing that under existing REST objects would point them
 // at another database's objects of the same name, with the grants left on
 // the old one, so it is only allowed while the schema has none.
-void check_database_change(Db_session *session, const Id &id,
+void check_database_change(Db_session *session, const Schema &schema,
                            const std::string &name) {
-  const auto row =
-      session
-          ->query("SELECT sc.name, EXISTS(SELECT 1 FROM " +
-                      sql::metadata_table("rest_object") +
-                      " o WHERE o.rest_schema_id = sc.id) AS has_objects FROM " +
-                      sql::metadata_table("rest_schema") + " sc WHERE sc.id = ?",
-                  {Value::id(id)})
-          .first();
-  const auto current = row["name"].as_string();
-  if (current != name && row["has_objects"].as_int() != 0) {
+  if (same_database_schema(session, schema.name, name)) return;
+  const bool has_objects =
+      !session
+           ->query("SELECT 1 FROM " + sql::metadata_table("rest_object") +
+                       " WHERE rest_schema_id = ? LIMIT 1",
+                   {Value::id(schema.id)})
+           .empty();
+  if (has_objects) {
     throw std::runtime_error(
-        "Its database schema cannot change from `" + current + "` to `" + name +
-        "` while it has REST objects. Drop them, or the REST SCHEMA, first.");
+        "Its database schema cannot change from `" + schema.name + "` to `" +
+        name + "` while it has REST objects. Drop them, or the REST SCHEMA, first.");
   }
 }
 
 }  // namespace
 
-void replace_schema(Db_session *session, const Id &id,
+void replace_schema(Db_session *session, const Schema &schema,
                     const Schema_definition &definition) {
   // The service and the request path found the schema; they stay, as do its
   // type and its objects
   const std::string name = schema_database_name(session, definition);
-  check_database_change(session, id, name);
+  check_database_change(session, schema, name);
   sql::Update update("rest_schema");
   set_schema_columns(&update, name, definition);
-  update.where("id", Value::id(id));
+  update.where("id", Value::id(schema.id));
   session->execute(update);
 }
 
-void update_schema(Db_session *session, const Id &id,
+void update_schema(Db_session *session, const Schema &schema,
                    const Schema_changes &changes) {
+  const Id &id = schema.id;
   sql::Update update("rest_schema");
   if (changes.service_id) update.set("service_id", Value::id(*changes.service_id));
   if (changes.name) {
     // As the server spells it, when the database schema exists
     const auto name =
         database_schema_name(session, *changes.name).value_or(*changes.name);
-    check_database_change(session, id, name);
+    check_database_change(session, schema, name);
     update.set("name", name);
   }
   update.set_if("request_path", changes.request_path);
@@ -1097,10 +1096,11 @@ std::optional<std::string> database_schema_name(Db_session *session,
 bool same_database_schema(Db_session *session, std::string_view a,
                           std::string_view b) {
   if (a == b) return true;
+  // Only names that differ in case alone depend on the server's setting
+  if (to_lower(a) != to_lower(b)) return false;
   return session->query("SELECT @@lower_case_table_names AS lctn")
-                 .first()["lctn"]
-                 .as_int() != 0 &&
-         to_lower(a) == to_lower(b);
+             .first()["lctn"]
+             .as_int() != 0;
 }
 
 }  // namespace metadata

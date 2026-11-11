@@ -165,6 +165,20 @@ struct Service_options {
   std::optional<Json> metadata;
   std::vector<Auth_app_reference> add_auth_apps;
   std::vector<Auth_app_reference> remove_auth_apps;
+
+  // Whether the options do nothing but REMOVE AUTH APP ... IF EXISTS (at
+  // least one). A new option belongs in this check too.
+  bool only_removes_if_exists() const {
+    if (enabled || published || protocol || auth_path || auth_redirection ||
+        auth_validation || auth_page_content || options || comments ||
+        metadata || !add_auth_apps.empty() || remove_auth_apps.empty()) {
+      return false;
+    }
+    for (const auto &entry : remove_auth_apps) {
+      if (!entry.if_exists) return false;
+    }
+    return true;
+  }
 };
 
 // restSchemaOptions

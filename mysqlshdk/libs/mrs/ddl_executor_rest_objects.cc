@@ -774,6 +774,14 @@ metadata::Schema Ddl_executor::rest_object_schema(
                            full_schema_path(given));
 }
 
+std::optional<metadata::Schema> Ddl_executor::rest_object_schema(
+    const std::optional<Schema_selector> &given, bool if_exists) {
+  if (!if_exists || !given) return rest_object_schema(given);
+  const auto service_id = require_service(given->service, true);
+  if (!service_id) return std::nullopt;
+  return metadata::find_schema(m_session, *service_id, given->schema_path);
+}
+
 // -- CREATE -------------------------------------------------------------------
 
 void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
@@ -961,11 +969,11 @@ void Ddl_executor::do_execute(const Drop_rest_object &s, Statement_result *r) {
 
   // IF EXISTS: a missing service or schema is nothing to do, as a missing
   // REST object
-  const auto schema = s.if_exists && s.from
-                          ? find_schema_if_exists(*s.from)
-                          : std::optional<metadata::Schema>(rest_object_schema(s.from));
+  const auto schema = rest_object_schema(s.from, s.if_exists);
   std::optional<metadata::Rest_object> rest_object;
-  if (schema) rest_object = metadata::find_rest_object(m_session, schema->id, s.path);
+  if (schema) {
+    rest_object = metadata::find_rest_object(m_session, schema->id, s.path);
+  }
   if (rest_object && !is_of_kind(*rest_object, s.kind)) rest_object.reset();
   if (!rest_object && !s.if_exists) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +

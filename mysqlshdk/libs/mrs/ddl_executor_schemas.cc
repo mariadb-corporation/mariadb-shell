@@ -76,7 +76,7 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   bool becomes_current = false;
   Id id;
   if (existing) {
-    metadata::replace_schema(m_session, existing->id, definition);
+    metadata::replace_schema(m_session, *existing, definition);
   } else {
     id = metadata::add_schema(m_session, definition);
     becomes_current = m_state->current_service_id == service_id &&
@@ -116,7 +116,7 @@ void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
   changes.metadata = s.options.metadata;
 
   Db_transaction transaction(m_session);
-  metadata::update_schema(m_session, schema.id, changes);
+  metadata::update_schema(m_session, schema, changes);
   transaction.commit();
 
   if (m_state->current_schema_id == schema.id && s.new_path) {
@@ -134,8 +134,7 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
 
   // IF EXISTS: a missing service is nothing to do, as a missing schema
   std::optional<metadata::Schema> schema;
-  if (const auto service_id = s.if_exists ? find_service_if_exists(s.service)
-                                          : require_service(s.service)) {
+  if (const auto service_id = require_service(s.service, s.if_exists)) {
     schema = metadata::find_schema(m_session, *service_id, s.schema_path);
   }
   // FOR DATABASE: only a REST schema still on that database schema, so that

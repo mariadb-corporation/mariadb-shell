@@ -362,7 +362,7 @@ Id add_schema(Db_session *session, const Schema_definition &definition);
 // default, as for a new schema), in place. Its id, service, request path and
 // REST objects stay. Throws when the database schema changes while the
 // schema has REST objects.
-void replace_schema(Db_session *session, const Id &id,
+void replace_schema(Db_session *session, const Schema &schema,
                     const Schema_definition &definition);
 
 struct Schema_changes {
@@ -380,7 +380,7 @@ struct Schema_changes {
 
 // Throws when the database schema (name) changes while the schema has REST
 // objects.
-void update_schema(Db_session *session, const Id &id,
+void update_schema(Db_session *session, const Schema &schema,
                    const Schema_changes &changes);
 
 void delete_schema(Db_session *session, const Id &id);
