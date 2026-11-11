@@ -82,7 +82,7 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   definition.options = content_set_options(s.options);
 
   if (existing) {
-    metadata::replace_content_set(m_session, existing->id, definition);
+    metadata::replace_content_set(m_session, *existing, definition);
   } else {
     metadata::add_content_set(m_session, definition);
   }

@@ -286,7 +286,8 @@ void update_auth_app(Db_session *session, const Id &id,
 
 // CREATE OR REPLACE REST AUTH APP on an existing auth app: writes its vendor
 // and settings anew from the definition, in place. Its id, its users and its
-// service links stay; an absent secret (access_token) keeps the stored one.
+// service links stay; an absent secret (access_token) keeps the stored one
+// while the vendor stays.
 // Throws when the vendor changes and the app has users.
 void replace_auth_app(Db_session *session, const Auth_app &auth_app,
                       const Auth_app_definition &definition);

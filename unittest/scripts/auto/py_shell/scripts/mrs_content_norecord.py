@@ -460,6 +460,10 @@ registered = script_ids()
 rest("CREATE OR REPLACE REST CONTENT SET /app COMMENT 'The app'")
 EXPECT_EQ(registered, script_ids())
 EXPECT_EQ(2, len(registered))
+# and the options LOAD SCRIPTS generated, which the daemon loads them by
+app_options = json.loads(query_rows("SELECT options FROM mariadb_rest_service.content_set WHERE request_path = '/app'")[0][0])
+EXPECT_TRUE(app_options.get("contains_mrs_scripts"), app_options)
+EXPECT_TRUE("script_module_files" in app_options, app_options)
 
 #@<> LOAD SCRIPTS refuses numbers JSON cannot hold
 # Infinity, NaN and 1e999 have no JSON form; the scripts registered before stay

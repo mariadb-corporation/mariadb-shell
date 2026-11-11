@@ -54,6 +54,12 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
     transaction.commit();
     return;
   }
+  // The REST schema of an MRS module belongs to the content set its scripts
+  // are registered from; it cannot become a database schema in place
+  if (existing && existing->schema_type != "DATABASE_SCHEMA") {
+    throw std::runtime_error("The request path " + request_path +
+                             " is used by the REST schema of an MRS module.");
+  }
 
   metadata::Schema_definition definition;
   definition.service_id = service_id;

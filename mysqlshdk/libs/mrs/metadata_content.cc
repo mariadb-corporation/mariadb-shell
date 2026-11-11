@@ -272,13 +272,45 @@ Id add_content_set(Db_session *session, const Content_set_definition &definition
   return id;
 }
 
-void replace_content_set(Db_session *session, const Id &id,
+namespace {
+
+// The options a replaced script set is written with: those of the statement,
+// plus what LOAD SCRIPTS generated, which the daemon needs to load the
+// scripts that stay registered (SHOW CREATE leaves it out of the statement).
+std::optional<std::string> with_generated_script_options(
+    const Content_set &content_set, const std::optional<std::string> &options) {
+  if (!content_set.options || content_set.content_type != "SCRIPTS") {
+    return options;
+  }
+  const auto stored = json::try_parse(*content_set.options);
+  if (!stored || !stored->is_object()) return options;
+  json::Value doc = json::Value::object();
+  if (options) {
+    auto given = json::try_parse(*options);
+    if (!given || !given->is_object()) return options;
+    doc = std::move(*given);
+  }
+  bool generated = false;
+  for (const auto key : k_generated_script_options) {
+    if (const auto *value = stored->get(key)) {
+      doc.set(key, *value);
+      generated = true;
+    }
+  }
+  return generated ? std::optional<std::string>(doc.dump()) : options;
+}
+
+}  // namespace
+
+void replace_content_set(Db_session *session, const Content_set &content_set,
                          const Content_set_definition &definition) {
   // The service and the request path found the content set; they stay, as
   // do its type, its files and the MRS scripts registered from them
+  auto written = definition;
+  written.options = with_generated_script_options(content_set, definition.options);
   sql::Update update("content_set");
-  set_content_set_columns(&update, definition);
-  update.where("id", Value::id(id));
+  set_content_set_columns(&update, written);
+  update.where("id", Value::id(content_set.id));
   session->execute(update);
 }
 

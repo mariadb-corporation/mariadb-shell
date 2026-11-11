@@ -1058,7 +1058,11 @@ void replace_auth_app(Db_session *session, const Auth_app &auth_app,
 
   sql::Update update("auth_app");
   set_auth_app_columns(&update, definition);
-  update.set_if("access_token", definition.access_token);
+  // The secret of another vendor does not carry over
+  if (definition.access_token ||
+      definition.auth_vendor_id != auth_app.auth_vendor_id) {
+    update.set("access_token", definition.access_token);
+  }
   update.where("id", Value::id(auth_app.id));
   session->execute(update);
 }

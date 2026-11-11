@@ -83,8 +83,8 @@ Id add_content_set(Db_session *session, const Content_set_definition &definition
 // CREATE OR REPLACE REST CONTENT SET on an existing content set: writes its
 // settings anew from the definition (an absent one takes its default, as
 // for a new content set), in place. Its id, files and the MRS scripts
-// registered from them stay.
-void replace_content_set(Db_session *session, const Id &id,
+// registered from them stay, and so do the options LOAD SCRIPTS generated.
+void replace_content_set(Db_session *session, const Content_set &content_set,
                          const Content_set_definition &definition);
 
 // The changes ALTER REST CONTENT SET makes; an unset field is left alone.

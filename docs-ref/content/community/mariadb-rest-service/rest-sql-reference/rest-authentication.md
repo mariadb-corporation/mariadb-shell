@@ -17,7 +17,7 @@ The `CREATE REST AUTH APP` statement creates a new REST authentication app. The 
 
 Once a REST authentication app has been created, link it to REST services to enable authentication for them. The [CREATE REST SERVICE](rest-services.md#create-rest-service) and [ALTER REST SERVICE](rest-services.md#alter-rest-service) statements add or remove REST authentication apps with the `ADD AUTH APP` and `REMOVE AUTH APP` clauses.
 
-`CREATE OR REPLACE` updates an existing REST authentication app in place. The app keeps its ID, its REST users and its links to REST services. Its vendor and options become those of the statement, except the app secret: a statement without `APP SECRET` (or `CLIENT SECRET`) keeps the stored one. The vendor of an app that has REST users can't change. `CREATE REST AUTH APP IF NOT EXISTS` leaves an existing app unchanged.
+`CREATE OR REPLACE` updates an existing REST authentication app in place. The app keeps its ID, its REST users and its links to REST services. Its vendor and options become those of the statement, except the app secret: a statement without `APP SECRET` (or `CLIENT SECRET`) keeps the stored one, unless it changes the vendor. The vendor of an app that has REST users can't change. `CREATE REST AUTH APP IF NOT EXISTS` leaves an existing app unchanged.
 
 ### Syntax
 

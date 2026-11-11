@@ -167,8 +167,11 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
           "The OAuth2 vendor `" + s.vendor +
           "` requires the APP/CLIENT ID option to be specified.");
     }
-    // A replaced app keeps its stored secret when the statement has none
-    if (!s.options.app_secret && !(existing && existing->access_token)) {
+    // A replaced app keeps its stored secret when the statement has none,
+    // unless the vendor changes: the secret belongs to the old vendor
+    if (!s.options.app_secret &&
+        !(existing && existing->auth_vendor_id == vendor->id &&
+          existing->access_token)) {
       throw std::runtime_error(
           "The OAuth2 vendor `" + s.vendor +
           "` requires the APP/CLIENT SECRET option to be specified.");
