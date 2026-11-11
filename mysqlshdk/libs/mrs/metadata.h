@@ -360,7 +360,8 @@ Id add_schema(Db_session *session, const Schema_definition &definition);
 // CREATE OR REPLACE REST SCHEMA on an existing schema: writes its database
 // schema and settings anew from the definition (an absent setting takes its
 // default, as for a new schema), in place. Its id, service, request path and
-// REST objects stay.
+// REST objects stay. Throws when the database schema changes while the
+// schema has REST objects.
 void replace_schema(Db_session *session, const Id &id,
                     const Schema_definition &definition);
 
@@ -377,6 +378,8 @@ struct Schema_changes {
   std::optional<std::string> metadata;
 };
 
+// Throws when the database schema (name) changes while the schema has REST
+// objects.
 void update_schema(Db_session *session, const Id &id,
                    const Schema_changes &changes);
 

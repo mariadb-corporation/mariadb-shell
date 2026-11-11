@@ -952,11 +952,38 @@ Id add_schema(Db_session *session, const Schema_definition &definition) {
   return id;
 }
 
+namespace {
+
+// A REST object names only its table or routine; its database schema is the
+// REST schema's. Changing that under existing REST objects would point them
+// at another database's objects of the same name, with the grants left on
+// the old one, so it is only allowed while the schema has none.
+void check_database_change(Db_session *session, const Id &id,
+                           const std::string &name) {
+  const auto row =
+      session
+          ->query("SELECT sc.name, EXISTS(SELECT 1 FROM " +
+                      sql::metadata_table("rest_object") +
+                      " o WHERE o.rest_schema_id = sc.id) AS has_objects FROM " +
+                      sql::metadata_table("rest_schema") + " sc WHERE sc.id = ?",
+                  {Value::id(id)})
+          .first();
+  const auto current = row["name"].as_string();
+  if (current != name && row["has_objects"].as_int() != 0) {
+    throw std::runtime_error(
+        "Its database schema cannot change from `" + current + "` to `" + name +
+        "` while it has REST objects. Drop them, or the REST SCHEMA, first.");
+  }
+}
+
+}  // namespace
+
 void replace_schema(Db_session *session, const Id &id,
                     const Schema_definition &definition) {
   // The service and the request path found the schema; they stay, as do its
   // type and its objects
   const std::string name = schema_database_name(session, definition);
+  check_database_change(session, id, name);
   sql::Update update("rest_schema");
   set_schema_columns(&update, name, definition);
   update.where("id", Value::id(id));
@@ -967,7 +994,13 @@ void update_schema(Db_session *session, const Id &id,
                    const Schema_changes &changes) {
   sql::Update update("rest_schema");
   if (changes.service_id) update.set("service_id", Value::id(*changes.service_id));
-  update.set_if("name", changes.name);
+  if (changes.name) {
+    // As the server spells it, when the database schema exists
+    const auto name =
+        database_schema_name(session, *changes.name).value_or(*changes.name);
+    check_database_change(session, id, name);
+    update.set("name", name);
+  }
   update.set_if("request_path", changes.request_path);
   update.set_if("requires_auth", changes.requires_auth);
   update.set_if("enabled", changes.enabled);

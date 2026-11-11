@@ -20,7 +20,7 @@ Each REST schema belongs to a REST service, which has to be created first. One R
 
 Each REST schema can have its own options.
 
-`CREATE OR REPLACE` updates an existing REST schema in place. The schema keeps its ID and its REST objects. Its database schema and options become those of the statement: an option the statement leaves out gets the value a new REST schema would get. `CREATE REST SCHEMA IF NOT EXISTS` leaves an existing REST schema unchanged.
+`CREATE OR REPLACE` updates an existing REST schema in place. The schema keeps its ID and its REST objects. Its database schema and options become those of the statement: an option the statement leaves out gets the value a new REST schema would get. The database schema can only change while the REST schema has no REST objects, because a REST object names only its table or routine and would then point at the other database's one. To move a REST schema with its objects to another database schema, drop the REST schema and create it again. `CREATE REST SCHEMA IF NOT EXISTS` leaves an existing REST schema unchanged.
 
 ### Syntax
 
@@ -121,7 +121,7 @@ The metadata holds any JSON data. A front end can consume it to render certain a
 
 ## ALTER REST SCHEMA
 
-The `ALTER REST SCHEMA` statement changes an existing REST schema. It uses the same `restSchemaOptions` as the [`CREATE REST SCHEMA`](#create-rest-schema) statement, which describes them.
+The `ALTER REST SCHEMA` statement changes an existing REST schema. It uses the same `restSchemaOptions` as the [`CREATE REST SCHEMA`](#create-rest-schema) statement, which describes them. `FROM` changes the database schema only while the REST schema has no REST objects.
 
 ### Syntax
 

@@ -422,6 +422,17 @@ EXPECT_EQ([["/city", "ENABLED"]], rest_rows("SHOW REST VIEWS ON SERVICE /inPlace
 # A database schema that does not exist fails and leaves the schema as it was
 EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM nope"), "The given database schema name 'nope' does not exists.")
 EXPECT_EQ("new", md_one("SELECT comments FROM mariadb_rest_service.rest_schema WHERE id = '%s'" % ids[1]))
+# The database schema cannot change under REST objects: they name only
+# their table, and would point at another database's table, without grants
+moved = "Its database schema cannot change from `sakila` to `mysql` while it has REST objects. Drop them, or the REST SCHEMA, first."
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM mysql"), "Failed to create the REST SCHEMA `/inPlace/s`. " + moved)
+EXPECT_THROWS(lambda: rest("ALTER REST SCHEMA /s ON SERVICE /inPlace FROM mysql COMMENT 'x'"), "Failed to update the REST SCHEMA `/inPlace/s`. " + moved)
+EXPECT_EQ("sakila", md_one("SELECT name FROM mariadb_rest_service.rest_schema WHERE id = '%s'" % ids[1]))
+# Without REST objects the database schema can change
+rest("CREATE REST SCHEMA /empty ON SERVICE /inPlace FROM sakila")
+rest("CREATE OR REPLACE REST SCHEMA /empty ON SERVICE /inPlace FROM mysql")
+rest("ALTER REST SCHEMA /empty ON SERVICE /inPlace FROM sakila COMMENT 'back'")
+EXPECT_EQ("sakila", md_one("SELECT name FROM mariadb_rest_service.rest_schema WHERE request_path = '/empty'"))
 
 rest("DROP REST SERVICE /inPlace")
 rest("DROP REST AUTH APP \"inPlaceKept\"")
