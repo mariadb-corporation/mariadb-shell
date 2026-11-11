@@ -15,7 +15,8 @@ Part of [PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
 ## Gotchas
 
-- A build directory configured before the submodule moved fails ("does not match the source used to generate cache"): delete its `lsp-server` and `lsp_server-prefix` subdirectories.
+- A build directory configured before the submodule moved fails ("does not match the source used to generate cache"): delete its `lsp-server` and `lsp_server-prefix` subdirectories. Pointing an existing build at another tree with `LSP_SERVER_SOURCE_DIR` fails the same way.
+- **A wrong `LSP_SERVER_SOURCE_DIR` builds no `mariadb-lsp` at all, quietly.** With `WITH_LSP=AUTO`, a path without a `CMakeLists.txt` only prints "mariadb-lsp is not built", and the build's `bin/mariadb-lsp` from an earlier configure stays behind, stale. VS Code's CMake extension does not expand shell variables in `cmake.configureArgs`: write `-DLSP_SERVER_SOURCE_DIR=${env:HOME}/...`, not `$HOME/...`, which ends up as a path below the build directory. Check `LSP_SERVER_SOURCE_DIR` in the build's `CMakeCache.txt` and the binary's timestamp when it looks old.
 - lsp-server squash-merges its pull requests. A pin at a pull request's head (to land both sides together) is not an ancestor of the squashed commit on `main`, so moving it there afterwards reads as diverged and the script warns; that move is expected.
 - After a pull or branch switch that moves the pin, run `git submodule update` (or set `submodule.recurse true`), or the build uses the old commit; configure warns.
 - Changes are kept in step with lsp-server and mariadb-shell-plugins: a lsp-server change that affects the build (options, vcpkg manifest, bison or compiler minimums, linked libraries) or the CLI contract `mcp_plugin` relies on lands with the matching change here and there.
