@@ -57,7 +57,15 @@ for statement in ["DROP REST SERVICE /svc",
     EXPECT_THROWS(lambda: rest(statement), "The MRS metadata schema `mariadb_rest_service` is not installed.")
 
 #@<> CONFIGURE REST METADATA deploys the default schema and roles
-EXPECT_EQ("REST metadata configured successfully.", rest_info("CONFIGURE REST METADATA"))
+# In one script with IF EXISTS removals: the one before it has nothing to
+# remove, the one after it runs on the new metadata
+res = rest("DROP REST SERVICE IF EXISTS /svc; CONFIGURE REST METADATA; DROP REST SERVICE IF EXISTS /svc")
+infos = [res.get_info()]
+while res.next_result():
+    infos.append(res.get_info())
+EXPECT_EQ(["The REST metadata is not configured, so there is nothing to remove.",
+           "REST metadata configured successfully.",
+           "REST SERVICE `/svc` dropped successfully."], infos)
 EXPECT_EQ("5.0.0", query_one("SELECT CONCAT(major, '.', minor, '.', patch) FROM mariadb_rest_service.msm_schema_version"))
 EXPECT_EQ(["mariadb_rest_service_admin", "mariadb_rest_service_data_provider", "mariadb_rest_service_dev", "mariadb_rest_service_meta_provider", "mariadb_rest_service_schema_admin", "mariadb_rest_service_user"], roles_like("mariadb_rest_service_%"))
 EXPECT_EQ([["mariadb_rest_service", "5.0.0", "YES"]], rest_rows("SHOW REST METADATA SCHEMAS"))

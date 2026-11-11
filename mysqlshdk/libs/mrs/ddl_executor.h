@@ -325,6 +325,9 @@ class Ddl_executor {
   std::string m_failure_context;
   bool m_metadata_checked = false;
   std::optional<metadata::Metadata_fingerprint> m_fingerprint;
+  // rest_metadata_exists() found none: later removals of the run skip the
+  // lookup (only CONFIGURE REST METADATA creates it, and resets this)
+  bool m_metadata_absent = false;
   metadata::Schema_deployer *m_schema_deployer = nullptr;
 };
 

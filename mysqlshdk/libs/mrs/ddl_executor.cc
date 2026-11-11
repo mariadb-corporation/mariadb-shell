@@ -111,8 +111,10 @@ bool Ddl_executor::rest_metadata_exists() {
   // then runs as usual, and fails as usual where it has to (several
   // schemas, a chosen one that does not exist). The session is on the
   // schema it would use (the constructor, USE REST METADATA SCHEMA).
+  if (m_metadata_absent) return false;
   if (!metadata::find_metadata_schemas(m_session).empty()) return true;
-  return metadata::schema_exists(m_session);
+  m_metadata_absent = !metadata::schema_exists(m_session);
+  return !m_metadata_absent;
 }
 
 void Ddl_executor::check_metadata() {
@@ -300,6 +302,7 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
   m_state->metadata_check.schema = m_session->metadata_schema();
   m_metadata_checked = false;
   m_fingerprint.reset();
+  m_metadata_absent = false;
 
   const auto result = metadata::configure(m_session, options, m_schema_deployer);
 
