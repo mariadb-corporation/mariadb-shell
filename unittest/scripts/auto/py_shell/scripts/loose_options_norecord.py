@@ -115,8 +115,15 @@ EXPECT_STDOUT_CONTAINS("connected: True")
 WIPE_OUTPUT()
 
 #@<> ssl-verify-server-cert turned off leaves the SSL mode alone
-for entry in ["skip-ssl-verify-server-cert", "disable-ssl-verify-server-cert", "ssl-verify-server-cert=0", "ssl-verify-server-cert=off"]:
+for entry in ["skip-ssl-verify-server-cert", "disable-ssl-verify-server-cert", "ssl-verify-server-cert=0", "ssl-verify-server-cert=off", "ssl-verify-server-cert\nskip-ssl-verify-server-cert"]:
     connect_with_cnf(f"[client]\n{entry}\n")
     EXPECT_STDOUT_NOT_CONTAINS("unknown option")
     EXPECT_STDOUT_CONTAINS("connected: True")
     WIPE_OUTPUT()
+
+#@<> ssl-verify-server-cert turned off restores the SSL mode it replaced
+# VERIFY_CA fails on the sandbox's self-signed certificate; cleared, it would
+# connect.
+connect_with_cnf("[client]\nssl-mode=VERIFY_CA\nssl-verify-server-cert\nskip-ssl-verify-server-cert\n")
+EXPECT_STDOUT_CONTAINS("Error 2026 (HY000)")
+WIPE_OUTPUT()

@@ -346,6 +346,11 @@ class Shell_options final : public shcore::Options {
 
   std::vector<std::string> m_ignored_client_options;
 
+  // While --ssl-verify-server-cert is what set the SSL mode: the mode it
+  // replaced (none if unset), restored when the option is turned off again.
+  bool m_ssl_mode_from_verify_server_cert = false;
+  std::optional<mysqlshdk::db::Ssl_mode> m_ssl_mode_before_verify_server_cert;
+
 #ifdef MARIADB_BUILD
   // argv buffer allocated by my_load_defaults(); released with free_defaults().
   char **m_mariadb_defaults_argv = nullptr;

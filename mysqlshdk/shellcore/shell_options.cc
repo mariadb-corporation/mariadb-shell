@@ -722,10 +722,25 @@ Shell_options::Shell_options(
       })
     // Not in --help: the MariaDB client spelling of --ssl-mode=VERIFY_IDENTITY,
     // accepted so option files shared with it ([client]) keep verifying the
-    // server's certificate. Turning it off leaves --ssl-mode as it is.
+    // server's certificate. Turning it off undoes only what it set itself
+    // (e.g. a later option file turning off what an earlier one turned on);
+    // a --ssl-mode given after it stays as it is.
     ("--ssl-verify-server-cert",
       [this](const std::string&, const bool value) {
-        if (value) set_ssl_mode("--ssl-mode", "VERIFY_IDENTITY");
+        auto &ssl = storage.connection_data.get_ssl_options();
+        if (value) {
+          if (!m_ssl_mode_from_verify_server_cert)
+            m_ssl_mode_before_verify_server_cert =
+                ssl.has_mode() ? std::optional(ssl.get_mode()) : std::nullopt;
+          set_ssl_mode("--ssl-mode", "VERIFY_IDENTITY");
+          m_ssl_mode_from_verify_server_cert = true;
+        } else if (m_ssl_mode_from_verify_server_cert) {
+          if (m_ssl_mode_before_verify_server_cert)
+            ssl.set_mode(*m_ssl_mode_before_verify_server_cert);
+          else
+            ssl.clear_mode();
+          m_ssl_mode_from_verify_server_cert = false;
+        }
       });
 
   add_startup_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
@@ -1631,6 +1646,7 @@ void Shell_options::set_ssl_mode(const std::string &option, const char *value) {
 
   storage.connection_data.get_ssl_options().set_mode(
       static_cast<mysqlshdk::db::Ssl_mode>(mode));
+  m_ssl_mode_from_verify_server_cert = false;
 }
 
 void Shell_options::check_password_conflicts() {
