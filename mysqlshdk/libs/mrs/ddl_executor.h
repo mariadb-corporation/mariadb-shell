@@ -237,6 +237,8 @@ class Ddl_executor {
   // Same, but returns nullopt when no service is given nor current.
   std::optional<Id> resolve_service(
       const std::optional<ast::Service_path> &given);
+  // The id of the named service, or nullopt when it does not exist.
+  std::optional<Id> find_named_service(const ast::Service_path &given);
   // The service of a role statement: `ON ANY SERVICE` yields nullopt.
   std::optional<Id> resolve_role_service(
       const std::optional<ast::Role_service> &given);
@@ -253,6 +255,14 @@ class Ddl_executor {
   // The service part of a schema selector, or the current service.
   Id require_service(const std::optional<ast::Schema_selector> &given);
 
+  // For IF EXISTS statements, which treat a missing service or schema as
+  // nothing to do: with if_exists, nullopt when the named service or schema
+  // does not exist. A missing current one still throws.
+  std::optional<Id> require_service(const std::optional<ast::Service_path> &given,
+                                    bool if_exists);
+  std::optional<metadata::Schema> rest_object_schema(
+      const std::optional<ast::Schema_selector> &given, bool if_exists);
+
   // Paths for messages: the service's full path (developers@host/path)
   // and the schema's path below it, with an optional request path appended.
   std::string full_service_path(const std::optional<ast::Service_path> &given,
@@ -262,20 +272,24 @@ class Ddl_executor {
   std::string current_service_path() const;
 
 
-  // CREATE IF NOT EXISTS and CREATE OR REPLACE: looks up the existing
-  // object with find() (which returns an optional). Returns true when the
-  // statement keeps it (IF NOT EXISTS); with OR REPLACE it is removed with
-  // remove(existing). Without either flag nothing is looked up.
-  template <typename Find, typename Remove>
-  static bool keep_existing(const ast::Create_flags &flags, Find find,
-                            Remove remove) {
-    if (!flags.or_replace && !flags.if_not_exists) return false;
-    const auto existing = find();
-    if (!existing) return false;
-    if (flags.if_not_exists) return true;
-    remove(*existing);
-    return false;
+  // CREATE IF NOT EXISTS and CREATE OR REPLACE: the existing object that
+  // find() (which returns an optional) looks up. IF NOT EXISTS keeps it
+  // unchanged; OR REPLACE writes it anew in place, keeping its id. Without
+  // either flag nothing is looked up and the result is empty.
+  template <typename Find>
+  static auto find_existing(const ast::Create_flags &flags, Find find)
+      -> decltype(find()) {
+    if (!flags.or_replace && !flags.if_not_exists) return std::nullopt;
+    return find();
   }
+
+  // DROP REST SERVICE/SCHEMA/VIEW/PROCEDURE/FUNCTION IF EXISTS, and ALTER
+  // REST SERVICE that only removes auth apps IF EXISTS: the statements that
+  // are a no-op on a server without any REST metadata.
+  static bool is_removal_if_exists(const ast::Statement &statement);
+  // Whether the server has any REST metadata schema, or the one the session
+  // would use.
+  bool rest_metadata_exists();
 
   // Checks once per run that the metadata schema can be used and that the
   // current service / schema still exist. A fingerprint equal to the one
@@ -294,10 +308,13 @@ class Ddl_executor {
   // Drops the current service / schema if they no longer exist.
   void validate_state();
 
-  // ADD AUTH APP / REMOVE AUTH APP of the service statements.
+  // ADD AUTH APP / REMOVE AUTH APP of the service statements. With
+  // keep_linked (CREATE OR REPLACE on an existing service) ADD skips the
+  // auth apps linked already instead of failing on them.
   void link_auth_apps(const Id &service_id,
                       const std::vector<ast::Auth_app_reference> &add,
-                      const std::vector<ast::Auth_app_reference> &remove);
+                      const std::vector<ast::Auth_app_reference> &remove,
+                      bool keep_linked = false);
 
   // Makes the current service the given one.
   void set_current_service(const metadata::Service &service);
@@ -308,6 +325,9 @@ class Ddl_executor {
   std::string m_failure_context;
   bool m_metadata_checked = false;
   std::optional<metadata::Metadata_fingerprint> m_fingerprint;
+  // rest_metadata_exists() found none: later removals of the run skip the
+  // lookup (only CONFIGURE REST METADATA creates it, and resets this)
+  bool m_metadata_absent = false;
   metadata::Schema_deployer *m_schema_deployer = nullptr;
 };
 

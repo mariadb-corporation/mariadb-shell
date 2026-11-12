@@ -62,12 +62,12 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
 
   const auto service_id = require_service(s.service);
 
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_content_set(m_session, service_id, s.path); },
-          [&](const auto &existing) {
-            metadata::delete_content_set(m_session, existing.id);
-          })) {
+  // OR REPLACE writes an existing content set anew in place: it keeps its
+  // id, its files and the MRS scripts registered from them
+  const auto existing = find_existing(s.flags, [&] {
+    return metadata::find_content_set(m_session, service_id, s.path);
+  });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST content set `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -81,7 +81,11 @@ void Ddl_executor::do_execute(const Create_rest_content_set &s,
   definition.comments = s.options.comments;
   definition.options = content_set_options(s.options);
 
-  const Id id = metadata::add_content_set(m_session, definition);
+  if (existing) {
+    metadata::replace_content_set(m_session, *existing, definition);
+  } else {
+    metadata::add_content_set(m_session, definition);
+  }
 
   transaction.commit();
 
@@ -231,16 +235,15 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
     throw std::runtime_error("CONTENT SET " + s.content_set_path + " not found.");
   }
 
-  // The metadata schema has no unique index on the file paths of a set
-  const auto find_file = [&] {
-    return metadata::find_content_file(m_session, content_set->id, s.path, false);
-  };
-  if (!s.flags.or_replace && !s.flags.if_not_exists && find_file()) {
+  // The metadata schema has no unique index on the file paths of a set, so
+  // the file is looked up for a plain CREATE too. OR REPLACE writes an
+  // existing file anew in place, keeping its id.
+  const auto existing =
+      metadata::find_content_file(m_session, content_set->id, s.path, false);
+  if (existing && !s.flags.or_replace && !s.flags.if_not_exists) {
     throw std::runtime_error("The request_path is already used by another entity.");
   }
-  if (keep_existing(s.flags, find_file, [&](const auto &existing) {
-        metadata::delete_content_file(m_session, existing.id);
-      })) {
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST CONTENT FILE `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -259,7 +262,11 @@ void Ddl_executor::do_execute(const Create_rest_content_file &s,
     definition.content = s.content.value_or("");
   }
 
-  const Id id = metadata::add_content_file(m_session, definition);
+  if (existing) {
+    metadata::replace_content_file(m_session, existing->id, definition);
+  } else {
+    metadata::add_content_file(m_session, definition);
+  }
 
   transaction.commit();
 

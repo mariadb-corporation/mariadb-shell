@@ -137,6 +137,13 @@ Id add_role(Db_session *session, const Role_definition &definition);
 // ERROR when other roles extend it.
 void delete_role(Db_session *session, const Id &id);
 
+// CREATE OR REPLACE REST ROLE on an existing role: writes the role it
+// extends, its caption, comment and options anew, in place. Its id, its
+// privileges and its grants to users and groups stay. Throws when the role
+// would extend itself.
+void replace_role(Db_session *session, const Id &id,
+                  const Role_definition &definition);
+
 // The CREATE REST ROLE statement of a role. With on_current_service, the
 // statement names no service (ON SERVICE ...) and acts on the current one,
 // as in the script of SHOW CREATE REST SERVICE ... INCLUDING ... ENDPOINTS.
@@ -277,13 +284,22 @@ struct Auth_app_changes {
 void update_auth_app(Db_session *session, const Id &id,
                      const Auth_app_changes &changes);
 
+// CREATE OR REPLACE REST AUTH APP on an existing auth app: writes its vendor
+// and settings anew from the definition, in place. Its id, its users and its
+// service links stay; an absent secret (access_token) keeps the stored one
+// while the vendor stays.
+// Throws when the vendor changes and the app has users.
+void replace_auth_app(Db_session *session, const Auth_app &auth_app,
+                      const Auth_app_definition &definition);
+
 // Deletes an auth app with its service links; its users go with it.
 void delete_auth_app(Db_session *session, const Id &id);
 
-// Links an auth app to a service / removes the link.
-void link_auth_app(Db_session *session, const Id &auth_app_id,
+// Links an auth app to a service / removes the link. Returns false when
+// there was nothing to do: the app was linked already / was not linked.
+bool link_auth_app(Db_session *session, const Id &auth_app_id,
                    const Id &service_id);
-void unlink_auth_app(Db_session *session, const Id &auth_app_id,
+bool unlink_auth_app(Db_session *session, const Id &auth_app_id,
                      const Id &service_id);
 
 // The CREATE OR REPLACE REST AUTH APP statement, optionally followed by
@@ -350,6 +366,12 @@ struct User_changes {
 
 void update_user(Db_session *session, const User &user,
                  const User_changes &changes);
+
+// CREATE OR REPLACE REST USER on an existing user: writes its settings anew
+// from the definition, in place. Its id, its roles and its groups stay; an
+// absent password keeps the stored one.
+void replace_user(Db_session *session, const User &user,
+                  const User_definition &definition);
 
 void delete_user(Db_session *session, const Id &id);
 

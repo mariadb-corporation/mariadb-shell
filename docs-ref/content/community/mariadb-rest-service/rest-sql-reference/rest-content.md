@@ -22,6 +22,8 @@ rest.load.content_set(directory="~/myApp/dist", content_set_path="/app",
 
 The `CREATE REST CONTENT SET` statement adds REST endpoints for static content.
 
+`CREATE OR REPLACE` updates an existing content set in place. The content set keeps its ID, its files and the MRS scripts registered from them. Its options become those of the statement: an option the statement leaves out gets the value a new content set would get. `CREATE REST CONTENT SET IF NOT EXISTS` leaves an existing content set unchanged.
+
 ### Syntax
 
 ```antlr
@@ -68,6 +70,8 @@ CREATE REST CONTENT SET /web ON SERVICE /myService
 ## CREATE REST CONTENT FILE
 
 The `CREATE REST CONTENT FILE` statement adds a file to a content set.
+
+`CREATE OR REPLACE` updates an existing file in place: it keeps its ID, and its content and options become those of the statement.
 
 ### Syntax
 

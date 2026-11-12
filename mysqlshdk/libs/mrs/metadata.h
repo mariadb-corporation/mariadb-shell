@@ -146,8 +146,9 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
 // batches and kept in the session's id pool.
 Id new_id(Db_session *session);
 
-// Whether a metadata table has a row with the id.
-bool row_exists(Db_session *session, std::string_view table, const Id &id);
+// Whether a metadata table has a row with the id in the given id column.
+bool row_exists(Db_session *session, std::string_view table, const Id &id,
+                std::string_view column = "id");
 
 // The ids and names used as "enabled" captions in SHOW output.
 std::string enabled_caption(int enabled);
@@ -268,6 +269,13 @@ struct Service_definition {
 // Returns its id. Throws for the reserved path /mrs.
 Id add_service(Db_session *session, const Service_definition &definition);
 
+// CREATE OR REPLACE REST SERVICE on an existing service: writes all its
+// settings anew from the definition (an absent one takes its default, as
+// for a new service), in place. Its id, path, developers, schemas, content
+// sets, roles and auth app links stay.
+void replace_service(Db_session *session, const Id &id,
+                     const Service_definition &definition);
+
 // The changes ALTER REST SERVICE makes. An unset field is left alone; a
 // field set to nullopt inside the outer optional is set to NULL.
 struct Service_changes {
@@ -350,6 +358,14 @@ struct Schema_definition {
 // exist; its name is taken as the server reports it.
 Id add_schema(Db_session *session, const Schema_definition &definition);
 
+// CREATE OR REPLACE REST SCHEMA on an existing schema: writes its database
+// schema and settings anew from the definition (an absent setting takes its
+// default, as for a new schema), in place. Its id, service, request path and
+// REST objects stay. Throws when the database schema changes while the
+// schema has REST objects.
+void replace_schema(Db_session *session, const Schema &schema,
+                    const Schema_definition &definition);
+
 struct Schema_changes {
   std::optional<Id> service_id;
   std::optional<std::string> name;
@@ -363,7 +379,9 @@ struct Schema_changes {
   std::optional<std::string> metadata;
 };
 
-void update_schema(Db_session *session, const Id &id,
+// Throws when the database schema (name) changes while the schema has REST
+// objects.
+void update_schema(Db_session *session, const Schema &schema,
                    const Schema_changes &changes);
 
 void delete_schema(Db_session *session, const Id &id);
@@ -387,6 +405,12 @@ Id clone_schema(Db_session *session, const Schema &schema,
 // The name of a database schema as the server reports it, or nullopt.
 std::optional<std::string> database_schema_name(Db_session *session,
                                                 std::string_view name);
+
+// Whether two database schema names name the same schema, compared as the
+// server compares them: exactly with lower_case_table_names = 0, else
+// case-insensitively.
+bool same_database_schema(Db_session *session, std::string_view a,
+                          std::string_view b);
 
 }  // namespace metadata
 }  // namespace mrs

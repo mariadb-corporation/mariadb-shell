@@ -350,6 +350,16 @@ TEST(Mrs_parser, rest_schema_statements) {
     EXPECT_TRUE(s.if_exists);
     EXPECT_EQ("/sakila", s.schema_path);
     EXPECT_EQ("/myTestService", s.service->path);
+    EXPECT_FALSE(s.for_database);
+  }
+  {
+    const auto &s = parse_as<Drop_rest_schema>(
+        "DROP REST DATABASE IF EXISTS /app FROM SERVICE /notes FOR DATABASE `a`");
+    EXPECT_EQ("/notes", s.service->path);
+    EXPECT_EQ("a", *s.for_database);
+    // SCHEMA is DATABASE, as everywhere
+    EXPECT_EQ("b", *parse_as<Drop_rest_schema>("DROP REST SCHEMA /app FOR SCHEMA b")
+                        .for_database);
   }
   {
     const auto &s = parse_as<Show_rest_schemas>("SHOW REST SCHEMAS FROM SERVICE /svc");

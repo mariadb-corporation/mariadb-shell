@@ -20,6 +20,8 @@ Each REST schema belongs to a REST service, which has to be created first. One R
 
 Each REST schema can have its own options.
 
+`CREATE OR REPLACE` updates an existing REST schema in place. The schema keeps its ID and its REST objects. Its database schema and options become those of the statement: an option the statement leaves out gets the value a new REST schema would get. The database schema can only change while the REST schema has no REST objects, because a REST object names only its table or routine and would then point at the other database's one. To move a REST schema with its objects to another database schema, drop the REST schema and create it again. `CREATE REST SCHEMA IF NOT EXISTS` leaves an existing REST schema unchanged.
+
 ### Syntax
 
 ```antlr
@@ -119,7 +121,7 @@ The metadata holds any JSON data. A front end can consume it to render certain a
 
 ## ALTER REST SCHEMA
 
-The `ALTER REST SCHEMA` statement changes an existing REST schema. It uses the same `restSchemaOptions` as the [`CREATE REST SCHEMA`](#create-rest-schema) statement, which describes them.
+The `ALTER REST SCHEMA` statement changes an existing REST schema. It uses the same `restSchemaOptions` as the [`CREATE REST SCHEMA`](#create-rest-schema) statement, which describes them. `FROM` changes the database schema only while the REST schema has no REST objects.
 
 ### Syntax
 
@@ -148,7 +150,9 @@ ALTER REST SCHEMA /sakila ON SERVICE /myService
 
 ## DROP REST SCHEMA
 
-The `DROP REST SCHEMA` statement drops an existing REST schema.
+The `DROP REST SCHEMA` statement drops an existing REST schema. With `IF EXISTS`, it does nothing when the REST schema or the REST service it names doesn't exist, or when the server has no REST metadata at all.
+
+With `FOR SCHEMA` (or `FOR DATABASE`), the statement drops the REST schema only while it serves the given database schema. The names are compared the way the server compares schema names. With `IF EXISTS`, a REST schema on another database schema is left alone, as a missing one is. This lets a deployment script drop a REST schema that moved to another database schema on every deployment: servers still on the old database schema drop it, and servers already moved, or new installs, keep theirs.
 
 ### Syntax
 
@@ -158,6 +162,8 @@ dropRestSchemaStatement:
         IF EXISTS
     )? schemaRequestPath (
         FROM SERVICE? serviceRequestPath
+    )? (
+        FOR SCHEMA schemaName
     )?
 ;
 ```
@@ -172,6 +178,12 @@ The following example drops the REST schema `/sakila` of the REST service `/mySe
 
 ```sql
 DROP REST SCHEMA /sakila FROM SERVICE /myService;
+```
+
+The following example drops the REST schema `/app` of the REST service `/notes` only if it still serves the database schema `a`.
+
+```sql
+DROP REST SCHEMA IF EXISTS /app FROM SERVICE /notes FOR SCHEMA a;
 ```
 
 ## SHOW REST SCHEMAS

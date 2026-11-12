@@ -383,10 +383,11 @@ Metadata_fingerprint read_fingerprint(Db_session *session,
   return fingerprint;
 }
 
-bool row_exists(Db_session *session, std::string_view table, const Id &id) {
+bool row_exists(Db_session *session, std::string_view table, const Id &id,
+                std::string_view column) {
   return !session
-              ->query("SELECT 1 FROM " + sql::metadata_table(table) +
-                          " WHERE id = ?",
+              ->query("SELECT 1 FROM " + sql::metadata_table(table) + " WHERE " +
+                          std::string(column) + " = ? LIMIT 1",
                       {Value::id(id)})
               .empty();
 }
@@ -630,6 +631,34 @@ void delete_daemon(Db_session *session, const Id &id) {
   session->execute(sql::Delete("rest_daemon").where("id", Value::id(id)));
 }
 
+namespace {
+
+// The columns a CREATE [OR REPLACE] REST SERVICE statement sets: an INSERT
+// for a new service, an UPDATE for the one it replaces in place. An option
+// the statement leaves out takes the column's default either way.
+template <typename Statement>
+void set_service_columns(Statement *statement,
+                         const Service_definition &definition) {
+  statement->set("options",
+                 definition.options
+                     ? *definition.options
+                     : json::parse(k_default_service_options).dump());
+  statement->set("enabled", Value::or_default(definition.enabled));
+  statement->set("published", Value::or_default(definition.published));
+  statement->set("url_protocol", Value::or_default(definition.url_protocol));
+  statement->set("comments", Value::or_default(definition.comments));
+  statement->set("metadata", Value::or_default(definition.metadata));
+  statement->set("auth_path", Value::or_default(definition.auth_path));
+  statement->set("auth_completed_url",
+                 Value::or_default(definition.auth_completed_url));
+  statement->set("auth_completed_url_validation",
+                 Value::or_default(definition.auth_completed_url_validation));
+  statement->set("auth_completed_page_content",
+                 Value::or_default(definition.auth_completed_page_content));
+}
+
+}  // namespace
+
 Id add_service(Db_session *session, const Service_definition &definition) {
   if (const auto lower = to_lower(definition.url_context_root);
       lower == "/mrs") {
@@ -642,34 +671,24 @@ Id add_service(Db_session *session, const Service_definition &definition) {
   insert.set("id", Value::id(id));
   insert.set("url_host_id", Value::id(url_host_id(session, "")));
   insert.set("url_context_root", definition.url_context_root);
-  insert.set("options", definition.options
-                            ? *definition.options
-                            : json::parse(k_default_service_options).dump());
   if (!definition.developers.empty()) {
     insert.set("in_development", in_development_json(definition.developers));
   }
-  insert.set_if("enabled", definition.enabled);
-  insert.set_if("published", definition.published);
-  insert.set_if("url_protocol", definition.url_protocol);
-  insert.set_if("comments", definition.comments);
-  insert.set_if("metadata", definition.metadata);
-  insert.set_if("auth_path", definition.auth_path);
-  if (definition.auth_completed_url) {
-    insert.set("auth_completed_url", *definition.auth_completed_url);
-  }
-  if (definition.auth_completed_url_validation) {
-    insert.set("auth_completed_url_validation",
-               *definition.auth_completed_url_validation);
-  }
-  if (definition.auth_completed_page_content) {
-    insert.set("auth_completed_page_content",
-               *definition.auth_completed_page_content);
-  }
+  set_service_columns(&insert, definition);
 
   if (session->execute(insert) == 0) {
     throw std::runtime_error("Failed to add the new service.");
   }
   return id;
+}
+
+void replace_service(Db_session *session, const Id &id,
+                     const Service_definition &definition) {
+  // The path and the developers are what found the service; they stay
+  sql::Update update("service");
+  set_service_columns(&update, definition);
+  update.where("id", Value::id(id));
+  session->execute(update);
 }
 
 void update_service(Db_session *session, const Id &id,
@@ -879,18 +898,42 @@ std::vector<Schema> get_schemas(Db_session *session, const Id &service_id) {
   return query_schemas(session, "sc.service_id = ?", {Value::id(service_id)});
 }
 
-Id add_schema(Db_session *session, const Schema_definition &definition) {
-  std::string name = definition.name;
+namespace {
+
+// The database schema a REST schema of the definition serves, as the
+// server spells it; it has to exist.
+std::string schema_database_name(Db_session *session,
+                                 const Schema_definition &definition) {
   if (definition.schema_type == "DATABASE_SCHEMA") {
-    const auto actual = database_schema_name(session, name);
+    const auto actual = database_schema_name(session, definition.name);
     if (!actual) {
-      throw std::runtime_error("The given database schema name '" + name +
-                               "' does not exists.");
+      throw std::runtime_error("The given database schema name '" +
+                               definition.name + "' does not exists.");
     }
-    name = *actual;
-  } else if (name.empty()) {
-    throw std::runtime_error("No schema name given.");
+    return *actual;
   }
+  if (definition.name.empty()) throw std::runtime_error("No schema name given.");
+  return definition.name;
+}
+
+// The columns a CREATE [OR REPLACE] REST SCHEMA statement sets, for a new
+// schema and for the one it replaces in place alike.
+template <typename Statement>
+void set_schema_columns(Statement *statement, const std::string &name,
+                        const Schema_definition &definition) {
+  statement->set("name", name);
+  statement->set("requires_auth", definition.requires_auth.value_or(false));
+  statement->set("enabled", definition.enabled.value_or(1));
+  statement->set("items_per_page", definition.items_per_page.value_or(25));
+  statement->set("comments", definition.comments.value_or(""));
+  statement->set("options", definition.options);
+  statement->set("metadata", definition.metadata);
+}
+
+}  // namespace
+
+Id add_schema(Db_session *session, const Schema_definition &definition) {
+  const std::string name = schema_database_name(session, definition);
 
   const std::string request_path =
       definition.request_path ? *definition.request_path : "/" + name;
@@ -902,25 +945,56 @@ Id add_schema(Db_session *session, const Schema_definition &definition) {
   sql::Insert insert("rest_schema");
   insert.set("id", Value::id(id));
   insert.set("service_id", Value::id(definition.service_id));
-  insert.set("name", name);
   insert.set("request_path", request_path);
-  insert.set("requires_auth", definition.requires_auth.value_or(false));
-  insert.set("enabled", definition.enabled.value_or(1));
-  insert.set("items_per_page", definition.items_per_page.value_or(25));
-  insert.set("comments", definition.comments.value_or(""));
-  insert.set("options", definition.options);
-  insert.set("metadata", definition.metadata);
+  set_schema_columns(&insert, name, definition);
   insert.set("schema_type", definition.schema_type);
   insert.set("internal", definition.internal);
   session->execute(insert);
   return id;
 }
 
-void update_schema(Db_session *session, const Id &id,
+namespace {
+
+// A REST object names only its table or routine; its database schema is the
+// REST schema's. Changing that under existing REST objects would point them
+// at another database's objects of the same name, with the grants left on
+// the old one, so it is only allowed while the schema has none.
+void check_database_change(Db_session *session, const Schema &schema,
+                           const std::string &name) {
+  if (same_database_schema(session, schema.name, name)) return;
+  if (row_exists(session, "rest_object", schema.id, "rest_schema_id")) {
+    throw std::runtime_error(
+        "Its database schema cannot change from `" + schema.name + "` to `" +
+        name + "` while it has REST objects. Drop them, or the REST SCHEMA, first.");
+  }
+}
+
+}  // namespace
+
+void replace_schema(Db_session *session, const Schema &schema,
+                    const Schema_definition &definition) {
+  // The service and the request path found the schema; they stay, as do its
+  // type and its objects
+  const std::string name = schema_database_name(session, definition);
+  check_database_change(session, schema, name);
+  sql::Update update("rest_schema");
+  set_schema_columns(&update, name, definition);
+  update.where("id", Value::id(schema.id));
+  session->execute(update);
+}
+
+void update_schema(Db_session *session, const Schema &schema,
                    const Schema_changes &changes) {
+  const Id &id = schema.id;
   sql::Update update("rest_schema");
   if (changes.service_id) update.set("service_id", Value::id(*changes.service_id));
-  update.set_if("name", changes.name);
+  if (changes.name) {
+    // As the server spells it, when the database schema exists
+    const auto name =
+        database_schema_name(session, *changes.name).value_or(*changes.name);
+    check_database_change(session, schema, name);
+    update.set("name", name);
+  }
   update.set_if("request_path", changes.request_path);
   update.set_if("requires_auth", changes.requires_auth);
   update.set_if("enabled", changes.enabled);
@@ -1012,6 +1086,16 @@ std::optional<std::string> database_schema_name(Db_session *session,
       {name});
   if (result.empty()) return std::nullopt;
   return result.first()["SCHEMA_NAME"].as_string();
+}
+
+bool same_database_schema(Db_session *session, std::string_view a,
+                          std::string_view b) {
+  if (a == b) return true;
+  // Only names that differ in case alone depend on the server's setting
+  if (to_lower(a) != to_lower(b)) return false;
+  return session->query("SELECT @@lower_case_table_names AS lctn")
+             .first()["lctn"]
+             .as_int() != 0;
 }
 
 }  // namespace metadata

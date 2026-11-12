@@ -352,7 +352,7 @@ Statement make_statement(T &&value, const Parser::location_type &loc) {
 %nterm <std::string> vendor
 
 %nterm <Opt_string> opt_identified_by opt_class opt_new_service_name
-%nterm <Opt_string> opt_from_schema_name
+%nterm <Opt_string> opt_from_schema_name opt_for_database
 %nterm <Opt_string> opt_new_request_path opt_schema_request_path
 %nterm <Opt_string> opt_extends opt_comments opt_for_auth_app
 %nterm <Opt_service_path> opt_on_service opt_from_service opt_on_from_service
@@ -1377,14 +1377,20 @@ drop_rest_service_statement:
 
 drop_rest_schema_statement:
     DROP_SYMBOL REST_SYMBOL DATABASE_SYMBOL opt_if_exists schema_request_path
-    opt_from_service
+    opt_from_service opt_for_database
     {
       Drop_rest_schema s;
       s.if_exists = $4;
       s.schema_path = std::move($5);
       s.service = std::move($6);
+      s.for_database = std::move($7);
       $$ = make_statement(std::move(s), @1);
     }
+  ;
+
+opt_for_database:
+    %empty { $$ = std::nullopt; }
+  | FOR_SYMBOL DATABASE_SYMBOL schema_name { $$ = std::move($3); }
   ;
 
 drop_rest_view_statement:

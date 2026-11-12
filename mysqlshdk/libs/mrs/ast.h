@@ -165,6 +165,20 @@ struct Service_options {
   std::optional<Json> metadata;
   std::vector<Auth_app_reference> add_auth_apps;
   std::vector<Auth_app_reference> remove_auth_apps;
+
+  // Whether the options do nothing but REMOVE AUTH APP ... IF EXISTS (at
+  // least one). A new option belongs in this check too.
+  bool only_removes_if_exists() const {
+    if (enabled || published || protocol || auth_path || auth_redirection ||
+        auth_validation || auth_page_content || options || comments ||
+        metadata || !add_auth_apps.empty() || remove_auth_apps.empty()) {
+      return false;
+    }
+    for (const auto &entry : remove_auth_apps) {
+      if (!entry.if_exists) return false;
+    }
+    return true;
+  }
 };
 
 // restSchemaOptions
@@ -338,6 +352,12 @@ struct Alter_rest_service {
   Service_path path;
   std::optional<Service_path> new_path;
   Service_options options;
+
+  // Whether the statement does nothing but REMOVE AUTH APP ... IF EXISTS,
+  // which a missing service, or missing REST metadata, makes a no-op.
+  bool only_removes_if_exists() const {
+    return !new_path && options.only_removes_if_exists();
+  }
 };
 
 struct Alter_rest_schema {
@@ -401,6 +421,8 @@ struct Drop_rest_schema {
   bool if_exists = false;
   std::string schema_path;
   std::optional<Service_path> service;
+  // FOR DATABASE <db>: only a REST schema on that database schema is dropped
+  std::optional<std::string> for_database;
 };
 
 // FORMAT=TRADITIONAL (the default) or FORMAT=JSON, as EXPLAIN takes it

@@ -88,10 +88,16 @@ rest("CREATE REST CONTENT FILE `/index.html` ON CONTENT SET /static CONTENT '<ht
 EXPECT_EQ("REST content set `/svc/static` created successfully.", rest_info("CREATE REST CONTENT SET IF NOT EXISTS /static COMMENT 'ignored'"))
 EXPECT_EQ(["STATIC", 1, 1, "", None], content_set_row("/static"))
 EXPECT_EQ(1, len(rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /static")))
-# OR REPLACE starts over with an empty set
+# OR REPLACE writes the set anew in place: its id and its files stay
+set_id = query_rows("SELECT id FROM mariadb_rest_service.content_set WHERE request_path = '/static'")
+EXPECT_EQ("REST content set `/svc/static` created successfully.", rest_info("CREATE OR REPLACE REST CONTENT SET /static COMMENT 'replaced' OPTIONS {\"a\": 1}"))
+EXPECT_EQ("replaced", content_set_row("/static")[3])
+EXPECT_EQ(set_id, query_rows("SELECT id FROM mariadb_rest_service.content_set WHERE request_path = '/static'"))
+EXPECT_EQ(1, len(rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /static")))
+# An option the statement leaves out takes the default of a new set
 EXPECT_EQ("REST content set `/svc/static` created successfully.", rest_info("CREATE OR REPLACE REST CONTENT SET /static COMMENT 'replaced'"))
 EXPECT_EQ(["STATIC", 1, 1, "replaced", None], content_set_row("/static"))
-EXPECT_EQ([], rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /static"))
+rest("DROP REST CONTENT FILE `/index.html` FROM CONTENT SET /static")
 EXPECT_EQ("REST content set `/svc/empty` created successfully.", rest_info("CREATE REST CONTENT SET IF NOT EXISTS /empty"))
 
 #@<> CREATE REST CONTENT FILE from inline text and base64
@@ -120,8 +126,12 @@ EXPECT_EQ(4, len(rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /inline")))
 #@<> CREATE REST CONTENT FILE IF NOT EXISTS and OR REPLACE
 EXPECT_EQ("REST CONTENT FILE `/svc/inline/bin.dat` created successfully.", rest_info("CREATE REST CONTENT FILE IF NOT EXISTS `/bin.dat` ON CONTENT SET /inline CONTENT 'ignored'"))
 EXPECT_EQ("0001020304050607", file_hex("/inline", "/bin.dat"))
-EXPECT_EQ("REST CONTENT FILE `/svc/inline/bin.dat` created successfully.", rest_info("CREATE OR REPLACE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline BINARY CONTENT 'AAEC'"))
+file_id = query_rows("SELECT id FROM mariadb_rest_service.content_file WHERE request_path = '/bin.dat'")
+EXPECT_EQ("REST CONTENT FILE `/svc/inline/bin.dat` created successfully.", rest_info("CREATE OR REPLACE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline BINARY CONTENT 'AAEC' DISABLED"))
 EXPECT_EQ("000102", file_hex("/inline", "/bin.dat"))
+# In place: the same id, the settings anew
+EXPECT_EQ(file_id, query_rows("SELECT id FROM mariadb_rest_service.content_file WHERE request_path = '/bin.dat'"))
+EXPECT_EQ([[0, 1]], query_rows("SELECT enabled, requires_auth FROM mariadb_rest_service.content_file WHERE request_path = '/bin.dat'"))
 rest("CREATE OR REPLACE REST CONTENT FILE `/bin.dat` ON CONTENT SET /inline BINARY CONTENT 'AAECAwQFBgc='")
 
 #@<> REST SQL statements join a transaction the caller started
@@ -231,10 +241,11 @@ rest_script(inline_statement)
 EXPECT_EQ(inline_statement, rest_text("SHOW CREATE REST CONTENT SET /inline"))
 EXPECT_EQ("0001020304050607", file_hex("/inline", "/bin.dat"))
 EXPECT_EQ(readme_txt.encode().hex().upper(), file_hex("/inline", "/readme.txt"))
-# Running it again replaces the set and its files
+# Running it again updates the set and its files in place, keeping their ids
+inline_ids = query_rows("SELECT cs.id, f.id FROM mariadb_rest_service.content_set cs JOIN mariadb_rest_service.content_file f ON f.content_set_id = cs.id WHERE cs.request_path = '/inline' ORDER BY f.request_path")
 rest_script(inline_statement)
 EXPECT_EQ(inline_statement, rest_text("SHOW CREATE REST CONTENT SET /inline"))
-EXPECT_EQ(2, len(rest_rows("SHOW REST CONTENT FILES FROM CONTENT SET /inline")))
+EXPECT_EQ(inline_ids, query_rows("SELECT cs.id, f.id FROM mariadb_rest_service.content_set cs JOIN mariadb_rest_service.content_file f ON f.content_set_id = cs.id WHERE cs.request_path = '/inline' ORDER BY f.request_path"))
 # The script reads the same with NO_BACKSLASH_ESCAPES: quotes are doubled,
 # and text with a backslash is written as base64
 rest("CREATE REST CONTENT FILE `/path.txt` ON CONTENT SET /inline CONTENT 'C:\\\\dir\\\\file'")
@@ -443,6 +454,16 @@ EXPECT_THROWS(lambda: rest("ALTER REST CONTENT SET /app LOAD SCRIPTS"), "The MRS
 EXPECT_EQ(3, len(script_ids()))
 rest("DROP REST CONTENT FILE `/src/zgrant.mts` FROM CONTENT SET /app")
 EXPECT_EQ("REST content set `/svc/app` updated successfully. 2 MRS script(s) of 1 module(s) registered.", rest_info("ALTER REST CONTENT SET /app LOAD SCRIPTS"))
+
+#@<> CREATE OR REPLACE REST CONTENT SET keeps the scripts registered from it
+registered = script_ids()
+rest("CREATE OR REPLACE REST CONTENT SET /app COMMENT 'The app'")
+EXPECT_EQ(registered, script_ids())
+EXPECT_EQ(2, len(registered))
+# and the options LOAD SCRIPTS generated, which the daemon loads them by
+app_options = json.loads(query_rows("SELECT options FROM mariadb_rest_service.content_set WHERE request_path = '/app'")[0][0])
+EXPECT_TRUE(app_options.get("contains_mrs_scripts"), app_options)
+EXPECT_TRUE("script_module_files" in app_options, app_options)
 
 #@<> LOAD SCRIPTS refuses numbers JSON cannot hold
 # Infinity, NaN and 1e999 have no JSON form; the scripts registered before stay

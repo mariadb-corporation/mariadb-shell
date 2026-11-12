@@ -13,6 +13,8 @@ REST procedures and REST functions of the MariaDB REST Service (MRS) add REST en
 
 The `CREATE REST PROCEDURE` statement adds REST endpoints for database schema stored procedures. It uses the [extended GraphQL syntax](rest-views.md#defining-the-graphql-definition-for-a-rest-view) of REST data mapping views to describe the parameters and result sets of the REST procedure.
 
+`CREATE OR REPLACE` updates an existing REST procedure in place, as it does a [REST view](rest-views.md#create-rest-view): it keeps its ID, and its routine, parameters, results and options become those of the statement. The same holds for `CREATE OR REPLACE REST FUNCTION`.
+
 ### Syntax
 
 ```antlr
@@ -163,7 +165,7 @@ For `serviceSchemaSelector` and `restObjectOptions`, see [CREATE REST VIEW](rest
 
 ## DROP REST PROCEDURE
 
-The `DROP REST PROCEDURE` statement drops an existing REST procedure.
+The `DROP REST PROCEDURE` statement drops an existing REST procedure. With `IF EXISTS`, it does nothing when the procedure, or the REST service or REST schema it names, doesn't exist, or when the server has no REST metadata at all.
 
 ### Syntax
 
@@ -188,7 +190,7 @@ FROM SERVICE /myService SCHEMA /sakila;
 
 ## DROP REST FUNCTION
 
-The `DROP REST FUNCTION` statement drops an existing REST function.
+The `DROP REST FUNCTION` statement drops an existing REST function. With `IF EXISTS`, it does nothing when the function, or the REST service or REST schema it names, doesn't exist, or when the server has no REST metadata at all.
 
 ### Syntax
 

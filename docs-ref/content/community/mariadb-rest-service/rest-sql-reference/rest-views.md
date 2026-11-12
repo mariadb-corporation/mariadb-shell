@@ -17,6 +17,8 @@ The `CREATE REST DATA MAPPING VIEW` statement adds REST endpoints for database s
 
 The structure of the served JSON documents is defined with an [extended GraphQL syntax](#defining-the-graphql-definition-for-a-rest-view), which lets you define even complex REST data mapping views in a simple and readable way.
 
+`CREATE OR REPLACE` updates an existing REST view in place. The view keeps its ID, and with it its row group security and content set links, and the privileges are adjusted to the new definition. Its database object, data mapping and options become those of the statement: an option the statement leaves out gets the value a new REST view would get. `CREATE REST VIEW IF NOT EXISTS` leaves an existing REST view unchanged.
+
 ### Syntax
 
 ```antlr
@@ -453,7 +455,7 @@ CLASS MyServiceSakilaCity {
 
 ## DROP REST VIEW
 
-The `DROP REST DATA MAPPING VIEW` statement drops an existing REST data mapping view.
+The `DROP REST DATA MAPPING VIEW` statement drops an existing REST data mapping view. With `IF EXISTS`, it does nothing when the view, or the REST service or REST schema it names, doesn't exist, or when the server has no REST metadata at all.
 
 ### Syntax
 

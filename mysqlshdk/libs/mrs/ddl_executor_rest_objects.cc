@@ -721,10 +721,10 @@ class Grant_restorer {
 
 // Adds the rest_object of a CREATE [OR REPLACE] REST VIEW / PROCEDURE /
 // FUNCTION, whose data mapping is built already. The object it replaces is
-// changed like an ALTER would: the privileges first, then the metadata in a
-// transaction nothing commits implicitly. A new definition that fails, e.g.
-// on a name in use, leaves the replaced object and its privileges as they
-// were.
+// changed in place like an ALTER would, keeping its id: the privileges
+// first, then the metadata in a transaction nothing commits implicitly. A new
+// definition that fails, e.g. on a name in use, leaves the replaced object
+// and its privileges as they were.
 void add_new_rest_object(Db_session *session,
                          const std::optional<metadata::Rest_object> &replaced,
                          const std::string &full_path, bool is_routine,
@@ -751,12 +751,16 @@ void add_new_rest_object(Db_session *session,
   Db_transaction transaction(session);
   if (replaced) {
     // The old objects go first, so their names are free for the new ones
-    metadata::delete_rest_object(session, replaced->id, false);
+    metadata::delete_objects(session, replaced->id);
   }
   assign_object_names(session, definition.rest_schema_id, full_path, is_routine,
                       &objects);
-  const Id id = metadata::add_rest_object(session, definition, objects);
-  if (!replaced) run_grants_of_new_object(session, id, new_grants, force, r);
+  if (replaced) {
+    metadata::replace_rest_object(session, replaced->id, definition, objects);
+  } else {
+    const Id id = metadata::add_rest_object(session, definition, objects);
+    run_grants_of_new_object(session, id, new_grants, force, r);
+  }
   transaction.commit();
   if (restorer) restorer->keep();
 }
@@ -768,6 +772,14 @@ metadata::Schema Ddl_executor::rest_object_schema(
   if (!given) return current_schema(m_session, *m_state);
   return schema_of_service(m_session, require_service(given), *given,
                            full_schema_path(given));
+}
+
+std::optional<metadata::Schema> Ddl_executor::rest_object_schema(
+    const std::optional<Schema_selector> &given, bool if_exists) {
+  if (!if_exists || !given) return rest_object_schema(given);
+  const auto service_id = require_service(given->service, true);
+  if (!service_id) return std::nullopt;
+  return metadata::find_schema(m_session, *service_id, given->schema_path);
 }
 
 // -- CREATE -------------------------------------------------------------------
@@ -785,11 +797,10 @@ void Ddl_executor::do_execute(const Create_rest_view &s, Statement_result *r) {
                              "` does not exist.");
   }
 
-  std::optional<metadata::Rest_object> replaced;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto replaced = find_existing(s.flags, [&] {
+    return metadata::find_rest_object(m_session, schema.id, s.path);
+  });
+  if (replaced && s.flags.if_not_exists) {
     r->message = "REST VIEW `" + full_path + "` created successfully.";
     return;
   }
@@ -812,11 +823,10 @@ void Ddl_executor::do_execute(const Create_rest_routine &s, Statement_result *r)
   const auto schema = rest_object_schema(s.on);
   const auto [schema_name, name] = database_object_name(s.object, schema);
 
-  std::optional<metadata::Rest_object> replaced;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_rest_object(m_session, schema.id, s.path); },
-          [&](const auto &existing) { replaced = existing; })) {
+  const auto replaced = find_existing(s.flags, [&] {
+    return metadata::find_rest_object(m_session, schema.id, s.path);
+  });
+  if (replaced && s.flags.if_not_exists) {
     r->message = "REST " + type + " `" + full_path + "` created successfully.";
     return;
   }
@@ -957,8 +967,13 @@ void Ddl_executor::do_execute(const Drop_rest_object &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto schema = rest_object_schema(s.from);
-  auto rest_object = metadata::find_rest_object(m_session, schema.id, s.path);
+  // IF EXISTS: a missing service or schema is nothing to do, as a missing
+  // REST object
+  const auto schema = rest_object_schema(s.from, s.if_exists);
+  std::optional<metadata::Rest_object> rest_object;
+  if (schema) {
+    rest_object = metadata::find_rest_object(m_session, schema->id, s.path);
+  }
   if (rest_object && !is_of_kind(*rest_object, s.kind)) rest_object.reset();
   if (!rest_object && !s.if_exists) {
     throw std::runtime_error("The given REST " + caption + " `" + full_path +

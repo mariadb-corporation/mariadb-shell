@@ -56,17 +56,24 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
   m_failure_context.clear();
 
   try {
-    // The statements on the metadata schema itself work without one, and
-    // find it themselves
-    if (!statement.is<Configure_rest_metadata>() &&
-        !statement.is<Show_rest_metadata_status>() &&
-        !statement.is<Use_rest_metadata_schema>() &&
-        !statement.is<Show_rest_metadata_schemas>()) {
-      check_metadata();
-    }
+    // IF EXISTS removals have nothing to do on a server without any REST
+    // metadata: a deployment script runs them on a fresh install too
+    if (is_removal_if_exists(statement) && !rest_metadata_exists()) {
+      result.message =
+          "The REST metadata is not configured, so there is nothing to remove.";
+    } else {
+      // The statements on the metadata schema itself work without one, and
+      // find it themselves
+      if (!statement.is<Configure_rest_metadata>() &&
+          !statement.is<Show_rest_metadata_status>() &&
+          !statement.is<Use_rest_metadata_schema>() &&
+          !statement.is<Show_rest_metadata_schemas>()) {
+        check_metadata();
+      }
 
-    std::visit([this, &result](const auto &s) { do_execute(s, &result); },
-               statement.value);
+      std::visit([this, &result](const auto &s) { do_execute(s, &result); },
+                 statement.value);
+    }
   } catch (const std::exception &e) {
     if (const auto db_error = dynamic_cast<const Db_error *>(&e)) {
       result.error_code = db_error->code();
@@ -86,6 +93,29 @@ Statement_result Ddl_executor::execute(const Statement &statement) {
 }
 
 // -- Shared helpers -------------------------------------------------------
+
+bool Ddl_executor::is_removal_if_exists(const Statement &statement) {
+  if (const auto s = statement.as<Drop_rest_service>()) return s->if_exists;
+  if (const auto s = statement.as<Drop_rest_schema>()) return s->if_exists;
+  if (const auto s = statement.as<Drop_rest_object>()) return s->if_exists;
+  if (const auto s = statement.as<Alter_rest_service>()) {
+    return s->only_removes_if_exists();
+  }
+  return false;
+}
+
+bool Ddl_executor::rest_metadata_exists() {
+  // A valid fingerprint was read from the metadata schema in use
+  if (m_metadata_checked || (m_fingerprint && m_fingerprint->valid)) return true;
+  // Any metadata schema on the server counts, chosen or not: the statement
+  // then runs as usual, and fails as usual where it has to (several
+  // schemas, a chosen one that does not exist). The session is on the
+  // schema it would use (the constructor, USE REST METADATA SCHEMA).
+  if (m_metadata_absent) return false;
+  if (!metadata::find_metadata_schemas(m_session).empty()) return true;
+  m_metadata_absent = !metadata::schema_exists(m_session);
+  return !m_metadata_absent;
+}
 
 void Ddl_executor::check_metadata() {
   if (m_metadata_checked) return;
@@ -143,19 +173,23 @@ void Ddl_executor::validate_state() {
   }
 }
 
+std::optional<Id> Ddl_executor::find_named_service(const Service_path &given) {
+  const auto service =
+      metadata::find_service(m_session, given.path, given.developers);
+  if (!service) return std::nullopt;
+  return service->id;
+}
+
 std::optional<Id> Ddl_executor::resolve_service(
     const std::optional<Service_path> &given) {
-  if (given) {
-    const auto service = metadata::find_service(m_session, given->path,
-                                                given->developers);
-    if (!service) {
-      throw std::runtime_error("Could not find the REST SERVICE " +
-                               metadata::format_developers(given->developers) +
-                               given->path + ".");
-    }
-    return service->id;
+  if (!given) return m_state->current_service_id;
+  const auto service_id = find_named_service(*given);
+  if (!service_id) {
+    throw std::runtime_error("Could not find the REST SERVICE " +
+                             metadata::format_developers(given->developers) +
+                             given->path + ".");
   }
-  return m_state->current_service_id;
+  return service_id;
 }
 
 Id Ddl_executor::require_service(const std::optional<Service_path> &given) {
@@ -166,6 +200,12 @@ Id Ddl_executor::require_service(const std::optional<Service_path> &given) {
 
 Id Ddl_executor::require_service(const std::optional<Schema_selector> &given) {
   return require_service(given ? given->service : std::nullopt);
+}
+
+std::optional<Id> Ddl_executor::require_service(
+    const std::optional<Service_path> &given, bool if_exists) {
+  if (if_exists && given) return find_named_service(*given);
+  return require_service(given);
 }
 
 std::optional<Id> Ddl_executor::resolve_role_service(
@@ -262,6 +302,7 @@ void Ddl_executor::do_execute(const Configure_rest_metadata &s,
   m_state->metadata_check.schema = m_session->metadata_schema();
   m_metadata_checked = false;
   m_fingerprint.reset();
+  m_metadata_absent = false;
 
   const auto result = metadata::configure(m_session, options, m_schema_deployer);
 

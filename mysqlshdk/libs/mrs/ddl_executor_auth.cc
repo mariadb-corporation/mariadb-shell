@@ -136,9 +136,11 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
 
   Db_transaction transaction(m_session);
 
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_auth_app(m_session, s.name); },
-          [&](const auto &existing) { metadata::delete_auth_app(m_session, existing.id); })) {
+  // OR REPLACE writes an existing auth app anew in place: it keeps its id,
+  // its users and its service links
+  const auto existing = find_existing(
+      s.flags, [&] { return metadata::find_auth_app(m_session, s.name); });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST AUTH APP `" + s.name + "` created successfully.";
     transaction.commit();
     return;
@@ -165,7 +167,11 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
           "The OAuth2 vendor `" + s.vendor +
           "` requires the APP/CLIENT ID option to be specified.");
     }
-    if (!s.options.app_secret) {
+    // A replaced app keeps its stored secret when the statement has none,
+    // unless the vendor changes: the secret belongs to the old vendor
+    if (!s.options.app_secret &&
+        !(existing && existing->auth_vendor_id == vendor->id &&
+          existing->access_token)) {
       throw std::runtime_error(
           "The OAuth2 vendor `" + s.vendor +
           "` requires the APP/CLIENT SECRET option to be specified.");
@@ -183,7 +189,11 @@ void Ddl_executor::do_execute(const Create_rest_auth_app &s, Statement_result *r
   definition.limit_to_registered_users = !s.options.allow_new_users.value_or(false);
   definition.default_role_id = default_role_id;
 
-  const Id id = metadata::add_auth_app(m_session, definition);
+  if (existing) {
+    metadata::replace_auth_app(m_session, *existing, definition);
+  } else {
+    metadata::add_auth_app(m_session, definition);
+  }
   transaction.commit();
 
   r->message = "REST AUTH APP `" + s.name + "` created successfully.";
@@ -364,9 +374,12 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
                              " was not found.");
   }
 
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_user(m_session, auth_app->id, s.name); },
-          [&](const auto &existing) { metadata::delete_user(m_session, existing.id); })) {
+  // OR REPLACE writes an existing user anew in place: it keeps its id, its
+  // roles and groups, and its password unless the statement gives one
+  const auto existing = find_existing(s.flags, [&] {
+    return metadata::find_user(m_session, auth_app->id, s.name);
+  });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST USER `" + full_path + "` created successfully.";
     transaction.commit();
     return;
@@ -387,7 +400,11 @@ void Ddl_executor::do_execute(const Create_rest_user &s, Statement_result *r) {
   definition.app_options = s.options.app_options;
   definition.password = s.password;
 
-  const Id id = metadata::add_user(m_session, definition);
+  if (existing) {
+    metadata::replace_user(m_session, *existing, definition);
+  } else {
+    metadata::add_user(m_session, definition);
+  }
   transaction.commit();
 
   r->message = "REST USER `" + full_path + "` created successfully.";
@@ -502,9 +519,11 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
     parent_role_id = parent->id;
   }
 
-  if (keep_existing(
-          s.flags, [&] { return metadata::find_role(m_session, s.name, service_id); },
-          [&](const auto &existing) { metadata::delete_role(m_session, existing.id); })) {
+  // OR REPLACE writes an existing role anew in place: it keeps its id, its
+  // privileges and its grants to users and groups
+  const auto existing = find_existing(
+      s.flags, [&] { return metadata::find_role(m_session, s.name, service_id); });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST ROLE `" + s.name + "` created successfully.";
     transaction.commit();
     return;
@@ -517,7 +536,11 @@ void Ddl_executor::do_execute(const Create_rest_role &s, Statement_result *r) {
   definition.description = s.options.comments;
   if (s.options.options) definition.options = s.options.options->value;
 
-  const Id id = metadata::add_role(m_session, definition);
+  if (existing) {
+    metadata::replace_role(m_session, existing->id, definition);
+  } else {
+    metadata::add_role(m_session, definition);
+  }
   transaction.commit();
 
   r->message = "REST ROLE `" + s.name + "` created successfully.";

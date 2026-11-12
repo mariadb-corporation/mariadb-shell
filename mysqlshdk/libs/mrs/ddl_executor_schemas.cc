@@ -44,17 +44,21 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
 
   const auto service_id = require_service(s.service);
 
-  bool replaces_current = false;
-  if (keep_existing(
-          s.flags,
-          [&] { return metadata::find_schema(m_session, service_id, request_path); },
-          [&](const auto &existing) {
-            metadata::delete_schema(m_session, existing.id);
-            replaces_current = m_state->current_schema_id == existing.id;
-          })) {
+  // OR REPLACE writes an existing schema anew in place: it keeps its id and
+  // its REST objects
+  const auto existing = find_existing(s.flags, [&] {
+    return metadata::find_schema(m_session, service_id, request_path);
+  });
+  if (existing && s.flags.if_not_exists) {
     r->message = "REST SCHEMA `" + full_path + "` created successfully.";
     transaction.commit();
     return;
+  }
+  // The REST schema of an MRS module belongs to the content set its scripts
+  // are registered from; it cannot become a database schema in place
+  if (existing && existing->schema_type != "DATABASE_SCHEMA") {
+    throw std::runtime_error("The request path " + request_path +
+                             " is used by the REST schema of an MRS module.");
   }
 
   metadata::Schema_definition definition;
@@ -68,14 +72,16 @@ void Ddl_executor::do_execute(const Create_rest_schema &s, Statement_result *r) 
   if (s.options.options) definition.options = s.options.options->value;
   definition.metadata = s.options.metadata;
 
-  const Id id = metadata::add_schema(m_session, definition);
-
-  // The first schema of the current service becomes the current schema, and
-  // a replaced current schema is followed to its replacement
-  const bool becomes_current =
-      replaces_current ||
-      (m_state->current_service_id == service_id &&
-       metadata::get_schemas(m_session, service_id).size() == 1);
+  // The first schema of the current service becomes the current schema
+  bool becomes_current = false;
+  Id id;
+  if (existing) {
+    metadata::replace_schema(m_session, *existing, definition);
+  } else {
+    id = metadata::add_schema(m_session, definition);
+    becomes_current = m_state->current_service_id == service_id &&
+                      metadata::get_schemas(m_session, service_id).size() == 1;
+  }
 
   transaction.commit();
 
@@ -110,7 +116,7 @@ void Ddl_executor::do_execute(const Alter_rest_schema &s, Statement_result *r) {
   changes.metadata = s.options.metadata;
 
   Db_transaction transaction(m_session);
-  metadata::update_schema(m_session, schema.id, changes);
+  metadata::update_schema(m_session, schema, changes);
   transaction.commit();
 
   if (m_state->current_schema_id == schema.id && s.new_path) {
@@ -126,8 +132,18 @@ void Ddl_executor::do_execute(const Drop_rest_schema &s, Statement_result *r) {
 
   Db_transaction transaction(m_session);
 
-  const auto service_id = require_service(s.service);
-  const auto schema = metadata::find_schema(m_session, service_id, s.schema_path);
+  // IF EXISTS: a missing service is nothing to do, as a missing schema
+  std::optional<metadata::Schema> schema;
+  if (const auto service_id = require_service(s.service, s.if_exists)) {
+    schema = metadata::find_schema(m_session, *service_id, s.schema_path);
+  }
+  // FOR DATABASE: only a REST schema still on that database schema, so that
+  // a deployment script can drop a schema that moved to another database
+  // on every deployment, without dropping it again once it has moved
+  if (schema && s.for_database &&
+      !metadata::same_database_schema(m_session, schema->name, *s.for_database)) {
+    schema.reset();
+  }
   if (!schema && !s.if_exists) {
     throw std::runtime_error("The given REST SCHEMA `" + full_path +
                              "` could not be found.");

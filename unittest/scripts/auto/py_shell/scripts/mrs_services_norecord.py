@@ -362,6 +362,82 @@ EXPECT_EQ([["/city", "ENABLED"]], rest_rows("SHOW REST VIEWS"))
 rest("USE REST SERVICE /myService")
 rest("DROP REST SERVICE /replaced")
 
+#@<> CREATE OR REPLACE REST SERVICE and SCHEMA update in place
+# A deployment script runs its statements again on every deploy: OR REPLACE
+# keeps the ids and what hangs on them, and writes the settings anew
+def md_one(sql):
+    return session.run_sql(sql).fetch_one()[0]
+
+rest("""CREATE REST SERVICE /inPlace PUBLISHED PROTOCOL HTTP COMMENT 'old'
+    AUTHENTICATION PATH '/auth' OPTIONS {"a": 1} METADATA {"m": 1}""")
+rest("CREATE REST SCHEMA /s ON SERVICE /inPlace FROM sakila PRIVATE AUTHENTICATION REQUIRED ITEMS PER PAGE 10 COMMENT 'old' OPTIONS {\"a\": 1}")
+rest("CREATE REST VIEW /city ON SERVICE /inPlace SCHEMA /s AS sakila.city")
+rest("CREATE REST ROLE \"inPlaceRole\" ON SERVICE /inPlace")
+rest("CREATE REST CONTENT SET /cs ON SERVICE /inPlace")
+rest("CREATE REST AUTH APP \"inPlaceKept\" VENDOR MRS")
+rest("CREATE REST AUTH APP \"inPlaceAdded\" VENDOR MRS")
+rest("ALTER REST SERVICE /inPlace ADD AUTH APP \"inPlaceKept\"")
+def current_ids():
+    return [md_one("SELECT id FROM mariadb_rest_service.service WHERE url_context_root = '/inPlace'"),
+            md_one("SELECT id FROM mariadb_rest_service.rest_schema WHERE request_path = '/s'"),
+            md_one("SELECT o.id FROM mariadb_rest_service.rest_object o JOIN mariadb_rest_service.rest_schema s ON o.rest_schema_id = s.id WHERE s.request_path = '/s'")]
+ids = current_ids()
+def linked_apps():
+    return [r[0] for r in rest_rows("SHOW REST AUTH APPS FROM SERVICE /inPlace")]
+
+replace_service = "CREATE OR REPLACE REST SERVICE /inPlace COMMENT 'new' ADD AUTH APP \"inPlaceAdded\""
+EXPECT_EQ("REST SERVICE `/inPlace` created successfully.", rest_info(replace_service))
+EXPECT_EQ(ids, current_ids())
+# An option the statement leaves out takes the default of a new service
+EXPECT_EQ(["new", 0, "/authentication", None],
+          list(session.run_sql("SELECT comments, published, auth_path, metadata FROM mariadb_rest_service.service WHERE id = ?", [ids[0]]).fetch_one()))
+EXPECT_EQ(md_one("SELECT options FROM mariadb_rest_service.service WHERE url_context_root = '/myService'"),
+          md_one("SELECT options FROM mariadb_rest_service.service WHERE id = '%s'" % ids[0]))
+# The schemas, roles, content sets and the auth app links it had stay
+EXPECT_EQ([["/s", "PRIVATE"]], rest_rows("SHOW REST SCHEMAS FROM SERVICE /inPlace"))
+EXPECT_EQ(1, md_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_role WHERE caption = 'inPlaceRole' AND specific_to_service_id = '%s'" % ids[0]))
+EXPECT_EQ(1, md_one("SELECT COUNT(*) FROM mariadb_rest_service.content_set WHERE service_id = '%s'" % ids[0]))
+EXPECT_EQ(["inPlaceAdded", "inPlaceKept"], sorted(linked_apps()))
+# Running it again changes nothing: ADD skips a linked auth app
+EXPECT_EQ("REST SERVICE `/inPlace` created successfully.", rest_info(replace_service))
+EXPECT_EQ(["inPlaceAdded", "inPlaceKept"], sorted(linked_apps()))
+# REMOVE ... IF EXISTS unlinks, and skips an auth app that is not linked
+for _ in range(2):
+    rest("CREATE OR REPLACE REST SERVICE /inPlace COMMENT 'new' REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS")
+    EXPECT_EQ(["inPlaceKept"], linked_apps())
+EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /inPlace REMOVE AUTH APP \"inPlaceAdded\""), "The REST auth app cannot be removed as it is not assigned to the REST service.")
+rest("ALTER REST SERVICE /inPlace REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS")
+# On a missing service, a statement that only removes auth apps, each IF
+# EXISTS, is nothing to do; one that also changes the service needs it
+EXPECT_EQ(0, rest("ALTER REST SERVICE /nope REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS").get_affected_items_count())
+EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /nope REMOVE AUTH APP \"inPlaceAdded\""), "Could not find the REST SERVICE /nope.")
+EXPECT_THROWS(lambda: rest("ALTER REST SERVICE /nope COMMENT 'x' REMOVE AUTH APP \"inPlaceAdded\" IF EXISTS"), "Could not find the REST SERVICE /nope.")
+
+# The schema: its settings anew, its id and its objects kept
+EXPECT_EQ("REST SCHEMA `/inPlace/s` created successfully.", rest_info("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM sakila COMMENT 'new'"))
+EXPECT_EQ(ids, current_ids())
+EXPECT_EQ(["sakila", 1, 0, 25, "new", None],
+          list(session.run_sql("SELECT name, enabled, requires_auth, items_per_page, comments, options FROM mariadb_rest_service.rest_schema WHERE id = ?", [ids[1]]).fetch_one()))
+EXPECT_EQ([["/city", "ENABLED"]], rest_rows("SHOW REST VIEWS ON SERVICE /inPlace SCHEMA /s"))
+# A database schema that does not exist fails and leaves the schema as it was
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM nope"), "The given database schema name 'nope' does not exists.")
+EXPECT_EQ("new", md_one("SELECT comments FROM mariadb_rest_service.rest_schema WHERE id = '%s'" % ids[1]))
+# The database schema cannot change under REST objects: they name only
+# their table, and would point at another database's table, without grants
+moved = "Its database schema cannot change from `sakila` to `mysql` while it has REST objects. Drop them, or the REST SCHEMA, first."
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST SCHEMA /s ON SERVICE /inPlace FROM mysql"), "Failed to create the REST SCHEMA `/inPlace/s`. " + moved)
+EXPECT_THROWS(lambda: rest("ALTER REST SCHEMA /s ON SERVICE /inPlace FROM mysql COMMENT 'x'"), "Failed to update the REST SCHEMA `/inPlace/s`. " + moved)
+EXPECT_EQ("sakila", md_one("SELECT name FROM mariadb_rest_service.rest_schema WHERE id = '%s'" % ids[1]))
+# Without REST objects the database schema can change
+rest("CREATE REST SCHEMA /empty ON SERVICE /inPlace FROM sakila")
+rest("CREATE OR REPLACE REST SCHEMA /empty ON SERVICE /inPlace FROM mysql")
+rest("ALTER REST SCHEMA /empty ON SERVICE /inPlace FROM sakila COMMENT 'back'")
+EXPECT_EQ("sakila", md_one("SELECT name FROM mariadb_rest_service.rest_schema WHERE request_path = '/empty'"))
+
+rest("DROP REST SERVICE /inPlace")
+rest("DROP REST AUTH APP \"inPlaceKept\"")
+rest("DROP REST AUTH APP \"inPlaceAdded\"")
+
 #@<> SHOW REST SERVICES FORMAT=JSON
 def json_list(sql, column):
     res = rest(sql)
@@ -419,6 +495,20 @@ rest("ALTER REST SCHEMA /sakila2 ON SERVICE /myService NEW REQUEST PATH /sakila"
 #@<> DROP REST SCHEMA
 EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /nope"), "Failed to drop the REST SCHEMA `/myService/nope`. The given REST SCHEMA `/myService/nope` could not be found.")
 EXPECT_EQ("REST SCHEMA `/myService/nope` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /nope"))
+# IF EXISTS: a missing service is nothing to do either
+EXPECT_EQ("REST SCHEMA `/nope/x` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /x FROM SERVICE /nope"))
+EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /x FROM SERVICE /nope"), "Could not find the REST SERVICE /nope.")
+# FOR DATABASE: only a REST schema on that database schema is dropped, so a
+# deployment script can drop one that moved to another database every time
+rest("CREATE REST SCHEMA /moved ON SERVICE /full FROM sakila")
+rest("CREATE REST VIEW /city ON SERVICE /full SCHEMA /moved AS sakila.city")
+EXPECT_EQ(0, rest("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /full FOR DATABASE mysql").get_affected_items_count())
+EXPECT_EQ([["/moved", "ENABLED"]], [r for r in rest_rows("SHOW REST SCHEMAS FROM SERVICE /full") if r[0] == "/moved"])
+EXPECT_THROWS(lambda: rest("DROP REST SCHEMA /moved FROM SERVICE /full FOR DATABASE mysql"), "The given REST SCHEMA `/full/moved` could not be found.")
+EXPECT_EQ("REST SCHEMA `/nope/moved` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /nope FOR DATABASE sakila"))
+EXPECT_EQ("REST SCHEMA `/full/moved` dropped successfully.", rest_info("DROP REST SCHEMA IF EXISTS /moved FROM SERVICE /full FOR DATABASE sakila"))
+EXPECT_EQ([], [r for r in rest_rows("SHOW REST SCHEMAS FROM SERVICE /full") if r[0] == "/moved"])
+EXPECT_EQ(0, session.run_sql("SELECT COUNT(*) FROM mariadb_rest_service.rest_object WHERE request_path = '/city' AND rest_schema_id NOT IN (SELECT id FROM mariadb_rest_service.rest_schema)").fetch_one()[0])
 EXPECT_EQ("REST SCHEMA `/full/sakila` dropped successfully.", rest_info("DROP REST SCHEMA /sakila FROM SERVICE /full"))
 EXPECT_EQ([], rest_rows("SHOW REST SCHEMAS FROM /full"))
 EXPECT_EQ([["/sakila", "ENABLED"]], rest_rows("SHOW REST SCHEMAS"))

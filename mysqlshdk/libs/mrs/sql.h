@@ -111,6 +111,12 @@ class Value {
     v.m_data = std::move(sql);
     return v;
   }
+  // The value, or the column's DEFAULT when the optional is empty: for the
+  // columns that an INSERT and an UPDATE writing the same row anew share.
+  template <typename T>
+  static Value or_default(const std::optional<T> &v) {
+    return v ? Value(*v) : raw("DEFAULT");
+  }
   // An id (its UUID text); an empty or absent id is NULL.
   static Value id(const Id &uuid) { return uuid.empty() ? Value() : Value(uuid); }
   static Value id(const std::optional<Id> &uuid) {

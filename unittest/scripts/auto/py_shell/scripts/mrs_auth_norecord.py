@@ -192,7 +192,8 @@ EXPECT_EQ("REST USER `:\"mike\"@\"MRS App\"` created successfully.", rest_info("
 EXPECT_THROWS(lambda: rest("CREATE REST USER \"mike\"@\"MRS App\" IDENTIFIED BY \"MariaDBR0cks!\""), "This name has already been used.")
 first_id = query_one("SELECT id FROM mariadb_rest_service.mrs_user WHERE name = 'mike'")
 EXPECT_EQ("REST USER `:\"mike\"@\"MRS App\"` created successfully.", rest_info("CREATE OR REPLACE REST USER \"mike\"@\"MRS App\" IDENTIFIED BY \"MariaDBR0cks!\""))
-EXPECT_NE(first_id, query_one("SELECT id FROM mariadb_rest_service.mrs_user WHERE name = 'mike'"))
+# OR REPLACE updates the user in place
+EXPECT_EQ(first_id, query_one("SELECT id FROM mariadb_rest_service.mrs_user WHERE name = 'mike'"))
 EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user WHERE name = 'mike'"))
 # The password is stored as a salted PBKDF2 derived key, as the router expects it
 auth_string = query_one("SELECT auth_string FROM mariadb_rest_service.mrs_user WHERE name = 'mike'")
@@ -545,6 +546,47 @@ EXPECT_EQ([], roles_rows("SHOW REST ROLES FOR \"mike\"@\"MRS App\""))
 EXPECT_THROWS(lambda: rest("REVOKE REST ROLE \"nope\" FROM \"mike\"@\"MRS App\""), "Failed to REVOKE REST role `nope` from `mike`@`MRS App`. Role `nope` was not found.")
 EXPECT_THROWS(lambda: rest("REVOKE REST ROLE \"reader\" FROM \"nobody\"@\"MRS App\""), "Failed to REVOKE REST role `reader` from `nobody`@`MRS App`. The given user `nobody` was not found.")
 EXPECT_EQ(1, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_role"))
+
+#@<> CREATE OR REPLACE REST AUTH APP, USER and ROLE update in place
+# A deployment script runs its statements again on every deploy: OR REPLACE
+# keeps the ids and what hangs on them, and writes the settings anew
+def row_of(sql):
+    return list(session.run_sql(sql).fetch_one())
+
+app_id, access_token = row_of("SELECT id, access_token FROM mariadb_rest_service.auth_app WHERE name = 'MRS App'")
+boss_id, boss_auth = row_of("SELECT id, auth_string FROM mariadb_rest_service.mrs_user WHERE name = 'boss'")
+reader_id = query_one("SELECT id FROM mariadb_rest_service.mrs_role WHERE caption = 'reader' AND specific_to_service_id IS NOT NULL")
+privileges = query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_privilege WHERE role_id = '%s'" % reader_id)
+user_roles = query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_role")
+EXPECT_EQ(1, user_roles)
+
+# The auth app: its users and service links stay, an absent secret too
+EXPECT_EQ("REST AUTH APP `MRS App` created successfully.", rest_info("CREATE OR REPLACE REST AUTH APP \"MRS App\" VENDOR MRS COMMENT 'replaced'"))
+EXPECT_EQ([app_id, "replaced", None, None, access_token, 1, 1],
+          row_of("SELECT id, description, url, app_id, access_token, enabled, limit_to_registered_users FROM mariadb_rest_service.auth_app WHERE name = 'MRS App'"))
+EXPECT_EQ([["MRS App", "MRS", "replaced", "ENABLED"]], rest_rows("SHOW REST AUTH APPS FROM SERVICE /svc"))
+EXPECT_EQ(2, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user WHERE auth_app_id = '%s'" % app_id))
+# The vendor of an app with users cannot change
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST AUTH APP \"MRS App\" VENDOR MariaDB"), "The vendor of the REST AUTH APP `MRS App` cannot be changed as it has users. Drop the REST AUTH APP first.")
+
+# The user: its roles stay, and its password unless the statement gives one
+EXPECT_EQ("REST USER `:\"boss\"@\"MRS App\"` created successfully.", rest_info("CREATE OR REPLACE REST USER \"boss\"@\"MRS App\" ACCOUNT LOCK"))
+EXPECT_EQ([boss_id, boss_auth, 0, None], row_of("SELECT id, auth_string, login_permitted, email FROM mariadb_rest_service.mrs_user WHERE name = 'boss'"))
+EXPECT_EQ(user_roles, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_role"))
+rest("CREATE OR REPLACE REST USER \"boss\"@\"MRS App\" IDENTIFIED BY \"MariaDBR0cks!2\"")
+EXPECT_EQ([boss_id, 1], row_of("SELECT id, login_permitted FROM mariadb_rest_service.mrs_user WHERE name = 'boss'"))
+EXPECT_NE(boss_auth, query_one("SELECT auth_string FROM mariadb_rest_service.mrs_user WHERE name = 'boss'"))
+
+# The role: its privileges, its grants to users and the roles extending it stay
+EXPECT_EQ("REST ROLE `reader` created successfully.", rest_info("CREATE OR REPLACE REST ROLE \"reader\" COMMENT 'replaced'"))
+EXPECT_EQ([reader_id, "replaced"], row_of("SELECT id, description FROM mariadb_rest_service.mrs_role WHERE caption = 'reader' AND specific_to_service_id IS NOT NULL"))
+EXPECT_EQ(privileges, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_privilege WHERE role_id = '%s'" % reader_id))
+EXPECT_EQ(user_roles, query_one("SELECT COUNT(*) FROM mariadb_rest_service.mrs_user_has_role"))
+EXPECT_EQ(reader_id, query_one("SELECT derived_from_role_id FROM mariadb_rest_service.mrs_role WHERE caption = 'writer'"))
+# A role cannot come to extend itself, nor a role that extends it
+EXPECT_THROWS(lambda: rest("CREATE OR REPLACE REST ROLE \"reader\" EXTENDS \"writer\""), "Failed to create the REST ROLE `reader`. The REST role `reader` cannot extend itself.")
+EXPECT_EQ("REST ROLE `reader` created successfully.", rest_info("CREATE OR REPLACE REST ROLE \"reader\""))
+EXPECT_EQ(None, query_one("SELECT description FROM mariadb_rest_service.mrs_role WHERE id = '%s'" % reader_id))
 
 #@<> SHOW CREATE REST SERVICE includes the roles of the service
 script = rest_text("SHOW CREATE REST SERVICE /svc INCLUDING DATABASE ENDPOINTS")
