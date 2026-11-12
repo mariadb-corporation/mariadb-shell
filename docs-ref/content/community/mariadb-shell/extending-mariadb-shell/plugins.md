@@ -181,6 +181,7 @@ def find_columns(pattern, **options):
 | `plugin_docs` | A dictionary with `brief` and `details` for an object that the decorator has to create. |
 | `shell` | Whether the function is available in the shell. The default is `True`. |
 | `cli` | Whether the function is also available through [command line integration](../using-mariadb-shell/command-line-integration.md). The default is `False`, and `cli=True` requires `shell=True`. |
+| `mcp` | Offers the function as a tool of the MariaDB MCP Server. See [Offering a Function as an MCP Tool](#offering-a-function-as-an-mcp-tool). With `shell=False`, the function is an MCP tool only. |
 
 The decorator wraps your function: if it raises an exception, the shell shows the message to the user and writes the traceback to the log at `debug` level. Raise `mysqlsh.Error("message")` for errors that the user should act on.
 
@@ -194,6 +195,52 @@ The decorators parse the docstring of each function and refuse to register it wh
 * A parameter with a default value is optional. A parameter declared with `=None` receives `None` when the caller omits it, from the command line too, and callers can pass `None` for it explicitly. Write `(type,required)` only for options inside a dictionary that callers must pass.
 * Document the keys of `**options` in a `Keyword Args:` section. For a named dictionary parameter `cfg`, use a section called `Allowed options for cfg:`.
 * Lines that start with `* ` become bullet points in the help.
+
+### Offering a Function as an MCP Tool
+
+The MariaDB MCP Server (the `mcp_plugin` of MariaDB Shell Plugins) serves MCP tools to AI agents. Any plugin can add tools to it by passing `mcp` to `@plugin_function`. The plugin doesn't import the MCP server or the MCP SDK, and the function works in the shell exactly as before.
+
+```python
+@plugin_function("orders.listOpen", cli=True,
+                 mcp={"group": "orders", "readOnly": True})
+def list_open(customer, limit=20, session=None):
+    """Lists a customer's open orders.
+
+    Args:
+        customer (str): The customer number.
+        limit (int): The most orders returned.
+        session (object): The session to use, the active one by default.
+
+    Returns:
+        A list of orders.
+    """
+    session = session or shell.get_session()
+    return session.run_sql(
+        "SELECT * FROM shop.orders WHERE customer = ? AND state = 'open' LIMIT ?",
+        [customer, limit])
+```
+
+The server publishes this function as the tool `orders.list_open`. Its description and parameters come from the docstring, and `**options` becomes one `options` object. The `mcp` dictionary takes these keys:
+
+| Key | Description |
+| --- | --- |
+| `group` | Required. The tool's group, which is also the first part of its name. Lower case letters, digits and underscores. The server's own groups, such as `db`, can't be used. |
+| `name` | The tool's name within the group. The default is the function name in snake_case. |
+| `readOnly`, `destructive` | Published as the tool's `readOnlyHint` and `destructiveHint` annotations. The default is `False`. |
+| `paths` | The parameters that hold file system paths. The server checks each against its allowed paths and asks the user to trust a path that is not allowed. |
+| `task` | Runs the function as a background task. The tool returns a task ID at once, and the agent follows the task with `task.get`. The default is `False`. |
+| `gui` | Serves the tool only to the MariaDB VS Code extension (`mcp start-server --gui`). The default is `False`. |
+
+The server fills in two parameters itself instead of publishing them:
+
+* `session`: the tool takes the `connection_id` of a connection the agent opened with `db.connect`, and the function receives that connection's session. The server's connection safeguards apply, and the tool is served only when the `db` group is served too.
+* `task`: in a tool with `"task": True`, the function receives its background task. Call `task.progress(current, total)` to report progress, and `task.check_cancelled()` to stop when the agent cancels the task. The function's return value becomes the task's result.
+
+Raise `mysqlsh.Error("message")` to refuse a call; the agent receives the message.
+
+MariaDB Shell checks the `mcp` dictionary when the plugin loads, and a mistake stops the function from registering. A result of `run_sql()` reaches the agent as its rows. A plugin that uses `mcp` needs a shell that supports it, so declare the version with `@plugin(shell_version_min=...)`.
+
+An extension group is not served just because its plugin is installed. Name it in `mcp start-server --functionGroups`, or have every server serve it by default with `mcp setup --extensionGroups=orders`. `mcp setup --show` lists the groups that the loaded plugins offer. A multi-tenant server serves no extension groups.
 
 ## Example: A Schema Explorer Plugin
 

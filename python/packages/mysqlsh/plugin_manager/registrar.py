@@ -47,6 +47,83 @@ def add_registration_callback(callback):
     _registration_callbacks.append(callback)
 
 
+def _python_name(name):
+    """Returns the snake_case Python name of a camelCase shell name."""
+    return "_".join([x.lower() for x in re.split("([A-Z][a-z0-9_]*)", name) if x])
+
+
+# The keys of the mcp argument of plugin_function. The MCP server plugin
+# (mcp_plugin in mariadb-shell-plugins) reads them from the registry and
+# serves the function as an MCP tool; see plugin_function.
+_MCP_KEYS = ("group", "name", "readOnly", "destructive", "paths", "task", "gui")
+_MCP_FLAGS = ("readOnly", "destructive", "task", "gui")
+_MCP_NAME = re.compile("^[a-z][a-z0-9_]*$")
+# Parameters the MCP server fills in itself, never a path
+_MCP_FILLED_IN = ("session", "task")
+
+
+def _mcp_definition(mcp, function_name, signature):
+    """Checks the mcp argument of plugin_function and fills in its defaults.
+
+    Args:
+        mcp: The argument as given: None, False or a dictionary.
+        function_name (str): The function name of the fully qualified name.
+        signature: The function's inspect.Signature.
+
+    Returns:
+        dict: Every key of _MCP_KEYS, or None for a function that is not an
+        MCP tool.
+    """
+    if mcp is None or mcp is False:
+        return None
+    if not isinstance(mcp, dict):
+        raise Exception(
+            "The mcp argument must be a dictionary naming at least the MCP "
+            "group of the tool, e.g. mcp={'group': 'orders'}.")
+
+    unknown = sorted(set(mcp) - set(_MCP_KEYS))
+    if unknown:
+        raise Exception(
+            f"Unknown mcp option(s): {', '.join(unknown)}. The options are: "
+            f"{', '.join(_MCP_KEYS)}.")
+
+    definition = {
+        "group": mcp.get("group"),
+        "name": mcp.get("name", _python_name(function_name)),
+    }
+    for key in ("group", "name"):
+        value = definition[key]
+        if not isinstance(value, str) or not _MCP_NAME.match(value):
+            raise Exception(
+                f"The mcp option '{key}' must be lower case letters, digits "
+                f"and underscores, starting with a letter, got {value!r}.")
+
+    for flag in _MCP_FLAGS:
+        value = mcp.get(flag, False)
+        if not isinstance(value, bool):
+            raise Exception(
+                f"The mcp option '{flag}' must be true or false, got {value!r}.")
+        definition[flag] = value
+
+    paths = mcp.get("paths", [])
+    if isinstance(paths, str) or not isinstance(paths, (list, tuple)):
+        raise Exception("The mcp option 'paths' must be a list of parameter names.")
+    named = [
+        name for name, parameter in signature.parameters.items()
+        if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                              inspect.Parameter.KEYWORD_ONLY)
+        and name not in _MCP_FILLED_IN
+    ]
+    for path in paths:
+        if path not in named:
+            raise Exception(
+                f"The mcp option 'paths' names {path!r}, which is not a "
+                "parameter of the function.")
+    definition["paths"] = list(paths)
+
+    return definition
+
+
 def validate_shell_version(min=None, max=None):
     """
     Validates the plugin Shell version requirements for plugin.
@@ -269,7 +346,8 @@ class PluginRegistrar:
                      fully_qualified_name=None,
                      shell=True,
                      cli=False,
-                     web=False):
+                     web=False,
+                     mcp=None):
             # Get the plugin name by stripping the function name
             name = None
             if not fully_qualified_name is None:
@@ -291,6 +369,9 @@ class PluginRegistrar:
                 PluginRegistrar.ParameterData(p)
                 for p in signature.parameters.values()
             ]
+
+            # The MCP tool definition, or None: see plugin_function
+            self.mcp = _mcp_definition(mcp, self.name, signature)
 
             docs = inspect.getdoc(function)
 
@@ -582,7 +663,7 @@ class PluginRegistrar:
         pass
 
     def _get_python_name(self, name):
-        return "_".join([x.lower() for x in re.split("([A-Z][a-z0-9_]*)", name) if x])
+        return _python_name(name)
 
     def register_object(self, name, docs, members=None):
         try:
@@ -671,7 +752,8 @@ class PluginRegistrar:
         fully_qualified_name=None,
         shell=True,
         cli=False,
-        web=False
+        web=False,
+        mcp=None
     ):
         """Registers a new member into the provided shell extension object"""
         shell_obj = mysqlsh.globals.shell
@@ -684,7 +766,8 @@ class PluginRegistrar:
             function, shell=shell,
             fully_qualified_name=fully_qualified_name,
             cli=cli,
-            web=web)
+            web=web,
+            mcp=mcp)
 
         # Registers definition in the global registry
         _registry.append(definition)
@@ -815,7 +898,8 @@ def plugin_function(fully_qualified_name,
                     plugin_docs=None,
                     shell: bool = True,
                     cli: bool = False,
-                    web: Union[bool, dict] = False):
+                    web: Union[bool, dict] = False,
+                    mcp: Union[dict, None] = None):
     """Decorator factory to register Shell plugins functions
 
     Args:
@@ -824,6 +908,16 @@ def plugin_function(fully_qualified_name,
         plugin_docs (dict): The documentation structure of the plugin. This
             is only required for the first function that will be registered
         cli (bool): Defines whether the function should be available in the CLI
+        mcp (dict): Offers the function as a tool of the MCP server plugin
+            (mcp_plugin), which reads it from the registry. The keys:
+            group (required: the tool's MCP group and the first part of its
+            name), name (default: the function name in snake_case),
+            readOnly, destructive (the tool's annotations), paths (the
+            parameters holding file paths, checked against the server's
+            allowed paths), task (run as a background task), gui (only on a
+            --gui server). A parameter called session receives the session
+            of an MCP connection; with task, one called task receives the
+            task. shell=False makes the function MCP-only.
 
     Returns:
         The decorator function
@@ -874,7 +968,8 @@ def wrapper{str(original_signature)}:
                 fully_qualified_name=fully_qualified_name,
                 shell=shell,
                 cli=cli,
-                web=web
+                web=web,
+                mcp=mcp
             )
         except Exception as e:
             print(

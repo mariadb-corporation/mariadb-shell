@@ -720,7 +720,104 @@ testutil.call_mysqlsh(["--quiet-start=2", "--py", "-f", "web_plugins.py"])
 EXPECT_STDOUT_CONTAINS("Found web only plugin: plugin2.list.webData")
 
 
+#@<> MCP tool definitions are in the registry, their defaults filled in
+plugin_code = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp={"group": "orders", "readOnly": True, "paths": ["target"]})
+def list_orders(target, session=None):
+    """Lists orders.
+
+    Args:
+        target (str): Where to write them.
+        session (object): The session to use.
+    """
+    pass
+
+@plugin_function("sample.checksumAll", shell=False, mcp={"group": "orders", "name": "checksum", "task": True})
+def checksum_all(session=None, task=None):
+    """Checksums the orders.
+
+    Args:
+        session (object): The session to use.
+        task (object): The background task.
+    """
+    pass
+
+@plugin_function("sample.notATool")
+def not_a_tool():
+    """Not offered to MCP."""
+    pass
+'''
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+
+mcp_plugins_code = """
+from mysqlsh.plugin_manager import registrar
+
+for definition in registrar.get_registry():
+    if definition.fully_qualified_name.startswith("sample."):
+        print(f"MCP {definition.fully_qualified_name}: {definition.mcp}")
+"""
+
+testutil.create_file("mcp_plugins.py", mcp_plugins_code)
+testutil.call_mysqlsh(["--quiet-start=2", "--py", "-f", "mcp_plugins.py"])
+EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders', 'name': 'list_orders', 'readOnly': True, 'destructive': False, 'task': False, 'gui': False, 'paths': ['target']}")
+EXPECT_STDOUT_CONTAINS("MCP sample.checksumAll: {'group': 'orders', 'name': 'checksum', 'readOnly': False, 'destructive': False, 'task': True, 'gui': False, 'paths': []}")
+EXPECT_STDOUT_CONTAINS("MCP sample.notATool: None")
+
+#@<> An MCP-only function is not in the shell
+rc = call_mysqlsh_py_e("\\? sample.checksumAll")
+EXPECT_STDOUT_CONTAINS("No help items found matching 'sample.checksumAll'")
+
+#@<> Invalid MCP tool definitions are refused
+mcp_plugin_template = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp=MCP_DEFINITION)
+def list_orders(target):
+    """Lists orders.
+
+    Args:
+        target (str): Where to write them.
+    """
+    pass
+'''
+
+mcp_definition_errors = [
+    ("True", "The mcp argument must be a dictionary naming at least the MCP group of the tool"),
+    ("{}", "The mcp option 'group' must be lower case letters, digits and underscores, starting with a letter, got None."),
+    ("{'group': 'Orders'}", "The mcp option 'group' must be lower case letters"),
+    ("{'group': 'orders', 'name': 'list-orders'}", "The mcp option 'name' must be lower case letters"),
+    ("{'group': 'orders', 'readonly': True}", "Unknown mcp option(s): readonly. The options are: group, name, readOnly, destructive, paths, task, gui."),
+    ("{'group': 'orders', 'task': 'yes'}", "The mcp option 'task' must be true or false, got 'yes'."),
+    ("{'group': 'orders', 'paths': 'target'}", "The mcp option 'paths' must be a list of parameter names."),
+    ("{'group': 'orders', 'paths': ['file']}", "The mcp option 'paths' names 'file', which is not a parameter of the function."),
+]
+
+for mcp_definition, mcp_error in mcp_definition_errors:
+    WIPE_OUTPUT()
+    testutil.rmfile(sample_path)
+    testutil.create_file(sample_path, mcp_plugin_template.replace("MCP_DEFINITION", mcp_definition))
+    testutil.call_mysqlsh(["--py", "-e", "print('loaded')"], "", shell_env)
+    EXPECT_STDOUT_CONTAINS("Could not register function 'listOrders' as a member of the sample plugin object.")
+    EXPECT_STDOUT_CONTAINS(mcp_error)
+
+
 #@<> Finalization
 testutil.rmdir(plugins_path, True)
 testutil.rmfile("my-script.py")
 testutil.rmfile("web_plugins.py")
+testutil.rmfile("mcp_plugins.py")
