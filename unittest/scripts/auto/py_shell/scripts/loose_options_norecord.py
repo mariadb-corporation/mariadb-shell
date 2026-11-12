@@ -39,95 +39,83 @@ EXPECT_STDOUT_CONTAINS("unknown option --whatever-else")
 EXPECT_STDOUT_NOT_CONTAINS("done")
 WIPE_OUTPUT()
 
+#@<> prep options-file helper
+def run_with_cnf(cnf, code="print('done')", args=None):
+    testutil.create_file("my_options.cnf", cnf)
+    testutil.call_mysqlsh(["--defaults-file=my_options.cnf"] + (args or []) + ["--py", "-e", code], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+    testutil.rmfile("my_options.cnf")
+
+def connect_with_cnf(cnf, args=None):
+    run_with_cnf(cnf, "print('connected:', session.is_open())", (args or []) + [__mysqluripwd])
+
 #@<> Warns unsupported loose options from the shell's groups of the options file
 for group in ["mariadb-shell", "mysqlsh"]:
-    testutil.create_file("my_options.cnf", f"""
-[{group}]
-loose-unknown=whatever
-""")
-    testutil.call_mysqlsh(["--defaults-file=my_options.cnf", "--py", "-e", "print('done')"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+    run_with_cnf(f"[{group}]\nloose-unknown=whatever\n")
     EXPECT_STDOUT_CONTAINS("WARNING: unknown option: --loose-unknown")
     EXPECT_STDOUT_CONTAINS("done")
     WIPE_OUTPUT()
-testutil.rmfile("my_options.cnf")
 
 #@<> Unsupported options in [client] of the options file are skipped quietly
 # [client] is read by every client program; e.g. Gentoo's stock config sets
 # character-sets-dir and loose-default-character-set there.
-testutil.create_file("my_options.cnf", """
-[client]
+run_with_cnf("""[client]
 character-sets-dir=/usr/share/mariadb/charsets
 loose-default-character-set=utf8
 plugin_dir=/usr/lib/mariadb/plugin
 skip-unknown-flag
 """)
-testutil.call_mysqlsh(["--defaults-file=my_options.cnf", "--py", "-e", "print('done')"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_NOT_CONTAINS("unknown option")
 EXPECT_STDOUT_CONTAINS("done")
 WIPE_OUTPUT()
-testutil.rmfile("my_options.cnf")
 
 #@<> Unsupported options in the shell's groups of the options file still fail
 for group in ["mariadb-shell", "mysqlsh"]:
-    testutil.create_file("my_options.cnf", f"""
-[{group}]
-character-sets-dir=/usr/share/mariadb/charsets
-""")
-    testutil.call_mysqlsh(["--defaults-file=my_options.cnf", "--py", "-e", "print('done')"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+    run_with_cnf(f"[{group}]\ncharacter-sets-dir=/usr/share/mariadb/charsets\n")
     EXPECT_STDOUT_CONTAINS("unknown option --character-sets-dir")
     EXPECT_STDOUT_NOT_CONTAINS("done")
     WIPE_OUTPUT()
-testutil.rmfile("my_options.cnf")
 
 #@<> Unsupported option in [client] and in the shell's group still fails
-testutil.create_file("my_options.cnf", """
-[client]
+run_with_cnf("""[client]
 character-sets-dir=/usr/share/mariadb/charsets
 [mariadb-shell]
-character-sets-dir=/usr/share/mariadb/charsets
+character_sets_dir=/usr/share/mariadb/charsets
 """)
-testutil.call_mysqlsh(["--defaults-file=my_options.cnf", "--py", "-e", "print('done')"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
 EXPECT_STDOUT_CONTAINS("unknown option --character-sets-dir")
 EXPECT_STDOUT_NOT_CONTAINS("done")
 WIPE_OUTPUT()
-testutil.rmfile("my_options.cnf")
 
 #@<> Supported options in [client] are still applied
-testutil.create_file("my_options.cnf", """
-[client]
+run_with_cnf("""[client]
 character-sets-dir=/usr/share/mariadb/charsets
 column-type-info
 loose-unknown=whatever
-""")
-testutil.call_mysqlsh(["--defaults-file=my_options.cnf", "--py", "-e", "print('column type info:', shell.options['showColumnTypeInfo'])"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
+""", "print('column type info:', shell.options['showColumnTypeInfo'])")
 EXPECT_STDOUT_NOT_CONTAINS("unknown option")
 EXPECT_STDOUT_CONTAINS("column type info: True")
 WIPE_OUTPUT()
-testutil.rmfile("my_options.cnf")
 
-
-#@<> ssl-verify-server-cert in [client] verifies the server's certificate
-# Skipping it would quietly weaken TLS; it maps to --ssl-mode=VERIFY_IDENTITY,
-# which the sandbox's self-signed certificate fails.
-def connect_with_cnf(cnf, args=[]):
-    testutil.create_file("my_options.cnf", cnf)
-    testutil.call_mysqlsh(["--defaults-file=my_options.cnf"] + args + [__mysqluripwd, "--py", "-e", "print('connected:', session.is_open())"], "", ["MARIADB_SHELL_TERM_COLOR_MODE=nocolor"])
-    testutil.rmfile("my_options.cnf")
-
-for entry in ["ssl-verify-server-cert", "ssl_verify_server_cert=ON", "loose-ssl-verify-server-cert=1"]:
-    connect_with_cnf(f"[client]\n{entry}\n")
+#@<> ssl-verify-server-cert verifies the server's certificate
+# It is --ssl-mode=VERIFY_IDENTITY, which the sandbox's self-signed certificate
+# fails.
+for cnf in ["[client]\nssl-verify-server-cert\n", "[client]\nssl_verify_server_cert=ON\n", "[client]\nloose-ssl-verify-server-cert=1\n", "[mariadb-shell]\nenable-ssl-verify-server-cert\n"]:
+    connect_with_cnf(cnf)
     EXPECT_STDOUT_NOT_CONTAINS("unknown option")
     EXPECT_STDOUT_NOT_CONTAINS("connected: True")
     EXPECT_STDOUT_CONTAINS("Error 2026 (HY000)")  # CR_SSL_CONNECTION_ERROR
     WIPE_OUTPUT()
 
-#@<> A later --ssl-mode wins over ssl-verify-server-cert in [client]
+connect_with_cnf("", ["--ssl-verify-server-cert"])
+EXPECT_STDOUT_CONTAINS("Error 2026 (HY000)")
+WIPE_OUTPUT()
+
+#@<> A later --ssl-mode wins over ssl-verify-server-cert
 connect_with_cnf("[client]\nssl-verify-server-cert\n", ["--ssl-mode=DISABLED"])
 EXPECT_STDOUT_CONTAINS("connected: True")
 WIPE_OUTPUT()
 
-#@<> ssl-verify-server-cert turned off in [client] is skipped
-for entry in ["skip-ssl-verify-server-cert", "ssl-verify-server-cert=0", "ssl-verify-server-cert=off"]:
+#@<> ssl-verify-server-cert turned off leaves the SSL mode alone
+for entry in ["skip-ssl-verify-server-cert", "disable-ssl-verify-server-cert", "ssl-verify-server-cert=0", "ssl-verify-server-cert=off"]:
     connect_with_cnf(f"[client]\n{entry}\n")
     EXPECT_STDOUT_NOT_CONTAINS("unknown option")
     EXPECT_STDOUT_CONTAINS("connected: True")
