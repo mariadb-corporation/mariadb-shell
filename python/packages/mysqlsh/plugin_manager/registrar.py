@@ -47,19 +47,12 @@ def add_registration_callback(callback):
     _registration_callbacks.append(callback)
 
 
-def _python_name(name):
-    """Returns the snake_case Python name of a camelCase shell name."""
-    return "_".join([x.lower() for x in re.split("([A-Z][a-z0-9_]*)", name) if x])
-
-
 def _mcp_definition(mcp):
     """Checks the shape of the mcp argument of plugin_function.
 
-    Only its shape: the MCP server plugin (mcp_plugin in
-    mariadb-shell-plugins) reads the definition from the registry and owns
-    what it means - its keys, their defaults and their rules - and reports a
-    definition it cannot serve when the server starts. As with web=, the
-    shell stores it as given.
+    Only its shape: as with web=, the definition is stored as given, and
+    what its keys mean - and which values are valid - is up to the reader of
+    the registry (get_registry()) that serves the function as an MCP tool.
 
     Args:
         mcp: The argument as given: None, False or a dictionary.
@@ -71,10 +64,10 @@ def _mcp_definition(mcp):
         return None
     if not isinstance(mcp, dict):
         raise Exception(
-            "The mcp argument must be a dictionary naming at least the MCP "
-            "group of the tool, e.g. mcp={'group': 'orders'}.")
+            "The mcp argument must be a dictionary, e.g. "
+            "mcp={'group': 'orders'}.")
 
-    return dict(mcp)
+    return mcp
 
 
 def validate_shell_version(min=None, max=None):
@@ -615,6 +608,9 @@ class PluginRegistrar:
     def __init__(self):
         pass
 
+    def _get_python_name(self, name):
+        return "_".join([x.lower() for x in re.split("([A-Z][a-z0-9_]*)", name) if x])
+
     def register_object(self, name, docs, members=None):
         try:
             plugin_obj = self.get_plugin_object(name, docs)
@@ -658,7 +654,7 @@ class PluginRegistrar:
                     # objects are registered as properties in which case naming
                     # convention is followed
                     if parent != mysqlsh.globals:
-                        py_name = _python_name(h_name)
+                        py_name = self._get_python_name(h_name)
                     if py_name in dir(parent):
                         parent = getattr(parent, py_name)
                     else:
@@ -667,7 +663,7 @@ class PluginRegistrar:
                         )
 
                 # Return the plugin object if it already exists
-                py_plugin_name = _python_name(plugin_name)
+                py_plugin_name = self._get_python_name(plugin_name)
                 plugin_obj = getattr(parent, py_plugin_name, None)
                 if not plugin_obj:
                     if docs is None:
@@ -728,14 +724,14 @@ class PluginRegistrar:
                     definition.format_info(),
                 )
 
-            # Registers definition in the global registry only once the shell
-            # took it: a function the shell refused must not be served
-            # elsewhere (the web, MCP) either
-            _registry.append(definition)
-
             # On success registration, the function is reported to the callbacks
             for callback in _registration_callbacks:
                 callback(definition)
+
+            # Registers definition in the global registry only once it is
+            # registered: a function whose registration failed is not offered
+            # to the registry's readers either
+            _registry.append(definition)
         except Exception as e:
             raise Exception(
                 f"Could not add function '{definition.name}' "
@@ -860,16 +856,11 @@ def plugin_function(fully_qualified_name,
         plugin_docs (dict): The documentation structure of the plugin. This
             is only required for the first function that will be registered
         cli (bool): Defines whether the function should be available in the CLI
-        mcp (dict): Offers the function as a tool of the MCP server plugin
-            (mcp_plugin), which reads it from the registry and checks it when
-            it starts. The keys: group (required: the tool's MCP group and
-            the first part of its name), name (default: the function name in
-            snake_case), readOnly, destructive (the tool's annotations),
-            paths (the parameters holding file paths, checked against the
-            server's allowed paths), task (run as a background task), gui
-            (only on a --gui server). A parameter called session receives
-            the session of an MCP connection; with task, one called task
-            receives the task. shell=False makes the function MCP-only.
+        mcp (dict): Offers the function as an MCP tool. Stored as given in
+            the registry (get_registry()), as web is, for an MCP server
+            that reads it, which defines its keys: for the MariaDB MCP
+            Server see the reference documentation, "Offering a Function as
+            an MCP Tool". shell=False makes the function MCP-only.
 
     Returns:
         The decorator function

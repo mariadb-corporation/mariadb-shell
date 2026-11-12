@@ -769,7 +769,7 @@ print(f"In the shell: {sorted(name for name in dir(sample) if not name.startswit
 
 testutil.create_file("mcp_plugins.py", mcp_plugins_code)
 __call_mysqlsh(["--py", "-f", "mcp_plugins.py"])
-# the MCP server plugin checks them and fills in their defaults
+# stored as given: the registry's reader checks them and fills in defaults
 EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders', 'readOnly': True, 'paths': ['target']}")
 EXPECT_STDOUT_CONTAINS("MCP sample.checksumAll: {'group': 'orders', 'name': 'checksum', 'task': True}")
 EXPECT_STDOUT_CONTAINS("MCP sample.notATool: None")
@@ -801,7 +801,41 @@ testutil.create_file(sample_path, plugin_code)
 WIPE_OUTPUT()
 # Not __call_mysqlsh: --quiet-start=2 hides what plugins print while loading
 testutil.call_mysqlsh(["--py", "-e", "print('loaded')"], "", shell_env)
-EXPECT_STDOUT_CONTAINS("Could not register function 'listOrders' as a member of the sample plugin object.\nERROR: The mcp argument must be a dictionary naming at least the MCP group of the tool")
+EXPECT_STDOUT_CONTAINS("Could not register function 'listOrders' as a member of the sample plugin object.\nERROR: The mcp argument must be a dictionary, e.g. mcp={'group': 'orders'}.")
+
+
+#@<> A function the shell refused is not in the registry
+plugin_code = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp={"group": "orders"})
+def first():
+    """The first."""
+    pass
+
+try:
+    @plugin_function("sample.listOrders", mcp={"group": "orders", "name": "second"})
+    def second():
+        """The second, of a name the object has."""
+        pass
+except Exception:
+    pass
+'''
+
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+WIPE_OUTPUT()
+# Not __call_mysqlsh: --quiet-start=2 hides what plugins print while loading
+testutil.call_mysqlsh(["--py", "-f", "mcp_plugins.py"], "", shell_env)
+EXPECT_STDOUT_CONTAINS("The object already has a 'listOrders' member.")
+EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders'}")
+EXPECT_STDOUT_NOT_CONTAINS("'name': 'second'")
 
 
 #@<> Finalization

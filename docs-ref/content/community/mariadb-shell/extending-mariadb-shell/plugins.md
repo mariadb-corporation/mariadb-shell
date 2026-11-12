@@ -198,7 +198,7 @@ The decorators parse the docstring of each function and refuse to register it wh
 
 ### Offering a Function as an MCP Tool
 
-The MariaDB MCP Server (the `mcp_plugin` of MariaDB Shell Plugins) serves MCP tools to AI agents. Any plugin can add tools to it by passing `mcp` to `@plugin_function`. The plugin doesn't import the MCP server or the MCP SDK, and the function works in the shell exactly as before.
+The [MariaDB MCP Server](../mcp-server/README.md) serves MCP tools to AI agents. Any plugin can add tools to it by passing `mcp` to `@plugin_function`. The plugin doesn't import the MCP server or the MCP SDK, and the function works in the shell exactly as before.
 
 ```python
 @plugin_function("orders.listOpen", cli=True,
@@ -229,7 +229,7 @@ The server publishes this function as the tool `orders.list_open`. Its descripti
 | `readOnly`, `destructive` | Published as the tool's `readOnlyHint` and `destructiveHint` annotations. The default is `False`. |
 | `paths` | The parameters that hold file system paths. The server checks each against its allowed paths and asks the user to trust a path that is not allowed. |
 | `task` | Runs the function as a background task. The tool returns a task ID at once, and the agent follows the task with `task.get`. The default is `False`. |
-| `gui` | Serves the tool only to the MariaDB VS Code extension (`mcp start-server --gui`). The default is `False`. |
+| `gui` | Serves the tool only on a server started with `mcp start-server --gui`. The default is `False`. |
 
 The server fills in two parameters itself instead of publishing them:
 
