@@ -589,6 +589,15 @@ int main(int argc, char **argv) {
     log_debug("Using color mode %i",
               static_cast<int>(mysqlshdk::textui::get_color_capability()));
 
+    // Not a console warning: distro configs put such options in [client] on
+    // purpose, and the shell would warn on every start.
+    for (const auto &option : shell_options->get_ignored_client_options()) {
+      log_info(
+          "Ignoring option %s from the [client] group of the option files: "
+          "not a MariaDB Shell option",
+          option.c_str());
+    }
+
     if (options.quiet_start !=
         mysqlsh::Shell_options::Quiet_start::SUPRESS_INFO) {
       for (const auto &option : shell_options->get_invalid_loose_options()) {

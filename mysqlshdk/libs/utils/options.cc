@@ -662,7 +662,8 @@ void Options::handle_persisted_options() {
 
 void Options::handle_cmdline_options(
     int argc, char const *const *argv, bool allow_unregistered_options,
-    Custom_cmdline_handler custom_cmdline_handler) {
+    Custom_cmdline_handler custom_cmdline_handler,
+    const Unknown_option_filter &skip_unknown) {
   Iterator iterator{Cmdline_iterator{argc, argv, 1}};
 
   while (iterator.valid()) {
@@ -698,11 +699,13 @@ void Options::handle_cmdline_options(
                                       it->first + " requires an argument");
         }
       }
-    } else if (!allow_unregistered_options && !iterator.is_loose()) {
-      throw std::invalid_argument(argv[0] + std::string(": unknown option ") +
-                                  opt);
     } else {
-      if (iterator.is_loose()) {
+      const bool quiet = skip_unknown && skip_unknown(iterator);
+      if (!quiet && !allow_unregistered_options && !iterator.is_loose()) {
+        throw std::invalid_argument(argv[0] + std::string(": unknown option ") +
+                                    opt);
+      }
+      if (!quiet && iterator.is_loose()) {
         auto loose_option = iterator.option();
         loose_option.insert(2, "loose-");
         if (Iterator::Type::LONG == iterator.type()) {
@@ -902,6 +905,8 @@ void Options::Iterator::next() {
 }
 
 void Options::Iterator::get_data() {
+  m_loose = false;
+
   if (valid()) {
     std::string data = m_iterator.peek();
 
