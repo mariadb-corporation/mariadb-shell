@@ -767,9 +767,6 @@ class PluginRegistrar:
             web=web,
             mcp=mcp)
 
-        # Registers definition in the global registry
-        _registry.append(definition)
-
         try:
             if shell:
                 shell_obj.add_extension_object_member(
@@ -778,6 +775,11 @@ class PluginRegistrar:
                     function,
                     definition.format_info(),
                 )
+
+            # Registers definition in the global registry only once the shell
+            # took it: a function the shell refused must not be served
+            # elsewhere (the web, MCP) either
+            _registry.append(definition)
 
             # On success registration, the function is reported to the callbacks
             for callback in _registration_callbacks:
