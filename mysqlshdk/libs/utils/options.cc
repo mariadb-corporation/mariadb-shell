@@ -902,6 +902,8 @@ void Options::Iterator::next() {
 }
 
 void Options::Iterator::get_data() {
+  m_loose = false;
+
   if (valid()) {
     std::string data = m_iterator.peek();
 

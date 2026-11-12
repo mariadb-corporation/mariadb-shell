@@ -26,11 +26,13 @@
 
 #include "mysqlshdk/include/shellcore/shell_options.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <unordered_set>
 #include <vector>
 
@@ -77,6 +79,70 @@ void obfuscate_uri_password(const std::string &nopassword_uri, char *argv) {
   shcore::clear_buffer(value, value_length);
   strncpy(value, nopassword_uri.c_str(), value_length + 1);
   value[value_length] = '\0';
+}
+
+// Counts, per option name, how many options the option files put in the
+// [client] group (and [client<suffix>] for --defaults-group-suffix). Names are
+// keyed "--name" (or "--loose-name"), with '_' normalized to '-'.
+//
+// [client] holds options for every client program, many of which the shell
+// does not have (character-sets-dir, default-character-set, plugin-dir, ...),
+// so the caller uses these counts to skip such options instead of failing.
+//
+// original_argv is the command line as main() received it, so the
+// defaults-control options (--no-defaults, --defaults-file,
+// --defaults-extra-file, --defaults-group-suffix, ...) select the same files
+// as the main my_load_defaults() call. Must run after that call, so a
+// --print-defaults has already been handled.
+std::map<std::string, int> client_group_option_counts(
+    const std::vector<char *> &original_argv) {
+  std::map<std::string, int> counts;
+  const auto count = [&counts](const char *arg) {
+    std::string name = arg;
+    if (const auto pos = name.find('='); pos != std::string::npos)
+      name.resize(pos);
+    std::replace(name.begin(), name.end(), '_', '-');
+    ++counts[name];
+  };
+
+  const char *groups[] = {"client", nullptr};
+  std::vector<char *> args(original_argv);
+  args.push_back(nullptr);
+  int argc = static_cast<int>(original_argv.size());
+  char **argv = args.data();
+
+#ifdef MARIADB_BUILD
+  // See Shell_options::handle_mycnf_options(): the injected options follow
+  // argv[0] and end at the first surviving original argument pointer.
+  const std::unordered_set<char *> original(original_argv.begin() + 1,
+                                            original_argv.end());
+  if (my_load_defaults("my", groups, &argc, &argv, nullptr) == 0) {
+    for (int i = 1; i < argc && !original.count(argv[i]); ++i) count(argv[i]);
+    free_defaults(argv);
+  }
+#else
+  // my_getopt_use_args_separator is already set by the main call.
+  MEM_ROOT alloc{};
+  if (my_load_defaults("my", groups, &argc, &argv, &alloc, nullptr) == 0) {
+    for (int i = 1;
+         i < argc && strcmp(argv[i], "----args-separator----") != 0; ++i)
+      count(argv[i]);
+  }
+#endif
+
+  return counts;
+}
+
+// Whether an option-file entry asks a MariaDB client to verify the server's
+// certificate: ssl-verify-server-cert[=1|on|true] or
+// enable-ssl-verify-server-cert. option is as Iterator::option() reports it
+// (no --loose- prefix).
+bool asks_to_verify_server_cert(const std::string &option, const char *value) {
+  if (option != "--ssl-verify-server-cert" &&
+      option != "--enable-ssl-verify-server-cert")
+    return false;
+  return value == nullptr || *value == '\0' ||
+         shcore::str_caseeq(value, "1", "on", "true");
 }
 }  // namespace
 
@@ -232,6 +298,51 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
   const char *load_default_groups[] = {shcore::k_shell_option_group, "mysqlsh",
                                        "client", nullptr};
 
+  // The command line as received, for the [client]-only pass below.
+  const std::vector<char *> original_argv(*argv, *argv + *argc);
+
+  // An unknown option is an error, except one from [client]: that group is
+  // shared by every client program and routinely holds options the shell does
+  // not have (Gentoo's stock config sets character-sets-dir there, for
+  // instance). my_load_defaults() does not say which group an option came
+  // from, so client_unknown_budget counts the [client] occurrences of each
+  // name; an unknown option is skipped while its name has occurrences left.
+  // One more occurrence than [client] holds must have come from the shell's
+  // own groups and still fails, and the precedence between groups and files
+  // is unchanged.
+  std::map<std::string, int> client_unknown_budget;
+  const auto defaults_handler = [&](Iterator *iterator) {
+    if (custom_cmdline_handler(iterator)) return true;
+
+    const auto option = iterator->option();
+    if (cmdline_options.count(option)) return false;
+
+    // An unknown --loose-name is only a warning, but [client] ones are skipped
+    // quietly too, or the shell would warn on every start (Gentoo also sets
+    // loose-default-character-set there).
+    const auto name = iterator->is_loose() ? "--loose-" + option.substr(2)
+                                           : option;
+    const auto budget = client_unknown_budget.find(name);
+    if (budget == client_unknown_budget.end() || budget->second == 0)
+      return false;
+
+    --budget->second;
+    // Skipping this one would quietly weaken TLS, so it maps to the shell's
+    // equivalent, applied in its place in the list so a later --ssl-mode
+    // still wins. Turning verification off is skipped: that leaves the shell's
+    // own setting alone.
+    if (asks_to_verify_server_cert(option, iterator->value()))
+      set_ssl_mode("--ssl-mode", "VERIFY_IDENTITY");
+    else
+      m_ignored_client_options.push_back(name);
+    // Option-file entries are always --name or --name=value.
+    if (Iterator::Type::LONG == iterator->type())
+      iterator->next();
+    else
+      iterator->next_no_value();
+    return true;
+  };
+
   // Process the default (config-file) options my_load_defaults() has placed at
   // argv[1 .. defaults_end-1], then collapse argv down to
   // [prog, <original command-line args starting at first_arg> ...]:
@@ -249,12 +360,12 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
       }
     }
 
+    client_unknown_budget = client_group_option_counts(original_argv);
+
     char *const saved = (*argv)[defaults_end];
     (*argv)[defaults_end] = nullptr;
     try {
-      handle_cmdline_options(
-          defaults_end, *argv, false,
-          std::bind(&Shell_options::custom_cmdline_handler, this, _1));
+      handle_cmdline_options(defaults_end, *argv, false, defaults_handler);
     } catch (const std::exception &e) {
       throw std::runtime_error(
           std::string("While processing defaults options:\n") + e.what());
