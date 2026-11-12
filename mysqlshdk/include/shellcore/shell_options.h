@@ -315,12 +315,6 @@ class Shell_options final : public shcore::Options {
 
   std::vector<std::string> get_named_options();
 
-  /// Options from the [client] group of the option files that the shell does
-  /// not have and skipped ("--name", one entry per occurrence).
-  const std::vector<std::string> &get_ignored_client_options() const {
-    return m_ignored_client_options;
-  }
-
   bool got_cmdline_password = false;
 
  private:
@@ -343,13 +337,6 @@ class Shell_options final : public shcore::Options {
 
   std::function<void(const std::string &)> m_on_error;
   std::function<void(const std::string &)> m_on_warning;
-
-  std::vector<std::string> m_ignored_client_options;
-
-  // While --ssl-verify-server-cert is what set the SSL mode: the mode it
-  // replaced (none if unset), restored when the option is turned off again.
-  bool m_ssl_mode_from_verify_server_cert = false;
-  std::optional<mysqlshdk::db::Ssl_mode> m_ssl_mode_before_verify_server_cert;
 
 #ifdef MARIADB_BUILD
   // argv buffer allocated by my_load_defaults(); released with free_defaults().

@@ -1,6 +1,5 @@
 /*
  * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
- * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -629,10 +628,6 @@ class Options {
 
   using Custom_cmdline_handler = std::function<bool(Iterator *)>;
 
-  /// Returns true for an unregistered option to be skipped without an error
-  /// or a warning.
-  using Unknown_option_filter = std::function<bool(const Iterator &)>;
-
   explicit Options(const std::string &config_file = "");
   virtual ~Options() = default;
 
@@ -686,8 +681,7 @@ class Options {
   /// Parses command line and stores values in options.
   void handle_cmdline_options(
       int argc, char const *const *argv, bool allow_unregistered_options = true,
-      Custom_cmdline_handler custom_cmdline_handler = nullptr,
-      const Unknown_option_filter &skip_unknown = nullptr);
+      Custom_cmdline_handler custom_cmdline_handler = nullptr);
 
   /** Returns formatted help for all defined command line options.
    *

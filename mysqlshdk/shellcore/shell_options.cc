@@ -31,8 +31,6 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
-#include <optional>
-#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -79,71 +77,6 @@ void obfuscate_uri_password(const std::string &nopassword_uri, char *argv) {
   shcore::clear_buffer(value, value_length);
   strncpy(value, nopassword_uri.c_str(), value_length + 1);
   value[value_length] = '\0';
-}
-
-// Option files may spell option names with '_' for '-' (e.g. ssl_ca);
-// normalizes the name part of "--name[=value]" in place.
-void normalize_option_name(char *arg) {
-  for (; *arg != '\0' && *arg != '='; ++arg) {
-    if (*arg == '_') *arg = '-';
-  }
-}
-
-#ifdef MARIADB_BUILD
-// MariaDB's my_load_defaults() puts the option-file options right after
-// argv[0] and reuses the original pointers for the command-line args it keeps,
-// while the injected ones are freshly allocated: the first original pointer
-// ends them.
-int end_of_defaults(char **argv, int argc,
-                    const std::unordered_set<char *> &original_args) {
-  int i = 1;
-  while (i < argc && !original_args.count(argv[i])) ++i;
-  return i;
-}
-#else
-// MySQL's my_load_defaults() ends the option-file options with a separator.
-constexpr const char *k_defaults_args_separator = "----args-separator----";
-
-int end_of_defaults(char **argv, int argc) {
-  int i = 1;
-  while (i < argc && strcmp(argv[i], k_defaults_args_separator) != 0) ++i;
-  return i;
-}
-#endif
-
-// The option names the option files set in the given groups, as spelled
-// ("--name" or "--loose-name"). original_argv is the command line as
-// received, so its --no-defaults, --defaults-file, ... pick the same files as
-// the main my_load_defaults() call in Shell_options::handle_mycnf_options().
-// Must run after that call, which has handled --print-defaults.
-std::unordered_set<std::string> option_names_in_groups(
-    const std::vector<char *> &original_argv, const char **groups) {
-  std::unordered_set<std::string> names;
-  std::vector<char *> args(original_argv);
-  args.push_back(nullptr);
-  int argc = static_cast<int>(original_argv.size());
-  char **argv = args.data();
-
-  const auto add = [&](int end) {
-    for (int i = 1; i < end; ++i) {
-      normalize_option_name(argv[i]);
-      names.emplace(argv[i], strcspn(argv[i], "="));
-    }
-  };
-
-#ifdef MARIADB_BUILD
-  if (my_load_defaults("my", groups, &argc, &argv, nullptr) == 0) {
-    add(end_of_defaults(argv, argc, {original_argv.begin() + 1,
-                                     original_argv.end()}));
-    free_defaults(argv);
-  }
-#else
-  MEM_ROOT alloc{};
-  if (my_load_defaults("my", groups, &argc, &argv, &alloc, nullptr) == 0)
-    add(end_of_defaults(argv, argc));
-#endif
-
-  return names;
 }
 }  // namespace
 
@@ -299,32 +232,6 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
   const char *load_default_groups[] = {shcore::k_shell_option_group, "mysqlsh",
                                        "client", nullptr};
 
-  const char *shell_groups[] = {shcore::k_shell_option_group, "mysqlsh",
-                                nullptr};
-
-  // The command line as received, for option_names_in_groups().
-  const std::vector<char *> original_argv(*argv, *argv + *argc);
-
-  // An option the shell does not have fails (or warns, as --loose-name) only
-  // if the shell's own groups set it. [client] is shared by every client
-  // program and routinely holds options the shell lacks (Gentoo's stock config
-  // sets character-sets-dir and loose-default-character-set there), so those
-  // are skipped quietly. my_load_defaults() does not say which group an option
-  // came from; the shell's groups are read again, only once an unknown option
-  // turns up, to find out. A name set in both groups still fails.
-  std::optional<std::unordered_set<std::string>> shell_group_names;
-  const auto skip_client_option = [&](const Iterator &iterator) {
-    if (!shell_group_names)
-      shell_group_names = option_names_in_groups(original_argv, shell_groups);
-
-    auto name = iterator.option();
-    if (iterator.is_loose()) name.insert(2, "loose-");
-    if (shell_group_names->count(name)) return false;
-
-    m_ignored_client_options.push_back(std::move(name));
-    return true;
-  };
-
   // Process the default (config-file) options my_load_defaults() has placed at
   // argv[1 .. defaults_end-1], then collapse argv down to
   // [prog, <original command-line args starting at first_arg> ...]:
@@ -336,15 +243,18 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
   // my.cnf-style option names have '_' normalized to '-' (e.g. --ssl_ca).
   const auto process_defaults_and_collapse = [&](int defaults_end,
                                                  int first_arg) {
-    for (int j = 1; j < defaults_end; ++j) normalize_option_name((*argv)[j]);
+    for (int j = 1; j < defaults_end; ++j) {
+      for (int i = 0; (*argv)[j][i] != '\0' && (*argv)[j][i] != '='; ++i) {
+        if ((*argv)[j][i] == '_') (*argv)[j][i] = '-';
+      }
+    }
 
     char *const saved = (*argv)[defaults_end];
     (*argv)[defaults_end] = nullptr;
     try {
       handle_cmdline_options(
           defaults_end, *argv, false,
-          std::bind(&Shell_options::custom_cmdline_handler, this, _1),
-          skip_client_option);
+          std::bind(&Shell_options::custom_cmdline_handler, this, _1));
     } catch (const std::exception &e) {
       throw std::runtime_error(
           std::string("While processing defaults options:\n") + e.what());
@@ -408,14 +318,19 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
     std::exit(0);  // mirrors MySQL's mysys --print-defaults behavior
   }
 
-  // my_load_defaults() also *consumes* leading defaults-control options
-  // (--no-defaults, --defaults-file, --defaults-extra-file,
-  // --defaults-group-suffix) off the command line, so the growth of argc is
-  // (#config opts inserted - #cmdline opts consumed) and can NOT be used to
-  // locate the config/cmdline boundary; end_of_defaults() finds it by pointer
-  // identity instead (see the memcpy in mysys/my_default.c).
-  const std::unordered_set<char *> original_cmdline_args(
-      original_argv.begin() + 1, original_argv.end());
+  // Snapshot the original command-line arg pointers. my_load_defaults() also
+  // *consumes* leading defaults-control options (--no-defaults,
+  // --defaults-file,
+  // --defaults-extra-file, --defaults-group-suffix) off the command line, so
+  // the growth of argc is (#config opts inserted - #cmdline opts consumed) and
+  // can NOT be used to locate the config/cmdline boundary. Instead we find it
+  // by identity: my_load_defaults() reuses the original pointers for the args
+  // it keeps (see the memcpy in mysys/my_default.c), while injected config-file
+  // options are freshly allocated, so the first surviving original pointer
+  // marks the start of the command-line args.
+  std::unordered_set<char *> original_cmdline_args;
+  original_cmdline_args.reserve(*argc);
+  for (int i = 1; i < *argc; ++i) original_cmdline_args.insert((*argv)[i]);
 
   const int load_rc =
       my_load_defaults("my", load_default_groups, argc, argv, nullptr);
@@ -436,21 +351,33 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
     throw std::runtime_error("Could not read my.cnf files");
   }
 
-  // If no command-line argument survived (everything was a config/defaults
-  // option) the boundary is the argv terminator at index *argc.
-  const int first_arg = end_of_defaults(*argv, *argc, original_cmdline_args);
+  // Locate the first surviving command-line argument by pointer identity. If
+  // none survived (everything was a config/defaults option) the boundary is the
+  // argv terminator at index *argc.
+  int first_arg = *argc;
+  for (int i = 1; i < *argc; ++i) {
+    if (original_cmdline_args.count((*argv)[i])) {
+      first_arg = i;
+      break;
+    }
+  }
 
   // MariaDB has no separator slot, so the config options end exactly where the
   // first command-line arg begins.
   process_defaults_and_collapse(first_arg, first_arg);
 #else
+  constexpr const char *defaults_args_separator = "----args-separator----";
+
   my_getopt_use_args_separator = 1;
   if (my_load_defaults("my", load_default_groups, argc, argv, argv_alloc,
                        nullptr)) {
     throw std::runtime_error("Could not read my.cnf files");
   }
 
-  const int sep = end_of_defaults(*argv, *argc);
+  // find the separator between default options and explicit options
+  int sep = 1;
+  while ((*argv)[sep] && strcmp((*argv)[sep], defaults_args_separator) != 0)
+    ++sep;
 
   // The separator occupies argv[sep]; the first real command-line arg follows.
   process_defaults_and_collapse(sep, sep + 1);
@@ -719,28 +646,6 @@ Shell_options::Shell_options(
         }
 
         storage.connection_data.set(mysqlshdk::db::kLocalInfile, value ? "true" : "false");
-      })
-    // Not in --help: the MariaDB client spelling of --ssl-mode=VERIFY_IDENTITY,
-    // accepted so option files shared with it ([client]) keep verifying the
-    // server's certificate. Turning it off undoes only what it set itself
-    // (e.g. a later option file turning off what an earlier one turned on);
-    // a --ssl-mode given after it stays as it is.
-    ("--ssl-verify-server-cert",
-      [this](const std::string&, const bool value) {
-        auto &ssl = storage.connection_data.get_ssl_options();
-        if (value) {
-          if (!m_ssl_mode_from_verify_server_cert)
-            m_ssl_mode_before_verify_server_cert =
-                ssl.has_mode() ? std::optional(ssl.get_mode()) : std::nullopt;
-          set_ssl_mode("--ssl-mode", "VERIFY_IDENTITY");
-          m_ssl_mode_from_verify_server_cert = true;
-        } else if (m_ssl_mode_from_verify_server_cert) {
-          if (m_ssl_mode_before_verify_server_cert)
-            ssl.set_mode(*m_ssl_mode_before_verify_server_cert);
-          else
-            ssl.clear_mode();
-          m_ssl_mode_from_verify_server_cert = false;
-        }
       });
 
   add_startup_options(!flags.is_set(Option_flags::CONNECTION_ONLY))
@@ -1646,7 +1551,6 @@ void Shell_options::set_ssl_mode(const std::string &option, const char *value) {
 
   storage.connection_data.get_ssl_options().set_mode(
       static_cast<mysqlshdk::db::Ssl_mode>(mode));
-  m_ssl_mode_from_verify_server_cert = false;
 }
 
 void Shell_options::check_password_conflicts() {
