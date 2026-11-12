@@ -145,8 +145,8 @@ def list_open(customer, limit=20, session=None):
 ```
 
 - Keys, checked by `_mcp_definition` in registrar.py when the plugin loads:
-  `group` (required; lower case, digits, `_`; not a built-in group such as
-  `db`), `name` (default: the function name in snake_case), `readOnly`,
+  `group` (required; lower case, digits, `_`; the server refuses a built-in
+  group such as `db` when it starts), `name` (default: the function name in snake_case), `readOnly`,
   `destructive`, `paths` (parameters holding file paths, checked against the
   server's allowed paths), `task` (run as a background task), `gui` (only on a
   `--gui` server). `mcp=True` is refused: a tool needs a group.

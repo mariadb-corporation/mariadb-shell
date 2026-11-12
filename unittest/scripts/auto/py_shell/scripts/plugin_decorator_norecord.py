@@ -764,20 +764,32 @@ from mysqlsh.plugin_manager import registrar
 for definition in registrar.get_registry():
     if definition.fully_qualified_name.startswith("sample."):
         print(f"MCP {definition.fully_qualified_name}: {definition.mcp}")
+print(f"In the shell: {sorted(name for name in dir(sample) if not name.startswith('_'))}")
 """
 
 testutil.create_file("mcp_plugins.py", mcp_plugins_code)
-testutil.call_mysqlsh(["--quiet-start=2", "--py", "-f", "mcp_plugins.py"])
+__call_mysqlsh(["--py", "-f", "mcp_plugins.py"])
 EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders', 'name': 'list_orders', 'readOnly': True, 'destructive': False, 'task': False, 'gui': False, 'paths': ['target']}")
 EXPECT_STDOUT_CONTAINS("MCP sample.checksumAll: {'group': 'orders', 'name': 'checksum', 'readOnly': False, 'destructive': False, 'task': True, 'gui': False, 'paths': []}")
 EXPECT_STDOUT_CONTAINS("MCP sample.notATool: None")
-
-#@<> An MCP-only function is not in the shell
-rc = call_mysqlsh_py_e("\\? sample.checksumAll")
-EXPECT_STDOUT_CONTAINS("No help items found matching 'sample.checksumAll'")
+# the MCP-only function is not in the shell
+EXPECT_STDOUT_CONTAINS("In the shell: ['help', 'list_orders', 'not_a_tool']")
 
 #@<> Invalid MCP tool definitions are refused
-mcp_plugin_template = '''
+mcp_definition_errors = [
+    ("True", "The mcp argument must be a dictionary naming at least the MCP group of the tool"),
+    ("{}", "The mcp option 'group' must be lower case letters, digits and underscores, starting with a letter, got None."),
+    ("{'group': 'Orders'}", "The mcp option 'group' must be lower case letters"),
+    ("{'group': 'orders', 'name': 'list-orders'}", "The mcp option 'name' must be lower case letters"),
+    ("{'group': 'orders', 'readonly': True}", "Unknown mcp option(s): readonly. The options are: group, name, readOnly, destructive, task, gui, paths."),
+    ("{'group': 'orders', 'task': 'yes'}", "The mcp option 'task' must be true or false, got 'yes'."),
+    ("{'group': 'orders', 'paths': 'target'}", "The mcp option 'paths' must be a list of parameter names."),
+    ("{'group': 'orders', 'paths': ['file']}", "The mcp option 'paths' names 'file', which is not a parameter of the function."),
+]
+
+# One plugin, one shell: plugin_function prints why it refused a function and
+# then raises, so each refusal is caught to reach the next one
+plugin_code = '''
 from mysqlsh.plugin_manager import plugin, plugin_function
 
 @plugin
@@ -786,7 +798,6 @@ class sample():
     A sample plugin
     """
 
-@plugin_function("sample.listOrders", mcp=MCP_DEFINITION)
 def list_orders(target):
     """Lists orders.
 
@@ -795,25 +806,21 @@ def list_orders(target):
     """
     pass
 '''
+for index, (mcp_definition, mcp_error) in enumerate(mcp_definition_errors):
+    plugin_code += f'''
+try:
+    plugin_function("sample.listOrders{index}", mcp={mcp_definition})(list_orders)
+except Exception:
+    pass
+'''
 
-mcp_definition_errors = [
-    ("True", "The mcp argument must be a dictionary naming at least the MCP group of the tool"),
-    ("{}", "The mcp option 'group' must be lower case letters, digits and underscores, starting with a letter, got None."),
-    ("{'group': 'Orders'}", "The mcp option 'group' must be lower case letters"),
-    ("{'group': 'orders', 'name': 'list-orders'}", "The mcp option 'name' must be lower case letters"),
-    ("{'group': 'orders', 'readonly': True}", "Unknown mcp option(s): readonly. The options are: group, name, readOnly, destructive, paths, task, gui."),
-    ("{'group': 'orders', 'task': 'yes'}", "The mcp option 'task' must be true or false, got 'yes'."),
-    ("{'group': 'orders', 'paths': 'target'}", "The mcp option 'paths' must be a list of parameter names."),
-    ("{'group': 'orders', 'paths': ['file']}", "The mcp option 'paths' names 'file', which is not a parameter of the function."),
-]
-
-for mcp_definition, mcp_error in mcp_definition_errors:
-    WIPE_OUTPUT()
-    testutil.rmfile(sample_path)
-    testutil.create_file(sample_path, mcp_plugin_template.replace("MCP_DEFINITION", mcp_definition))
-    testutil.call_mysqlsh(["--py", "-e", "print('loaded')"], "", shell_env)
-    EXPECT_STDOUT_CONTAINS("Could not register function 'listOrders' as a member of the sample plugin object.")
-    EXPECT_STDOUT_CONTAINS(mcp_error)
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+WIPE_OUTPUT()
+# Not __call_mysqlsh: --quiet-start=2 hides what plugins print while loading
+testutil.call_mysqlsh(["--py", "-e", "print('loaded')"], "", shell_env)
+for index, (mcp_definition, mcp_error) in enumerate(mcp_definition_errors):
+    EXPECT_STDOUT_CONTAINS(f"Could not register function 'listOrders{index}' as a member of the sample plugin object.\nERROR: {mcp_error}")
 
 
 #@<> Finalization

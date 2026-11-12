@@ -55,11 +55,9 @@ def _python_name(name):
 # The keys of the mcp argument of plugin_function. The MCP server plugin
 # (mcp_plugin in mariadb-shell-plugins) reads them from the registry and
 # serves the function as an MCP tool; see plugin_function.
-_MCP_KEYS = ("group", "name", "readOnly", "destructive", "paths", "task", "gui")
 _MCP_FLAGS = ("readOnly", "destructive", "task", "gui")
+_MCP_KEYS = ("group", "name", *_MCP_FLAGS, "paths")
 _MCP_NAME = re.compile("^[a-z][a-z0-9_]*$")
-# Parameters the MCP server fills in itself, never a path
-_MCP_FILLED_IN = ("session", "task")
 
 
 def _mcp_definition(mcp, function_name, signature):
@@ -106,14 +104,17 @@ def _mcp_definition(mcp, function_name, signature):
         definition[flag] = value
 
     paths = mcp.get("paths", [])
-    if isinstance(paths, str) or not isinstance(paths, (list, tuple)):
+    if not isinstance(paths, (list, tuple)):
         raise Exception("The mcp option 'paths' must be a list of parameter names.")
-    named = [
+    # The parameters the MCP server fills in itself are never paths: session,
+    # and in a task tool task
+    filled_in = ("session", "task") if definition["task"] else ("session",)
+    named = {
         name for name, parameter in signature.parameters.items()
         if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
                               inspect.Parameter.KEYWORD_ONLY)
-        and name not in _MCP_FILLED_IN
-    ]
+        and name not in filled_in
+    }
     for path in paths:
         if path not in named:
             raise Exception(
@@ -662,9 +663,6 @@ class PluginRegistrar:
     def __init__(self):
         pass
 
-    def _get_python_name(self, name):
-        return _python_name(name)
-
     def register_object(self, name, docs, members=None):
         try:
             plugin_obj = self.get_plugin_object(name, docs)
@@ -708,7 +706,7 @@ class PluginRegistrar:
                     # objects are registered as properties in which case naming
                     # convention is followed
                     if parent != mysqlsh.globals:
-                        py_name = self._get_python_name(h_name)
+                        py_name = _python_name(h_name)
                     if py_name in dir(parent):
                         parent = getattr(parent, py_name)
                     else:
@@ -717,7 +715,7 @@ class PluginRegistrar:
                         )
 
                 # Return the plugin object if it already exists
-                py_plugin_name = self._get_python_name(plugin_name)
+                py_plugin_name = _python_name(plugin_name)
                 plugin_obj = getattr(parent, py_plugin_name, None)
                 if not plugin_obj:
                     if docs is None:
