@@ -26,6 +26,7 @@
 
 #include "mysqlshdk/include/shellcore/shell_options.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -309,9 +310,11 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
   // if the shell's own groups set it. [client] is shared by every client
   // program and routinely holds options the shell lacks (Gentoo's stock config
   // sets character-sets-dir and loose-default-character-set there), so those
-  // are skipped quietly. my_load_defaults() does not say which group an option
-  // came from; the shell's groups are read again, only once an unknown option
-  // turns up, to find out. A name set in both groups still fails.
+  // are skipped: a loose- one quietly, any other one is recorded for a warning
+  // at startup (see get_ignored_client_options()). my_load_defaults() does not
+  // say which group an option came from; the shell's groups are read again,
+  // only once an unknown option turns up, to find out. A name set in both
+  // groups still fails.
   std::optional<std::unordered_set<std::string>> shell_group_names;
   const auto skip_client_option = [&](const Iterator &iterator) {
     if (!shell_group_names)
@@ -321,7 +324,11 @@ void Shell_options::handle_mycnf_options(int *argc, char ***argv,
     if (iterator.is_loose()) name.insert(2, "loose-");
     if (shell_group_names->count(name)) return false;
 
-    m_ignored_client_options.push_back(std::move(name));
+    if (!iterator.is_loose() &&
+        std::find(m_ignored_client_options.begin(),
+                  m_ignored_client_options.end(),
+                  name) == m_ignored_client_options.end())
+      m_ignored_client_options.push_back(std::move(name));
     return true;
   };
 

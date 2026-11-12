@@ -316,7 +316,8 @@ class Shell_options final : public shcore::Options {
   std::vector<std::string> get_named_options();
 
   /// Options from the [client] group of the option files that the shell does
-  /// not have and skipped ("--name", one entry per occurrence).
+  /// not have and skipped ("--name", once each, in the order first seen). A
+  /// loose- one is skipped without being listed here.
   const std::vector<std::string> &get_ignored_client_options() const {
     return m_ignored_client_options;
   }

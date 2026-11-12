@@ -48,6 +48,16 @@ def run_with_cnf(cnf, code="print('done')", args=None):
 def connect_with_cnf(cnf, args=None):
     run_with_cnf(cnf, "print('connected:', session.is_open())", (args or []) + [__mysqluripwd])
 
+client_log_path = os.path.join(__tmp_dir, "client_options.log")
+
+def run_with_cnf_and_log(cnf, args=None):
+    """Runs the shell with its own log file and returns that log's content."""
+    run_with_cnf(cnf, args=[f"--log-file={client_log_path}"] + (args or []))
+    with open(client_log_path, encoding="utf-8") as f:
+        log = f.read()
+    os.remove(client_log_path)
+    return log
+
 #@<> Warns unsupported loose options from the shell's groups of the options file
 for group in ["mariadb-shell", "mysqlsh"]:
     run_with_cnf(f"[{group}]\nloose-unknown=whatever\n")
@@ -55,17 +65,51 @@ for group in ["mariadb-shell", "mysqlsh"]:
     EXPECT_STDOUT_CONTAINS("done")
     WIPE_OUTPUT()
 
-#@<> Unsupported options in [client] of the options file are skipped quietly
+#@<> Unsupported options in [client] of the options file are skipped with a warning
 # [client] is read by every client program; e.g. Gentoo's stock config sets
-# character-sets-dir and loose-default-character-set there.
-run_with_cnf("""[client]
+# character-sets-dir and loose-default-character-set there. The console points
+# to the log, which lists them; a loose- one is skipped without a mention.
+client_cnf = """[client]
 character-sets-dir=/usr/share/mariadb/charsets
 loose-default-character-set=utf8
 plugin_dir=/usr/lib/mariadb/plugin
 skip-unknown-flag
-""")
+character-sets-dir=/usr/share/mariadb/charsets
+"""
+ignored_client_options = "These options from the [client] group of the option files are not supported by MariaDB Shell and were ignored: --character-sets-dir, --plugin-dir, --skip-unknown-flag. To avoid this warning, prefix them with loose- in the option file (e.g. loose-character-sets-dir)."
+log = run_with_cnf_and_log(client_cnf)
 EXPECT_STDOUT_NOT_CONTAINS("unknown option")
+EXPECT_STDOUT_CONTAINS(f"WARNING: Some options from the [client] group of the option files are not supported by MariaDB Shell and were ignored. See the log file for details: {client_log_path}")
+EXPECT_STDOUT_NOT_CONTAINS("character-sets-dir")
 EXPECT_STDOUT_CONTAINS("done")
+# Listed once, although character-sets-dir is set twice.
+EXPECT_EQ(1, log.count(f"Warning: {ignored_client_options}"), log)
+EXPECT_FALSE("default-character-set" in log, log)
+WIPE_OUTPUT()
+
+#@<> With logging off, the console warning lists the [client] options itself
+run_with_cnf(client_cnf, args=["--log-level=none"])
+EXPECT_STDOUT_CONTAINS(f"WARNING: {ignored_client_options}")
+EXPECT_STDOUT_CONTAINS("done")
+WIPE_OUTPUT()
+
+#@<> No console warning on unsupported [client] options with --quiet-start=2, the log still lists them
+log = run_with_cnf_and_log(client_cnf, args=["--quiet-start=2"])
+EXPECT_STDOUT_NOT_CONTAINS("WARNING")
+EXPECT_STDOUT_CONTAINS("done")
+EXPECT_EQ(1, log.count(f"Warning: {ignored_client_options}"), log)
+EXPECT_FALSE("See the log file for details" in log, log)
+WIPE_OUTPUT()
+
+#@<> Unsupported loose- options in [client] are skipped quietly, also in the log
+log = run_with_cnf_and_log("""[client]
+loose-character-sets-dir=/usr/share/mariadb/charsets
+loose-default-character-set=utf8
+""")
+EXPECT_STDOUT_NOT_CONTAINS("WARNING")
+EXPECT_STDOUT_CONTAINS("done")
+EXPECT_FALSE("[client] group" in log, log)
+EXPECT_FALSE("character-set" in log, log)
 WIPE_OUTPUT()
 
 #@<> Unsupported options in the shell's groups of the options file still fail
