@@ -87,6 +87,8 @@ def create_instance(name, region="us-east-1", **options):
   - `cli=True` — also exposed as a CLI command (`mariadb-shell -- mycloud create instance ...`).
     `cli=True` requires `shell=True`.
   - `web=True` — registered for web/MRS clients. Can be `web=False`/`True`.
+  - `mcp={"group": "<group>", ...}` — also offered as an MCP tool of the MariaDB
+    MCP Server (see "Offering a function as an MCP tool" below).
 - The decorator wraps the call so tracebacks are logged at `debug` level instead of
   leaking to the user; raise `mysqlsh.Error("message")` for user-facing errors.
 
@@ -128,6 +130,45 @@ exactly:
 A correct multi-section example lives in
 [unittest/scripts/auto/py_shell/scripts/plugin_decorator_norecord.py](unittest/scripts/auto/py_shell/scripts/plugin_decorator_norecord.py) —
 consult it for edge cases (required dict params, nested options, web-only functions).
+
+## Offering a function as an MCP tool
+
+When the user wants agents to call a function through the MariaDB MCP Server
+(`mcp_plugin` in mariadb-shell-plugins), pass `mcp=` to `@plugin_function`. The
+plugin imports neither mcp_plugin nor the MCP SDK; the server reads the shell's
+registry (`registrar.get_registry()`, each entry's `.mcp`) when it starts.
+
+```python
+@plugin_function("orders.listOpen", mcp={"group": "orders", "readOnly": True})
+def list_open(customer, limit=20, session=None):
+    ...
+```
+
+- Keys: `group` (required; lower case, digits, `_`; not a built-in group such
+  as `db`), `name` (default: the function name in snake_case), `readOnly`,
+  `destructive`, `paths` (parameters holding file paths, checked against the
+  server's allowed paths), `task` (run as a background task), `gui` (only on a
+  `--gui` server). The shell only checks that `mcp` is a dict (`mcp=True` is
+  refused) and stores it as given, as it does `web=`; mcp_plugin's
+  `check_definition` checks the keys when the server starts, and a tool with a
+  mistake is not served (the server log says why). Have the user run the
+  server once to see such a mistake.
+- A `session` parameter is filled in by the server: the tool takes the
+  `connection_id` from `db.connect` instead, and is served only with the `db`
+  group. Keep `session=None` with a fallback to `shell.get_session()`, so the
+  function still works in the shell.
+- With `"task": True`, a `task` parameter receives the background task
+  (`task.progress(current, total)`, `task.check_cancelled()`); the return
+  value is the task's result.
+- Parameters may not be called `ctx`, `connection_id`, `options` or start with
+  `_`; `*args` is not allowed. `**options` is published as one `options`
+  object, documented by `Keyword Args:`.
+- Return plain values; a `run_sql()` result is sent as its rows. Raise
+  `mysqlsh.Error` to refuse a call.
+- Set `@plugin(shell_version_min=...)` to the first shell with `mcp=`.
+- Tell the user the group is served only when named in
+  `mcp start-server --functionGroups` or allowed with
+  `mcp setup --extensionGroups=<group>`.
 
 ## Accessing shell facilities from a plugin
 
