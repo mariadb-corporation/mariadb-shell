@@ -238,7 +238,7 @@ The server fills in two parameters itself instead of publishing them:
 
 Raise `mysqlsh.Error("message")` to refuse a call; the agent receives the message.
 
-MariaDB Shell checks the `mcp` dictionary when the plugin loads, and a mistake stops the function from registering. A result of `run_sql()` reaches the agent as its rows. A plugin that uses `mcp` needs a shell that supports it, so declare the version with `@plugin(shell_version_min=...)`.
+MariaDB Shell only checks that `mcp` is a dictionary. The MCP server checks its keys and values when it starts: it doesn't serve a tool whose definition has a mistake, and its log says why. A result of `run_sql()` reaches the agent as its rows. A plugin that uses `mcp` needs a shell that supports it, so declare the version with `@plugin(shell_version_min=...)`.
 
 An extension group is not served just because its plugin is installed. Name it in `mcp start-server --functionGroups`, or have every server serve it by default with `mcp setup --extensionGroups=orders`. `mcp setup --show` lists the groups that the loaded plugins offer. A multi-tenant server serves no extension groups.
 

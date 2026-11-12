@@ -52,25 +52,20 @@ def _python_name(name):
     return "_".join([x.lower() for x in re.split("([A-Z][a-z0-9_]*)", name) if x])
 
 
-# The keys of the mcp argument of plugin_function. The MCP server plugin
-# (mcp_plugin in mariadb-shell-plugins) reads them from the registry and
-# serves the function as an MCP tool; see plugin_function.
-_MCP_FLAGS = ("readOnly", "destructive", "task", "gui")
-_MCP_KEYS = ("group", "name", *_MCP_FLAGS, "paths")
-_MCP_NAME = re.compile("^[a-z][a-z0-9_]*$")
+def _mcp_definition(mcp):
+    """Checks the shape of the mcp argument of plugin_function.
 
-
-def _mcp_definition(mcp, function_name, signature):
-    """Checks the mcp argument of plugin_function and fills in its defaults.
+    Only its shape: the MCP server plugin (mcp_plugin in
+    mariadb-shell-plugins) reads the definition from the registry and owns
+    what it means - its keys, their defaults and their rules - and reports a
+    definition it cannot serve when the server starts. As with web=, the
+    shell stores it as given.
 
     Args:
         mcp: The argument as given: None, False or a dictionary.
-        function_name (str): The function name of the fully qualified name.
-        signature: The function's inspect.Signature.
 
     Returns:
-        dict: Every key of _MCP_KEYS, or None for a function that is not an
-        MCP tool.
+        dict: The definition, or None for a function that is not an MCP tool.
     """
     if mcp is None or mcp is False:
         return None
@@ -79,50 +74,7 @@ def _mcp_definition(mcp, function_name, signature):
             "The mcp argument must be a dictionary naming at least the MCP "
             "group of the tool, e.g. mcp={'group': 'orders'}.")
 
-    unknown = sorted(set(mcp) - set(_MCP_KEYS))
-    if unknown:
-        raise Exception(
-            f"Unknown mcp option(s): {', '.join(unknown)}. The options are: "
-            f"{', '.join(_MCP_KEYS)}.")
-
-    definition = {
-        "group": mcp.get("group"),
-        "name": mcp.get("name", _python_name(function_name)),
-    }
-    for key in ("group", "name"):
-        value = definition[key]
-        if not isinstance(value, str) or not _MCP_NAME.match(value):
-            raise Exception(
-                f"The mcp option '{key}' must be lower case letters, digits "
-                f"and underscores, starting with a letter, got {value!r}.")
-
-    for flag in _MCP_FLAGS:
-        value = mcp.get(flag, False)
-        if not isinstance(value, bool):
-            raise Exception(
-                f"The mcp option '{flag}' must be true or false, got {value!r}.")
-        definition[flag] = value
-
-    paths = mcp.get("paths", [])
-    if not isinstance(paths, (list, tuple)):
-        raise Exception("The mcp option 'paths' must be a list of parameter names.")
-    # The parameters the MCP server fills in itself are never paths: session,
-    # and in a task tool task
-    filled_in = ("session", "task") if definition["task"] else ("session",)
-    named = {
-        name for name, parameter in signature.parameters.items()
-        if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                              inspect.Parameter.KEYWORD_ONLY)
-        and name not in filled_in
-    }
-    for path in paths:
-        if path not in named:
-            raise Exception(
-                f"The mcp option 'paths' names {path!r}, which is not a "
-                "parameter of the function.")
-    definition["paths"] = list(paths)
-
-    return definition
+    return dict(mcp)
 
 
 def validate_shell_version(min=None, max=None):
@@ -372,7 +324,7 @@ class PluginRegistrar:
             ]
 
             # The MCP tool definition, or None: see plugin_function
-            self.mcp = _mcp_definition(mcp, self.name, signature)
+            self.mcp = _mcp_definition(mcp)
 
             docs = inspect.getdoc(function)
 
@@ -909,15 +861,15 @@ def plugin_function(fully_qualified_name,
             is only required for the first function that will be registered
         cli (bool): Defines whether the function should be available in the CLI
         mcp (dict): Offers the function as a tool of the MCP server plugin
-            (mcp_plugin), which reads it from the registry. The keys:
-            group (required: the tool's MCP group and the first part of its
-            name), name (default: the function name in snake_case),
-            readOnly, destructive (the tool's annotations), paths (the
-            parameters holding file paths, checked against the server's
-            allowed paths), task (run as a background task), gui (only on a
-            --gui server). A parameter called session receives the session
-            of an MCP connection; with task, one called task receives the
-            task. shell=False makes the function MCP-only.
+            (mcp_plugin), which reads it from the registry and checks it when
+            it starts. The keys: group (required: the tool's MCP group and
+            the first part of its name), name (default: the function name in
+            snake_case), readOnly, destructive (the tool's annotations),
+            paths (the parameters holding file paths, checked against the
+            server's allowed paths), task (run as a background task), gui
+            (only on a --gui server). A parameter called session receives
+            the session of an MCP connection; with task, one called task
+            receives the task. shell=False makes the function MCP-only.
 
     Returns:
         The decorator function
