@@ -68,7 +68,9 @@ EXPECT_STDOUT_MATCHES(re.compile(".*the following arguments:\n\n", re.DOTALL))
 
 #@<> invalid option error
 # TSFR_1_3
-make_cnf(f"""[client]
+# Only the shell's own groups fail on an unknown option; [client] skips it
+# (loose_options_norecord.py).
+make_cnf(f"""[mysqlsh]
 binary_mode
 """)
 testutil.call_mysqlsh([], "", ["MYSQL_HOME="+homedir])

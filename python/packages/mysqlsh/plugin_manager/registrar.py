@@ -47,6 +47,29 @@ def add_registration_callback(callback):
     _registration_callbacks.append(callback)
 
 
+def _mcp_definition(mcp):
+    """Checks the shape of the mcp argument of plugin_function.
+
+    Only its shape: as with web=, the definition is stored as given, and
+    what its keys mean - and which values are valid - is up to the reader of
+    the registry (get_registry()) that serves the function as an MCP tool.
+
+    Args:
+        mcp: The argument as given: None, False or a dictionary.
+
+    Returns:
+        dict: The definition, or None for a function that is not an MCP tool.
+    """
+    if mcp is None or mcp is False:
+        return None
+    if not isinstance(mcp, dict):
+        raise Exception(
+            "The mcp argument must be a dictionary, e.g. "
+            "mcp={'group': 'orders'}.")
+
+    return mcp
+
+
 def validate_shell_version(min=None, max=None):
     """
     Validates the plugin Shell version requirements for plugin.
@@ -269,7 +292,8 @@ class PluginRegistrar:
                      fully_qualified_name=None,
                      shell=True,
                      cli=False,
-                     web=False):
+                     web=False,
+                     mcp=None):
             # Get the plugin name by stripping the function name
             name = None
             if not fully_qualified_name is None:
@@ -291,6 +315,9 @@ class PluginRegistrar:
                 PluginRegistrar.ParameterData(p)
                 for p in signature.parameters.values()
             ]
+
+            # The MCP tool definition, or None: see plugin_function
+            self.mcp = _mcp_definition(mcp)
 
             docs = inspect.getdoc(function)
 
@@ -671,7 +698,8 @@ class PluginRegistrar:
         fully_qualified_name=None,
         shell=True,
         cli=False,
-        web=False
+        web=False,
+        mcp=None
     ):
         """Registers a new member into the provided shell extension object"""
         shell_obj = mysqlsh.globals.shell
@@ -684,10 +712,8 @@ class PluginRegistrar:
             function, shell=shell,
             fully_qualified_name=fully_qualified_name,
             cli=cli,
-            web=web)
-
-        # Registers definition in the global registry
-        _registry.append(definition)
+            web=web,
+            mcp=mcp)
 
         try:
             if shell:
@@ -701,6 +727,11 @@ class PluginRegistrar:
             # On success registration, the function is reported to the callbacks
             for callback in _registration_callbacks:
                 callback(definition)
+
+            # Registers definition in the global registry only once it is
+            # registered: a function whose registration failed is not offered
+            # to the registry's readers either
+            _registry.append(definition)
         except Exception as e:
             raise Exception(
                 f"Could not add function '{definition.name}' "
@@ -815,7 +846,8 @@ def plugin_function(fully_qualified_name,
                     plugin_docs=None,
                     shell: bool = True,
                     cli: bool = False,
-                    web: Union[bool, dict] = False):
+                    web: Union[bool, dict] = False,
+                    mcp: Union[dict, None] = None):
     """Decorator factory to register Shell plugins functions
 
     Args:
@@ -824,6 +856,11 @@ def plugin_function(fully_qualified_name,
         plugin_docs (dict): The documentation structure of the plugin. This
             is only required for the first function that will be registered
         cli (bool): Defines whether the function should be available in the CLI
+        mcp (dict): Offers the function as an MCP tool. Stored as given in
+            the registry (get_registry()), as web is, for an MCP server
+            that reads it, which defines its keys: for the MariaDB MCP
+            Server see the reference documentation, "Offering a Function as
+            an MCP Tool". shell=False makes the function MCP-only.
 
     Returns:
         The decorator function
@@ -874,7 +911,8 @@ def wrapper{str(original_signature)}:
                 fully_qualified_name=fully_qualified_name,
                 shell=shell,
                 cli=cli,
-                web=web
+                web=web,
+                mcp=mcp
             )
         except Exception as e:
             print(

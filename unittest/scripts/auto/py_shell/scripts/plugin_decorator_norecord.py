@@ -720,7 +720,126 @@ testutil.call_mysqlsh(["--quiet-start=2", "--py", "-f", "web_plugins.py"])
 EXPECT_STDOUT_CONTAINS("Found web only plugin: plugin2.list.webData")
 
 
+#@<> MCP tool definitions are in the registry as given
+plugin_code = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp={"group": "orders", "readOnly": True, "paths": ["target"]})
+def list_orders(target, session=None):
+    """Lists orders.
+
+    Args:
+        target (str): Where to write them.
+        session (object): The session to use.
+    """
+    pass
+
+@plugin_function("sample.checksumAll", shell=False, mcp={"group": "orders", "name": "checksum", "task": True})
+def checksum_all(session=None, task=None):
+    """Checksums the orders.
+
+    Args:
+        session (object): The session to use.
+        task (object): The background task.
+    """
+    pass
+
+@plugin_function("sample.notATool")
+def not_a_tool():
+    """Not offered to MCP."""
+    pass
+'''
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+
+mcp_plugins_code = """
+from mysqlsh.plugin_manager import registrar
+
+for definition in registrar.get_registry():
+    if definition.fully_qualified_name.startswith("sample."):
+        print(f"MCP {definition.fully_qualified_name}: {definition.mcp}")
+print(f"In the shell: {sorted(name for name in dir(sample) if not name.startswith('_'))}")
+"""
+
+testutil.create_file("mcp_plugins.py", mcp_plugins_code)
+__call_mysqlsh(["--py", "-f", "mcp_plugins.py"])
+# stored as given: the registry's reader checks them and fills in defaults
+EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders', 'readOnly': True, 'paths': ['target']}")
+EXPECT_STDOUT_CONTAINS("MCP sample.checksumAll: {'group': 'orders', 'name': 'checksum', 'task': True}")
+EXPECT_STDOUT_CONTAINS("MCP sample.notATool: None")
+# the MCP-only function is not in the shell
+EXPECT_STDOUT_CONTAINS("In the shell: ['help', 'list_orders', 'not_a_tool']")
+
+#@<> An MCP tool definition must be a dictionary
+plugin_code = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp=True)
+def list_orders(target):
+    """Lists orders.
+
+    Args:
+        target (str): Where to write them.
+    """
+    pass
+'''
+
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+WIPE_OUTPUT()
+# Not __call_mysqlsh: --quiet-start=2 hides what plugins print while loading
+testutil.call_mysqlsh(["--py", "-e", "print('loaded')"], "", shell_env)
+EXPECT_STDOUT_CONTAINS("Could not register function 'listOrders' as a member of the sample plugin object.\nERROR: The mcp argument must be a dictionary, e.g. mcp={'group': 'orders'}.")
+
+
+#@<> A function the shell refused is not in the registry
+plugin_code = '''
+from mysqlsh.plugin_manager import plugin, plugin_function
+
+@plugin
+class sample():
+    """
+    A sample plugin
+    """
+
+@plugin_function("sample.listOrders", mcp={"group": "orders"})
+def first():
+    """The first."""
+    pass
+
+try:
+    @plugin_function("sample.listOrders", mcp={"group": "orders", "name": "second"})
+    def second():
+        """The second, of a name the object has."""
+        pass
+except Exception:
+    pass
+'''
+
+testutil.rmfile(sample_path)
+testutil.create_file(sample_path, plugin_code)
+WIPE_OUTPUT()
+# Not __call_mysqlsh: --quiet-start=2 hides what plugins print while loading
+testutil.call_mysqlsh(["--py", "-f", "mcp_plugins.py"], "", shell_env)
+EXPECT_STDOUT_CONTAINS("The object already has a 'listOrders' member.")
+EXPECT_STDOUT_CONTAINS("MCP sample.listOrders: {'group': 'orders'}")
+EXPECT_STDOUT_NOT_CONTAINS("'name': 'second'")
+
+
 #@<> Finalization
 testutil.rmdir(plugins_path, True)
 testutil.rmfile("my-script.py")
 testutil.rmfile("web_plugins.py")
+testutil.rmfile("mcp_plugins.py")
