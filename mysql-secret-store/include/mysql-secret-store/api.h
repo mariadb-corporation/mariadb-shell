@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -65,6 +65,14 @@ struct Secret_spec {
    */
   std::string group = {};
 };
+
+/**
+ * Validates and normalizes a credential URL.
+ *
+ * @returns Normalized URL.
+ * @throws std::runtime_error if the URL is invalid.
+ */
+std::string validate_url(const std::string &url);
 
 /**
  * Holds name of the secret store helper.

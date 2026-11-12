@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +43,11 @@ const std::set<std::string> db_connection_attributes = {
     kSchema,
     kUser,
     kPassword,
+    kPassword1,
+    kPassword2,
+    kPassword3,
+    kNoPassword,
+    kRegisterFactor,
     kSslCa,
     kSslCaPath,
     kSslCert,
@@ -51,6 +57,11 @@ const std::set<std::string> db_connection_attributes = {
     kSslCipher,
     kSslTlsVersion,
     kSslTlsCiphersuites,
+#ifndef MARIADB_BUILD
+    kSslTlsKex,
+    kSslForcePqc,
+    kSslUsePqcSign,
+#endif
     kSslMode,
     kAuthMethod,
     kGetServerPublicKey,
@@ -68,7 +79,10 @@ const std::set<std::string> db_connection_attributes = {
     kOciConfigFile,
     kOciAuthenticationClientConfigProfile,
     kOpenIdConnectAuthenticationClientTokenFile,
-    kWebauthnClientDeviceIndex};
+    kWebauthnClientPreservePrivacy,
+    kWebauthnClientDeviceIndex,
+    kClientInteractive,
+    kCanHandleExpiredPasswords};
 
 const std::array<std::string, 6> ssl_modes = {"",
                                               kSslModeDisabled,

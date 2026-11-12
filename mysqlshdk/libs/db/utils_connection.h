@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -71,6 +71,11 @@ inline constexpr const char kPath[] = "schema";
 inline constexpr const char kSchema[] = "schema";
 inline constexpr const char kUser[] = "user";
 inline constexpr const char kPassword[] = "password";
+inline constexpr const char kPassword1[] = "password1";
+inline constexpr const char kPassword2[] = "password2";
+inline constexpr const char kPassword3[] = "password3";
+inline constexpr const char kNoPassword[] = "no-password";
+inline constexpr const char kRegisterFactor[] = "register-factor";
 inline constexpr const char kSshRemoteHost[] = "ssh-remote-host";
 // The SSH endpoint, spelled as three scalars so that a tunnelled connection
 // fits in a URI. `ssh-host` is optional: left out, the tunnel is opened to the
@@ -95,6 +100,13 @@ inline constexpr const char kSslCipher[] = "ssl-cipher";
 inline constexpr const char kSslTlsVersion[] = "tls-version";
 inline constexpr const char kSslTlsVersions[] = "tls-versions";
 inline constexpr const char kSslTlsCiphersuites[] = "tls-ciphersuites";
+#ifndef MARIADB_BUILD
+// Post-quantum TLS settings: MariaDB Connector/C has no setting for any of
+// them, so MariaDB builds do not offer them at all.
+inline constexpr const char kSslTlsKex[] = "tls-kex";
+inline constexpr const char kSslForcePqc[] = "force-pqc";
+inline constexpr const char kSslUsePqcSign[] = "use-pqc-sign";
+#endif
 inline constexpr const char kSslMode[] = "ssl-mode";
 inline constexpr const char kAuthMethod[] = "auth-method";
 inline constexpr const char kGetServerPublicKey[] = "get-server-public-key";
@@ -110,6 +122,8 @@ inline constexpr const char kNetBufferLength[] = "net-buffer-length";
 inline constexpr const char kMaxAllowedPacket[] = "max-allowed-packet";
 inline constexpr const char kMysqlPluginDir[] = "mysql-plugin-dir";
 inline constexpr const char kClientInteractive[] = "client-interactive";
+inline constexpr const char kCanHandleExpiredPasswords[] =
+    "can-handle-expired-passwords";
 inline constexpr const char kWebauthnClientPreservePrivacy[] =
     "plugin-authentication-webauthn-client-preserve-privacy";
 inline constexpr const char kWebauthnClientDeviceIndex[] =
@@ -183,6 +197,11 @@ inline const std::set<std::string> uri_connection_attributes = {
     kSslCipher,
     kSslTlsVersion,
     kSslTlsCiphersuites,
+#ifndef MARIADB_BUILD
+    kSslTlsKex,
+    kSslForcePqc,
+    kSslUsePqcSign,
+#endif
     kSslMode,
     kAuthMethod,
     kGetServerPublicKey,

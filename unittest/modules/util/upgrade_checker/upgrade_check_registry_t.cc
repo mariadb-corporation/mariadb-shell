@@ -252,6 +252,44 @@ void test_check_availability(
 
 }  // namespace
 
+TEST(Upgrade_check_registry, removed_legacy_hashing_functions_source_versions) {
+  struct Scenario {
+    Version source;
+    bool functional_indexes;
+    bool check_constraints;
+  };
+
+  const Scenario scenarios[] = {
+      {Version(5, 7, 44), false, false}, {Version(8, 0, 12), false, false},
+      {Version(8, 0, 13), true, false},  {Version(8, 0, 15), true, false},
+      {Version(8, 0, 16), true, true},   {Version(8, 4, 0), true, true},
+  };
+
+  for (const auto &scenario : scenarios) {
+    SCOPED_TRACE(scenario.source.get_base());
+    auto config = create_config(scenario.source, Version(9, 6, 0));
+    config.set_targets(Target_flags::all());
+    const auto checklist = Upgrade_check_registry::create_checklist(config);
+    const auto it = std::ranges::find_if(checklist, [](const auto &check) {
+      return check->get_name() == ids::k_removed_legacy_hashing_functions_check;
+    });
+    ASSERT_NE(checklist.end(), it);
+    const auto check = dynamic_cast<const Sql_upgrade_check *>(it->get());
+    ASSERT_NE(nullptr, check);
+
+    const auto has_query_for = [&](Upgrade_issue::Object_type type) {
+      return std::ranges::any_of(
+          check->get_queries(),
+          [type](const auto &query) { return query.second == type; });
+    };
+
+    EXPECT_EQ(scenario.functional_indexes,
+              has_query_for(Upgrade_issue::Object_type::INDEX));
+    EXPECT_EQ(scenario.check_constraints,
+              has_query_for(Upgrade_issue::Object_type::TABLE));
+  }
+}
+
 TEST(Upgrade_check_registry, create_checklist) {
   std::map<Version, std::set<std::string_view>> single_version_checks = {
       {Version(8, 0, 0),
@@ -275,7 +313,8 @@ TEST(Upgrade_check_registry, create_checklist) {
       {Version(8, 0, 29), {ids::k_deprecated_temporal_delimiter_check}},
       {Version(8, 0, 31), {ids::k_dollar_sign_name_check}},
       {Version(8, 4, 0),
-       {ids::k_column_definition, ids::k_partitions_with_prefix_keys}}};
+       {ids::k_column_definition, ids::k_partitions_with_prefix_keys}},
+      {Version(9, 6, 0), {ids::k_removed_legacy_hashing_functions_check}}};
 
   auto v5_7_0 = Version(5, 7, 0);
   for (const auto &version_check : single_version_checks) {
@@ -381,14 +420,37 @@ TEST(Upgrade_check_registry, create_checklist) {
                           {{v5_7_0, Version(8, 0, 11)},
                            {Version(8, 0, 11), Version(8, 0, 14)},
                            {Version(8, 0, 14), Version(8, 0, 17)},
-                           {Version(8, 0, 17), Version(8, 0, 31)}});
+                           {Version(8, 0, 17), Version(8, 0, 31)},
+                           {Version(8, 1, 0), Version(8, 2, 0)},
+                           {Version(8, 2, 0), Version(8, 3, 0)},
+                           {Version(8, 3, 0), Version(8, 4, 0)},
+                           {Version(8, 4, 11), Version(9, 0, 0)},
+                           {Version(9, 0, 0), Version(9, 2, 0)},
+                           {Version(9, 2, 0), Version(9, 4, 0)},
+                           {Version(9, 5, 0), Version(9, 6, 0)},
+                           {Version(9, 4, 0), vShell},
+                           {Version(8, 0, 31), vShell}});
+
+  // Crossing a reservation threshold selects the check even when the creator
+  // finds no newly reserved keywords for the source and target versions.
+  test_check_availability(ids::k_reserved_keywords_check, true,
+                          {{Version(8, 4, 1), Version(9, 1, 0)},
+                           {Version(9, 5, 0), Version(9, 7, 0)}});
 
   test_check_availability(ids::k_reserved_keywords_check, false,
                           {{v5_7_0, Version(8, 0, 10)},
                            {Version(8, 0, 11), Version(8, 0, 13)},
                            {Version(8, 0, 14), Version(8, 0, 16)},
                            {Version(8, 0, 17), Version(8, 0, 30)},
-                           {Version(8, 0, 31), vShell}});
+                           {Version(8, 0, 31), Version(8, 1, 0)},
+                           {Version(8, 2, 0), Version(8, 2, 1)},
+                           {Version(8, 3, 0), Version(8, 3, 1)},
+                           {Version(8, 4, 0), Version(8, 4, 11)},
+                           {Version(9, 0, 0), Version(9, 1, 0)},
+                           {Version(9, 2, 0), Version(9, 3, 0)},
+                           {Version(9, 4, 0), Version(9, 5, 0)},
+                           {Version(9, 7, 1), Version(9, 7, 2)},
+                           {Version(9, 6, 0), vShell}});
 
   // syntax_check:
   // available: always between series versions

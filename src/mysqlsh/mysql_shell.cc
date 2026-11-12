@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -59,6 +59,7 @@
 #include "mysqlshdk/libs/db/connection_options.h"
 #include "mysqlshdk/libs/db/session.h"
 #include "mysqlshdk/libs/db/uri_parser.h"
+#include "mysqlshdk/libs/db/utils/utils.h"
 #include "mysqlshdk/libs/db/utils_error.h"
 #include "mysqlshdk/libs/utils/atomic_flag.h"
 #include "mysqlshdk/libs/utils/fault_injection.h"
@@ -1667,11 +1668,13 @@ std::shared_ptr<mysqlsh::ShellBaseSession> Mysql_shell::connect(
         "connection id is " + std::to_string(new_session->get_connection_id());
     if (session_type == "Session") message += " (X protocol)";
     try {
-      message += "\nServer version: " +
-                 new_session->get_core_session()
-                     ->query("select concat(@@version, ' ', @@version_comment)")
-                     ->fetch_one()
-                     ->get_string(0);
+      const auto core_session = new_session->get_core_session();
+      const auto result = core_session->query(shcore::str_format(
+          "select concat(%s, ' ', @@version_comment)",
+          mysqlshdk::db::get_server_version_sql(core_session)));
+      const auto row = result->fetch_one_or_throw();
+
+      message += "\nServer version: " + row->get_string(0);
     } catch (const mysqlshdk::db::Error &e) {
       // ignore password expired errors
       if (e.code() == ER_MUST_CHANGE_PASSWORD) {
@@ -2159,6 +2162,16 @@ bool Mysql_shell::cmd_status(
                   .c_str()));
         else
           println(shcore::str_format(format.c_str(), "SSL: ", "Not in use."));
+
+        if (status->has_key("TLS_KEY_EXCHANGE_ALGORITHM"))
+          println(shcore::str_format(
+              format.c_str(), "TLS key exchange algorithm: ",
+              (*status)["TLS_KEY_EXCHANGE_ALGORITHM"].descr(true).c_str()));
+
+        if (status->has_key("TLS_SIGNATURE_ALGORITHM"))
+          println(shcore::str_format(
+              format.c_str(), "TLS signature algorithm: ",
+              (*status)["TLS_SIGNATURE_ALGORITHM"].descr(true).c_str()));
 
         if (status->has_key("DELIMITER"))
           println(shcore::str_format(

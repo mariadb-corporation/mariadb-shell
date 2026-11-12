@@ -161,6 +161,12 @@ void setup(const Setup_options &options, Mock_session *session) {
     EXPECT_CALL(*session, get_server_vendor())
         .WillRepeatedly(Return(mysqlshdk::db::ServerVendor::MySQL));
 
+    session
+        ->expect_query(
+            "show GLOBAL variables where `variable_name` in "
+            "('version_with_update')")
+        .then({"Variable_name", "Value"});
+
     std::set<std::string> all_roles;
 
     {

@@ -63,6 +63,45 @@ bool cont_contains(const cont_type &cont, const value_type &value) {
   return std::ranges::find(cont, value) != std::end(cont);
 }
 
+std::optional<Version> get_lifecycle_version(
+    const std::vector<Version> &versions, const Version &target) {
+  bool has_same_series = false;
+  bool has_same_major = false;
+  for (const auto &version : versions) {
+    if (version.get_major() == target.get_major()) {
+      has_same_major = true;
+
+      if (version.get_minor() == target.get_minor()) {
+        has_same_series = true;
+      }
+    }
+  }
+
+  std::optional<Version> selected;
+  for (const auto &version : versions) {
+    const bool same_major = version.get_major() == target.get_major();
+    const bool same_series =
+        same_major && version.get_minor() == target.get_minor();
+
+    if (has_same_series && !same_series) continue;
+
+    if (!has_same_series && has_same_major) {
+      if (!same_major) continue;
+
+      // A later marker in the same major version belongs to the forward
+      // development line. An earlier marker is a backport and does not apply
+      // to the target version between the two markers.
+      if (version > target) return {};
+    }
+
+    if (version <= target && (!selected.has_value() || *selected < version)) {
+      selected = version;
+    }
+  }
+
+  return selected;
+}
+
 char normalize_platform(const std::string &os_platform) {
   if (std::string("WLM").find(os_platform[0]) != std::string::npos)
     return os_platform[0];
@@ -378,6 +417,8 @@ constexpr const char *k_default = "default";
 constexpr const char *k_allowed = "allowed";
 constexpr const char *k_forbidden = "forbidden";
 constexpr const char *k_vartype = "vartype";
+constexpr const char *k_separator = "separator";
+constexpr const char *k_default_set_separator = " ,";
 
 std::vector<std::string> parse_string_list(const rapidjson::Value &source) {
   std::vector<std::string> result;
@@ -396,6 +437,23 @@ std::vector<std::string> parse_string_list(const rapidjson::Value &source) {
 
 std::string get_string(const rapidjson::Value &source) {
   return std::string(source.GetString(), source.GetStringLength());
+}
+
+void parse_versions(const rapidjson::Value &source,
+                    std::vector<Version> *versions) {
+  if (source.IsString()) {
+    versions->emplace_back(get_string(source));
+  } else if (source.IsArray()) {
+    for (const auto &version : source.GetArray()) {
+      if (!version.IsString()) {
+        throw std::logic_error("Version list contains a non-string value");
+      }
+
+      versions->emplace_back(get_string(version));
+    }
+  } else {
+    throw std::logic_error("Version must be a string or a list of strings");
+  }
 }
 
 void parse_default(const rapidjson::Value &source, Sysvar_configuration *target,
@@ -500,15 +558,19 @@ void parse_sysvar(const rapidjson::Value &source, Sysvar_definition *sysvar) {
   }
 
   if (source.HasMember("deprecation")) {
-    sysvar->deprecation_version = Version(get_string(source["deprecation"]));
+    parse_versions(source["deprecation"], &sysvar->deprecation_versions);
   }
 
   if (source.HasMember("removal")) {
-    sysvar->removal_version = Version(get_string(source["removal"]));
+    parse_versions(source["removal"], &sysvar->removal_versions);
   }
 
   if (source.HasMember("replacement")) {
     sysvar->replacement = get_string(source["replacement"]);
+  }
+
+  if (source.HasMember(k_separator)) {
+    sysvar->separator = get_string(source[k_separator]);
   }
 
   // Parses the initial values
@@ -592,8 +654,8 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
       introduction_version.value() > upgrade_info.server_version)
     return {};
 
-  if (removal_version.has_value() &&
-      removal_version.value() <= upgrade_info.server_version)
+  if (get_lifecycle_version(removal_versions, upgrade_info.server_version)
+          .has_value())
     return {};
 
   const auto os_platform = normalize_platform(upgrade_info.server_os);
@@ -632,11 +694,13 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
     vartype = change.second.get_vartype(os_platform);
   }
 
-  bool is_deprecated = deprecation_version.has_value() &&
-                       *deprecation_version <= upgrade_info.target_version;
+  const auto deprecation_version =
+      get_lifecycle_version(deprecation_versions, upgrade_info.target_version);
+  const auto removal_version =
+      get_lifecycle_version(removal_versions, upgrade_info.target_version);
 
-  bool is_removed = removal_version.has_value() &&
-                    *removal_version <= upgrade_info.target_version;
+  const bool is_deprecated = deprecation_version.has_value();
+  const bool is_removed = removal_version.has_value();
 
   if ((final_default.has_value() && initial_default != final_default) ||
       allowed_values.has_value() || forbidden_values.has_value() ||
@@ -680,6 +744,7 @@ std::optional<Sysvar_version_check> Sysvar_definition::get_check(
     }
 
     cnf.vartype = vartype;
+    cnf.separator = separator;
 
     return cnf;
   }
@@ -755,7 +820,7 @@ std::vector<std::string_view> Sysvar_check::get_invalid_allowed_values(
             }
             return true;
           },
-          " ,");
+          sysvar_check.separator.value_or(k_default_set_separator));
     } else if (!cont_contains(sysvar_check.allowed_values, sysvar->value)) {
       invalid_values.push_back(sysvar->value);
     }
@@ -780,7 +845,7 @@ std::vector<std::string_view> Sysvar_check::get_invalid_forbidden_values(
             }
             return true;
           },
-          " ,");
+          sysvar_check.separator.value_or(k_default_set_separator));
     } else if (cont_contains(sysvar_check.forbidden_values, sysvar->value)) {
       invalid_values.push_back(sysvar->value);
     }

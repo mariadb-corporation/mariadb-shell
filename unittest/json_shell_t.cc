@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,7 +32,8 @@
 
 namespace mysqlsh {
 
-static bool print_capture(void *cdata, const char *text) {
+static bool print_capture(void *cdata, const char *text,
+                          const shcore::Dictionary_t &) {
   std::string *capture = static_cast<std::string *>(cdata);
   capture->append(text).append("\n");
   return true;

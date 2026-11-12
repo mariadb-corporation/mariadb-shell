@@ -161,6 +161,8 @@ was adapted to libmariadb, which lacks several MySQL 8.x client APIs:
 | query attributes (`mysql_bind_param`) | not supported — dropped, warns if used |
 | MFA (`MAX_AUTH_FACTORS`, `MYSQL_OPT_USER_PASSWORD`) | primary password routed through `mysql_real_connect`; 2nd/3rd factors warn |
 | `MYSQL_OPT_COMPRESSION_ALGORITHMS`, `MYSQL_OPT_TLS_CIPHERSUITES`, `MYSQL_OPT_GET_SERVER_PUBLIC_KEY` | not in libmariadb — dropped, warn if used |
+| `MYSQL_OPT_TLS_KEX`, `MYSQL_OPT_FORCE_PQC`, `MYSQL_OPT_USE_PQC_SIGN` | not in libmariadb — the `tls-kex`, `force-pqc` and `use-pqc-sign` connection options and command-line flags are not built: an invalid option, not an ignored one |
+| FIDO device registration (`register-factor`, `fido::register_device`) | needs the MySQL fido auth plugin — dropped, warns if used |
 | `mysql_real_escape_string_quote` | falls back to `mysql_real_escape_string` |
 | `CR_*` client error codes | `#include <errmsg.h>`; MySQL-only `CR_*`/`ER_*` constants gated out |
 | `MYSQL_TYPE_VECTOR` | gated out (MySQL 9 type) |
@@ -209,6 +211,20 @@ tracked in [AIPL-24](https://jira.mariadb.org/browse/AIPL-24).
   built (they need MySQL's `sql_yacc.yy`). Syntax-check upgrade checks therefore
   have no parser plugin to load at runtime.
 - **adminapi_modules** removed from the `api_modules` / `mysqlsh` link.
+- **Linux RPATH of bundled binaries** ([cmake/exeutils.cmake](cmake/exeutils.cmake)):
+  upstream's `get_linux_rpath_command()` removes the RPATH from bundled shared
+  libraries and gives a bundled executable the relative `$ORIGIN` RPATH only
+  when it ships its own OpenSSL, which it detects as `BUNDLED_OPENSSL`. A vcpkg
+  build ships OpenSSL and the rest of its dependency closure in `INSTALL_LIBDIR`
+  without setting it, so the test is `BUNDLED_OPENSSL OR USING_VCPKG`;
+  otherwise the bundled `openssl` CLI and `mariadb-lsp` load the system's older
+  `libssl.so.3`. When it holds, shared libraries and plugins get the RPATH too,
+  so each resolves its bundled dependencies by itself, not only through the
+  RPATH of the executable that loads it (the package audit,
+  `scripts/verify_package.sh`, checks every binary on its own). The function
+  also skips inspecting a binary that does not exist yet at configure time
+  (`mariadb-lsp`, built later by the lsp-server ExternalProject) and emits its
+  command as is.
 
 ---
 

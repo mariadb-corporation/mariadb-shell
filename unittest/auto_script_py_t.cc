@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,6 +33,8 @@
 #include "unittest/gtest_clean.h"
 #include "unittest/mysqlshdk/libs/azure/test_utils.h"
 #include "unittest/shell_script_tester.h"
+
+#include <openssl/opensslv.h>
 
 #include <stdlib.h>
 
@@ -200,6 +202,15 @@ class Auto_script_py : public Shell_py_script_tester,
     exec_and_out_equals(code);
 
     code = "__mysqlsh = " + shcore::quote_string(get_path_to_mysqlsh(), '\'');
+    exec_and_out_equals(code);
+
+    code =
+        shcore::str_format("__mysqlsh_openssl_version_number = %lu;",
+                           static_cast<unsigned long>(OPENSSL_VERSION_NUMBER));
+    exec_and_out_equals(code);
+
+    code = "__mysqlsh_openssl_version_text = " +
+           shcore::quote_string(OPENSSL_VERSION_TEXT, '\'');
     exec_and_out_equals(code);
   }
 

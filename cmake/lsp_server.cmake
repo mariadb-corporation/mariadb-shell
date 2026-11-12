@@ -173,4 +173,8 @@ install_bundled_binaries(
   BINARIES "${_lsp_binary}"
   DESTINATION "${INSTALL_BINDIR}"
   TARGET mariadb-shell)
-add_dependencies("copy_mariadb-lsp${CMAKE_EXECUTABLE_SUFFIX}" lsp_server)
+# install_bundled_binaries() names the copy target "copy_<binary name>", with
+# every character other than [a-zA-Z0-9_] turned into '_'.
+get_filename_component(_lsp_binary_name "${_lsp_binary}" NAME)
+string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" _lsp_copy_target "copy_${_lsp_binary_name}")
+add_dependencies("${_lsp_copy_target}" lsp_server)

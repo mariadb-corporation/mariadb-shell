@@ -73,6 +73,8 @@ endif()
 # custom packaging steps.
 option(COMMUNITY_BUILD "Set to true if this is a community build" ON)
 
+option(BUNDLE_FIDO "Include bundled libfido2 in the package" ON)
+
 if(NOT COMMUNITY_BUILD)
   set(PRODUCT_SUFFIX "-commercial")
   set(CONFLICTING_PRODUCT_SUFFIX "")
@@ -135,6 +137,11 @@ message(STATUS "OS code name    : ${CODENAME}")
 set(EXTRA_CMAKE_OPTS)
 set(DEB_BUILD_DEPS)
 set(DEB_DEPS)
+
+# Always required: mysqlshdk/libs/yparser generates its parsers with bison and
+# drives the generation from a python3 interpreter
+list(APPEND DEB_BUILD_DEPS "bison")
+list(APPEND DEB_BUILD_DEPS "python3")
 if(BUNDLED_SSH_DIR)
   list(APPEND EXTRA_CMAKE_OPTS "-DBUNDLED_SSH_DIR=${BUNDLED_SSH_DIR}")
 else()
@@ -187,7 +194,11 @@ if(HAVE_PYTHON)
 endif()
 
 if(MYSQL_SOURCE_DIR)
-  list(APPEND EXTRA_CMAKE_OPTS "-DMYSQL_SOURCE_DIR=${MYSQL_SOURCE_DIR} -DMYSQL_BUILD_DIR=${MYSQL_SOURCE_DIR}/bld")
+  list(APPEND EXTRA_CMAKE_OPTS "-DMYSQL_SOURCE_DIR=\"${MYSQL_SOURCE_DIR}\"")
+  if(NOT MYSQL_BUILD_DIR)
+    set(MYSQL_BUILD_DIR "${MYSQL_SOURCE_DIR}/bld")
+  endif()
+  list(APPEND EXTRA_CMAKE_OPTS "-DMYSQL_BUILD_DIR=\"${MYSQL_BUILD_DIR}\"")
 endif()
 
 if(MARIADB_SOURCE_DIR)
@@ -320,11 +331,16 @@ if (MYSQL_SOURCE_DIR)
 file(APPEND "${INSTALL_FILE}"
 "# For client authentication plugins
 usr/lib/mariadb/plugins/*.so
-usr/lib/mariadb-shell/libfido2.so*
 # For protobuf library
 usr/lib/mariadb-shell/libprotobuf*.so*
 usr/lib/mariadb-shell/libabsl_*.so
 ")
+if (BUNDLE_FIDO)
+file(APPEND "${INSTALL_FILE}"
+"# dependency of client authentication plugins
+usr/lib/mariadb-shell/libfido2.so*
+")
+endif()
 endif()
 
 if (MARIADB_SOURCE_DIR)

@@ -231,29 +231,125 @@ elseif(NOT WIN32)
     set("${ARG_OUT_COMMAND}" ${PATCHELF_EXECUTABLE} ${PATCHELF_PAGE_SIZE_ARGS} ${ARG_ARGS} PARENT_SCOPE)
   endfunction()
 
-  function(get_rpath_command)
+  function(get_binary_rpaths)
     set(options)
-    set(oneValueArgs BINARY DESTINATION OUT_COMMAND)
+    set(oneValueArgs BINARY OUT_RPATH OUT_RUNPATH)
     set(multiValueArgs)
     cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-    file(RELATIVE_PATH RELATIVE_PATH_TO_LIBDIR "${CONFIG_BINARY_DIR}/${ARG_DESTINATION}" "${CONFIG_BINARY_DIR}/${INSTALL_LIBDIR}")
-
-    # if RELATIVE_PATH_TO_LIBDIR is not set, then binaries are copied to the INSTALL_LIBDIR, in which case rpath should be $ORIGIN
-    # in all other cases we want to separate $ORIGIN with a slash
-    if(RELATIVE_PATH_TO_LIBDIR)
-      string(PREPEND RELATIVE_PATH_TO_LIBDIR "/")
+    if(NOT CMAKE_READELF)
+      find_program(CMAKE_READELF NAMES readelf llvm-readelf)
     endif()
 
-    # --force-rpath writes the legacy DT_RPATH tag instead of DT_RUNPATH. Only
-    # DT_RPATH is searched *before* LD_LIBRARY_PATH, so this is what keeps a
-    # bundled library winning over a system one of the same SONAME - the same
-    # reason add_shell_executable() links the executables with
-    # -Wl,--disable-new-dtags. With DT_RUNPATH, any LD_LIBRARY_PATH naming a
-    # system lib dir silently substitutes the system copy, which breaks outright
-    # when ours is newer (e.g. bundled OpenSSL 3.x vs the distro's libcrypto.so.3:
-    # "version `OPENSSL_3.3.0' not found").
-    get_patchelf_command(ARGS --force-rpath --set-rpath "\\$$ORIGIN${RELATIVE_PATH_TO_LIBDIR}" "${ARG_BINARY}" OUT_COMMAND COMMAND)
+    if(NOT CMAKE_READELF)
+      message(FATAL_ERROR "Please install the readelf(1) utility.")
+    endif()
+
+    execute_process(
+        COMMAND "${CMAKE_READELF}" --dynamic --wide "${ARG_BINARY}"
+        OUTPUT_VARIABLE DYNAMIC_ENTRIES
+        RESULT_VARIABLE COMMAND_RESULT
+        ERROR_VARIABLE COMMAND_ERROR
+    )
+
+    if(NOT "${COMMAND_RESULT}" STREQUAL "0")
+      message(FATAL_ERROR "Failed to inspect ${ARG_BINARY}: ${COMMAND_ERROR} (${COMMAND_RESULT})")
+    endif()
+
+    # Leave absent tags undefined, preserving the distinction from empty tags.
+    # Match the dynamic tag column rather than a dependency's filename.
+    foreach(TAG RPATH RUNPATH)
+      unset("${ARG_OUT_${TAG}}" PARENT_SCOPE)
+
+      if(DYNAMIC_ENTRIES MATCHES "(^|\n)[ \t]*0x[0-9a-fA-F]+[ \t]+\\(${TAG}\\)[^\n]*\\[([^\n]*)\\]")
+        set("${ARG_OUT_${TAG}}" "${CMAKE_MATCH_2}" PARENT_SCOPE)
+      endif()
+    endforeach()
+  endfunction()
+
+  function(get_linux_rpath_command)
+    # FORCE_SET: write the relative rpath whatever the binary is (the
+    # install_bundled_binaries() WRITE_RPATH TRUE override).
+    set(options FORCE_SET)
+    set(oneValueArgs TARGET_BINARY SOURCE_BINARY DESTINATION OUT_COMMAND)
+    set(multiValueArgs)
+    cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    set("${ARG_OUT_COMMAND}" "" PARENT_SCOPE)
+    get_filename_component(BINARY_NAME "${ARG_TARGET_BINARY}" NAME)
+    get_filename_component(PYTHON_BINARY_NAME "${PYTHON_EXECUTABLE}" NAME)
+
+    # Remove build-tree paths and empty padding rejected by RPM.
+    set(ACTION REMOVE)
+
+    # A package that bundles its own dependencies (BUNDLED_OPENSSL, or a vcpkg
+    # build, which ships OpenSSL and the rest of its dependency closure in
+    # INSTALL_LIBDIR without setting BUNDLED_OPENSSL) gives every bundled binary
+    # the relative RPATH, shared libraries and plugins included: each one then
+    # resolves its bundled dependencies by itself, not only when an executable
+    # with a DT_RPATH happens to be the one loading it.
+    if(BUNDLED_OPENSSL OR USING_VCPKG)
+      set(ACTION SET)
+    # Otherwise only the bundled Python executable. Bundled shared libraries and
+    # loadable plugins use .so[.<version>]; permission bits and ET_DYN cannot
+    # distinguish libraries from PIEs.
+    elseif(NOT BINARY_NAME MATCHES "\\.so($|\\.)" AND BINARY_NAME STREQUAL PYTHON_BINARY_NAME)
+      set(ACTION SET)
+    endif()
+
+    if(ARG_FORCE_SET)
+      set(ACTION SET)
+    endif()
+
+    # A binary this build produces itself (the lsp-server ExternalProject's
+    # mariadb-lsp) does not exist yet at configure time, so it cannot be
+    # inspected: emit the command unconditionally instead.
+    set(SOURCE_BINARY_EXISTS FALSE)
+    if(EXISTS "${ARG_SOURCE_BINARY}")
+      set(SOURCE_BINARY_EXISTS TRUE)
+      get_binary_rpaths(BINARY "${ARG_SOURCE_BINARY}" OUT_RPATH BINARY_RPATH OUT_RUNPATH BINARY_RUNPATH)
+      # Refresh the generated command if an inspected dependency is rebuilt.
+      set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_SOURCE_BINARY}")
+    endif()
+
+    if(ACTION STREQUAL "REMOVE")
+      if(SOURCE_BINARY_EXISTS AND NOT DEFINED BINARY_RPATH AND NOT DEFINED BINARY_RUNPATH)
+        return()
+      endif()
+
+      set(PATCHELF_ARGS --remove-rpath)
+    else()
+      file(RELATIVE_PATH RELATIVE_PATH_TO_LIBDIR "${CONFIG_BINARY_DIR}/${ARG_DESTINATION}" "${CONFIG_BINARY_DIR}/${INSTALL_LIBDIR}")
+      # CMake can return "../"; omit the trailing slash to shorten RPATH
+      # without changing the directory it resolves to.
+      string(REGEX REPLACE "/$" "" RELATIVE_PATH_TO_LIBDIR "${RELATIVE_PATH_TO_LIBDIR}")
+
+      # if RELATIVE_PATH_TO_LIBDIR is not set, then binaries are copied to the INSTALL_LIBDIR, in which case rpath should be $ORIGIN
+      # in all other cases we want to separate $ORIGIN with a slash
+      if(RELATIVE_PATH_TO_LIBDIR)
+        string(PREPEND RELATIVE_PATH_TO_LIBDIR "/")
+      endif()
+
+      set(RPATH "$ORIGIN${RELATIVE_PATH_TO_LIBDIR}")
+
+      if(DEFINED BINARY_RPATH AND NOT DEFINED BINARY_RUNPATH AND "${BINARY_RPATH}" STREQUAL "${RPATH}")
+        return()
+      endif()
+
+      # RPATH is inherited by plugins and Python extension dependencies.
+      # Replace directly so patchelf can reuse an existing path's space.
+      # --force-rpath writes the legacy DT_RPATH tag instead of DT_RUNPATH. Only
+      # DT_RPATH is searched *before* LD_LIBRARY_PATH, so this is what keeps a
+      # bundled library winning over a system one of the same SONAME - the same
+      # reason add_shell_executable() links the executables with
+      # -Wl,--disable-new-dtags. With DT_RUNPATH, any LD_LIBRARY_PATH naming a
+      # system lib dir silently substitutes the system copy, which breaks
+      # outright when ours is newer (e.g. bundled OpenSSL 3.x vs the distro's
+      # libcrypto.so.3: "version `OPENSSL_3.3.0' not found").
+      set(PATCHELF_ARGS --force-rpath --set-rpath "${RPATH}")
+    endif()
+
+    get_patchelf_command(ARGS ${PATCHELF_ARGS} "${ARG_TARGET_BINARY}" OUT_COMMAND COMMAND)
     set("${ARG_OUT_COMMAND}" ${COMMAND} PARENT_SCOPE)
   endfunction()
 
@@ -322,26 +418,28 @@ function(get_binary_output_dir)
 endfunction()
 
 function(install_bundled_binaries)
+  if(BUILD_SOURCE_PACKAGE)
+    # Source packages do not require prebuilt dependency binaries.
+    return()
+  endif()
+
   set(options USE_LIBDIR)
+  # WRITE_RPATH: on macOS, whether the copy gets an @loader_path rpath to
+  # INSTALL_LIBDIR (default: BUNDLED_OPENSSL); on Linux, TRUE forces a relative
+  # $ORIGIN rpath where get_linux_rpath_command() would otherwise remove it.
   set(oneValueArgs DESCRIPTION DESTINATION TARGET WRITE_RPATH)
   set(multiValueArgs BINARIES EXTRA_COPY_COMMANDS)
   cmake_parse_arguments(ARG "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if(APPLE AND NOT DEFINED ARG_WRITE_RPATH)
+    set(ARG_WRITE_RPATH ${BUNDLED_OPENSSL})
+  endif()
 
   message(STATUS "Bundling ${ARG_DESCRIPTION}")
 
   if(WITH_PARFAIT)
     message(STATUS "  Skipping bundled binaries for Parfait build")
     return()
-  endif()
-
-  if(NOT DEFINED ARG_WRITE_RPATH)
-    if(APPLE)
-      # if we bundle OpenSSL, then we want the bundled binary to use it instead of the system one
-      set(ARG_WRITE_RPATH ${BUNDLED_OPENSSL})
-    else()
-      # if not explicitly specified, we always add an RPATH
-      set(ARG_WRITE_RPATH TRUE)
-    endif()
   endif()
 
   if(NOT ARG_USE_LIBDIR AND WIN32 AND (ARG_DESTINATION STREQUAL INSTALL_LIBDIR OR ARG_DESTINATION MATCHES "^${INSTALL_LIBDIR}/.*"))
@@ -372,14 +470,28 @@ function(install_bundled_binaries)
   foreach(SOURCE_BINARY ${ARG_BINARIES})
     get_filename_component(SOURCE_BINARY_NAME "${SOURCE_BINARY}" NAME)
     set(COPIED_BINARY "${DESTINATION_BINARY_DIR}/${SOURCE_BINARY_NAME}")
-    set(COPY_TARGET "copy_${SOURCE_BINARY_NAME}")
+    # Sanitise target names and avoid collisions between identical basenames
+    # or names that become identical after sanitisation.
+    string(REGEX REPLACE "[^a-zA-Z0-9_]" "_" SAFE_BINARY_NAME "${SOURCE_BINARY_NAME}")
+    set(COPY_TARGET "copy_${SAFE_BINARY_NAME}")
+    set(_copy_target_suffix 0)
+    while(TARGET "${COPY_TARGET}")
+      math(EXPR _copy_target_suffix "${_copy_target_suffix} + 1")
+      set(COPY_TARGET "copy_${SAFE_BINARY_NAME}_${_copy_target_suffix}")
+    endwhile()
     SET(COPY_COMMAND "")
+    set(COPY_DEPENDS "${SOURCE_BINARY}" "${CMAKE_SOURCE_DIR}/cmake/copy_file.cmake")
 
     if(NOT IS_SYMLINK "${SOURCE_BINARY}")
       message(STATUS "  Bundling binary: ${SOURCE_BINARY}, installation directory: ${ARG_DESTINATION}")
       if(LINUX)
+        set(_force_set)
         if(ARG_WRITE_RPATH)
-          get_rpath_command(BINARY "${COPIED_BINARY}" DESTINATION "${ARG_DESTINATION}" OUT_COMMAND RPATH_COMMAND)
+          set(_force_set FORCE_SET)
+        endif()
+        get_linux_rpath_command(TARGET_BINARY "${COPIED_BINARY}" SOURCE_BINARY "${SOURCE_BINARY}"
+            DESTINATION "${ARG_DESTINATION}" OUT_COMMAND RPATH_COMMAND ${_force_set})
+        if(RPATH_COMMAND)
           message(STATUS "    will execute: ${RPATH_COMMAND}")
           list(APPEND COPY_COMMAND COMMAND ${RPATH_COMMAND})
         endif()
@@ -398,7 +510,7 @@ function(install_bundled_binaries)
           list(APPEND COPY_COMMAND COMMAND install_name_tool -id "${SOURCE_BINARY_NAME}" "${COPIED_BINARY}")
         endif()
 
-        if(ARG_WRITE_RPATH)
+        if(BUNDLED_OPENSSL)
           get_use_bundled_openssl_command(PATTERN "${COPIED_BINARY}" OUT_COMMAND COMMAND)
           list(APPEND COPY_COMMAND COMMAND ${COMMAND})
         endif()
@@ -426,11 +538,12 @@ function(install_bundled_binaries)
     # create a dependency, so that files are copied only if source changes
     add_custom_command(OUTPUT "${COPIED_BINARY}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${DESTINATION_BINARY_DIR}"
-        COMMAND ${CMAKE_COMMAND} -Dsrc_file="${SOURCE_BINARY}" -Ddst_dir="${DESTINATION_BINARY_DIR}" -P "${CMAKE_SOURCE_DIR}/cmake/copy_file.cmake"
+        COMMAND ${CMAKE_COMMAND} "-Dsrc_file=${SOURCE_BINARY}" "-Ddst_dir=${DESTINATION_BINARY_DIR}" -P "${CMAKE_SOURCE_DIR}/cmake/copy_file.cmake"
         ${COPY_COMMAND}
         ${ARG_EXTRA_COPY_COMMANDS}
-        DEPENDS "${SOURCE_BINARY}"
+        DEPENDS ${COPY_DEPENDS}
         COMMENT "Copying ${SOURCE_BINARY} to ${DESTINATION_BINARY_DIR}..."
+        VERBATIM
     )
     add_custom_target("${COPY_TARGET}"
         DEPENDS "${COPIED_BINARY}"
@@ -503,6 +616,7 @@ function(install_bundled_directory)
       ${ARG_EXTRA_COPY_COMMANDS}
       DEPENDS ${COPY_DEPS}
       COMMENT "Copying contents of directory ${ARG_DIRECTORY} to ${DESTINATION_BINARY_DIR}..."
+      VERBATIM
   )
 
   get_filename_component(COPY_TARGET "${ARG_DESTINATION}" NAME)

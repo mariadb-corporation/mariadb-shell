@@ -104,8 +104,11 @@ def collect_member_info(zf: zipfile.ZipFile, prefix: str, session: InstanceSessi
 
     # MariaDB has no server_uuid
     server_uuid_expr = "NULL" if session.is_mariadb else "@@server_uuid"
+    version_with_update = session.run_sql(
+        "SHOW VARIABLES LIKE 'version_with_update'").fetch_one()
+    version_sql = "@@version_with_update" if version_with_update else "@@version"
     utc_time, local_time, time_zone, sys_tz, tz_offs, hostname, port, report_host, report_port, server_uuid, server_id, version = session.run_sql(
-        f"select utc_timestamp(), now(), @@time_zone, @@system_time_zone, cast(TIMEDIFF(NOW(), UTC_TIMESTAMP()) as char), @@hostname, @@port, @@report_host, @@report_port, {server_uuid_expr}, @@server_id, concat(@@version_comment, ' ', @@version)").fetch_one()
+        f"select utc_timestamp(), now(), @@time_zone, @@system_time_zone, cast(TIMEDIFF(NOW(), UTC_TIMESTAMP()) as char), @@hostname, @@port, @@report_host, @@report_port, {server_uuid_expr}, @@server_id, concat(@@version_comment, ' ', {version_sql})").fetch_one()
 
     try:
         sys_version = session.run_sql(

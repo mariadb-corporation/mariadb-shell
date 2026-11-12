@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,6 +37,7 @@
 #include "mysqlshdk/libs/db/utils/utils.h"
 #include "mysqlshdk/libs/ssh/ssh_manager.h"
 #include "mysqlshdk/libs/utils/option_tracker.h"
+#include "mysqlshdk/libs/utils/strformat.h"
 #include "shellcore/shell_notifications.h"
 #include "shellcore/utils_help.h"
 #include "utils/utils_general.h"
@@ -639,11 +640,26 @@ shcore::Value::Map_type_ref ClassicSession::get_status() {
     }
 
     result = _session->query(
+        "SHOW SESSION STATUS LIKE 'Tls_key_exchange_algorithm'");
+    row = result->fetch_one();
+    if (row) {
+      (*status)["TLS_KEY_EXCHANGE_ALGORITHM"] =
+          shcore::Value(row->get_string(1));
+    }
+
+    result = _session->query("SHOW SESSION STATUS LIKE 'Tls_sign_algorithm'");
+    row = result->fetch_one();
+    if (row) {
+      (*status)["TLS_SIGNATURE_ALGORITHM"] = shcore::Value(row->get_string(1));
+    }
+
+    result = _session->query(shcore::str_format(
         "select @@character_set_client, @@character_set_connection, "
         "@@character_set_server, @@character_set_database, "
-        "concat(@@version, ' ', @@version_comment) as version, "
+        "concat(%s, ' ', @@version_comment) as version, "
         "@@socket, @@port, @@datadir, @@character_set_results "
-        "limit 1");
+        "limit 1",
+        mysqlshdk::db::get_server_version_sql(_session)));
 
     row = result->fetch_one();
 
@@ -670,10 +686,8 @@ shcore::Value::Map_type_ref ClassicSession::get_status() {
         (*status)["UNIX_SOCKET"] = shcore::Value(socket_abs_path);
       }
 
-      unsigned long ver = mysql_get_client_version();
-      std::stringstream sv;
-      sv << ver / 10000 << "." << (ver % 10000) / 100 << "." << ver % 100;
-      (*status)["CLIENT_LIBRARY"] = shcore::Value(sv.str());
+      (*status)["CLIENT_LIBRARY"] =
+          shcore::Value(mysqlshdk::db::get_client_library_version());
 
       if (_session->get_stats())
         (*status)["SERVER_STATS"] = shcore::Value(_session->get_stats());

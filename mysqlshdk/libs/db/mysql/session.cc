@@ -310,9 +310,11 @@ void Session_impl::connect(
     const mysqlshdk::db::Connection_options &connection_options) {
   long flags = CLIENT_MULTI_RESULTS;
 
-  if (connection_options.is_interactive()) {
-    flags |= CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS | CLIENT_INTERACTIVE;
-  }
+  if (connection_options.can_handle_expired_passwords() ||
+      connection_options.is_interactive())
+    flags |= CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS;
+
+  if (connection_options.is_interactive()) flags |= CLIENT_INTERACTIVE;
 
   _mysql = mysql_init(nullptr);
 
@@ -539,6 +541,10 @@ void Session_impl::connect(
   static_assert(MAX_AUTH_FACTORS == 3);
   for (int factor = 1; factor <= 3; factor++) {
     if (_connection_options.has_mfa_password(factor - 1)) {
+      DBUG_LOG("sqlconnectpwd",
+               "MYSQL_OPT_USER_PASSWORD: "
+                   << factor << ": "
+                   << _connection_options.get_mfa_password(factor - 1));
       mysql_options4(_mysql, MYSQL_OPT_USER_PASSWORD, &factor,
                      _connection_options.get_mfa_password(factor - 1).c_str());
     }
@@ -606,6 +612,20 @@ void Session_impl::connect(
   }
 
   m_thread_id = mysql_thread_id(_mysql);
+
+  if (_connection_options.has_register_factor()) {
+#ifdef MARIADB_BUILD
+    // FIDO/WebAuthn device registration relies on the MySQL fido auth plugin,
+    // which libmariadb does not have.
+    log_warning(
+        "FIDO device registration (register-factor) is not supported by the "
+        "MariaDB client library and will be ignored.");
+#else
+    fido::register_device(_mysql,
+                          _connection_options.get_register_factor().c_str());
+#endif
+    _connection_options.remove(kRegisterFactor);
+  }
 }
 
 std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(
@@ -655,6 +675,12 @@ std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(
                     (ssl_options.get_tls_ciphersuites().c_str()));
 #endif
 
+#ifndef MARIADB_BUILD
+    if (ssl_options.has_tls_kex())
+      mysql_options(_mysql, MYSQL_OPT_TLS_KEX,
+                    ssl_options.get_tls_kex().c_str());
+#endif
+
     if (ssl_options.has_cert())
       mysql_options(_mysql, MYSQL_OPT_SSL_CERT,
                     (ssl_options.get_cert().c_str()));
@@ -701,6 +727,12 @@ std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(
     mysql_options(_mysql, MYSQL_OPT_SSL_ENFORCE, &enforce);
     mysql_options(_mysql, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verify);
   }
+#else
+  const bool force_pqc = ssl_options.get_force_pqc();
+  mysql_options(_mysql, MYSQL_OPT_FORCE_PQC, &force_pqc);
+
+  const bool use_pqc_sign = ssl_options.get_use_pqc_sign();
+  mysql_options(_mysql, MYSQL_OPT_USE_PQC_SIGN, &use_pqc_sign);
 #endif
 
   return ssl_mode;

@@ -179,7 +179,8 @@ enum class OperatingSystem {
   LINUX,
   WINDOWS_OS,  // WINDOWS conflicts with a zlib #define
   MACOS,
-  SOLARIS
+  SOLARIS,
+  FREEBSD,
 };
 std::string SHCORE_PUBLIC to_string(OperatingSystem os_type);
 
@@ -294,7 +295,8 @@ std::string SHCORE_PUBLIC unquote_identifier(std::string_view str,
                                              bool allow_ansi_quotes = false);
 
 std::string SHCORE_PUBLIC unquote_sql_string(std::string_view str,
-                                             char quote = '\'');
+                                             char quote = '\'',
+                                             bool no_backslash_escapes = false);
 
 /**
  * Check whether a variable is enabled in @@session_track_system_variables,

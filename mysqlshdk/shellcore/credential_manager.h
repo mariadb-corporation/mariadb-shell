@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,7 +27,9 @@
 #ifndef MYSQLSHDK_SHELLCORE_CREDENTIAL_MANAGER_H_
 #define MYSQLSHDK_SHELLCORE_CREDENTIAL_MANAGER_H_
 
+#include <array>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -53,6 +55,9 @@ namespace shcore {
 class Credential_manager : public NotificationObserver {
  public:
   enum class Save_passwords { ALWAYS, PROMPT, NEVER };
+  using Factor_mask = mysqlshdk::db::Auth_factor_mask;
+  using Mfa_passwords =
+      std::array<std::optional<std::string>, mysqlshdk::db::k_max_auth_factors>;
 
   Credential_manager(const Credential_manager &) = delete;
   Credential_manager(Credential_manager &&) = delete;
@@ -60,6 +65,10 @@ class Credential_manager : public NotificationObserver {
   Credential_manager &operator=(Credential_manager &&) = delete;
 
   static Credential_manager &get();
+
+  static std::string normalize_credential_url(const std::string &url);
+  static std::string normalize_credential_url(
+      const mysqlshdk::IConnection &options);
 
   void register_options(Options *options);
 
@@ -73,34 +82,38 @@ class Credential_manager : public NotificationObserver {
 
   bool get_password(mysqlshdk::IConnection *options) const;
 
+  Factor_mask get_mfa_passwords(const std::string &url,
+                                const Factor_mask &requested,
+                                Mfa_passwords *passwords) const;
+
   bool save_password(const mysqlshdk::IConnection &options);
+
+  bool save_mfa_passwords(const std::string &url,
+                          const Mfa_passwords &passwords,
+                          const Factor_mask &factors);
 
   bool remove_password(const mysqlshdk::IConnection &options);
 
+  bool remove_mfa_passwords(const std::string &url, const Factor_mask &factors);
+
   bool get_credential(const std::string &url, std::string *credential) const;
 
-  bool should_save_password(const std::string &url);
+  bool should_save_password(const std::string &url,
+                            bool all_prompted_passwords = false);
 
   // shell API
 
   std::vector<std::string> list_credential_helpers() const;
 
-  inline void store_credential(const std::string &url,
-                               const std::string &credential) {
-    store_secret(Secret_type::PASSWORD, url, credential);
-  }
+  void store_credential(const std::string &url, const Mfa_passwords &passwords);
 
-  inline void delete_credential(const std::string &url) {
-    delete_secret(Secret_type::PASSWORD, url);
-  }
+  void store_credential(const std::string &url, const std::string &password);
 
-  inline void delete_all_credentials() {
-    delete_all_secrets(Secret_type::PASSWORD);
-  }
+  void delete_credential(const std::string &url);
 
-  inline std::vector<std::string> list_credentials() const {
-    return list_secrets(Secret_type::PASSWORD);
-  }
+  void delete_all_credentials();
+
+  std::vector<std::string> list_credentials() const;
 
   // the group of a secret is a lower-case UUID, or empty for the default group
 
@@ -109,10 +122,7 @@ class Credential_manager : public NotificationObserver {
 
   std::string read_secret(const std::string &id, const std::string &group = {});
 
-  inline void delete_secret(const std::string &id,
-                            const std::string &group = {}) {
-    delete_secret(Secret_type::GENERIC, id, group);
-  }
+  void delete_secret(const std::string &id, const std::string &group = {});
 
   inline void delete_all_secrets(const std::string &group = {}) {
     delete_all_secrets(Secret_type::GENERIC, group);

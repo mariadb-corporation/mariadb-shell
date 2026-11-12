@@ -28,6 +28,9 @@
 
 #include "mysqlshdk/libs/utils/version.h"
 
+#include <utility>
+#include <vector>
+
 #include "unittest/gtest_clean.h"
 #include "unittest/test_utils/mocks/gmock_clean.h"
 
@@ -154,6 +157,69 @@ TEST(Version, version_parsing) {
   EXPECT_STREQ("8.4.0", Version(8, 4, 0).get_base().c_str());
 }
 
+TEST(Version, update_parsing_and_formatting) {
+  for (const auto *base : {"8.4.8", "9.7.0", "26.7.1"}) {
+    for (const int update : {0, 1, 123}) {
+      for (const auto *extra : {"", "-debug", "-commercial-cloud"}) {
+        const auto full =
+            std::string(base) + "." + std::to_string(update) + extra;
+        SCOPED_TRACE(full);
+        const Version v(full);
+        EXPECT_TRUE(v.has_update());
+        EXPECT_EQ(update, v.get_update());
+        EXPECT_EQ(std::string(base) + "." + std::to_string(update),
+                  v.get_base_with_update());
+        EXPECT_EQ(full, v.get_full_with_update());
+        EXPECT_EQ(base, v.get_base());
+        EXPECT_EQ(std::string(base) + extra, v.get_full());
+        EXPECT_EQ(Version(std::string(base) + extra).is_mds(), v.is_mds());
+      }
+    }
+  }
+
+  for (const auto &[full, base] :
+       std::vector<std::pair<const char *, const char *>>{
+           {"8", "8"},
+           {"8.4", "8.4"},
+           {"8.4.8", "8.4.8"},
+           {"8.4.8-debug", "8.4.8"},
+       }) {
+    const Version v(full);
+    EXPECT_FALSE(v.has_update());
+    EXPECT_EQ(0, v.get_update());
+    EXPECT_EQ(base, v.get_base_with_update());
+    EXPECT_EQ(full, v.get_full_with_update());
+  }
+
+  for (const auto *invalid : {"9.7.0.", "9.7.0.x", "9.7.0.1x", "9.7.0.1.2",
+                              "9.7.0.2147483648", "9.7.0.-debug"}) {
+    SCOPED_TRACE(invalid);
+    EXPECT_THROW(Version{invalid}, std::invalid_argument);
+  }
+}
+
+TEST(Version, update_does_not_affect_compatibility) {
+  for (const auto *base : {"8.4.8", "9.7.0", "26.7.1"}) {
+    for (const auto *update : {"", ".0", ".1", ".123-debug"}) {
+      const Version v(std::string(base) + update);
+      for (const auto *other_update : {"", ".0", ".2", ".456-commercial"}) {
+        const Version other(std::string(base) + other_update);
+        EXPECT_TRUE(v == other);
+        EXPECT_FALSE(v != other);
+        EXPECT_TRUE(v <= other);
+        EXPECT_TRUE(v >= other);
+        EXPECT_FALSE(v < other);
+        EXPECT_FALSE(v > other);
+        EXPECT_EQ(other.numeric(), v.numeric());
+        EXPECT_EQ(other.numeric_version_series(), v.numeric_version_series());
+        EXPECT_EQ(version::is_lts(other), version::is_lts(v));
+        EXPECT_EQ(0, version::major_difference(v, other));
+      }
+      EXPECT_LT(v, Version(v.get_major(), v.get_minor(), v.get_patch() + 1));
+    }
+  }
+}
+
 TEST(Version, corresponding_versions) {
   EXPECT_THAT(version::corresponding_versions(Version(8, 1, 0)),
               ElementsAre(Version(8, 0, 34), Version(8, 1, 0)));
@@ -229,26 +295,26 @@ TEST(Version, corresponding_versions) {
 
   EXPECT_THAT(
       version::corresponding_versions(Version(26, 10, 0)),
-      ElementsAre(Version(8, 4, 12), Version(9, 7, 3), Version(26, 10, 0)));
+      ElementsAre(Version(8, 4, 13), Version(9, 7, 4), Version(26, 10, 0)));
 
   EXPECT_THAT(
       version::corresponding_versions(Version(27, 1, 0)),
-      ElementsAre(Version(8, 4, 13), Version(9, 7, 4), Version(27, 1, 0)));
+      ElementsAre(Version(8, 4, 14), Version(9, 7, 5), Version(27, 1, 0)));
 
   EXPECT_THAT(
       version::corresponding_versions(Version(28, 4, 0)),
-      ElementsAre(Version(8, 4, 18), Version(9, 7, 9), Version(28, 4, 0)));
+      ElementsAre(Version(8, 4, 19), Version(9, 7, 10), Version(28, 4, 0)));
 
   EXPECT_THAT(
       version::corresponding_versions(Version(28, 4, 1)),
-      ElementsAre(Version(8, 4, 19), Version(9, 7, 10), Version(28, 4, 1)));
+      ElementsAre(Version(8, 4, 20), Version(9, 7, 11), Version(28, 4, 1)));
 
   EXPECT_THAT(
       version::corresponding_versions(Version(28, 4, 5)),
-      ElementsAre(Version(8, 4, 23), Version(9, 7, 14), Version(28, 4, 5)));
+      ElementsAre(Version(8, 4, 24), Version(9, 7, 15), Version(28, 4, 5)));
 
   EXPECT_THAT(version::corresponding_versions(Version(28, 7, 0)),
-              ElementsAre(Version(8, 4, 19), Version(9, 7, 10),
+              ElementsAre(Version(8, 4, 20), Version(9, 7, 11),
                           Version(28, 4, 1), Version(28, 7, 0)));
 
   const auto overlap_versions =

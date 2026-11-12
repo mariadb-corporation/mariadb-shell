@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -66,6 +66,8 @@ constexpr auto k_secret_type_generic = "generic";
 [[noreturn]] void throw_json_error(const std::string &msg) {
   throw std::runtime_error{"Failed to parse JSON output: " + msg};
 }
+
+}  // namespace
 
 std::string validate_url(const std::string &url) {
   using mysqlshdk::db::uri::Generic_uri;
@@ -142,6 +144,8 @@ std::string validate_url(const std::string &url) {
 
   return options.as_uri(tokens);
 }
+
+namespace {
 
 std::string to_string(Secret_type type) {
   switch (type) {

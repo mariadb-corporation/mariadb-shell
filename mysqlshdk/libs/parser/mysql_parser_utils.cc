@@ -134,9 +134,11 @@ class Parser_context {
     }
 
     m_parser.sqlMode = m_lexer.sqlMode = mode;
-    m_parser.serverVersion = m_lexer.serverVersion =
+    const auto version =
         (config.mysql_version ? config.mysql_version : utils::k_shell_version)
             .numeric();
+    m_lexer.set_server_version(version);
+    m_parser.serverVersion = m_lexer.serverVersion;
   }
 
   void traverse_ast(IParser_listener *listener, antlr4::tree::ParseTree *tree) {
@@ -289,9 +291,9 @@ class Tokenizer_context {
     }
 
     m_lexer.sqlMode = mode;
-    m_lexer.serverVersion =
+    m_lexer.set_server_version(
         (config.mysql_version ? config.mysql_version : utils::k_shell_version)
-            .numeric();
+            .numeric());
   }
 
   ANTLRInputStream m_input;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -174,7 +174,8 @@ TEST(Cmdline_shell, prompt_py) {
   shcore::delete_file("test.theme");
 }
 
-static bool print_capture(void *cdata, const char *text) {
+static bool print_capture(void *cdata, const char *text,
+                          const shcore::Dictionary_t &) {
   std::string *capture = static_cast<std::string *>(cdata);
   capture->append(text).append("\n");
   return true;

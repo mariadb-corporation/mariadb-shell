@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -81,7 +81,7 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   Bool reconnect();
   Undefined status();
   List listCredentialHelpers();
-  Undefined storeCredential(String url, String password);
+  Undefined storeCredential(String url, String | Dictionary password);
   Undefined deleteCredential(String url);
   Undefined deleteAllCredentials();
   List listCredentials();
@@ -129,7 +129,7 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
   bool reconnect();
   None status();
   list list_credential_helpers();
-  None store_credential(str url, str password);
+  None store_credential(str url, str | dict password);
   None delete_credential(str url);
   None delete_all_credentials();
   list list_credentials();
@@ -198,7 +198,7 @@ class SHCORE_PUBLIC Shell : public shcore::Cpp_object_bridge
 
   shcore::Array_t list_credential_helpers();
   void store_credential(const std::string &url,
-                        std::optional<std::string> password);
+                        std::optional<shcore::Value> password);
   void delete_credential(const std::string &url);
   void delete_all_credentials();
   shcore::Array_t list_credentials();

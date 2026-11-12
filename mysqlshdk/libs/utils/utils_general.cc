@@ -41,6 +41,7 @@
 #ifdef WIN32
 #include <Lmcons.h>
 #else
+#include <sys/wait.h>
 #include <unistd.h>
 #ifdef HAVE_GETPWUID_R
 #include <pwd.h>
@@ -280,6 +281,7 @@ std::string errno_to_string(int err) {
 #endif
 
 #if defined(_WIN32) || defined(__sun) || defined(__APPLE__) || \
+    defined(__FreeBSD__) ||                                    \
     ((_POSIX_C_SOURCE >= 200112L || _XOPEN_SOURCE >= 600) &&   \
      !_GNU_SOURCE)  // NOLINT
   char buf[256];
@@ -640,7 +642,8 @@ std::string SHCORE_PUBLIC unquote_identifier(std::string_view str,
   return object;
 }
 
-std::string SHCORE_PUBLIC unquote_sql_string(std::string_view s, char quote) {
+std::string SHCORE_PUBLIC unquote_sql_string(std::string_view s, char quote,
+                                             bool no_backslash_escapes) {
   if (s.length() < 2 || s[0] != quote || s[0] != s.back())
     throw std::invalid_argument("string is not properly quoted");
 
@@ -652,7 +655,7 @@ std::string SHCORE_PUBLIC unquote_sql_string(std::string_view s, char quote) {
 
   offs = 1;  // skip opening quote
 
-  const char needle[] = {quote, '\\', '\0'};
+  const char needle[] = {quote, no_backslash_escapes ? '\0' : '\\', '\0'};
 
   for (;;) {
     auto p = s.find_first_of(needle, offs);
@@ -663,7 +666,7 @@ std::string SHCORE_PUBLIC unquote_sql_string(std::string_view s, char quote) {
       result.append(s.data() + offs, p - offs);
     }
 
-    if (s[p] == '\\') {
+    if (!no_backslash_escapes && s[p] == '\\') {
       ++p;
       switch (s[p]) {
         case 0:
@@ -690,10 +693,9 @@ std::string SHCORE_PUBLIC unquote_sql_string(std::string_view s, char quote) {
       }
     } else {
       ++p;
+      if (p == end) break;
       if (s[p] == quote)
         result.push_back(quote);
-      else if (p == end)
-        break;
       else
         throw std::invalid_argument("string is not properly quoted");
     }
@@ -723,6 +725,8 @@ OperatingSystem get_os_type() {
   os = OperatingSystem::MACOS;
 #elif __sun
   os = OperatingSystem::SOLARIS;
+#elif __FreeBSD__
+  os = OperatingSystem::FREEBSD;
 #elif __linux__
   os = OperatingSystem::LINUX;
 
@@ -792,6 +796,8 @@ std::string to_string(OperatingSystem os_type) {
       return "macos";
     case OperatingSystem::SOLARIS:
       return "solaris";
+    case OperatingSystem::FREEBSD:
+      return "freebsd";
     default:
       assert(0);
       return "unknown";

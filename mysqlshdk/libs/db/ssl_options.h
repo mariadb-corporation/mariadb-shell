@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
+ * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -59,6 +60,11 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   bool has_cipher() const { return has_value(kSslCipher); }
   bool has_tls_version() const { return has_value(kSslTlsVersion); }
   bool has_tls_ciphersuites() const { return has_value(kSslTlsCiphersuites); }
+#ifndef MARIADB_BUILD
+  bool has_tls_kex() const { return has_value(kSslTlsKex); }
+  bool has_force_pqc() const { return has_value(kSslForcePqc); }
+  bool has_use_pqc_sign() const { return has_value(kSslUsePqcSign); }
+#endif
 
   Ssl_mode get_mode() const;
   std::string get_mode_name() const;
@@ -73,6 +79,11 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   const std::string &get_tls_ciphersuites() const {
     return _get(kSslTlsCiphersuites);
   }
+#ifndef MARIADB_BUILD
+  const std::string &get_tls_kex() const { return _get(kSslTlsKex); }
+  bool get_force_pqc() const { return _get_bool(kSslForcePqc); }
+  bool get_use_pqc_sign() const { return _get_bool(kSslUsePqcSign); }
+#endif
 
   void clear_mode() { clear_value(kSslMode); }
   void clear_ca() { clear_value(kSslCa); }
@@ -84,6 +95,11 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   void clear_cipher() { clear_value(kSslCipher); }
   void clear_tls_version() { clear_value(kSslTlsVersion); }
   void clear_tls_ciphersuites() { clear_value(kSslTlsCiphersuites); }
+#ifndef MARIADB_BUILD
+  void clear_tls_kex() { clear_value(kSslTlsKex); }
+  void clear_force_pqc() { clear_value(kSslForcePqc); }
+  void clear_use_pqc_sign() { clear_value(kSslUsePqcSign); }
+#endif
 
   void set_mode(Ssl_mode value);
   void set_ca(const std::string &value);
@@ -93,6 +109,11 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   void set_cipher(const std::string &value);
   void set_tls_version(const std::string &value);
   void set_tls_ciphersuites(const std::string &value);
+#ifndef MARIADB_BUILD
+  void set_tls_kex(const std::string &value);
+  void set_force_pqc(bool value);
+  void set_use_pqc_sign(bool value);
+#endif
   void set_cert(const std::string &value);
   void set_key(const std::string &value);
 
@@ -102,6 +123,7 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
 
  private:
   const std::string &_get(const std::string &attribute) const;
+  bool _get_bool(const std::string &attribute) const;
 };
 }  // namespace db
 }  // namespace mysqlshdk

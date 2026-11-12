@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1312,6 +1312,14 @@ TEST(Uri_parser, parse_query) {
   // atts[kSslCaPath] = {"[one,two,three]"};
   atts[mysqlshdk::db::kSslCaPath] = {"ca_path"};
   atts[mysqlshdk::db::kSslCipher] = {"/what/e/ver"};
+
+#ifndef MARIADB_BUILD
+  // WL17311-AUTO-02
+  atts[mysqlshdk::db::kSslTlsKex] = {"X25519MLKEM768:X25519"};
+  atts[mysqlshdk::db::kSslForcePqc] = {"true"};
+  atts[mysqlshdk::db::kSslUsePqcSign] = {"false"};
+#endif
+
   // validate_uri("mysqlx://user@10.150.123.45:2845/world?ssl-ca=value&auth-method=my%20space&ssl-cert&sslCapath=[one,two,three]&ssl-cipher=(/what/e/ver)",
   // "mysqlx", "user", NO_PASSWORD, "10.150.123.45", 2845, NO_SOCK, "world",
   // HAS_NO_PASSWORD, HAS_PORT, Transport_type::Tcp, &atts);
@@ -1319,7 +1327,11 @@ TEST(Uri_parser, parse_query) {
       "mysqlx://user@10.150.123.45:2845/"
       "world?ssl-ca=value&auth-method=my%20space&ssl-cert=cert&ssl-capath=ca_"
       "path&"
-      "ssl-cipher=(/what/e/ver)",
+      "ssl-cipher=(/what/e/ver)"
+#ifndef MARIADB_BUILD
+      "&tls-kex=X25519MLKEM768%3AX25519&force-pqc=true&use-pqc-sign=false"
+#endif
+      ,
       "mysqlx", "user", NO_PASSWORD, "10.150.123.45", 2845, NO_SOCK, "world",
       HAS_NO_PASSWORD, HAS_PORT, Transport_type::Tcp, false, false, &atts);
 }

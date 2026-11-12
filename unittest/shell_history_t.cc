@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -92,7 +92,8 @@ class Shell_history : public ::testing::Test {
   shcore::Interpreter_print_handler m_handler;
 
  private:
-  static bool print_capture(void *cdata, const char *text) {
+  static bool print_capture(void *cdata, const char *text,
+                            const shcore::Dictionary_t &) {
     std::string *m_capture = static_cast<std::string *>(cdata);
     m_capture->append(text).append("\n");
     return true;

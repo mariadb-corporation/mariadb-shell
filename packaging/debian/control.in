@@ -3,7 +3,7 @@ Section: database
 Priority: optional
 Maintainer: MariaDB Corporation <info@mariadb.com>
 Standards-Version: 3.9.2
-Build-Depends: debhelper (>= 8.9.4), cmake (>= 2.8.5), @DEB_BUILD_DEPS@
+Build-Depends: debhelper (>= 11), cmake (>= 2.8.5), @DEB_BUILD_DEPS@
 Homepage: https://mariadb.com/
 Vcs-Git: https://github.com/mariadb-corporation/mariadb-shell.git
 Vcs-Browser: https://github.com/mariadb-corporation/mariadb-shell

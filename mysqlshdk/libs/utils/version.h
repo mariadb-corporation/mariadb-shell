@@ -38,7 +38,8 @@ namespace mysqlshdk {
 namespace utils {
 /**
  * Class to handle versions following the MySQL Standard which is
- * \<major\>.\<minor\>.\<patch\>[-extra]
+ * \<major\>.\<minor\>.\<patch\>[.update][-extra].
+ * Comparisons and numeric conversions ignore the update and extra parts.
  */
 class Version {
  public:
@@ -70,6 +71,16 @@ class Version {
   bool has_patch() const { return _patch.has_value(); }
 
   /**
+   * Returns the update version, or 0 if not present.
+   */
+  int get_update() const { return _update.value_or(0); }
+
+  /**
+   * Returns true if the update version is present.
+   */
+  bool has_update() const { return _update.has_value(); }
+
+  /**
    * Returns the extra part of the version string, or an empty string if not
    * present.
    */
@@ -86,9 +97,21 @@ class Version {
   std::string get_base() const;
 
   /**
+   * Returns the version string including the update part when present:
+   * \<major\>.\<minor\>.\<patch\>[.update].
+   */
+  std::string get_base_with_update() const;
+
+  /**
    * Returns the version string in format \<major\>.\<minor\>.\<patch\>[-extra].
    */
   std::string get_full() const;
+
+  /**
+   * Returns the version string including the update part when present:
+   * \<major\>.\<minor\>.\<patch\>[.update][-extra].
+   */
+  std::string get_full_with_update() const;
 
   /**
    * Returns the numeric version: MMmmpp, where M - major, m - minor, p - patch.
@@ -124,6 +147,7 @@ class Version {
   int _major = 0;
   std::optional<int> _minor;
   std::optional<int> _patch;
+  std::optional<int> _update;
   std::optional<std::string> _extra;
 
   int parse_token(std::string_view data);

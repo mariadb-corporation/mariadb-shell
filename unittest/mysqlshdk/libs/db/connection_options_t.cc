@@ -102,6 +102,41 @@ TEST(Connection_options, default_initialization) {
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSocket));
 }
 
+TEST(Connection_options, webauthn_client_preserve_privacy) {
+  Connection_options options;
+
+  options.set_webauthn_client_preserve_privacy(true);
+  EXPECT_TRUE(options.has(mysqlshdk::db::kWebauthnClientPreservePrivacy));
+  EXPECT_TRUE(options.has_value(mysqlshdk::db::kWebauthnClientPreservePrivacy));
+  EXPECT_EQ("true", options.get(mysqlshdk::db::kWebauthnClientPreservePrivacy));
+
+  options.set_webauthn_client_preserve_privacy(false);
+  EXPECT_EQ("false",
+            options.get(mysqlshdk::db::kWebauthnClientPreservePrivacy));
+}
+
+TEST(Connection_options, override_webauthn_device_index) {
+  Connection_options options;
+  options.set_webauth_device_index(1);
+
+  options.override_with(Connection_options("mysql://user@host"));
+  ASSERT_TRUE(options.has_webauth_device_index());
+  EXPECT_EQ(1, options.get_webauth_device_index());
+
+  options.override_with(Connection_options(
+      "mysql://user@host?plugin-authentication-webauthn-device=2"));
+  EXPECT_EQ(2, options.get_webauth_device_index());
+}
+
+TEST(Connection_options, register_factor_uri) {
+  constexpr auto uri = "mysql://user@host?register-factor=2";
+  const Connection_options options(uri);
+
+  ASSERT_TRUE(options.has_register_factor());
+  EXPECT_EQ("2", options.get_register_factor());
+  EXPECT_EQ(uri, options.as_uri(mysqlshdk::db::uri::formats::full()));
+}
+
 TEST(Connection_options, scheme_functions) {
   Connection_options options;
   std::string msg;
@@ -275,6 +310,84 @@ TEST(Connection_options, uri_constructor) {
   }
 }
 
+#ifndef MARIADB_BUILD
+// WL17311-AUTO-02
+TEST(Connection_options, pqc_uri_round_trip) {
+  const std::string uri =
+      "mysqlx://user@host:33060?tls-kex=X25519MLKEM768%3AX25519&"
+      "force-pqc=true&use-pqc-sign=false";
+
+  Connection_options options(uri);
+  const auto &ssl = options.get_ssl_options();
+
+  EXPECT_EQ("X25519MLKEM768:X25519", ssl.get_tls_kex());
+  EXPECT_TRUE(ssl.get_force_pqc());
+  EXPECT_FALSE(ssl.get_use_pqc_sign());
+  EXPECT_EQ(
+      "mysqlx://user@host:33060?force-pqc=true&"
+      "tls-kex=X25519MLKEM768%3AX25519&use-pqc-sign=false",
+      options.as_uri(mysqlshdk::db::uri::formats::full()));
+}
+
+// WL17311-AUTO-02
+TEST(Connection_options, pqc_login_options_copy_and_override) {
+  Connection_options source;
+  auto &source_ssl = source.get_ssl_options();
+  source_ssl.set_tls_kex("X25519MLKEM768:X25519");
+  source_ssl.set_force_pqc(true);
+  source_ssl.set_use_pqc_sign(false);
+
+  Connection_options copied;
+  copied.set_login_options_from(source);
+  EXPECT_EQ("X25519MLKEM768:X25519", copied.get_ssl_options().get_tls_kex());
+  EXPECT_TRUE(copied.get_ssl_options().get_force_pqc());
+  EXPECT_FALSE(copied.get_ssl_options().get_use_pqc_sign());
+
+  Connection_options overridden;
+  overridden.override_with(source);
+  EXPECT_EQ("X25519MLKEM768:X25519",
+            overridden.get_ssl_options().get_tls_kex());
+  EXPECT_TRUE(overridden.get_ssl_options().get_force_pqc());
+  EXPECT_FALSE(overridden.get_ssl_options().get_use_pqc_sign());
+
+  Connection_options empty;
+  overridden.set_login_options_from(empty);
+  EXPECT_FALSE(overridden.get_ssl_options().has_tls_kex());
+  EXPECT_FALSE(overridden.get_ssl_options().has_force_pqc());
+  EXPECT_FALSE(overridden.get_ssl_options().has_use_pqc_sign());
+}
+#else
+// MariaDB Connector/C has no setting for the post-quantum TLS options, so
+// MariaDB builds do not offer them.
+TEST(Connection_options, pqc_options_not_supported) {
+  for (const char *name : {"tls-kex", "force-pqc", "use-pqc-sign"}) {
+    SCOPED_TRACE(name);
+
+    try {
+      Connection_options options(std::string{"mysql://user@host?"} + name +
+                                 "=1");
+      ADD_FAILURE() << "expected an exception";
+    } catch (const std::invalid_argument &e) {
+      EXPECT_STREQ(
+          (std::string{"Invalid URI: Invalid connection option '"} + name +
+           "'.")
+              .c_str(),
+          e.what());
+    }
+
+    Connection_options options;
+    try {
+      options.set(name, "1");
+      ADD_FAILURE() << "expected an exception";
+    } catch (const std::invalid_argument &e) {
+      EXPECT_STREQ(
+          (std::string{"Invalid connection option '"} + name + "'.").c_str(),
+          e.what());
+    }
+  }
+}
+#endif
+
 void combine(
     const std::string &input,
     std::function<void(const std::string &, const std::string)> callback) {
@@ -378,6 +491,16 @@ TEST(Connection_options, case_insensitive_options) {
   auto callback = std::bind(case_insensitive::callback, std::placeholders::_1,
                             std::placeholders::_2, "whatever");
 
+#ifndef MARIADB_BUILD
+  // WL17311-AUTO-02
+  auto bool_callback =
+      std::bind(case_insensitive::callback, std::placeholders::_1,
+                std::placeholders::_2, "true");
+
+  combine(mysqlshdk::db::kSslForcePqc, bool_callback);
+  combine(mysqlshdk::db::kSslUsePqcSign, bool_callback);
+#endif
+
   std::set<std::string> attributes(uri_connection_attributes.begin(),
                                    uri_connection_attributes.end());
 
@@ -392,6 +515,10 @@ TEST(Connection_options, case_insensitive_options) {
   attributes.erase(mysqlshdk::db::kCompression);
   attributes.erase(mysqlshdk::db::kCompressionLevel);
   attributes.erase(mysqlshdk::db::kConnectionAttributes);
+#ifndef MARIADB_BUILD
+  attributes.erase(mysqlshdk::db::kSslForcePqc);
+  attributes.erase(mysqlshdk::db::kSslUsePqcSign);
+#endif
 #ifdef _WIN32
   attributes.erase(mysqlshdk::db::kKerberosClientAuthMode);
 #endif

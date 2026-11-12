@@ -22,10 +22,16 @@
  along with this program; if not, write to the Free Software Foundation, Inc.,
  51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA */
 
+#include <mysql.h>
+#include <mysqld_error.h>
+
+#include <array>
 #include <cstdio>
+#include <optional>
 
 #include "unittest/gprod_clean.h"
 
+#include "mysqlshdk/libs/db/utils/utils.h"
 #include "src/mysqlsh/cmdline_shell.h"
 #include "unittest/test_utils.h"
 #include "utils/shell_naming.h"
@@ -37,6 +43,25 @@ extern bool g_test_parallel_execution;
 extern "C" const char *g_test_home;
 
 namespace mysqlsh {
+namespace {
+
+std::optional<std::string> get_session_status_value(
+    const std::shared_ptr<ShellBaseSession> &session, const char *name) {
+  auto result = session->get_core_session()->query(
+      std::string{"SHOW SESSION STATUS LIKE '"} + name + "'");
+
+  if (const auto row = result->fetch_one()) return row->get_string(1);
+
+  return std::nullopt;
+}
+
+bool is_tls_algorithm_status_line(const std::string &line) {
+  return shcore::str_beginswith(line, "TLS key exchange algorithm:") ||
+         shcore::str_beginswith(line, "TLS signature algorithm:");
+}
+
+}  // namespace
+
 class Interactive_shell_test : public Shell_core_test_wrapper {
  protected:
 #ifdef HAVE_JS
@@ -44,6 +69,34 @@ class Interactive_shell_test : public Shell_core_test_wrapper {
 #else
   const std::string to_scripting = "\\py";
 #endif
+
+  void validate_tls_status_output(const std::string &uri) {
+    execute("\\connect " + uri + "?ssl-Mode=REQUIRED");
+    const auto session = _interactive_shell->shell_context()->get_dev_session();
+    const auto tls_kex =
+        get_session_status_value(session, "Tls_key_exchange_algorithm");
+    const auto tls_sign =
+        get_session_status_value(session, "Tls_sign_algorithm");
+
+    wipe_all();
+    execute("\\status");
+
+    if (tls_kex) {
+      // The value can be empty depending on the server, OpenSSL and protocol.
+      MY_EXPECT_STDOUT_CONTAINS(shcore::str_format(
+          "%-30s%s", "TLS key exchange algorithm: ", tls_kex->c_str()));
+    } else {
+      MY_EXPECT_STDOUT_NOT_CONTAINS("TLS key exchange algorithm:");
+    }
+
+    if (tls_sign) {
+      MY_EXPECT_STDOUT_CONTAINS(shcore::str_format(
+          "%-30s%s", "TLS signature algorithm: ", tls_sign->c_str()));
+    } else {
+      MY_EXPECT_STDOUT_NOT_CONTAINS("TLS signature algorithm:");
+    }
+  }
+
  public:
   virtual void set_options() {
     _options->interactive = true;
@@ -1294,14 +1347,18 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
   _interactive_shell->connect(_options->connection_options());
   output_handler.wipe_all();
   execute("drop user if exists expired;");
+  execute("drop user if exists expired2;");
   output_handler.wipe_all();
   execute("create user expired@'%' identified by 'sample';");
+  execute("create user expired2@'%' identified by 'sample';");
   MY_EXPECT_STDOUT_CONTAINS("Query OK, 0 rows affected");
   output_handler.wipe_all();
   execute("grant all on *.* to expired@'%';");
+  execute("grant all on *.* to expired2@'%';");
   MY_EXPECT_STDOUT_CONTAINS("Query OK, 0 rows affected");
   output_handler.wipe_all();
   execute("alter user expired@'%' password expire;");
+  execute("alter user expired2@'%' password expire;");
   MY_EXPECT_STDOUT_CONTAINS("Query OK, 0 rows affected");
   output_handler.wipe_all();
 
@@ -1341,6 +1398,32 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
     }
     wipe_all();
   }
+
+  // API-created classic sessions must also be able to handle expired
+  // passwords. MariaDB allows only SET statements on an expired account, so the
+  // password is changed with SET PASSWORD there.
+  const std::string reset_password =
+      server_vendor == "MySQL"
+          ? "ALTER USER expired2@'%' IDENTIFIED BY 'updated';"
+          : "SET PASSWORD = PASSWORD('updated');";
+  execute(to_scripting);
+#ifdef HAVE_JS
+  execute("x = mysql.getSession('mysql://expired2:sample@localhost:" +
+          _mysql_port + "?can-handle-expired-passwords=true')");
+  execute("x.runSql(\"" + reset_password + "\")");
+  execute("x.runSql(\"SELECT CONCAT('hel', 'lo');\")");
+#else
+  execute("x = mysql.get_session('mysql://expired2:sample@localhost:" +
+          _mysql_port + "?can-handle-expired-passwords=true')");
+  execute("x.run_sql(\"" + reset_password + "\")");
+  execute("x.run_sql(\"SELECT CONCAT('hel', 'lo')\")");
+#endif
+  execute("x.close()");
+  MY_EXPECT_STDOUT_CONTAINS("hello");
+  EXPECT_EQ("", output_handler.std_err);
+  output_handler.wipe_all();
+
+  execute("\\sql");
 
   // Connects with the expired account
   execute("\\c mysql://expired:sample@localhost:" + _mysql_port);
@@ -1384,6 +1467,7 @@ TEST_F(Interactive_shell_test, expired_account_support_classic) {
 
   execute("\\c " + _mysql_uri);
   execute("drop user if exists expired;");
+  execute("drop user if exists expired2;");
   execute(to_scripting);
   execute("session.close()");
   MY_EXPECT_STDOUT_CONTAINS("");
@@ -1823,7 +1907,11 @@ TEST_F(Interactive_shell_test, status_x) {
   ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
   EXPECT_NE(std::string::npos, line.find("SSL"));
 
-  ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
+  // The optional TLS algorithm lines are covered by the dedicated test below.
+  do {
+    ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
+  } while (is_tls_algorithm_status_line(line));
+
   EXPECT_EQ(1, sscanf(line.c_str(), "Using delimiter:              %c", &c));
   EXPECT_EQ(c, ';');
 
@@ -1872,6 +1960,55 @@ TEST_F(Interactive_shell_test, status_x) {
 }
 #endif
 
+TEST_F(Interactive_shell_test, reports_server_and_client_version_with_update) {
+#ifdef HAVE_X_PROTOCOL
+  const std::array<std::string, 2> uris{_mysql_uri, _uri};
+#else
+  const std::array<std::string, 1> uris{_mysql_uri};
+#endif
+
+  for (const auto &uri : uris) {
+    wipe_all();
+    execute("\\connect " + uri);
+
+    const auto session = _interactive_shell->shell_context()->get_dev_session();
+    ASSERT_TRUE(session) << output_handler.std_err;
+    const auto core_session = session->get_core_session();
+    ASSERT_TRUE(core_session);
+    std::string server_version;
+
+    try {
+      server_version = core_session->query("SELECT @@version_with_update")
+                           ->fetch_one_or_throw()
+                           ->get_string(0);
+    } catch (const mysqlshdk::db::Error &error) {
+      if (error.code() != ER_UNKNOWN_SYSTEM_VARIABLE) {
+        throw;
+      }
+
+      server_version = core_session->query("SELECT @@version")
+                           ->fetch_one_or_throw()
+                           ->get_string(0);
+    }
+
+    server_version.append(" ").append(
+        core_session->query("SELECT @@version_comment")
+            ->fetch_one_or_throw()
+            ->get_string(0));
+
+    MY_EXPECT_STDOUT_CONTAINS("Server version: " + server_version);
+
+    wipe_all();
+    execute("\\status");
+
+    MY_EXPECT_STDOUT_CONTAINS(shcore::str_format(
+        "%-30s%s", "Server version: ", server_version.c_str()));
+    MY_EXPECT_STDOUT_CONTAINS(shcore::str_format(
+        "%-30s%s",
+        "Client library: ", mysqlshdk::db::get_client_library_version()));
+  }
+}
+
 TEST_F(Interactive_shell_test, status_classic) {
   execute("\\connect " + _mysql_uri + "?compression=1");
   wipe_all();
@@ -1896,7 +2033,11 @@ TEST_F(Interactive_shell_test, status_classic) {
   ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
   EXPECT_NE(std::string::npos, line.find("SSL"));
 
-  ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
+  // The optional TLS algorithm lines are covered by the dedicated test below.
+  do {
+    ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
+  } while (is_tls_algorithm_status_line(line));
+
   EXPECT_EQ(1, sscanf(line.c_str(), "Using delimiter:              %c", &c));
   EXPECT_EQ(c, ';');
 
@@ -1940,6 +2081,18 @@ TEST_F(Interactive_shell_test, status_classic) {
   ASSERT_TRUE(static_cast<bool>(std::getline(ss, line)));
   EXPECT_NE(std::string::npos, line.find("Uptime"));
   EXPECT_NE(std::string::npos, line.find("sec"));
+}
+
+// WL17311-AUTO-07
+#ifdef HAVE_X_PROTOCOL
+TEST_F(Interactive_shell_test, status_tls_algorithms_x) {
+  validate_tls_status_output(_uri);
+}
+#endif
+
+// WL17311-AUTO-07
+TEST_F(Interactive_shell_test, status_tls_algorithms_classic) {
+  validate_tls_status_output(_mysql_uri);
 }
 
 TEST_F(Interactive_shell_test, status_ansi_quotes) {

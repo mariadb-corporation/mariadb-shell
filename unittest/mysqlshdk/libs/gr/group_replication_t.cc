@@ -1469,6 +1469,12 @@ TEST_F(Group_replication_test, update_auto_increment) {
 
   std::shared_ptr<Mock_session> mock_session = std::make_shared<Mock_session>();
   mysqlshdk::mysql::Instance instance{mock_session};
+  mock_session
+      ->expect_query(
+          "show GLOBAL variables where `variable_name` in "
+          "('version_with_update')")
+      .then({"Variable_name", "Value"});
+
   EXPECT_CALL(*mock_session, get_server_version())
       .WillRepeatedly(Return(mysqlshdk::utils::Version(8, 0, 1)));
 
@@ -1617,6 +1623,11 @@ TEST_F(Group_replication_test, get_group_protocol_version) {
 
   std::shared_ptr<Mock_session> mock_session = std::make_shared<Mock_session>();
   mysqlshdk::mysql::Instance instance{mock_session};
+  mock_session
+      ->expect_query(
+          "show GLOBAL variables where `variable_name` in "
+          "('version_with_update')")
+      .then({"Variable_name", "Value"});
 
   EXPECT_CALL(*mock_session, get_server_version())
       .WillOnce(Return(mysqlshdk::utils::Version("8.0.16")));
@@ -1639,6 +1650,11 @@ TEST_F(Group_replication_test, is_protocol_upgrade_possible) {
 
   std::shared_ptr<Mock_session> mock_session = std::make_shared<Mock_session>();
   mysqlshdk::mysql::Instance instance{mock_session};
+  mock_session
+      ->expect_query(
+          "show GLOBAL variables where `variable_name` in "
+          "('version_with_update')")
+      .then({"Variable_name", "Value"});
 
   // Protocol version 8.0.16, one of the members is running 8.0.15 so the
   // upgrade is not possible
@@ -1724,6 +1740,11 @@ TEST_F(Group_replication_test, is_protocol_upgrade_possible) {
   // Protocol version 8.0.27
   mock_session = std::make_shared<Mock_session>();
   instance = mysqlshdk::mysql::Instance(mock_session);
+  mock_session
+      ->expect_query(
+          "show GLOBAL variables where `variable_name` in "
+          "('version_with_update')")
+      .then({"Variable_name", "Value"});
 
   mock_session
       ->expect_query(
@@ -1782,6 +1803,11 @@ TEST_F(Group_replication_test, is_protocol_upgrade_not_required) {
 
   std::shared_ptr<Mock_session> mock_session = std::make_shared<Mock_session>();
   mysqlshdk::mysql::Instance instance{mock_session};
+  mock_session
+      ->expect_query(
+          "show GLOBAL variables where `variable_name` in "
+          "('version_with_update')")
+      .then({"Variable_name", "Value"});
 
   mock_session
       ->expect_query(
@@ -1881,6 +1907,11 @@ TEST_F(Group_replication_test, check_instance_version_compatibility) {
         !*gr_allow_lower_version_join) {
       EXPECT_CALL(*mock_session, get_server_version())
           .WillOnce(Return(instance_version));
+      mock_session
+          ->expect_query(
+              "show GLOBAL variables where `variable_name` in "
+              "('version_with_update')")
+          .then({"Variable_name", "Value"});
     }
 
     if (is_compatible) {
@@ -2132,6 +2163,11 @@ TEST_F(Group_replication_test, is_instance_only_read_compatible) {
 
     EXPECT_CALL(*mock_session, get_server_version())
         .WillOnce(Return(instance_version));
+    mock_session
+        ->expect_query(
+            "show GLOBAL variables where `variable_name` in "
+            "('version_with_update')")
+        .then({"Variable_name", "Value"});
 
     if (is_only_read_compatible) {
       EXPECT_TRUE(mysqlshdk::gr::is_instance_only_read_compatible(

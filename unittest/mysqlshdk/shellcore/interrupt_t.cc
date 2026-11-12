@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2026, Oracle and/or its affiliates.
    Copyright (c) 2026, MariaDB plc.
 
  This program is free software; you can redistribute it and/or modify
@@ -157,7 +157,8 @@ class Interrupt_mysql : public Shell_core_test_wrapper {
     enable_testutil();
   }
 
-  static bool slow_deleg_print(void *, const char *) {
+  static bool slow_deleg_print(void *, const char *,
+                               const shcore::Dictionary_t &) {
     sleep_ms(10);
     return false;
   }

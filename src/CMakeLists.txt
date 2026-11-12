@@ -934,14 +934,6 @@ ENDIF()
 # If defined, installs the client authentication plugins
 IF(AUTH_CLIENT_PLUGINS)
   IF(AUTH_CLIENT_PLUGINS_DEPS)
-    SET(AUTH_CLIENT_PLUGINS_DEPS_OPTIONS)
-    IF(LINUX_UBUNTU AND NOT BUNDLED_OPENSSL)
-      # Do not add an RPATH to libfido2 itself; debugedit corrupts this
-      # patched DSO in dh_strip on Ubuntu builds using the system OpenSSL
-      # libraries.
-      LIST(APPEND AUTH_CLIENT_PLUGINS_DEPS_OPTIONS WRITE_RPATH FALSE)
-    ENDIF()
-
     install_bundled_binaries(
         DESCRIPTION "MySQL authentication plugins - dependencies"
         BINARIES ${AUTH_CLIENT_PLUGINS_DEPS}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -78,10 +78,6 @@ class Shell_context_wrapper_options {
   }
 
  private:
-  void on_start_unpack(const shcore::Dictionary_t &options);
-
-  shcore::Dictionary_t m_options;
-
   std::string m_log_file = shcore::path::join_path(
       shcore::get_user_config_path(), shcore::k_shell_log_file_name);
   shcore::Function_base_ref m_deleg_print_func;
@@ -95,18 +91,23 @@ class Delegate_wrapper : public shcore::Interpreter_delegate {
   explicit Delegate_wrapper(const Shell_context_wrapper_options &callbacks);
 
  private:
-  static bool deleg_print(void *self, const char *text);
+  static bool deleg_print(void *self, const char *text,
+                          const shcore::Dictionary_t &attributes);
   static shcore::Prompt_result deleg_prompt(
       void *self, const char *text,
-      const shcore::prompt::Prompt_options &options, std::string *ret);
-  static bool deleg_print_error(void *self, const char *text);
-  static bool deleg_print_diag(void *self, const char *text);
+      const shcore::prompt::Prompt_options &options,
+      const shcore::Dictionary_t &attributes, std::string *ret);
+  static bool deleg_print_error(void *self, const char *text,
+                                const shcore::Dictionary_t &attributes);
+  static bool deleg_print_diag(void *self, const char *text,
+                               const shcore::Dictionary_t &attributes);
   static shcore::Value call_delegate(
-      void *cdata, const char *text,
+      void *cdata, const char *text, const shcore::Dictionary_t &attributes,
       shcore::Function_base_ref Delegate_wrapper::*func);
   static shcore::Value call_prompt_delegate(
       void *cdata, const char *text,
       const shcore::prompt::Prompt_options &options,
+      const shcore::Dictionary_t &attributes,
       shcore::Function_base_ref Delegate_wrapper::*func);
   static shcore::Prompt_result get_prompt_value(
       const shcore::Value &prompt_value, std::string *ret);

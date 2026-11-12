@@ -68,6 +68,9 @@ Version::Version(std::string_view version) {
   auto base_tokens = shcore::str_split(tokens[0], ".");
 
   switch (base_tokens.size()) {
+    case 4:
+      _update = parse_token(base_tokens[3]);
+      [[fallthrough]];
     case 3:
       _patch = parse_token(base_tokens[2]);
       [[fallthrough]];
@@ -79,7 +82,7 @@ Version::Version(std::string_view version) {
       break;
     default:
       throw std::invalid_argument(
-          "Invalid version format: 1 to 3 version "
+          "Invalid version format: 1 to 4 version "
           "numbers expected");
   }
 }
@@ -141,8 +144,24 @@ std::string Version::get_base() const {
   return ret_val;
 }
 
+std::string Version::get_base_with_update() const {
+  std::string ret_val = get_base();
+
+  if (_update) ret_val.append(".").append(std::to_string(*_update));
+
+  return ret_val;
+}
+
 std::string Version::get_full() const {
   std::string ret_val = get_base();
+
+  if (_extra) ret_val.append("-").append(*_extra);
+
+  return ret_val;
+}
+
+std::string Version::get_full_with_update() const {
+  std::string ret_val = get_base_with_update();
 
   if (_extra) ret_val.append("-").append(*_extra);
 
@@ -650,7 +669,10 @@ namespace calendar {
 
 std::vector<Version> corresponding_versions(const Version &version) {
   const auto offset = release_offset(version);
-  const auto legacy_lts_patch = offset + version.get_patch();
+  // 8.4.12 and 9.7.3 were one-off releases between July and October 2026.
+  // Later one-off releases use the update number instead of the patch number.
+  const auto legacy_lts_patch =
+      offset + version.get_patch() + (offset > 0 ? 1 : 0);
 
   std::vector<Version> result;
   result.emplace_back(8, 4,

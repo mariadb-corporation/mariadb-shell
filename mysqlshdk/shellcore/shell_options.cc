@@ -155,17 +155,20 @@ using mysqlshdk::db::uri::Type;
 
 bool Shell_options::Storage::has_connection_data(
     bool require_main_options) const {
+  const auto has_password_requirement = [this](int factor) {
+    return connection_data.password_requirement(factor) !=
+           mysqlshdk::db::Password_requirement::kUnspecified;
+  };
+
   if (require_main_options) {
     return connection_data.has_user() || connection_data.has_host() ||
            connection_data.has_port() || connection_data.has_socket() ||
            connection_data.has_pipe() || connection_data.has_password() ||
-           connection_data.has_needs_password(0) ||
-           connection_data.has_needs_password(1) ||
-           connection_data.has_needs_password(2);
+           has_password_requirement(0) || has_password_requirement(1) ||
+           has_password_requirement(2);
   }
-  return connection_data.has_data() || connection_data.has_needs_password(0) ||
-         connection_data.has_needs_password(1) ||
-         connection_data.has_needs_password(2);
+  return connection_data.has_data() || has_password_requirement(0) ||
+         has_password_requirement(1) || has_password_requirement(2);
 }
 
 mysqlshdk::db::Connection_options Shell_options::Storage::connection_options()
@@ -198,9 +201,11 @@ mysqlshdk::db::Connection_options Shell_options::Storage::connection_options()
   }
 
   if (webauthn_client_preserve_privacy.has_value()) {
-    target_server.set_unchecked(
-        mysqlshdk::db::kWebauthnClientPreservePrivacy,
-        (*webauthn_client_preserve_privacy) ? "1" : "0");
+    target_server.set_webauthn_client_preserve_privacy(
+        *webauthn_client_preserve_privacy);
+  }
+  if (!register_factor.empty()) {
+    target_server.set_register_factor(register_factor);
   }
 
   return target_server;
@@ -1187,6 +1192,33 @@ Shell_options::Shell_options(
         "TLS v1.3 cipher to use.",
 #endif
         std::bind(&Ssl_options::set_tls_ciphersuites, &storage.connection_data.get_ssl_options(), _2))
+#ifndef MARIADB_BUILD
+    // Not offered on MariaDB builds: MariaDB Connector/C has no setting for
+    // any of the post-quantum TLS options.
+    (cmdline("--tls-kex=<group_list>"),
+        "TLS key exchange groups to use. Expects a colon-separated list.",
+        std::bind(&Ssl_options::set_tls_kex,
+                  &storage.connection_data.get_ssl_options(), _2))
+#endif
+    ;
+
+#ifndef MARIADB_BUILD
+  add_startup_bool_options(true)
+    ("--force-pqc",
+        "Require encrypted connections to use a PQC-compatible key exchange. "
+        "Boolean option, default value \"false\".",
+        [this](const std::string &, const bool value) {
+          storage.connection_data.get_ssl_options().set_force_pqc(value);
+        })
+    ("--use-pqc-sign",
+        "Advertise PQC TLS handshake signature algorithms. Boolean option, "
+        "default value \"false\".",
+        [this](const std::string &, const bool value) {
+          storage.connection_data.get_ssl_options().set_use_pqc_sign(value);
+        });
+#endif
+
+  add_startup_options(true)
     (cmdline("--auth-method=<method>"),
 #ifdef MARIADB_BUILD
         // passed to MariaDB Connector/C as default-auth
@@ -1329,8 +1361,8 @@ Shell_options::Shell_options(
       // if we didn't get any password in the cmdline, restore the ones we got
       // from my.cnf (if any)
       for (int f = 0; f < mysqlshdk::db::k_max_auth_factors; f++) {
-        if (!storage.connection_data.has_needs_password(f) ||
-            !storage.connection_data.needs_password(f)) {
+        if (storage.connection_data.password_requirement(f) !=
+            mysqlshdk::db::Password_requirement::kRequired) {
           if (mycnf_connection_data.has_mfa_password(f))
             storage.connection_data.set_mfa_password(
                 f, mycnf_connection_data.get_mfa_password(f));

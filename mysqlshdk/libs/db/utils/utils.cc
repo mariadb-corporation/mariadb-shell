@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates.
  * Copyright (c) 2026, MariaDB plc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,6 +26,8 @@
 
 #include "mysqlshdk/libs/db/utils/utils.h"
 
+#include <mysql.h>
+
 #include <vector>
 
 #include "mysqlshdk/include/shellcore/shell_init.h"
@@ -38,6 +40,39 @@
 
 namespace mysqlshdk {
 namespace db {
+
+bool supports_version_with_update(const mysqlshdk::utils::Version &version) {
+  // version_with_update was introduced in 8.4.13, 9.7.4 and 26.10.0
+  if (version.get_major() == 8 && version.get_minor() == 4) {
+    return version.get_patch() >= 13;
+  }
+
+  if (version.get_major() == 9 && version.get_minor() == 7) {
+    return version.get_patch() >= 4;
+  }
+
+  return version >= mysqlshdk::utils::Version(26, 10, 0);
+}
+
+const char *get_server_version_sql(ISession *session) {
+  return supports_version_with_update(session->get_server_version())
+             ? "@@version_with_update"
+             : "@@version";
+}
+
+const char *get_server_version_sql(const std::shared_ptr<ISession> &session) {
+  return get_server_version_sql(session.get());
+}
+
+const char *get_client_library_version() {
+#ifdef MARIADB_BUILD
+  // libmariadb has no update component in its version
+  return mysql_get_client_info();
+#else
+  const auto version = mysql_get_client_info_with_version_update();
+  return version ? version : mysql_get_client_info();
+#endif
+}
 
 std::string to_string(const IRow &row) {
   std::string text;

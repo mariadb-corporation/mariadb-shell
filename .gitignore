@@ -25,3 +25,8 @@ unittest/test-chunk-times.txt
 docs-ref/node_modules/
 docs-ref/build/
 docs-ref/.docusaurus/
+
+# written into the source root by the packaging generators
+# (cmake -S packaging/rpm / -S packaging/debian)
+/mariadb-shell.spec
+/debian/

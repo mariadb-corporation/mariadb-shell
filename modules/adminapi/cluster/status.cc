@@ -658,7 +658,7 @@ void Status::collect_local_status(shcore::Dictionary_t dict,
     (*dict)["recovery"] = shcore::Value(recovery_node);
   }
 
-  (*dict)["version"] = shcore::Value(version.get_full());
+  (*dict)["version"] = shcore::Value(version.get_base());
 }
 
 void Status::feed_metadata_info(shcore::Dictionary_t dict,
@@ -1065,6 +1065,23 @@ void check_auth_type_instance_ssl(shcore::Array_t issues,
       break;
     default:
       break;
+  }
+}
+
+void check_instance_for_native_password_internal_account(
+    shcore::Array_t &issues, const Cluster_impl &cluster,
+    std::string_view instance_uuid, Replica_type replica_type,
+    std::string_view account_in_use = {}) {
+  auto metadata = cluster.get_metadata_storage();
+  const auto account = metadata->get_instance_repl_account(
+      instance_uuid, Cluster_type::GROUP_REPLICATION, replica_type);
+
+  if (!account_in_use.empty() && account_in_use != account.first) return;
+
+  if (auto account_source = cluster.get_cluster_server()) {
+    check_for_native_password_internal_account(
+        issues, *account_source, account.first, account.second,
+        cluster.is_cluster_set_member() ? "ClusterSet" : "Cluster");
   }
 }
 
@@ -1567,6 +1584,8 @@ shcore::Dictionary_t Status::get_topology(
 
       if (m_extended.has_value()) {
         if (*m_extended >= 1) {
+          (*member)["versionWithUpdate"] =
+              shcore::Value(instance->get_version().get_full_with_update());
           fence_sysvars = instance->get_fence_sysvars();
 
           const auto &workers =
@@ -1700,6 +1719,11 @@ shcore::Dictionary_t Status::get_topology(
                 "Cluster.rescan() to repair.",
                 it->second.c_str());
             ret_val->push_back(shcore::Value(std::move(msg)));
+          } else {
+            // Only check the authentication plugin if the recovery account
+            // in use matches the account stored in metadata
+            check_instance_for_native_password_internal_account(
+                ret_val, *m_cluster, inst.md.uuid, Replica_type::GROUP_MEMBER);
           }
         }
 
@@ -2202,7 +2226,12 @@ shcore::Dictionary_t Status::feed_read_replica_info(const Read_replica_info &rr,
 
   if (rr_instance) {
     rr_dict->set("version",
-                 shcore::Value(rr_instance->get_version().get_full()));
+                 shcore::Value(rr_instance->get_version().get_base()));
+    if (m_extended.value_or(0) >= 1) {
+      rr_dict->set(
+          "versionWithUpdate",
+          shcore::Value(rr_instance->get_version().get_full_with_update()));
+    }
   }
 
   rr_dict->set("role", shcore::Value("READ_REPLICA"));
@@ -2316,6 +2345,12 @@ shcore::Dictionary_t Status::feed_read_replica_info(const Read_replica_info &rr,
   // Run the diagnostics
   shcore::Array_t instance_errors = nullptr;
   instance_errors = read_replica_diagnostics(rr_instance.get(), rr, is_primary);
+
+  if (rr_instance && !rr.repl_channel_info.user.empty()) {
+    check_instance_for_native_password_internal_account(
+        instance_errors, *m_cluster, rr.md.uuid, Replica_type::READ_REPLICA,
+        rr.repl_channel_info.user);
+  }
 
   if (!instance_errors->empty()) {
     rr_dict->set("instanceErrors", shcore::Value(instance_errors));
