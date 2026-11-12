@@ -589,6 +589,37 @@ int main(int argc, char **argv) {
     log_debug("Using color mode %i",
               static_cast<int>(mysqlshdk::textui::get_color_capability()));
 
+    // [client] options the shell does not have were skipped: the log lists
+    // them, the console only says so and points there. A loose- prefix in the
+    // option file silences both.
+    if (const auto &ignored = shell_options->get_ignored_client_options();
+        !ignored.empty()) {
+      // Names are recorded as "--name".
+      const auto details = shcore::str_format(
+          "These options from the [client] group of the option files are not "
+          "supported by %s and were ignored: %s. To avoid this warning, "
+          "prefix them with loose- in the option file (e.g. loose-%s).",
+          shcore::k_shell_product_name, shcore::str_join(ignored, ", ").c_str(),
+          ignored.front().c_str() + 2);
+      log_warning("%s", details.c_str());
+
+      if (options.quiet_start !=
+          mysqlsh::Shell_options::Quiet_start::SUPRESS_INFO) {
+        // Without the log entry, the console warning has to list them itself.
+        const bool logged =
+            !logger->logfile_name().empty() &&
+            logger->get_log_level() >= shcore::Logger::LOG_WARNING;
+        mysqlsh::current_console()->print_warning(
+            logged ? shcore::str_format(
+                         "Some options from the [client] group of the option "
+                         "files are not supported by %s and were ignored. See "
+                         "the log file for details: %s",
+                         shcore::k_shell_product_name,
+                         logger->logfile_name().c_str())
+                   : details);
+      }
+    }
+
     if (options.quiet_start !=
         mysqlsh::Shell_options::Quiet_start::SUPRESS_INFO) {
       for (const auto &option : shell_options->get_invalid_loose_options()) {
