@@ -1,6 +1,6 @@
 ---
-description: Run the MariaDB Shell release end to end -- version bump, plugins version and sandbox server index, release/candidate build and verification, publish. Usage: /release [--official] [--dry-run] [--help]
-argument-hint: "[--official] [--dry-run] [--help]"
+description: Run the MariaDB Shell release end to end -- version bump, plugins version and sandbox server index, release/candidate build and verification, publish. Usage: /release [--official] [--dry-run] [--refresh <major>]... [--help]
+argument-hint: "[--official] [--dry-run] [--refresh <major>]... [--help]"
 ---
 
 # Release Command
@@ -29,16 +29,19 @@ Parse `$ARGUMENTS`:
 |---|---|---|
 | `--official` | publish with `prerelease=false` | pre-release (`prerelease=true`) |
 | `--dry-run` | publish with `dry_run=true`: assembled and checked, nothing released | off |
+| `--refresh <major>` | rebuild and republish that series' current server version even though it is unchanged, for a change `preflight` cannot detect (such as the Windows runners' OpenSSL). Repeatable; `<major>` is 11, 12 or 13. Passed to every `preflight` run. Outdated packaging is detected without it (step 2) | none |
 | `--help` | print the help below and stop | — |
 
 With `--help`, print the block below exactly as written and stop. Run
 nothing, not even `preflight`, and ignore any other flag given with it. If
-there is any other unknown argument, stop and print the usage line,
-`Usage: /release [--official] [--dry-run] [--help]`. Before step 1, print the
-mode in effect, for example: `Mode: pre-release, real publish`.
+there is any other unknown argument, or a `--refresh` without a major of 11,
+12 or 13, stop and print the usage line,
+`Usage: /release [--official] [--dry-run] [--refresh <major>]... [--help]`.
+Before step 1, print the mode in effect, for example: `Mode: pre-release, real
+publish`, adding `, refresh 13.x` for each `--refresh`.
 
 ```
-/release [--official] [--dry-run] [--help]
+/release [--official] [--dry-run] [--refresh <major>]... [--help]
 
 Takes MariaDB Shell from "main is ready" to a published GitHub release,
 across mariadb-shell and mariadb-shell-plugins.
@@ -46,6 +49,12 @@ across mariadb-shell and mariadb-shell-plugins.
   --official   publish an official release (default: pre-release)
   --dry-run    run everything, but publish-release assembles and checks
                the release without creating it (default: off)
+  --refresh <major>
+               rebuild and republish the current server version of that
+               series (11, 12 or 13) although it is unchanged, for a change
+               preflight cannot see, such as the Windows runners' OpenSSL.
+               Repeatable. A series whose packages were built with older
+               packaging files is refreshed without it.
   --help       show this help
 
 Steps, in order. Each one checks first and does only what is missing, so
@@ -58,9 +67,11 @@ running /release again resumes where the last run stopped.
                 and merge a [bypass-ci] bump PR, then wait for
                 MariaDB-Shell-CI-Publish on main
   2 Plugins &   newest MariaDB/server 11.x/12.x/13.x tags vs the sandbox
-    sandboxes   index: build only new or pending tags (unchanged ones are
-                never rebuilt); run update-version; open and merge a plugins
-                PR if anything changed, after Shell Plugins CI passes
+    sandboxes   index: build only new or pending tags, and published ones
+                built with packaging files that have changed since (or named
+                with --refresh); others are never rebuilt; run
+                update-version; open and merge a plugins PR if anything
+                changed, after Shell Plugins CI passes
   3 Build &     fast-forward release/candidate (plugins, then shell), or
     verify      reuse an existing build; approve the build's release-build
                 environment review; wait for MariaDB-Shell-Release and
@@ -139,9 +150,12 @@ Details: .claude/commands/release.md · helper: scripts/release.py --help
 ## Step 0: Preflight
 
 ```
-python3 scripts/release.py preflight          # human summary
-python3 scripts/release.py preflight --json   # same data, for decisions
+python3 scripts/release.py preflight [--refresh <major> ...]          # human summary
+python3 scripts/release.py preflight [--refresh <major> ...] --json   # same data, for decisions
 ```
+
+Pass every `--refresh` given to `/release` to this and to every later
+`preflight` run, so all of them decide the same way.
 
 Show the summary to the user. It gives the last published version, the
 version for this release, both repos' versions on main and on
@@ -203,13 +217,32 @@ picks. It compares that tag with the sandbox server index on the plugins'
 main and gives a `series_status`, decided the same way `update-version`
 decides it.
 
-**Sandbox servers are decided by tag, never by build artifacts.** A series
-whose newest tag is already in the index, from a published release whose
-`SERVER_SHA256SUMS` matches, is left alone: no build, no index change, no
-`server_NN_tag`. That holds however old its build is, because release assets
-don't expire and Actions artifacts do (after 90 days). Rebuilding it would
-not even reproduce it: the builds aren't bit-for-bit reproducible, so the
-same server version would be shipped again under new checksums.
+**Sandbox servers are decided by tag and by packaging, never by build
+artifacts.** A series whose newest tag is already in the index, from a
+published release whose `SERVER_SHA256SUMS` matches, is left alone: no build,
+no index change, no `server_NN_tag`. That holds however old its build is,
+because release assets don't expire and Actions artifacts do (after 90 days).
+Rebuilding it would not even reproduce it: the builds aren't bit-for-bit
+reproducible, so the same server version would be shipped again under new
+checksums.
+
+There are two exceptions, both reported as `refresh`:
+
+- **Outdated packaging, detected.** The release notes record the commit that
+  built each published server package. When any of the packaging files
+  (`SANDBOX_PACKAGING_FILES` in `release.py`: the sandbox build workflows, the
+  Linux builder, the prune and dependency-check scripts) differs between that
+  commit and main, the published packages were made with an older recipe, and
+  rebuilding the same version gives different packages on purpose (in
+  2026-11, the packages started shipping their own OpenSSL). The reason names
+  the files and the commit.
+- **Forced with `--refresh <major>`,** for a change in what the build picks
+  up that no file in this repo records, such as a new OpenSSL on the Windows
+  runners.
+
+If a release's notes don't record the build commit, the series stays
+`unchanged` and its decision says so; mention it, and the user can pass
+`--refresh` next time.
 
 The report must first list the tags found, one line per series, before any
 build starts:
@@ -222,19 +255,24 @@ Then act on each series:
 
 | `series_status` | Meaning | Action |
 |---|---|---|
-| `unchanged` | the index has this version, from a published release whose `SERVER_SHA256SUMS` matches | none |
+| `unchanged` | the index has this version, from a published release whose `SERVER_SHA256SUMS` matches, built with main's packaging files | none |
+| `refresh` | the index has this version, but its published packages were built with packaging files that differ from main's, or the series was named with `--refresh` | needs packages from a build (below); report its reason |
 | `new` | a newer tag than the index's, or a series not in the index | needs packages from a build (below) |
 | `pending` | the index has this version, but in a release that isn't published (a resumed or abandoned release) | needs packages from a build (below) |
 | `inconsistent` | the index has this version, but the published release doesn't carry it under those checksums: someone edited the index or the release by hand | **ask the user** (below) |
 | `problem` | no release tag for the series, or the tag is older than the index | stop: report it |
 
-For `new` and `pending`, `decision` says whether a usable build exists:
+For `new`, `pending` and `refresh`, `decision` says whether a usable build
+exists. A successful run is only usable when it was built with main's
+packaging files, and, for a forced `--refresh`, after the release it would
+replace was published: `update-version` and publish-release take the newest
+successful run of a tag, whatever it was built from.
 
 | `decision` ends with | Action |
 |---|---|
 | `built by MariaDB-Sandbox-Server run N` | reuse it |
 | `still running, wait for it` | watch that run (`pending_run`) |
-| `never built`, `no successful build`, `artifacts expired` | build it |
+| `never built`, `no successful build`, `artifacts expired`, `differed from main's, build it again`, `predates the release it would replace, build it again` | build it |
 
 For `inconsistent`, show the reason and ask with AskUserQuestion. Give two
 options: **Rebuild `<tag>` (Recommended)**, because a fresh build is the way
@@ -256,7 +294,7 @@ python3 scripts/release.py find-run --workflow sandbox-server.yml \
 Then watch it, and report each build as `<tag>: MariaDB-Sandbox-Server run N
 — <result>`. Start all the builds and watchers together, since the series
 are independent. Keep the list of tags built in this step (`BUILT_TAGS`). When
-every `new` and `pending` series shows `built by`, and every `inconsistent`
+every `new`, `pending` and `refresh` series shows `built by`, and every `inconsistent`
 one the user chose to rebuild has a new build, go on. A re-run of `preflight`
 confirms it.
 
@@ -270,8 +308,10 @@ gh repo clone mariadb-corporation/mariadb-shell-plugins <scratch>/plugins -- --d
 cd <scratch>/plugins/tools && npm run update-version [-- --refresh <major> ...] 2>&1 | tee <scratch>/update-version.log
 ```
 
-Add `--refresh <major>` for each series rebuilt from an `inconsistent`
-state. `update-version` downloads artifacts only for `new`, `pending` and
+Add `--refresh <major>` for each series `preflight` reports as `refresh`,
+and for each series rebuilt from an `inconsistent` state. `update-version`
+does not detect outdated packaging itself; with `--refresh` it reports the
+series as `refresh` too. It downloads artifacts only for `new`, `pending` and
 refreshed series. It prints one `<major>.x <tag>: <status> -- <reason>` line
 per series, and its status must match the one `preflight` gave. If they
 differ, stop and report both.
@@ -312,8 +352,8 @@ differ, stop and report both.
   3. Re-run `preflight`.
 
 The server tags to publish with are **`INDEX_TAGS`**: exactly the `new`,
-`pending` and refreshed series, whose index entries now point at this
-release. `unchanged` series are never passed. Show the set and each tag's
+`pending` and `refresh` series (and any `inconsistent` one rebuilt), whose
+index entries now point at this release. `unchanged` series are never passed. Show the set and each tag's
 status.
 
 Every tag in `BUILT_TAGS` must be in `INDEX_TAGS`. A build made for a series
@@ -436,7 +476,8 @@ and the marker artifact.
      `mariadb/mariadb-shell-mcp-server:<v>` (plus `X.Y` and `latest` when
      `v<v>` is the newest release);
    - anything unusual seen along the way, each on its own line: a version
-     note from step 1, an inconsistency and how it was resolved, a cancelled
+     note from step 1, an inconsistency and how it was resolved, a series
+     republished as `refresh` (with its reason: outdated packaging, or `--refresh`), a cancelled
      run, a release `v<v>` that already exists (it would be updated),
      artifacts that expire within 7 days, or **main moved past the build**
      (from 2), with the list of commits the release would not include.
@@ -502,7 +543,7 @@ read on its own. Use one row per item, and `—` when a step had nothing to do:
 | Version for this release | the version, and whether main had to be bumped |
 | Shell version bump | the PR (number, link) and the MariaDB-Shell-CI-Publish run after its merge, or "already bumped" |
 | MariaDB/server tags | the newest tag found for 11.x, 12.x and 13.x |
-| Sandbox server builds | per tag: its `series_status`, then not needed (unchanged), reused or built, with its MariaDB-Sandbox-Server run and result; any inconsistency and the user's answer |
+| Sandbox server builds | per tag: its `series_status` (for `refresh`, its reason), then not needed (unchanged), reused or built, with its MariaDB-Sandbox-Server run and result; any inconsistency and the user's answer |
 | Plugins version | before → after |
 | Sandbox index | per series: packages updated (to this release) or kept (in which release) |
 | Plugins PR | the PR (number, link) and its Shell Plugins CI result, or "no changes" |
