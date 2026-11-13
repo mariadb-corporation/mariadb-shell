@@ -12,7 +12,6 @@ These were found by testing a 26.9.5 build (osx, arm64, for MariaDB 13.1.0) agai
 - **The older `--ssh` without a user connects as `root`** in sessions opened by another user (CI, agents). `get_system_user()` asks `getlogin_r()` before `getpwuid_r()`. Only `+ssh` URIs use the new `get_effective_user()` (commit a7405461f). The same call also picks the default *database* user. [connecting/ssh-tunnels.md]
 - **`ssl-mode=REQUIRED` and `PREFERRED`** fall back to an unencrypted connection, with no warning, when the server has no TLS. README.md "Server Compatibility" and MARIADB_PORT.md §3 say the shell warns; the code has no warning. [connecting/encrypted-connections.md]
 - **`VERIFY_CA` behaves like `VERIFY_IDENTITY`.** Both turn on Connector/C's server certificate check, which includes the host name. [connecting/encrypted-connections.md]
-- **`compression-algorithms` and `compression-level` have no effect** with Connector/C. `compression-algorithms` alone does not turn compression on: Compression showed OFF. Only zlib is documented. [connecting/compressed-connections.md]
 - **An unknown option in a `[client]` group** of an option file (for example `default-character-set`) stops startup. A `loose-` prefix works around it. [connecting/option-files-and-login-paths.md]
 - **Option-file groups have no priority.** Options from `[client]`, `[mysqlsh]` and `[mariadb-shell]` apply in file order. [connecting/option-files-and-login-paths.md]
 - **`local-infile` is ON by default** on the client side. [connecting/connection-uris-and-options.md]
@@ -77,9 +76,7 @@ These items still describe MySQL Shell, or disagree with the code. The docs foll
   - Tests that use `mysqlx` as a sample scheme without a guard: about 142 lines in `uri_parser_t.cc`, 17 in `shell_cmdline_options_t.cc`, 6 in `connection_options_t.cc`, one weak assertion in `interactive_shell_t.cc`, and the SSH scripted tests `shell_ssh_errors_norecord.py` / `shell_ssh_import_export_norecord.py`. Swap them to `mariadb` in the MariaDB build, or guard the X-specific ones.
   - mariadb-shell-plugins: code_ext's `CONNECTION_SCHEMES` (`code_ext/src/connections/connectionUri.ts`) mirrors the shell's set and lets the connection editor save a `mysqlx://` connection; drop it there too, with its icon entry (`treeItems.ts`) and about 8 test assertions. mcp_plugin already treats an unparsable URI as "not a connection", and its tests pass either way.
 - **Exposed in help but MySQL-only or meaningless:**
-  - `--get-server-public-key`
   - the X values of `auth-method`
-  - the OCI, WebAuthn, OpenID Connect and Kerberos connection options
   - `set_query_attributes` and `set_option_tracker_feature_id`
 - **Dump and load help:**
   - it still lists `lakehouseTarget`, `dataMaskingPolicies`, `allowDataMasking`, `libraries`, `convertInnoDbVectorStore`, `heatwaveLoad`, `lakehouseSource`, `disableBulkLoad`, `analyzeTables: "histogram"` and the full HeatWave `compatibility` section

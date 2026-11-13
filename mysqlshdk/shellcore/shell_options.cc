@@ -200,6 +200,7 @@ mysqlshdk::db::Connection_options Shell_options::Storage::connection_options()
     target_server.set_scheme("mysql");
   }
 
+#ifndef MARIADB_BUILD
   if (webauthn_client_preserve_privacy.has_value()) {
     target_server.set_webauthn_client_preserve_privacy(
         *webauthn_client_preserve_privacy);
@@ -207,6 +208,7 @@ mysqlshdk::db::Connection_options Shell_options::Storage::connection_options()
   if (!register_factor.empty()) {
     target_server.set_register_factor(register_factor);
   }
+#endif
 
   return target_server;
 }
@@ -580,7 +582,7 @@ Shell_options::Shell_options(
     "Set buffer size in bytes for data transfer, default is 10240 (10Kb)",
       shcore::opts::Range<int>(0, std::numeric_limits<int>::max()));
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
   add_startup_options()
     (cmdline("--plugin-authentication-kerberos-client-mode=<mode>"),
       "Allows defining the kerberos client mode (SSPI, GSSAPI) when using "
@@ -899,12 +901,16 @@ Shell_options::Shell_options(
         "Default: *IDENTIFIED*:*PASSWORD*");
 
   add_startup_options(true)
+#ifndef MARIADB_BUILD
+    // MariaDB Connector/C always asks the server for its public key when it
+    // needs one.
     (cmdline("--get-server-public-key"), "Request public key from the server "
         "required for RSA key pair-based password exchange. Use when connecting"
         " to MySQL 8.0 servers with classic sessions with SSL mode DISABLED.",
         [this](const std::string&, const char*) {
           storage.connection_data.set(mysqlshdk::db::kGetServerPublicKey, "true");
         })
+#endif
     (cmdline("--server-public-key-path=<p>"), "The path name to a file "
         "containing a client-side copy of the public key required by the "
         "server for RSA key pair-based password exchange. Use when connecting "
@@ -1184,17 +1190,13 @@ Shell_options::Shell_options(
     (cmdline("--tls-version=<version>"),
         "TLS version to use. Allowed values: TLSv1.2, TLSv1.3.",
         std::bind(&Ssl_options::set_tls_version, &storage.connection_data.get_ssl_options(), _2))
-    (cmdline("--tls-ciphersuites=<name>"),
-#ifdef MARIADB_BUILD
-        "Accepted, but has no effect: MariaDB Connector/C has no setting of "
-        "its own for the TLS v1.3 cipher suites.",
-#else
-        "TLS v1.3 cipher to use.",
-#endif
-        std::bind(&Ssl_options::set_tls_ciphersuites, &storage.connection_data.get_ssl_options(), _2))
 #ifndef MARIADB_BUILD
     // Not offered on MariaDB builds: MariaDB Connector/C has no setting for
-    // any of the post-quantum TLS options.
+    // the TLS v1.3 cipher suites (with OpenSSL, --ssl-cipher sets them too) or
+    // for any of the post-quantum TLS options.
+    (cmdline("--tls-ciphersuites=<name>"),
+        "TLS v1.3 cipher to use.",
+        std::bind(&Ssl_options::set_tls_ciphersuites, &storage.connection_data.get_ssl_options(), _2))
     (cmdline("--tls-kex=<group_list>"),
         "TLS key exchange groups to use. Expects a colon-separated list.",
         std::bind(&Ssl_options::set_tls_kex,
@@ -1385,7 +1387,9 @@ Shell_options::Shell_options(
       check_file_execute_conflicts();
       check_result_format();
     }
+#ifndef MARIADB_BUILD
     check_connection_options();
+#endif
 
     if (!flags.is_set(Option_flags::CONNECTION_ONLY))
       shcore::Logger::set_stderr_output_format(storage.wrap_json);
@@ -1599,13 +1603,19 @@ bool Shell_options::custom_cmdline_handler(Iterator *iterator) {
 
     iterator->next();
   } else if ("--password" == option || "-p" == option ||
-             "--password1" == option || "--password2" == option ||
-             "--password3" == option) {
+             "--password1" == option
+#ifndef MARIADB_BUILD
+             // No multi-factor authentication in MariaDB Connector/C.
+             || "--password2" == option || "--password3" == option
+#endif
+  ) {
     int mfa_password = 0;
+#ifndef MARIADB_BUILD
     if (option == "--password2")
       mfa_password = 1;
     else if (option == "--password3")
       mfa_password = 2;
+#endif
 
     // Note that in any connection attempt, password prompt will be done if
     // the password is missing.
@@ -1742,6 +1752,9 @@ void Shell_options::check_result_format() {
         storage.result_format.c_str(), storage.wrap_json.c_str()));
 }
 
+#ifndef MARIADB_BUILD
+// Only the options of MySQL client authentication plugins depend on a
+// connection, and MariaDB builds have none of them.
 void Shell_options::check_connection_options() {
   std::vector<std::string> connection_dependent_options;
   if (!storage.register_factor.empty()) {
@@ -1790,5 +1803,6 @@ void Shell_options::check_connection_options() {
           "Multi-factor authentication is only compatible with MySQL protocol");
   }
 }
+#endif  // MARIADB_BUILD
 
 }  // namespace mysqlsh

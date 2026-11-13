@@ -561,18 +561,85 @@ REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_CIPHER,
               "connections that use TLS protocols up through TLSv1.2.");
 REGISTER_HELP(TOPIC_CONNECTION_OPTION_TLS_CIPHERSUITES,
               "@li tls-ciphersuites: List of TLS v1.3 ciphers to use.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_GET_SERVER_PUBLIC_KEY,
+              "@li get-server-public-key: Request public key from the server "
+              "required for RSA key pair-based password exchange. Use when "
+              "connecting to MySQL 8.0 servers with classic MySQL sessions "
+              "with SSL mode DISABLED.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_COMPRESSION_ALGORITHMS,
+              "@li compression-algorithms: Use compression algorithm in "
+              "server/client protocol.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_COMPRESSION_ALGORITHMS1,
+              "@li compression-level: Use this compression level in the "
+              "client/server protocol.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS,
+              "@li plugin-authentication-kerberos-client-mode: (Windows) "
+              "Allows defining the kerberos client mode (SSPI, GSSAPI) when "
+              "using kerberos authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS1,
+              "@li plugin-authentication-webauthn-device: Non-negative integer "
+              "selecting the authentication device used for client side "
+              "webauthn authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS2,
+              "@li register-factor: Specifies authentication factors for which "
+              "device registration needs to be done.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS3,
+              "@li plugin-authentication-webauthn-client-preserve-privacy: "
+              "Boolean that enables the use of discoverable credentials for "
+              "client side webauthn authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS4,
+              "@li oci-config-file: Allows defining the OCI configuration file "
+              "for OCI authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS5,
+              "@li authentication-oci-client-config-profile: Allows defining "
+              "the OCI profile used from the configuration for client side OCI "
+              "authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_AUTH_PLUGINS6,
+              "@li authentication-openid-connect-client-id-token-file: Allows "
+              "defining the file path to an OpenId Connect authorization token "
+              "file when using OpenId Connect authentication.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS,
+              "@li password: the password for the first authentication factor. "
+              "If omitted or set to <b>null</b>, a stored first-factor "
+              "password is used if available; otherwise, it is prompted for.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS1,
+              "@li no-password: if <b>true</b>, sets an empty first-factor "
+              "password and prevents prompting for it.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS2,
+              "@li password1: alias for password. Takes precedence over "
+              "password. If set to <b>null</b>, a stored first-factor password "
+              "is used if available; otherwise, it is prompted for.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS3,
+              "@li password2: the password for the second authentication "
+              "factor. If omitted, no password is requested for this factor. "
+              "If set to <b>null</b>, a stored second-factor password is used "
+              "if available; otherwise, it is prompted for.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS4,
+              "@li password3: the password for the third authentication "
+              "factor. If omitted, no password is requested for this factor. "
+              "If set to <b>null</b>, a stored third-factor password is used "
+              "if available; otherwise, it is prompted for.");
 #else
-// MariaDB Connector/C has no option of its own for the TLS v1.3 cipher suites,
-// so tls-ciphersuites is accepted and dropped; its OpenSSL backend applies the
-// ssl-cipher list to both TLS v1.3 and older versions
+// MariaDB Connector/C has no setting of its own for the TLS v1.3 cipher
+// suites: its OpenSSL backend applies the ssl-cipher list to both TLS v1.3 and
+// older versions. The options MariaDB builds do not have (tls-ciphersuites,
+// get-server-public-key, compression-algorithms/-level, the MySQL client
+// authentication plugins' options, password2/3) are left out, so their
+// ${} lines below expand to nothing.
 REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_CIPHER,
               "@li ssl-cipher: The list of permissible encryption ciphers. "
               "With OpenSSL, the list also selects the TLS v1.3 cipher "
               "suites.");
-REGISTER_HELP(TOPIC_CONNECTION_OPTION_TLS_CIPHERSUITES,
-              "@li tls-ciphersuites: Accepted, but has no effect: MariaDB "
-              "Connector/C has no setting of its own for the TLS v1.3 cipher "
-              "suites.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS,
+              "@li password: the password. If omitted or set to <b>null</b>, a "
+              "stored password is used if available; otherwise, it is prompted "
+              "for.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS1,
+              "@li no-password: if <b>true</b>, sets an empty password and "
+              "prevents prompting for it.");
+REGISTER_HELP(TOPIC_CONNECTION_OPTION_PASSWORDS2,
+              "@li password1: alias for password. Takes precedence over "
+              "password.");
 #endif
 
 #ifndef MARIADB_BUILD
@@ -611,9 +678,7 @@ ${TOPIC_CONNECTION_OPTION_TLS_KEX}
 ${TOPIC_CONNECTION_OPTION_FORCE_PQC}
 ${TOPIC_CONNECTION_OPTION_USE_PQC_SIGN}
 @li auth-method: Authentication method.
-@li get-server-public-key: Request public key from the server required for
-RSA key pair-based password exchange. Use when connecting to MySQL 8.0
-servers with classic MySQL sessions with SSL mode DISABLED.
+${TOPIC_CONNECTION_OPTION_GET_SERVER_PUBLIC_KEY}
 @li server-public-key-path: The path name to a file containing a
 client-side copy of the public key required by the server for RSA key
 pair-based password exchange. Use when connecting to MySQL 8.0 servers
@@ -622,26 +687,12 @@ with classic MySQL sessions with SSL mode DISABLED.
 default timeout of 10 seconds will be used. Specifying a value of 0 disables the
 connection timeout.
 @li compression: Enable compression in client/server protocol.
-@li compression-algorithms: Use compression algorithm in server/client protocol.
-@li compression-level: Use this compression level in the client/server protocol.
+${TOPIC_CONNECTION_OPTION_COMPRESSION_ALGORITHMS}
 @li connection-attributes: List of connection attributes to be registered at the
 PERFORMANCE_SCHEMA connection attributes tables.
 @li local-infile: Enable/disable LOAD DATA LOCAL INFILE.
 @li net-buffer-length: The buffer size for TCP/IP and socket communication.
-@li plugin-authentication-kerberos-client-mode: (Windows) Allows defining the kerberos
-client mode (SSPI, GSSAPI) when using kerberos authentication.
-@li plugin-authentication-webauthn-device: Non-negative integer selecting the
-authentication device used for client side webauthn authentication.
-@li register-factor: Specifies authentication factors for which device
-registration needs to be done.
-@li plugin-authentication-webauthn-client-preserve-privacy: Boolean that
-enables the use of discoverable credentials for client side webauthn
-authentication.
-@li oci-config-file: Allows defining the OCI configuration file for OCI authentication.
-@li authentication-oci-client-config-profile: Allows defining the OCI profile used from
-the configuration for client side OCI authentication.
-@li authentication-openid-connect-client-id-token-file: Allows defining the file path to
-an OpenId Connect authorization token file when using OpenId Connect authentication.
+${TOPIC_CONNECTION_OPTION_AUTH_PLUGINS}
 @li client-interactive: Enable/disable interactive mode for the session.
 @li can-handle-expired-passwords: Enable handling of expired account passwords.
 
@@ -653,20 +704,7 @@ The following options are also valid when a dictionary is used:
 @li uri: a URI string.
 @li scheme: the protocol to be used on the connection.
 @li user: the MySQL user name to be used on the connection.
-@li password: the password for the first authentication factor. If omitted or
-set to <b>null</b>, a stored first-factor password is used if available;
-otherwise, it is prompted for.
-@li no-password: if <b>true</b>, sets an empty first-factor password and
-prevents prompting for it.
-@li password1: alias for password. Takes precedence over password. If set to
-<b>null</b>, a stored first-factor password is used if available; otherwise,
-it is prompted for.
-@li password2: the password for the second authentication factor. If omitted,
-no password is requested for this factor. If set to <b>null</b>, a stored
-second-factor password is used if available; otherwise, it is prompted for.
-@li password3: the password for the third authentication factor. If omitted,
-no password is requested for this factor. If set to <b>null</b>, a stored
-third-factor password is used if available; otherwise, it is prompted for.
+${TOPIC_CONNECTION_OPTION_PASSWORDS}
 @li host: the hostname or IP address to be used on the connection.
 @li port: the port to be used in a TCP connection.
 @li socket: the socket file name to be used on a connection through unix sockets.
@@ -837,6 +875,25 @@ data will be stored on the database.
 
 REGISTER_HELP_TOPIC(Connection Compression, TOPIC, TOPIC_CONNECTION_COMPRESSION,
                     Contents, ALL);
+#ifdef MARIADB_BUILD
+// MariaDB Connector/C has one on/off (zlib) compression setting, and no
+// compression-algorithms or compression-level option.
+REGISTER_HELP_TOPIC_TEXT(TOPIC_CONNECTION_COMPRESSION, R"*(
+<b>Connection Compression</b>
+
+Connection compression is governed by the "compression" connection option.
+Compressed connections use zlib.
+
+"compression" accepts following values:
+
+@li REQUIRED: connection will be established with compression enabled.
+@li PREFERRED: same as REQUIRED.
+@li DISABLED: (default) connection will be established without compression.
+
+For convenience "compression" also accepts Boolean: 'True', 'False', '1',
+and '0' values which map to REQUIRED and DISABLED respectively.
+)*");
+#else
 REGISTER_HELP_TOPIC_TEXT(TOPIC_CONNECTION_COMPRESSION, R"*(
 <b>Connection Compression</b>
 
@@ -876,6 +933,7 @@ expected:
 @li zlib: 1-9 (default 3), supported only by X protocol
 @li lz4: 0-16 (default 2), supported only by X protocol.
 )*");
+#endif
 
 REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_MODE, "<b>SSL Mode</b>");
 REGISTER_HELP(TOPIC_CONNECTION_OPTION_SSL_MODE1,
@@ -1451,9 +1509,15 @@ REGISTER_HELP(SHELL_STORECREDENTIAL_BRIEF,
               "Stores given credential using the configured helper.");
 REGISTER_HELP(SHELL_STORECREDENTIAL_PARAM,
               "@param url URL of the server for the credential to be stored.");
+#ifndef MARIADB_BUILD
 REGISTER_HELP(SHELL_STORECREDENTIAL_PARAM1,
               "@param password Optional first-factor password string or "
               "password dictionary.");
+#else
+REGISTER_HELP(SHELL_STORECREDENTIAL_PARAM1,
+              "@param password Optional password string or password "
+              "dictionary.");
+#endif
 REGISTER_HELP(SHELL_STORECREDENTIAL_THROWS,
               "Throws ArgumentError if URL has invalid form.");
 REGISTER_HELP(SHELL_STORECREDENTIAL_THROWS1,
@@ -1465,6 +1529,7 @@ REGISTER_HELP(SHELL_STORECREDENTIAL_THROWS3,
 REGISTER_HELP(SHELL_STORECREDENTIAL_DETAIL,
               "If a required password is not provided, displays a password "
               "prompt.");
+#ifndef MARIADB_BUILD
 REGISTER_HELP(
     SHELL_STORECREDENTIAL_DETAIL1,
     "Passwords supplied in a password dictionary are stored for their "
@@ -1476,6 +1541,17 @@ REGISTER_HELP(SHELL_STORECREDENTIAL_DETAIL3,
               "The URL must have the form <b>user@(host[:port]|socket)</b>. "
               "A password dictionary may contain <b>password</b>, "
               "<b>password1</b>, <b>password2</b>, and <b>password3</b>.");
+#else
+// No multi-factor authentication in MariaDB Connector/C: a password dictionary
+// holds the one password.
+REGISTER_HELP(SHELL_STORECREDENTIAL_DETAIL1,
+              "If a credential is already in storage, its value is "
+              "overwritten.");
+REGISTER_HELP(SHELL_STORECREDENTIAL_DETAIL2,
+              "The URL must have the form <b>user@(host[:port]|socket)</b>. "
+              "A password dictionary may contain <b>password</b> or "
+              "<b>password1</b>.");
+#endif
 
 /**
  * $(SHELL_STORECREDENTIAL_BRIEF)
@@ -1529,11 +1605,14 @@ void Shell::store_credential(const std::string &url,
     if (password_option_names.compare(entry.first, mysqlshdk::db::kPassword) !=
             0 &&
         password_option_names.compare(entry.first, mysqlshdk::db::kPassword1) !=
-            0 &&
-        password_option_names.compare(entry.first, mysqlshdk::db::kPassword2) !=
-            0 &&
+            0
+#ifndef MARIADB_BUILD
+        && password_option_names.compare(entry.first,
+                                         mysqlshdk::db::kPassword2) != 0 &&
         password_option_names.compare(entry.first, mysqlshdk::db::kPassword3) !=
-            0) {
+            0
+#endif
+    ) {
       throw shcore::Exception::argument_error(
           "Invalid password dictionary option '" + entry.first + "'.");
     }

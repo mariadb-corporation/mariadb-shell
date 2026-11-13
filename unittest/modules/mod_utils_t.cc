@@ -75,6 +75,7 @@ TEST(
   EXPECT_EQ("correct", options.get_password());
 }
 
+#ifndef MARIADB_BUILD
 TEST(modules_mod_utils, get_connection_data_dictionary_mfa_null_passwords) {
   const auto map = shcore::make_dict();
   (*map)[mysqlshdk::db::kUser] = shcore::Value("root");
@@ -90,6 +91,7 @@ TEST(modules_mod_utils, get_connection_data_dictionary_mfa_null_passwords) {
               options.password_requirement(factor));
   }
 }
+#endif
 
 TEST(modules_mod_utils, get_connection_data_dictionary_no_password) {
   const auto map = shcore::make_dict();
@@ -124,6 +126,7 @@ TEST(modules_mod_utils, get_connection_data_dictionary_expired_passwords) {
   EXPECT_TRUE(options.can_handle_expired_passwords());
 }
 
+#ifndef MARIADB_BUILD
 TEST(modules_mod_utils,
      get_connection_data_dictionary_webauthn_preserve_privacy) {
   const auto map = shcore::make_dict();
@@ -139,6 +142,7 @@ TEST(modules_mod_utils,
   EXPECT_TRUE(connection_data->at(mysqlshdk::db::kWebauthnClientPreservePrivacy)
                   .as_bool());
 }
+#endif
 
 #ifndef MARIADB_BUILD
 // WL17311-AUTO-04
@@ -189,6 +193,7 @@ TEST(modules_mod_utils, get_connection_data_dictionary_pqc_options) {
 }
 #endif
 
+#ifndef MARIADB_BUILD
 TEST(modules_mod_utils, get_connection_data_dictionary_webauthn_device) {
   const auto map = shcore::make_dict();
   (*map)[mysqlshdk::db::kUser] = shcore::Value("root");
@@ -204,7 +209,9 @@ TEST(modules_mod_utils, get_connection_data_dictionary_webauthn_device) {
       1,
       connection_data->at(mysqlshdk::db::kWebauthnClientDeviceIndex).as_int());
 }
+#endif
 
+#ifndef MARIADB_BUILD
 TEST(modules_mod_utils, get_connection_data_dictionary_register_factor) {
   const auto map = shcore::make_dict();
   (*map)[mysqlshdk::db::kUser] = shcore::Value("root");
@@ -241,6 +248,7 @@ TEST(modules_mod_utils, get_connection_data_dictionary_mysqlx_webauthn) {
       mysqlsh::get_connection_options(shcore::Value(map)), shcore::Exception,
       "Multi-factor authentication is only compatible with MySQL protocol");
 }
+#endif
 
 TEST(modules_mod_utils, get_connection_data_invalid_uri) {
   EXPECT_THROW_LIKE(

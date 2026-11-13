@@ -1104,8 +1104,10 @@ mysqlshdk::db::Ssl_options read_ssl_client_options(
   if (!row->is_null(5)) ssl_options.set_crlpath(row->get_string(5));
   if (!row->is_null(6)) ssl_options.set_cipher(row->get_string(6));
   if (!row->is_null(7)) ssl_options.set_tls_version(row->get_string(7));
+#ifndef MARIADB_BUILD
   if (row->num_fields() > 8)
     if (!row->is_null(8)) ssl_options.set_tls_ciphersuites(row->get_string(8));
+#endif
 
   return ssl_options;
 }

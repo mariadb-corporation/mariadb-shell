@@ -3413,6 +3413,9 @@ TEST_F(Interactive_shell_test, sql_source_cmd) {
   wipe_all();
 }
 
+#ifndef MARIADB_BUILD
+// MariaDB builds have no tls-ciphersuites option: with OpenSSL, ssl-cipher
+// covers the TLS 1.3 suites too.
 TEST_F(Interactive_shell_test, tls_ciphersuites) {
 #ifdef HAVE_X_PROTOCOL
   // Feature not yet supported on X protocol
@@ -3449,6 +3452,7 @@ TEST_F(Interactive_shell_test, tls_ciphersuites) {
   MY_EXPECT_STDOUT_NOT_CONTAINS("tls-ciphersuites option is not yet supported");
   wipe_all();
 }
+#endif  // MARIADB_BUILD
 
 #ifdef HAVE_JS
 TEST_F(Interactive_shell_test, js_interactive_multiline_comments) {

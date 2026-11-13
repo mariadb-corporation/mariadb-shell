@@ -1471,6 +1471,7 @@ SYNTAX
 
 WHERE
       url: URL of the server for the credential to be stored.
+?{not __mariadb_build}
       password: First-factor password string or password dictionary.
 
 DESCRIPTION
@@ -1483,6 +1484,18 @@ DESCRIPTION
 
       The URL must have the form user@(host[:port]|socket). A password
       dictionary may contain password, password1, password2, and password3.
+?{}
+?{__mariadb_build}
+      password: Password string or password dictionary.
+
+DESCRIPTION
+      If a required password is not provided, displays a password prompt.
+
+      If a credential is already in storage, its value is overwritten.
+
+      The URL must have the form user@(host[:port]|socket). A password
+      dictionary may contain password or password1.
+?{}
 
 EXCEPTIONS
       Throws ArgumentError if URL has invalid form.
@@ -1614,10 +1627,6 @@ The following options are valid for use either in a URI or in a dictionary:
 ?{not __mariadb_build}
 - tls-ciphersuites: List of TLS v1.3 ciphers to use.
 ?{}
-?{__mariadb_build}
-- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
-  setting of its own for the TLS v1.3 cipher suites.
-?{}
 ?{not __mariadb_build}
 - tls-kex: TLS key exchange groups to use. Expects a colon-separated list.
 - force-pqc: Require encrypted connections to use a PQC-compatible key
@@ -1626,9 +1635,11 @@ The following options are valid for use either in a URI or in a dictionary:
   option, default value "false".
 ?{}
 - auth-method: Authentication method.
+?{not __mariadb_build}
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
   with classic MySQL sessions with SSL mode DISABLED.
+?{}
 - server-public-key-path: The path name to a file containing a client-side copy
   of the public key required by the server for RSA key pair-based password
   exchange. Use when connecting to MySQL 8.0 servers with classic MySQL
@@ -1637,12 +1648,15 @@ The following options are valid for use either in a URI or in a dictionary:
   default timeout of 10 seconds will be used. Specifying a value of 0 disables
   the connection timeout.
 - compression: Enable compression in client/server protocol.
+?{not __mariadb_build}
 - compression-algorithms: Use compression algorithm in server/client protocol.
 - compression-level: Use this compression level in the client/server protocol.
+?{}
 - connection-attributes: List of connection attributes to be registered at the
   PERFORMANCE_SCHEMA connection attributes tables.
 - local-infile: Enable/disable LOAD DATA LOCAL INFILE.
 - net-buffer-length: The buffer size for TCP/IP and socket communication.
+?{not __mariadb_build}
 - plugin-authentication-kerberos-client-mode: (Windows) Allows defining the
   kerberos client mode (SSPI, GSSAPI) when using kerberos authentication.
 - plugin-authentication-webauthn-device: Non-negative integer selecting the
@@ -1658,6 +1672,7 @@ The following options are valid for use either in a URI or in a dictionary:
 - authentication-openid-connect-client-id-token-file: Allows defining the file
   path to an OpenId Connect authorization token file when using OpenId Connect
   authentication.
+?{}
 - client-interactive: Enable/disable interactive mode for the session.
 - can-handle-expired-passwords: Enable handling of expired account passwords.
 
@@ -1670,6 +1685,7 @@ Base Connection Options
 - uri: a URI string.
 - scheme: the protocol to be used on the connection.
 - user: the MySQL user name to be used on the connection.
+?{not __mariadb_build}
 - password: the password for the first authentication factor. If omitted or set
   to null, a stored first-factor password is used if available; otherwise, it
   is prompted for.
@@ -1684,6 +1700,13 @@ Base Connection Options
 - password3: the password for the third authentication factor. If omitted, no
   password is requested for this factor. If set to null, a stored third-factor
   password is used if available; otherwise, it is prompted for.
+?{}
+?{__mariadb_build}
+- password: the password. If omitted or set to null, a stored password is used
+  if available; otherwise, it is prompted for.
+- no-password: if true, sets an empty password and prevents prompting for it.
+- password1: alias for password. Takes precedence over password.
+?{}
 - host: the hostname or IP address to be used on the connection.
 - port: the port to be used in a TCP connection.
 - socket: the socket file name to be used on a connection through unix sockets.
@@ -1824,6 +1847,7 @@ In case of X protocol session, it should be one of:
 
 Connection Compression
 
+?{not __mariadb_build}
 Connection compression is governed by following connection options:
 "compression", "compression-algorithms", and "compression-level".
 
@@ -1859,6 +1883,20 @@ expected:
 - zstd: 1-22 (default 3)
 - zlib: 1-9 (default 3), supported only by X protocol
 - lz4: 0-16 (default 2), supported only by X protocol.
+?{}
+?{__mariadb_build}
+Connection compression is governed by the "compression" connection option.
+Compressed connections use zlib.
+
+"compression" accepts following values:
+
+- REQUIRED: connection will be established with compression enabled.
+- PREFERRED: same as REQUIRED.
+- DISABLED: (default) connection will be established without compression.
+
+For convenience "compression" also accepts Boolean: 'True', 'False', '1', and
+'0' values which map to REQUIRED and DISABLED respectively.
+?{}
 
 Connection Attributes
 
@@ -1948,10 +1986,6 @@ The following options are valid for use either in a URI or in a dictionary:
 ?{not __mariadb_build}
 - tls-ciphersuites: List of TLS v1.3 ciphers to use.
 ?{}
-?{__mariadb_build}
-- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
-  setting of its own for the TLS v1.3 cipher suites.
-?{}
 ?{not __mariadb_build}
 - tls-kex: TLS key exchange groups to use. Expects a colon-separated list.
 - force-pqc: Require encrypted connections to use a PQC-compatible key
@@ -1960,9 +1994,11 @@ The following options are valid for use either in a URI or in a dictionary:
   option, default value "false".
 ?{}
 - auth-method: Authentication method.
+?{not __mariadb_build}
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
   with classic MySQL sessions with SSL mode DISABLED.
+?{}
 - server-public-key-path: The path name to a file containing a client-side copy
   of the public key required by the server for RSA key pair-based password
   exchange. Use when connecting to MySQL 8.0 servers with classic MySQL
@@ -1971,12 +2007,15 @@ The following options are valid for use either in a URI or in a dictionary:
   default timeout of 10 seconds will be used. Specifying a value of 0 disables
   the connection timeout.
 - compression: Enable compression in client/server protocol.
+?{not __mariadb_build}
 - compression-algorithms: Use compression algorithm in server/client protocol.
 - compression-level: Use this compression level in the client/server protocol.
+?{}
 - connection-attributes: List of connection attributes to be registered at the
   PERFORMANCE_SCHEMA connection attributes tables.
 - local-infile: Enable/disable LOAD DATA LOCAL INFILE.
 - net-buffer-length: The buffer size for TCP/IP and socket communication.
+?{not __mariadb_build}
 - plugin-authentication-kerberos-client-mode: (Windows) Allows defining the
   kerberos client mode (SSPI, GSSAPI) when using kerberos authentication.
 - plugin-authentication-webauthn-device: Non-negative integer selecting the
@@ -1992,6 +2031,7 @@ The following options are valid for use either in a URI or in a dictionary:
 - authentication-openid-connect-client-id-token-file: Allows defining the file
   path to an OpenId Connect authorization token file when using OpenId Connect
   authentication.
+?{}
 - client-interactive: Enable/disable interactive mode for the session.
 - can-handle-expired-passwords: Enable handling of expired account passwords.
 
@@ -2004,6 +2044,7 @@ Base Connection Options
 - uri: a URI string.
 - scheme: the protocol to be used on the connection.
 - user: the MySQL user name to be used on the connection.
+?{not __mariadb_build}
 - password: the password for the first authentication factor. If omitted or set
   to null, a stored first-factor password is used if available; otherwise, it
   is prompted for.
@@ -2018,6 +2059,13 @@ Base Connection Options
 - password3: the password for the third authentication factor. If omitted, no
   password is requested for this factor. If set to null, a stored third-factor
   password is used if available; otherwise, it is prompted for.
+?{}
+?{__mariadb_build}
+- password: the password. If omitted or set to null, a stored password is used
+  if available; otherwise, it is prompted for.
+- no-password: if true, sets an empty password and prevents prompting for it.
+- password1: alias for password. Takes precedence over password.
+?{}
 - host: the hostname or IP address to be used on the connection.
 - port: the port to be used in a TCP connection.
 - socket: the socket file name to be used on a connection through unix sockets.
@@ -2158,6 +2206,7 @@ In case of X protocol session, it should be one of:
 
 Connection Compression
 
+?{not __mariadb_build}
 Connection compression is governed by following connection options:
 "compression", "compression-algorithms", and "compression-level".
 
@@ -2193,6 +2242,20 @@ expected:
 - zstd: 1-22 (default 3)
 - zlib: 1-9 (default 3), supported only by X protocol
 - lz4: 0-16 (default 2), supported only by X protocol.
+?{}
+?{__mariadb_build}
+Connection compression is governed by the "compression" connection option.
+Compressed connections use zlib.
+
+"compression" accepts following values:
+
+- REQUIRED: connection will be established with compression enabled.
+- PREFERRED: same as REQUIRED.
+- DISABLED: (default) connection will be established without compression.
+
+For convenience "compression" also accepts Boolean: 'True', 'False', '1', and
+'0' values which map to REQUIRED and DISABLED respectively.
+?{}
 
 Connection Attributes
 
@@ -2303,6 +2366,7 @@ will be stored on the database.
 #@<OUT> Help on connection compression
 Connection Compression
 
+?{not __mariadb_build}
 Connection compression is governed by following connection options:
 "compression", "compression-algorithms", and "compression-level".
 
@@ -2338,6 +2402,20 @@ expected:
 - zstd: 1-22 (default 3)
 - zlib: 1-9 (default 3), supported only by X protocol
 - lz4: 0-16 (default 2), supported only by X protocol.
+?{}
+?{__mariadb_build}
+Connection compression is governed by the "compression" connection option.
+Compressed connections use zlib.
+
+"compression" accepts following values:
+
+- REQUIRED: connection will be established with compression enabled.
+- PREFERRED: same as REQUIRED.
+- DISABLED: (default) connection will be established without compression.
+
+For convenience "compression" also accepts Boolean: 'True', 'False', '1', and
+'0' values which map to REQUIRED and DISABLED respectively.
+?{}
 
 #@<OUT> Help on connection options
 Connection Options
@@ -2365,10 +2443,6 @@ The following options are valid for use either in a URI or in a dictionary:
 ?{not __mariadb_build}
 - tls-ciphersuites: List of TLS v1.3 ciphers to use.
 ?{}
-?{__mariadb_build}
-- tls-ciphersuites: Accepted, but has no effect: MariaDB Connector/C has no
-  setting of its own for the TLS v1.3 cipher suites.
-?{}
 ?{not __mariadb_build}
 - tls-kex: TLS key exchange groups to use. Expects a colon-separated list.
 - force-pqc: Require encrypted connections to use a PQC-compatible key
@@ -2377,9 +2451,11 @@ The following options are valid for use either in a URI or in a dictionary:
   option, default value "false".
 ?{}
 - auth-method: Authentication method.
+?{not __mariadb_build}
 - get-server-public-key: Request public key from the server required for RSA
   key pair-based password exchange. Use when connecting to MySQL 8.0 servers
   with classic MySQL sessions with SSL mode DISABLED.
+?{}
 - server-public-key-path: The path name to a file containing a client-side copy
   of the public key required by the server for RSA key pair-based password
   exchange. Use when connecting to MySQL 8.0 servers with classic MySQL
@@ -2388,12 +2464,15 @@ The following options are valid for use either in a URI or in a dictionary:
   default timeout of 10 seconds will be used. Specifying a value of 0 disables
   the connection timeout.
 - compression: Enable compression in client/server protocol.
+?{not __mariadb_build}
 - compression-algorithms: Use compression algorithm in server/client protocol.
 - compression-level: Use this compression level in the client/server protocol.
+?{}
 - connection-attributes: List of connection attributes to be registered at the
   PERFORMANCE_SCHEMA connection attributes tables.
 - local-infile: Enable/disable LOAD DATA LOCAL INFILE.
 - net-buffer-length: The buffer size for TCP/IP and socket communication.
+?{not __mariadb_build}
 - plugin-authentication-kerberos-client-mode: (Windows) Allows defining the
   kerberos client mode (SSPI, GSSAPI) when using kerberos authentication.
 - plugin-authentication-webauthn-device: Non-negative integer selecting the
@@ -2409,6 +2488,7 @@ The following options are valid for use either in a URI or in a dictionary:
 - authentication-openid-connect-client-id-token-file: Allows defining the file
   path to an OpenId Connect authorization token file when using OpenId Connect
   authentication.
+?{}
 - client-interactive: Enable/disable interactive mode for the session.
 - can-handle-expired-passwords: Enable handling of expired account passwords.
 
@@ -2421,6 +2501,7 @@ Base Connection Options
 - uri: a URI string.
 - scheme: the protocol to be used on the connection.
 - user: the MySQL user name to be used on the connection.
+?{not __mariadb_build}
 - password: the password for the first authentication factor. If omitted or set
   to null, a stored first-factor password is used if available; otherwise, it
   is prompted for.
@@ -2435,6 +2516,13 @@ Base Connection Options
 - password3: the password for the third authentication factor. If omitted, no
   password is requested for this factor. If set to null, a stored third-factor
   password is used if available; otherwise, it is prompted for.
+?{}
+?{__mariadb_build}
+- password: the password. If omitted or set to null, a stored password is used
+  if available; otherwise, it is prompted for.
+- no-password: if true, sets an empty password and prevents prompting for it.
+- password1: alias for password. Takes precedence over password.
+?{}
 - host: the hostname or IP address to be used on the connection.
 - port: the port to be used in a TCP connection.
 - socket: the socket file name to be used on a connection through unix sockets.

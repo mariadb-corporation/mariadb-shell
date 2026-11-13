@@ -169,9 +169,9 @@ TEST(Ssl_options, initialization) {
   EXPECT_FALSE(options.has_key());
   EXPECT_FALSE(options.has_mode());
   EXPECT_FALSE(options.has_tls_version());
-  EXPECT_FALSE(options.has_tls_ciphersuites());
 
 #ifndef MARIADB_BUILD
+  EXPECT_FALSE(options.has_tls_ciphersuites());
   // WL17311-AUTO-01
   EXPECT_FALSE(options.has_tls_kex());
   EXPECT_FALSE(options.has_force_pqc());
@@ -190,9 +190,9 @@ TEST(Ssl_options, initialization) {
   EXPECT_TRUE(options.has(mysqlshdk::db::kSslKey));
   EXPECT_TRUE(options.has(mysqlshdk::db::kSslMode));
   EXPECT_TRUE(options.has(mysqlshdk::db::kSslTlsVersion));
-  EXPECT_TRUE(options.has(mysqlshdk::db::kSslTlsCiphersuites));
 
 #ifndef MARIADB_BUILD
+  EXPECT_TRUE(options.has(mysqlshdk::db::kSslTlsCiphersuites));
   // WL17311-AUTO-01
   EXPECT_TRUE(options.has(mysqlshdk::db::kSslTlsKex));
   EXPECT_TRUE(options.has(mysqlshdk::db::kSslForcePqc));
@@ -209,9 +209,9 @@ TEST(Ssl_options, initialization) {
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslKey));
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslMode));
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslTlsVersion));
-  EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslTlsCiphersuites));
 
 #ifndef MARIADB_BUILD
+  EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslTlsCiphersuites));
   // WL17311-AUTO-01
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslTlsKex));
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSslForcePqc));

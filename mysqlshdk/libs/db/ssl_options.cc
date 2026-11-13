@@ -39,9 +39,9 @@ namespace {
 constexpr const char *const option_str_list[] = {
     kSslCa,     kSslCaPath,     kSslCert,
     kSslKey,    kSslCrl,        kSslCrlPath,
-    kSslCipher, kSslTlsVersion, kSslTlsCiphersuites,
+    kSslCipher, kSslTlsVersion,
 #ifndef MARIADB_BUILD
-    kSslTlsKex, kSslForcePqc,   kSslUsePqcSign,
+    kSslTlsCiphersuites, kSslTlsKex, kSslForcePqc, kSslUsePqcSign,
 #endif
     kSslMode};
 
@@ -120,12 +120,12 @@ void Ssl_options::set_tls_version(const std::string &value) {
   Nullable_options::set(kSslTlsVersion, value, Set_mode::CREATE_AND_UPDATE);
 }
 
+#ifndef MARIADB_BUILD
 void Ssl_options::set_tls_ciphersuites(const std::string &value) {
   Nullable_options::set(kSslTlsCiphersuites, value,
                         Set_mode::CREATE_AND_UPDATE);
 }
 
-#ifndef MARIADB_BUILD
 void Ssl_options::set_tls_kex(const std::string &value) {
   Nullable_options::set(kSslTlsKex, value, Set_mode::CREATE_AND_UPDATE);
 }

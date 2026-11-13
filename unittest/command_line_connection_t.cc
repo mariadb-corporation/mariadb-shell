@@ -867,7 +867,7 @@ TEST_F(Command_line_connection_test, kerberos_auth_mode) {
   execute({_mysqlsh, _uri.c_str(),
            "--plugin-authentication-kerberos-client-mode=InvalidMode", "--port",
            "invalidPort", NULL});
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
   MY_EXPECT_CMD_OUTPUT_CONTAINS(
       "Invalid value: InvalidMode. Allowed values: SSPI, GSSAPI.");
 
