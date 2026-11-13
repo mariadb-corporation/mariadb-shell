@@ -46,27 +46,30 @@ namespace db {
 namespace {
 const std::set<std::string> uri_extra_options = {
     kAuthMethod,
-    kGetServerPublicKey,
     kServerPublicKeyPath,
     kConnectTimeout,
     kNetReadTimeout,
     kNetWriteTimeout,
     kCompression,
-    kCompressionAlgorithms,
     kLocalInfile,
     kNetBufferLength,
     kMaxAllowedPacket,
     kMysqlPluginDir,
+    kClientInteractive,
+    kCanHandleExpiredPasswords,
+#ifndef MARIADB_BUILD
+    kGetServerPublicKey,
+    kCompressionAlgorithms,
 #ifdef _WIN32
     kKerberosClientAuthMode,
 #endif
     kOciConfigFile,
     kOciAuthenticationClientConfigProfile,
     kOpenIdConnectAuthenticationClientTokenFile,
-    kClientInteractive,
-    kCanHandleExpiredPasswords,
     kWebauthnClientPreservePrivacy,
-    kWebauthnClientDeviceIndex};
+    kWebauthnClientDeviceIndex,
+#endif
+};
 
 int lexical_cast_timeout(const std::string &name, const std::string &value) {
   try {
@@ -145,10 +148,12 @@ void Connection_options::override_with(const Connection_options &options) {
   m_connection_attributes.override_from(options.m_connection_attributes, true);
   m_enable_connection_attributes = options.m_enable_connection_attributes;
 
+#ifndef MARIADB_BUILD
   if (options.has_compression_level()) {
     clear_compression_level();
     set_compression_level(options.get_compression_level());
   }
+#endif
 
   if (options.has_port()) {
     set_port(options.get_port());
@@ -160,6 +165,7 @@ void Connection_options::override_with(const Connection_options &options) {
   m_default_transport_type = options.m_default_transport_type;
   m_transport_type = options.m_transport_type;
   m_reject_local_infile_requests = options.m_reject_local_infile_requests;
+#ifndef MARIADB_BUILD
   if (options.has_webauthn_client_preserve_privacy()) {
     m_webauthn_client_preserve_privacy =
         options.m_webauthn_client_preserve_privacy;
@@ -170,6 +176,7 @@ void Connection_options::override_with(const Connection_options &options) {
   if (options.has_register_factor()) {
     m_register_factor = options.m_register_factor;
   }
+#endif
 
   for (int f = 0; f < k_max_auth_factors; f++) {
     const auto requirement = options.password_requirement(f);
@@ -201,8 +208,8 @@ void Connection_options::set_login_options_from(
   m_ssl_options.clear_crl();
   m_ssl_options.clear_crlpath();
   m_ssl_options.clear_tls_version();
-  m_ssl_options.clear_tls_ciphersuites();
 #ifndef MARIADB_BUILD
+  m_ssl_options.clear_tls_ciphersuites();
   m_ssl_options.clear_tls_kex();
   m_ssl_options.clear_force_pqc();
   m_ssl_options.clear_use_pqc_sign();
@@ -217,15 +224,16 @@ void Connection_options::set_login_options_from(
   if (ssl.has_crlpath()) m_ssl_options.set_crlpath(ssl.get_crlpath());
   if (ssl.has_tls_version())
     m_ssl_options.set_tls_version(ssl.get_tls_version());
+#ifndef MARIADB_BUILD
   if (ssl.has_tls_ciphersuites())
     m_ssl_options.set_tls_ciphersuites(ssl.get_tls_ciphersuites());
-#ifndef MARIADB_BUILD
   if (ssl.has_tls_kex()) m_ssl_options.set_tls_kex(ssl.get_tls_kex());
   if (ssl.has_force_pqc()) m_ssl_options.set_force_pqc(ssl.get_force_pqc());
   if (ssl.has_use_pqc_sign())
     m_ssl_options.set_use_pqc_sign(ssl.get_use_pqc_sign());
 #endif
 
+#ifndef MARIADB_BUILD
   if (options.is_auth_method(kAuthMethodOpenIdConnect)) {
     if (has(kAuthMethod)) {
       remove(kAuthMethod);
@@ -239,6 +247,7 @@ void Connection_options::set_login_options_from(
           options.get(kOpenIdConnectAuthenticationClientTokenFile));
     }
   }
+#endif
 }
 
 void Connection_options::set_ssl_options(const Ssl_options &options) {
@@ -531,6 +540,7 @@ void Connection_options::set_pipe(const std::string &pipe) {
   m_default_transport_type = Transport_type::Pipe;
 }
 
+#ifndef MARIADB_BUILD
 void Connection_options::check_compression_conflicts() {
   if (has_compression_algorithms() &&
       get_compression_algorithms() == "uncompressed" && has_compression() &&
@@ -540,6 +550,7 @@ void Connection_options::check_compression_conflicts() {
         "compression-algorithms=uncompressed.");
 }
 
+#endif
 void Connection_options::set_compression(const std::string &compression) {
   if (has_compression())
     throw std::invalid_argument(std::string("Redefinition of '") +
@@ -559,15 +570,19 @@ void Connection_options::set_compression(const std::string &compression) {
         kCompressionPreferred + "', '" + kCompressionDisabled +
         "', 'True', 'False', '1', and '0'.");
 
+#ifndef MARIADB_BUILD
   check_compression_conflicts();
+#endif
 }
 
+#ifndef MARIADB_BUILD
 void Connection_options::set_compression_algorithms(
     const std::string &compression_algorithms) {
   auto ca = shcore::str_lower(compression_algorithms);
   m_extra_options.set(kCompressionAlgorithms, ca);
   check_compression_conflicts();
 }
+#endif
 
 void Connection_options::set_socket(const std::string &socket) {
   m_options.set(kSocket, socket, Set_mode::CREATE_AND_UPDATE);
@@ -641,15 +656,19 @@ void Connection_options::set(const std::string &name,
     m_ssl_options.set(name, value);
   } else if (name == kCompression) {
     set_compression(value);
+#ifndef MARIADB_BUILD
   } else if (name == kCompressionAlgorithms) {
     set_compression_algorithms(value);
+#endif
   } else if (compare(name, db::kConnectTimeout) == 0) {
     set_connect_timeout(lexical_cast_timeout(db::kConnectTimeout, value));
   } else if (compare(name, db::kNetReadTimeout) == 0) {
     set_net_read_timeout(lexical_cast_timeout(db::kNetReadTimeout, value));
   } else if (compare(name, db::kNetWriteTimeout) == 0) {
     set_net_write_timeout(lexical_cast_timeout(db::kNetWriteTimeout, value));
-  } else if (compare(name, kWebauthnClientPreservePrivacy) == 0) {
+  }
+#ifndef MARIADB_BUILD
+  else if (compare(name, kWebauthnClientPreservePrivacy) == 0) {
     set_webauthn_client_preserve_privacy(lexical_cast_bool(name, value));
   } else if (compare(name, kWebauthnClientDeviceIndex) == 0) {
     try {
@@ -667,6 +686,7 @@ void Connection_options::set(const std::string &name,
     set_kerberos_auth_mode(value);
   }
 #endif
+#endif  // MARIADB_BUILD
   else if (ssh_uri_query_attributes.count(shcore::str_lower(name)) > 0) {
     set_ssh_uri_option(shcore::str_lower(name), value);
   } else if (ssh_uri_connection_attributes.count(shcore::str_lower(name)) >
@@ -676,16 +696,21 @@ void Connection_options::set(const std::string &name,
     throw std::invalid_argument("The connection option '" + name +
                                 "' cannot be set in a URI.");
   } else if (is_extra_option(name)) {
-    if (compare(name, kGetServerPublicKey) == 0 ||
+    if (
+#ifndef MARIADB_BUILD
+        compare(name, kGetServerPublicKey) == 0 ||
+#endif
         compare(name, kClientInteractive) == 0 ||
         compare(name, kCanHandleExpiredPasswords) == 0 ||
         compare(name, kLocalInfile) == 0) {
       lexical_cast_bool(name, value);
     }
+#ifndef MARIADB_BUILD
     if (name == kOpenIdConnectAuthenticationClientTokenFile &&
         !has_value(kAuthMethod)) {
       set(kAuthMethod, kAuthMethodOpenIdConnect);
     }
+#endif
     m_extra_options.set(name, value, Set_mode::CREATE);
   } else if (name == kConnectionAttributes) {
     // When connection-attributes has assigned a single value, it must
@@ -704,14 +729,18 @@ void Connection_options::set(const std::string &name,
             "or a list of key-value pairs.");
       }
     }
-  } else if (name == kCompressionLevel) {
+  }
+#ifndef MARIADB_BUILD
+  else if (name == kCompressionLevel) {
     try {
       set_compression_level(shcore::lexical_cast<int>(value));
     } catch (...) {
       throw std::invalid_argument("The value of '"s + kCompressionLevel +
                                   "' must be an integer."s);
     }
-  } else {
+  }
+#endif
+  else {
     throw std::invalid_argument("Invalid connection option '" + name + "'.");
   }
 }
@@ -719,8 +748,10 @@ void Connection_options::set(const std::string &name,
 void Connection_options::set(const std::string &name, int value) {
   if (name == db::kPort) {
     set_port(value);
+#ifndef MARIADB_BUILD
   } else if (name == db::kCompressionLevel) {
     set_compression_level(value);
+#endif
   } else if (name == kConnectTimeout) {
     if (value < 0)
       throw_invalid_timeout(kConnectTimeout, std::to_string(value));
@@ -758,9 +789,11 @@ void Connection_options::set(const std::string &name,
   } else if (shcore::str_caseeq(name, kSslTlsVersions)) {
     m_ssl_options.set_tls_version(
         shcore::str_join(values.begin(), values.end(), ","));
+#ifndef MARIADB_BUILD
   } else if (shcore::str_caseeq(name, kSslTlsCiphersuites)) {
     m_ssl_options.set_tls_ciphersuites(
         shcore::str_join(values.begin(), values.end(), ":"));
+#endif
   } else if (m_options.has(name) || m_ssl_options.has(name) ||
              is_extra_option(name)) {
     // All the connection parameters accept only 1 value
@@ -772,14 +805,16 @@ void Connection_options::set(const std::string &name,
 }
 
 bool Connection_options::has(const std::string &name) const {
-  if (name == db::kCompressionLevel) return has_compression_level();
   if (name == db::kConnectTimeout) return has_connect_timeout();
   if (name == db::kNetReadTimeout) return has_net_read_timeout();
   if (name == db::kNetWriteTimeout) return has_net_write_timeout();
+#ifndef MARIADB_BUILD
+  if (name == db::kCompressionLevel) return has_compression_level();
   if (name == db::kWebauthnClientDeviceIndex) return has_webauth_device_index();
   if (name == db::kWebauthnClientPreservePrivacy)
     return has_webauthn_client_preserve_privacy();
   if (name == db::kRegisterFactor) return has_register_factor();
+#endif
 
   return m_options.has(name) || m_ssl_options.has(name) ||
          m_extra_options.has(name) || m_options.compare(name, kPort) == 0;
@@ -796,10 +831,12 @@ bool Connection_options::has_value(const std::string &name) const {
     return has_net_read_timeout();
   else if (m_options.compare(name, kNetWriteTimeout) == 0)
     return has_net_write_timeout();
+#ifndef MARIADB_BUILD
   else if (m_options.compare(name, kWebauthnClientPreservePrivacy) == 0)
     return has_webauthn_client_preserve_privacy();
   else if (m_options.compare(name, kRegisterFactor) == 0)
     return has_register_factor();
+#endif
   else if (m_options.has(name))
     return m_options.has_value(name);
   else if (m_ssl_options.has(name))
@@ -833,6 +870,7 @@ Connection_options::query_attributes() const {
     }
   }
 
+#ifndef MARIADB_BUILD
   if (has_webauthn_client_preserve_privacy()) {
     attributes.push_back(
         {kWebauthnClientPreservePrivacy,
@@ -847,6 +885,7 @@ Connection_options::query_attributes() const {
   if (has_register_factor()) {
     attributes.push_back({kRegisterFactor, get_register_factor()});
   }
+#endif
 
   if (has_connect_timeout()) {
     attributes.push_back(
@@ -860,10 +899,12 @@ Connection_options::query_attributes() const {
     attributes.push_back(
         {kNetWriteTimeout, std::to_string(get_net_write_timeout())});
   }
+#ifndef MARIADB_BUILD
   if (has_compression_level()) {
     attributes.push_back(
         {kCompressionLevel, std::to_string(get_compression_level())});
   }
+#endif
 
   // The SSH options a `+ssh` URI carries. Without this the extension would
   // survive a round trip but its settings would not, which is the trap the
@@ -935,33 +976,39 @@ Transport_type Connection_options::get_transport_type() const {
   return *m_transport_type;
 }
 
+#ifndef MARIADB_BUILD
 int64_t Connection_options::get_compression_level() const {
   if (!m_compress_level.has_value())
     throw std::invalid_argument("Compression level is undefined.");
   return *m_compress_level;
 }
+#endif
 
 const std::string &Connection_options::get(const std::string &name) const {
   if (m_ssl_options.has(name)) return m_ssl_options.get_value(name);
   if (m_extra_options.has(name)) return m_extra_options.get_value(name);
   if (m_options.compare(name, kSocket) == 0) return get_socket();
   if (m_options.compare(name, kPipe) == 0) return get_pipe();
+#ifndef MARIADB_BUILD
   if (m_options.compare(name, kWebauthnClientPreservePrivacy) == 0) {
     static const std::string k_true{"true"};
     static const std::string k_false{"false"};
     return get_webauthn_client_preserve_privacy() ? k_true : k_false;
   }
+#endif
 
   return get_value(name);
 }
 
 int Connection_options::get_numeric(const std::string &name) const {
   if (name == db::kPort) return get_port();
-  if (name == db::kCompressionLevel) return get_compression_level();
   if (name == db::kConnectTimeout) return get_connect_timeout();
   if (name == db::kNetReadTimeout) return get_net_read_timeout();
   if (name == db::kNetWriteTimeout) return get_net_write_timeout();
+#ifndef MARIADB_BUILD
+  if (name == db::kCompressionLevel) return get_compression_level();
   if (name == db::kWebauthnClientDeviceIndex) return get_webauth_device_index();
+#endif
 
   throw std::invalid_argument(
       shcore::str_format("Invalid URI property: %s", name.c_str()));
@@ -981,6 +1028,7 @@ void Connection_options::clear_pipe() {
 }
 
 void Connection_options::remove(const std::string &name) {
+#ifndef MARIADB_BUILD
   if (m_options.compare(name, kWebauthnClientDeviceIndex) == 0) {
     m_webauth_device_index.reset();
     return;
@@ -993,6 +1041,7 @@ void Connection_options::remove(const std::string &name) {
     m_register_factor.reset();
     return;
   }
+#endif
 
   // Can't delete fixed values
   if (m_options.has(name))
@@ -1015,10 +1064,12 @@ bool Connection_options::operator==(const Connection_options &other) const {
              other.m_enable_connection_attributes &&
          m_connection_attributes == other.m_connection_attributes &&
          m_port == other.m_port && m_transport_type == other.m_transport_type &&
+#ifndef MARIADB_BUILD
          m_webauth_device_index == other.m_webauth_device_index &&
          m_webauthn_client_preserve_privacy ==
              other.m_webauthn_client_preserve_privacy &&
          m_register_factor == other.m_register_factor &&
+#endif
          m_reject_local_infile_requests == other.m_reject_local_infile_requests;
 }
 
@@ -1110,6 +1161,7 @@ bool Connection_options::is_auth_method(const std::string &method_id) const {
   return ret_val;
 }
 
+#ifndef MARIADB_BUILD
 bool Connection_options::has_oci_config_file() const {
   return has_value(mysqlshdk::db::kOciConfigFile);
 }
@@ -1163,7 +1215,8 @@ std::string Connection_options::get_kerberos_auth_mode() const {
   }
   return mysqlshdk::db::kKerberosAuthModeSSPI;
 }
-#endif
+#endif  // _WIN32
+#endif  // MARIADB_BUILD
 
 bool Connection_options::has_connect_timeout() const {
   return m_connect_timeout.has_value();
@@ -1235,6 +1288,7 @@ bool Connection_options::is_interactive() const {
   return m_interactive || is_enabled(kClientInteractive);
 }
 
+#ifndef MARIADB_BUILD
 bool Connection_options::has_webauth_device_index() const {
   return m_webauth_device_index.has_value();
 }
@@ -1279,6 +1333,7 @@ const std::string &Connection_options::get_register_factor() const {
   assert(has_register_factor());
   return *m_register_factor;
 }
+#endif
 
 void Connection_options::set_connection_attribute(const std::string &attribute,
                                                   const std::string &value) {

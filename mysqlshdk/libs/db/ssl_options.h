@@ -59,8 +59,8 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   bool has_crlpath() const { return has_value(kSslCrlPath); }
   bool has_cipher() const { return has_value(kSslCipher); }
   bool has_tls_version() const { return has_value(kSslTlsVersion); }
-  bool has_tls_ciphersuites() const { return has_value(kSslTlsCiphersuites); }
 #ifndef MARIADB_BUILD
+  bool has_tls_ciphersuites() const { return has_value(kSslTlsCiphersuites); }
   bool has_tls_kex() const { return has_value(kSslTlsKex); }
   bool has_force_pqc() const { return has_value(kSslForcePqc); }
   bool has_use_pqc_sign() const { return has_value(kSslUsePqcSign); }
@@ -76,10 +76,10 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   const std::string &get_crlpath() const { return _get(kSslCrlPath); }
   const std::string &get_cipher() const { return _get(kSslCipher); }
   const std::string &get_tls_version() const { return _get(kSslTlsVersion); }
+#ifndef MARIADB_BUILD
   const std::string &get_tls_ciphersuites() const {
     return _get(kSslTlsCiphersuites);
   }
-#ifndef MARIADB_BUILD
   const std::string &get_tls_kex() const { return _get(kSslTlsKex); }
   bool get_force_pqc() const { return _get_bool(kSslForcePqc); }
   bool get_use_pqc_sign() const { return _get_bool(kSslUsePqcSign); }
@@ -94,8 +94,8 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   void clear_crlpath() { clear_value(kSslCrlPath); }
   void clear_cipher() { clear_value(kSslCipher); }
   void clear_tls_version() { clear_value(kSslTlsVersion); }
-  void clear_tls_ciphersuites() { clear_value(kSslTlsCiphersuites); }
 #ifndef MARIADB_BUILD
+  void clear_tls_ciphersuites() { clear_value(kSslTlsCiphersuites); }
   void clear_tls_kex() { clear_value(kSslTlsKex); }
   void clear_force_pqc() { clear_value(kSslForcePqc); }
   void clear_use_pqc_sign() { clear_value(kSslUsePqcSign); }
@@ -108,8 +108,8 @@ struct SHCORE_PUBLIC Ssl_options : public mysqlshdk::utils::Nullable_options {
   void set_crlpath(const std::string &value);
   void set_cipher(const std::string &value);
   void set_tls_version(const std::string &value);
-  void set_tls_ciphersuites(const std::string &value);
 #ifndef MARIADB_BUILD
+  void set_tls_ciphersuites(const std::string &value);
   void set_tls_kex(const std::string &value);
   void set_force_pqc(bool value);
   void set_use_pqc_sign(bool value);

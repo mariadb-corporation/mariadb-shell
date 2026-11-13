@@ -121,8 +121,7 @@ Without a mode option, the shell starts in the mode set by the `defaultMode` [co
 | `--local-infile[=<bool>]` | Allow `LOAD DATA LOCAL INFILE` statements in the session. |
 | `--auth-method=<plugin>` | Client authentication plugin to start with, such as `client_ed25519` or `caching_sha2_password`. The server can still switch the connection to another plugin. |
 | `--mysql-plugin-dir[=<path>]` | Directory with the client authentication plugins. |
-| `--get-server-public-key` | Request the server's RSA public key for password exchange with `caching_sha2_password` or `sha256_password` over an unencrypted connection. |
-| `--server-public-key-path=<file>` | File with a local copy of the server's RSA public key, for the same purpose. |
+| `--server-public-key-path=<file>` | File with a local copy of the server's RSA public key, for password exchange with `caching_sha2_password` or `sha256_password` over an unencrypted connection. Without it, the shell asks the server for the key. |
 
 ## SSL/TLS Options
 
@@ -137,7 +136,6 @@ Without a mode option, the shell starts in the mode set by the `defaultMode` [co
 | `--ssl-crlpath=<dir>` | Directory with certificate revocation list files in PEM format. |
 | `--ssl-cipher=<list>` | Permitted ciphers. With OpenSSL, the list also selects the TLS 1.3 cipher suites. |
 | `--tls-version=<version>` | TLS version to use: `TLSv1.2` or `TLSv1.3`. |
-| `--tls-ciphersuites=<list>` | Accepted, but has no effect: Connector/C has no setting for TLS 1.3 cipher suites. Use `--ssl-cipher`. |
 
 See [Encrypted Connections](connecting/encrypted-connections.md).
 

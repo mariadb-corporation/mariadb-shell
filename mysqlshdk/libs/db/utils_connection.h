@@ -72,10 +72,14 @@ inline constexpr const char kSchema[] = "schema";
 inline constexpr const char kUser[] = "user";
 inline constexpr const char kPassword[] = "password";
 inline constexpr const char kPassword1[] = "password1";
+#ifndef MARIADB_BUILD
+// Multi-factor authentication: MariaDB Connector/C has none, so MariaDB builds
+// do not offer it.
 inline constexpr const char kPassword2[] = "password2";
 inline constexpr const char kPassword3[] = "password3";
-inline constexpr const char kNoPassword[] = "no-password";
 inline constexpr const char kRegisterFactor[] = "register-factor";
+#endif
+inline constexpr const char kNoPassword[] = "no-password";
 inline constexpr const char kSshRemoteHost[] = "ssh-remote-host";
 // The SSH endpoint, spelled as three scalars so that a tunnelled connection
 // fits in a URI. `ssh-host` is optional: left out, the tunnel is opened to the
@@ -99,24 +103,32 @@ inline constexpr const char kSslCrlPath[] = "ssl-crlpath";
 inline constexpr const char kSslCipher[] = "ssl-cipher";
 inline constexpr const char kSslTlsVersion[] = "tls-version";
 inline constexpr const char kSslTlsVersions[] = "tls-versions";
-inline constexpr const char kSslTlsCiphersuites[] = "tls-ciphersuites";
 #ifndef MARIADB_BUILD
-// Post-quantum TLS settings: MariaDB Connector/C has no setting for any of
-// them, so MariaDB builds do not offer them at all.
+// MariaDB Connector/C has no setting for the TLS v1.3 cipher suites (with
+// OpenSSL, ssl-cipher sets them too) or for any of the post-quantum TLS
+// settings, so MariaDB builds do not offer them at all.
+inline constexpr const char kSslTlsCiphersuites[] = "tls-ciphersuites";
 inline constexpr const char kSslTlsKex[] = "tls-kex";
 inline constexpr const char kSslForcePqc[] = "force-pqc";
 inline constexpr const char kSslUsePqcSign[] = "use-pqc-sign";
 #endif
 inline constexpr const char kSslMode[] = "ssl-mode";
 inline constexpr const char kAuthMethod[] = "auth-method";
+#ifndef MARIADB_BUILD
+// MariaDB Connector/C always asks the server for its public key when it needs
+// one, so MariaDB builds have no option for it.
 inline constexpr const char kGetServerPublicKey[] = "get-server-public-key";
+#endif
 inline constexpr const char kServerPublicKeyPath[] = "server-public-key-path";
 inline constexpr const char kConnectTimeout[] = "connect-timeout";
 inline constexpr const char kNetReadTimeout[] = "net-read-timeout";
 inline constexpr const char kNetWriteTimeout[] = "net-write-timeout";
 inline constexpr const char kCompression[] = "compression";
+#ifndef MARIADB_BUILD
+// MariaDB Connector/C has only on/off (zlib) compression.
 inline constexpr const char kCompressionAlgorithms[] = "compression-algorithms";
 inline constexpr const char kCompressionLevel[] = "compression-level";
+#endif
 inline constexpr const char kLocalInfile[] = "local-infile";
 inline constexpr const char kNetBufferLength[] = "net-buffer-length";
 inline constexpr const char kMaxAllowedPacket[] = "max-allowed-packet";
@@ -124,13 +136,20 @@ inline constexpr const char kMysqlPluginDir[] = "mysql-plugin-dir";
 inline constexpr const char kClientInteractive[] = "client-interactive";
 inline constexpr const char kCanHandleExpiredPasswords[] =
     "can-handle-expired-passwords";
+#ifndef MARIADB_BUILD
+// Options of MySQL client authentication plugins MariaDB Connector/C does not
+// have (see also kKerberosClientAuthMode, kOciConfigFile...).
 inline constexpr const char kWebauthnClientPreservePrivacy[] =
     "plugin-authentication-webauthn-client-preserve-privacy";
 inline constexpr const char kWebauthnClientDeviceIndex[] =
     "plugin-authentication-webauthn-device";
+#endif
 inline constexpr const char kConnectionAttributes[] = "connection-attributes";
 inline constexpr const char kUri[] = "uri";
 inline constexpr const char kSsh[] = "ssh";
+#ifndef MARIADB_BUILD
+// Options of MySQL client authentication plugins MariaDB Connector/C does not
+// have.
 inline constexpr const char kKerberosClientAuthMode[] =
     "plugin-authentication-kerberos-client-mode";
 inline constexpr const char kOciConfigFile[] = "oci-config-file";
@@ -138,6 +157,7 @@ inline constexpr const char kOciAuthenticationClientConfigProfile[] =
     "authentication-oci-client-config-profile";
 inline constexpr const char kOpenIdConnectAuthenticationClientTokenFile[] =
     "authentication-openid-connect-client-id-token-file";
+#endif
 
 // The connection schemes. `mariadb` is this shell's own name for the classic
 // MariaDB/MySQL client-server protocol and is the default; `mysql` is accepted
@@ -196,28 +216,34 @@ inline const std::set<std::string> uri_connection_attributes = {
     kSslCrlPath,
     kSslCipher,
     kSslTlsVersion,
-    kSslTlsCiphersuites,
 #ifndef MARIADB_BUILD
+    kSslTlsCiphersuites,
     kSslTlsKex,
     kSslForcePqc,
     kSslUsePqcSign,
 #endif
     kSslMode,
     kAuthMethod,
+#ifndef MARIADB_BUILD
     kGetServerPublicKey,
+#endif
     kServerPublicKeyPath,
     kConnectTimeout,
     kNetReadTimeout,
     kNetWriteTimeout,
     kCompression,
+#ifndef MARIADB_BUILD
     kCompressionAlgorithms,
     kCompressionLevel,
+#endif
     kConnectionAttributes,
+#ifndef MARIADB_BUILD
 #ifdef _WIN32
     kKerberosClientAuthMode,
 #endif
     kOciConfigFile,
     kOciAuthenticationClientConfigProfile,
+#endif
 };
 
 }  // namespace db

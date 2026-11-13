@@ -55,6 +55,7 @@ void Auth_options::get(const mysqlshdk::db::Connection_options &copts) {
                  ? std::optional<std::string>{copts.get_password()}
                  : std::nullopt;
   ssl_options = copts.get_ssl_options();
+#ifndef MARIADB_BUILD
   if (copts.has(mysqlshdk::db::kAuthMethod) &&
       copts.get(mysqlshdk::db::kAuthMethod) ==
           mysqlshdk::db::kAuthMethodOpenIdConnect) {
@@ -64,6 +65,7 @@ void Auth_options::get(const mysqlshdk::db::Connection_options &copts) {
                   mysqlshdk::db::kOpenIdConnectAuthenticationClientTokenFile)}
             : std::nullopt;
   }
+#endif
 }
 
 void Auth_options::set(mysqlshdk::db::Connection_options *copts) const {
@@ -73,6 +75,7 @@ void Auth_options::set(mysqlshdk::db::Connection_options *copts) const {
   else
     copts->set_password(*password);
   copts->set_ssl_options(ssl_options);
+#ifndef MARIADB_BUILD
   if (openid_token.has_value()) {
     if (copts->has(mysqlshdk::db::kAuthMethod)) {
       copts->remove(mysqlshdk::db::kAuthMethod);
@@ -82,6 +85,7 @@ void Auth_options::set(mysqlshdk::db::Connection_options *copts) const {
     copts->set(mysqlshdk::db::kOpenIdConnectAuthenticationClientTokenFile,
                openid_token.value());
   }
+#endif
 }
 
 void Instance::register_warnings_callback(const Warnings_callback &callback) {

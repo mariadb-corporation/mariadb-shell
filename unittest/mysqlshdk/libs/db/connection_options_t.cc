@@ -79,8 +79,10 @@ TEST(Connection_options, default_initialization) {
   ASSERT_FALSE(options.has_transport_type());
   ASSERT_FALSE(options.get_ssl_options().has_data());
   ASSERT_FALSE(options.has_compression());
+#ifndef MARIADB_BUILD
   ASSERT_FALSE(options.has_compression_algorithms());
   ASSERT_FALSE(options.has_compression_level());
+#endif
 
   // has verifies the existence of the option
   EXPECT_TRUE(options.has(mysqlshdk::db::kScheme));
@@ -102,6 +104,7 @@ TEST(Connection_options, default_initialization) {
   EXPECT_FALSE(options.has_value(mysqlshdk::db::kSocket));
 }
 
+#ifndef MARIADB_BUILD
 TEST(Connection_options, webauthn_client_preserve_privacy) {
   Connection_options options;
 
@@ -114,7 +117,9 @@ TEST(Connection_options, webauthn_client_preserve_privacy) {
   EXPECT_EQ("false",
             options.get(mysqlshdk::db::kWebauthnClientPreservePrivacy));
 }
+#endif
 
+#ifndef MARIADB_BUILD
 TEST(Connection_options, override_webauthn_device_index) {
   Connection_options options;
   options.set_webauth_device_index(1);
@@ -127,7 +132,9 @@ TEST(Connection_options, override_webauthn_device_index) {
       "mysql://user@host?plugin-authentication-webauthn-device=2"));
   EXPECT_EQ(2, options.get_webauth_device_index());
 }
+#endif
 
+#ifndef MARIADB_BUILD
 TEST(Connection_options, register_factor_uri) {
   constexpr auto uri = "mysql://user@host?register-factor=2";
   const Connection_options options(uri);
@@ -136,6 +143,7 @@ TEST(Connection_options, register_factor_uri) {
   EXPECT_EQ("2", options.get_register_factor());
   EXPECT_EQ(uri, options.as_uri(mysqlshdk::db::uri::formats::full()));
 }
+#endif
 
 TEST(Connection_options, scheme_functions) {
   Connection_options options;
@@ -458,6 +466,7 @@ TEST(Connection_options, case_insensitive_ssl_mode) {
   combine(mysqlshdk::db::kSslMode, callback);
 }
 
+#ifndef MARIADB_BUILD
 TEST(Connection_options, case_insensitive_get_server_public_key) {
   // This callback will get called with every combination of
   // uppercase/lowercase letters on get-server-public-key
@@ -466,6 +475,7 @@ TEST(Connection_options, case_insensitive_get_server_public_key) {
 
   combine(mysqlshdk::db::kGetServerPublicKey, callback);
 }
+#endif
 
 TEST(Connection_options, case_insensitive_interactive) {
   // This callback will get called with every combination of
@@ -506,23 +516,29 @@ TEST(Connection_options, case_insensitive_options) {
 
   // handled by other, more specific tests
   attributes.erase(mysqlshdk::db::kSslMode);
+#ifndef MARIADB_BUILD
   attributes.erase(mysqlshdk::db::kGetServerPublicKey);
+#endif
   attributes.erase(mysqlshdk::db::kClientInteractive);
   attributes.erase(mysqlshdk::db::kServerPublicKeyPath);
   attributes.erase(mysqlshdk::db::kConnectTimeout);
   attributes.erase(mysqlshdk::db::kNetReadTimeout);
   attributes.erase(mysqlshdk::db::kNetWriteTimeout);
   attributes.erase(mysqlshdk::db::kCompression);
+#ifndef MARIADB_BUILD
   attributes.erase(mysqlshdk::db::kCompressionLevel);
+#endif
   attributes.erase(mysqlshdk::db::kConnectionAttributes);
 #ifndef MARIADB_BUILD
   attributes.erase(mysqlshdk::db::kSslForcePqc);
   attributes.erase(mysqlshdk::db::kSslUsePqcSign);
 #endif
+#ifndef MARIADB_BUILD
 #ifdef _WIN32
   attributes.erase(mysqlshdk::db::kKerberosClientAuthMode);
 #endif
   attributes.erase(mysqlshdk::db::kOpenIdConnectAuthenticationClientTokenFile);
+#endif
 
   for (auto property : attributes) {
     combine(property, callback);
@@ -665,6 +681,7 @@ TEST(Connection_options, compression) {
   }
 }
 
+#ifndef MARIADB_BUILD
 TEST(Connection_options, compression_level) {
   auto invalid_values = {"-1e", "-0.5", "10.0", "whatever"};
 
@@ -699,6 +716,7 @@ TEST(Connection_options, compression_level) {
     EXPECT_NO_THROW(sample.set(mysqlshdk::db::kCompressionLevel, {value}));
   }
 }
+#endif
 
 TEST(Connection_options, set_host) {
   // localhost defaults to socket for mysql, tcp for mysqlx

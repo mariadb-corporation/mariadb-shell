@@ -563,6 +563,7 @@ TEST_F(mod_shell_test, parse_uri) {
         _shell->unparse_uri(dict));
   }
 
+#ifndef MARIADB_BUILD
   {
     std::string args;
     args =
@@ -589,7 +590,9 @@ TEST_F(mod_shell_test, parse_uri) {
         "ECDSA-AES256-GCM-SHA384&tls-version=TLSv1.1%2CTLSv1.2",
         _shell->unparse_uri(dict));
   }
+#endif
 
+#ifndef MARIADB_BUILD
   {
     std::string args;
     args =
@@ -616,9 +619,10 @@ TEST_F(mod_shell_test, parse_uri) {
         "ECDSA-AES256-GCM-SHA384&tls-version=TLSv1.1%2CTLSv1.2",
         _shell->unparse_uri(dict));
   }
+#endif
   // clang-format on
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
   {
     std::string args;
     args = "user@host?plugin-authentication-kerberos-client-mode=SSPI";
@@ -651,6 +655,7 @@ TEST_F(mod_shell_test, parse_uri) {
   }
 #endif
 
+#ifndef MARIADB_BUILD
   {
     std::string args;
     args =
@@ -670,6 +675,7 @@ TEST_F(mod_shell_test, parse_uri) {
         dict->get_string(mysqlshdk::db::kOciAuthenticationClientConfigProfile)
             .c_str());
   }
+#endif
 }
 
 TEST_F(mod_shell_test, connect) {

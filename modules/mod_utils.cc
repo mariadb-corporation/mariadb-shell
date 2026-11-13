@@ -58,9 +58,11 @@ void validate_mfa_connection_options(
       connection_options.get_scheme() == "mysqlx" &&
       (connection_options.has_mfa_password(1) ||
        connection_options.has_mfa_password(2) ||
+#ifndef MARIADB_BUILD
        connection_options.has_register_factor() ||
        connection_options.has_webauth_device_index() ||
        connection_options.has_webauthn_client_preserve_privacy() ||
+#endif
        connection_options.password_requirement(1) ==
            mysqlshdk::db::Password_requirement::kRequired ||
        connection_options.password_requirement(2) ==
@@ -157,6 +159,7 @@ Connection_options get_connection_options(
     } else if (ret_val.compare(option.first, mysqlshdk::db::kPassword1) == 0) {
       // Apply password1 after all other options, including password.
       password1_option = &option;
+#ifndef MARIADB_BUILD
     } else if (ret_val.compare(option.first, mysqlshdk::db::kPassword2) == 0) {
       if (option.second.get_type() == shcore::Null) {
         ret_val.clear_mfa_password(1);
@@ -171,6 +174,7 @@ Connection_options get_connection_options(
       } else {
         ret_val.set_mfa_password(2, connection_map.string_at(option.first));
       }
+#endif
     } else if (ret_val.compare(option.first, mysqlshdk::db::kPassword) == 0 &&
                option.second.get_type() == shcore::Null) {
       ret_val.clear_password();
@@ -192,9 +196,11 @@ Connection_options get_connection_options(
 #else   // !_WIN32
       ret_val.set_socket(sock);
 #endif  // !_WIN32
+#ifndef MARIADB_BUILD
     } else if (ret_val.compare(option.first,
                                mysqlshdk::db::kCompressionLevel) == 0) {
       ret_val.set_compression_level(connection_map.int_at(option.first));
+#endif
     } else if (ret_val.compare(option.first, mysqlshdk::db::kConnectTimeout) ==
                0) {
       check_timeout_option(mysqlshdk::db::kConnectTimeout, connection_map,
@@ -228,6 +234,7 @@ Connection_options get_connection_options(
         ret_val.set(mysqlshdk::db::kConnectionAttributes,
                     option.second.descr());
       }
+#ifndef MARIADB_BUILD
     } else if (ret_val.compare(option.first, mysqlshdk::db::kRegisterFactor) ==
                0) {
       if (option.second.get_type() != shcore::String &&
@@ -246,6 +253,7 @@ Connection_options get_connection_options(
                0) {
       ret_val.set_webauthn_client_preserve_privacy(
           connection_map.bool_at(option.first));
+#endif
     } else if (ret_val.compare(option.first,
                                mysqlshdk::db::kClientInteractive) == 0 ||
                ret_val.compare(option.first,
@@ -400,6 +408,7 @@ shcore::Value::Map_type_ref get_connection_map(
            mysqlshdk::db::Password_requirement::kRequired)
     (*map)[mysqlshdk::db::kPassword] = shcore::Value::Null();
 
+#ifndef MARIADB_BUILD
   if (connection_options.has_mfa_password(1))
     (*map)[mysqlshdk::db::kPassword2] =
         shcore::Value(connection_options.get_mfa_password(1));
@@ -413,6 +422,7 @@ shcore::Value::Map_type_ref get_connection_map(
   else if (connection_options.password_requirement(2) ==
            mysqlshdk::db::Password_requirement::kRequired)
     (*map)[mysqlshdk::db::kPassword3] = shcore::Value::Null();
+#endif
 
   if (connection_options.has_host())
     (*map)[mysqlshdk::db::kHost] = shcore::Value(connection_options.get_host());
@@ -496,11 +506,11 @@ shcore::Value::Map_type_ref get_connection_map(
       (*map)[mysqlshdk::db::kSslTlsVersion] =
           shcore::Value(ssl.get_tls_version());
 
+#ifndef MARIADB_BUILD
     if (ssl.has_tls_ciphersuites())
       (*map)[mysqlshdk::db::kSslTlsCiphersuites] =
           shcore::Value(ssl.get_tls_ciphersuites());
 
-#ifndef MARIADB_BUILD
     if (ssl.has_tls_kex())
       (*map)[mysqlshdk::db::kSslTlsKex] = shcore::Value(ssl.get_tls_kex());
 
@@ -521,6 +531,7 @@ shcore::Value::Map_type_ref get_connection_map(
     }
   }
 
+#ifndef MARIADB_BUILD
   if (connection_options.has_webauthn_client_preserve_privacy()) {
     (*map)[mysqlshdk::db::kWebauthnClientPreservePrivacy] = shcore::Value(
         connection_options.get_webauthn_client_preserve_privacy());
@@ -533,6 +544,7 @@ shcore::Value::Map_type_ref get_connection_map(
     (*map)[mysqlshdk::db::kRegisterFactor] =
         shcore::Value(connection_options.get_register_factor());
   }
+#endif
 
   if (connection_options.has_connect_timeout()) {
     (*map)[mysqlshdk::db::kConnectTimeout] =
@@ -546,10 +558,12 @@ shcore::Value::Map_type_ref get_connection_map(
     (*map)[mysqlshdk::db::kNetWriteTimeout] =
         shcore::Value(connection_options.get_net_write_timeout());
   }
+#ifndef MARIADB_BUILD
   if (connection_options.has_compression_level()) {
     (*map)[mysqlshdk::db::kCompressionLevel] =
         shcore::Value(connection_options.get_compression_level());
   }
+#endif
 
   if (connection_options.is_connection_attributes_enabled()) {
     auto conn_atts = connection_options.get_connection_attributes();

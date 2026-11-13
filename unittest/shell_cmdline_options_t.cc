@@ -139,11 +139,11 @@ class Shell_cmdline_options : public tests::Shell_base_test {
       return options->connection_options().get_ssl_options().get_cipher();
     else if (option == "tls-version")
       return options->connection_options().get_ssl_options().get_tls_version();
+#ifndef MARIADB_BUILD
     else if (option == "tls-ciphersuites")
       return options->connection_options()
           .get_ssl_options()
           .get_tls_ciphersuites();
-#ifndef MARIADB_BUILD
     else if (option == "tls-kex")
       return options->connection_options().get_ssl_options().get_tls_kex();
     else if (option == "force-pqc")
@@ -205,7 +205,7 @@ class Shell_cmdline_options : public tests::Shell_base_test {
       return options->mysql_plugin_dir;
     else if (option == "log-sql")
       return options->log_sql;
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
     else if (option == "plugin-authentication-kerberos-client-mode")
       return options->connection_options().get_kerberos_auth_mode();
 #endif
@@ -810,10 +810,10 @@ TEST_F(Shell_cmdline_options, default_values) {
   EXPECT_TRUE(!options.connection_options().get_ssl_options().has_cipher());
   EXPECT_TRUE(
       !options.connection_options().get_ssl_options().has_tls_version());
-  EXPECT_FALSE(
-      options.connection_options().get_ssl_options().has_tls_ciphersuites());
 
 #ifndef MARIADB_BUILD
+  EXPECT_FALSE(
+      options.connection_options().get_ssl_options().has_tls_ciphersuites());
   // WL17311-AUTO-03
   EXPECT_FALSE(options.connection_options().get_ssl_options().has_tls_kex());
   EXPECT_FALSE(options.connection_options().get_ssl_options().has_force_pqc());
@@ -833,13 +833,15 @@ TEST_F(Shell_cmdline_options, default_values) {
   EXPECT_FALSE(options.show_column_type_info);
   EXPECT_TRUE(!options.connection_options().has_compression());
   EXPECT_FALSE(options.default_compress);
+#ifndef MARIADB_BUILD
   EXPECT_TRUE(!options.connection_options().has_compression_algorithms());
   EXPECT_TRUE(!options.connection_options().has_compression_level());
+#endif
   EXPECT_EQ("error", options.log_sql);
   EXPECT_EQ("*SELECT*:SHOW*", options.log_sql_ignore);
   EXPECT_EQ("*IDENTIFIED*:*PASSWORD*", options.log_sql_ignore_unsafe);
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
   EXPECT_FALSE(options.connection_options().has_kerberos_auth_mode());
 #endif
 }
@@ -882,19 +884,25 @@ TEST_F(Shell_cmdline_options, app) {
 
   test_option_with_no_value("--password", "prompt_password", "1");
   test_option_with_no_value("--password1", "prompt_password", "1");
+#ifndef MARIADB_BUILD
   test_option_with_no_value("--password2", "prompt_password2", "1");
   test_option_with_no_value("--password3", "prompt_password3", "1");
+#endif
 
   test_option_equal_value("password1", "mypwd", IS_CONNECTION_DATA, "password");
+#ifndef MARIADB_BUILD
   test_option_equal_value("password2", "mypwd", IS_CONNECTION_DATA);
   test_option_equal_value("password3", "mypwd", IS_CONNECTION_DATA);
+#endif
 
   test_option_space_value("password1", "mypwd", IS_CONNECTION_DATA,
                           "prompt_password", "1");
+#ifndef MARIADB_BUILD
   test_option_space_value("password2", "mypwd", IS_CONNECTION_DATA,
                           "prompt_password2", "1");
   test_option_space_value("password3", "mypwd", IS_CONNECTION_DATA,
                           "prompt_password3", "1");
+#endif
 
   test_option_with_value("ssl-ca", "", "some_value", "", IS_CONNECTION_DATA,
                          false);
@@ -902,10 +910,10 @@ TEST_F(Shell_cmdline_options, app) {
                          !IS_NULLABLE);
   test_option_with_value("ssl-key", "", "some_value", "", IS_CONNECTION_DATA,
                          !IS_NULLABLE);
-  test_option_with_value("tls-ciphersuites", "", "some_value", "",
-                         IS_CONNECTION_DATA, !IS_NULLABLE);
 
 #ifndef MARIADB_BUILD
+  test_option_with_value("tls-ciphersuites", "", "some_value", "",
+                         IS_CONNECTION_DATA, !IS_NULLABLE);
   // WL17311-AUTO-03
   test_option_with_value("tls-kex", "", "X25519MLKEM768:X25519", "",
                          IS_CONNECTION_DATA, !IS_NULLABLE);
@@ -1022,7 +1030,7 @@ TEST_F(Shell_cmdline_options, app) {
                                    "--log-sql: The log level value must be any "
                                    "of {off, error, on, all, unfiltered}.\n");
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(MARIADB_BUILD)
   test_option_with_value_list("plugin-authentication-kerberos-client-mode", "",
                               {"GSSAPI", "SSPI"}, "", false, false);
 
@@ -1958,6 +1966,7 @@ password=bla
     EXPECT_FALSE(so.get().connection_options().should_prompt_password(2));
     EXPECT_FALSE(so.get().connection_options().has_password());
   }
+#ifndef MARIADB_BUILD
   // mfa
   {
     char uri[] = "root:goodpass@localhost";
@@ -1991,6 +2000,7 @@ password=bla
     EXPECT_FALSE(so.get().connection_options().has_mfa_password(2));
     EXPECT_EQ("goodpass", so.get().connection_options().get_password());
   }
+#endif
 }
 
 TEST_F(Shell_cmdline_options, no_password) {

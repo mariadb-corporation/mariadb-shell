@@ -2608,7 +2608,7 @@ session.run_sql("analyze table t;")
 # get the socket URI, use invalid credentials
 socket_uri = shell.unparse_uri({ **shell.parse_uri(get_socket_uri(session)), "user": "invalid", "password": "invalid" })
 
-if __os_type == "windows":
+if __os_type == "windows" and not __mariadb_build:
     socket_uri += "?get-server-public-key=true"
 
 # enable --skip-grant-tables, restart the server

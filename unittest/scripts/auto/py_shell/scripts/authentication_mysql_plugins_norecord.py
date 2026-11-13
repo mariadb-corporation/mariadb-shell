@@ -25,7 +25,9 @@ def check_login(user, password, options=""):
 def check_wrong_password(user):
     EXPECT_THROWS(lambda: mysql.get_classic_session(f"{user}:wrong@{__host}:{__mysql_port}"), f"Access denied for user '{user}'")
 
-__no_tls = "?ssl-mode=DISABLED&get-server-public-key=true"
+# MariaDB Connector/C asks the server for the key by itself (the MariaDB build
+# has no get-server-public-key option); libmysqlclient only when told to.
+__no_tls = "?ssl-mode=DISABLED" if __mariadb_build else "?ssl-mode=DISABLED&get-server-public-key=true"
 
 # -----------------------------------------------------------------------------
 # setup

@@ -182,7 +182,8 @@ were MySQL-specific still exist but raise a "not supported" error. Either way,
 | **Binlog utilities** (`util.dumpBinlogs`, `util.loadBinlogs`) | Built on MySQL's client binlog API and binlog event library |
 | **`util.upgradeAuthMethod`**, and the `random`, `dual` and `discardOld` options of `util.changePassword` | Migrate off, or rely on, MySQL 8.0 account features MariaDB does not have |
 | **MySQL REST Service (MRS) management** | MySQL Router plugin specific |
-| **`--register-factor`** | Uses the MySQL FIDO/WebAuthn authentication plugin |
+| **`--register-factor`**, and the OCI, WebAuthn, OpenID Connect and Kerberos connection options | Configure MySQL client authentication plugins that MariaDB Connector/C does not have |
+| **Connection options with no Connector/C setting**: `password2`/`password3` (multi-factor authentication), `compression-algorithms`, `compression-level`, `tls-ciphersuites`, `get-server-public-key`, `tls-kex`, `force-pqc`, `use-pqc-sign` | Not offered on the command line, in URIs or in dictionaries, rather than accepted and ignored |
 
 For the engineering detail behind each exclusion, and the macros that gate them,
 see [MARIADB_PORT.md](MARIADB_PORT.md).

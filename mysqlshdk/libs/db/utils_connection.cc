@@ -44,10 +44,12 @@ const std::set<std::string> db_connection_attributes = {
     kUser,
     kPassword,
     kPassword1,
+#ifndef MARIADB_BUILD
     kPassword2,
     kPassword3,
-    kNoPassword,
     kRegisterFactor,
+#endif
+    kNoPassword,
     kSslCa,
     kSslCaPath,
     kSslCert,
@@ -56,23 +58,24 @@ const std::set<std::string> db_connection_attributes = {
     kSslCrlPath,
     kSslCipher,
     kSslTlsVersion,
-    kSslTlsCiphersuites,
 #ifndef MARIADB_BUILD
+    kSslTlsCiphersuites,
     kSslTlsKex,
     kSslForcePqc,
     kSslUsePqcSign,
 #endif
     kSslMode,
     kAuthMethod,
-    kGetServerPublicKey,
     kServerPublicKeyPath,
     kConnectTimeout,
     kNetReadTimeout,
     kNetWriteTimeout,
     kCompression,
+    kConnectionAttributes,
+#ifndef MARIADB_BUILD
+    kGetServerPublicKey,
     kCompressionAlgorithms,
     kCompressionLevel,
-    kConnectionAttributes,
 #ifdef _WIN32
     kKerberosClientAuthMode,
 #endif
@@ -81,6 +84,7 @@ const std::set<std::string> db_connection_attributes = {
     kOpenIdConnectAuthenticationClientTokenFile,
     kWebauthnClientPreservePrivacy,
     kWebauthnClientDeviceIndex,
+#endif
     kClientInteractive,
     kCanHandleExpiredPasswords};
 

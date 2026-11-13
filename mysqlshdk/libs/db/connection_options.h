@@ -178,10 +178,12 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   const std::string &get_compression() const {
     return m_extra_options.get_value(kCompression);
   }
+#ifndef MARIADB_BUILD
   const std::string &get_compression_algorithms() const {
     return m_extra_options.get_value(kCompressionAlgorithms);
   }
   int64_t get_compression_level() const;
+#endif
 
   const Ssl_options &get_ssl_options() const { return m_ssl_options; }
   Ssl_options &get_ssl_options() { return m_ssl_options; }
@@ -220,10 +222,12 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   bool has_pipe() const { return m_options.has_value(kPipe); }
   bool has_transport_type() const { return m_transport_type.has_value(); }
   bool has_compression() const { return m_extra_options.has(kCompression); }
+#ifndef MARIADB_BUILD
   bool has_compression_algorithms() const {
     return m_extra_options.has(kCompressionAlgorithms);
   }
   bool has_compression_level() const { return m_compress_level.has_value(); }
+#endif
 
   mysqlshdk::db::uri::Type get_type() const override {
     return mysqlshdk::db::uri::Type::DevApi;
@@ -243,10 +247,12 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   void set_socket(const std::string &socket);
   void set_pipe(const std::string &pipe);
   void set_compression(const std::string &compress);
+#ifndef MARIADB_BUILD
   void set_compression_algorithms(const std::string &compression_algorithms);
   void set_compression_level(int64_t compression_level) {
     m_compress_level = compression_level;
   }
+#endif
   void set_password(const std::string &password) override;
   void set_mfa_password(int factor, const std::string &password);
   void set_needs_password(int factor, bool flag);
@@ -266,7 +272,9 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   void clear_schema() { clear_value(kSchema); }
   void clear_socket();
   void clear_pipe();
+#ifndef MARIADB_BUILD
   void clear_compression_level() { m_compress_level.reset(); }
+#endif
   void clear_transport_type();
 
   void clear_warnings() { m_warnings.clear(); }
@@ -311,10 +319,13 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
 
   bool is_auth_method(const std::string &method_id) const;
 
+#ifndef MARIADB_BUILD
   bool has_oci_config_file() const;
   void set_oci_config_file(const std::string &path);
   std::string get_oci_config_file() const;
+#endif
 
+#ifndef MARIADB_BUILD
   bool has_oci_client_config_profile() const;
   void set_oci_client_config_profile(const std::string &profile);
   std::string get_oci_client_config_profile() const;
@@ -323,6 +334,7 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   bool has_kerberos_auth_mode() const;
   void set_kerberos_auth_mode(const std::string &mode);
   std::string get_kerberos_auth_mode() const;
+#endif
 #endif
 
   bool has_connect_timeout() const;
@@ -353,6 +365,7 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
     return m_reject_local_infile_requests;
   }
 
+#ifndef MARIADB_BUILD
   bool has_webauth_device_index() const;
   void set_webauth_device_index(int index);
   int get_webauth_device_index() const;
@@ -364,23 +377,30 @@ class SHCORE_PUBLIC Connection_options : public IConnection {
   bool has_register_factor() const;
   void set_register_factor(const std::string &factor);
   const std::string &get_register_factor() const;
+#endif
 
  private:
   void _set_fixed(const std::string &key, const std::string &val);
   bool is_extra_option(const std::string &option);
   bool uses_local_transport() const;
 
+#ifndef MARIADB_BUILD
   void check_compression_conflicts();
+#endif
 
   std::optional<Transport_type> m_default_transport_type;
   std::optional<Transport_type> m_transport_type;
+#ifndef MARIADB_BUILD
   std::optional<int64_t> m_compress_level;
+#endif
   std::optional<int> m_connect_timeout;
   std::optional<int> m_net_read_timeout;
   std::optional<int> m_net_write_timeout;
+#ifndef MARIADB_BUILD
   std::optional<int> m_webauth_device_index;
   std::optional<bool> m_webauthn_client_preserve_privacy;
   std::optional<std::string> m_register_factor;
+#endif
 
   Ssl_options m_ssl_options;
   void set_ssh_uri_option(const std::string &name, const std::string &value);

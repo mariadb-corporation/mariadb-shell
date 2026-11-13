@@ -382,14 +382,12 @@ void Session_impl::connect(
     }
   }
 
+#ifndef MARIADB_BUILD
   if (bool get_pub_key =
           connection_options.is_enabled(mysqlshdk::db::kGetServerPublicKey)) {
-#ifdef MARIADB_BUILD
-    (void)get_pub_key;
-#else
     mysql_options(_mysql, MYSQL_OPT_GET_SERVER_PUBLIC_KEY, &get_pub_key);
-#endif
   }
+#endif
 
   if (connection_options.has(mysqlshdk::db::kServerPublicKeyPath)) {
     std::string server_public_key =
@@ -613,19 +611,13 @@ void Session_impl::connect(
 
   m_thread_id = mysql_thread_id(_mysql);
 
+#ifndef MARIADB_BUILD
   if (_connection_options.has_register_factor()) {
-#ifdef MARIADB_BUILD
-    // FIDO/WebAuthn device registration relies on the MySQL fido auth plugin,
-    // which libmariadb does not have.
-    log_warning(
-        "FIDO device registration (register-factor) is not supported by the "
-        "MariaDB client library and will be ignored.");
-#else
     fido::register_device(_mysql,
                           _connection_options.get_register_factor().c_str());
-#endif
     _connection_options.remove(kRegisterFactor);
   }
+#endif
 }
 
 std::optional<mysqlshdk::db::Ssl_mode> Session_impl::setup_ssl(

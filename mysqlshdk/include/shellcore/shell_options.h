@@ -130,8 +130,10 @@ class Shell_options final : public shcore::Options {
     std::string run_module;
 
     // Individual connection parameters
+#ifndef MARIADB_BUILD
     std::string register_factor;
     std::optional<bool> webauthn_client_preserve_privacy;
+#endif
     std::string oci_profile;
     std::string oci_config_file;
 
@@ -341,7 +343,9 @@ class Shell_options final : public shcore::Options {
   void check_file_execute_conflicts();
   void check_ssh_conflicts();
 
+#ifndef MARIADB_BUILD
   void check_connection_options();
+#endif
 
   Storage storage;
   std::unique_ptr<shcore::cli::Shell_cli_operation> m_shell_cli_operation;

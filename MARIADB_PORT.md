@@ -141,7 +141,6 @@ X parser applies it to the operand that follows (`(NOT tid) = 1`).
 (Their backends are X- or MySQL-specific; they compile but are stubbed or refused.)
 
 - `util.importJson` — used the X document store
-- `--register-factor` — used the MySQL FIDO/WebAuthn auth plugin
 - cluster `--redirect-primary` / `--redirect-secondary` — used AdminAPI
 - the `ocimds` and `compatibility` dump options, when the source is MariaDB —
   they rewrite DDL and accounts for MySQL HeatWave Service
@@ -159,10 +158,10 @@ was adapted to libmariadb, which lacks several MySQL 8.x client APIs:
 |---|---|
 | `MYSQL_OPT_SSL_MODE` / `MYSQL_OPT_SSL_ENFORCE` | mapped best-effort onto `MYSQL_OPT_SSL_VERIFY_SERVER_CERT`; **`ssl-mode=REQUIRED` cannot be strictly enforced** and warns at runtime |
 | query attributes (`mysql_bind_param`) | not supported — dropped, warns if used |
-| MFA (`MAX_AUTH_FACTORS`, `MYSQL_OPT_USER_PASSWORD`) | primary password routed through `mysql_real_connect`; 2nd/3rd factors warn |
-| `MYSQL_OPT_COMPRESSION_ALGORITHMS`, `MYSQL_OPT_TLS_CIPHERSUITES`, `MYSQL_OPT_GET_SERVER_PUBLIC_KEY` | not in libmariadb — dropped, warn if used |
-| `MYSQL_OPT_TLS_KEX`, `MYSQL_OPT_FORCE_PQC`, `MYSQL_OPT_USE_PQC_SIGN` | not in libmariadb — the `tls-kex`, `force-pqc` and `use-pqc-sign` connection options and command-line flags are not built: an invalid option, not an ignored one |
-| FIDO device registration (`register-factor`, `fido::register_device`) | needs the MySQL fido auth plugin — dropped, warns if used |
+| MFA (`MAX_AUTH_FACTORS`, `MYSQL_OPT_USER_PASSWORD`) | primary password routed through `mysql_real_connect`; `password2`/`password3` and `--password2`/`--password3` are not built (`password1` stays, an alias of `password`) |
+| `MYSQL_OPT_COMPRESSION_ALGORITHMS`, `MYSQL_OPT_ZSTD_COMPRESSION_LEVEL`, `MYSQL_OPT_TLS_CIPHERSUITES`, `MYSQL_OPT_TLS_KEX`, `MYSQL_OPT_FORCE_PQC`, `MYSQL_OPT_USE_PQC_SIGN` | not in libmariadb — the matching connection options and command-line flags are not built: an invalid option, not an ignored one |
+| `MYSQL_OPT_GET_SERVER_PUBLIC_KEY` | not in libmariadb, whose `caching_sha2_password` asks the server for the key whenever it has none — `get-server-public-key` is not built |
+| FIDO device registration (`register-factor`, `fido::register_device`) and the OCI, WebAuthn, OpenID Connect and Kerberos auth plugin options | need MySQL client auth plugins — the options are not built |
 | `mysql_real_escape_string_quote` | falls back to `mysql_real_escape_string` |
 | `CR_*` client error codes | `#include <errmsg.h>`; MySQL-only `CR_*`/`ER_*` constants gated out |
 | `MYSQL_TYPE_VECTOR` | gated out (MySQL 9 type) |
