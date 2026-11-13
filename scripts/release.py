@@ -228,17 +228,30 @@ def branch_sha(repo, branch):
     return gh("api", f"repos/{repo}/git/ref/heads/{branch}", "--jq", ".object.sha").strip()
 
 
+PR_NUMBER_PATTERN = re.compile(r"\(#(\d+)\)\s*$")
+
+
 def rc_state(repo):
     """Where release/candidate stands against main: identical, behind (can be
-    fast-forwarded to main) or diverged/ahead (cannot)."""
+    fast-forwarded to main) or diverged/ahead (cannot), and the commits on
+    main that release/candidate does not have, oldest first."""
     main_sha = branch_sha(repo, "main")
     rc_sha = branch_sha(repo, RC_BRANCH)
     # compare/BASE...HEAD: status is HEAD relative to BASE, so "ahead" means
     # main is ahead of release/candidate -- a fast-forward.
-    status = gh("api", f"repos/{repo}/compare/{rc_sha}...{main_sha}", "--jq", ".status").strip()
+    compare = gh_json("api", f"repos/{repo}/compare/{rc_sha}...{main_sha}")
+    status = compare["status"]
     meaning = {"identical": "identical", "ahead": "behind main (fast-forward)"}.get(status, status)
+    ahead = []
+    for commit in compare.get("commits", []) if status == "ahead" else []:
+        subject = commit["commit"]["message"].split("\n", 1)[0]
+        pr = PR_NUMBER_PATTERN.search(subject)
+        ahead.append({"sha": commit["sha"], "subject": subject, "pr": int(pr.group(1)) if pr else None})
     return {"main_sha": main_sha, "rc_sha": rc_sha, "rc_vs_main": meaning,
-            "can_fast_forward": status in ("identical", "ahead")}
+            "can_fast_forward": status in ("identical", "ahead"),
+            # The compare API lists at most 250 commits; ahead_by is the count.
+            "ahead_by": compare.get("ahead_by", 0) if status == "ahead" else 0,
+            "ahead_commits": ahead}
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +586,14 @@ def cmd_preflight(args):
     for name, repo in (("shell", shell), ("plugins", plugins)):
         print(f"  {name:<8} main {short(repo['main_sha'])} ({repo['main_version']}), "
               f"rc {short(repo['rc_sha'])} ({repo['rc_version']}): rc is {repo['rc_vs_main']}")
+        if repo["ahead_by"]:
+            same = repo["main_version"] == repo["rc_version"]
+            print(f"           {repo['ahead_by']} commit(s) on main that release/candidate does not have"
+                  + (" -- same version on both, so ask whether to include them" if same else "") + ":")
+            for commit in repo["ahead_commits"]:
+                print(f"             {short(commit['sha'])} {commit['subject']}")
+            if repo["ahead_by"] > len(repo["ahead_commits"]):
+                print(f"             ... and {repo['ahead_by'] - len(repo['ahead_commits'])} more")
     return 0
 
 
