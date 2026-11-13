@@ -9,7 +9,10 @@
 # Subcommands:
 #   preflight            Versions on both repos, the last release, the
 #                        release/candidate branches and the sandbox server
-#                        builds, with the decision each one leads to.
+#                        builds, with the decision each one leads to. A
+#                        published server built with packaging files that
+#                        have changed since is reported as "refresh", as is
+#                        one named with --refresh MAJOR.
 #   shell-bump-pr V      Opens the PR that sets MYSQL_VERSION on main to V (or
 #                        finds the one already open).
 #   push-rc REPO SHA     Fast-forwards release/candidate; for the plugins repo,
@@ -43,13 +46,35 @@ RC_BRANCH = "release/candidate"
 # EXPECTED_PLATFORMS and classify_series() in the plugins repo's
 # tools/update_version/update_version.py: this decides which sandbox servers to
 # build, that script decides what the index says about them, and the two have
-# to agree on the tags, on each series' status and on the runs.
+# to agree on the tags, on each series' status and on the runs. Only this side
+# detects outdated packaging: for every series preflight reports as "refresh",
+# the release passes --refresh <major> to update_version.py, which then reports
+# it as "refresh" too.
 SERVER_MAJORS = (11, 12, 13)
 SERVER_TAG_PATTERN = re.compile(r"^mariadb-(\d+)\.(\d+)\.(\d+)$")
 RUN_SEARCH_LIMIT = 50
 EXPECTED_PLATFORMS = ("darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-arm64", "win32-x64")
 SERVER_INDEX_FILE = "mcp_plugin/lib/sandbox_server_versions.json"
 SERVER_CHECKSUMS_ASSET = "SERVER_SHA256SUMS"
+
+# The files of this repo that decide what goes into a sandbox server package:
+# the build workflows, the Linux builder and the scripts they run. A published
+# server whose packages were built while any of these differed from main is
+# outdated: rebuilding the same version with today's recipe gives different
+# packages (2026-11: the version that started shipping its own OpenSSL). Keep
+# the list current when a file is added to, or dropped from, the packaging.
+SANDBOX_PACKAGING_FILES = (
+    ".github/workflows/sandbox-server.yml",
+    ".github/workflows/sandbox-server-rocky-linux.yml",
+    "docker/linux-rocky9-server.Dockerfile",
+    "docker/entrypoint-sandbox-server.sh",
+    "scripts/prune_sandbox_server.sh",
+    "scripts/check_sandbox_server_deps.sh",
+)
+
+# A row of publish-release.yml's "Sandbox server packages" table in the release
+# notes: | 13.x | `mariadb-13.1.1` | `e0802cd` | `<package>` |
+SERVER_NOTES_ROW = re.compile(r"^\|\s*\d+\.x\s*\|\s*`(mariadb-[0-9.]+)`\s*\|\s*`([0-9a-f]{7,40})`\s*\|")
 
 # Workflow display names, for reporting: a run number is always printed with
 # the name of the workflow it belongs to.
@@ -277,6 +302,71 @@ def release_checksums(tag):
     return _release_cache[tag]
 
 
+_release_info_cache = {}
+
+
+def release_info(tag):
+    """(published_at, {server tag: {build commits}}) of a published release,
+    the commits from its notes' sandbox server table."""
+    if tag not in _release_info_cache:
+        info = gh_json("release", "view", tag, "-R", SHELL_REPO, "--json", "publishedAt,body")
+        commits = {}
+        for line in (info.get("body") or "").splitlines():
+            match = SERVER_NOTES_ROW.match(line.strip())
+            if match:
+                commits.setdefault(match.group(1), set()).add(match.group(2))
+        _release_info_cache[tag] = (info.get("publishedAt"), commits)
+    return _release_info_cache[tag]
+
+
+_packaging_cache = {}
+
+
+def packaging_blobs(ref):
+    """{path: blob sha, or None when absent} of SANDBOX_PACKAGING_FILES at ref.
+
+    Compared by content, not by ancestry: a build made from a branch that was
+    then squash-merged has the same files as main, but its commit is not an
+    ancestor of main's."""
+    if ref not in _packaging_cache:
+        blobs = {}
+        for path in SANDBOX_PACKAGING_FILES:
+            result = run(["gh", "api", f"repos/{SHELL_REPO}/contents/{path}?ref={ref}", "--jq", ".sha"],
+                         check=False)
+            blobs[path] = result.stdout.strip() if result.returncode == 0 else None
+        _packaging_cache[ref] = blobs
+    return _packaging_cache[ref]
+
+
+def packaging_changes(ref, main_sha):
+    """The packaging files that differ between ref and main."""
+    at_ref, at_main = packaging_blobs(ref), packaging_blobs(main_sha)
+    return [path for path in SANDBOX_PACKAGING_FILES if at_ref[path] != at_main[path]]
+
+
+def published_build_state(tag, packages, main_sha):
+    """Whether an unchanged series' published packages were built with main's
+    packaging files: ("current", None), ("outdated", reason), or ("unknown",
+    reason) when a release's notes do not record the commit that built them."""
+    for release in sorted({package_release(p["url"])[0] for p in packages.values()}):
+        commits = release_info(release)[1].get(tag)
+        if not commits:
+            return "unknown", f"the notes of {release} do not record the commit that built {tag}"
+        for commit in sorted(commits):
+            changed = packaging_changes(commit, main_sha)
+            if changed:
+                return "outdated", (f"outdated: {', '.join(changed)} changed on main since {commit} "
+                                    f"built the packages in {release}")
+    return "current", None
+
+
+def published_at(packages):
+    """The latest publish time of the releases an index entry's packages are
+    in."""
+    times = [release_info(package_release(p["url"])[0])[0] for p in packages.values()]
+    return max(t for t in times if t) if any(times) else None
+
+
 def classify_series(tag_version, indexed):
     """What a series needs, from its newest tag and its index entry, as
     update_version.py decides it: unchanged, new, pending, inconsistent or
@@ -314,16 +404,24 @@ def classify_series(tag_version, indexed):
     return "unchanged", f"the index has {indexed_text} from {', '.join(releases)} ({SERVER_CHECKSUMS_ASSET} matches)"
 
 
-def sandbox_status(tags, index):
+def sandbox_status(tags, index, main_sha, refresh=()):
     """For each series: its status against the index, and for a series that
     needs packages from a build, the run publish-release would attach or why
     there is none.
 
-    Only new and pending series need a build. An unchanged series is left
-    alone -- no build, no artifacts, no index change -- however old its build
-    is: the published release carries it, and release assets do not expire.
+    New and pending series need a build, and so does a refreshed one: the same
+    version again, because the packages published for it were built while the
+    packaging files differed from main's (detected), or because it was named
+    in 'refresh' (forced, for a change outside this repo, such as the Windows
+    runners' OpenSSL). Otherwise an unchanged series is left alone -- no build,
+    no artifacts, no index change -- however old its build is: the published
+    release carries it, and release assets do not expire.
+
+    A build is only reused when it was made with main's packaging files, since
+    update_version.py and publish-release take the newest successful run of a
+    tag whatever it was built from.
     """
-    fields = "databaseId,displayTitle,createdAt,conclusion,status,url"
+    fields = "databaseId,displayTitle,createdAt,conclusion,status,url,headSha"
     successful = recent = None
     indexed = index_series(index)
 
@@ -339,9 +437,25 @@ def sandbox_status(tags, index):
 
         tag_version = tuple(int(part) for part in tag.split("-")[1].split("."))
         series_status, reason = classify_series(tag_version, indexed.get(major))
+        not_before = None
+        # Same rule as update_version.py's --refresh: it turns an unchanged,
+        # inconsistent or pending series into a refreshed one.
+        if major in refresh and series_status in ("unchanged", "inconsistent", "pending"):
+            not_before = published_at(indexed[major][1])
+            series_status, reason = "refresh", f"--refresh: replacing the index's packages ({reason})"
+        elif series_status == "unchanged":
+            state, why = published_build_state(tag, indexed[major][1], main_sha)
+            if state == "outdated":
+                series_status, reason = "refresh", why
+            elif state == "unknown":
+                entry.update(series_status=series_status, reason=reason, note=why,
+                             decision=f"unchanged: {reason} -- no build, no index change "
+                                      f"(but {why}; pass --refresh {major} to rebuild it)")
+                continue
         entry.update(series_status=series_status, reason=reason)
         if series_status == "unchanged":
-            entry["decision"] = f"unchanged: {reason} -- no build, no index change"
+            entry["decision"] = (f"unchanged: {reason}, built with main's packaging files "
+                                 "-- no build, no index change")
             continue
         if series_status == "problem":
             entry.update(blocked=True, decision=f"problem: {reason}")
@@ -350,7 +464,7 @@ def sandbox_status(tags, index):
             entry.update(blocked=True, decision=f"INCONSISTENT: {reason} -- ask the user")
             continue
 
-        # new or pending: the packages come from a build.
+        # new, pending or refresh: the packages come from a build.
         if successful is None:
             successful = gh_json("run", "list", "-R", SHELL_REPO, "--workflow", "sandbox-server.yml",
                                  "--status", "success", "--limit", str(RUN_SEARCH_LIMIT), "--json", fields)
@@ -370,9 +484,21 @@ def sandbox_status(tags, index):
             continue
 
         if success:
+            run_name = f"{SANDBOX_WORKFLOW_NAME} run {success['databaseId']}"
+            entry.update(success_run=success["databaseId"], success_created=success["createdAt"])
+            changed = packaging_changes(success["headSha"], main_sha)
+            if changed:
+                entry.update(needs_build=True,
+                             decision=f"{prefix} -- {run_name} was built while {', '.join(changed)} "
+                                      "differed from main's, build it again")
+                continue
+            if not_before and parse_time(success["createdAt"]) <= parse_time(not_before):
+                entry.update(needs_build=True,
+                             decision=f"{prefix} -- {run_name} predates the release it would replace "
+                                      f"(published {not_before}), build it again")
+                continue
             artifacts = gh_json("api", f"repos/{SHELL_REPO}/actions/runs/{success['databaseId']}/artifacts?per_page=100")
             expired = [a["name"] for a in artifacts["artifacts"] if a["expired"]]
-            entry.update(success_run=success["databaseId"], success_created=success["createdAt"])
             if not artifacts["artifacts"] or expired:
                 entry.update(needs_build=True,
                              decision=f"{prefix} -- {SANDBOX_WORKFLOW_NAME} run {success['databaseId']} succeeded "
@@ -406,7 +532,7 @@ def cmd_preflight(args):
     last = last_release()
     version_check = check_shell_version(shell["main_version"], last, today)
     index = json.loads(raw_file(PLUGINS_REPO, SERVER_INDEX_FILE, plugins["main_sha"]))
-    servers = sandbox_status(latest_server_tags(), index)
+    servers = sandbox_status(latest_server_tags(), index, shell["main_sha"], set(args.refresh))
 
     report = {
         "today": today.isoformat(),
@@ -704,6 +830,10 @@ def main():
 
     p = sub.add_parser("preflight", help="Report the state every release step depends on.")
     p.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    p.add_argument("--refresh", type=int, action="append", default=[], choices=SERVER_MAJORS, metavar="MAJOR",
+                   help="Rebuild and republish this series' current version even though it is unchanged, "
+                        "for a change preflight cannot detect (such as the Windows runners' OpenSSL). "
+                        "Repeatable. Outdated packaging is detected without it.")
     p.set_defaults(func=cmd_preflight)
 
     p = sub.add_parser("shell-bump-pr", help="Open (or find) the PR setting MYSQL_VERSION on main.")
