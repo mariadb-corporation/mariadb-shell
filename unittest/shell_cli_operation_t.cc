@@ -731,8 +731,8 @@ TEST_F(Shell_cli_operation_test, connection_options) {
   {
     const char *arg1[] = {"util",       "copy-instance",
                           "{",          "--sslMode",
-                          "required",   "--compression-algorithms",
-                          "zstd",       "--user",
+                          "required",   "--ssl-cipher",
+                          "AES256-SHA", "--user",
                           "root",       "--host",
                           "localhost",  "}",
                           "--password", "samplepwd"};
@@ -745,8 +745,8 @@ TEST_F(Shell_cli_operation_test, connection_options) {
     ASSERT_TRUE(m_argument_list[0].get_type() == Value_type::Map);
     EXPECT_EQ("localhost", m_argument_list.map_at(0)->get_string("host"));
     EXPECT_EQ("required", m_argument_list.map_at(0)->get_string("ssl-mode"));
-    EXPECT_EQ("zstd",
-              m_argument_list.map_at(0)->get_string("compression-algorithms"));
+    EXPECT_EQ("AES256-SHA",
+              m_argument_list.map_at(0)->get_string("ssl-cipher"));
     EXPECT_EQ("root", m_argument_list.map_at(0)->get_string("user"));
     EXPECT_EQ("samplepwd", m_argument_list.map_at(0)->get_string("password"));
   }
@@ -759,7 +759,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
                           "--default-character-set=utf8mb4",
                           "}",
                           "--sslMode=required",
-                          "--compression-algorithms=zstd",
+                          "--ssl-cipher=AES256-SHA",
                           "--user=root"};
     Options::Cmdline_iterator it(10, arg2, 0);
     EXPECT_NO_THROW(parse(&it));
@@ -772,7 +772,7 @@ TEST_F(Shell_cli_operation_test, connection_options) {
     // a connection options dictionary
     EXPECT_EQ(3306, co->get_int("port"));
     EXPECT_EQ("required", co->get_string("ssl-mode"));
-    EXPECT_EQ("zstd", co->get_string("compression-algorithms"));
+    EXPECT_EQ("AES256-SHA", co->get_string("ssl-cipher"));
     EXPECT_EQ("root", co->get_string("user"));
 
     // not a connection options dictionary
