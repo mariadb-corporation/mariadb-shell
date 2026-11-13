@@ -209,8 +209,8 @@ jobs:
   # inside the image, so the image would first have to be given git, tar and
   # useradd just to get the packages onto it -- and provisioning it is exactly
   # what a pristine target must not have. `apt-get install git` alone pulls
-  # libcurl4 and with it libssl3, which is one of the libraries the server
-  # package is being checked for; installing the harness would pre-satisfy the
+  # libcurl4 and with it libssl3, the system copy of a library the server
+  # package must now carry itself; installing the harness would pre-satisfy the
   # product's own dependencies and a packaging bug would pass unnoticed.
   #
   # So the runner does the fetching with its own preinstalled tooling and
@@ -218,12 +218,14 @@ jobs:
   # as the runner's own uid (no useradd, and mariadbd refuses to run as root).
   # No harness is installed into the image. The one thing a leg may add is the
   # slice of its own distro's baseline that the minimal image omits, declared as
-  # `image-setup` in the matrix -- debian:12 has no libssl3 because apt uses
-  # GnuTLS, while every real Debian install does. That is calibration, not
-  # provisioning: the bar is "a real install of this distro always has it",
-  # verified, and never something that would hide a packaging gap (the `openssl`
-  # package, say, which carries the CLI). Everything else must come out of the
-  # packages.
+  # `image-setup` in the matrix. That is calibration, not provisioning: the bar
+  # is "a real install of this distro always has it", verified, and never
+  # something that would hide a packaging gap (the `openssl` package, say, which
+  # carries the CLI). No leg needs it today. debian:12 used it for libssl3 (apt
+  # uses GnuTLS, so the image has no OpenSSL) until the server packages started
+  # shipping their own OpenSSL: Fedora 45 moved to OpenSSL 4, so the system
+  # libssl.so.3 was never a dependency the packages could rely on. Everything
+  # must come out of the packages.
   #
   # Keeping it a plain step also keeps every leg, container or not, in one
   # matrix sharing one step list.
@@ -293,20 +295,6 @@ jobs:
             os-runner: ubuntu-latest
             image: debian:12
             docker-platform: linux/amd64
-            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
-            # nothing pulls libssl3 in, while every real Debian 12 install has it
-            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
-            # calibrates the image to the real target; it does not paper over a gap.
-            #
-            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
-            # and the missing CLI is the packaging bug these legs just caught in the
-            # shell package -- installing it here would hide that class of bug again,
-            # which is exactly what the old prerequisites step did. libssl3 depends
-            # only on libc6, so it brings nothing else with it.
-            #
-            # Package name is tied to the pinned image: Debian 13 renamed it
-            # libssl3t64 in the time_t transition.
-            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
             shell-glob: "*-linux-glibc*-x86-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-x86-64bit-sandbox.tar.gz"
           - name: fedora-x64
@@ -327,20 +315,6 @@ jobs:
             os-runner: ubuntu-24.04-arm
             image: debian:12
             docker-platform: linux/arm64
-            # debian:12 is the one base image without OpenSSL -- apt uses GnuTLS, so
-            # nothing pulls libssl3 in, while every real Debian 12 install has it
-            # (ca-certificates -> openssl -> libssl3), confirmed on a VM. Adding it
-            # calibrates the image to the real target; it does not paper over a gap.
-            #
-            # libssl3, NOT openssl. The `openssl` package would also install the CLI,
-            # and the missing CLI is the packaging bug these legs just caught in the
-            # shell package -- installing it here would hide that class of bug again,
-            # which is exactly what the old prerequisites step did. libssl3 depends
-            # only on libc6, so it brings nothing else with it.
-            #
-            # Package name is tied to the pinned image: Debian 13 renamed it
-            # libssl3t64 in the time_t transition.
-            image-setup: apt-get update && apt-get install -y --no-install-recommends libssl3
             shell-glob: "*-linux-glibc*-arm-64bit.tar.gz"
             server-glob: "mariadb-*-linux-glibc*-arm-64bit-sandbox.tar.gz"
           - name: fedora-arm64

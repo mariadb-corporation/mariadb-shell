@@ -74,6 +74,10 @@ ccache --set-config=max_size=15G
 # `crypt` symbol at the point it processes libcrypt.a and silently drops it,
 # and the build fails with "undefined reference to `crypt'" instead of
 # linking it in.
+#
+# WITH_SSL points at the OpenSSL the Dockerfile builds into
+# /opt/sandbox-openssl; step 3c ships it in the package. WITH_ZLIB=bundled
+# compiles the server's own zlib copy in, so libz.so.1 is not needed either.
 cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -90,6 +94,8 @@ cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DPLUGIN_DUCKDB=NO \
   -DCOMPILATION_COMMENT="Development Sandbox" \
   -DWITH_PCRE=bundled \
+  -DWITH_SSL=/opt/sandbox-openssl \
+  -DWITH_ZLIB=bundled \
   -DLIBAIO_LIBRARIES=/opt/static-libs/libaio.a \
   -DLIBAIO_INCLUDE_DIRS=/usr/include \
   -DCMAKE_EXE_LINKER_FLAGS="-Wl,--undefined=crypt -Wl,-Bstatic -lcrypt -Wl,-Bdynamic"
@@ -123,6 +129,32 @@ mv "$BUILD_DIR/install_root/usr/local/mysql" "$BUILD_DIR/$PKG_NAME"
 #     and the assertions that fail the build rather than ship a tree that cannot
 #     bootstrap.
 /usr/local/bin/prune_sandbox_server.sh "$BUILD_DIR/$PKG_NAME"
+
+# 3c. Ship the OpenSSL the server was built against (see the Dockerfile for
+#     why the system one cannot be used), and make every binary find it
+#     through an RPATH relative to its own location. DT_RPATH (--force-rpath),
+#     not DT_RUNPATH: RPATH also applies to the libraries' own dependency
+#     (libssl -> libcrypto) and is not overridden by a LD_LIBRARY_PATH that
+#     points at a system libssl.so.3.
+PKG_DIR="$BUILD_DIR/$PKG_NAME"
+mkdir -p "$PKG_DIR/lib"
+for lib in libssl.so.3 libcrypto.so.3; do
+  cp -L "/opt/sandbox-openssl/lib/$lib" "$PKG_DIR/lib/$lib"
+  chmod 755 "$PKG_DIR/lib/$lib"
+  strip --strip-unneeded "$PKG_DIR/lib/$lib"
+  patchelf --force-rpath --set-rpath '$ORIGIN' "$PKG_DIR/lib/$lib"
+done
+for f in "$PKG_DIR"/bin/*; do
+  [ "$(head -c4 "$f" | od -An -tx1 | tr -d ' ')" = "7f454c46" ] || continue
+  patchelf --force-rpath --set-rpath '$ORIGIN/../lib' "$f"
+done
+for f in "$PKG_DIR"/lib/plugin/*.so; do
+  patchelf --force-rpath --set-rpath '$ORIGIN/..' "$f"
+done
+
+# 3d. Fail the build if any binary still needs a library the package does not
+#     carry and the target distros cannot be relied on to have.
+/usr/local/bin/check_sandbox_server_deps.sh "$PKG_DIR"
 
 # 4. Package and publish to the output mount, declaring the package name for
 #    downstream consumers (e.g. CI artifact naming).

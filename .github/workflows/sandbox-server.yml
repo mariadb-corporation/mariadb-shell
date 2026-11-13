@@ -186,6 +186,17 @@ jobs:
               -DZLIB_LIBRARY="$MACOS_SDK_PATH/usr/lib/libz.tbd"
               -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
             )
+          else
+            # Windows: the runner image's preinstalled OpenSSL (the Shining
+            # Light Win64/Win64ARM build, 3.6.5 on both runners as of
+            # 2026-11). Pinned here so the build fails rather than picking up
+            # some other copy, and so the Windows packaging step knows which
+            # DLLs to ship: the package carries them in bin/, since a user's
+            # Windows has no OpenSSL. The version follows the runner image;
+            # the packaging step prints it.
+            EXTRA_CMAKE_ARGS+=(
+              -DOPENSSL_ROOT_DIR="C:/Program Files/OpenSSL"
+            )
           fi
 
           cmake -B ${{ env.MARIADB_SERVER_BUILD_DIR }} -G Ninja \
@@ -254,17 +265,43 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
+          set -euo pipefail
           cd ${{ env.MARIADB_SERVER_BUILD_DIR }}
           DESTDIR="$(pwd)/install_root" cmake --install . --config Release --component Server
+          # The VC++ runtime DLLs (vcruntime140.dll, msvcp140.dll, ...) the
+          # binaries are linked against: the server's CMake installs them as
+          # their own VCCRT component (cmake/os/Windows.cmake, through CMake's
+          # InstallRequiredSystemLibraries), next to the executables in bin/.
+          # They are not part of Windows -- they come with the VC++
+          # Redistributable, which build machines have and users need not.
+          DESTDIR="$(pwd)/install_root" cmake --install . --config Release --component VCCRT
           cp extra/my_print_defaults.exe "install_root/Program Files (x86)/MariaDB/bin/"
           cp client/mariadb-admin.exe "install_root/Program Files (x86)/MariaDB/bin/"
           mv "install_root/Program Files (x86)/MariaDB" "$PKG_NAME"
 
+          # The OpenSSL DLLs the build linked (step 3 pins which), into bin/
+          # next to mariadbd.exe and server.dll: Windows looks in the
+          # executable's own directory first, for the server and for the
+          # plugins it loads from lib/plugin, which then reuse the copies
+          # already loaded. Taken from the include dir CMake actually used.
+          OPENSSL_INCLUDE="$(sed -n 's/^OPENSSL_INCLUDE_DIR:[A-Z]*=//p' CMakeCache.txt)"
+          OPENSSL_ROOT="$(dirname "$OPENSSL_INCLUDE")"
+          echo "==> OpenSSL: $OPENSSL_ROOT ($(sed -n 's/^#[[:space:]]*define OPENSSL_FULL_VERSION_STR[[:space:]]*//p' "$OPENSSL_INCLUDE/openssl/opensslv.h"))"
+          for dll in libssl-3-${{ matrix.arch }}.dll libcrypto-3-${{ matrix.arch }}.dll; do
+            cp "$OPENSSL_ROOT/bin/$dll" "$PKG_NAME/bin/$dll"
+          done
+
           # Drop everything a sandbox never touches before tarring -- see the
           # script for what "never touches" means and how it is verified.
           # Pruning after the mv, not before, keeps the script off the
-          # "Program Files (x86)" path and its space.
+          # "Program Files (x86)" path and its space. It keeps every DLL in
+          # bin/, so the runtime and OpenSSL DLLs above survive it.
           bash "$GITHUB_WORKSPACE/ci-config/scripts/prune_sandbox_server.sh" "$PKG_NAME"
+
+          # Fail the build if any binary still imports a DLL that is neither
+          # part of Windows nor shipped in bin/. dumpbin comes from the Visual
+          # Studio environment step 1 loaded.
+          bash "$GITHUB_WORKSPACE/ci-config/scripts/check_sandbox_server_deps.sh" "$PKG_NAME"
 
           tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
 
@@ -305,15 +342,25 @@ jobs:
           # own directory, so one relative path works for both. install_name_tool
           # invalidates the linker's original ad hoc signature, so dylibbundler
           # re-signs (also ad hoc) everything it touches.
+          #
+          # The filter is Homebrew's prefix as `brew --prefix` reports it, not a
+          # literal path: it is /opt/homebrew on Apple Silicon but /usr/local on
+          # the Intel runner, where a '/opt/homebrew' filter matched nothing and
+          # the x64 package shipped pointing at /usr/local/opt/openssl@3.
+          HOMEBREW_PREFIX="$(brew --prefix)"
           mkdir -p "$ROOT/lib/private"
           for f in "$ROOT"/bin/* "$ROOT"/lib/plugin/*.so; do
             [ -f "$f" ] || continue
-            otool -L "$f" | grep -q '/opt/homebrew' || continue
+            otool -L "$f" | grep -q "[[:space:]]$HOMEBREW_PREFIX/" || continue
             dylibbundler -of -b \
               -x "$f" \
               -d "$ROOT/lib/private" \
               -p "@executable_path/../lib/private/"
           done
+
+          # Fail the build if anything still loads a library from outside the
+          # OS and lib/private.
+          bash "$GITHUB_WORKSPACE/ci-config/scripts/check_sandbox_server_deps.sh" "$ROOT"
 
           mv install_root/usr/local/mysql "$PKG_NAME"
           tar -czvf "${PKG_NAME}.tar.gz" "$PKG_NAME"
