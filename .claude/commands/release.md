@@ -73,7 +73,9 @@ running /release again resumes where the last run stopped.
                 update-version; open and merge a plugins PR if anything
                 changed, after Shell Plugins CI passes
   3 Build &     fast-forward release/candidate (plugins, then shell), or
-    verify      reuse an existing build; approve the build's release-build
+    verify      reuse an existing build; when main has commits that a
+                release/candidate at the same version lacks, list them and
+                ask whether to include or ignore them; approve the build's release-build
                 environment review; wait for MariaDB-Shell-Release and
                 Verify Packages
   4 Publish     show a pre-publish summary and ask before a real publish;
@@ -81,7 +83,9 @@ running /release again resumes where the last run stopped.
 
 It asks you before: a real publish, an index that disagrees with its
 release (rebuild or stop), a version that skips ahead, a release/candidate
-that cannot fast-forward, and a build that main has moved past.
+that cannot fast-forward, commits on main that a release/candidate at the
+same version doesn't have (include or ignore them), and a build that main
+has moved past.
 
 It changes: PRs on both repos (version bump, plugins version/index), both
 release/candidate branches (fast-forward only, never forced), workflow runs
@@ -369,27 +373,67 @@ From a fresh `preflight`:
 2. **Require fast-forwards**: `can_fast_forward` must be true for both
    repos. If release/candidate has diverged from main, stop and ask. Never
    force it.
-3. **Reuse a build that already exists.** If both release/candidate branches
-   are `identical` to main, list the MariaDB-Shell-Release runs for
-   `shell.main_sha`
+3. **Decide what each release/candidate is built from (`TARGET`).** Commits
+   on main are never left out silently. For each repo, `preflight` gives
+   `ahead_by` and `ahead_commits`: what main has that release/candidate
+   doesn't, oldest first.
+   - **`ahead_by` is 0:** `TARGET` is `rc_sha`; nothing to decide.
+   - **`rc_version` differs from `main_version`:** release/candidate must
+     move, since main carries this release's version. `TARGET` is
+     `main_sha`, and every commit comes with it. List them in the report as
+     included; no question.
+   - **Same version on both, but main is ahead:** ask. Show the commits of
+     each such repo, one per line as `<sha 9> <subject>` (with `... and N
+     more` when `ahead_by` exceeds the list), then ask with AskUserQuestion,
+     one question per repo, in the same call when both need one, each naming
+     the repo, the release/candidate version and the number of commits:
+     - **Include them**: fast-forward release/candidate to main. `TARGET` is
+       `main_sha`.
+     - **Ignore them**: release/candidate stays where it is and the release
+       is built from it. `TARGET` is `rc_sha`, and the commits are recorded
+       as `IGNORED` for that repo.
+
+   **Ignoring the shell's commits needs an existing build.** A build started
+   without a push to the shell's release/candidate is a `repository_dispatch`
+   run, and that checks out, builds and (through its `headSha`) tags the
+   shell's **main**, ignored commits included. So the shell can stay behind
+   only when nothing has to be built: the plugins' `TARGET` is its `rc_sha`
+   too, and a MariaDB-Shell-Release run for the shell's `rc_sha` that
+   succeeded, or is still running, exists from after the plugins
+   release/candidate head commit (the same search as 4). Check that before
+   asking. When it holds, offer *Ignore* for the shell, saying in its
+   description that it also needs the plugins' commits ignored if the
+   plugins question is asked too. When it doesn't, offer **Include them** and
+   **Stop** instead, and say why *Ignore* is not available. If the answers
+   are *Ignore* for the shell and *Include* for the plugins, explain the
+   conflict and ask the shell question again with *Include* and *Stop*. On
+   *Stop*, stop the release.
+
+   The decision lives only in this run: a later `/release` asks again, from
+   what main has then. The report must show, per repo, `TARGET`, the commits
+   it includes, and the commits ignored, if any.
+4. **Reuse a build that already exists.** If neither release/candidate moves
+   (each `TARGET` is its `rc_sha`), list the MariaDB-Shell-Release runs for
+   the shell `TARGET`
    (`find-run --workflow shell-release.yml --sha <sha> --timeout 0`). Take
    the newest one created after the plugins release/candidate head commit,
    whose date is from
    `gh api repos/mariadb-corporation/mariadb-shell-plugins/commits/<plugins rc sha> --jq .commit.committer.date`.
-   - If it succeeded, use it as `BUILD` and go to 6.
+   - If it succeeded, use it as `BUILD` and go to 7.
    - If it is still running, or waiting for its environment review, approve
-     it as in 5 and watch it.
+     it as in 6 and watch it.
    - If there is none, or only failed ones, trigger a build without moving a
      branch: `gh api repos/mariadb-corporation/mariadb-shell/dispatches -f
      event_type=updated-shell-plugins-rc`. Then find the
      `repository_dispatch` run.
-4. **Move release/candidate, plugins first, then the shell.** Note the time,
-   then fast-forward each branch that is behind to the exact SHA `preflight`
-   reported. If main moved since, re-run `preflight` first.
+5. **Move release/candidate, plugins first, then the shell.** Note the time,
+   then fast-forward each branch whose `TARGET` is not its `rc_sha` to that
+   exact SHA. If main moved since `preflight`, re-run it and go back to 3,
+   since the commits to decide on have changed.
 
    ```
-   python3 scripts/release.py push-rc plugins <plugins main sha>
-   python3 scripts/release.py push-rc shell   <shell main sha>
+   python3 scripts/release.py push-rc plugins <plugins TARGET>
+   python3 scripts/release.py push-rc shell   <shell TARGET>
    ```
 
    For the plugins, `push-rc` first reads the state of PLUGINS'
@@ -400,7 +444,7 @@ From a fresh `preflight`:
    when the push fails. If it was already disabled, it is left disabled. The
    report must show that state before and after, and whether a trigger run
    started anyway.
-5. **Identify the build run.**
+6. **Identify the build run.**
    - **The shell was pushed:** that push starts the build. Find it with
      `find-run --workflow shell-release.yml --event push --sha <shell sha> --created-after <time>`.
      If a `repository_dispatch` MariaDB-Shell-Release run also started after
@@ -411,7 +455,7 @@ From a fresh `preflight`:
      nothing builds by itself. Start the build with
      `gh api repos/mariadb-corporation/mariadb-shell/dispatches -f event_type=updated-shell-plugins-rc`,
      then find the `repository_dispatch` run and check that its `headSha` is
-     `shell.main_sha`.
+     the shell `TARGET`.
 
    **Approve the build.** The build's first job runs in the `release-build`
    environment, whose required reviewers hold the run in `waiting` until one
@@ -429,7 +473,7 @@ From a fresh `preflight`:
    go on.
 
    Watch `BUILD`.
-6. **Verification.** Verify Packages starts by itself when the build
+7. **Verification.** Verify Packages starts by itself when the build
    finishes. Find its run with
    `find-run --workflow verify-packages.yml --title "Verify build <BUILD>" --timeout 900`.
    If no run appears, start it by hand with
@@ -442,7 +486,7 @@ From a fresh `preflight`:
    ```
 
 The report must show each release/candidate as `<old sha> → <new sha>` (or
-`unchanged`), the build and verification runs with their workflow names, who
+`unchanged`), the commits included and ignored from 3, the build and verification runs with their workflow names, who
 approved the build's environment review (`/release`, or a reviewer by hand),
 and the marker artifact.
 
@@ -462,8 +506,11 @@ and the marker artifact.
    For each repo that moved, list the commits the build does not have, with
    their PR numbers, from
    `gh api repos/<repo>/compare/<built sha>...<main sha> --jq '.commits[] | "\(.sha[0:9]) \(.commit.message | split("\n")[0])"'`.
-   Also note whether the version on main changed. That is a warning, not a
-   failure: the build is still valid, it just doesn't have those commits.
+   Mark the ones the user chose to ignore in step 3 (`IGNORED`) as
+   `ignored in step 3`: they are left out by decision. Only the others mean
+   main moved past the build. Also note whether the version on main changed.
+   That is a warning, not a failure: the build is still valid, it just
+   doesn't have those commits.
 3. **A real publish needs the user's confirmation; a dry run does not.**
    Without `--dry-run`, first show a **pre-publish summary**. It is the
    final summary table, filled in from steps 1–3, with the Publish row
@@ -479,14 +526,17 @@ and the marker artifact.
      note from step 1, an inconsistency and how it was resolved, a series
      republished as `refresh` (with its reason: outdated packaging, or `--refresh`), a cancelled
      run, a release `v<v>` that already exists (it would be updated),
-     artifacts that expire within 7 days, or **main moved past the build**
-     (from 2), with the list of commits the release would not include.
+     artifacts that expire within 7 days, the commits ignored in step 3 (per
+     repo, as a reminder that the release leaves them out), or **main moved
+     past the build** (from 2), with the list of commits the release would
+     not include beyond those.
 
    Then ask with AskUserQuestion. Give two options: **Publish v<v>**, naming
    pre-release or official, and **Stop**, which publishes nothing. When main
-   moved past the build, add a third option between them: **Rebuild with the
-   latest main**. It goes back to step 3: fast-forward release/candidate to
-   the new main, build, verify, then show this summary again. If main's
+   moved past the build (by commits other than those ignored in step 3), add
+   a third option between them: **Rebuild with the latest main**. It goes
+   back to step 3, which asks again about every commit release/candidate
+   lacks, then builds, verifies and shows this summary again. If main's
    version changed, it goes back to step 1 instead. Do not dispatch anything
    until the answer is *Publish*. On *Stop*, end with the summary, state that
    nothing was published, and say that `/release` picks up here again
@@ -548,7 +598,7 @@ read on its own. Use one row per item, and `—` when a step had nothing to do:
 | Sandbox index | per series: packages updated (to this release) or kept (in which release) |
 | Plugins PR | the PR (number, link) and its Shell Plugins CI result, or "no changes" |
 | Trigger MariaDB Shell Release | state before, what was done, state after |
-| release/candidate | shell and plugins: old → new SHA, or unchanged |
+| release/candidate | shell and plugins: old → new SHA, or unchanged; the commits included, and those ignored by the user's choice in step 3 |
 | Build | MariaDB-Shell-Release run, link, whether it was reused or new, and its environment approval (`/release`, by hand, or not needed) |
 | Verification | Verify Packages run, link, marker artifact |
 | Publish | Publish Release run, link, the inputs given (prerelease, dry_run, server tags); for a real publish, the user's confirmation |
