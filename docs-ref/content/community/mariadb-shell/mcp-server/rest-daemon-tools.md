@@ -92,3 +92,5 @@ When the server is gone, or about to be, pass `drop_accounts` as `false` to dele
 `sandbox_dir` and `restd_path` are checked against the [allowed directories](configuring-access.md#allowed-paths). A `directory` that `restd.get_restd_status` lists, a sandbox instance's deployment or one in `~/.mariadb-restd`, is accepted without the check, because the MCP server created it. Any other `directory` is checked too.
 
 <sub>_This page is licensed: GPLv2_</sub>
+
+{% @marketo/form formId="4316" %}
