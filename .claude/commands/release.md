@@ -12,12 +12,12 @@ two repos:
 
 | Repo | Role |
 |---|---|
-| `mariadb-corporation/mariadb-shell` (`SHELL`) | `MYSQL_VERSION`; the workflows `shell-release.yml` (build; its first job runs in the `release-build` environment, whose required reviewers hold every build until one of them approves it), `verify-packages.yml` (verification), `publish-release.yml` (publish), `sandbox-server.yml` (server packages), `shell-ci-publish.yml` (runs on every push to main) |
-| `mariadb-corporation/mariadb-shell-plugins` (`PLUGINS`) | `VERSION`, the sandbox server index, `npm run update-version` (in `tools/`), and `trigger-shell-release.yml`, which starts a shell build on every push to its release/candidate |
+| `mariadb-corporation/mariadb-shell` (`SHELL`) | `MYSQL_VERSION`; the workflows `shell-release.yml` (build; started by hand only, never by a push, and by `/release` always with the macOS packages signed; its first job and its signing jobs run in the `release-build` environment, whose required reviewers hold the run at each until one of them approves it), `verify-packages.yml` (verification), `publish-release.yml` (publish), `sandbox-server.yml` (server packages), `shell-ci-publish.yml` (runs on every push to main) |
+| `mariadb-corporation/mariadb-shell-plugins` (`PLUGINS`) | `VERSION`, the sandbox server index and `npm run update-version` (in `tools/`). Its release/candidate is what the build bundles; a push to it starts nothing |
 
 `scripts/release.py` does the checks and the waiting:
-`preflight`, `shell-bump-pr`, `push-rc`, `find-run`, `approve-build` and
-`watch`. Run it as
+`preflight`, `shell-bump-pr`, `push-rc`, `start-build`, `find-run`,
+`approve-build` and `watch`. Run it as
 `python3 scripts/release.py <subcommand>`. Run `--help` on a
 subcommand for its flags.
 
@@ -72,12 +72,13 @@ running /release again resumes where the last run stopped.
                 with --refresh); others are never rebuilt; run
                 update-version; open and merge a plugins PR if anything
                 changed, after Shell Plugins CI passes
-  3 Build &     fast-forward release/candidate (plugins, then shell), or
-    verify      reuse an existing build; when main has commits that a
+  3 Build &     fast-forward release/candidate (plugins, then shell) and
+    verify      start a build with the macOS packages signed, or reuse an
+                existing signed build; when main has commits that a
                 release/candidate at the same version lacks, list them and
-                ask whether to include or ignore them; approve the build's release-build
-                environment review; wait for MariaDB-Shell-Release and
-                Verify Packages
+                ask whether to include or ignore them; approve the build's
+                two release-build environment reviews (start, signing);
+                wait for MariaDB-Shell-Release and Verify Packages
   4 Publish     show a pre-publish summary and ask before a real publish;
                 run publish-release and report the release
 
@@ -123,7 +124,6 @@ Details: .claude/commands/release.md · helper: scripts/release.py --help
   | `shell-ci-publish.yml` | MariaDB-Shell-CI-Publish |
   | `shell-ci.yml` | MariaDB-Shell-CI |
   | PLUGINS `shell-plugins-ci.yml` | Shell Plugins CI |
-  | PLUGINS `trigger-shell-release.yml` | Trigger MariaDB Shell Release |
 
   `release.py` already prints run numbers this way.
 - **Every step checks before it acts**, so running `/release` again resumes
@@ -393,41 +393,31 @@ From a fresh `preflight`:
        is built from it. `TARGET` is `rc_sha`, and the commits are recorded
        as `IGNORED` for that repo.
 
-   **Ignoring the shell's commits needs an existing build.** A build started
-   without a push to the shell's release/candidate is a `repository_dispatch`
-   run, and that checks out, builds and (through its `headSha`) tags the
-   shell's **main**, ignored commits included. So the shell can stay behind
-   only when nothing has to be built: the plugins' `TARGET` is its `rc_sha`
-   too, and a MariaDB-Shell-Release run for the shell's `rc_sha` that
-   succeeded, or is still running, exists from after the plugins
-   release/candidate head commit (the same search as 4). Check that before
-   asking. When it holds, offer *Ignore* for the shell, saying in its
-   description that it also needs the plugins' commits ignored if the
-   plugins question is asked too. When it doesn't, offer **Include them** and
-   **Stop** instead, and say why *Ignore* is not available. If the answers
-   are *Ignore* for the shell and *Include* for the plugins, explain the
-   conflict and ask the shell question again with *Include* and *Stop*. On
-   *Stop*, stop the release.
+   Either answer works for either repo: the build is started on the
+   shell's release/candidate and bundles the plugins' release/candidate, so
+   it builds exactly the two `TARGET`s.
 
    The decision lives only in this run: a later `/release` asks again, from
    what main has then. The report must show, per repo, `TARGET`, the commits
    it includes, and the commits ignored, if any.
-4. **Reuse a build that already exists.** If neither release/candidate moves
-   (each `TARGET` is its `rc_sha`), list the MariaDB-Shell-Release runs for
-   the shell `TARGET`
-   (`find-run --workflow shell-release.yml --sha <sha> --timeout 0`). Take
-   the newest one created after the plugins release/candidate head commit,
-   whose date is from
+4. **Reuse a signed build that already exists.** If neither release/candidate
+   moves (each `TARGET` is its `rc_sha`), list the MariaDB-Shell-Release runs
+   for the shell `TARGET`
+   (`find-run --workflow shell-release.yml --event workflow_dispatch --sha <sha> --timeout 0`).
+   Take the newest one created after the plugins release/candidate head
+   commit, whose date is from
    `gh api repos/mariadb-corporation/mariadb-shell-plugins/commits/<plugins rc sha> --jq .commit.committer.date`.
-   - If it succeeded, use it as `BUILD` and go to 7.
-   - If it is still running, or waiting for its environment review, approve
-     it as in 6 and watch it.
-   - If there is none, or only failed ones, trigger a build without moving a
-     branch: `gh api repos/mariadb-corporation/mariadb-shell/dispatches -f
-     event_type=updated-shell-plugins-rc`. Then find the
-     `repository_dispatch` run.
-5. **Move release/candidate, plugins first, then the shell.** Note the time,
-   then fast-forward each branch whose `TARGET` is not its `rc_sha` to that
+   Only a signed build can be reused. A succeeded run is signed when it
+   carries a `macos-signed-<Team ID>` artifact:
+   `gh api repos/mariadb-corporation/mariadb-shell/actions/runs/<run>/artifacts --jq '.artifacts[].name' | grep '^macos-signed-'`.
+   - If it succeeded and is signed, use it as `BUILD` and go to 7.
+   - If it is still running, use it as `BUILD` and approve and watch it as
+     in 6. If it then succeeds without the marker, it was started by hand
+     without signing: start a new build as in 6.
+   - If there is none, or only failed or unsigned ones, start a build as in
+     6 without moving a branch.
+5. **Move release/candidate, plugins first, then the shell.** Fast-forward
+   each branch whose `TARGET` is not its `rc_sha` to that
    exact SHA. If main moved since `preflight`, re-run it and go back to 3,
    since the commits to decide on have changed.
 
@@ -436,30 +426,24 @@ From a fresh `preflight`:
    python3 scripts/release.py push-rc shell   <shell TARGET>
    ```
 
-   For the plugins, `push-rc` first reads the state of PLUGINS'
-   Trigger MariaDB Shell Release workflow. That workflow would answer the
-   push by starting a second, redundant shell build. If it is enabled,
-   `push-rc` disables it, pushes, waits a minute, checks that the workflow
-   started no run, and enables it again. It always enables it again, even
-   when the push fails. If it was already disabled, it is left disabled. The
-   report must show that state before and after, and whether a trigger run
-   started anyway.
-6. **Identify the build run.**
-   - **The shell was pushed:** that push starts the build. Find it with
-     `find-run --workflow shell-release.yml --event push --sha <shell sha> --created-after <time>`.
-     If a `repository_dispatch` MariaDB-Shell-Release run also started after
-     `<time>`, because the trigger fired despite `push-rc`, cancel it with
-     `gh run cancel` and report that as a decision. It builds the same
-     commits.
-   - **Only the plugins were pushed:** with the trigger workflow held off,
-     nothing builds by itself. Start the build with
-     `gh api repos/mariadb-corporation/mariadb-shell/dispatches -f event_type=updated-shell-plugins-rc`,
-     then find the `repository_dispatch` run and check that its `headSha` is
-     the shell `TARGET`.
+   A push starts nothing: the build is started in 6.
+6. **Start the build**, unless 4 found one to reuse. It always signs and
+   notarizes the macOS packages:
 
-   **Approve the build.** The build's first job runs in the `release-build`
-   environment, whose required reviewers hold the run in `waiting` until one
-   of them approves it. Approve it before watching:
+   ```
+   python3 scripts/release.py start-build --expect-sha <shell TARGET>
+   ```
+
+   It refuses to start when the shell's release/candidate is not at
+   `TARGET`, dispatches `shell-release.yml` on release/candidate with
+   `sign=true`, and prints the run it started; that run is `BUILD`. If it
+   reports that the run builds another commit, release/candidate moved:
+   cancel that run and go back to 3.
+
+   **Approve the build.** The run stops twice in the `release-build`
+   environment, whose required reviewers hold it in `waiting` until one of
+   them approves: at its first job, and at the signing jobs once every
+   platform has built. Approve the first before watching:
 
    ```
    python3 scripts/release.py approve-build <BUILD>
@@ -472,23 +456,30 @@ From a fresh `preflight`:
    reports no review pending, the run is already past the gate: say so and
    go on.
 
-   Watch `BUILD`.
+   Then watch `BUILD` with `release.py watch <BUILD> --approve`, which
+   approves the signing review when the run reaches it. If the user is not a
+   reviewer, the watch says once who is and keeps polling: report that with
+   the run link.
 7. **Verification.** Verify Packages starts by itself when the build
    finishes. Find its run with
    `find-run --workflow verify-packages.yml --title "Verify build <BUILD>" --timeout 900`.
    If no run appears, start it by hand with
    `gh workflow run verify-packages.yml -R mariadb-corporation/mariadb-shell -f run_id=<BUILD>`.
-   Watch it. Success alone is not enough: confirm that the run carries the
+   Watch it. Success alone is not enough: confirm that the build carries the
+   signing marker, which is what made Verify Packages check the macOS
+   signatures and Gatekeeper, and that the verification run carries the
    artifact publish-release gates on:
 
    ```
+   gh api repos/mariadb-corporation/mariadb-shell/actions/runs/<BUILD>/artifacts --jq '.artifacts[].name' | grep '^macos-signed-'
    gh api repos/mariadb-corporation/mariadb-shell/actions/runs/<VERIFY>/artifacts --jq '.artifacts[].name' | grep -x "verified-build-<BUILD>"
    ```
 
 The report must show each release/candidate as `<old sha> → <new sha>` (or
 `unchanged`), the commits included and ignored from 3, the build and verification runs with their workflow names, who
-approved the build's environment review (`/release`, or a reviewer by hand),
-and the marker artifact.
+approved each of the build's two environment reviews (`/release`, or a
+reviewer by hand), the signing marker (with its Team ID) and the
+verification marker artifact.
 
 ## Step 4: Publish
 
@@ -501,7 +492,7 @@ and the marker artifact.
    - **Plugins:** `plugins.main_sha` against the plugins commit the build
      bundled. That commit is the plugins release/candidate head when the
      build started: the SHA `push-rc` moved it to, or `plugins.rc_sha` when
-     the build was reused or started without a push.
+     the branch did not move.
 
    For each repo that moved, list the commits the build does not have, with
    their PR numbers, from
@@ -597,9 +588,8 @@ read on its own. Use one row per item, and `—` when a step had nothing to do:
 | Plugins version | before → after |
 | Sandbox index | per series: packages updated (to this release) or kept (in which release) |
 | Plugins PR | the PR (number, link) and its Shell Plugins CI result, or "no changes" |
-| Trigger MariaDB Shell Release | state before, what was done, state after |
 | release/candidate | shell and plugins: old → new SHA, or unchanged; the commits included, and those ignored by the user's choice in step 3 |
-| Build | MariaDB-Shell-Release run, link, whether it was reused or new, and its environment approval (`/release`, by hand, or not needed) |
+| Build | MariaDB-Shell-Release run, link, whether it was reused or new, its two environment approvals (`/release`, by hand, or not needed), and the macOS signing marker with its Team ID |
 | Verification | Verify Packages run, link, marker artifact |
 | Publish | Publish Release run, link, the inputs given (prerelease, dry_run, server tags); for a real publish, the user's confirmation |
 | Server tags shipped | the set from 2.3 and why, or none |

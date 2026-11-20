@@ -26,6 +26,8 @@
 #
 # Environment:
 #   EXPECT_VERSION  assert `--version` reports exactly this version
+#   EXPECT_TEAM_ID  macOS: assert every binary is signed by this team, with the
+#                   hardened runtime, and that Gatekeeper accepts the shell
 #   CHECKS_FILE     plugin CLI checks (default: package-checks.conf beside this)
 #
 # Every check runs even after one fails, so a single run reports the full picture
@@ -655,6 +657,72 @@ else
       }' | sort)
   fi
   rm -f "$ABS_RPATHS"
+fi
+
+# ---------------------------------------------------------------------------
+# Code signatures, for a signed macOS package (EXPECT_TEAM_ID set).
+#
+# Everything but object files must be signed by the expected team with the
+# hardened runtime: under it, a binary only loads libraries signed by its own
+# team, so one file signed differently breaks whatever loads it. Gatekeeper is
+# asked about the shell itself last. Its verdict needs Apple's notarization
+# record, which it looks up online, so this is what proves notarization worked.
+# ---------------------------------------------------------------------------
+EXPECT_TEAM_ID="${EXPECT_TEAM_ID:-}"
+if [ -n "$EXPECT_TEAM_ID" ]; then
+  section "Code signatures"
+  if [ "$(uname -s)" != "Darwin" ]; then
+    skip "binaries signed by team $EXPECT_TEAM_ID" "signatures are only checked on macOS"
+  else
+    SIG_BAD="$(mktemp)"
+    SIGNED=0
+    while IFS= read -r bin; do
+      [ -n "$bin" ] || continue
+      # python.o in the bundled Python's config dir: object files cannot be
+      # signed, and the notary service does not ask for them to be.
+      case "$(file -b "$bin")" in *object*) continue ;; esac
+      SIGNED=$((SIGNED + 1))
+      rel="${bin#$ROOT/}"
+      if ! codesign --verify --strict "$bin" 2>/dev/null; then
+        printf '%s\tinvalid signature\n' "$rel" >> "$SIG_BAD"; continue
+      fi
+      info="$(codesign -dv "$bin" 2>&1)"
+      team="$(printf '%s\n' "$info" | sed -n 's/^TeamIdentifier=//p')"
+      if [ "$team" != "$EXPECT_TEAM_ID" ]; then
+        printf '%s\tTeam ID %s\n' "$rel" "${team:-none}" >> "$SIG_BAD"; continue
+      fi
+      if ! printf '%s\n' "$info" | grep -Eq '^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime'; then
+        printf '%s\tno hardened runtime\n' "$rel" >> "$SIG_BAD"
+      fi
+    done < <(list_binaries)
+
+    if [ "$SIGNED" -eq 0 ]; then
+      fail "binaries signed by team $EXPECT_TEAM_ID" "found no Mach-O files under $ROOT"
+    elif [ ! -s "$SIG_BAD" ]; then
+      pass "all $SIGNED binaries signed by team $EXPECT_TEAM_ID, hardened runtime"
+    else
+      # Grouped by problem: an unsigned build step usually leaves many files.
+      while IFS='|' read -r problem count examples; do
+        fail "binaries signed by team $EXPECT_TEAM_ID: $problem" "$count: $examples"
+      done < <(sort "$SIG_BAD" | awk -F'\t' '
+        { n[$2]++; if (n[$2] <= 3) ex[$2] = ex[$2] (ex[$2] == "" ? "" : ", ") $1 }
+        END {
+          for (p in n) {
+            more = (n[p] > 3) ? sprintf(", +%d more", n[p] - 3) : ""
+            label = (n[p] == 1) ? "1 binary" : sprintf("%d binaries", n[p])
+            printf "%s|%s|%s%s\n", p, label, ex[p], more
+          }
+        }' | sort)
+    fi
+    rm -f "$SIG_BAD"
+
+    GK="$(spctl --assess --type execute -vv "$SHELL_BIN" 2>&1)"
+    if printf '%s' "$GK" | grep -q ': accepted'; then
+      pass "Gatekeeper accepts $(basename "$SHELL_BIN") ($(printf '%s\n' "$GK" | sed -n 's/^source=//p'))"
+    else
+      fail "Gatekeeper accepts $(basename "$SHELL_BIN")" "$(printf '%s' "$GK" | tr '\n' ' ')"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
