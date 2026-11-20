@@ -411,5 +411,8 @@ jobs:
     needs: build
     if: ${{ inputs.sign }}
     uses: ./.github/workflows/sign-macos.yml
+    # Without it the called workflow sees no secrets at all, not even those of
+    # the release-build environment its job names.
+    secrets: inherit
     with:
       artifacts: '["pkg-macos-x64", "pkg-macos-arm64"]'
