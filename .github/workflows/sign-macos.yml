@@ -26,14 +26,34 @@ on:
           .tar.gz packages, e.g. '["pkg-macos-x64", "pkg-macos-arm64"]'
         type: string
         required: true
+  # TEMPORARY, to try signing on the packages of a finished build run without
+  # rebuilding. The signed tarballs and the marker land in THIS run, not in the
+  # build run, so Verify Packages and Publish Release do not see them: check
+  # them by hand (gh run download <this run>, then verify_package.sh with
+  # EXPECT_TEAM_ID). Remove once a chained sign=true release run has passed.
+  # Must be started on main or release/candidate (release-build's branch policy).
+  workflow_dispatch:
+    inputs:
+      # Never empty when dispatched, which is how the job tells a dispatch from
+      # a workflow_call: there github.event_name is the caller's event, which is
+      # workflow_dispatch too.
+      run_id:
+        description: "MariaDB-Shell-Release run whose macOS packages to sign (latest = the newest finished one that has them)"
+        type: string
+        default: latest
+      artifacts:
+        description: "JSON list of artifact names in that run"
+        type: string
+        default: '["pkg-macos-x64", "pkg-macos-arm64"]'
 
 jobs:
   sign:
     name: Sign (${{ matrix.artifact }})
     runs-on: macos-latest
     # The signing secrets are environment secrets of release-build. A reusable
-    # workflow gets an environment's secrets only by naming the environment
-    # itself; secrets: inherit in the caller does not pass them. Its required
+    # workflow needs both halves to see them: this job names the environment,
+    # and the caller passes secrets: inherit (without it the secrets context
+    # here is empty, environment secrets included). The environment's required
     # reviewers therefore approve this job too, once the builds have finished.
     environment: release-build
 
@@ -46,6 +66,7 @@ jobs:
 
     permissions:
       contents: read   # checkout
+      actions: read    # download from another run (workflow_dispatch only)
 
     steps:
       - name: Checkout Signing Script
@@ -56,11 +77,51 @@ jobs:
             packaging/macos
           sparse-checkout-cone-mode: false
 
+      # Dispatched only. "latest" is the newest finished MariaDB-Shell-Release
+      # run, failed ones included (a run whose signing failed still has its
+      # packages), that still holds every requested artifact.
+      - name: Pick Build Run
+        id: pick
+        if: ${{ inputs.run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+          ARTIFACTS: ${{ inputs.artifacts }}
+        run: |
+          set -euo pipefail
+          has_all() {
+            local have
+            have=$(gh api --paginate "repos/$REPO/actions/runs/$1/artifacts" \
+              --jq '.artifacts[] | select(.expired | not) | .name')
+            for name in $(jq -r '.[]' <<< "$ARTIFACTS"); do
+              grep -qxF "$name" <<< "$have" || return 1
+            done
+          }
+          if [ "$RUN_ID" = latest ]; then
+            CANDIDATES=$(gh run list -R "$REPO" --workflow shell-release.yml \
+              --status completed --limit 20 --json databaseId --jq '.[].databaseId')
+            RUN_ID=""
+            for id in $CANDIDATES; do
+              if has_all "$id"; then RUN_ID="$id"; break; fi
+            done
+            [ -n "$RUN_ID" ] || { echo "::error::No recent finished MariaDB-Shell-Release run holds $ARTIFACTS"; exit 1; }
+          elif ! has_all "$RUN_ID"; then
+            echo "::error::Run $RUN_ID does not hold every one of $ARTIFACTS (wrong id, or expired)"
+            exit 1
+          fi
+          echo "==> Signing the packages of $GITHUB_SERVER_URL/$REPO/actions/runs/$RUN_ID"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
       - name: Download Package
         uses: actions/download-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: _in
+          # Dispatched: the build run picked above. Called: no token, so the
+          # action reads the current run as before.
+          run-id: ${{ steps.pick.outputs.run_id || github.run_id }}
+          github-token: ${{ steps.pick.outputs.run_id && github.token || '' }}
 
       # A keychain of its own, created for this job and deleted at the end: the
       # login keychain of a hosted runner is locked, and an identity left in a
