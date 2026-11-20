@@ -38,6 +38,8 @@
 #   NOTARY_KEY_ID     its key ID
 #   NOTARY_ISSUER     its issuer ID
 #                     Give all three to notarize, or none to skip notarization.
+#   NOTARY_RECORD_WAIT  seconds to wait, after notarization, for Gatekeeper to
+#                     see the record (default: 600)
 #
 # Why each piece is the way it is:
 #
@@ -203,19 +205,48 @@ if [ "$NOTARIZE" -eq 1 ]; then
   fi
   echo "    accepted (submission $SUB_ID)"
 
-  # Proves the chain end to end: Gatekeeper, asked about a binary that has no
-  # stapled ticket, fetches the notarization record online. The record can
-  # take a moment to reach Apple's servers after the submission is accepted.
-  MAIN="$(grep -m1 -E '/bin/[^/]+$' "$SIGNABLE" || head -n1 "$SIGNABLE")"
-  ok=0
-  for attempt in 1 2 3 4 5 6; do
-    if spctl --assess --type execute -vv "$MAIN" 2>&1 | tee "$WORK/spctl.out" | grep -q ': accepted'; then
-      ok=1; break
+  # Proves the chain end to end, for every signed file: Gatekeeper, asked about
+  # a binary that has no stapled ticket, fetches the notarization record
+  # online.
+  #
+  # Not `--type execute`: that assesses app bundles only, and rejects every
+  # command-line binary, notarized or not, with "the code is valid but does
+  # not seem to be an app". `--type open` with the primary-signature context
+  # assesses the file's own signature, executable or library, and names the
+  # notarization in `source=`, which is what is required here.
+  notarized() {
+    spctl --assess --type open --context context:primary-signature -vv "$1" \
+      > "$WORK/spctl.out" 2>&1 || true
+    grep -q ': accepted' "$WORK/spctl.out" \
+      && grep -qx 'source=Notarized Developer ID' "$WORK/spctl.out"
+  }
+
+  # The record is normally live as soon as the submission is accepted, but can
+  # take a while to reach Apple's servers: wait for it on the shell, then check
+  # the rest once. The wait ends at the first success, so the long limit only
+  # delays reporting a real failure.
+  MAIN="$(grep -m1 -E '/bin/mariadb-shell$' "$SIGNABLE" || head -n1 "$SIGNABLE")"
+  WAIT_LIMIT="${NOTARY_RECORD_WAIT:-600}"
+  start=$SECONDS
+  until notarized "$MAIN"; do
+    if [ $((SECONDS - start)) -ge "$WAIT_LIMIT" ]; then
+      cat "$WORK/spctl.out" >&2
+      echo "Gatekeeper does not accept ${MAIN#$ROOT/} as notarized after ${WAIT_LIMIT}s" >&2
+      exit 1
     fi
-    sleep 20
+    sleep 15
   done
-  cat "$WORK/spctl.out"
-  [ "$ok" -eq 1 ] || { echo "Gatekeeper does not accept ${MAIN#$ROOT/} after notarization" >&2; exit 1; }
+  echo "    notarization record live after $((SECONDS - start))s"
+
+  BAD=0
+  while IFS= read -r f; do
+    if ! notarized "$f"; then
+      echo "    FAIL ${f#$ROOT/}: $(tr '\n' ' ' < "$WORK/spctl.out")" >&2
+      BAD=$((BAD + 1))
+    fi
+  done < "$SIGNABLE"
+  [ "$BAD" -eq 0 ] || { echo "Gatekeeper does not accept $BAD of $COUNT files as notarized" >&2; exit 1; }
+  echo "    Gatekeeper accepts all $COUNT as notarized"
 else
   echo "==> Not notarizing (no NOTARY_KEY_FILE/NOTARY_KEY_ID/NOTARY_ISSUER)"
 fi
