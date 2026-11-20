@@ -1,10 +1,17 @@
 name: MariaDB-Shell-Release
 
+# Started by hand only, nothing builds on a push. /release starts it once both
+# release/candidate branches are where the release needs them:
+#   gh workflow run shell-release.yml --ref release/candidate -f sign=true
+# The run builds the branch it is started on (the release-build environment
+# allows main and release/candidate) with the plugins repo's release/candidate.
 on:
-  push:
-    branches: [ "release/candidate"]
-  repository_dispatch:
-      types: [ "updated-shell-plugins-rc" ]
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: "Sign and notarize the macOS packages (needs a second release-build approval once the builds finish)"
+        type: boolean
+        default: false
 jobs:
   # ==========================================================================
   # SHELL AND PLUGINS MUST BE THE SAME VERSION
@@ -394,3 +401,15 @@ jobs:
     needs: check-versions
     uses: ./.github/workflows/rocky-linux.yml
     secrets: inherit
+  # ==========================================================================
+  # SIGN AND NOTARIZE THE MACOS PACKAGES (only when started with sign=true)
+  #
+  # Replaces pkg-macos-* with signed tarballs of the same names, so Verify
+  # Packages and Publish Release pick them up unchanged. See sign-macos.yml.
+  # ==========================================================================
+  sign-macos:
+    needs: build
+    if: ${{ inputs.sign }}
+    uses: ./.github/workflows/sign-macos.yml
+    with:
+      artifacts: '["pkg-macos-x64", "pkg-macos-arm64"]'
