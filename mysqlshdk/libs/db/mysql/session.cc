@@ -1121,6 +1121,14 @@ std::shared_ptr<Session> Session::create() {
 
 ServerVendor Session::get_server_vendor() { return _impl->get_server_vendor(); }
 
+bool Session::check_in_transaction() {
+  if (!get_last_error()) return in_transaction();
+
+  const auto result = query("SELECT @@in_transaction", true);
+  const auto row = result->fetch_one();
+  return row && row->get_int(0) != 0;
+}
+
 void Session::reject_local_infile() {
   _impl->set_reject_local_infile_callbacks();
 }

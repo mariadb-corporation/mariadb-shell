@@ -357,13 +357,8 @@ Returns true if the session has a transaction open.
 
 @returns A boolean value indicating if a transaction is open.
 
-When the last statement succeeded, no query is sent: the value comes from the
-status flags the server sent with its reply, so it does not affect the
-session's warnings, FOUND_ROWS() or ROW_COUNT().
-
-An error reply carries no status flags, and a failed statement can open a
-transaction (the first statement with autocommit disabled) or end one (a
-deadlock). So when the last statement failed, the server is asked with
+Normally no query is sent, so the session's warnings, FOUND_ROWS() and
+ROW_COUNT() are kept. After a failed statement the server is asked with
 SELECT @@in_transaction, which clears the session's warnings and errors.
 
 @throw LogicError if there's no open session.
@@ -383,14 +378,7 @@ bool ClassicSession::in_transaction() const {
     throw Exception::logic_error("Not connected.");
   }
 
-  // The flags of an error reply's statement never arrived
-  if (_session->get_last_error()) {
-    const auto result = _session->query("SELECT @@in_transaction", true);
-    const auto row = result->fetch_one();
-    return row && row->get_int(0) != 0;
-  }
-
-  return _session->in_transaction();
+  return _session->check_in_transaction();
 }
 
 std::shared_ptr<mysqlshdk::db::IResult> ClassicSession::do_execute_sql(

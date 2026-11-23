@@ -404,16 +404,20 @@ class SHCORE_PUBLIC Session : public ISession,
   }
 
   /**
-   * Whether a transaction is open, from the status flags of the server's last
-   * reply; no query is sent. An error reply carries no status, so after a
-   * failed statement this is the status from before it, which is stale when
-   * the error made the server roll back (e.g. a deadlock). The flags arrive
-   * after the last row, so with an unbuffered result whose rows are not all
-   * read yet, this is also the status from before that statement.
+   * The IN_TRANS status flag of the server's last reply; sends no query. Stale
+   * after an error reply (which carries no flags) and while an unbuffered
+   * result has unread rows.
    */
   bool in_transaction() const {
     return (get_server_status() & SERVER_STATUS_IN_TRANS) != 0;
   }
+
+  /**
+   * Whether a transaction is open, also after a failed statement: the status
+   * flag when the last reply was not an error, else SELECT @@in_transaction,
+   * which clears the session's warnings and errors.
+   */
+  bool check_in_transaction();
 
   /**
    * Releases ownership of the underlying MySQL connection, meaning that this
