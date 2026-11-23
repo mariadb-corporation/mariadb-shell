@@ -124,6 +124,15 @@ session2.run_sql("select * from in_trx_test.t")
 EXPECT_TRUE(session2.in_transaction())
 session2.run_sql("rollback")
 EXPECT_FALSE(session2.in_transaction())
+
+# a failing first statement opens a transaction its error reply cannot report
+session2.run_sql("insert into in_trx_test.t values (1)")
+session2.run_sql("commit")
+EXPECT_FALSE(session2.in_transaction())
+EXPECT_THROWS(lambda: session2.run_sql("insert into in_trx_test.t values (1)"), "Duplicate entry")
+EXPECT_TRUE(session2.in_transaction())
+session2.run_sql("rollback")
+EXPECT_FALSE(session2.in_transaction())
 session2.run_sql("set autocommit=1")
 
 #@<> in_transaction sends no query
