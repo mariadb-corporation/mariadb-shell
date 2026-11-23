@@ -361,10 +361,6 @@ No query is sent: the value comes from the status flags the server sent with
 its reply to the last statement, so it does not affect the session's warnings,
 FOUND_ROWS() or ROW_COUNT().
 
-A transaction is open after START TRANSACTION or BEGIN, and also after any
-statement that uses a transactional table while autocommit is disabled. It is
-closed by COMMIT, ROLLBACK and statements that commit implicitly.
-
 An error reply carries no status flags, so after a statement that failed this
 reflects the status from before that statement. That is accurate for most
 errors, which leave an open transaction open, but not for the ones that make
@@ -388,7 +384,7 @@ bool ClassicSession::in_transaction() const {
     throw Exception::logic_error("Not connected.");
   }
 
-  return (_session->get_server_status() & SERVER_STATUS_IN_TRANS) != 0;
+  return _session->in_transaction();
 }
 
 std::shared_ptr<mysqlshdk::db::IResult> ClassicSession::do_execute_sql(

@@ -96,50 +96,47 @@ EXPECT_EQ(session.uri, clone.uri)
 EXPECT_THROWS(lambda: clone.clone(), "Not connected.")
 
 #@<> in_transaction follows the transaction state
-session3 = shell.open_session(__mysqluripwd)
-session3.run_sql("create schema if not exists in_trx_test")
-session3.run_sql("create temporary table in_trx_test.t (id int primary key) engine=InnoDB")
+session2.run_sql("create schema if not exists in_trx_test")
+session2.run_sql("create temporary table in_trx_test.t (id int primary key) engine=InnoDB")
 
-EXPECT_FALSE(session3.in_transaction())
+EXPECT_FALSE(session2.in_transaction())
 
-session3.run_sql("start transaction")
-EXPECT_TRUE(session3.in_transaction())
+session2.run_sql("start transaction")
+EXPECT_TRUE(session2.in_transaction())
 
-session3.run_sql("insert into in_trx_test.t values (1)")
-EXPECT_THROWS(lambda: session3.run_sql("insert into in_trx_test.t values (1)"), "Duplicate entry")
+session2.run_sql("insert into in_trx_test.t values (1)")
+EXPECT_THROWS(lambda: session2.run_sql("insert into in_trx_test.t values (1)"), "Duplicate entry")
 # a failed statement leaves the transaction open
-EXPECT_TRUE(session3.in_transaction())
+EXPECT_TRUE(session2.in_transaction())
 
-session3.run_sql("rollback")
-EXPECT_FALSE(session3.in_transaction())
+session2.run_sql("rollback")
+EXPECT_FALSE(session2.in_transaction())
 
-session3.run_sql("start transaction")
-EXPECT_TRUE(session3.in_transaction())
-session3.run_sql("commit")
-EXPECT_FALSE(session3.in_transaction())
+session2.run_sql("start transaction")
+EXPECT_TRUE(session2.in_transaction())
+session2.run_sql("commit")
+EXPECT_FALSE(session2.in_transaction())
 
 #@<> in_transaction with autocommit disabled
-session3.run_sql("set autocommit=0")
-EXPECT_FALSE(session3.in_transaction())
-session3.run_sql("select * from in_trx_test.t")
-EXPECT_TRUE(session3.in_transaction())
-session3.run_sql("rollback")
-EXPECT_FALSE(session3.in_transaction())
-session3.run_sql("set autocommit=1")
+session2.run_sql("set autocommit=0")
+EXPECT_FALSE(session2.in_transaction())
+session2.run_sql("select * from in_trx_test.t")
+EXPECT_TRUE(session2.in_transaction())
+session2.run_sql("rollback")
+EXPECT_FALSE(session2.in_transaction())
+session2.run_sql("set autocommit=1")
 
 #@<> in_transaction sends no query
 # a query would reset the diagnostics area, so the warning of the previous
 # statement must still be there
-session3.run_sql("select cast('x' as signed)")
-EXPECT_FALSE(session3.in_transaction())
-EXPECT_FALSE(session3.in_transaction())
-EXPECT_EQ(1, len(session3.run_sql("show warnings").fetch_all()))
+session2.run_sql("select cast('x' as signed)")
+EXPECT_FALSE(session2.in_transaction())
+EXPECT_EQ(1, len(session2.run_sql("show warnings").fetch_all()))
 
 #@<> in_transaction requires an open session
-session3.run_sql("drop schema in_trx_test")
-session3.close()
-EXPECT_THROWS(lambda: session3.in_transaction(), "Not connected.")
+EXPECT_THROWS(lambda: clone.in_transaction(), "Not connected.")
 
 #@<> cleanup
+session2.run_sql("drop schema if exists in_trx_test")
 session2.close()
 shell.disconnect()
