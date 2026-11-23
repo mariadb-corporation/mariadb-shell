@@ -57,6 +57,9 @@ FUNCTIONS
       help([member])
             Provides help about this class and it's members
 
+      in_transaction()
+            Returns true if the session has a transaction open.
+
       is_open()
             Returns true if session is known to be open.
 

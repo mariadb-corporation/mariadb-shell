@@ -116,6 +116,7 @@ void ClassicSession::init() {
   expose("close", &ClassicSession::close);
   expose("runSql", &ClassicSession::run_sql, "query", "?args");
   expose("clone", &ClassicSession::clone);
+  expose("inTransaction", &ClassicSession::in_transaction);
   expose("isOpen", &ClassicSession::is_open);
   expose("startTransaction", &ClassicSession::_start_transaction);
   expose("commit", &ClassicSession::_commit);
@@ -348,6 +349,46 @@ std::shared_ptr<ClassicSession> ClassicSession::clone() const {
   // defaults that were applied when it got connected, so the new session is an
   // exact replica of this one, connection wise.
   return connect_session(get_connection_options());
+}
+
+REGISTER_HELP_FUNCTION(inTransaction, ClassicSession);
+REGISTER_HELP_FUNCTION_TEXT(CLASSICSESSION_INTRANSACTION, R"*(
+Returns true if the session has a transaction open.
+
+@returns A boolean value indicating if a transaction is open.
+
+No query is sent: the value comes from the status flags the server sent with
+its reply to the last statement, so it does not affect the session's warnings,
+FOUND_ROWS() or ROW_COUNT().
+
+A transaction is open after START TRANSACTION or BEGIN, and also after any
+statement that uses a transactional table while autocommit is disabled. It is
+closed by COMMIT, ROLLBACK and statements that commit implicitly.
+
+An error reply carries no status flags, so after a statement that failed this
+reflects the status from before that statement. That is accurate for most
+errors, which leave an open transaction open, but not for the ones that make
+the server roll the transaction back, such as a deadlock: this keeps returning
+true until the next statement succeeds.
+
+@throw LogicError if there's no open session.
+)*");
+/**
+ * $(CLASSICSESSION_INTRANSACTION_BRIEF)
+ *
+ * $(CLASSICSESSION_INTRANSACTION)
+ */
+#if DOXYGEN_JS
+Bool ClassicSession::inTransaction() {}
+#elif DOXYGEN_PY
+bool ClassicSession::in_transaction() {}
+#endif
+bool ClassicSession::in_transaction() const {
+  if (!is_open()) {
+    throw Exception::logic_error("Not connected.");
+  }
+
+  return (_session->get_server_status() & SERVER_STATUS_IN_TRANS) != 0;
 }
 
 std::shared_ptr<mysqlshdk::db::IResult> ClassicSession::do_execute_sql(
