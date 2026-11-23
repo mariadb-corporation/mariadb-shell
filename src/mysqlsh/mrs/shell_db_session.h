@@ -44,6 +44,7 @@ class Shell_db_session : public ::mrs::Db_session {
 
   void execute_script(const std::string &script) override;
   std::string sql_mode() override;
+  bool in_transaction() override;
 
  protected:
   ::mrs::Db_result do_query(const std::string &sql) override;
@@ -51,6 +52,12 @@ class Shell_db_session : public ::mrs::Db_session {
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
+
+  // Whether the last statement run here succeeded, so the session's status
+  // flags are its reply's. An error reply carries none, and the error may
+  // have rolled the transaction back (e.g. a deadlock); the statements before
+  // this object existed are not known.
+  bool m_status_current = false;
 };
 
 }  // namespace mrs

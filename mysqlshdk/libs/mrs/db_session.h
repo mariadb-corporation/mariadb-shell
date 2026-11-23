@@ -170,6 +170,11 @@ class Db_session {
   // The server's @@sql_mode.
   virtual std::string sql_mode() = 0;
 
+  // Whether the session has a transaction open. This queries
+  // @@in_transaction; a session that can read it from the server's status
+  // flags overrides it, saving the round trip.
+  virtual bool in_transaction();
+
   // The SQL sent for a statement: the metadata schema marker replaced with
   // the metadata schema, the values written as literals in the quoting the
   // session's sql_mode needs. A server plugin may bind them on the server

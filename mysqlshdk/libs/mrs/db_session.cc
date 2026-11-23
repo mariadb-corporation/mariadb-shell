@@ -152,8 +152,12 @@ std::string Db_session::bind(const sql::Statement &statement) {
   return sql::Statement(std::move(text), statement.params).render(*m_quoting);
 }
 
+bool Db_session::in_transaction() {
+  return query("SELECT @@in_transaction AS t").first()["t"].as_int() != 0;
+}
+
 Db_transaction::Db_transaction(Db_session *session) : m_session(session) {
-  if (m_session->query("SELECT @@in_transaction AS t").first()["t"].as_int() == 0) {
+  if (!m_session->in_transaction()) {
     m_session->execute("START TRANSACTION");
     return;
   }
