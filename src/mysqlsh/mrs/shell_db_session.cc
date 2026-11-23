@@ -83,7 +83,9 @@ bool is_binary(const mysqlshdk::db::Column &column) {
 
 Shell_db_session::Shell_db_session(
     std::shared_ptr<mysqlshdk::db::ISession> session)
-    : m_session(std::move(session)) {}
+    : m_session(std::move(session)),
+      m_classic(
+          dynamic_cast<mysqlshdk::db::mysql::Session *>(m_session.get())) {}
 
 ::mrs::Db_result Shell_db_session::do_query(const std::string &sql) {
   ::mrs::Db_result result;
@@ -110,6 +112,17 @@ Shell_db_session::Shell_db_session(
     rethrow(e);
   }
   return result;
+}
+
+bool Shell_db_session::in_transaction() {
+  if (!m_classic) return Db_session::in_transaction();
+  // Unread rows of an unbuffered result would leave older flags; this relies
+  // on a buffered query here (the fingerprint) having flushed them.
+  try {
+    return m_classic->check_in_transaction();
+  } catch (const mysqlshdk::db::Error &e) {
+    rethrow(e);
+  }
 }
 
 uint64_t Shell_db_session::do_execute(const std::string &sql) {

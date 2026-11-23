@@ -35,6 +35,14 @@
 #include "mysqlshdk/libs/mrs/db_session.h"
 #include "mysqlshdk/libs/db/session.h"
 
+namespace mysqlshdk {
+namespace db {
+namespace mysql {
+class Session;
+}  // namespace mysql
+}  // namespace db
+}  // namespace mysqlshdk
+
 namespace mysqlsh {
 namespace mrs {
 
@@ -44,6 +52,7 @@ class Shell_db_session : public ::mrs::Db_session {
 
   void execute_script(const std::string &script) override;
   std::string sql_mode() override;
+  bool in_transaction() override;
 
  protected:
   ::mrs::Db_result do_query(const std::string &sql) override;
@@ -51,6 +60,8 @@ class Shell_db_session : public ::mrs::Db_session {
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
+  // m_session when it is a classic session, which has status flags
+  mysqlshdk::db::mysql::Session *m_classic = nullptr;
 };
 
 }  // namespace mrs
