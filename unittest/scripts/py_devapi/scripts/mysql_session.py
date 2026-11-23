@@ -17,6 +17,7 @@ validate_members(classicSession, [
   'get_sql_mode',
   'get_ssh_uri',
   'help',
+  'in_transaction',
   'is_open',
   'rollback',
   'run_sql',

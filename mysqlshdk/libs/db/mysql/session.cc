@@ -1121,6 +1121,14 @@ std::shared_ptr<Session> Session::create() {
 
 ServerVendor Session::get_server_vendor() { return _impl->get_server_vendor(); }
 
+bool Session::check_in_transaction() {
+  // An error reply carries no status flags; the OK reply of any statement
+  // refreshes them. DO 0 touches no table, so it opens no transaction itself,
+  // and unlike @@in_transaction (MariaDB only) it works on both vendors.
+  if (get_last_error()) execute("DO 0");
+  return in_transaction();
+}
+
 void Session::reject_local_infile() {
   _impl->set_reject_local_infile_callbacks();
 }

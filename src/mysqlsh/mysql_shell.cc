@@ -3214,14 +3214,17 @@ void Mysql_shell::add_devapi_completions() {
 
   // ===
   registry->add_completable_type("ClassicSession",
-                                 {{"close", "", true},
+                                 {{"clone", "ClassicSession", true},
+                                  {"close", "", true},
                                   {"commit", "ClassicResult", true},
                                   {"getClientData", "", true},
                                   {"getConnectionId", "", true},
+                                  {"getServerVendor", "", true},
                                   {"getUri", "", true},
                                   {"getSqlMode", "", true},
                                   {"getSshUri", "", true},
                                   {"help", "", true},
+                                  {"inTransaction", "", true},
                                   {"isOpen", "", true},
                                   {"rollback", "ClassicResult", true},
                                   {"runSql", "ClassicResult", true},
@@ -3231,6 +3234,7 @@ void Mysql_shell::add_devapi_completions() {
                                   {"setQueryAttributes", "", true},
                                   {"trackSystemVariable", "", true},
                                   {"connectionId", "", false},
+                                  {"serverVendor", "", false},
                                   {"uri", "", false},
                                   {"sshUri", "", false},
                                   {"_getSocketFd", "", true}});

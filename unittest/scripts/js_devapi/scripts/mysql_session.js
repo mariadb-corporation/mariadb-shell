@@ -15,6 +15,7 @@ validateMembers(classicSession, [
     'getSqlMode',
     'getSshUri',
     'help',
+    'inTransaction',
     'isOpen',
     'startTransaction',
     'setClientData',

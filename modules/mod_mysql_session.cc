@@ -116,6 +116,7 @@ void ClassicSession::init() {
   expose("close", &ClassicSession::close);
   expose("runSql", &ClassicSession::run_sql, "query", "?args");
   expose("clone", &ClassicSession::clone);
+  expose("inTransaction", &ClassicSession::in_transaction);
   expose("isOpen", &ClassicSession::is_open);
   expose("startTransaction", &ClassicSession::_start_transaction);
   expose("commit", &ClassicSession::_commit);
@@ -348,6 +349,37 @@ std::shared_ptr<ClassicSession> ClassicSession::clone() const {
   // defaults that were applied when it got connected, so the new session is an
   // exact replica of this one, connection wise.
   return connect_session(get_connection_options());
+}
+
+REGISTER_HELP_FUNCTION(inTransaction, ClassicSession);
+REGISTER_HELP_FUNCTION_TEXT(CLASSICSESSION_INTRANSACTION, R"*(
+Returns true if the session has a transaction open.
+
+@returns A boolean value indicating if a transaction is open.
+
+Normally no query is sent, so the session's warnings, FOUND_ROWS() and
+ROW_COUNT() are kept. After a failed statement a statement is sent to get the
+current state from the server, which clears the session's warnings and errors.
+
+@throw LogicError if there's no open session.
+@throw a database error if that statement fails, e.g. after a lost connection.
+)*");
+/**
+ * $(CLASSICSESSION_INTRANSACTION_BRIEF)
+ *
+ * $(CLASSICSESSION_INTRANSACTION)
+ */
+#if DOXYGEN_JS
+Bool ClassicSession::inTransaction() {}
+#elif DOXYGEN_PY
+bool ClassicSession::in_transaction() {}
+#endif
+bool ClassicSession::in_transaction() const {
+  if (!is_open()) {
+    throw Exception::logic_error("Not connected.");
+  }
+
+  return _session->check_in_transaction();
 }
 
 std::shared_ptr<mysqlshdk::db::IResult> ClassicSession::do_execute_sql(

@@ -404,6 +404,23 @@ class SHCORE_PUBLIC Session : public ISession,
   }
 
   /**
+   * The IN_TRANS status flag of the server's last reply; sends no query. Stale
+   * after an error reply (which carries no flags) and while an unbuffered
+   * result has unread rows.
+   */
+  bool in_transaction() const {
+    return (get_server_status() & SERVER_STATUS_IN_TRANS) != 0;
+  }
+
+  /**
+   * Whether a transaction is open, also after a failed statement: the status
+   * flag when the last reply was not an error, else the flag of a DO 0 sent to
+   * refresh it, which clears the session's warnings and errors. Throws if that
+   * statement fails, e.g. after a lost connection.
+   */
+  bool check_in_transaction();
+
+  /**
    * Releases ownership of the underlying MySQL connection, meaning that this
    * session becomes closed after this call.
    */

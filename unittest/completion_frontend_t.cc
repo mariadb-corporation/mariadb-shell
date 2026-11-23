@@ -1710,6 +1710,11 @@ TEST_F(Completer_frontend, py_classic) {
 
   // TS_FR5.2_C03
   CHECK_OBJECT_COMPLETIONS("mysql");
+
+  // The members of an object reached through a call come from the completion
+  // registry (mysql_shell.cc), not from a live object.
+  CHECK_OBJECT_COMPLETIONS("session.clone()");
+  EXPECT_AFTER_TAB("session.clone().in_", "session.clone().in_transaction()");
 }
 
 TEST_F(Completer_frontend, help_py) {
