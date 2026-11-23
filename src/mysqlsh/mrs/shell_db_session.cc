@@ -115,15 +115,14 @@ Shell_db_session::Shell_db_session(
 }
 
 bool Shell_db_session::in_transaction() {
-  // Without an error the last reply was an OK packet, whose status flags are
-  // current. An error reply carries none, and the error may have rolled the
-  // transaction back (a deadlock, a lost connection): ask the server then.
-  // Unread rows of an unbuffered result would also leave older flags; this
-  // relies on a buffered query here (the fingerprint) having flushed them.
-  if (m_classic && !m_classic->get_last_error()) {
-    return m_classic->in_transaction();
+  if (!m_classic) return Db_session::in_transaction();
+  // Unread rows of an unbuffered result would leave older flags; this relies
+  // on a buffered query here (the fingerprint) having flushed them.
+  try {
+    return m_classic->check_in_transaction();
+  } catch (const mysqlshdk::db::Error &e) {
+    rethrow(e);
   }
-  return Db_session::in_transaction();
 }
 
 uint64_t Shell_db_session::do_execute(const std::string &sql) {
