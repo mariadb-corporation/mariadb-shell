@@ -407,7 +407,9 @@ class SHCORE_PUBLIC Session : public ISession,
    * Whether a transaction is open, from the status flags of the server's last
    * reply; no query is sent. An error reply carries no status, so after a
    * failed statement this is the status from before it, which is stale when
-   * the error made the server roll back (e.g. a deadlock).
+   * the error made the server roll back (e.g. a deadlock). The flags arrive
+   * after the last row, so with an unbuffered result whose rows are not all
+   * read yet, this is also the status from before that statement.
    */
   bool in_transaction() const {
     return (get_server_status() & SERVER_STATUS_IN_TRANS) != 0;

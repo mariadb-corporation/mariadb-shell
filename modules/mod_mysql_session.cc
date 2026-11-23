@@ -367,6 +367,9 @@ errors, which leave an open transaction open, but not for the ones that make
 the server roll the transaction back, such as a deadlock: this keeps returning
 true until the next statement succeeds.
 
+Likewise, after the connection to the server is lost, the server rolls the
+transaction back, but this keeps returning the last status it received.
+
 @throw LogicError if there's no open session.
 )*");
 /**
