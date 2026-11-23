@@ -35,6 +35,14 @@
 #include "mysqlshdk/libs/mrs/db_session.h"
 #include "mysqlshdk/libs/db/session.h"
 
+namespace mysqlshdk {
+namespace db {
+namespace mysql {
+class Session;
+}  // namespace mysql
+}  // namespace db
+}  // namespace mysqlshdk
+
 namespace mysqlsh {
 namespace mrs {
 
@@ -52,12 +60,8 @@ class Shell_db_session : public ::mrs::Db_session {
 
  private:
   std::shared_ptr<mysqlshdk::db::ISession> m_session;
-
-  // Whether the last statement run here succeeded, so the session's status
-  // flags are its reply's. An error reply carries none, and the error may
-  // have rolled the transaction back (e.g. a deadlock); the statements before
-  // this object existed are not known.
-  bool m_status_current = false;
+  // m_session when it is a classic session, which has status flags
+  mysqlshdk::db::mysql::Session *m_classic = nullptr;
 };
 
 }  // namespace mrs

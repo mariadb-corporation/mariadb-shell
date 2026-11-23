@@ -83,14 +83,14 @@ bool is_binary(const mysqlshdk::db::Column &column) {
 
 Shell_db_session::Shell_db_session(
     std::shared_ptr<mysqlshdk::db::ISession> session)
-    : m_session(std::move(session)) {}
+    : m_session(std::move(session)),
+      m_classic(
+          dynamic_cast<mysqlshdk::db::mysql::Session *>(m_session.get())) {}
 
 ::mrs::Db_result Shell_db_session::do_query(const std::string &sql) {
   ::mrs::Db_result result;
   try {
-    m_status_current = false;
     const auto res = m_session->query(sql, true);
-    m_status_current = true;
     result.affected_rows = res->get_affected_row_count();
 
     const auto &metadata = res->get_metadata();
@@ -115,23 +115,20 @@ Shell_db_session::Shell_db_session(
 }
 
 bool Shell_db_session::in_transaction() {
-  // Every statement here is buffered, so after one that succeeded the status
-  // flags are those of its complete reply; otherwise ask the server
-  if (m_status_current) {
-    if (const auto classic =
-            std::dynamic_pointer_cast<mysqlshdk::db::mysql::Session>(
-                m_session)) {
-      return classic->in_transaction();
-    }
+  // Without an error the last reply was an OK packet, whose status flags are
+  // current. An error reply carries none, and the error may have rolled the
+  // transaction back (a deadlock, a lost connection): ask the server then.
+  // Unread rows of an unbuffered result would also leave older flags; this
+  // relies on a buffered query here (the fingerprint) having flushed them.
+  if (m_classic && !m_classic->get_last_error()) {
+    return m_classic->in_transaction();
   }
   return Db_session::in_transaction();
 }
 
 uint64_t Shell_db_session::do_execute(const std::string &sql) {
   try {
-    m_status_current = false;
     const auto res = m_session->query(sql, true);
-    m_status_current = true;
     return res->get_affected_row_count();
   } catch (const mysqlshdk::db::Error &e) {
     rethrow(e);
@@ -160,9 +157,7 @@ void Shell_db_session::execute_script(const std::string &script) {
 
 std::string Shell_db_session::sql_mode() {
   try {
-    m_status_current = false;
     const auto res = m_session->query("SELECT @@session.sql_mode", true);
-    m_status_current = true;
     if (const auto *row = res->fetch_one()) {
       if (!row->is_null(0)) return row->get_string(0);
     }
