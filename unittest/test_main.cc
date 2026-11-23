@@ -923,6 +923,14 @@ std::shared_ptr<shcore::Logger> setup_logger() {
     }
   }
 
+  // The tests expect the shell's own built-in plugins (chunk conditions use
+  // the sandbox plugin, for one), not the plugin setup of the environment they
+  // are run from. Tests of these variables set them for the shells they start.
+  for (const auto var : {"MARIADB_SHELL_DISABLE_BUILTIN_PLUGINS",
+                         "MARIADB_SHELL_PLUGINS_PATH"}) {
+    shcore::unsetenv(var);
+  }
+
   // Setup logger with default configs
   std::string log_path = shcore::path::join_path(shcore::get_user_config_path(),
                                                  shcore::k_shell_log_file_name);
