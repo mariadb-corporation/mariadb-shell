@@ -414,8 +414,9 @@ class SHCORE_PUBLIC Session : public ISession,
 
   /**
    * Whether a transaction is open, also after a failed statement: the status
-   * flag when the last reply was not an error, else SELECT @@in_transaction,
-   * which clears the session's warnings and errors.
+   * flag when the last reply was not an error, else the flag of a DO 0 sent to
+   * refresh it, which clears the session's warnings and errors. Throws if that
+   * statement fails, e.g. after a lost connection.
    */
   bool check_in_transaction();
 

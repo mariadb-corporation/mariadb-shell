@@ -358,10 +358,11 @@ Returns true if the session has a transaction open.
 @returns A boolean value indicating if a transaction is open.
 
 Normally no query is sent, so the session's warnings, FOUND_ROWS() and
-ROW_COUNT() are kept. After a failed statement the server is asked with
-SELECT @@in_transaction, which clears the session's warnings and errors.
+ROW_COUNT() are kept. After a failed statement a statement is sent to get the
+current state from the server, which clears the session's warnings and errors.
 
 @throw LogicError if there's no open session.
+@throw a database error if that statement fails, e.g. after a lost connection.
 )*");
 /**
  * $(CLASSICSESSION_INTRANSACTION_BRIEF)
