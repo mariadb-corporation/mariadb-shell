@@ -53,7 +53,7 @@ jobs:
     env:
       CI_PLATFORM: rocky9-${{ matrix.arch }}
       # Must match what the build asks for: the cache dirs are named after it.
-      PYTHON_VERSION: "3.14.6"
+      PYTHON_VERSION: "3.14.10"
 
     # The cache tree is shared mutable state on the runner: two concurrent runs
     # would race on the same vcpkg checkout and server build dir. Queue instead.
@@ -190,11 +190,11 @@ jobs:
 
       # 3. Create host output dir + the persistent per-platform build cache.
       #
-      #    The vcpkg checkout is keyed on vcpkg.json's builtin-baseline. This is
-      #    not cosmetic: bootstrap_vcpkg.cmake reuses any checkout that has a
-      #    .git without re-fetching, so a baseline bump reusing the same
-      #    directory would keep building the OLD ports and still report success.
-      #    Keying on the baseline makes a bump land in a fresh directory.
+      #    The vcpkg checkout is keyed on vcpkg.json's builtin-baseline, so a
+      #    baseline bump starts from a fresh clone. bootstrap_vcpkg.cmake would
+      #    also move a reused checkout to the new baseline (and update its vcpkg
+      #    executable); keying keeps each baseline's checkout as it is for runs
+      #    of branches still on it, instead of moving one back and forth.
       #
       #    The binary cache is deliberately NOT keyed: vcpkg addresses it by
       #    per-port ABI hash, so it is safe to share, and ports unaffected by a

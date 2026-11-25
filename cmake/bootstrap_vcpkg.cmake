@@ -80,7 +80,14 @@ SET(VCPKG_INSTALLED_PREFIX "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}"
 
 # If the caller already supplied a vcpkg toolchain file, respect it and only
 # make sure the triplet is set -- do not clone a second copy.
-IF(CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg")
+#
+# The toolchain this file derived itself (step 4 caches it) is not the
+# caller's: a re-configure goes through the steps below again, so a baseline
+# bump in vcpkg.json moves the checkout and updates the vcpkg executable in an
+# existing build dir too, rather than building against the old ports.
+IF(CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "[Vv]cpkg"
+   AND NOT (VCPKG_ROOT AND
+            CMAKE_TOOLCHAIN_FILE STREQUAL "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"))
   MESSAGE(STATUS "WITH_VCPKG_TRIPLET: reusing the vcpkg toolchain already given "
                  "(${CMAKE_TOOLCHAIN_FILE}); triplet '${VCPKG_TARGET_TRIPLET}'")
   RETURN()
@@ -105,11 +112,19 @@ ENDIF()
 SET(VCPKG_GIT_REPOSITORY "https://github.com/microsoft/vcpkg.git"
   CACHE STRING "Git URL of vcpkg to fetch when WITH_VCPKG_TRIPLET is set")
 
-# Skipped when the caller already pinned a ref (-DVCPKG_GIT_TAG=..., or a cache
-# entry from an earlier configure): the SET(... CACHE ...) below would not
-# overwrite it anyway, so there is nothing to read.
-SET(_vcpkg_ref_origin "")
-IF(NOT VCPKG_GIT_TAG)
+# The baseline is read on every configure, so VCPKG_GIT_TAG follows a bump of
+# it in an existing build dir. Only a ref the caller pinned (-DVCPKG_GIT_TAG=...)
+# is left alone. _VCPKG_GIT_TAG_DERIVED remembers what this file derived, which
+# is how the two are told apart. A build dir configured before it existed holds
+# the baseline it derived back then: a full commit id, with VCPKG_ROOT cached.
+SET(_vcpkg_ref_origin "  (pinned with -DVCPKG_GIT_TAG)")
+SET(_vcpkg_follow_baseline FALSE)
+STRING(LENGTH "${VCPKG_GIT_TAG}" _vcpkg_tag_length)
+IF(NOT VCPKG_GIT_TAG
+   OR VCPKG_GIT_TAG STREQUAL "${_VCPKG_GIT_TAG_DERIVED}"
+   OR (NOT DEFINED _VCPKG_GIT_TAG_DERIVED AND VCPKG_ROOT
+       AND VCPKG_GIT_TAG MATCHES "^[0-9a-fA-F]+$" AND _vcpkg_tag_length EQUAL 40))
+  SET(_vcpkg_follow_baseline TRUE)
   # Same manifest root the vcpkg install step passes via --x-manifest-root.
   SET(_vcpkg_manifest "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json")
   IF(NOT EXISTS "${_vcpkg_manifest}")
@@ -143,10 +158,11 @@ IF(NOT VCPKG_GIT_TAG)
       "Add one, or pass -DVCPKG_GIT_TAG=<commit> to pin the checkout directly.")
   ENDIF()
   SET(_vcpkg_ref_origin "  (vcpkg.json builtin-baseline)")
+  SET(VCPKG_GIT_TAG "${_vcpkg_baseline}"
+    CACHE STRING "Git ref (branch, tag, or commit) of vcpkg to fetch" FORCE)
+  SET(_VCPKG_GIT_TAG_DERIVED "${_vcpkg_baseline}" CACHE INTERNAL
+    "VCPKG_GIT_TAG as derived from vcpkg.json (anything else was pinned)")
 ENDIF()
-
-SET(VCPKG_GIT_TAG "${_vcpkg_baseline}"
-  CACHE STRING "Git ref (branch, tag, or commit) of vcpkg to fetch")
 
 # Where vcpkg is cloned. Honour an existing VCPKG_ROOT (cache or environment)
 # so a shared checkout is reused; otherwise clone next to the shell source,
@@ -201,7 +217,7 @@ MESSAGE(STATUS "WITH_VCPKG_TRIPLET='${WITH_VCPKG_TRIPLET}' -- bootstrapping vcpk
 MESSAGE(STATUS "  repo    : ${VCPKG_GIT_REPOSITORY}")
 MESSAGE(STATUS "  ref     : ${VCPKG_GIT_TAG}${_vcpkg_ref_origin}")
 MESSAGE(STATUS "  location: ${_vcpkg_root}")
-MESSAGE(STATUS "  (override with -DVCPKG_ROOT / -DVCPKG_GIT_TAG; this runs once)")
+MESSAGE(STATUS "  (override with -DVCPKG_ROOT / -DVCPKG_GIT_TAG)")
 MESSAGE(STATUS "==========================================================")
 
 ##############################################################################
@@ -240,12 +256,100 @@ IF(NOT EXISTS "${_vcpkg_root}/.git")
   ENDIF()
 ELSE()
   MESSAGE(STATUS "Reusing existing vcpkg checkout at ${_vcpkg_root}")
+  # A checkout cloned for an earlier baseline stays there unless moved: vcpkg
+  # would then build the old ports, or, once the new baseline needs a newer
+  # vcpkg executable, fail outright. Move it to the baseline commit, fetching
+  # it if the checkout predates it. A pinned ref is the caller's business, and
+  # a checkout with local changes is not ours to move.
+  #
+  # The checkout may be shared (VCPKG_ROOT, or ../vcpkg next to several
+  # worktrees): each configure moves it to its own baseline. vcpkg reads older
+  # baselines from git history, so a build dir still on one keeps working.
+  IF(_vcpkg_follow_baseline)
+    FIND_PACKAGE(Git REQUIRED)
+    EXECUTE_PROCESS(
+      COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" rev-parse HEAD
+      OUTPUT_VARIABLE _vcpkg_head OUTPUT_STRIP_TRAILING_WHITESPACE
+      RESULT_VARIABLE _rc)
+    STRING(TOLOWER "${VCPKG_GIT_TAG}" _vcpkg_want)
+    IF(_rc EQUAL 0 AND NOT _vcpkg_head STREQUAL _vcpkg_want)
+      EXECUTE_PROCESS(
+        COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" status --porcelain
+                --untracked-files=no
+        OUTPUT_VARIABLE _vcpkg_dirty OUTPUT_STRIP_TRAILING_WHITESPACE)
+      IF(_vcpkg_dirty)
+        MESSAGE(WARNING
+          "${_vcpkg_root} is at ${_vcpkg_head}, not at the vcpkg.json baseline "
+          "${VCPKG_GIT_TAG}, and has local changes, so it is left where it is. "
+          "Commit or discard them and re-configure, or pass -DVCPKG_GIT_TAG to "
+          "pin the checkout as it is.")
+      ELSE()
+        EXECUTE_PROCESS(
+          COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" cat-file -e
+                  "${VCPKG_GIT_TAG}^{commit}"
+          RESULT_VARIABLE _rc ERROR_QUIET)
+        IF(NOT _rc EQUAL 0)
+          # By id first: a clone made with --branch/--single-branch fetches
+          # only that branch otherwise. GitHub serves any reachable commit by
+          # id; a server that does not gets the plain fetch.
+          MESSAGE(STATUS "Fetching vcpkg baseline ${VCPKG_GIT_TAG}...")
+          EXECUTE_PROCESS(
+            COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" fetch origin "${VCPKG_GIT_TAG}"
+            RESULT_VARIABLE _rc ERROR_QUIET)
+          IF(NOT _rc EQUAL 0)
+            EXECUTE_PROCESS(
+              COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" fetch origin)
+          ENDIF()
+          EXECUTE_PROCESS(
+            COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}" cat-file -e
+                    "${VCPKG_GIT_TAG}^{commit}"
+            RESULT_VARIABLE _rc ERROR_QUIET)
+          IF(NOT _rc EQUAL 0)
+            MESSAGE(FATAL_ERROR
+              "Could not fetch the vcpkg baseline ${VCPKG_GIT_TAG} into "
+              "${_vcpkg_root} from its 'origin' remote. Fetch it there yourself, "
+              "or pass -DVCPKG_GIT_TAG to pin the checkout as it is.")
+          ENDIF()
+        ENDIF()
+        MESSAGE(STATUS "Moving the vcpkg checkout to baseline ${VCPKG_GIT_TAG} "
+                       "(was ${_vcpkg_head})")
+        EXECUTE_PROCESS(
+          COMMAND "${GIT_EXECUTABLE}" -C "${_vcpkg_root}"
+                  -c advice.detachedHead=false checkout -q "${VCPKG_GIT_TAG}"
+          RESULT_VARIABLE _rc)
+        IF(NOT _rc EQUAL 0)
+          MESSAGE(FATAL_ERROR "Failed to check out vcpkg ref '${VCPKG_GIT_TAG}'")
+        ENDIF()
+      ENDIF()
+    ENDIF()
+  ENDIF()
 ENDIF()
 
 ##############################################################################
-# 2. Bootstrap vcpkg (builds the vcpkg executable) unless already present.
+# 2. Bootstrap vcpkg (builds the vcpkg executable) unless it is already there
+#    and is the release this checkout asks for. Each vcpkg commit names its
+#    tool release in scripts/vcpkg-tool-metadata.txt; a checkout moved to a
+#    newer baseline usually needs a newer one (an older executable rejects the
+#    newer tool data: "document schema version 2 is not supported").
 ##############################################################################
+SET(_vcpkg_need_bootstrap FALSE)
 IF(NOT EXISTS "${_vcpkg_exe}")
+  SET(_vcpkg_need_bootstrap TRUE)
+ELSEIF(EXISTS "${_vcpkg_root}/scripts/vcpkg-tool-metadata.txt")
+  FILE(STRINGS "${_vcpkg_root}/scripts/vcpkg-tool-metadata.txt" _vcpkg_tool_tag
+       REGEX "^VCPKG_TOOL_RELEASE_TAG=")
+  STRING(REGEX REPLACE "^VCPKG_TOOL_RELEASE_TAG=" "" _vcpkg_tool_tag "${_vcpkg_tool_tag}")
+  EXECUTE_PROCESS(
+    COMMAND "${_vcpkg_exe}" version
+    OUTPUT_VARIABLE _vcpkg_exe_version ERROR_QUIET RESULT_VARIABLE _rc)
+  IF(_vcpkg_tool_tag AND NOT (_rc EQUAL 0 AND
+                              _vcpkg_exe_version MATCHES "version ${_vcpkg_tool_tag}"))
+    MESSAGE(STATUS "vcpkg executable is not release ${_vcpkg_tool_tag}, which "
+                   "this checkout needs: bootstrapping it again.")
+    SET(_vcpkg_need_bootstrap TRUE)
+  ENDIF()
+ENDIF()
+IF(_vcpkg_need_bootstrap)
   IF(NOT EXISTS "${_vcpkg_bootstrap}")
     MESSAGE(FATAL_ERROR "vcpkg bootstrap script not found: ${_vcpkg_bootstrap}")
   ENDIF()

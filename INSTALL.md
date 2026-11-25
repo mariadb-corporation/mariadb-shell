@@ -114,7 +114,7 @@ the platform where the MariaDB Shell is being built:
 **Linux/Macos**
 ```bash
 mkdir bld && cd bld
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=<triplet>
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.10 -DWITH_VCPKG_TRIPLET=<triplet>
 ```
 
 **Windows**
@@ -306,8 +306,14 @@ vcpkg is cloned to `../vcpkg` (next to the shell source) by default; set
 `VCPKG_ROOT` environment variable when it names a vcpkg git checkout, is reused
 instead of re-cloning; Visual Studio's bundled vcpkg, which its developer
 environment puts there, is not one and is ignored). A directory that exists and
-isn't a vcpkg checkout is never replaced: configure stops instead. This runs
-once and is cached. Passing `-DCMAKE_TOOLCHAIN_FILE`/`-DVCPKG_TARGET_TRIPLET`
+isn't a vcpkg checkout is never replaced: configure stops instead.
+
+The checkout follows the `builtin-baseline` of `vcpkg.json`: when it changes,
+the next configure (of a new or an existing build directory) moves the checkout
+to the new baseline, fetching it if needed, and bootstraps vcpkg again when the
+new baseline needs a newer vcpkg executable. A checkout with local changes is
+left where it is, with a warning. `-DVCPKG_GIT_TAG=<ref>` opts out: that ref is
+what a fresh clone checks out, and an existing checkout is not moved. Passing `-DCMAKE_TOOLCHAIN_FILE`/`-DVCPKG_TARGET_TRIPLET`
 explicitly still works and takes precedence over `-DWITH_VCPKG_TRIPLET`.
 
 When the vcpkg toolchain file and target triplet are supplied, on any platform,
