@@ -147,7 +147,7 @@ jobs:
           # the same workspace path every run, so that costs no hits, and
           # turning it off to chase path-independence we do not need would put
           # wrong paths in a published binary's debug info.
-          cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.6 -DWITH_VCPKG_TRIPLET=x64-linux-dynamic \
+          cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.10 -DWITH_VCPKG_TRIPLET=x64-linux-dynamic \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       # ============

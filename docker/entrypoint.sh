@@ -28,7 +28,7 @@ BUILD_TYPE="${BUILD_TYPE:-Release}"
 # one, so mounting just that install from a persistent cache is all it takes to
 # reuse an interpreter across runs. The CPython checkout it would otherwise
 # clone lands here too, but only on a rebuild, and is not worth caching.
-PYTHON_VERSION="${PYTHON_VERSION:-3.14.6}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.14.10}"
 PYTHON_ROOT="/workspace/python"
 
 # Bind-mounted directories (the source tree, the cached vcpkg checkout) keep

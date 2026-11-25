@@ -343,7 +343,7 @@ jobs:
           # Build platform-specific CMake flags
           EXTRA_CMAKE_ARGS=""
           if [ "$RUNNER_OS" != "Windows" ]; then
-            EXTRA_CMAKE_ARGS="-DWITH_PYTHON_SOURCE=3.14.6"
+            EXTRA_CMAKE_ARGS="-DWITH_PYTHON_SOURCE=3.14.10"
           fi
 
           cmake -B ${{ env.MARIADB_SHELL_BUILD_DIR }} -G Ninja \

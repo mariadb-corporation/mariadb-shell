@@ -742,7 +742,7 @@ that closure, so the interpreter came up without `_sqlite3` and `import sqlite3`
 failed with **`ModuleNotFoundError: No module named '_sqlite3'`** (surfaced by
 `unittest/scripts/auto/py_shell/scripts/sqlite_support_norecord.py`).
 
-Fix: add `sqlite3` to `vcpkg.json` (pinned to the baseline's `3.53.3#1` per §11.9).
+Fix: add `sqlite3` to `vcpkg.json` (pinned in `overrides`, port-version included, per §11.9).
 It then lands in `<vcpkg>/include` + `<vcpkg>/lib`, CPython's configure detects it
 (via the header/`-lsqlite3` fallback — `PKG_CONFIG_PATH` is not set), and builds
 `_sqlite3` with the vcpkg lib dir baked into its RUNPATH like `_ssl`/`zlib`/`_zstd`.
