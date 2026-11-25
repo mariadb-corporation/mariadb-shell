@@ -66,3 +66,4 @@ Dead ends already tried and why they failed.
 - **Updating means deleting too.** When this session made a fact false — something fixed, merged, removed, renamed, decided — delete or rewrite it where it stands; never append a correction or a history line next to it. Check the parts of the touched files that this session's work affects for such facts.
 - Do not record git status or the current branch in a "Git state" section or anywhere else: they change with every command.
 - Confirm back to the user every path you wrote to, and say which files you left untouched.
+- **End by asking whether to commit.** After reporting the paths, ask the user whether the context changes should be committed, on whatever branch is checked out — a checkpoint's edits are easy to leave behind when the PR is opened. On a yes, commit only the context files this checkpoint changed, not other uncommitted work; on `main`, create a branch first.
