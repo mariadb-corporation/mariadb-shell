@@ -9,9 +9,11 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <!-- The sources of every library pointed at PyDepsNone, and the projects
-         that would build sqlite3.dll, liblzma.lib and zlib-ng.lib from them. -->
+         that would build sqlite3.dll, liblzma.lib and zlib-ng.lib from them.
+         CustomBuild: _decimal assembles libmpdec's vcdiv64.asm on x64 only. -->
     <ClCompile Remove="$(PyDepsNone)**" />
     <ClInclude Remove="$(PyDepsNone)**" />
+    <CustomBuild Remove="$(PyDepsNone)**" />
     <ProjectReference Remove="sqlite3.vcxproj;liblzma.vcxproj;zlib-ng.vcxproj" />
     <!-- libffi.props copies python.org's libffi-8.dll; vcpkg's is placed by
          bootstrap_python_windows.cmake under its own name. -->
