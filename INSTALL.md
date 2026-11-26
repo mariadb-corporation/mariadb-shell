@@ -58,7 +58,10 @@ source ~/.zshrc
 Install Visual Studio, at least the Community Edition, specifically Desktop
 development with C++.
 
-Install Python 3.14 using the MSI installer from www.python.org
+Python does not need to be installed: the configure step below builds it from
+source (`-DWITH_PYTHON_SOURCE`, see [6.2](#62-bundled-python-from-source)).
+Without that option, install Python 3.14 using the MSI installer from
+www.python.org, and the build bundles that install instead.
 
 Install bison, which the REST SQL grammar needs at configure time. The build
 looks for `win_bison` where Chocolatey puts it:
@@ -129,7 +132,7 @@ mkdir bld && cd bld
 
 rem Using Ninja is on  purpose, avoid conflicts resulting from the
 rem build paths resulting from the multi-configuration nature of MSBuild
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_VCPKG_TRIPLET=<triplet>
+cmake .. -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_PYTHON_SOURCE=3.14.10 -DWITH_VCPKG_TRIPLET=<triplet>
 ```
 
 ### 3.2 Build the MariaDB Shell
@@ -327,7 +330,7 @@ system-package build. (A Homebrew-based macOS build does not bundle: it is
 intended to run locally against the Homebrew libraries.)
 
 
-## 6.2. Bundled Python from source (Unix/macOS)
+## 6.2. Bundled Python from source
 
 To build and ship a self-contained interpreter of a specific version tell the
 build at what Python to build and it will configure, build and install it
@@ -355,9 +358,17 @@ toolchain), Python is configured *after* the vcpkg dependencies are installed
 and links its extension modules (`_ssl`, `zlib`, …) against the vcpkg closure
 rather than the system libraries. The build type (`-DCMAKE_BUILD_TYPE`) is honoured
 for the interpreter's optimization/debug-info flags. Passing `-DBUNDLED_PYTHON_DIR`
-explicitly still works and takes precedence over `-DWITH_PYTHON_SOURCE`. This is
-Unix/macOS only; on Windows use a python.org install (auto-detected) or a
-pre-built `-DBUNDLED_PYTHON_DIR`.
+explicitly still works and takes precedence over `-DWITH_PYTHON_SOURCE`.
+
+On **Windows** Python is built with CPython's own Visual Studio projects, which
+needs a vcpkg build (`-DWITH_VCPKG_TRIPLET`) and MSBuild (a Developer Command
+Prompt provides both): every library comes from the vcpkg tree (OpenSSL, SQLite,
+zlib, bzip2, xz, zstd, mpdecimal, libffi), so nothing is downloaded besides
+CPython itself. Tcl/Tk (`tkinter`, IDLE) and the test modules are not built. The
+interpreter is always a Release build, whatever `-DCMAKE_BUILD_TYPE` says, and
+it is used in place of a python.org install rather than through
+`BUNDLED_PYTHON_DIR`. Without `-DWITH_PYTHON_SOURCE`, Windows builds bundle the
+python.org install they find.
 
 ## 6.3. Third-party Python packages in the bundle
 
@@ -372,7 +383,7 @@ At configure time the bundled interpreter runs `pip install` into a staging
 directory (the source Python is never mutated), and that directory is then
 bundled into the packaged interpreter's `site-packages` via the same path as
 `PYTHON_DEPS` — so it is picked up automatically at startup. This works for every
-bundled build: **Windows** (the auto-detected python.org install) and
+bundled build: **Windows** (the Python built or found) and
 **Linux/macOS** (`BUNDLED_PYTHON_DIR` / `WITH_PYTHON_SOURCE`). It needs network
 access to PyPI, and the set is cached — packages are (re)installed only when the
 list changes.
@@ -386,8 +397,8 @@ When a bundled Python is in use and you don't set `PYTHON_DEPS_PACKAGES`, it
 Windows — the packages the bundled shell plugins need. Override with your own
 list, or pass `-DPYTHON_DEPS_PACKAGES=` (empty) to install none.
 
-On Windows the packaged `site-packages` deliberately drops the pywin32 that the
-build host's python.org install may already contain, and ships the one `pip`
+On Windows the packaged `site-packages` deliberately drops the pywin32 that a
+python.org install on the build host may already contain, and ships the one `pip`
 installed for this build instead; a `PYTHON_DEPS_PACKAGES` list without pywin32
 therefore produces a package with no pywin32 at all, even on a host that has it.
 

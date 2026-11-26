@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Imported by CPython's PCbuild/python.props through its ExternalProps hook,
+  before python.props sets its defaults: points every third-party library at
+  the shell's vcpkg tree instead of the copies PCbuild would fetch into
+  externals/ (see cmake/bootstrap_python_windows.cmake, which passes the
+  properties used below).
+
+  Libraries PCbuild compiles from source (SQLite, bzip2, xz, zstd, mpdecimal,
+  zlib-ng) get a folder that never exists, PyDepsNone: vcpkg-deps.targets then
+  drops every source file under it and links vcpkg's import library instead.
+  The prebuilt ones (OpenSSL, libffi) are simply pointed at vcpkg's.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <sqlite3Dir>$(PyDepsNone)sqlite-0.0.0.0\</sqlite3Dir>
+    <bz2Dir>$(PyDepsNone)bzip2\</bz2Dir>
+    <lzmaDir>$(PyDepsNone)xz\</lzmaDir>
+    <zstdDir>$(PyDepsNone)zstd\</zstdDir>
+    <mpdecimalDir>$(PyDepsNone)mpdecimal\</mpdecimalDir>
+    <zlibNgDir>$(PyDepsNone)zlib-ng\</zlibNgDir>
+    <zlibDir>$(PyDepsNone)zlib\</zlibDir>
+
+    <opensslOutDir>$(PyVcpkgDir)lib\</opensslOutDir>
+    <opensslIncludeDir>$(PyVcpkgDir)include</opensslIncludeDir>
+    <!-- openssl.props copies the DLLs by python.org's file names, which are
+         not vcpkg's on x64; bootstrap_python_windows.cmake places them. -->
+    <SkipCopySSLDLL>true</SkipCopySSLDLL>
+
+    <!-- libffi.props links libffi-8.lib from here: a copy of vcpkg's import
+         library under that name, staged by bootstrap_python_windows.cmake. -->
+    <libffiOutDir>$(PyDepsStage)</libffiOutDir>
+    <libffiIncludeDir>$(PyVcpkgDir)include</libffiIncludeDir>
+  </PropertyGroup>
+</Project>

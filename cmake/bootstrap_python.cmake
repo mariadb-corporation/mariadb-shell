@@ -43,10 +43,15 @@
 # and its extension modules (_ssl, zlib, ...) link the same libraries the shell
 # does rather than the system ones.
 #
-# Explicitly passing -DBUNDLED_PYTHON_DIR keeps working and takes precedence:
-# WITH_PYTHON_SOURCE is a shortcut, not a requirement. Unix/macOS only (CPython's
-# autotools flow); on Windows use a python.org install or a pre-built
-# -DBUNDLED_PYTHON_DIR.
+# Explicitly passing -DBUNDLED_PYTHON_DIR keeps working and takes precedence on
+# Unix/macOS: WITH_PYTHON_SOURCE is a shortcut, not a requirement there.
+#
+# On Windows the build itself is CPython's Visual Studio projects instead of the
+# autotools flow (cmake/bootstrap_python_windows.cmake), and the result is not
+# exported as BUNDLED_PYTHON_DIR: it is handed to the Windows Python lookup in
+# the top-level CMakeLists.txt as Python3_ROOT_DIR/Python3_EXECUTABLE, so the
+# shell builds against it and bundles it as it did a python.org install. Without
+# WITH_PYTHON_SOURCE, Windows still finds and bundles a python.org install.
 #
 ##############################################################################
 
@@ -64,35 +69,56 @@ IF(BUNDLED_PYTHON_DIR)
   RETURN()
 ENDIF()
 
-# Building CPython from source uses the autotools flow (configure + make), which
-# is not how Python is produced on Windows (PCbuild\build.bat). On Windows the
-# top-level CMakeLists.txt already locates and bundles a python.org install, so
-# this shortcut is Unix/macOS only. WIN32 is not set this early (before
-# project()), so key off CMAKE_HOST_WIN32.
-IF(CMAKE_HOST_WIN32)
-  MESSAGE(FATAL_ERROR
-    "WITH_PYTHON_SOURCE (build Python from source) is only supported on "
-    "Unix/macOS. On Windows use a python.org install (auto-detected) or pass "
-    "-DBUNDLED_PYTHON_DIR to an already-built Python.")
-ENDIF()
+# WIN32 is not set this early (before project()), so the platform checks below
+# key off CMAKE_HOST_WIN32.
+#
+# Some vcpkg ports exist purely to feed this build: libffi, liblzma and bzip2
+# (for _ctypes / _lzma / _bz2), and on Windows mpdecimal (for _decimal), which
+# vcpkg.json (being JSON) cannot say itself.
 
-# Because of the above, the vcpkg ports that exist purely to feed this build --
-# libffi, liblzma and bzip2, for _ctypes / _lzma / _bz2 -- are declared
-# "platform": "!windows" in vcpkg.json (which, being JSON, cannot say so itself).
-# A python.org install arrives with those modules already built, so on Windows
-# the ports would be dead weight; libffi's port cannot even build there, as it
-# drives an autotools configure through msys2 and mis-handles the spaces in the
-# vcpkg root under "C:\Program Files\...".
+# Where the interpreter is in an install tree: bin/python<maj.min> for a
+# "make install" prefix, python.exe at the root of a Windows one.
+MACRO(_PY_INTERPRETER dir mm out_var)
+  IF(CMAKE_HOST_WIN32)
+    SET(${out_var} "${dir}/python.exe")
+  ELSE()
+    SET(${out_var} "${dir}/bin/python${mm}")
+  ENDIF()
+ENDMACRO()
 
-# A small helper reused for the "is this interpreter already built?" probe: a
-# "make install" prefix has the interpreter at bin/python<maj.min> and headers
-# under include/python<maj.min>.
+# A small helper reused for the "is this interpreter already built?" probe: the
+# interpreter, plus the headers (include/python<maj.min> for "make install",
+# include/ on Windows).
 MACRO(_PY_INSTALL_IS_BUILT dir mm out_var)
-  IF(EXISTS "${dir}/bin/python${mm}"
-     AND EXISTS "${dir}/include/python${mm}/Python.h")
+  _PY_INTERPRETER("${dir}" "${mm}" _py_exe_probe)
+  IF(CMAKE_HOST_WIN32)
+    SET(_py_header_probe "${dir}/include/Python.h")
+  ELSE()
+    SET(_py_header_probe "${dir}/include/python${mm}/Python.h")
+  ENDIF()
+  IF(EXISTS "${_py_exe_probe}" AND EXISTS "${_py_header_probe}")
     SET(${out_var} TRUE)
   ELSE()
     SET(${out_var} FALSE)
+  ENDIF()
+ENDMACRO()
+
+# Hand a built interpreter to the rest of the build. On Unix/macOS that is
+# BUNDLED_PYTHON_DIR. On Windows it is the Windows Python lookup in the
+# top-level CMakeLists.txt, which bundles whatever it finds: setting
+# BUNDLED_PYTHON_DIR there would instead switch the shell to the Unix
+# "bundled" runtime mode (HAVE_PYTHON=2). Python3_EXECUTABLE is forced as well
+# as the root, because FindPython keeps the interpreter of an earlier configure
+# (a python.org install, say) in the cache.
+MACRO(_PY_EXPORT dir mm)
+  IF(CMAKE_HOST_WIN32)
+    SET(Python3_ROOT_DIR "${dir}"
+      CACHE PATH "Python built from WITH_PYTHON_SOURCE" FORCE)
+    SET(Python3_EXECUTABLE "${dir}/python.exe"
+      CACHE FILEPATH "Python built from WITH_PYTHON_SOURCE" FORCE)
+  ELSE()
+    SET(BUNDLED_PYTHON_DIR "${dir}"
+      CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
   ENDIF()
 ENDMACRO()
 
@@ -121,9 +147,10 @@ SET(_PY_REQUIRED_MODULES ssl hashlib sqlite3 zlib binascii ctypes lzma bz2 decim
 
 MACRO(_PY_REQUIRE_MODULES dir mm)
   SET(_missing_mods "")
+  _PY_INTERPRETER("${dir}" "${mm}" _py_exe_check)
   FOREACH(_mod ${_PY_REQUIRED_MODULES})
     EXECUTE_PROCESS(
-      COMMAND "${dir}/bin/python${mm}" -c "import ${_mod}"
+      COMMAND "${_py_exe_check}" -c "import ${_mod}"
       RESULT_VARIABLE _mod_rc
       OUTPUT_QUIET
       ERROR_VARIABLE _mod_err)
@@ -178,8 +205,7 @@ IF(WITH_PYTHON_SOURCE MATCHES "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
       MESSAGE(STATUS "Python ${_py_req} already built at "
         "${PYTHON_INSTALL_ROOT}/Python-${_py_req}; reusing it.")
       _PY_REQUIRE_MODULES("${PYTHON_INSTALL_ROOT}/Python-${_py_req}" "${_mm}")
-      SET(BUNDLED_PYTHON_DIR "${PYTHON_INSTALL_ROOT}/Python-${_py_req}"
-        CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
+      _PY_EXPORT("${PYTHON_INSTALL_ROOT}/Python-${_py_req}" "${_mm}")
       RETURN()
     ENDIF()
   ELSE()
@@ -197,8 +223,7 @@ IF(WITH_PYTHON_SOURCE MATCHES "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$")
           MESSAGE(STATUS "Python ${_py_req}.x already built at ${_cand}; reusing "
             "it. Delete it to fetch/build a newer patch level.")
           _PY_REQUIRE_MODULES("${_cand}" "${_py_req}")
-          SET(BUNDLED_PYTHON_DIR "${_cand}"
-            CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
+          _PY_EXPORT("${_cand}" "${_py_req}")
           RETURN()
         ENDIF()
       ENDFOREACH()
@@ -279,8 +304,7 @@ _PY_INSTALL_IS_BUILT("${_py_install}" "${_py_mm}" _built)
 IF(_built)
   MESSAGE(STATUS "Python ${_py_version} already built at ${_py_install}; reusing "
     "it. Delete that directory to force a rebuild.")
-  SET(BUNDLED_PYTHON_DIR "${_py_install}"
-    CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
+  _PY_EXPORT("${_py_install}" "${_py_mm}")
   RETURN()
 ENDIF()
 
@@ -290,6 +314,13 @@ MESSAGE(STATUS "  source  : ${_py_src}")
 MESSAGE(STATUS "  install : ${_py_install}")
 MESSAGE(STATUS "  (override the location with -DPYTHON_INSTALL_ROOT; runs once)")
 MESSAGE(STATUS "==========================================================")
+
+IF(CMAKE_HOST_WIN32)
+  INCLUDE(${CMAKE_CURRENT_LIST_DIR}/bootstrap_python_windows.cmake)
+  _PY_EXPORT("${_py_install}" "${_py_mm}")
+  MESSAGE(STATUS "Python bootstrap complete: ${_py_install}")
+  RETURN()
+ENDIF()
 
 ##############################################################################
 # 5. Point the Python build at the vcpkg dependency closure that bootstrap_vcpkg
@@ -353,10 +384,12 @@ IF(_vcpkg_prefix AND EXISTS "${_vcpkg_prefix}")
   # either way the dependency is one the package bundles.
   SET(_pkg_config_libdir "${_vcpkg_prefix}/lib/pkgconfig")
 
-  # _decimal is the exception: there is no vcpkg mpdecimal port, so rather than
-  # link whatever libmpdec the host happens to have, build the copy that ships
-  # in the CPython source tree (Modules/_decimal/libmpdec). No external library
-  # at all, which is the most self-contained answer available for this one.
+  # _decimal is the exception: rather than link whatever libmpdec the host
+  # happens to have, build the copy that ships in the CPython source tree
+  # (Modules/_decimal/libmpdec). No external library at all, which is the most
+  # self-contained answer available for this one. (The Windows build uses
+  # vcpkg's mpdecimal port instead: PCbuild compiles a downloaded copy of
+  # libmpdec, not the in-tree one, and the point there is to download nothing.)
   LIST(APPEND _configure_extra "--with-system-libmpdec=no")
 ELSE()
   MESSAGE(STATUS "  no vcpkg prefix found; Python will build against system libs")
@@ -516,8 +549,7 @@ _PY_REQUIRE_MODULES("${_py_install}" "${_py_mm}")
 ##############################################################################
 # 9. Export the derived BUNDLED_PYTHON_DIR for the rest of the build.
 ##############################################################################
-SET(BUNDLED_PYTHON_DIR "${_py_install}"
-  CACHE PATH "Bundled Python install (built from WITH_PYTHON_SOURCE)" FORCE)
+_PY_EXPORT("${_py_install}" "${_py_mm}")
 
 MESSAGE(STATUS "Python bootstrap complete:")
 MESSAGE(STATUS "  BUNDLED_PYTHON_DIR = ${BUNDLED_PYTHON_DIR}")

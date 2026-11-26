@@ -195,16 +195,6 @@ jobs:
           ls -la "$DEST"
 
       # ========================================
-      # 1. SETUP PYTHON (WINDOWS ONLY)
-      # ========================================
-      - name: Setup Python (Python.org)
-        if: runner.os == 'Windows'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-          architecture: ${{ matrix.arch }}
-
-      # ========================================
       # 2. SETUP VISUAL STUDIO 2022 (WINDOWS ONLY)
       # ========================================
       # Pinned to the VS 2022 toolset (MSVC 14.44). Since 2026-09-30 the
@@ -340,18 +330,15 @@ jobs:
       # ========================================
       - name: Configure MariaDB Shell
         run: |
-          # Build platform-specific CMake flags
-          EXTRA_CMAKE_ARGS=""
-          if [ "$RUNNER_OS" != "Windows" ]; then
-            EXTRA_CMAKE_ARGS="-DWITH_PYTHON_SOURCE=3.14.10"
-          fi
-
+          # The bundled Python is built from source on every platform, against
+          # the same vcpkg libraries as the shell (on Windows with CPython's
+          # Visual Studio projects: cmake/bootstrap_python_windows.cmake).
           cmake -B ${{ env.MARIADB_SHELL_BUILD_DIR }} -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_TESTS=0 \
             -DWITH_LSP=ON \
             -DWITH_VCPKG_TRIPLET=${{ matrix.vcpkg-triplet }} \
-            $EXTRA_CMAKE_ARGS
+            -DWITH_PYTHON_SOURCE=3.14.10
         shell: bash
 
       # ========================================
