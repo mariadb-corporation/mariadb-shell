@@ -944,7 +944,9 @@ if(HAVE_PYTHON)
       # Exclude vcpkg's tree for just this find so the python.org install (located
       # via the Windows registry, PEP 514) wins when both are present. To force
       # vcpkg's Python instead, pass -DPython3_ROOT_DIR=<prefix>/tools/python3,
-      # which takes precedence and disables the exclusion.
+      # which takes precedence and disables the exclusion. WITH_PYTHON_SOURCE
+      # uses the same override: cmake/bootstrap_python.cmake sets
+      # Python3_ROOT_DIR and Python3_EXECUTABLE to the Python it built.
       #
       # NOTE: FindPython3 caches Python3_EXECUTABLE; clear the CMake cache when
       # changing which Python to use or a stale value is reused.
@@ -1737,7 +1739,7 @@ endif()
 # Semicolon- or space-separated list of pip requirement specs, e.g.
 #   -DPYTHON_DEPS_PACKAGES="certifi;PyYAML==6.0".
 #
-# Works for every bundled build: Windows (the located python.org install) and
+# Works for every bundled build: Windows (the Python found or built) and
 # Linux/macOS (BUNDLED_PYTHON_DIR / WITH_PYTHON_SOURCE). A system-Python
 # (non-bundled) unix build has nothing to bundle into, so it uses PYTHON_DEPS
 # directly instead.
@@ -1754,7 +1756,7 @@ endif()
 # sandbox plugin, which then surfaces as "name 'sandbox' is not defined".
 
 # "Are we producing a bundle that embeds a Python?" Windows always bundles the
-# located python.org install; unix bundles when BUNDLED_PYTHON_DIR is set.
+# Python it found or built; unix bundles when BUNDLED_PYTHON_DIR is set.
 SET(_py_bundling FALSE)
 IF(HAVE_PYTHON AND (WIN32 OR BUNDLED_PYTHON_DIR))
   SET(_py_bundling TRUE)
@@ -1783,8 +1785,9 @@ IF(PYTHON_DEPS_PACKAGES)
   ENDIF()
   IF(NOT _py_bundling)
     MESSAGE(FATAL_ERROR
-      "PYTHON_DEPS_PACKAGES requires a bundled Python. On Windows a python.org "
-      "install is bundled automatically; on Linux/macOS set BUNDLED_PYTHON_DIR "
+      "PYTHON_DEPS_PACKAGES requires a bundled Python. On Windows the Python "
+      "found (or built with WITH_PYTHON_SOURCE) is bundled automatically; on "
+      "Linux/macOS set BUNDLED_PYTHON_DIR "
       "(or WITH_PYTHON_SOURCE to build one). For a system Python, use "
       "PYTHON_DEPS=<dir> instead.")
   ENDIF()
@@ -1803,17 +1806,22 @@ IF(PYTHON_DEPS_PACKAGES)
   STRING(REPLACE " " ";" _py_pkg_list "${PYTHON_DEPS_PACKAGES}")
 
   # Install the packages into a staging directory. Treat it as a cache keyed on
-  # the requested set: only (re)install when the list changes, so reconfigures do
-  # not keep hitting PyPI. The stamp lives outside the staging dir so it is not
-  # itself bundled.
+  # the requested set and the interpreter that installs it: only (re)install
+  # when either changes, so reconfigures do not keep hitting PyPI. The
+  # interpreter is part of the key because compiled packages (PyYAML's _yaml,
+  # cryptography, pywin32) are built for it -- a build dir that switches from a
+  # python.org install to WITH_PYTHON_SOURCE, or to another version, must not
+  # keep the old interpreter's. The stamp lives outside the staging dir so it is
+  # not itself bundled.
   SET(_py_deps_staging "${CMAKE_BINARY_DIR}/bundled-python-deps")
   SET(_py_dep_stamp "${CMAKE_BINARY_DIR}/bundled-python-deps.stamp")
+  SET(_py_dep_key "${_py_pkg_list}|${PYTHON_EXECUTABLE}|${PYTHONLIBS_VERSION_STRING}")
   SET(_py_dep_stamped "")
   IF(EXISTS "${_py_dep_stamp}")
     FILE(READ "${_py_dep_stamp}" _py_dep_stamped)
   ENDIF()
 
-  IF(NOT _py_dep_stamped STREQUAL "${_py_pkg_list}" OR NOT EXISTS "${_py_deps_staging}")
+  IF(NOT _py_dep_stamped STREQUAL "${_py_dep_key}" OR NOT EXISTS "${_py_deps_staging}")
     MESSAGE(STATUS "Installing bundled Python packages via pip: ${_py_pkg_list}")
 
     # The bundled interpreter must have pip. A from-source CPython built with
@@ -1880,7 +1888,7 @@ IF(PYTHON_DEPS_PACKAGES)
         "Failed to install bundled Python packages (see output above). Ensure "
         "the bundled interpreter has pip and that PyPI is reachable.")
     ENDIF()
-    FILE(WRITE "${_py_dep_stamp}" "${_py_pkg_list}")
+    FILE(WRITE "${_py_dep_stamp}" "${_py_dep_key}")
   ELSE()
     MESSAGE(STATUS "Bundled Python packages already installed: ${_py_pkg_list}")
   ENDIF()

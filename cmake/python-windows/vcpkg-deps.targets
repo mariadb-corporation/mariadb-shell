@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Imported at the end of every C++ project of CPython's PCbuild through
+  ForceImportAfterCppTargets (see cmake/bootstrap_python_windows.cmake): the
+  second half of vcpkg-deps.props. It removes what PCbuild would build from
+  its own copies of the libraries and links vcpkg's import libraries instead.
+  The Py* properties are passed on the msbuild command line.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <!-- The sources of every library pointed at PyDepsNone, and the projects
+         that would build sqlite3.dll, liblzma.lib and zlib-ng.lib from them.
+         CustomBuild: _decimal assembles libmpdec's vcdiv64.asm on x64 only. -->
+    <ClCompile Remove="$(PyDepsNone)**" />
+    <ClInclude Remove="$(PyDepsNone)**" />
+    <CustomBuild Remove="$(PyDepsNone)**" />
+    <ProjectReference Remove="sqlite3.vcxproj;liblzma.vcxproj;zlib-ng.vcxproj" />
+    <!-- libffi.props copies python.org's libffi-8.dll; vcpkg's is placed by
+         bootstrap_python_windows.cmake under its own name. -->
+    <_LIBFFIDLL Remove="@(_LIBFFIDLL)" />
+  </ItemGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(PyVcpkgDir)include</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(PyDepsStage);$(PyVcpkgDir)lib</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == '_bz2'">
+    <Link><AdditionalDependencies>$(PyLibBz2);%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == '_zstd'">
+    <Link><AdditionalDependencies>$(PyLibZstd);%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == '_sqlite3'">
+    <Link><AdditionalDependencies>$(PyLibSqlite3);%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectName)' == '_decimal'">
+    <ClCompile>
+      <!-- Ahead of Modules\_decimal\windows: its mpdecimal.h is a wrapper that
+           includes the per-configuration headers of PCbuild's own copy. -->
+      <AdditionalIncludeDirectories>$(PyVcpkgDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- The project defines BUILD_LIBMPDEC, because it normally compiles
+           libmpdec in; that turns mpdecimal.h's declarations into dllexport.
+           Undefined again here, they become dllimport from vcpkg's DLL, which
+           _decimal needs: it assigns libmpdec's global variables. -->
+      <ForcedIncludeFiles>$(PyDepsStage)undef_build_libmpdec.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+    </ClCompile>
+    <Link><AdditionalDependencies>$(PyLibMpdec);%(AdditionalDependencies)</AdditionalDependencies></Link>
+  </ItemDefinitionGroup>
+
+  <!-- _lzma links $(OutDir)liblzma.lib by its full path, the output of the
+       liblzma project removed above. -->
+  <Target Name="PyVcpkgLzma" BeforeTargets="Link" Condition="'$(MSBuildProjectName)' == '_lzma'">
+    <Copy SourceFiles="$(PyLibLzma)" DestinationFiles="$(OutDir)liblzma$(PyDebugExt).lib" />
+  </Target>
+
+  <!-- python.vcxproj writes LICENSE.txt from CPython's own license plus those
+       of the libraries it bundles, read from the folders repointed above.
+       Rebuilt here (regen.targets is imported after this file, so its items
+       can only be changed from a target) with the copyright files of the vcpkg
+       ports instead. -->
+  <Target Name="PyVcpkgLicenses" BeforeTargets="_RegenLicense">
+    <ItemGroup>
+      <_PyVcpkgLicense Include="$(PyVcpkgDir)share\bzip2\copyright;
+                                $(PyVcpkgDir)share\libffi\copyright;
+                                $(PyVcpkgDir)share\liblzma\copyright;
+                                $(PyVcpkgDir)share\mpdecimal\copyright;
+                                $(PyVcpkgDir)share\openssl\copyright;
+                                $(PyVcpkgDir)share\sqlite3\copyright;
+                                $(PyVcpkgDir)share\zlib\copyright;
+                                $(PyVcpkgDir)share\zstd\copyright" />
+      <_LicenseSources Remove="@(_LicenseSources)" />
+      <_LicenseSources Include="$(PySourcePath)LICENSE;$(PySourcePath)PC\crtlicense.txt" />
+      <_LicenseSources Include="@(_PyVcpkgLicense)" Condition="Exists('%(FullPath)')" />
+    </ItemGroup>
+  </Target>
+</Project>

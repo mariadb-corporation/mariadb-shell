@@ -17,9 +17,11 @@ def drop_db(dbpath):
         os.remove(dbpath)
 
 
+# The bundled SQLite is built with FTS3/4/5, R-Tree and the math functions
+# (vcpkg.json), matching what python.org builds in, so a missing one is a failure.
 def test_full_text_search(module_name):
+    db = sqlite3.connect(":memory:")
     try:
-        db = sqlite3.connect(":memory:")
         with db:
             db.execute("create virtual table recipe using {}(name, ingredients)".format(module_name))
             db.executescript("""
@@ -31,7 +33,7 @@ def test_full_text_search(module_name):
             r = db.execute("select rowid, name, ingredients from recipe where name match 'pie'").fetchall()
             EXPECT_EQ([(3, 'broccoli pie', 'broccoli cheese onions flour'), (4, 'pumpkin pie', 'pumpkin sugar flour butter')], r)
     except sqlite3.OperationalError as e:
-        print("{}:".format(module_name), e)
+        testutil.fail("{}: {}".format(module_name, e))
     finally:
         db.close()
 
@@ -125,8 +127,8 @@ test_full_text_search("fts5")
 
 
 #@<> R-tree support
+db = sqlite3.connect(":memory:")
 try:
-    db = sqlite3.connect(":memory:")
     with db:
         db.execute("""CREATE VIRTUAL TABLE denylist USING rtree_i32(id, low_ip, high_ip, low_port, high_port);""")
         # deny ip range 127.0.0.1-127.0.255.255 with port range 0-1024
@@ -139,7 +141,19 @@ try:
         r = db.execute("""SELECT * FROM denylist WHERE low_ip <= ? and ? <= high_ip and low_port <= ? and ? <= high_port""", (check_ip, check_ip, ephemeral_port, ephemeral_port)).fetchall()
         EXPECT_EQ([], r)
 except sqlite3.OperationalError as e:
-    print("rtree:", e)
+    testutil.fail("rtree: {}".format(e))
+finally:
+    db.close()
+
+
+#@<> math functions support
+db = sqlite3.connect(":memory:")
+try:
+    with db:
+        r = db.execute("select sqrt(16), pow(2, 10), floor(2.5)").fetchall()
+        EXPECT_EQ([(4.0, 1024.0, 2.0)], r)
+except sqlite3.OperationalError as e:
+    testutil.fail("math: {}".format(e))
 finally:
     db.close()
 

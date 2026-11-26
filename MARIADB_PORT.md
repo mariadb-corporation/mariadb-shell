@@ -661,6 +661,63 @@ bin dir (`<prefix>/bin` for release, `<prefix>/debug/bin` for Debug) to `PATH`
 for the nested build via `cmake -E env --modify PATH=path_list_prepend:` (needs
 CMake ≥ 3.25).
 
+### 11.11 Python from source: PCbuild against the vcpkg tree
+
+With `-DWITH_PYTHON_SOURCE`, `cmake/bootstrap_python_windows.cmake` builds CPython
+with its own Visual Studio projects (PCbuild), but links every extension module
+against the shell's vcpkg tree instead of the copies PCbuild downloads into
+`externals/`. A python.org install ships whatever OpenSSL, SQLite, zlib (inside
+Tcl) etc. its CPython release was built with, frozen, and those were most of the
+CVEs a scan finds in the Windows package; this way each library is the one
+`vcpkg.json` pins, as on Linux/macOS.
+
+PCbuild itself is not modified. `msbuild PCbuild\pcbuild.proj` is called directly
+(`build.bat` would fetch the externals) with `IncludeExternals=true` (without it
+`_ssl`, `_sqlite3`, `_bz2`, ... are not built at all), plus two hooks from
+`cmake/python-windows/`:
+
+- `vcpkg-deps.props`, through PCbuild's `ExternalProps` property, sets the library
+  properties before PCbuild's defaults: OpenSSL and libffi at vcpkg's tree, and the
+  libraries PCbuild compiles from source (SQLite, bzip2, xz, zstd, mpdecimal,
+  zlib-ng) at a folder that never exists. `zlib-ng.vcxproj` then drops out of the
+  build on its own (it is included only when its folder exists).
+- `vcpkg-deps.targets`, through `ForceImportAfterCppTargets` (imported at the end
+  of every C++ project), removes the source items under that folder and the
+  project references to `sqlite3`/`liblzma`/`zlib-ng`, and links vcpkg's import
+  libraries.
+
+Non-obvious parts:
+
+- **Hardcoded import library names.** `libffi.props` links `libffi-8.lib`,
+  `pythoncore` `zlib-ng.lib`, `_lzma` `$(OutDir)liblzma.lib`. Copies of vcpkg's
+  (`ffi.lib`, `libz.lib`, `lzma.lib`) under those names work: the DLL a module
+  imports is recorded inside the import library, not taken from its file name.
+- **DLL copy targets.** `libffi.props` and `openssl.props` copy python.org's DLLs by
+  name (`libffi-8.dll`, `libcrypto-3.dll` on x64, where vcpkg's is
+  `libcrypto-3-x64.dll`); `SkipCopySSLDLL` and removing `_LIBFFIDLL` turn them off,
+  and the bootstrap places vcpkg's own.
+- **mpdecimal.** `_decimal.vcxproj` defines `BUILD_LIBMPDEC` (it normally compiles
+  libmpdec in), which makes vcpkg's `mpdecimal.h` declare everything `dllexport`.
+  A forced-include `#undef BUILD_LIBMPDEC` makes it `dllimport` again, which
+  `_decimal` needs because it assigns libmpdec's global variables. vcpkg's include
+  dir must come before `Modules\_decimal\windows`, whose `mpdecimal.h` is a wrapper
+  around PCbuild's per-configuration headers.
+- **Where the DLLs go.** An extension module's dependencies are searched for in
+  its own directory (`DLLs\`), but `python314.dll`'s (zlib is linked into the core)
+  only beside `python314.dll`. Without `libz.dll` there, `python.exe` exits with
+  `0xC0000135` before running anything.
+- **Release only.** A Debug CPython is another ABI (`python314_d.dll`, `_d`
+  modules); the interpreter is built Release whatever `CMAKE_BUILD_TYPE` is.
+- **Toolset.** A newer Visual Studio's MSBuild builds with its own default toolset;
+  the bootstrap passes the `PlatformToolset` that matches the developer
+  environment's `VCToolsVersion` (14.44 in CI, see the workflow's toolset pin).
+
+`PC\layout` (CPython's packaging script), run with the built interpreter, then
+writes the install tree the rest of the build uses in place of a python.org
+install (handed over as `Python3_ROOT_DIR`/`Python3_EXECUTABLE`, not
+`BUNDLED_PYTHON_DIR`, which would switch the runtime to the Unix bundled mode).
+Tcl/Tk and the test modules are not built.
+
 ## 12. Linux platform notes
 
 Verified working: a full `arm64-linux-dynamic` (vcpkg) build with a from-source
@@ -751,7 +808,13 @@ NOTE: the bundled Python is **cached** (`bootstrap_python.cmake` reuses an exist
 cached install (`$PYTHON_INSTALL_ROOT/Python-<ver>`, default alongside the shell
 source) so the next configure re-runs vcpkg + the Python bootstrap. Verify with
 `lib/mariadb-shell/bin/python<ver> -c "import sqlite3; print(sqlite3.sqlite_version)"`.
-Cross-platform: the same manifest entry gives macOS/Windows builds `_sqlite3` too.
+Cross-platform: the same manifest entry gives macOS builds `_sqlite3` too, and
+Windows builds that use `-DWITH_PYTHON_SOURCE` (§11.11).
+
+The manifest enables the port features `fts3`, `fts4`, `fts5`, `math` and `rtree`:
+the port's default is JSON only, while python.org builds in all five, so without
+them the bundled `sqlite3` module lacks SQL that a stock Python has.
+`sqlite_support_norecord.py` fails if any is missing.
 
 ### 12.5 GCC 15 `-Werror=array-bounds` false positive (linenoise-ng)
 

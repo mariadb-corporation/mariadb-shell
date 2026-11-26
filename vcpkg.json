@@ -14,18 +14,22 @@
     "libssh",
     "antlr4",
     "rapidjson",
-    "sqlite3",
     {
-      "name": "libffi",
-      "platform": "!windows"
+      "name": "sqlite3",
+      "features": [
+        "fts3",
+        "fts4",
+        "fts5",
+        "math",
+        "rtree"
+      ]
     },
+    "libffi",
+    "liblzma",
+    "bzip2",
     {
-      "name": "liblzma",
-      "platform": "!windows"
-    },
-    {
-      "name": "bzip2",
-      "platform": "!windows"
+      "name": "mpdecimal",
+      "platform": "windows"
     },
     {
       "name": "curl",
@@ -73,6 +77,10 @@
     {
       "name": "sqlite3",
       "version": "3.54.1"
+    },
+    {
+      "name": "mpdecimal",
+      "version": "4.0.1"
     }
   ]
 }

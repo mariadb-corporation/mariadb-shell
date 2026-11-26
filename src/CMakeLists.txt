@@ -326,9 +326,10 @@ IF(HAVE_PYTHON)
 
     # Python runtime.
     #
-    # The Windows interpreter is a python.org / tool-cache install taken as it is
-    # found, so its site-packages contains whatever the build host had installed
-    # there -- which on the GitHub runners means pywin32. pywin32 is a dependency
+    # The Windows interpreter, when it is a python.org / tool-cache install
+    # rather than one built with WITH_PYTHON_SOURCE, is taken as it is found, so
+    # its site-packages contains whatever the build host had installed there --
+    # which on the GitHub runners means pywin32. pywin32 is a dependency
     # we now ship deliberately (it is in the PYTHON_DEPS_PACKAGES default), but
     # the copy we ship must be the one pip installed for this build, NOT the
     # host's: pywin32's Python modules and its DLLs (pywin32_system32) are
