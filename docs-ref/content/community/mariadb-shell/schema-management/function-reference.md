@@ -39,6 +39,20 @@ In interactive mode, which includes the command line, functions print their resu
 | `msm.set.project_settings(settings[, options])` | `msm set project-settings` | Changes the given keys of `msm.project.json`, brings the project's files in line, and returns the files it wrote. See [Change Project Settings](schema-projects.md#change-project-settings). |
 | `msm.get.project_information([options])` | `msm get project-information` | Returns the project settings plus `currentDevelopmentVersion`, `lastReleasedVersion`, and `schemaDevelopmentFilePath`. |
 | `msm.get.available_licenses()` | `msm get available-licenses` | Returns the names of the included license headers. |
+| `msm.rename_schema([new_schema_name][, options])` | `msm rename-schema` | Renames the schema of a project that has no release yet, everywhere the project names it: `msm.project.json`, the file names and SQL of the development script and the files it includes, the pending update script, `README.md`, `CHANGELOG.md`, the schema snapshot, and the project folder where it still has MSM's name for the old schema. Everything is changed, or nothing. A project with a release is refused. Options: `dry_run`, which reports what would change and why a rename is refused, without changing anything; `allow_special_chars`; `lsp_path`. |
+
+## Project List
+
+The project list holds the schema projects that you work with, each filed in a folder of the list, with an optional caption and color. The MariaDB extension for Visual Studio Code shows it. A project enters the list when `msm.create_new_project_folder()`, `msm.import_live_schema()`, or `msm.import_workbench_model()` creates it, unless their option `add_to_project_list` is `false`, or with `msm.add_project()`.
+
+| Python | Command line | Description |
+| --- | --- | --- |
+| `msm.list_projects()` | `msm list-projects` | Returns the listed projects, sorted by path: each with its `project_path`, `folder` (`/` for the top level), `caption`, `color`, `mcp_access`, `schema_name`, whether the folder still exists as a project, and `last_released_version`. |
+| `msm.add_project(project_path[, options])` | `msm add-project` | Adds an existing project to the list, or changes the details given for a project that is listed already, and returns the entry. Options: `folder`, `caption`, `color` (`red`, `orange`, `yellow`, `green`, `blue`, or `purple`), `mcp_access`. |
+| `msm.update_project(project_path[, options])` | `msm update-project` | Changes how a listed project is filed and shown, and returns the entry. An option left out keeps its value; an empty string clears it. Options: `folder`, `caption`, `color`, `mcp_access`. |
+| `msm.remove_project(project_path)` | `msm remove-project` | Removes a project from the list and returns its path. The project folder is left as it is. |
+
+`mcp_access` decides whether LLMs may work on the project through an MCP server that was started without `--gui`. It is `true` for a new entry.
 
 ## Sections and Versions
 
@@ -97,8 +111,25 @@ Section 160 of the development script holds a snapshot of the schema objects and
 | `msm.rename_schema_diagram(name, new_name[, options])` | `msm rename-schema-diagram` | Renames a diagram and keeps its figures, pictures, and place among the diagrams. Refuses an empty name, `schema_definition`, and a name that another diagram has, in any case. Returns the files it wrote, or an empty list for the same name. |
 | `msm.remove_schema_diagram(name[, options])` | `msm remove-schema-diagram` | Removes a diagram. |
 | `msm.edit_schema(edits, base_hash[, options])` | `msm edit-schema` | Changes tables, columns, indexes, keys, views, and routines in the `CREATE` statements of the development script. `base_hash` is the `source_hash` of the schema snapshot that the edits were made against. Option: `edits_file`. |
-| `msm.get.object_templates()` | `msm get object-templates` | Returns the `CREATE` statements that `msm.add_schema_object()` fills in, for each kind, and the placeholders that each kind takes: `${name}` and `${schema}`, and `${table}` for a trigger. |
-| `msm.add_schema_object(kind, name, base_hash[, options])` | `msm add-schema-object` | Adds a `view`, `procedure`, `function`, `trigger`, `event`, or `sequence` from a template through `msm.edit_schema()`: a sequence to section 140 before the first table, every other kind to section 150. Returns what `msm.edit_schema()` returns, plus the `file` and the `line` where the new statement starts. Options: `template`, `table` (for a trigger), `lsp_path`. |
+| `msm.set.schema_statements([statements][, options])` | `msm set schema-statements` | Puts `CREATE TABLE`, `SEQUENCE`, `VIEW`, `PROCEDURE`, `FUNCTION`, `TRIGGER`, and `EVENT` statements into the development script. An object that the project lacks is added: a table or sequence to section 140, the others to section 150. A view, routine, trigger, or event that the project has is replaced where it stands. A table that the project has is changed to the definition given, and once the project has a release, the `ALTER TABLE` that a deployed server needs is kept for the next update script. A sequence that the project has is refused. Everything is written, or nothing. Returns what `msm.edit_schema()` returns, plus `statements`: each statement's object, the file and line where it is, and whether it changed anything. Options: `base_hash`, `expect`, `renames`, `dropped_columns`, `statements_file`, `lsp_path`. See [Change a Table](#change-a-table). |
+| `msm.drop_schema_object(kind, name[, options])` | `msm drop-schema-object` | Removes a `table`, `sequence`, `view`, `procedure`, `function`, `trigger`, or `event` from the development script and the files it includes. Once the project has a release, the `DROP` is kept for the next update script. Returns what `msm.edit_schema()` returns. Options: `base_hash`, `lsp_path`. |
+| `msm.get.object_templates()` | `msm get object-templates` | Returns MSM's `CREATE` statement templates for each kind of object to add with `msm.set.schema_statements()`, and the placeholders that each kind takes: `${name}` and `${schema}`, and `${table}` for a trigger. |
+
+### Change a Table
+
+`msm.set.schema_statements()` drops every column that a table's new definition lacks, with its data on a deployed server. To rename a column instead, name the rename in `renames`, as `{table: {old_column: new_column}}`. Where a dropped column and an added column are alike apart from the name, the call is refused until `renames` names the rename or `dropped_columns`, as `{table: [column]}`, confirms the drop.
+
+`base_hash` is optional for `msm.set.schema_statements()`, `msm.drop_schema_object()`, `msm.set.rest_statements()`, and `msm.drop_rest_object()`. With it, the call is refused where the schema snapshot was made again since. Without it, the change is made against the project as it is, and a snapshot that no longer matches the development script is made again first. `msm.edit_schema()` always needs it.
+
+## REST Services
+
+These functions work on the REST services that section 180 of the development script defines. See [REST Endpoints](deploying-schemas.md#rest-endpoints). Those that read the SQL need `mariadb-lsp` and take the option `lsp_path`.
+
+| Python | Command line | Description |
+| --- | --- | --- |
+| `msm.set.rest_statements([statements][, options])` | `msm set rest-statements` | Writes `CREATE REST SERVICE`, `SCHEMA`, `VIEW`, `PROCEDURE`, and `FUNCTION` statements into section 180 as `CREATE OR REPLACE`: an item that the section creates already is replaced where it stands, and a new one goes after the statements of its service or schema. Nothing but the items given may change. Everything is written, or nothing. Returns what `msm.edit_schema()` returns, plus `statements`: each item, the file and line where it is, and whether it replaced one. Options: `base_hash`, `replaces` (the REST object that the one statement renames), `statements_file`, `lsp_path`. |
+| `msm.drop_rest_object(kind, service[, options])` | `msm drop-rest-object` | Removes a REST `service`, `schema`, or `object` and everything on it from section 180. No `DROP` is written: the next release's update script drops what the release no longer defines, in section 280. Returns what `msm.edit_schema()` returns, plus `removed`: the file and line of each statement removed or changed. Options: `schema`, `object`, `base_hash`, `lsp_path`. |
+| `msm.dump_rest_sdk(service, directory[, options])` | `msm dump-rest-sdk` | Writes the REST client SDK of a service that the project defines, without a server: the same files that `rest.dump_sdk_service_files()` writes for a service on a server. Returns `directory`, `files`, `service`, `sdk_language`, and `warnings`. Options: `options` (`service_url`, `sdk_language`, `add_app_base_class`, `header`; those left out are the ones stored in the folder), `lsp_path`. |
 
 ## Working Directory
 
