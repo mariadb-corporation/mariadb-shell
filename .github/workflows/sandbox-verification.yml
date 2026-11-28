@@ -361,7 +361,7 @@ jobs:
       # these scripts.
       # ====================================================================
       - name: Checkout Driver Scripts
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # ====================================================================
       # 2. DOWNLOAD BOTH PACKAGES
@@ -605,7 +605,7 @@ jobs:
       # ====================================================================
       - name: Upload Transcript On Failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failed-sandbox-verification-${{ matrix.name }}
           path: ${{ env.OUT_DIR }}/sandbox-verification.log

@@ -72,13 +72,13 @@ jobs:
       # 1. Checkout this repo -- it carries the Dockerfile and entrypoint
       #    script used to build the image below.
       - name: Checkout CI Config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 2. Checkout the MariaDB server source to be packaged, into its own
       #    directory so it can be bind-mounted into the container separately
       #    from the CI config checked out above.
       - name: Checkout MariaDB Server Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MariaDB/server
           ref: ${{ env.MARIADB_VERSION }}
@@ -107,7 +107,7 @@ jobs:
       #     objects; restore-keys fall back to the newest previous set.
       - name: Restore ccache
         if: matrix.hosted
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ci/docker/sandbox-server-rocky9-${{ matrix.arch }}/ccache
           key: sandbox-server-ccache-${{ matrix.arch }}-${{ env.MARIADB_VERSION }}-${{ hashFiles('docker/linux-rocky9-server.Dockerfile') }}
@@ -153,7 +153,7 @@ jobs:
 
       # 8. Upload compiled package to GitHub Actions artifacts
       - name: Upload Compiled Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.pkg.outputs.name }}
           path: ${{ steps.pkg.outputs.path }}

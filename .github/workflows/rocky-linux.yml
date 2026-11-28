@@ -65,7 +65,7 @@ jobs:
     steps:
       # 1. Checkout repository code onto the runner
       - name: Checkout Source Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         # src/lsp-server (mariadb-corporation/lsp-server, public) is built into
         # mariadb-lsp next to mariadb-shell.
         with:
@@ -79,7 +79,7 @@ jobs:
       #     tree is bind-mounted into the container, so staging on the host here
       #     is what the build sees.
       - name: Checkout Shell Plugins (release/candidate)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mariadb-corporation/mariadb-shell-plugins
           ref: release/candidate
@@ -154,7 +154,7 @@ jobs:
       #     ports stay warm across a bump.
       - name: Restore vcpkg Binary Cache
         if: matrix.hosted
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ci/docker/rocky9-${{ matrix.arch }}/vcpkg-archives
           key: vcpkg-archives-${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
@@ -175,7 +175,7 @@ jobs:
       #     interpreter has to be rebuilt rather than served from this cache.
       - name: Restore Bundled Python
         if: matrix.hosted
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ci/docker/rocky9-${{ matrix.arch }}/python/Python-${{ env.PYTHON_VERSION }}
           key: python-${{ matrix.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('vcpkg.json', 'docker/linux-rocky9.Dockerfile') }}
@@ -329,7 +329,7 @@ jobs:
 
       # 7. Upload compiled package to GitHub Actions artifacts
       - name: Upload Compiled Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.pkg.outputs.name }}
           path: ${{ steps.pkg.outputs.path }}
