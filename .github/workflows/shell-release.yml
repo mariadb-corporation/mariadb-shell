@@ -26,13 +26,13 @@ jobs:
     environment: release-build
     steps:
       - name: Checkout Shell Version
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: MYSQL_VERSION
           sparse-checkout-cone-mode: false
 
       - name: Checkout Shell Plugins Version (release/candidate)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mariadb-corporation/mariadb-shell-plugins
           ref: release/candidate
@@ -106,7 +106,7 @@ jobs:
       # 0. CHECKOUT MAIN PROJECT
       # ========================================
       - name: Checkout Main Project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         # src/lsp-server (mariadb-corporation/lsp-server, public) is built into
         # mariadb-lsp next to mariadb-shell.
         with:
@@ -125,7 +125,7 @@ jobs:
       #
       # mariadb-shell-plugins is a separate, public repo in the same org.
       - name: Checkout Shell Plugins (release/candidate)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: mariadb-corporation/mariadb-shell-plugins
           ref: release/candidate
@@ -199,7 +199,7 @@ jobs:
       # ========================================
       - name: Setup Python (Python.org)
         if: runner.os == 'Windows'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.14'
           architecture: ${{ matrix.arch }}

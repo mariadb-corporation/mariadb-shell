@@ -75,7 +75,7 @@ jobs:
       # ========================================
       - name: Checkout Main Project
         if: env.RUN_BUILD == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         # src/lsp-server (mariadb-corporation/lsp-server, public) is built into
         # mariadb-lsp next to mariadb-shell.
         with:
@@ -288,7 +288,7 @@ jobs:
         # always(), and not gated on success, so the plan/report/logs are still
         # picked up when a suite failure is exactly what we want to diagnose.
         if: always() && env.RUN_TESTS == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-execution-artifacts
           path: test-execution-*

@@ -110,7 +110,7 @@ jobs:
       tree: ${{ steps.lookup.outputs.tree }}
       cached: ${{ steps.lookup.outputs.cached }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: lookup
         run: |

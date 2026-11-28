@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout MariaDB Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 'MariaDB/server'
           ref: ${{ env.MARIADB_VERSION }}
