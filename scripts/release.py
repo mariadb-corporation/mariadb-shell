@@ -108,6 +108,40 @@ def gh(*args, check=True):
     return run(["gh", *args], check=check).stdout
 
 
+# gh's answers that mean "it does not exist", as opposed to "the call failed".
+GH_RELEASE_MISSING = re.compile(r"^release not found$", re.MULTILINE)
+GH_ASSET_MISSING = re.compile(r"^no assets match the file pattern$", re.MULTILINE)
+GH_CONTENT_MISSING = re.compile(r"^gh: Not Found \(HTTP 404\)$", re.MULTILINE)
+
+LOOKUP_ATTEMPTS = 4
+LOOKUP_BACKOFF = 5  # seconds, doubled after each failed attempt
+
+
+def gh_lookup(*args, missing):
+    """gh's stdout, or None when its stderr matches `missing`: GitHub answered
+    that the thing does not exist.
+
+    Any other failure (a reset connection, a timeout, a 5xx, a rate limit) is
+    retried, and exits once the attempts are used up. It must never read as
+    "missing": the callers decide sandbox server rebuilds from the answer, and
+    a dropped connection taken for an absent file or an unpublished release
+    made preflight report packages as outdated that were not."""
+    delay = LOOKUP_BACKOFF
+    for attempt in range(1, LOOKUP_ATTEMPTS + 1):
+        result = run(["gh", *args], check=False)
+        if result.returncode == 0:
+            return result.stdout
+        error = result.stderr.strip()
+        if missing.search(error):
+            return None
+        if attempt == LOOKUP_ATTEMPTS:
+            raise SystemExit(f"gh {' '.join(args)} failed {LOOKUP_ATTEMPTS} times, last with:\n{error}")
+        print(f"[{stamp()}] gh {' '.join(args)} failed, retrying in {delay}s: {error.splitlines()[-1] if error else ''}",
+              file=sys.stderr, flush=True)
+        time.sleep(delay)
+        delay *= 2
+
+
 def gh_json(*args):
     return json.loads(gh(*args))
 
@@ -304,15 +338,15 @@ def release_checksums(tag):
     """None when the release is not published; otherwise {package: sha256}
     from its SERVER_SHA256SUMS, empty when it has none."""
     if tag not in _release_cache:
-        view = run(["gh", "release", "view", tag, "-R", SHELL_REPO, "--json", "isDraft", "--jq", ".isDraft"],
-                   check=False)
-        if view.returncode != 0 or view.stdout.strip() != "false":
+        is_draft = gh_lookup("release", "view", tag, "-R", SHELL_REPO, "--json", "isDraft", "--jq", ".isDraft",
+                             missing=GH_RELEASE_MISSING)
+        if is_draft is None or is_draft.strip() != "false":
             _release_cache[tag] = None
         else:
-            sums = run(["gh", "release", "download", tag, "-R", SHELL_REPO, "-p", SERVER_CHECKSUMS_ASSET,
-                        "-O", "-"], check=False)
+            sums = gh_lookup("release", "download", tag, "-R", SHELL_REPO, "-p", SERVER_CHECKSUMS_ASSET,
+                             "-O", "-", missing=GH_ASSET_MISSING)
             checksums = {}
-            for line in sums.stdout.splitlines() if sums.returncode == 0 else []:
+            for line in (sums or "").splitlines():
                 sha256sum, _, name = line.strip().partition("  ")
                 if name:
                     checksums[name.lstrip("*")] = sha256sum
@@ -349,9 +383,11 @@ def packaging_blobs(ref):
     if ref not in _packaging_cache:
         blobs = {}
         for path in SANDBOX_PACKAGING_FILES:
-            result = run(["gh", "api", f"repos/{SHELL_REPO}/contents/{path}?ref={ref}", "--jq", ".sha"],
-                         check=False)
-            blobs[path] = result.stdout.strip() if result.returncode == 0 else None
+            # Only a 404 for the file itself means absent. An unknown ref is a
+            # different 404 ("No commit found for the ref"), and fails loudly.
+            sha = gh_lookup("api", f"repos/{SHELL_REPO}/contents/{path}?ref={ref}", "--jq", ".sha",
+                            missing=GH_CONTENT_MISSING)
+            blobs[path] = sha.strip() if sha is not None else None
         _packaging_cache[ref] = blobs
     return _packaging_cache[ref]
 
