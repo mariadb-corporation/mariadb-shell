@@ -1293,10 +1293,15 @@ IF (WITH_SSL_PATH AND (APPLE OR WIN32 OR LINUX_STANDALONE))
   # (pulled in by mcp -> pyjwt[crypto]) tries to load the legacy provider when
   # its extension module is imported, so `import mcp` prints "OpenSSL 3's legacy
   # provider failed to load".
+  #
+  # Search ONLY under WITH_SSL_PATH. The default search includes the system
+  # PATH, where a build host may have another OpenSSL: the windows-2022 runners
+  # put Ruby on PATH, whose bin/lib/ossl-modules holds an OpenSSL 4 legacy.dll.
+  # Found first, it was bundled next to vcpkg's OpenSSL 3, linked against a
+  # libcrypto-4-x64.dll the package does not ship.
   FIND_PATH(OPENSSL_MODULES_DIR
     NAMES ossl-modules
-    NO_CMAKE_PATH
-    NO_CMAKE_ENVIRONMENT_PATH
+    NO_DEFAULT_PATH
     HINTS ${WITH_SSL_PATH}
     PATH_SUFFIXES lib lib64
   )
